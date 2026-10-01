@@ -154,6 +154,12 @@ target_link_libraries(direct_boundary_consumer PRIVATE gui_boundary)
         self.assertEqual(0, result.returncode, result.stdout)
 
     def test_sdl_host_and_deliverable_checks_select_declared_native_display(self):
+        self.sdl_display_fixture()
+
+    def test_sdl_display_discovery_selects_multiconfig_configuration(self):
+        self.sdl_display_fixture("Ninja Multi-Config")
+
+    def sdl_display_fixture(self, generator=None):
         cmake = (ROOT / "gui/CMakeLists.txt").read_text()
         setup = "function(foundation_gui_sdl_display_test " + cmake.split(
             "function(foundation_gui_sdl_display_test ", 1)[1].split("endfunction()", 1)[0] + "endfunction()\n"
@@ -184,14 +190,17 @@ endfunction()
                     (source / "CMakeLists.txt").write_text(project + 'set(CMAKE_SYSTEM_NAME "' + system + '")\n' +
                                                           setup + installed + native)
                     build = source / "build"
-                    result = subprocess.run(["cmake", "-S", str(source), "-B", str(build)],
-                        capture_output=True, text=True, timeout=30)
+                    command = ["cmake", "-S", str(source), "-B", str(build)]
+                    if generator is not None: command += ["-G", generator]
+                    result = subprocess.run(command, capture_output=True, text=True, timeout=30)
                     if driver is None:
                         self.assertNotEqual(0, result.returncode)
                         self.assertIn("Declare the native SDL video driver", result.stderr)
                         continue
                     self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-                    result = subprocess.run(["ctest", "--test-dir", str(build), "--show-only=json-v1"],
+                    # Multi-configuration generators guard test definitions by
+                    # configuration even when this fixture builds no executable.
+                    result = subprocess.run(["ctest", "--test-dir", str(build), "-C", "Debug", "--show-only=json-v1"],
                         capture_output=True, text=True, check=True, timeout=15)
                     tests = json.loads(result.stdout)["tests"]
                     self.assertEqual({"foundation.gui.installed-sdl", "foundation.gui.sdl-host"},
