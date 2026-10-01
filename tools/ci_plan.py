@@ -459,6 +459,181 @@ def download_run(repository, run_id, source_commit, workflow, name, output):
     return observed
 
 
+
+def retained_sdk_request(request, repository, target, profile, recipe):
+    """One explicit producer and two immutable transport objects; no selection fallback."""
+    g = module('github_release')
+    fields = {'schema_version', 'repository', 'target', 'profile', 'recipe_id',
+              'run_id', 'source_commit', 'attempt', 'job_id', 'group', 'proof'}
+    if not isinstance(request, dict) or set(request) != fields or type(request['schema_version']) is not int or request['schema_version'] != 1:
+        raise ValueError('exact retained SDK request schema required')
+    g.location(repository); exact_commit(request['source_commit'])
+    if (target not in (*STANDARD, 'browser-wasm32') or profile not in ('core', 'all-gui') or
+        request['repository'] != repository or request['target'] != target or
+        request['profile'] != profile or request['recipe_id'] != recipe or
+        not isinstance(recipe, str) or not re.fullmatch(r'[0-9a-f]{64}', recipe)):
+        raise ValueError('retained SDK repository, target, profile or current recipe differs')
+    for field in ('run_id', 'attempt', 'job_id'):
+        if type(request[field]) is not int or request[field] < 1:
+            raise ValueError('retained producer identifiers must be positive integers')
+    for field in ('group', 'proof'):
+        item = request[field]
+        if (not isinstance(item, dict) or set(item) != {'id', 'sha256'} or
+            type(item['id']) is not int or item['id'] < 1 or
+            not isinstance(item['sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', item['sha256'])):
+            raise ValueError('exact retained artifact ID and SHA256 required')
+    if request['group']['id'] == request['proof']['id']:
+        raise ValueError('group and proof must be distinct artifacts')
+    return request
+
+
+def _retained_zip(path, *, max_bytes):
+    """Validate every member; callers read selected proof files without extraction."""
+    import stat
+    import zipfile
+    a = module('dependency_archive')
+    entries, folded, kinds, spelling, total = {}, set(), {}, {}, 0
+    with zipfile.ZipFile(path) as source:
+        members = source.infolist()
+        if len(members) > 10000:
+            raise ValueError('retained ZIP inventory exceeds supported limit')
+        for item in members:
+            name = str(a.relative(item.filename[:-1] if item.is_dir() else item.filename))
+            key = name.casefold(); mode = item.external_attr >> 16
+            kind = stat.S_IFMT(mode)
+            if (key in folded or kind not in (0, stat.S_IFDIR if item.is_dir() else stat.S_IFREG) or
+                mode & 0o7000 or item.flag_bits & 1 or item.file_size < 0):
+                raise ValueError('unsafe, linked or duplicate retained ZIP member')
+            total += item.file_size
+            if total > max_bytes:
+                raise ValueError('retained ZIP expands beyond supported limit')
+            folded.add(key); kinds[key] = item.is_dir()
+            parts = name.split('/')
+            for index in range(1, len(parts) + 1):
+                prefix = '/'.join(parts[:index]); prior = spelling.setdefault(prefix.casefold(), prefix)
+                if prior != prefix:
+                    raise ValueError('ambiguous retained ZIP path spelling')
+            if not item.is_dir(): entries[name] = item
+        for name in entries:
+            for parent in a.relative(name).parents:
+                if str(parent) != '.' and kinds.get(str(parent).casefold()) is False:
+                    raise ValueError('retained ZIP file is also an entry parent')
+    return entries
+
+
+def _download_action_artifact(repository, artifact_id, path):
+    with Path(path).open('xb') as stream:
+        result = subprocess.run(['gh', 'api', '--hostname', 'github.com',
+            f'repos/{repository}/actions/artifacts/{artifact_id}/zip'], stdout=stream,
+            stderr=subprocess.PIPE, check=False, timeout=1800)
+    if result.returncode:
+        raise ValueError('retained artifact download failed; no fallback is permitted')
+
+
+def retained_sdk(repository, request, target, profile, recipe, output, *, transport=None, download=None):
+    """Reuse checked bytes from one finished producer, regardless of sibling status."""
+    import datetime
+    import shutil
+    import tempfile
+    import zipfile
+    g = module('github_release'); a = module('dependency_archive'); store = module('dependency_store')
+    retained_sdk_request(request, repository, target, profile, recipe)
+    output = Path(output).absolute()
+    if output.exists() or output.is_symlink(): raise ValueError('retained SDK output must be new')
+    remote = g.Remote(repository, transport); remote.visible()
+    base = remote.base; run_id = request['run_id']; attempt = request['attempt']; commit = request['source_commit']
+    repository_info = remote.transport.json(base)
+    repository_id = repository_info.get('id')
+    if type(repository_id) is not int or repository_id < 1:
+        raise ValueError('repository numeric identity is unavailable')
+    run_endpoint = f'{base}/actions/runs/{run_id}/attempts/{attempt}'
+    job_endpoint = f'{base}/actions/jobs/{request["job_id"]}'
+    runner = STANDARD.get(target, 'ubuntu-24.04')
+
+    def producer():
+        observed = remote.transport.json(run_endpoint)
+        job = remote.transport.json(job_endpoint)
+        if (observed.get('id') != run_id or observed.get('run_attempt') != attempt or
+            observed.get('head_sha') != commit or observed.get('event') != 'workflow_dispatch' or
+            observed.get('path') != '.github/workflows/sdk-maintenance.yml' or
+            observed.get('repository', {}).get('id') != repository_id or
+            observed.get('repository', {}).get('full_name', '').casefold() != repository.casefold() or
+            observed.get('head_repository', {}).get('id') != repository_id or
+            observed.get('head_repository', {}).get('full_name', '').casefold() != repository.casefold() or
+            job.get('id') != request['job_id'] or job.get('run_id') != run_id or
+            job.get('run_attempt') != attempt or job.get('head_sha') != commit or
+            job.get('name') != f'produce ({target}, {runner})' or job.get('status') != 'completed' or
+            job.get('conclusion') not in ('success', 'failure')):
+            raise ValueError('retained producer job, attempt or workflow identity differs')
+        try:
+            started = datetime.datetime.fromisoformat(job['started_at'].replace('Z', '+00:00'))
+            completed = datetime.datetime.fromisoformat(job['completed_at'].replace('Z', '+00:00'))
+            if started.utcoffset() is None or completed.utcoffset() is None or completed < started:
+                raise ValueError('invalid producer time interval')
+        except (KeyError, TypeError, AttributeError) as error:
+            raise ValueError('completed producer time interval is unavailable') from error
+        return job, started, completed
+
+    job, started, completed = producer()
+    observed_artifacts = {}
+    for kind in ('group', 'proof'):
+        item = request[kind]
+        row = remote.transport.json(f'{base}/actions/artifacts/{item["id"]}')
+        run = row.get('workflow_run', {})
+        expected_name = f'sdk-{kind}-{target}-{attempt}'
+        if (row.get('id') != item['id'] or row.get('name') != expected_name or row.get('expired') is not False or
+            row.get('digest') != 'sha256:' + item['sha256'] or type(row.get('size_in_bytes')) is not int or
+            not 0 < row['size_in_bytes'] <= (16 * 1024**3 if kind == 'group' else 64 * 1024**2) or
+            run.get('id') != run_id or run.get('head_sha') != commit or
+            run.get('repository_id') != repository_id or run.get('head_repository_id') != repository_id):
+            raise ValueError('retained artifact immutable identity or producer differs')
+        created = datetime.datetime.fromisoformat(row.get('created_at', '').replace('Z', '+00:00'))
+        if created.utcoffset() is None or not started <= created <= completed:
+            raise ValueError('retained artifact was not created within the exact producer job')
+        observed_artifacts[kind] = row
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=output.parent, prefix='.retained-sdk-') as temporary:
+        stage = Path(temporary)
+        for kind, row in observed_artifacts.items():
+            path = stage / (kind + '.zip')
+            (download or _download_action_artifact)(repository, row['id'], path)
+            if path.stat().st_size != row['size_in_bytes'] or a.digest(path) != request[kind]['sha256']:
+                raise ValueError('downloaded retained ZIP differs from pinned bytes')
+        proof_entries = _retained_zip(stage / 'proof.zip', max_bytes=64 * 1024**2)
+        if any(name not in proof_entries or proof_entries[name].file_size > 128 * 1024
+               for name in ('sdk-retention.json', 'sdk-origin.json')):
+            raise ValueError('retained proof requires bounded retention and origin records')
+        with zipfile.ZipFile(stage / 'proof.zip') as source:
+            receipt = g.parse(source.read('sdk-retention.json'))
+            origin = g.parse(source.read('sdk-origin.json'))
+        expected = dict(schema_version=1, status='verified', qualification='unqualified',
+            publication_approved=False, target=target, profile=profile, recipe_id=recipe,
+            source_commit=commit, run_id=str(run_id), attempt=attempt)
+        if (not isinstance(receipt, dict) or set(receipt) != set(expected) | {'files'} or
+            any(type(receipt.get(k)) is not type(v) or receipt[k] != v for k, v in expected.items()) or
+            not isinstance(origin, dict) or origin.get('recipe') != recipe or
+            origin.get('origin') not in ('base', 'rebuild', 'absent-base', 'absent-recipe', 'retained')):
+            raise ValueError('retained SDK receipt or origin does not bind the exact request')
+        entries = _retained_zip(stage / 'group.zip', max_bytes=16 * 1024**3)
+        with zipfile.ZipFile(stage / 'group.zip') as source:
+            if set(entries) != set(store.names(recipe)) or len(source.infolist()) != 3:
+                raise ValueError('retained group must contain exactly the SDK triplet')
+            group = stage / 'group'; group.mkdir()
+            for name in entries:
+                with source.open(name) as stream, (group / name).open('xb') as destination:
+                    shutil.copyfileobj(stream, destination)
+        files = store.verify_group(group, recipe)
+        if files != receipt['files']:
+            raise ValueError('retained SDK triplet differs from the verified receipt')
+        if producer()[0] != job or any(remote.transport.json(f'{base}/actions/artifacts/{row["id"]}') != row
+                                      for row in observed_artifacts.values()):
+            raise ValueError('retained producer or artifacts changed during verification')
+        store.copy_group(group, output, recipe)
+    return dict(origin='retained', recipe=recipe, qualification='unqualified', publication_approved=False,
+                repository=repository, request=request, producer=job, artifacts=observed_artifacts,
+                retention=receipt, previous_origin=origin)
+
+
 def maintenance_base(repository, recipe, output, source='auto', transport=None):
     """Cold production is allowed only after positively observing complete absence."""
     g = module('github_release'); store = module('dependency_store')

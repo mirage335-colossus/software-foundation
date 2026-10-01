@@ -563,5 +563,58 @@ python tools/build.py test release --sdk build/retry/sdk --build-dir build/retry
 Choose a new output directory for every attempt and preserve failure evidence.
 Native GUI and browser requirements still need their relevant full consumers.
 Hosted `source=auto` and `source=base` continue to use qualified base storage;
-failed-run artifact reuse is a manual local operation, not a hosted fallback.
+artifact reuse requires the separate explicit `source=retained` selection.
 A retained group or local retry does not itself authorize base publication.
+
+For a hosted retry, select `source=retained`, one exact `target`, its `profile`,
+and an explicit `retained_input` JSON object. This is separate from ordinary
+base selection; there is no fallback from failed download or validation to a cold
+build. All fields below are required. Replace the illustrative IDs and full-length
+hexadecimal values with the reviewed producer and artifact identities:
+
+```json
+{
+  "schema_version": 1,
+  "repository": "OWNER/REPOSITORY",
+  "target": "windows-x86_64",
+  "profile": "all-gui",
+  "recipe_id": "REPLACE_WITH_64_LOWERCASE_HEX_DIGITS",
+  "run_id": 123,
+  "source_commit": "REPLACE_WITH_EXACT_PRODUCER_COMMIT",
+  "attempt": 1,
+  "job_id": 456,
+  "group": {"id": 789, "sha256": "REPLACE_WITH_GROUP_ZIP_SHA256"},
+  "proof": {"id": 790, "sha256": "REPLACE_WITH_PROOF_ZIP_SHA256"}
+}
+```
+
+Read the exact job and artifact metadata through the authenticated GitHub API.
+The artifact digest describes the entire transport ZIP; it differs from the
+binary/source archive digests inside `sdk-retention.json`. A retry uses the current
+checkout's recipe and new consumer source. Its declared producer commit identifies
+the earlier checkout that created the retained SDK. The recipes must still match;
+a changed producer recipe requires another appropriate group or explicit rebuild.
+
+[`ci_plan.retained_sdk`](../tools/ci_plan.py) checks the repository's numeric and
+text identity, the producer's head repository and source commit, exact maintenance
+workflow and attempt, completed target job, and the artifacts' immutable IDs,
+names, digests, size limits and creation times within that job. The producer job
+may have failed its consumers while sibling jobs are still running. A running,
+cancelled or timed-out producer is not accepted. Overall run success is neither
+required nor inferred. The existing successful-run download interface is unchanged.
+
+Both ZIP hashes are checked before their contents are used. Every member is
+validated for portable paths, entry type, duplicate/case aliases and size limits.
+Only the two bounded JSON proof records are read; other proof reports are never
+extracted. The group must contain exactly three ordinary SDK files, and both
+inner inventories and the receipt's exact hashes are verified. Remote identities
+are reread before a new group directory is published. Missing, changed, expired,
+ambiguous or partial inputs fail without any cold-build fallback.
+
+The new `sdk-origin.json` retains the complete selected request, immutable artifact
+metadata, producer job and prior unqualified receipt. Core and, when selected,
+complete GUI consumers then run again with the current application sources.
+The GUI input and host graphics prerequisites remain explicit maintenance steps;
+reusing SDK bytes does not suppress them. A fresh failure stays failed and can
+retain only another unqualified group. Base publication still requires successful
+current consumers and the independent explicit `execute` gate.

@@ -55,18 +55,18 @@ local implementation checks, not a complete release-policy certification.
 
 ## Hosted candidate and maintenance observations
 
-Full candidate [36893866396](https://github.com/mirage335-colossus/software-foundation/actions/runs/36893866396)
-passed at `a0ceba8f1bf93bc19b8270137639d65cdf710cc4` on Windows x86_64,
+Full candidate [36898077179](https://github.com/mirage335-colossus/software-foundation/actions/runs/36898077179)
+passed at `ac8ca19867b832ba33dae6cc2bc5abcbb46047a5` on Windows x86_64,
 Linux x86_64 and Linux ARM64. Native source/tool suites, independent packaging,
 fresh copied-archive execution and sanitizer checks passed. The real Debian client
 receipt records signed HTTPS refresh, installation, exact payload verification,
 runtime execution, upgrade, tampered-signature rejection and removal. This
 supersedes earlier candidate failures for those exact scopes and inputs.
 
-Browser SDK maintenance [36892115955](https://github.com/mirage335-colossus/software-foundation/actions/runs/36892115955)
-passed at `cad7886508b0f5d95f16835fa2d70d68d4c19477` with `execute=false`.
-Production, two core and 28 GUI consumer checks, and all three artifact uploads
-succeeded. This also qualified the container builder's host UID/GID mapping and
+The browser job of SDK maintenance [36898087108](https://github.com/mirage335-colossus/software-foundation/actions/runs/36898087108)
+passed at `ac8ca19867b832ba33dae6cc2bc5abcbb46047a5` with `execute=false`.
+Production, two core and 29 GUI/source consumer checks, and all three artifact
+uploads succeeded. This also qualified the container builder's host UID/GID mapping and
 readable retained output. Actual browser-engine interactions remain the separately
 observed scope recorded above; this maintenance run did not execute browser engines.
 
@@ -80,6 +80,15 @@ at `25a674d6c564b6068c0c73c0ee0e2fd6c2444062`: the build suite recorded 12 passe
 and no exclusions. That candidate exposed one short-path fixture mismatch;
 correcting it preserves the producer's existing canonical-path behavior.
 
+The Windows job of maintenance run `36898087108` then completed SDK production
+and both core consumer checks. Its GUI compilation exposed Windows header macros
+colliding with standard C++ minimum/maximum calls. The shared GUI interface now
+sets `NOMINMAX` for all Windows consumers; 15 boundary tests passed, including
+actual CMake direct/transitive consumers and removal controls. Native GUI execution
+still needs a successful retry. The failed job retained a verified complete SDK
+group with an explicitly unqualified receipt; retaining those bytes does not make
+the failed consumer checks pass.
+
 The initial ARM64 cold build completed compilation, the SDK target and supplier
 license-information collection, then rejected runtime-only skeleton aliases during
 assembly. The subsequent source review identified additional target-only libc
@@ -88,10 +97,17 @@ omission and identical-provider checks preserve compiler inputs and strict
 application ABI policy; 39 SDK and 27 actual-ELF/portability fixture cases passed.
 Corrected native production and all GUI consumers still require hosted results.
 
-Eight complete-group retention tests verify that a consumer failure remains a
-failure while checked binary/source/checksum bytes can be retained for diagnosis
-and local retesting. Their receipt is explicitly unqualified. No failed-run
-artifact becomes a qualified base automatically.
+Twenty complete-group retention and recovery tests verify that a consumer failure
+remains a failure while checked binary/source/checksum bytes can be retained and
+explicitly reused. Producer, artifact, recipe, receipt and complete byte identities
+are verified before fresh consumers run. The latest combined focused verification
+passed 15 GUI boundary, 49 CI and all 20 retention cases. Their receipt remains
+explicitly unqualified; no failed-run artifact becomes a qualified base automatically.
+
+The ARM64 producer in maintenance run `36898087108` completed compilation and
+supplier license-information collection, then rejected a supplier directory-link
+cycle before SDK sealing. This failed scope has no completed group or consumer
+qualification. Resolving the actual supplier link structure remains necessary.
 
 A requested, queued or running job is not successful qualification. Evidence is
 reused only for identical relevant inputs; the latest repairs still need their

@@ -32,13 +32,19 @@ name: Explicit prepared SDK maintenance
         - all-gui
         default: core
       source:
-        description: Reuse exact base when available, require base, or explicitly rebuild
+        description: Select base policy, explicit cold rebuild, or exact unqualified retained bytes
         type: choice
         options:
         - auto
         - base
         - rebuild
+        - retained
         default: auto
+      retained_input:
+        description: Exact JSON producer and group/proof artifact identities for source retained
+        type: string
+        required: false
+        default: ''
 permissions:
   contents: read
   actions: read
@@ -58,6 +64,9 @@ jobs:
       id: plan
       env:
         TARGET: ${{ inputs.target }}
+        SDK_PROFILE: ${{ inputs.profile }}
+        SDK_SOURCE: ${{ inputs.source }}
+        SDK_RETAINED_INPUT: ${{ inputs.retained_input }}
   produce:
     needs: plan
     strategy:
@@ -70,6 +79,7 @@ jobs:
       JOBS: ${{ inputs.jobs }}
       SDK_PROFILE: ${{ inputs.profile }}
       SDK_SOURCE: ${{ inputs.source }}
+      SDK_RETAINED_INPUT: ${{ inputs.retained_input }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:

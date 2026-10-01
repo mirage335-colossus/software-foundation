@@ -72,6 +72,85 @@ class GuiBoundaryTests(unittest.TestCase):
         for name in ("FLTK", "SDL", "REV", "WEB"):
             self.assertIn("FOUNDATION_GUI_" + name, cmake)
 
+    def windows_macro_fixture(self, *, windows, remove_guard=False):
+        # Execute the real shared interface, application linkage and host factory.
+        # Windows uses its actual platform header; other hosts reproduce only
+        # that header's conditional min/max definitions for the same compile test.
+        cmake = (ROOT / "gui/CMakeLists.txt").read_text()
+        boundary = "add_library(foundation_gui_boundary INTERFACE)" + cmake.split(
+            "add_library(foundation_gui_boundary INTERFACE)", 1)[1].split("file(GLOB_RECURSE", 1)[0]
+        application = "add_library(foundation_gui_application STATIC" + cmake.split(
+            "add_library(foundation_gui_application STATIC", 1)[1].split("function(gui_warnings", 1)[0]
+        host = "function(foundation_gui_executable" + cmake.split(
+            "function(foundation_gui_executable", 1)[1].split("endfunction()", 1)[0] + "endfunction()\n"
+        with tempfile.TemporaryDirectory(prefix="gui Windows macros ") as directory:
+            source = Path(directory) / "source"; source.mkdir()
+            (source / "shared").mkdir(); (source / "include").mkdir()
+            header = """#pragma once
+#include <algorithm>
+#ifdef FIXTURE_WINDOWS_HEADERS
+#ifdef _WIN32
+#include <windows.h>
+#elif !defined(NOMINMAX)
+#define min(a,b) (((a)<(b))?(a):(b))
+#define max(a,b) (((a)>(b))?(a):(b))
+#endif
+#else
+#ifdef NOMINMAX
+#error Non-Windows consumers must not inherit NOMINMAX
+#endif
+#endif
+inline int generic_extent() { return std::min(4, std::max(1, 2)); }
+"""
+            (source / "collision.hpp").write_text(header, encoding="utf-8")
+            (source / "shared/application.cpp").write_text(
+                '#include "collision.hpp"\nint shared_extent() { return generic_extent(); }\n', encoding="utf-8")
+            (source / "host.cpp").write_text(
+                '#include "collision.hpp"\nint shared_extent();\nint main() { return shared_extent() != generic_extent(); }\n', encoding="utf-8")
+            (source / "direct.cpp").write_text(
+                '#include "collision.hpp"\nint main() { return generic_extent() != 2; }\n', encoding="utf-8")
+            project = """cmake_minimum_required(VERSION 3.24)
+project(WindowsGuiHeaderContract LANGUAGES CXX)
+set(FOUNDATION_GUI_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}")
+set(EMSCRIPTEN OFF)
+add_library(Threads::Threads INTERFACE IMPORTED)
+add_library(fixture_core INTERFACE)
+add_library(foundation::core ALIAS fixture_core)
+add_custom_target(foundation_gui_contract)
+add_custom_target(foundation-gui-hosts)
+function(foundation_options target)
+endfunction()
+"""
+            project += "set(WIN32 " + ("ON" if windows else "OFF") + ")\n"
+            if windows:
+                project += "add_compile_definitions(FIXTURE_WINDOWS_HEADERS)\n"
+            project += boundary
+            if remove_guard:
+                project += "set_property(TARGET foundation_gui_boundary PROPERTY INTERFACE_COMPILE_DEFINITIONS \"\")\n"
+            project += application + host + """
+foundation_gui_executable(foundation-gui-fixture host.cpp)
+add_executable(direct_boundary_consumer direct.cpp)
+target_link_libraries(direct_boundary_consumer PRIVATE gui_boundary)
+"""
+            (source / "CMakeLists.txt").write_text(project, encoding="utf-8")
+            build = Path(directory) / "build"
+            configured = subprocess.run(["cmake", "-G", "Ninja", "-S", str(source), "-B", str(build)],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30)
+            self.assertEqual(0, configured.returncode, configured.stdout)
+            return subprocess.run(["cmake", "--build", str(build), "--config", "Debug", "--parallel", "2"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=60)
+
+    def test_windows_shared_interface_prevents_native_min_max_macro_collision(self):
+        guarded = self.windows_macro_fixture(windows=True)
+        self.assertEqual(0, guarded.returncode, guarded.stdout)
+        unguarded = self.windows_macro_fixture(windows=True, remove_guard=True)
+        self.assertNotEqual(0, unguarded.returncode, "The negative control must expose the platform macro collision")
+        self.assertIn("collision.hpp", unguarded.stdout)
+
+    def test_non_windows_shared_interface_does_not_add_windows_macro_policy(self):
+        result = self.windows_macro_fixture(windows=False)
+        self.assertEqual(0, result.returncode, result.stdout)
+
     def rev_dependency_configuration(self, *, sdk=False, bundled=None, windows=False):
         # Execute the real composition block in CMake. The fixture replaces only
         # the toolkit build, so this stays independent of native SDK availability.

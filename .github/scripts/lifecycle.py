@@ -77,18 +77,36 @@ def retain_sdk_group(target, profile):
     return receipt
 
 
+def retained_request(target, profile, *, producer_host=False):
+    raw = os.environ.get('SDK_RETAINED_INPUT', '')
+    if value('SDK_SOURCE') != 'retained':
+        if raw.strip(): raise ValueError('retained SDK input requires explicit source=retained')
+        return None
+    if len(raw.encode('utf-8')) > 16384: raise ValueError('retained SDK input exceeds supported size')
+    request = delivery.parse(raw)
+    # Planning runs on Linux for every target; enforce recipe bytes on the selected producer host.
+    identity = sdk_identity(target, profile) if producer_host else request.get('recipe_id') if isinstance(request, dict) else None
+    return ci.retained_sdk_request(request, value('GITHUB_REPOSITORY'), target, profile, identity)
+
+
 def main(command):
     os.chdir(ROOT)
     (ROOT / 'build').mkdir(exist_ok=True)
     if command == 'sdk-plan':
+        if value('SDK_SOURCE') == 'retained' and value('TARGET') == 'all':
+            raise ValueError('retained SDK reuse selects one exact target per dispatch')
+        retained_request(value('TARGET'), value('SDK_PROFILE'))
         targets = [*ci.STANDARD, 'browser-wasm32']
         if value('TARGET') != 'all': targets = [value('TARGET')]
         if any(t not in (*ci.STANDARD, 'browser-wasm32') for t in targets): raise ValueError('unknown SDK target')
         output('matrix', {'include': [{'target': t, 'runner': ci.STANDARD.get(t, 'ubuntu-24.04')} for t in targets]})
     elif command == 'sdk-inputs':
         identity = sdk_identity(value('TARGET'), value('SDK_PROFILE'))
-        write('build/sdk-origin.json', ci.maintenance_base(value('GITHUB_REPOSITORY'), identity,
-              Path('build/sdk-group'), source=value('SDK_SOURCE')))
+        request = retained_request(value('TARGET'), value('SDK_PROFILE'), producer_host=True)
+        origin = (ci.retained_sdk(value('GITHUB_REPOSITORY'), request, value('TARGET'), value('SDK_PROFILE'),
+                  identity, Path('build/sdk-group')) if request is not None else
+                  ci.maintenance_base(value('GITHUB_REPOSITORY'), identity, Path('build/sdk-group'), source=value('SDK_SOURCE')))
+        write('build/sdk-origin.json', origin)
     elif command == 'sdk-retain':
         retain_sdk_group(value('TARGET'), value('SDK_PROFILE'))
         output('retained', True)
@@ -104,7 +122,7 @@ def main(command):
         target = value('TARGET'); recipe = sdk_recipe(target, value('SDK_PROFILE'));  jobs = int(value('JOBS'))
         if target != 'browser-wasm32': ci.assert_host(target)
         origin = evidence.load(Path('build/sdk-origin.json'))
-        if origin['origin'] == 'base':
+        if origin['origin'] in ('base', 'retained'):
             result = {'recipe_id': origin['recipe']}
         elif target.startswith('linux-'):
             import distro_sdk

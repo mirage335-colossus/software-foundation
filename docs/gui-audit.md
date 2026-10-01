@@ -63,6 +63,13 @@ This integration closes these practical consumer gaps:
   reviewed integration patches. Complete source-tree verification covers files
   outside the consumed-header lock, and the ordinary build entry point restores
   the group before configuring the same selected targets.
+- The shared Windows CMake interface defines `NOMINMAX` before native toolkit
+  headers are parsed. Direct adapter consumers, composed application hosts and
+  tests inherit the guard, so Win32 macros cannot rewrite generic C++ `std::min`
+  and `std::max` calls. Toolkit producer targets keep their own configuration.
+  A compile fixture exercises real interface inheritance and a failing control
+  with the guard removed; Windows uses its actual platform header. The portable
+  fixture alone does not establish successful native GUI execution.
 - GUI install destinations exist behind reviewed lock metadata. Local development
   can build all hosts; an unresolved dependency license cannot silently turn into
   a redistributable binary package.
