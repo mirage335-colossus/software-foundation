@@ -3,11 +3,33 @@
 #include "host/contract.hpp"
 #include "tests/fixture.hpp"
 #include <iostream>
+#include <cmath>
 
 int main(){try{
     foundation::host::Session<foundation::ui::Application,gui::rev::Adapter> session;
     auto& adapter=session.adapter;adapter.show();
     auto sync=[&]{session.tick();adapter.pump();session.tick();fixture::check(adapter.error().empty(),"Native callback failed");};sync();
+    // Native scale belongs to the host. Verify physical storage and logical
+    // widget rectangles before the shared unit-scale comparison scenarios.
+    const auto native_scale=session.application.view().display_scale;
+    fixture::check(std::isfinite(native_scale)&&native_scale>0,"Invalid native display scale");
+    {
+        const auto& view=session.application.view();
+        const auto image=adapter.capture();
+        fixture::check(image.width()==unsigned(std::ceil(view.client_size.width*native_scale))&&
+            image.height()==unsigned(std::ceil(view.client_size.height*native_scale)),
+            "Native physical capture differs from scaled logical viewport");
+        for(const auto& widget:view.widgets) {
+            if(!widget.state.visible)continue;
+            const auto actual=gui::rev::Probe::bounds(adapter,widget.spec.key);
+            const auto expected=widget.state.bounds;
+            fixture::check(std::abs(actual.x-expected.x)<0.01&&std::abs(actual.y-expected.y)<0.01&&
+                std::abs(actual.width-expected.width)<0.01&&std::abs(actual.height-expected.height)<0.01,
+                "Native scale changed logical widget geometry");
+        }
+        std::cout<<"Rev native scale "<<native_scale<<" logical "<<view.client_size.width<<'x'
+            <<view.client_size.height<<" physical "<<image.width()<<'x'<<image.height()<<'\n';
+    }
     fixture::feature(session.application,
         [&](std::string text){gui::rev::Probe::edit_text(adapter,{"entries.editor",1},std::move(text));},
         [&](std::string id){gui::rev::Probe::activate(adapter,{std::move(id),1});},

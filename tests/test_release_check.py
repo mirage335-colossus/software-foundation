@@ -245,9 +245,10 @@ class ReleaseCheckTests(unittest.TestCase):
         from contextlib import ExitStack
         from subprocess import CompletedProcess
         from unittest.mock import Mock
+        from types import ModuleType
+        import sys
         import apt_repo
         import http.server
-        import ssl
         import threading
         with tempfile.TemporaryDirectory() as temporary, ExitStack() as stack:
             root = Path(temporary); work = root / 'work'; evidence = root / 'evidence'
@@ -274,19 +275,52 @@ class ReleaseCheckTests(unittest.TestCase):
             stack.enter_context(patch.object(apt_repo, 'repository', side_effect=repository))
             stack.enter_context(patch.object(apt_repo, 'verify_repository', return_value={}))
             server = Mock(); server.server_address = ('127.0.0.1', 12345)
+            raw_socket = server.socket
             stack.enter_context(patch.object(http.server, 'ThreadingHTTPServer', return_value=server))
-            stack.enter_context(patch.object(ssl, 'SSLContext'))
+            # This case tests failed-download cleanup, with all transport mocked.
+            # Slim offline SDK Python need not load its optional SSL extension.
+            ssl = ModuleType('ssl')
+            ssl.PROTOCOL_TLS_SERVER = object()
+            context = Mock(spec=['load_cert_chain', 'wrap_socket'])
+            ssl.SSLContext = Mock(return_value=context)
+            stack.enter_context(patch.dict(sys.modules, {'ssl': ssl}))
             thread = Mock(); thread.is_alive.return_value = False
             stack.enter_context(patch.object(threading, 'Thread', return_value=thread))
             entry = dict(target='linux-x86_64', archive='app.tar.gz', manifest='app.json', sha256='b' * 64)
             with self.assertRaisesRegex(ValueError, 'unexpected outcome'):
                 check.run_apt(root, entry, 'core', work, evidence)
+            ssl.SSLContext.assert_called_once_with(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain.assert_called_once_with(work / 'ca.pem', work / 'tls.key')
+            context.wrap_socket.assert_called_once_with(raw_socket, server_side=True)
             self.assertEqual(sum('install' in argv for argv in commands), 1)
             self.assertEqual(sum('purge' in argv for argv in commands), 1)
             self.assertIn(b'404 injected download failure', (evidence / 'apt.log').read_bytes())
             server.shutdown.assert_called_once(); server.server_close.assert_called_once()
             thread.join.assert_called_once()
             self.assertFalse((evidence / 'qualification.json').exists())
+
+    def test_apt_cleanup_fixture_runs_without_optional_ssl_extension(self):
+        import subprocess
+        import sys
+        script = (
+            "import sys, unittest\n"
+            "sys.modules.pop('ssl', None)\n"
+            "sys.modules['_ssl'] = None\n"
+            "try:\n import ssl\n"
+            "except ImportError:\n pass\n"
+            "else:\n raise SystemExit('SSL prerequisite unexpectedly available')\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "from test_release_check import ReleaseCheckTests\n"
+            "case = ReleaseCheckTests('test_failed_apt_download_cleans_with_its_isolated_index_and_preserves_primary_error')\n"
+            "result = unittest.TestResult()\n"
+            "case.run(result)\n"
+            "if not result.wasSuccessful() or result.testsRun != 1 or result.skipped:\n"
+            " raise SystemExit(str(result.errors + result.failures + result.skipped))\n"
+            "print('mocked APT cleanup passed without optional SSL extension')\n")
+        result = subprocess.run([sys.executable, '-I', '-B', '-c', script, str(Path(__file__).resolve().parent)],
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip(), 'mocked APT cleanup passed without optional SSL extension')
 
     def test_apt_refuses_ordinary_host_before_any_package_command(self):
         with patch.object(check, 'native_target'), patch.dict(check.os.environ, {}, clear=True), \

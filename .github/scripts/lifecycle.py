@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Thin hosted adapters; substantive byte and lifecycle checks live in tools/."""
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
+import tempfile
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,6 +63,95 @@ def sdk_identity(target, profile):
         return sdk_windows.recipe_identity(recipe)
     import sdk_wasm
     return sdk_wasm.recipe_identity(recipe)
+
+
+def ordinary_directory(path):
+    """Do not follow links or Windows reparse points in an owned directory."""
+    info = path.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or
+            getattr(info, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)):
+        raise ValueError('SDK isolation requires ordinary directories: ' + str(path))
+    return info.st_dev, info.st_ino
+
+
+def absent(path):
+    try: path.lstat()
+    except FileNotFoundError: return True
+    return False
+
+
+@contextmanager
+def isolated_sdk_producer(target, profile, recipe, origin, files):
+    """Exclude original producer paths during all synchronous consumer work.
+
+    The caller owns this build tree exclusively and must stop producer writers
+    first. This is relocation qualification, not a hostile-process sandbox.
+    Never delete or overwrite an unexpected entry during recovery.
+    """
+    parent = ROOT / 'build'; original = parent / 'sdk-inputs'
+    receipt_path = parent / 'sdk-isolation.json'
+    if not absent(receipt_path): raise FileExistsError('SDK isolation receipt must be new')
+    parent_id = ordinary_directory(parent)
+    receipt = dict(schema_version=1, status='started', target=target, profile=profile,
+        recipe_id=recipe, group_files=files, origin=origin,
+        source_commit=value('GITHUB_SHA'), run_id=value('GITHUB_RUN_ID'),
+        attempt=int(value('GITHUB_RUN_ATTEMPT')), original=str(original),
+        initial_state='unchecked', quarantine=None, disposition='unchanged',
+        checkpoints=[], consumers='not-completed')
+    holder = moved = original_id = holder_id = failure = None
+
+    def check_absent(label):
+        if ordinary_directory(parent) != parent_id:
+            raise ValueError('SDK isolation parent identity changed; preserve trees')
+        if not absent(original):
+            raise ValueError('SDK producer path was recreated; preserve both trees')
+        if moved is not None and (ordinary_directory(holder) != holder_id or
+                                  ordinary_directory(moved) != original_id):
+            raise ValueError('SDK quarantine identity changed; preserve trees')
+        receipt['checkpoints'].append(label)
+
+    try:
+        if absent(original):
+            receipt['initial_state'] = 'absent'
+        else:
+            original_id = ordinary_directory(original)
+            receipt['initial_state'] = 'present'
+            holder = Path(tempfile.mkdtemp(prefix='sdk-producer-quarantine-', dir=parent))
+            holder_id = ordinary_directory(holder); moved = holder / 'sdk-inputs'
+            receipt['quarantine'] = str(moved)
+            receipt['disposition'] = 'preserved'
+            # The private holder is new. Any rename error has an unknown outcome;
+            # retain both spellings for explicit inspection instead of retrying.
+            original.rename(moved)
+        check_absent('before-install-and-core')
+        yield check_absent
+        check_absent('after-all-consumers')
+        receipt['consumers'] = 'completed'
+        if moved is not None:
+            moved.rename(original)
+            if (ordinary_directory(parent) != parent_id or ordinary_directory(original) != original_id or
+                    not absent(moved) or ordinary_directory(holder) != holder_id):
+                raise ValueError('SDK restoration identity differs; preserve trees')
+            holder.rmdir()  # Only the exact now-empty owned holder may be removed.
+            receipt['disposition'] = 'restored'
+        else:
+            receipt['disposition'] = 'remained-absent'
+        receipt['status'] = 'passed'
+    except BaseException as error:
+        failure = error
+        receipt['status'] = 'failed'
+        receipt['error_type'] = type(error).__name__
+        # Incomplete consumers or uncertain filesystem operations never trigger
+        # restoration, recursive deletion, success receipts or publication.
+        raise
+    finally:
+        try:
+            if ordinary_directory(parent) != parent_id:
+                raise ValueError('SDK isolation parent changed; preserve trees and receipt destination')
+            write(receipt_path, receipt)
+        except BaseException as publication_error:
+            if failure is not None: raise publication_error from failure
+            raise
 
 
 def retain_sdk_group(target, profile):
@@ -148,13 +240,25 @@ def main(command):
         checksums = list(Path('build/sdk-group').glob('sdk-*-SHA256SUMS'))
         if len(checksums) != 1: raise ValueError('producer did not return one complete SDK group')
         recipe_id = checksums[0].name[4:-len('-SHA256SUMS')]
-        dependency_store.verify_group(Path('build/sdk-group'), recipe_id)
+        files = dependency_store.verify_group(Path('build/sdk-group'), recipe_id)
         if recipe_id != origin['recipe']: raise ValueError('produced SDK identity differs from selected recipe')
-        ci.prepared_check(target, recipe_id, Path('build/sdk-group'), ROOT / 'build/sdk-consumer', jobs)
-        if value('SDK_PROFILE') == 'all-gui':
-            main('gui-maintain')
-            ci.prepared_check(target, recipe_id, Path('build/sdk-group'), ROOT / 'build/sdk-gui-consumer', jobs, ROOT / 'build/gui-group',
-                              graphics_archive=ROOT / 'build/host-graphics/mesa-windows.7z' if target == 'windows-x86_64' else None)
+        pending = []
+        with isolated_sdk_producer(target, value('SDK_PROFILE'), recipe_id, origin['origin'], files) as isolated:
+            consumer = ROOT / 'build/sdk-consumer'
+            pending.append((consumer, ci.prepared_check(target, recipe_id, Path('build/sdk-group'), consumer,
+                                                       jobs, defer_qualification=True)))
+            isolated('after-core')
+            if value('SDK_PROFILE') == 'all-gui':
+                main('gui-maintain')
+                isolated('before-gui-install')
+                consumer = ROOT / 'build/sdk-gui-consumer'
+                pending.append((consumer, ci.prepared_check(target, recipe_id, Path('build/sdk-group'), consumer,
+                    jobs, ROOT / 'build/gui-group', defer_qualification=True,
+                    graphics_archive=ROOT / 'build/host-graphics/mesa-windows.7z' if target == 'windows-x86_64' else None)))
+        isolation = evidence.sha(ROOT / 'build/sdk-isolation.json')
+        for consumer, receipt in pending:
+            receipt['producer_isolation'] = {'file': '../sdk-isolation.json', 'sha256': isolation}
+            write(consumer / 'qualification.json', receipt)
         request = dict(repository=value('GITHUB_REPOSITORY'), recipe=recipe_id, group='build/sdk-group', source_commit=value('GITHUB_SHA'))
         write('build/sdk-publication-plan.json', delivery.publish_base(**request))
     elif command == 'publish-bases':

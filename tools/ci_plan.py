@@ -710,7 +710,7 @@ def windows_gui_qualification(command, archive, build, output, jobs, *, protecte
             for p in [output / 'graphics.json', output / 'graphics-probe.json', *files]}
 
 
-def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphics_archive=None):
+def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphics_archive=None, *, defer_qualification=False):
     """Consume a relocated SDK; GUI qualification retains no distributable output."""
     from dependency_store import verify_group
     if target not in (*STANDARD, 'browser-wasm32') or jobs < 1:
@@ -766,7 +766,7 @@ def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphi
                          else ['relocated-sdk', 'all-native-gui' if target != 'browser-wasm32' else 'wasm-gui', 'full-source-tests'],
                'redistribution': False, 'source_junit': 'source.junit.xml'}
     if graphics_evidence is not None: receipt['graphics_evidence'] = graphics_evidence
-    module('coverage').write_new(output / 'qualification.json', receipt)
+    if not defer_qualification: module('coverage').write_new(output / 'qualification.json', receipt)
     return receipt
 
 

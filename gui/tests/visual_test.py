@@ -60,7 +60,8 @@ def compare_text(actual, expected, identity):
 
 def inspect(image, view):
     width, height, _ = image
-    assert (width, height) == (view['width'], view['height']), 'capture viewport differs'
+    assert (width, height) == (view['width'], view['height']), (
+        f"capture viewport differs: physical {width}x{height}, logical {view['width']}x{view['height']}")
     palette = view['palette']; assert near(color(image, 4, 4), palette['background']), 'wrong viewport surface'
     text_boxes = {}
     for widget in view['widgets']:
@@ -155,13 +156,21 @@ def compare(directory):
     return result
 
 
+def capture_environment(directory):
+    # Pixel comparisons use one physical pixel per logical unit. The standalone
+    # native host fixture still tests the display's actual scale independently.
+    # REV_SCALE is the retained Linux toolkit's documented scale input; it is
+    # confined to these capture subprocesses and never changes the parent host.
+    return dict(os.environ, FOUNDATION_GUI_CAPTURE_DIR=str(directory), REV_SCALE='1')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--parity', type=Path, required=True); parser.add_argument('--fltk', type=Path, required=True); parser.add_argument('--rev', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args(); args.output.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix='run-', dir=args.output)).resolve()
-    env = dict(os.environ, FOUNDATION_GUI_CAPTURE_DIR=str(directory))
+    env = capture_environment(directory)
     binaries = {}
     for name in ['parity', 'fltk', 'rev']:
         executable = getattr(args, name).resolve(); binaries[name] = hashlib.sha256(executable.read_bytes()).hexdigest()
@@ -169,7 +178,7 @@ def main():
         (directory / f'{name}.log').write_bytes(completed.stdout)
         if completed.returncode:
             raise RuntimeError(name + ' native fixture failed: ' + completed.stdout.decode(errors='replace'))
-    result = {'schema_version': 1, 'binary_sha256': binaries, 'viewports': list(SIZES), 'captures': compare(directory), 'limits': 'Logical geometry and shared palette checks with bounded native font raster tolerance; physical display and assistive-device qualification separate.'}
+    result = {'schema_version': 1, 'binary_sha256': binaries, 'viewports': list(SIZES), 'capture_scale': 1, 'captures': compare(directory), 'limits': 'Logical geometry and shared palette checks with bounded native font raster tolerance; physical display and assistive-device qualification separate.'}
     (directory / 'qualification.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps({'evidence': str(directory), 'captures': len(result['captures']), 'result': 'passed'}))
 

@@ -153,6 +153,69 @@ target_link_libraries(direct_boundary_consumer PRIVATE gui_boundary)
         result = self.windows_macro_fixture(windows=False)
         self.assertEqual(0, result.returncode, result.stdout)
 
+    def sdl_link_fixture(self, *, portable, static_available=True, remove_selection=False):
+        cmake = (ROOT / "gui/CMakeLists.txt").read_text()
+        block = "if(FOUNDATION_GUI_SDL)\n" + cmake.split("if(FOUNDATION_GUI_SDL)\n", 1)[1].split(
+            "\nif(FOUNDATION_GUI_REV)", 1)[0]
+        native_test = "foundation_gui_executable(foundation_gui_sdl_test" + cmake.split(
+            "foundation_gui_executable(foundation_gui_sdl_test", 1)[1].split(
+            "foundation_gui_check(sdl-host", 1)[0]
+        if remove_selection:
+            block = block.replace("INTERFACE SDL2::SDL2-static)", "INTERFACE SDL2::SDL2)")
+        with tempfile.TemporaryDirectory(prefix="SDL linkage ") as temporary:
+            root = Path(temporary); source = root / "source"; source.mkdir()
+            (source / "static.c").write_text("int fixture_value(void) { return 3; }\n")
+            (source / "shared.c").write_text("int fixture_value(void) { return 7; }\n")
+            (source / "entry.c").write_text("int fixture_value(void); int fixture_entry(void) { return fixture_value(); }\n")
+            (source / "main.c").write_text("int fixture_entry(void); int main(void) { return fixture_entry() != " +
+                                           ("3" if portable else "7") + "; }\n")
+            config = """add_library(fixture_shared SHARED "${CMAKE_CURRENT_SOURCE_DIR}/shared.c")
+set_target_properties(fixture_shared PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+add_library(SDL2::SDL2 ALIAS fixture_shared)
+add_library(fixture_entry STATIC "${CMAKE_CURRENT_SOURCE_DIR}/entry.c")
+add_library(SDL2::SDL2main ALIAS fixture_entry)
+"""
+            if static_available:
+                config += """add_library(fixture_static STATIC "${CMAKE_CURRENT_SOURCE_DIR}/static.c")
+add_library(SDL2::SDL2-static ALIAS fixture_static)
+"""
+            (source / "SDL2Config.cmake").write_text(config)
+            project = """cmake_minimum_required(VERSION 3.24)
+project(PortableSdlSelection LANGUAGES C)
+set(SDL2_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(FOUNDATION_GUI_SDL ON)
+function(foundation_gui_patch)
+endfunction()
+function(foundation_gui_executable name source)
+    add_executable(${name} "${CMAKE_CURRENT_SOURCE_DIR}/main.c")
+endfunction()
+"""
+            project += "set(FOUNDATION_PORTABLE " + ("ON" if portable else "OFF") + ")\n" + block + "\n" + native_test
+            (source / "CMakeLists.txt").write_text(project)
+            build = root / "build"
+            configured = subprocess.run(["cmake", "-G", "Ninja", "-S", str(source), "-B", str(build)],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30)
+            if portable and not static_available:
+                self.assertNotEqual(0, configured.returncode)
+                self.assertIn("Portable SDL requires the retained SDL2::SDL2-static target", configured.stdout)
+                return []
+            self.assertEqual(0, configured.returncode, configured.stdout)
+            built = subprocess.run(["cmake", "--build", str(build), "--config", "Debug", "--parallel", "2"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=60)
+            self.assertEqual(0, built.returncode, built.stdout)
+            return [subprocess.run([str(next(p for p in build.glob(name + "*") if p.is_file() and
+                p.suffix in ("", ".exe")))], cwd=build, capture_output=True, timeout=10).returncode
+                for name in ("foundation-gui-sdl", "foundation_gui_sdl_test")]
+
+    def test_portable_sdl_host_and_test_use_static_supplier_target(self):
+        self.assertEqual([0, 0], self.sdl_link_fixture(portable=True))
+        self.assertEqual([1, 1], self.sdl_link_fixture(portable=True, remove_selection=True),
+                         "Both consumers must expose the incorrect shared linkage")
+
+    def test_ordinary_sdl_preserves_shared_target_and_portable_requires_static(self):
+        self.assertEqual([0, 0], self.sdl_link_fixture(portable=False))
+        self.assertEqual([], self.sdl_link_fixture(portable=True, static_available=False))
+
     def rev_dependency_configuration(self, *, sdk=False, bundled=None, windows=False):
         # Execute the real composition block in CMake. The fixture replaces only
         # the toolkit build, so this stays independent of native SDK availability.

@@ -497,6 +497,44 @@ compiler smoke. A successful program run followed by changed SDK files is a
 failed installation. Do not repair such a failure by accepting newly generated
 files into the old published recipe; prepare and qualify a new immutable group.
 
+## Exclude producer paths during SDK qualification
+
+Maintenance moves any existing `build/sdk-inputs` tree into a fresh private sibling
+before SDK installation, compiler smoke, the core package consumer and the GUI
+consumer. Both consumers must succeed while the original path is absent. The
+orchestrator checks absence and directory identity around each consumer and only
+restores the original tree after all checks complete. A fresh `source=base` or
+`source=retained` job records initial absence instead; an unexpectedly present
+producer tree is isolated by the same procedure. This prevents the consumer from
+silently satisfying absolute paths through the original compiler or target files.
+
+`build/sdk-isolation.json` records the exact recipe, group digests, workflow commit,
+run and attempt, initial state, checked boundaries and restoration outcome. It is
+retained in the SDK proof artifact. Consumer `qualification.json` files include
+its SHA-256 and are published only after successful guard exit; the publication
+plan follows those receipts. A failed consumer or filesystem operation emits a
+failed isolation receipt, when its original parent remains accessible, and preserves
+the quarantined tree. A recreated original
+path, changed directory identity, link/reparse point or failed restoration stops
+qualification without overwriting or deleting either tree. Inspect the receipt,
+stop all relevant writers, reconcile both locations, and use a new owned output
+for a retry; do not automatically remove a conflicting directory.
+
+This check relies on exclusive ownership of the job workspace and synchronous
+consumers; it is not confinement of hostile processes or proof against every
+ambient host dependency. Native Linux compiler outputs and supplier trees remain
+inside the isolated cache. Windows producer temporary checkouts and WebAssembly
+preparation trees have already been removed on producer return; their retained
+cache is isolated too. Selected Microsoft tools, operating-system prerequisites
+and the separate GUI input group remain intentional external inputs. SDK host
+Python supplies the declared build functionality; features needing optional
+extensions must probe those extensions explicitly. Mocked fixtures should not
+accidentally require optional extensions. Maintenance and actual HTTPS distribution
+checks require a host Python with working TLS support. A fresh
+runner consuming an exact retained group supplies stronger separation from the
+producer host. Changing only this orchestration leaves SDK recipe identities and
+archived binary/source bytes unchanged.
+
 ## Qualification boundaries for the supplied recipes
 
 The executable tests cover corruption, incomplete inventories, host/target

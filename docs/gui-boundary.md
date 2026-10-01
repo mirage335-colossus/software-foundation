@@ -271,6 +271,19 @@ invalid capture data and do not establish a rendering difference. Preserve the
 original captures, geometry diagnostics and existing comparison bounds; record the
 qualified host scope in [validation](validation.md).
 
+The pixel comparator requires one physical pixel per logical layout unit. Its
+capture subprocesses select the retained Linux Rev toolkit's `REV_SCALE=1` input;
+this does not change application startup or the parent environment. The separate
+[Rev native fixture](../gui/tests/rev_test.cpp) verifies the host's actual scale,
+physical capture dimensions and unchanged logical widget rectangles, including
+non-unit-scale qualification. Captures are never cropped or resampled to pass a
+comparison. Record both scales and dimensions when changing display prerequisites.
+
+Portable SDL builds require the supplier's `SDL2::SDL2-static` target, including
+its exported link dependencies. Hosts and native tests consume the same interface;
+an unavailable static target fails configuration. Ordinary local builds retain the
+supplier's shared target selection.
+
 New rendering primitives, input models or OS services can require a public
 contract extension. Specify semantics and fallback once, implement each selected
 adapter and add conformance fixtures before exposing the capability in product

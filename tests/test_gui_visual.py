@@ -5,6 +5,8 @@ from pathlib import Path
 import unittest
 import subprocess
 import sys
+import os
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('gui_visual', ROOT / 'gui/tests/visual_test.py')
@@ -20,6 +22,18 @@ class GuiVisualTests(unittest.TestCase):
                     capture_output=True, text=True, timeout=10)
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn('requires active Python assertions', result.stderr)
+
+    def test_capture_unit_scale_is_confined_to_child_environment(self):
+        with mock.patch.dict(os.environ, {'REV_SCALE': '1.25', 'GDK_SCALE': '2'}):
+            child = subject.capture_environment(Path('capture output'))
+            self.assertEqual('1', child['REV_SCALE'])
+            self.assertEqual('2', child['GDK_SCALE'])
+            self.assertEqual('capture output', child['FOUNDATION_GUI_CAPTURE_DIR'])
+            self.assertEqual('1.25', os.environ['REV_SCALE'])
+        image, view = self.fixture()
+        # A scaled physical image cannot pass as the common logical viewport.
+        with self.assertRaisesRegex(AssertionError, 'capture viewport differs'):
+            subject.inspect((160, 90, bytes(160 * 90 * 3)), view)
 
     def fixture(self, rendering='gray', shift=0, *, enabled=False, tone=0):
         palette = {'background': [240, 242, 246], 'surface': [248, 248, 248],

@@ -126,6 +126,7 @@ jobs:
         name: sdk-proof-${{ matrix.target }}-${{ github.run_attempt }}
         path: |-
           build/sdk-origin.json
+          build/sdk-isolation.json
           build/sdk-retention.json
           build/sdk-consumer/qualification.json
           build/sdk-consumer/source.junit.xml

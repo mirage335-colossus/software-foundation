@@ -7,6 +7,8 @@ import zipfile
 import json
 from pathlib import Path
 import shutil
+import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -136,6 +138,7 @@ class SdkRetentionTests(unittest.TestCase):
         self.assertIn('    if: inputs.execute\n    needs: produce\n', publication)
         self.assertNotIn('always()', publication.split('    steps:', 1)[0])
         self.assertIn('          build/sdk-retention.json\n', text)
+        self.assertIn('          build/sdk-isolation.json\n', text)
         self.assertIn('sdk_retention', (ROOT / 'CMakeLists.txt').read_text())
 
 
@@ -344,7 +347,7 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
         archive.write_json(self.root/'build/sdk-origin.json',{'origin':'retained','recipe':self.recipe,
                             'qualification':'unqualified','publication_approved':False})
         self.publisher.side_effect = None; self.publisher.return_value = {'operation':'plan'}
-        with patch.object(lifecycle.ci,'assert_host'), patch.object(lifecycle.ci,'prepared_check') as check, \
+        with patch.object(lifecycle.ci,'assert_host'), patch.object(lifecycle.ci,'prepared_check', return_value={'status':'passed'}) as check, \
              patch.object(lifecycle.subprocess,'run',side_effect=AssertionError('cold producer must not run')):
             lifecycle.main('sdk-produce')
         check.assert_called_once(); self.publisher.assert_called_once()
@@ -374,13 +377,15 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
         entry = lifecycle.main
         with patch.dict(lifecycle.os.environ,{'SDK_PROFILE':'all-gui'}), \
              patch.object(lifecycle.ci,'assert_host'), patch.object(lifecycle,'main') as gui_input, \
-             patch.object(lifecycle.ci,'prepared_check') as check, \
+             patch.object(lifecycle.ci,'prepared_check', return_value={'status':'passed'}) as check, \
              patch.object(lifecycle.subprocess,'run',side_effect=AssertionError('cold producer must not run')):
             entry('sdk-produce')
         gui_input.assert_called_once_with('gui-maintain'); self.assertEqual(check.call_count,2)
         self.assertEqual(check.call_args.args[5],self.root/'build/gui-group')
         self.assertEqual(check.call_args.kwargs['graphics_archive'],self.root/'build/host-graphics/mesa-windows.7z')
         self.publisher.assert_called_once(); (self.root/'build/sdk-publication-plan.json').unlink()
+        (self.root/'build/sdk-isolation.json').unlink()
+        shutil.rmtree(self.root/'build/sdk-consumer'); shutil.rmtree(self.root/'build/sdk-gui-consumer')
         self.publisher.reset_mock()
         with patch.dict(lifecycle.os.environ,{'SDK_PROFILE':'all-gui'}), \
              patch.object(lifecycle.ci,'assert_host'), patch.object(lifecycle,'main'), \
@@ -408,5 +413,223 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
         self.assertEqual(text.count('SDK_SOURCE: ${{ inputs.source }}'),2)
         self.assertIn('    if: inputs.execute\n    needs: produce\n',text)
 
+
+
+class SdkProducerIsolationTests(unittest.TestCase):
+    setUp = SdkRetentionTests.setUp
+
+    def producer(self):
+        original = self.root / 'build/sdk-inputs'; original.mkdir()
+        (original / 'producer-only.txt').write_bytes(b'producer bytes')
+        return original
+
+    def isolate(self, origin='rebuild'):
+        return lifecycle.isolated_sdk_producer('windows-x86_64', 'core', self.recipe, origin, self.files)
+
+    def isolation(self):
+        return json.loads((self.root / 'build/sdk-isolation.json').read_text())
+
+    def test_real_subprocess_cannot_read_original_but_independent_consumer_succeeds(self):
+        original = self.producer(); consumer = self.root / 'relocated'; consumer.mkdir()
+        (consumer / 'copied.txt').write_bytes(b'independent bytes')
+        script = 'from pathlib import Path; import sys; print(Path(sys.argv[1]).read_bytes().decode())'
+        def read(path):
+            return subprocess.run([sys.executable, '-B', '-c', script, str(path)], cwd=self.root,
+                                  capture_output=True, text=True, timeout=20)
+        self.assertEqual(read(original / 'producer-only.txt').returncode, 0)
+        with self.isolate() as check:
+            self.assertNotEqual(read(original / 'producer-only.txt').returncode, 0)
+            good = read(consumer / 'copied.txt')
+            self.assertEqual((good.returncode, good.stdout.strip()), (0, 'independent bytes'))
+            check('independent-consumer')
+        self.assertEqual(read(original / 'producer-only.txt').returncode, 0)
+        receipt = self.isolation()
+        self.assertEqual((receipt['status'], receipt['initial_state'], receipt['disposition']),
+                         ('passed', 'present', 'restored'))
+        self.assertEqual(receipt['group_files'], self.files)
+        self.assertEqual(receipt['recipe_id'], self.recipe)
+        self.assertFalse(Path(receipt['quarantine']).parent.exists())
+
+    def test_base_and_retained_origins_record_initial_absence(self):
+        for origin in ('base', 'retained'):
+            with self.subTest(origin=origin):
+                with self.isolate(origin): self.assertFalse((self.root/'build/sdk-inputs').exists())
+                receipt = self.isolation()
+                self.assertEqual((receipt['origin'], receipt['initial_state'], receipt['disposition']),
+                                 (origin, 'absent', 'remained-absent'))
+                self.assertIsNone(receipt['quarantine'])
+                (self.root/'build/sdk-isolation.json').unlink()
+
+    def test_existing_producer_is_quarantined_even_for_retained_input(self):
+        original = self.producer()
+        with self.isolate('retained'): self.assertFalse(original.exists())
+        self.assertEqual(self.isolation()['disposition'], 'restored')
+
+    def test_consumer_exception_preserves_quarantine_without_restoring(self):
+        original = self.producer()
+        with self.assertRaisesRegex(RuntimeError, 'consumer failure'):
+            with self.isolate(): raise RuntimeError('consumer failure')
+        receipt = self.isolation()
+        self.assertEqual((receipt['status'],receipt['disposition'],receipt['consumers']),
+                         ('failed','preserved','not-completed'))
+        self.assertFalse(original.exists())
+        self.assertEqual((Path(receipt['quarantine'])/'producer-only.txt').read_bytes(),b'producer bytes')
+
+    def test_interrupt_preserves_tree_and_failure_receipt(self):
+        self.producer()
+        with self.assertRaises(KeyboardInterrupt):
+            with self.isolate(): raise KeyboardInterrupt()
+        self.assertEqual(self.isolation()['status'],'failed')
+        self.assertTrue(Path(self.isolation()['quarantine']).is_dir())
+
+    def test_recreated_original_preserves_both_trees(self):
+        original = self.producer()
+        with self.assertRaisesRegex(ValueError, 'recreated'):
+            with self.isolate():
+                original.mkdir(); (original/'foreign').write_bytes(b'foreign')
+        receipt = self.isolation()
+        self.assertEqual((original/'foreign').read_bytes(),b'foreign')
+        self.assertEqual((Path(receipt['quarantine'])/'producer-only.txt').read_bytes(),b'producer bytes')
+        self.assertEqual(receipt['status'],'failed')
+
+    def test_absent_origin_recreated_by_consumer_is_not_removed(self):
+        original = self.root/'build/sdk-inputs'
+        with self.assertRaisesRegex(ValueError,'recreated'):
+            with self.isolate('base'): original.mkdir()
+        self.assertTrue(original.is_dir()); self.assertEqual(self.isolation()['status'],'failed')
+
+    def test_replaced_quarantine_is_not_restored_or_deleted(self):
+        original = self.producer(); saved = self.root/'saved original'
+        with self.assertRaisesRegex(ValueError,'quarantine identity'):
+            with self.isolate():
+                holder, = (self.root/'build').glob('sdk-producer-quarantine-*')
+                (holder/'sdk-inputs').rename(saved); (holder/'sdk-inputs').mkdir()
+                (holder/'sdk-inputs/foreign').write_bytes(b'foreign')
+        self.assertEqual((saved/'producer-only.txt').read_bytes(),b'producer bytes')
+        self.assertEqual((holder/'sdk-inputs/foreign').read_bytes(),b'foreign')
+        self.assertFalse(original.exists())
+
+    def test_file_link_and_reparse_producer_roots_are_rejected(self):
+        original = self.root/'build/sdk-inputs'; original.write_bytes(b'foreign')
+        with self.assertRaisesRegex(ValueError,'ordinary directories'):
+            with self.isolate(): self.fail('consumer must not run')
+        self.assertEqual(original.read_bytes(),b'foreign'); original.unlink()
+        (self.root/'build/sdk-isolation.json').unlink(); original.mkdir()
+        actual = Path.lstat
+        from types import SimpleNamespace
+        for mode, attributes in [(stat.S_IFLNK|0o777, 0), (stat.S_IFDIR|0o755,0x400)]:
+            def lstat(path):
+                if path == original: return SimpleNamespace(st_mode=mode,st_file_attributes=attributes)
+                return actual(path)
+            with self.subTest(mode=mode), patch.object(Path,'lstat',lstat):
+                with self.assertRaisesRegex(ValueError,'ordinary directories'):
+                    with self.isolate(): self.fail('consumer must not run')
+            self.assertTrue(original.is_dir()); (self.root/'build/sdk-isolation.json').unlink()
+
+    def test_failed_rename_does_not_retry_or_cleanup(self):
+        original = self.producer(); real = Path.rename
+        for after in (False, True):
+            def rename(path,destination):
+                if path == original:
+                    if after: real(path,destination)
+                    raise OSError('uncertain move')
+                return real(path,destination)
+            with self.subTest(after=after), patch.object(Path,'rename',rename):
+                with self.assertRaisesRegex(OSError,'uncertain move'):
+                    with self.isolate(): self.fail('consumer must not run')
+            receipt = self.isolation(); self.assertEqual(receipt['status'],'failed')
+            self.assertTrue(Path(receipt['quarantine']).parent.exists())
+            self.assertEqual(original.exists(),not after)
+            self.assertEqual(Path(receipt['quarantine']).exists(),after)
+            (self.root/'build/sdk-isolation.json').unlink()
+
+    def test_restore_failure_preserves_tree_and_suppresses_passed_receipt(self):
+        original = self.producer(); real = Path.rename
+        def rename(path,destination):
+            if Path(destination) == original: raise PermissionError('restoration denied')
+            return real(path,destination)
+        with patch.object(Path,'rename',rename), self.assertRaisesRegex(PermissionError,'restoration denied'):
+            with self.isolate(): pass
+        receipt = self.isolation()
+        self.assertEqual((receipt['status'],receipt['consumers'],receipt['disposition']),
+                         ('failed','completed','preserved'))
+        self.assertTrue(Path(receipt['quarantine']).is_dir()); self.assertFalse(original.exists())
+
+    def test_changed_parent_is_preserved_without_writing_foreign_receipt(self):
+        self.producer(); parent=self.root/'build'; saved=self.root/'preserved-build'
+        with self.assertRaisesRegex(ValueError,'parent changed'):
+            with self.isolate():
+                parent.rename(saved); parent.mkdir(); (parent/'foreign').write_bytes(b'foreign')
+        self.assertEqual(list(parent.iterdir()),[parent/'foreign'])
+        self.assertEqual((parent/'foreign').read_bytes(),b'foreign')
+        self.assertTrue(any(saved.glob('sdk-producer-quarantine-*/sdk-inputs/producer-only.txt')))
+
+    def test_conflicting_receipt_at_exit_blocks_success_without_overwrite(self):
+        self.producer(); receipt=self.root/'build/sdk-isolation.json'
+        with self.assertRaises(FileExistsError):
+            with self.isolate(): receipt.write_bytes(b'foreign')
+        self.assertEqual(receipt.read_bytes(),b'foreign')
+
+    def test_receipt_failure_chains_original_consumer_error_and_preserves_tree(self):
+        self.producer(); failure=RuntimeError('consumer failed')
+        with patch.object(lifecycle,'write',side_effect=OSError('receipt write failed')):
+            with self.assertRaisesRegex(OSError,'receipt write failed') as raised:
+                with self.isolate(): raise failure
+        self.assertIs(raised.exception.__cause__,failure)
+        self.assertTrue(any((self.root/'build').glob('sdk-producer-quarantine-*/sdk-inputs/producer-only.txt')))
+        self.assertFalse((self.root/'build/sdk-inputs').exists())
+
+    def test_existing_isolation_receipt_is_never_replaced(self):
+        self.producer(); path=self.root/'build/sdk-isolation.json'; path.write_bytes(b'foreign')
+        with self.assertRaises(FileExistsError):
+            with self.isolate(): self.fail('consumer must not run')
+        self.assertEqual(path.read_bytes(),b'foreign'); self.assertTrue((self.root/'build/sdk-inputs').is_dir())
+
+    def test_both_consumers_install_inside_guard_and_receipts_bind_final_isolation(self):
+        original = self.producer(); entry=lifecycle.main; calls=[]
+        def consumer(target,recipe,group,output,*args,**kwargs):
+            self.assertFalse(original.exists()); self.assertTrue(kwargs['defer_qualification'])
+            self.assertFalse((self.root/'build/sdk-consumer/qualification.json').exists())
+            # Use a real installer before either qualification receipt can appear.
+            sdk_windows.install(group,recipe,output/'dependencies','14.44.35207')
+            calls.append(output.name)
+            return {'status':'passed','group_files':self.files}
+        self.publisher.side_effect=None; self.publisher.return_value={'operation':'plan'}
+        with patch.dict(lifecycle.os.environ,{'SDK_PROFILE':'all-gui'}), patch.object(lifecycle.ci,'assert_host'), \
+             patch.object(lifecycle,'main') as gui, patch.object(lifecycle.ci,'prepared_check',side_effect=consumer):
+            entry('sdk-produce')
+        self.assertEqual(calls,['sdk-consumer','sdk-gui-consumer']); gui.assert_called_once_with('gui-maintain')
+        self.assertTrue(original.is_dir())
+        self.assertEqual(self.isolation()['checkpoints'],
+            ['before-install-and-core','after-core','before-gui-install','after-all-consumers'])
+        digest=archive.digest(self.root/'build/sdk-isolation.json')
+        for name in calls:
+            report=json.loads((self.root/'build'/name/'qualification.json').read_text())
+            self.assertEqual(report['producer_isolation'],{'file':'../sdk-isolation.json','sha256':digest})
+        self.assertTrue((self.root/'build/sdk-publication-plan.json').is_file())
+
+    def test_guard_exit_failure_emits_neither_qualification_nor_publication(self):
+        original = self.producer()
+        def consumer(*args,**kwargs): original.mkdir(); return {'status':'passed'}
+        with patch.object(lifecycle.ci,'assert_host'), patch.object(lifecycle.ci,'prepared_check',side_effect=consumer):
+            with self.assertRaisesRegex(ValueError,'recreated'): lifecycle.main('sdk-produce')
+        self.assertFalse((self.root/'build/sdk-consumer/qualification.json').exists())
+        self.assertFalse((self.root/'build/sdk-publication-plan.json').exists()); self.publisher.assert_not_called()
+        self.assertEqual(self.isolation()['status'],'failed')
+
+    def test_deferred_prepared_check_runs_sdk_install_but_does_not_publish(self):
+        from unittest.mock import Mock
+        sdk=Mock(); sdk.install.return_value={'capabilities':['terminal','framebuffer','fltk','rev','sdl','hosted-web']}
+        select=lifecycle.ci.module
+        def module(name): return sdk if name=='sdk' else select(name)
+        for defer in (False,True):
+            output=self.root/('deferred' if defer else 'ordinary')
+            with patch.object(lifecycle.ci,'module',side_effect=module),patch.object(lifecycle.ci,'assert_host'), \
+                 patch.object(lifecycle.ci.subprocess,'run'):
+                receipt=lifecycle.ci.prepared_check('linux-x86_64',self.recipe,self.group,output,
+                    gui_group=self.group,defer_qualification=defer)
+            self.assertEqual(receipt['status'],'passed')
+            self.assertEqual((output/'qualification.json').exists(),not defer)
+        self.assertEqual(sdk.install.call_count,2)
 
 if __name__ == '__main__': unittest.main()
