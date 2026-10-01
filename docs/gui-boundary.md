@@ -262,6 +262,15 @@ visible text and bounded text placement, and proves rejection of erased labels,
 wrong disabled colors and shifted controls. Native glyph rasterization and terminal cell rounding are intentionally
 qualified separately from declaration equality.
 
+Native screen captures require a display work area large enough for the decorated
+window. As the [native fixture](../gui/tests/fltk_test.cpp) demonstrates, exercise
+an initially off-screen position, then position and redraw the window and verify
+that its entire client viewport is inside the available area before reading pixels.
+An undersized display is a failed prerequisite. Off-screen black regions are
+invalid capture data and do not establish a rendering difference. Preserve the
+original captures, geometry diagnostics and existing comparison bounds; record the
+qualified host scope in [validation](validation.md).
+
 New rendering primitives, input models or OS services can require a public
 contract extension. Specify semantics and fallback once, implement each selected
 adapter and add conformance fixtures before exposing the capability in product
