@@ -1,0 +1,247 @@
+# GitHub delivery of exact retained bytes
+
+[`github_release.py`](../tools/github_release.py) connects the local dependency,
+release and certification contracts to GitHub. It supports an immutable application
+inventory, append-only certification attempts and a separately controlled Latest
+pointer. The implementation uses the authenticated `gh` executable through argument
+arrays. It never builds missing inputs, deletes assets, force-updates a tag or
+uploads with overwrite enabled.
+
+The repository's qualification is **offline transport testing**. No live publication,
+GitHub permission setup or hosted workflow execution is implied by those tests.
+Use a dedicated repository to qualify hosting behavior before adopting this for
+production. Read [release requirements](releases.md), [dependency groups](dependencies.md)
+and [certification](certification.md) first.
+
+## Explicit execution and owned inputs
+
+Each command takes one strict JSON request. Unknown arguments, duplicate JSON
+fields and nonfinite values fail. Mutation commands return a local plan by default:
+
+```sh
+python3 tools/github_release.py publish-candidate --input build/publication-request.json
+```
+
+Only the separate command-line `--execute` option enables changes to GitHub. An
+`execute` key inside the request is rejected. The corresponding Python functions
+also default to `execute=False`. A plan validates local inputs and identifies their
+exact hashes, but does not authenticate, query or reserve a remote tag. Its digest
+is a review aid, not an authorization token. Executing later revalidates the inputs;
+the caller must compare against its reviewed plan and hold those inputs unchanged.
+
+`fetch-base` is the exception: it reads GitHub and creates a new local destination,
+without making remote changes. It never falls back to compiling dependencies.
+
+For an authorized publishing job, execute the same frozen request explicitly:
+
+```sh
+python3 tools/github_release.py publish-candidate --input build/publication-request.json --execute
+```
+
+Assign one publisher for a repository's release lifecycle. Hold the agreed release
+resource claim from preflight through final receipt, including the shared `base`
+release and Latest pointer. Local [coordination](agent-coordination.md) protects
+cooperating sessions on one agreed board; it is not a distributed GitHub lock.
+Hosted workflows must use the same repository-wide concurrency group for all
+publishing operations, with `cancel-in-progress: false`. A different machine,
+workflow or manual publisher must participate in that same exclusion policy.
+
+Keep the source checkout, assembled release, requests, SDK groups, policy, reports
+and retained logs stable during an operation. Own separate temporary and receipt
+directories. Set `TMPDIR` on POSIX or the supported temporary-directory setting on
+Windows to owned space. The helper rechecks bytes and observed identities at
+critical boundaries; it cannot provide a distributed transaction or stop an actor
+that ignores the agreed exclusion. No remote compare-and-swap API is assumed.
+
+Use a protected publisher environment and the least repository permissions needed
+for release/tag creation. Authenticate `gh` through its supported environment or
+credential store; never put secrets in request JSON, command arguments, published
+evidence or console diagnostics. The helper suppresses CLI stderr in its own
+errors, but this does not sanitize arbitrary logs bundled by a caller. Review
+evidence for secrets before permitting publication.
+
+## Command contracts
+
+All requests use `repository: "OWNER/REPO"`. The supported service is `github.com`;
+the transport pins that host explicitly. Tags and asset names must be portable
+single components. Slash-separated tags, unsafe path components, platform-reserved
+names and ambiguous names that differ only by letter case are rejected. Commits
+are complete lowercase 40- or 64-character object IDs. Generated tags directly
+identify commits; annotated tags are deliberately outside this adapter's contract.
+
+The following fields are required unless a default is shown. Filesystem paths
+belong to the local caller. `delivery` is the complete generated object from the
+candidate plan or successful publication receipt, not a reconstructed abbreviation.
+
+| Command | JSON request fields | Result and required invariant |
+| --- | --- | --- |
+| `fetch-base` | `repository`, `recipe`, `output` | Fetch the exact recipe's binary/source/checksum group into a new directory; verify all three before publishing the local directory. |
+| `publish-base` | `repository`, `recipe`, `group`, `source_commit` | Verify the complete local group, reuse an exact existing group or append a new group; never replace a partial or conflicting group. |
+| `publish-candidate` | `repository`, `tag`, `directory`, `source_commit`, `packager_commit`, `publication_id`, optional `experiment: false` | Freeze delivery identity, create an absent tag and draft, upload every required file, verify bytes and then publish without moving Latest. |
+| `attach-certificate` | `repository`, `tag`, `directory`, `delivery`, `certificate`, `check_plan`, `policy`, `profile`, `reports`, positive `attempt` | Reproduce the certificate, retain complete evidence, append its uniquely named bundle and envelope, verify uploads and preserve all existing assets. |
+| `promote` | `repository`, `tag`, `directory`, `delivery`, `policy`, `profile`, `run_id`, positive `attempt`, `certificate_sha256` | Reproduce the exact selected remote certificate against current policy, recheck all identities, change Latest and verify the final pointer. |
+
+`recipe` is the digest produced by the [dependency store](../tools/dependency_store.py).
+`group` contains exactly its verified binary archive, corresponding source archive
+and checksum manifest. `directory` is the complete output of
+[`release.py assemble`](../tools/release.py). `reports` is an explicit ordered array
+of result JSON paths, one selected result per planned check. The selected report
+can retain an earlier check attempt under the unchanged plan; its actual attempt
+remains visible. The delivery `attempt` names a new immutable certification
+publication, never an excuse to overwrite an older report.
+
+For example, a candidate request has this structure. Replace the example values
+with the exact reviewed release and commit identities before execution:
+
+```json
+{
+  "repository": "example/project",
+  "tag": "v1.0.0",
+  "directory": "dist/candidate",
+  "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "packager_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "publication_id": "candidate-1",
+  "experiment": false
+}
+```
+
+Retain the entire printed receipt in owned append-only storage. Preserve its
+`delivery` object for attachment and promotion requests. `certificate_sha256` is
+the digest of the actual certifier output, not the digest of its remote envelope.
+The attachment plan includes both filenames, their hashes and the full envelope,
+making the intended run and attempt reviewable before any upload.
+
+## Dependency base lifecycle
+
+The `base` release is a published prerelease named `base`, and must never be Latest.
+Creating it first reserves an absent direct Git tag at `source_commit`, then creates
+a draft. A new recipe group uploads its binary and source archives before the
+checksum manifest. The caller obtains no valid reusable group until all three
+exist, download correctly and pass `dependency_store.verify_group`.
+
+An existing complete group is reused only after exact comparison with the supplied
+local group. A partial group, changed bytes or incompatible release state fails
+without overwrite. Existing groups and their remote IDs remain unchanged while
+a new group is appended. The base tag's current commit is frozen and rechecked;
+adding a later group does not move that tag to the new recipe's source commit.
+
+Fetching validates repository visibility, base state, tag and the complete paged
+asset inventory. Missing recipes fail clearly. Authentication failures and unknown
+responses never become cache misses. A failed download remains in temporary staging;
+it does not publish a usable destination. Exact SDK source retention is required
+for [recovery qualification](certification.md), even when cached binaries exist.
+
+## Candidate and certificate lifecycle
+
+Candidate planning calls the complete local release verifier, then freezes the
+application source archive, exact `release.json`, every application archive and
+retained dependency member. GitHub asset names are flattened from these paths;
+any collision blocks delivery. `delivery.json` retains the original path mapping,
+hashes, sizes, source commit, packaging commit, tag commit and publication identity.
+
+Repository visibility is confirmed before absence checks. The helper lists every
+release page, including drafts, and rejects duplicate matching tags. It creates
+the Git reference before the draft; an existing release or orphan reference is
+never silently adopted. This reservation still needs the caller's repository-wide
+lock. After uploading, it lists every asset page separately, downloads each expected
+asset by its remote ID, reconstructs the original tree and runs the complete release
+verifier. Only then does it finalize the draft with `make_latest: false` and verify
+the resulting state and pointer.
+
+Ordinary candidates require equal source and packaging commits. An intentional
+split requires `experiment: true`, receives the title `experiment`, remains a
+prerelease and cannot pass this helper's promotion gate. Full commit strings alone
+do not prove the bytes came from those commits: the publisher must construct the
+source and packaging inputs from those reviewed revisions. The release manifest's
+source identity and package checks bind the retained tree to the application.
+The transport does not independently reproduce a Git commit from its tree archive
+or authenticate the person who supplied a request.
+
+Certification publication appends two assets:
+
+- `certification-RUN-attempt-N.tar.gz`: the exact certificate, frozen plan, tested
+  policy, ordered selected reports and every declared evidence file.
+- `certification-RUN-attempt-N.json`: a small envelope binding the bundle digest,
+  certificate digest, delivery identity, run, attempt, outcome and eligibility.
+
+The helper revalidates the copied evidence before archiving it. It uploads the
+bundle first and the envelope last. A failed or incomplete qualification can be
+retained as a new attempt, but cannot promote the release. Every previous report
+and binary remains intact. Unknown extra assets or incomplete certificate pairs
+block subsequent mutations until explicitly reconciled.
+
+Promotion selects one exact run, attempt and certificate digest. It downloads and
+verifies the pair, checks a complete bundle file inventory, extracts it under the
+strict archive policy and reruns the certifier against the current local support
+policy. A changed policy, stale source, different application inventory, failed
+required check, omitted mandatory scope or ineligible experiment blocks promotion.
+The adapter limits uncompressed evidence bundles to 4 GiB; split oversized logs or
+choose another reviewed evidence-storage contract before producing the candidate.
+
+Immediately before updating Latest, promotion rereads the release, direct tag and
+all remote asset identities. After updating, it rechecks those identities and the
+Latest endpoint. Matching names or byte hashes alone are insufficient: replacing
+an asset with identical bytes changes its ID and invalidates the earlier review.
+Warnings retained by an otherwise eligible certificate remain visible; they do not
+waive mandatory checks. Passing reports rely on trusted, reviewed check adapters
+and runner provenance. A self-declared JSON assertion is not proof against a
+malicious producer.
+
+This protocol requires GitHub's immutable-release feature to be disabled because
+it appends evidence after publishing a candidate. Application assets remain
+immutable by enforced policy. If repository policy requires server-enforced
+immutable releases, collect evidence before publication or place later evidence in
+a separate durable store bound to the original inventory; qualify a corresponding
+adapter rather than enabling overwrite or weakening repository policy.
+
+## Failure, uncertainty and recovery
+
+An API or CLI success is not sufficient evidence of publication. Every mutation
+sequence verifies the resulting remote IDs, lifecycle and bytes. An exception
+after the first attempted remote change yields `uncertain: true`, including a lost
+output receipt after execution. The change may have completed. Stop dependent
+uploads, retries and promotion; preserve the original request and local evidence.
+
+Under the same publisher lock, inspect repository visibility, tag target, release
+ID/state, complete paged assets and their downloaded hashes. Compare these with
+the frozen request and receipt. Do not infer absence from a timeout, lack of local
+output or inaccessible credentials. Do not rerun a mutating command merely because
+its client failed. There is intentionally no automatic resume, rollback, deletion,
+clobber or tag adoption command. Resolve a partial group/draft through an explicitly
+reviewed administrative procedure, or choose a fresh release identity while
+preserving the incident evidence. A failed promotion can already have changed
+Latest, so verify the pointer before deciding the next authorized action.
+
+The helper rejects missing server SHA-256 digests, incomplete upload states,
+duplicate asset IDs/names, malformed JSON and incomplete pagination. It bounds
+parsed JSON to 16 MiB. Repositories beyond those limits need a reviewed extension;
+truncating discovery is not a workaround. Read-only download failures leave no
+permission to rebuild or publish replacement bytes.
+
+## Executable coverage and limits
+
+Run the focused offline suite:
+
+```sh
+python3 -B -m unittest discover -s tests -p test_github_release.py -v
+```
+
+| Invariant | Offline scenarios |
+| --- | --- |
+| Explicit authorization | All mutation defaults avoid transport calls; CLI rejects execution inside JSON; lost execution receipt reports uncertainty. |
+| Immutable candidate | Existing release/draft, duplicate tags, orphan reference, incomplete upload and missing local dependency member block finalization or mutation. |
+| Complete dependency group | Missing group has no fallback; exact reuse succeeds; partial or changed existing group fails. |
+| Fresh review | Same-byte asset replacement, tag movement during download and altered bytes invalidate observations. |
+| Retained qualification | Complete round trip reproduces the certificate; later failed attempts preserve earlier evidence; duplicate/stale/partial attempts and altered evidence or policy fail. |
+| Controlled channel | Experiments cannot promote; changed post-update assets and an incorrect final pointer report uncertainty without rollback. |
+| Transport boundary | Complete pagination, safe argument arrays, private diagnostics and explicit rejection of access failures as cache misses. |
+
+These fixtures use actual local release, archive and certification validators
+with an in-memory GitHub transport. They do not establish service permission
+behavior, retention policy enforcement, native Windows hosting, authentication,
+cross-machine exclusion or server failure timing. Qualify those in an authorized
+deployment before describing a production release as supported.
+
+The transport contract follows the primary documentation for
+[`gh api` pagination and JSON input](https://cli.github.com/manual/gh_api) and
+[GitHub release REST operations](https://docs.github.com/en/rest/releases/releases).

@@ -22,3 +22,16 @@ silently discover a sibling repository and use whichever revision happens to
 be present. The GUI source is supplied through the documented optional
 integration and is not vendored into this repository. Its license and complete
 dependency inventory remain release prerequisites.
+
+## Prepared input producers
+
+`third_party/sdk/` contains separate native source, browser-target and Windows
+dependency recipes. Producing code lives under `tools/`; generated caches and
+archives belong under ignored, owned build directories or a durable external
+store. The native recipe pins maintained old-runtime sources and recent tools.
+The browser recipe preserves exact precompiled upstream inputs explicitly. The
+Windows recipe keeps Microsoft host tools separate from redistributable inputs.
+
+Every prepared group contains matched binary/source/checksum assets and complete
+inner inventories. Every binary release retains its own exact copies. See
+[the SDK lifecycle](../docs/sdk.md) and [release assembly](../docs/releases.md).

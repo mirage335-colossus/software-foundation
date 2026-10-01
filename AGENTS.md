@@ -16,6 +16,19 @@ writing subagents. Passive read-only tools do not need their own session.
 - Use the ignored `.agent-work/` directory for current ownership, temporary notes
   and per-session artifacts. One independent writer owns each session identity.
   Use the checked helper; do not implement ad hoc lock/unlock shell sequences.
+- Use `tools/agent_session.py` for record registration, review and checked commit,
+  `tools/check_agent_record.py` for bounded complete discovery, and
+  `tools/agent_publish.py` for complete immutable messages. Use
+  `tools/agent_edit.py` for supported existing-source replacements; otherwise use
+  a qualified adapter with equivalent guarantees or isolate writes. Read the
+  [exact operation recipes](docs/agent-recipes.md), including failure ordering.
+  These write helpers require qualified POSIX filesystem primitives. Unsupported
+  systems must fail closed; a native adapter needs equivalent tests.
+- An existing `state.json` board remains on `tools/agent_board.py` until the
+  [explicit migration](docs/agent-recipes.md#transition-an-existing-json-board)
+  completes. Never mix protocols, initialize a second board to avoid a conflict,
+  or migrate while any session or output writer is active. New boards use the
+  complete record protocol directly.
 - Discover complete claims, relevant releases and your inbox before acquisition.
   Bounded output must not hide owners or truncate a claim list. Unknown, corrupt
   or inaccessible data blocks affected shared writes; it never means free scope.
@@ -29,6 +42,10 @@ writing subagents. Passive read-only tools do not need their own session.
   launches. Inspect authoritative saved state before retrying uncertain results.
   Preserve foreign edits, staged work, processes, notes and uncommitted changes.
 - Recheck input bytes and shared interface assumptions before applying an edit.
+  Freeze physical identity/version and exact bytes when reviewing. Revalidate
+  complete claims and scope-relevant predecessor releases at commit; an unchanged
+  source hash cannot erase an intervening owner. Page discovery with its returned
+  snapshot token; never combine pages from different snapshots.
   Disjoint files can change the same invariant. Stabilize inputs during tests or
   use an isolated copy containing the intended uncommitted changes.
 - Record launch intent before long commands, actual yielded handles when known,

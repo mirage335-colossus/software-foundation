@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+"""Explicit pinned source SDK producer, with retained-input offline replay."""
+import argparse
+import hashlib
+import os
+from pathlib import Path, PurePosixPath
+import platform
+import re
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import urllib.request
+from dependency_archive import digest, encoded, file_inventory, read_json, relative, verify_inventory, write_json
+from sdk import export_group, materialize, seal
+
+TOOLS = ('distro_sdk.py', 'sdk.py', 'sdk_manifest.py', 'dependency_archive.py', 'dependency_store.py', 'verify_abi.py')
+
+
+def recipe_id(recipe):
+    recipe = Path(recipe)
+    inputs = {'recipe.json': digest(recipe)}
+    for name in ('config', 'Config.in', 'external.desc', 'external.mk'):
+        inputs[name] = digest(recipe.parent / name)
+    for name in TOOLS:
+        inputs['tools/' + name] = digest(Path(__file__).parent / name)
+    return hashlib.sha256(encoded(inputs)).hexdigest()
+
+
+def fetch_file(item, path, network):
+    path = Path(path)
+    if path.is_file():
+        if digest(path) != item['sha256']: raise ValueError('changed pinned input: ' + path.name)
+        return
+    if not network: raise ValueError('missing pinned input; explicit fetch required: ' + path.name)
+    if not item['url'].startswith('https://'): raise ValueError('source URL must use HTTPS')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream: temporary = Path(stream.name)
+    try:
+        with urllib.request.urlopen(item['url'], timeout=60) as source, temporary.open('wb') as output:
+            shutil.copyfileobj(source, output)
+        if digest(temporary) != item['sha256']: raise ValueError('pinned source checksum mismatch')
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def unpack_source(archive, output):
+    """Upstream source links remain inert; no extraction can traverse any link."""
+    if output.exists(): raise ValueError('source extraction destination must be new')
+    with tarfile.open(archive) as source:
+        members = source.getmembers()
+        names, links = {}, set()
+        for member in members:
+            name = str(relative(member.name.rstrip('/')))
+            if name in names:
+                if member.isdir() and names[name]: continue
+                raise ValueError('duplicate upstream source entry')
+            if not (member.isfile() or member.isdir() or member.issym()):
+                raise ValueError('unsupported upstream source entry')
+            names[name] = member.isdir()
+            if member.issym(): links.add(name)
+            if member.mode & 0o7000: raise ValueError('privileged upstream source mode')
+        for name in names:
+            if any(str(parent) in links for parent in PurePosixPath(name).parents):
+                raise ValueError('upstream source entry traverses a link')
+        output.mkdir(parents=True)
+        for member in members:
+            path = output / member.name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if member.isdir(): path.mkdir(exist_ok=True)
+            elif member.issym():
+                # Buildroot contains target skeleton links to OS locations. They
+                # are stored as inert entries; build commands never use skeletons
+                # as their host source/build/output roots.
+                path.symlink_to(member.linkname)
+            else:
+                with source.extractfile(member) as stream, path.open('xb') as target: shutil.copyfileobj(stream, target)
+                path.chmod(member.mode & 0o777)
+
+
+def overlay(source, manifest):
+    item = manifest['glibc_source']
+    path = source / 'package/glibc/glibc.mk'
+    text = path.read_text()
+    for name, value in {'VERSION': item['version'], 'SITE': item['site'], 'SITE_METHOD': 'wget'}.items():
+        text, count = re.subn(r'^GLIBC_' + name + r' = .*$', 'GLIBC_' + name + ' = ' + value, text, flags=re.M)
+        if count != 1: raise ValueError('upstream SDK overlay context changed')
+    text = re.sub(r'^GLIBC_SOURCE = .*\n', '', text, flags=re.M)
+    text, count = re.subn(r'^GLIBC_LICENSE = .*?\nGLIBC_LICENSE_FILES = .*?\n',
+        'GLIBC_LICENSE = LGPL-2.1+, GPL-2.0+, BSD-3-Clause\nGLIBC_LICENSE_FILES = COPYING COPYING.LIB LICENSES\n', text, flags=re.M | re.S)
+    if count != 1: raise ValueError('upstream license context changed')
+    text = re.sub(r'^GLIBC_IGNORE_CVES.*\n', '', text, flags=re.M)
+    marker = '$(eval $('
+    if marker not in text: raise ValueError('upstream package evaluation context changed')
+    text = text.replace(marker, 'GLIBC_SOURCE = ' + item['file'] + '\nGLIBC_EXTRA_CFLAGS += -std=gnu11\n' + marker, 1)
+    path.write_text(text)
+    (path.parent / 'glibc.hash').write_text('sha256  ' + item['sha256'] + '  ' + item['file'] + '\n' +
+        ''.join('sha256  ' + value + '  ' + name + '\n' for name, value in item['licenses'].items()))
+
+
+def host_check(recipe):
+    if platform.system() != 'Linux' or platform.machine() != 'x86_64':
+        raise ValueError('the source SDK recipe requires an x86_64 Linux builder')
+    info = dict(line.split('=', 1) for line in Path('/etc/os-release').read_text().splitlines() if '=' in line)
+    if info.get('ID', '').strip('"') != 'debian' or info.get('VERSION_ID', '').strip('"') != '12':
+        raise ValueError('production source SDK must be built on the declared Debian 12 host baseline')
+    for name in ('make', 'gcc', 'g++', 'patch', 'tar', 'gzip', 'bzip2', 'xz', 'cpio', 'rsync', 'gawk', 'wget', 'python3'):
+        if not shutil.which(name): raise ValueError('missing bootstrap tool: ' + name)
+    return {'host': 'debian-12-x86_64', 'status': 'passed'}
+
+
+def prepare(recipe, cache, jobs, network):
+    recipe, cache = Path(recipe).resolve(strict=True), Path(cache).absolute()
+    manifest = read_json(recipe)
+    identity = recipe_id(recipe)
+    if any(not re.fullmatch(r'[A-Za-z0-9_./+-]+', str(path)) for path in (recipe, cache)):
+        raise ValueError('upstream source preparation requires simple paths without spaces')
+    bootstrap = cache / 'bootstrap' / manifest['buildroot']['file']
+    fetch_file(manifest['buildroot'], bootstrap, network)
+    fetch_file(manifest['glibc_source'], cache / 'downloads/glibc' / manifest['glibc_source']['file'], network)
+    work = cache / 'work' / identity
+    source = work / ('buildroot-' + manifest['buildroot']['version'])
+    if not source.exists():
+        work.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work) as temporary:
+            extraction = Path(temporary) / 'source'
+            unpack_source(bootstrap, extraction)
+            candidate = extraction / source.name
+            overlay(candidate, manifest)
+            candidate.rename(source)
+    output = work / 'output'
+    command = ['make', '-C', str(source), 'O=' + str(output), 'BR2_DL_DIR=' + str(cache / 'downloads'), 'BR2_EXTERNAL=' + str(recipe.parent), 'BR2_JLEVEL=' + str(jobs)]
+    if not network:
+        command += ['BR2_' + name + '=/bin/false' for name in ('WGET', 'GIT', 'SVN', 'HG', 'CVS', 'BZR', 'SCP', 'SFTP')]
+    else:
+        command += ['BR2_WGET=wget --timeout=30 --tries=2 -nv']
+    subprocess.run(command + ['BR2_DEFCONFIG=' + str(recipe.parent / 'config'), 'defconfig'], check=True)
+    text = (output / '.config').read_text().splitlines()
+    for required in ('BR2_GCC_VERSION_15_X=y', 'BR2_TOOLCHAIN_BUILDROOT_GLIBC=y', 'BR2_DOWNLOAD_FORCE_CHECK_HASHES=y', 'BR2_PACKAGE_HOST_CMAKE=y'):
+        if required not in text: raise ValueError('required source SDK configuration disappeared')
+    return manifest, identity, command, output
+
+
+def fetch(recipe, cache, jobs):
+    manifest, identity, command, output = prepare(recipe, cache, jobs, True)
+    subprocess.run(command + ['source'], check=True)
+    resolution = subprocess.check_output(command + ['--no-print-directory', 'show-info'], text=True)
+    packages = __import__('json').loads(resolution)
+    files = {}
+    for package in packages.values():
+        for item in package.get('downloads', []):
+            name = str(relative('downloads/' + package['dl_dir'] + '/' + item['source']))
+            path = Path(cache) / name
+            actual = path.resolve(strict=True)
+            if Path(cache).resolve() not in actual.parents: raise ValueError('source download escapes cache')
+            files[name] = digest(actual)
+    bootstrap = 'bootstrap/' + manifest['buildroot']['file']
+    files[bootstrap] = digest(Path(cache) / bootstrap)
+    if len(files) < 2: raise ValueError('incomplete resolved source closure')
+    write_json(Path(cache) / 'source-inputs.json', {'schema_version': 1, 'recipe_id': identity, 'files': files})
+    write_json(Path(cache) / 'resolution.json', packages)
+    return {'recipe_id': identity, 'input_count': len(files)}
+
+
+def verify_inputs(recipe, cache):
+    state = read_json(Path(cache) / 'source-inputs.json')
+    if state.get('recipe_id') != recipe_id(recipe): raise ValueError('source cache belongs to another complete recipe')
+    for name, value in state['files'].items():
+        path = Path(cache).joinpath(*relative(name).parts)
+        if not path.is_file() or digest(path) != value: raise ValueError('missing or changed offline source input: ' + name)
+    return state
+
+
+def preserve_sources(recipe, cache, output):
+    state = verify_inputs(recipe, cache)
+    output = Path(output)
+    if output.exists(): raise ValueError('source export destination must be new')
+    (output / 'recipe').mkdir(parents=True)
+    shutil.copyfile(recipe, output / 'recipe/recipe.json')
+    for name in ('config', 'Config.in', 'external.desc', 'external.mk'):
+        shutil.copyfile(Path(recipe).parent / name, output / 'recipe' / name)
+    for name in TOOLS:
+        (output / 'tools').mkdir(exist_ok=True)
+        shutil.copyfile(Path(__file__).parent / name, output / 'tools' / name)
+    for name in state['files']:
+        target = output / 'cache' / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(Path(cache) / name, target)
+    for name in ('source-inputs.json', 'resolution.json'):
+        shutil.copyfile(Path(cache) / name, output / 'cache' / name)
+    license_path = Path(__file__).resolve().parents[1] / 'LICENSE'
+    if license_path.is_file(): shutil.copyfile(license_path, output / 'LICENSE')
+    write_json(output / 'sources.json', {'schema_version': 1, 'recipe_id': state['recipe_id'], 'files': file_inventory(output)})
+    return state['recipe_id']
+
+
+def build(recipe, cache, destination, jobs):
+    host_check(recipe)
+    verify_inputs(recipe, cache)
+    manifest, identity, command, output = prepare(recipe, cache, jobs, False)
+    subprocess.run(command + ['sdk', 'legal-info'], check=True)
+    verify_inputs(recipe, cache)
+    destination = Path(destination).absolute()
+    if destination.exists(): raise ValueError('SDK group destination must be new')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=destination.parent, prefix='sdk-build-') as temporary:
+        work = Path(temporary)
+        supplier = output / 'host'
+        # Remove virtual filesystem aliases from the target sysroot. They are
+        # runtime host services, never compiler inputs or application libraries.
+        sysroot = supplier / manifest['target'] / 'sysroot'
+        for name in ('dev', 'proc', 'sys', 'run', 'tmp', 'var'):
+            path = sysroot / name
+            if path.is_symlink(): path.unlink()
+            elif path.is_dir(): shutil.rmtree(path)
+        # Normalize SDK absolute aliases to their corresponding contained paths.
+        for path in supplier.rglob('*'):
+            if path.is_symlink() and os.readlink(path).startswith('/'):
+                candidate = sysroot / os.readlink(path).lstrip('/')
+                if candidate.exists():
+                    path.unlink()
+                    path.symlink_to(os.path.relpath(candidate, path.parent))
+                else: raise ValueError('unresolved absolute SDK link: ' + str(path))
+        tree = work / 'sdk'
+        materialize(supplier, tree)
+        licenses = tree / 'share/sdk-licenses'
+        shutil.copytree(output / 'legal-info', licenses, ignore=lambda directory, entries: set(entries) & {'sources', 'host-sources'})
+        # Buildroot relocates selected generated text files on installation.
+        sources = work / 'sources'
+        preserve_sources(recipe, cache, sources)
+        target = {'system': 'Linux', 'processor': manifest['architecture'], 'triple': manifest['target'],
+                  'sysroot': manifest['target'] + '/sysroot', 'cxx_compiler': 'bin/' + manifest['target'] + '-g++'}
+        metadata = seal(tree, identity, target, digest(sources / 'sources.json'), licenses=['share/sdk-licenses'],
+                        host_tools={'cmake': 'bin/cmake', 'ctest': 'bin/ctest', 'cpack': 'bin/cpack', 'ninja': 'bin/ninja', 'python': 'bin/python3'})
+        metadata['relocation'] = 'buildroot'
+        write_json(tree / 'sdk.json', metadata)
+        return export_group(tree, sources, destination, manifest['source_date_epoch'])
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('recipe-id', 'bootstrap', 'fetch', 'build', 'export-sources', 'verify-inputs'))
+    parser.add_argument('--recipe', type=Path, default=Path(__file__).resolve().parents[1] / 'third_party/sdk/recipe.json')
+    parser.add_argument('--cache', type=Path)
+    parser.add_argument('--output', type=Path)
+    parser.add_argument('--jobs', type=int, default=2)
+    args = parser.parse_args()
+    if args.jobs < 1: parser.error('jobs must be positive')
+    if args.action == 'recipe-id': result = {'recipe_id': recipe_id(args.recipe)}
+    elif args.action == 'bootstrap': result = {'distribution': 'Debian 12 Bookworm', 'packages': read_json(args.recipe)['bootstrap_packages'], 'install': 'apt-get install <listed packages>', 'check': host_check(args.recipe)}
+    else:
+        if not args.cache: parser.error('--cache is required')
+        if args.action in ('build', 'export-sources') and not args.output: parser.error('--output is required')
+        if args.action == 'fetch': result = fetch(args.recipe, args.cache.resolve(), args.jobs)
+        elif args.action == 'build': result = build(args.recipe, args.cache.resolve(), args.output, args.jobs)
+        elif args.action == 'export-sources': result = {'recipe_id': preserve_sources(args.recipe, args.cache.resolve(), args.output)}
+        else: result = verify_inputs(args.recipe, args.cache.resolve())
+    print(encoded(result).decode(), end='')
+
+
+if __name__ == '__main__':
+    try: main()
+    except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error: raise SystemExit(str(error))

@@ -1,0 +1,44 @@
+name: Explicit native SDK maintenance
+on:
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: Cold toolchain compilation is explicit maintenance work
+        type: choice
+        options: ['2', '4', '8']
+        default: '2'
+permissions:
+  contents: read
+concurrency:
+  group: sdk-maintenance-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fetch and build using the declared old host baseline
+        env:
+          JOBS: ${{ inputs.jobs }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -e JOBS -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE" debian:bookworm bash -euc '
+            apt-get update
+            apt-get install -y --no-install-recommends ca-certificates python3 git build-essential cmake ninja-build file cpio rsync unzip wget patch bc bzip2 xz-utils perl gawk libncurses-dev
+            python3 tools/distro_sdk.py fetch --cache build/sdk-inputs --jobs "$JOBS"
+            python3 tools/distro_sdk.py build --cache build/sdk-inputs --output build/sdk-produced --jobs "$JOBS"
+          '
+      - name: Retain maintenance outputs for reviewed durable-base publication
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prepared-sdk-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/sdk-produced/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+      - name: Explain storage boundary
+        run: echo 'Workflow artifacts are temporary transport. Copy the verified complete recipe group into durable base storage before ordinary consumers use it.' >> "$GITHUB_STEP_SUMMARY"

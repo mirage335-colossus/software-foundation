@@ -49,7 +49,7 @@ contracts, tests and procedures. Do not force every contributor to read all logs
 
 A change affecting behavior updates its contract, test and user instructions in
 the same review. Renames preserve or repair inbound links. Use
-`python3 tools/check_docs.py` for local file links and JSON syntax; it does not
+`python3 tools/check_docs.py` for local file links, heading targets, strict JSON and the requirements-to-code/test map; it does not
 validate external links or prove the truth of prose. Review examples by executing
 them in an appropriate environment. Avoid exposing workstation paths, identities,
 secrets or application-specific material in a reusable template.

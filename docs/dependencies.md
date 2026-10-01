@@ -109,9 +109,9 @@ a checklist.
 ## Durable recovery
 
 Keep exact source inputs, patches, recipes, and binary archive digests together.
-An upstream URL may disappear. A binary release should retain its required
-prepared dependency group or a durable independent reference and documented
-recovery procedure. Test reconstruction from the retained source inventory in
+An upstream URL may disappear. Every binary release MUST retain exact copies
+of its required prepared dependency binary/source/checksum groups. External
+references are supplemental and cannot replace release-owned recovery inputs. Test reconstruction from the retained source inventory in
 an empty, offline cache when qualifying a new SDK recipe. See [SDKs](sdk.md).
 
 Temporary investigation findings belong in the ignored coordination notes with

@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""Export, install and validate retained SDK groups; production is explicit."""
+import argparse
+import hashlib
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+from dependency_archive import archive_tree, digest, encoded, extract, file_inventory, read_json, verify_inventory, write_json
+from dependency_store import create_sums, names, verify_group
+from sdk_manifest import verify_sdk
+from verify_abi import audit
+
+
+def recipe_identity(recipe_directory):
+    return hashlib.sha256(encoded(file_inventory(recipe_directory))).hexdigest()
+
+
+def materialize(source, output):
+    """Convert confined supplier links into ordinary archived files/directories."""
+    source, output = Path(source).resolve(strict=True), Path(output)
+    def copy(path, destination, ancestors):
+        real = path.resolve(strict=True)
+        if real != source and source not in real.parents:
+            raise ValueError('supplier link escapes SDK tree')
+        if real in ancestors:
+            raise ValueError('supplier directory link cycle')
+        if real.is_dir():
+            destination.mkdir()
+            for child in sorted(real.iterdir()):
+                copy(child, destination / child.name, ancestors | {real})
+        elif real.is_file():
+            shutil.copyfile(real, destination)
+            destination.chmod(0o755 if real.stat().st_mode & 0o111 else 0o644)
+        else:
+            raise ValueError('supplier tree contains a special file')
+    if output.exists(): raise ValueError('materialization output must be new')
+    copy(source, output, set())
+
+
+def seal(root, recipe, target, sources_hash, kind='source-build', licenses=None, production=True, host_tools=None):
+    root = Path(root)
+    if (root / 'sdk.json').exists(): raise ValueError('SDK is already sealed')
+    metadata = {'schema_version': 1, 'recipe_id': recipe, 'kind': kind, 'target': target,
+                'baseline': {'distribution': 'debian-12', 'glibc': '2.36'},
+                'host': {'system': 'Linux', 'glibc': '2.36'}, 'host_tools': host_tools or {},
+                'sources_sha256': sources_hash, 'licenses': licenses or [],
+                'relocation': 'relative-paths', 'audits': {}}
+    if production:
+        if target['system'] == 'Linux':
+            metadata['audits']['target'] = audit(root / target['sysroot'], target['processor'], host=True)
+            # Host compiler support is inspected separately from the target tree.
+            host_files = {}
+            for directory in ('bin', 'libexec', 'lib'):
+                if (root / directory).exists():
+                    try: host_files[directory] = audit(root / directory, target['processor'], host=True)
+                    except ValueError as error:
+                        if str(error) != 'no ELF files inspected': raise
+            if not host_files: raise ValueError('SDK contains no auditable host executables')
+            metadata['audits']['host'] = {'status': 'passed', 'directories': host_files}
+    metadata['files'] = file_inventory(root)
+    write_json(root / 'sdk.json', metadata)
+    verify_sdk(root, release=production)
+    return metadata
+
+
+def export_group(tree, sources, output, epoch=0):
+    tree, sources, output = Path(tree), Path(sources), Path(output).absolute()
+    verify_sdk(tree)
+    metadata = read_json(tree / 'sdk.json')
+    recipe = metadata['recipe_id']
+    source = read_json(sources / 'sources.json')
+    if source.get('schema_version') != 1 or source.get('recipe_id') != recipe:
+        raise ValueError('SDK source inventory belongs to another recipe')
+    verify_inventory(sources, source['files'], exclude=('sources.json',))
+    if digest(sources / 'sources.json') != metadata['sources_sha256']:
+        raise ValueError('SDK source inventory identity mismatch')
+    if output.exists() or output.is_symlink(): raise ValueError('SDK output group must be new')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=output.parent, prefix='.sdk-export-') as temporary:
+        group = Path(temporary) / 'group'
+        group.mkdir()
+        binary, source_name, _ = names(recipe)
+        archive_tree(tree, group / binary, epoch)
+        archive_tree(sources, group / source_name, epoch)
+        create_sums(group, recipe)
+        group.rename(output)
+    return {'recipe_id': recipe, 'files': verify_group(output, recipe)}
+
+
+def clean_environment(root=None):
+    env = dict(os.environ)
+    for name in ('CC', 'CXX', 'CFLAGS', 'CXXFLAGS', 'LDFLAGS', 'CPATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH',
+                 'LIBRARY_PATH', 'PKG_CONFIG_PATH', 'LD_LIBRARY_PATH', 'LD_PRELOAD', 'GCC_EXEC_PREFIX', 'COMPILER_PATH'):
+        env.pop(name, None)
+    env['LC_ALL'] = 'C'
+    env['PYTHONDONTWRITEBYTECODE'] = '1'
+    if root: env['PATH'] = str(Path(root) / 'bin') + os.pathsep + '/usr/bin:/bin'
+    return env
+
+
+def smoke(root, work):
+    root, work = Path(root).resolve(strict=True), Path(work).absolute()
+    verify_sdk(root)
+    metadata = read_json(root / 'sdk.json')
+    if metadata['target']['system'] == 'Emscripten':
+        from sdk_wasm import smoke as browser_smoke
+        return browser_smoke(root, work)
+    if metadata['target']['system'] != 'Linux':
+        raise ValueError('SDK smoke requires a declared platform-specific executor')
+    if work.exists(): raise ValueError('SDK smoke work directory must be new')
+    work.mkdir(parents=True)
+    source = work / 'check.cpp'
+    source.write_text('#include <string>\n#include <vector>\nint main(){std::vector<std::string> v{"entry"}; return v.at(0)=="entry" ? 0 : 1;}\n')
+    compiler = root / metadata['target']['cxx_compiler']
+    executable = work / 'check'
+    command = [str(compiler), '-std=c++20', '--sysroot=' + str(root / metadata['target']['sysroot']),
+               '-static-libstdc++', '-static-libgcc', str(source), '-o', str(executable)]
+    subprocess.run(command, cwd=work, env=clean_environment(root), check=True)
+    report = audit(executable, metadata['target']['processor'])
+    subprocess.run([str(executable)], cwd=work, env=clean_environment(), check=True)
+    write_json(work / 'result.json', report)
+    return report
+
+
+def install(group, recipe, output, production=True):
+    group, output = Path(group), Path(output).absolute()
+    verify_group(group, recipe)
+    if output.exists() or output.is_symlink(): raise ValueError('SDK installation destination must be new')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=output.parent, prefix='.sdk-install-') as temporary:
+        staged = Path(temporary) / 'sdk'
+        extract(group / names(recipe)[0], staged)
+        verify_sdk(staged, release=production)
+        metadata = read_json(staged / 'sdk.json')
+        if metadata['recipe_id'] != recipe: raise ValueError('SDK binary recipe identity mismatch')
+        if metadata.get('relocation') not in ('relative-paths', 'buildroot'):
+            raise ValueError('unsupported SDK relocation procedure')
+        if metadata['relocation'] == 'buildroot':
+            # Relocation must run at the final root. Rollback only this newly
+            # created directory when the supplier script or verification fails.
+            staged.rename(output)
+            try:
+                subprocess.run([str(output / 'relocate-sdk.sh')], cwd=output, env=clean_environment(output), check=True)
+                metadata['installed_root'] = str(output.resolve())
+                metadata['archive_sha256'] = digest(group / names(recipe)[0])
+                metadata['files'] = file_inventory(output, exclude=('sdk.json',))
+                write_json(output / 'sdk.json', metadata)
+                verify_sdk(output, release=production)
+                if production:
+                    for tool in metadata.get('host_tools', {}).values():
+                        subprocess.run([str(output / tool), '--version'], cwd=output, env=clean_environment(output), check=True, stdout=subprocess.DEVNULL)
+                    smoke(output, Path(temporary) / 'compiler-check')
+                    verify_sdk(output, release=True)
+            except BaseException:
+                shutil.rmtree(output)
+                raise
+        else:
+            if production:
+                smoke(staged, Path(temporary) / 'compiler-check')
+                verify_sdk(staged, release=True)
+            staged.rename(output)
+    return metadata
+
+
+def restore_sources(group, recipe, output):
+    verify_group(group, recipe)
+    extract(Path(group) / names(recipe)[1], output)
+    source = read_json(Path(output) / 'sources.json')
+    if source['recipe_id'] != recipe: raise ValueError('source recipe mismatch')
+    verify_inventory(output, source['files'], exclude=('sources.json',))
+    return source
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest='action', required=True)
+    for action in ('install', 'restore-sources'):
+        command = commands.add_parser(action)
+        command.add_argument('--group', type=Path, required=True)
+        command.add_argument('--recipe', required=True)
+        command.add_argument('--output', type=Path, required=True)
+        if action == 'install': command.add_argument('--diagnostic', action='store_true', help='do not claim release compatibility')
+    check = commands.add_parser('verify')
+    check.add_argument('root', type=Path)
+    check.add_argument('--release', action='store_true')
+    probe = commands.add_parser('smoke')
+    probe.add_argument('root', type=Path)
+    probe.add_argument('--work', type=Path, required=True)
+    pack = commands.add_parser('export')
+    pack.add_argument('--tree', type=Path, required=True)
+    pack.add_argument('--sources', type=Path, required=True)
+    pack.add_argument('--output', type=Path, required=True)
+    pack.add_argument('--epoch', type=int, default=0)
+    args = parser.parse_args()
+    if args.action == 'install': result = install(args.group, args.recipe, args.output, not args.diagnostic)
+    elif args.action == 'restore-sources': result = restore_sources(args.group, args.recipe, args.output)
+    elif args.action == 'verify': result = {'sha256': verify_sdk(args.root, args.release)}
+    elif args.action == 'smoke': result = smoke(args.root, args.work)
+    else: result = export_group(args.tree, args.sources, args.output, args.epoch)
+    print(encoded(result).decode(), end='')
+
+
+if __name__ == '__main__':
+    try: main()
+    except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error: raise SystemExit(str(error))

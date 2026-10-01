@@ -14,7 +14,7 @@ as proposed, even if the source appears portable.
 
 | Target identity | Architecture aliases | Normal release form | Status in this example |
 | --- | --- | --- | --- |
-| Linux `x86_64` | `amd64`, `x64` | TGZ; optionally Debian `amd64` | Reference native build; release baseline must be chosen and qualified |
+| Linux `x86_64` | `amd64`, `x64` | TGZ; optionally Debian `amd64` | Bookworm baseline selected; full source SDK and oldest-runtime qualification remain required |
 | Linux `aarch64` | `arm64`, `ARM64` | TGZ; optionally Debian `arm64` | Intended CI/release target; qualification requires execution on that architecture |
 | Windows `x86_64` | `AMD64`, `x64` | ZIP; optionally a separately maintained installer | Intended native CI target; qualification requires Windows results |
 | macOS or another target | Platform-specific naming | Platform-specific package | Extension requiring an explicit support decision |
@@ -130,3 +130,61 @@ the host kernel; document kernel coverage separately when relevant.
 Repeat affected qualification after changing compiler, linker, SDK, runtime
 linkage, dependencies, CPU flags, install layout, or minimum supported platform.
 The [release procedure](releases.md) binds this evidence to the delivered files.
+
+## Enforced baseline and runtime closure
+
+The supplied Linux release baseline is Debian 12 Bookworm: glibc 2.36,
+GLIBCXX 3.4.30 and CXXABI 1.3.13 for externally required runtime interfaces.
+[`verify_abi.py`](../tools/verify_abi.py) reads ELF metadata without executing the
+files. It rejects a wrong processor, excessive or unsupported named ABI
+requirements, an unexpected loader, absolute/escaping runtime search paths,
+incomplete non-system library closure and declared x86 instruction requirements
+above the generic baseline. No ELF files is an error, not passing coverage.
+
+```sh
+python3 tools/verify_abi.py /owned/extracted-package --processor x86_64 --output /owned/abi.json
+python3 tools/stage_runtime.py --executable /owned/staging/bin/foundation-cli \
+  --root /owned/sdk/target/sysroot --output /owned/staging/lib/runtime --processor x86_64
+```
+
+The collector searches only explicit target roots, follows dependency edges
+recursively, rejects ambiguous providers with different bytes, and records each
+copied file. It never asks a host package database to supply missing target
+libraries. The narrow system allowlist covers the target libc/loader family;
+additional host services require a deliberate contract change and tests.
+Dynamically selected plugins still need an explicit inventory and host tests.
+
+Static C++ runtimes remove a common deployment dependency but do not remove the
+libc floor or shared-library ABI boundaries. Private libraries need appropriate
+relative loader paths, and each final archive is checked after extraction.
+Portable Linux executables use `$ORIGIN/../lib/runtime` with linker option
+`--disable-new-dtags`, producing inherited `DT_RPATH`. That inherited path also
+finds indirect private dependencies without rewriting supplier libraries. An
+alternative layout may use `DT_RUNPATH` on every dependent object, but an
+executable's `DT_RUNPATH` alone cannot cover its libraries' children; see the
+[loader search rules](https://man7.org/linux/man-pages/man8/ld.so.8.html).
+
+The final audit follows every private dependency from each executable using
+object-relative loader paths, checks indirect loads in their executable context,
+rejects ambiguous providers, and rejects a library found only in an unsearched
+directory. Libraries outside those closures need usable paths of their own.
+The collector's `staged-requirements` result checks copied bytes and ABI limits;
+it explicitly defers loader resolution until the complete package exists. Never
+substitute that intermediate report for the final `target` audit.
+`--host` auditing inspects SDK tools separately; target compatibility cannot
+establish that a compiler starts on the claimed builder.
+
+Windows archives also have an executable inspection path:
+
+```powershell
+python tools/verify_pe.py extracted-package --processor x86_64 --output pe-report.json
+```
+
+The helper parses PE headers and ordinary/delayed DLL imports without loading
+application code. It checks architecture, declared minimum OS and package DLL
+closure against a narrow OS allowlist. Static CRT policy rejects imports of
+shared compiler runtimes, including DLLs found in System32. The layout follows
+[Microsoft's PE format specification](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format).
+A header/import inspection cannot establish the availability of every called
+Windows API or dynamically selected plugin; clean-machine native execution is a
+separate required scope.

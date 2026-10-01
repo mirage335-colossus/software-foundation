@@ -135,6 +135,43 @@ void Application::enable_remove_feature() {
     publish();
 }
 
+void Application::qualify(const std::function<void()>& present) {
+    const auto require = [](bool condition, const char* message) {
+        if (!condition) throw std::runtime_error(message);
+    };
+    require(entries_.snapshot().empty(), "Qualification requires a fresh application");
+    const auto step = [&] {
+        present();
+        require(!adapter_.closed() && !presentation_pending_, "Qualification presentation failed");
+    };
+    const auto edit = [&](std::string text) {
+        handle(gui::WidgetEvent{{"entries.editor", 1},
+            gui::EditText{std::move(text), get("entries.editor").state.text}});
+        step();
+    };
+    const auto activate = [&](std::string id) {
+        handle(gui::WidgetEvent{{std::move(id), 1}, gui::Activate{}});
+        step();
+    };
+    step();
+    edit("Rejected \xc3\xa9"); activate("entries.add");
+    require(entries_.snapshot().empty() && get("entries.status").state.font.tone == gui::Tone::error,
+            "Qualification lost core validation");
+    edit("First entry"); activate("entries.add");
+    edit("Second entry"); activate("entries.add");
+    require(get("entries.list").state.records.size() == 2, "Qualification lost submitted entries");
+    enable_remove_feature(); step();
+    handle(gui::WidgetEvent{{"entries.list", 1},
+        gui::SelectRecord{get("entries.list").state.records.front().id}}); step();
+    activate("entries.remove");
+    const auto records = entries_.snapshot();
+    require(records.size() == 1 && records.front().text == "Second entry", "Qualification removed the wrong entry");
+    require(get("entries.editor").state.text.empty() && !get("entries.remove").state.enabled,
+            "Qualification left inconsistent controls");
+    handle(gui::ResizeEvent{{800, 640}, 1}); step();
+    require(get("entries.editor").state.bounds.width > 0, "Qualification lost shared layout");
+}
+
 std::optional<gui::ServiceRequest> Application::next_service() {
     return services_.begin_next();
 }

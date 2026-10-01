@@ -1,0 +1,197 @@
+from datetime import datetime, timedelta, timezone
+import importlib.util
+import io
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("apt_repo", Path(__file__).resolve().parents[1] / "tools/apt_repo.py")
+apt = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(apt)
+
+
+@unittest.skipUnless(shutil.which("dpkg-deb"), "Debian package tooling required")
+class AptTests(unittest.TestCase):
+    def archive(self, root, binaries=None, extra=None, binary_mode=0o755, terms=b"fixture terms\n"):
+        archive = root / "application.tar"
+        source, binary = root / "fixture.c", root / "fixture"
+        source.write_text("int main(void) { return 0; }\n")
+        subprocess.run(["cc", str(source), "-o", str(binary)], check=True)
+        entries = [("prefix/bin/" + name, binary.read_bytes(), binary_mode)
+                   for name in (binaries or ["foundation-cli"])]
+        entries += [("prefix/share/doc/Foundation/LICENSE", terms, 0o644)]
+        entries += [("prefix/" + name, data, mode) for name, (data, mode) in (extra or {}).items()]
+        with tarfile.open(archive, "w") as bundle:
+            for name, data, mode in entries:
+                item = tarfile.TarInfo(name)
+                item.size, item.mode = len(data), mode
+                bundle.addfile(item, io.BytesIO(data))
+        manifest = root / "archive.json"
+        apt.c.write_new(manifest, apt.artifact.describe(archive))
+        return archive, manifest
+
+    def fixture(self, root, terms=b"fixture terms\n"):
+        archive, manifest = self.archive(root, terms=terms)
+        receipt = apt.package(archive, manifest, "1.0.0", "amd64", "core", root / "packages")
+        return root / "packages" / (receipt["package"] + ".json")
+
+    def approved_fixture_terms(self):
+        original = apt.c.load
+        def load(path):
+            if Path(path).name == 'gui-boundary.lock.json':
+                return {'license': 'MIT', 'redistribution': {'approved': True, 'license_files': ['LICENSE']},
+                        'files': {'LICENSE': apt.byte_record(b'GUI fixture terms\n', 0o644)['sha256']}}
+            return original(path)
+        return patch.object(apt.c, 'load', side_effect=load)
+
+    def test_payload_preservation_no_hooks_and_no_overwrite(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            receipt = self.fixture(root)
+            data = apt.c.load(receipt)
+            package = receipt.parent / data["package"]
+            self.assertEqual(apt.verify_package(package, data)["Architecture"], "amd64")
+            self.assertEqual(set(apt.deb_contents(package, True)), {"control"})
+            self.assertIn("opt/software-foundation/core/bin/foundation-cli", data["payload"])
+            with self.assertRaisesRegex(ValueError, "destination must be new"):
+                apt.package(root / 'application.tar', root / 'archive.json', '1.0.0', 'amd64', 'core', receipt.parent)
+            package.write_bytes(package.read_bytes() + b"tamper")
+            with self.assertRaises(ValueError):
+                apt.verify_package(package, data)
+
+    def test_combined_archive_projects_backend_and_retains_shared_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binaries = ['foundation-cli', 'foundation-gui-terminal', 'foundation-gui-framebuffer', 'foundation-gui-web']
+            extra = {'share/doc/Foundation/gui-boundary/LICENSE': (b'GUI fixture terms\n', 0o644),
+                     'lib/runtime/shared-data.txt': (b'unchanged shared runtime data\n', 0o644),
+                     'share/software-foundation/web/renderer.mjs': (b'export const fixture = true;\n', 0o644)}
+            archive, manifest = self.archive(root, binaries, extra)
+            original = archive.read_bytes()
+            for backend, gui in (('core', None), ('terminal', 'foundation-gui-terminal'), ('hosted-web', 'foundation-gui-web')):
+                with self.subTest(backend=backend), self.approved_fixture_terms():
+                    output = root / backend
+                    receipt = apt.package(archive, manifest, '1.0.0', 'amd64', backend, output)
+                    package = output / receipt['package']
+                    fields = apt.verify_package(package, receipt)
+                    self.assertEqual(fields['Package'], 'software-foundation-' + backend)
+                    self.assertEqual(receipt['schema_version'], 2)
+                    extracted = root / ('installed-' + backend)
+                    apt.run('dpkg-deb', '--extract', package, extracted)
+                    private = extracted / 'opt/software-foundation' / backend
+                    selected = {'foundation-cli'} | ({gui} if gui else set())
+                    self.assertEqual({p.name for p in (private / 'bin').iterdir()}, selected)
+                    expected_launchers = {'foundation-cli' + ('-' + backend if backend != 'core' else '')} | ({gui} if gui else set())
+                    self.assertEqual({p.name for p in (extracted / 'usr/bin').iterdir()}, expected_launchers)
+                    for name in selected:
+                        self.assertEqual((private / 'bin' / name).read_bytes(), (root / 'fixture').read_bytes())
+                        subprocess.run([str(private / 'bin' / name)], check=True)
+                    for name, (data, _) in extra.items():
+                        self.assertEqual((private / name).read_bytes(), data)
+                    self.assertEqual(apt.c.load(private / apt.SELECTION_PATH), receipt['selection'])
+                    self.assertEqual(set(receipt['selection']['excluded_executables']),
+                                     {'bin/' + name for name in set(binaries) - selected})
+                    self.assertEqual(archive.read_bytes(), original)
+
+    def test_core_projection_cannot_bypass_combined_gui_terms(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive, manifest = self.archive(root, ['foundation-cli', 'foundation-gui-terminal'])
+            with self.assertRaisesRegex(ValueError, 'redistribution'):
+                apt.package(archive, manifest, '1.0.0', 'amd64', 'core', root / 'rejected')
+            self.assertFalse((root / 'rejected').exists())
+
+    def test_unknown_missing_nonexecutable_and_colliding_inputs_fail_without_output(self):
+        cases = [('unknown', ['foundation-cli', 'foundation-other'], {}, 0o755, 'core'),
+                 ('nested', ['foundation-cli', 'nested/foundation-gui-web'], {}, 0o755, 'core'),
+                 ('missing', ['foundation-cli'], {}, 0o755, 'terminal'),
+                 ('mode', ['foundation-cli'], {}, 0o644, 'core'),
+                 ('collision', ['foundation-cli'], {apt.SELECTION_PATH: (b'old receipt\n', 0o644)}, 0o755, 'core'),
+                 ('alias', ['foundation-cli'], {'share/doc/foundation/other.txt': (b'alias\n', 0o644)}, 0o755, 'core')]
+        for label, binaries, extra, mode, backend in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                archive, manifest = self.archive(root, binaries, extra, mode)
+                with self.assertRaises(ValueError):
+                    apt.package(archive, manifest, '1.0.0', 'amd64', backend, root / 'rejected')
+                self.assertFalse((root / 'rejected').exists())
+
+    def test_selection_receipt_cannot_relabel_or_omit_source_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            receipt_path = self.fixture(root)
+            receipt = apt.c.load(receipt_path)
+            package = receipt_path.parent / receipt['package']
+            for field in ('backend', 'archive_sha256', 'source_file_inventory_sha256'):
+                changed = json.loads(json.dumps(receipt))
+                changed['selection'][field] = 'terminal' if field == 'backend' else '0' * 64
+                with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'selection'):
+                    apt.verify_package(package, changed)
+            receipt['archive_manifest']['files'].pop('prefix/share/doc/Foundation/LICENSE')
+            with self.assertRaisesRegex(ValueError, 'original archive projection'):
+                apt.verify_package(package, receipt)
+
+    @unittest.skipUnless(shutil.which("gpg") and shutil.which("gpgv"), "repository signing tools required")
+    def test_signed_repository_update_idempotence_rollback_expiry_and_tamper(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            receipt = self.fixture(root)
+            home = root / "keyhome"
+            home.mkdir(mode=0o700)
+            apt.run("gpg", "--batch", "--homedir", home, "--pinentry-mode", "loopback", "--passphrase", "",
+                    "--quick-generate-key", "Fixture <fixture@example.invalid>", "default", "sign", "1d")
+            public = root / "public.gpg"
+            public.write_bytes(apt.run("gpg", "--batch", "--homedir", home, "--export"))
+            trusted = apt.fingerprint(public)
+            private = root / "private.asc"
+            private.write_bytes(apt.run("gpg", "--batch", "--homedir", home, "--armor", "--export-secret-keys", trusted))
+            url = "https://example.invalid/releases/download/v1/"
+            apt.repository([receipt], root / "one", url, private, trusted, 1)
+            first = apt.verify_repository(root / "one", trusted)
+            self.assertEqual(apt.verify_repository(root / "one", trusted, first), first)
+            apt.repository([receipt], root / "two", url, private, trusted, 2)
+            second = apt.verify_repository(root / "two", trusted, first)
+            self.assertEqual(second['package_sha256'], first['package_sha256'])
+            missing_identity = dict(first)
+            missing_identity.pop('package_sha256')
+            with self.assertRaisesRegex(ValueError, 'missing previous payload identity'):
+                apt.verify_repository(root / 'two', trusted, missing_identity)
+            changed = root / 'changed'
+            changed.mkdir()
+            replacement = self.fixture(changed, terms=b'changed retained terms\n')
+            apt.repository([replacement], root / 'replacement', url, private, trusted, 3)
+            with self.assertRaisesRegex(ValueError, 'same-version package replacement'):
+                apt.verify_repository(root / 'replacement', trusted, second)
+            upgraded = apt.package(changed / 'application.tar', changed / 'archive.json', '1.0.1', 'amd64',
+                                   'core', changed / 'upgrade')
+            apt.repository([changed / 'upgrade' / (upgraded['package'] + '.json')],
+                           root / 'upgrade', url, private, trusted, 3)
+            accepted = apt.verify_repository(root / 'upgrade', trusted, second)
+            self.assertEqual(accepted['versions']['software-foundation-core:amd64'], '1.0.1')
+            incompatible = dict(first, versions={"software-foundation-core:amd64": "2.0.0"})
+            with self.assertRaisesRegex(ValueError, "version rollback"):
+                apt.verify_repository(root / "two", trusted, incompatible)
+            with self.assertRaisesRegex(ValueError, "rollback"):
+                apt.verify_repository(root / "one", trusted, second)
+            with self.assertRaisesRegex(ValueError, "expired"):
+                apt.verify_repository(root / "two", trusted, now=datetime.now(timezone.utc) + timedelta(days=31))
+            (root / "two/Packages").write_text("changed")
+            with self.assertRaises(ValueError):
+                apt.verify_repository(root / "two", trusted)
+            apt.run("gpgconf", "--homedir", home, "--kill", "all")
+
+    def test_metadata_injection_and_incomplete_trust_rejected(self):
+        for value in ("short", "a" * 41, "A\n" * 20):
+            with self.assertRaises(ValueError):
+                apt.full_fingerprint(value)
+        with self.assertRaises(ValueError):
+            apt.control_fields("Package: one\nPackage: two\n")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,22 +1,31 @@
-Software Foundation — release order
+Software Foundation — release and recovery order
 
-1. Choose an immutable source revision, version and complete asset matrix.
-2. Confirm dependency terms, pinned sources, notices, SDK recipe and target policy.
-3. Complete applicable regression, backend, platform and ABI checks for that source.
-4. Build each configuration once; package the resulting binaries. Never move a
-   configured build tree between hosts. Preserve source and dependency inputs.
-5. Inventory each final archive and verify that exact archive after relocation:
+1. Freeze source, version, target/backend inventory and qualification policy.
+2. Verify supplier terms, pinned inputs and notices. Resolve GUI terms before
+   distributing optional GUI code. Select exact immutable prepared recipes.
+3. Fetch verified compiled SDK/dependency groups from the durable base. Missing
+   groups fail with explicit maintenance instructions; never cold-build implicitly.
+4. Build each configuration once. Stage only allowed target runtime dependencies;
+   inspect every binary for architecture, generic CPU floor and runtime ceiling.
+5. Inventory and relocate each actual final archive:
    python3 tools/artifact.py create ARCHIVE --manifest MANIFEST.json
    python3 tools/artifact.py verify ARCHIVE --manifest MANIFEST.json
-6. Populate docs/templates/release-manifest.json and attach actual evidence,
-   source identity, runtime floor, notices, checksums and remaining omissions.
-7. Stage immutable release assets. Verify downloads and inventories before making
-   the release generally available. Never replace published bytes under one name.
-8. Publish package-repository metadata only after packages exist and verify fully.
-   GitHub download assets alone do not constitute an APT repository.
-9. Certify the exact published artifacts, retain reports, and promote only when
-   all required gates pass. A diagnostic or incomplete run cannot qualify them.
+6. Assemble a complete local release, copying the exact SDK compiled/source/checksum
+   groups into it. External links are not substitutes:
+   python3 tools/release.py assemble --spec SPEC.json --base BASE --output NEW_RELEASE
+   python3 tools/release.py verify NEW_RELEASE
+7. Wrap verified archives in native repository packages without rebuilding them.
+   Verify signed metadata and exact payloads; retain source/packager identities.
+8. Run the frozen certification policy against these exact bytes and retain all
+   source, archive, recovery, backend and platform results with actual attempts.
+9. Test recovery with the original base unavailable:
+   python3 tools/release.py recover NEW_RELEASE --output NEW_RECOVERY
+10. When separately authorized, publish immutable assets, reverify downloads,
+    certify the delivered bytes and only then promote an eligible ordinary release.
+    Experiments and incomplete qualification cannot become a stable release.
 
-This repository supplies native archive examples and a release specification.
-It does not include credentials, remote publishing, a compiled cross SDK, or a
-qualified older-runtime release. See docs/releases.md and docs/validation.md.
+Every publication and report is append-only. Preserve earlier failures and releases.
+No remote is configured for this repository. SDK/source producers, local assembly,
+Debian repository creation, coverage and certification tools are included. Actual
+execution and remaining environment qualification are documented in docs/validation.md.
+See docs/releases.md, docs/sdk.md, docs/certification.md and docs/distribution.md.

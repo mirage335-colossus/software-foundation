@@ -24,6 +24,7 @@ With a matching C++20 toolchain, configure your consumer with
 find_package(Foundation 0.1 CONFIG REQUIRED)
 add_executable(example main.cpp)
 target_link_libraries(example PRIVATE foundation::core)
+foundation_apply_runtime(example)
 ```
 
 Include `<foundation/store.hpp>` and `<foundation/version.hpp>`. The collection
@@ -33,7 +34,20 @@ stable for the lifetime of each collection. The static C++ library requires a
 compatible compiler, standard library and runtime configuration. This package
 is not a standalone compiler/sysroot SDK.
 
+Call `foundation_apply_runtime` for each final consumer target. It applies the
+package's recorded Microsoft runtime choice, portable GNU/Clang runtime linkage,
+or browser exception settings. Linking a static archive alone does not configure
+the consumer's runtime. Keep the matching prepared SDK for SDK-produced packages;
+this helper does not turn a different compiler or target into a compatible one.
+
 The accompanying `LICENSE` applies to this package's own code.
 `third_party/dependencies.json` records dependency status. Optional GUI adapters
 are not included. The matching source repository provides the full development
 specification, tests and reproducible build instructions.
+
+A complete release also retains the exact prepared dependency groups that produced
+its binaries. They are development/recovery assets, not application installation
+requirements. Use the matching source tree's `tools/release.py verify` and
+`recover` commands to check and restore those inputs without consulting a base
+store. The release's compatibility evidence applies to exact archived bytes;
+changing a private library or mixing files from different releases invalidates it.

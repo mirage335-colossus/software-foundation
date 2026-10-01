@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Cooperative local-filesystem coordination; Python standard library only.
+"""Compatibility support for existing JSON coordination boards.
 
-Read docs/agent-coordination.md before use. JSON requests arrive on stdin.
-This is not a sandbox, a distributed lock, or a process supervisor.
+New projects use agent_session.py and the complete record protocol. This interface
+exists so a running JSON board can close safely before explicit agent_migrate.py.
+It is not a sandbox, a distributed lock, or a process supervisor.
 """
 import argparse
 from contextlib import contextmanager
@@ -340,10 +341,10 @@ class Board:
             if not isinstance(release["scopes"], list) or not 1 <= len(release["scopes"]) <= 128:
                 raise Rejected("missing complete release scope inventory", "corrupt")
             released_scopes = set()
-            # Historical scopes preserve identity even when a later change removes a path.
+            # Prior scopes preserve identity even when a later change removes a path.
             for scope in release["scopes"]:
                 if not isinstance(scope, dict) or set(scope) != {"kind", "value"} or scope["kind"] not in {"file", "directory", "resource"}:
-                    raise Rejected("incomplete historical scope inventory", "corrupt")
+                    raise Rejected("incomplete prior scope inventory", "corrupt")
                 text_field(scope["value"], "released scope")
                 key = scope["kind"], scope["value"]
                 if key in released_scopes:
@@ -355,7 +356,7 @@ class Board:
                     path = Path(scope["value"])
                     portable_components(path)
                     if not path.is_absolute() or str(Path(os.path.abspath(path))) != scope["value"] or ".." in path.parts:
-                        raise Rejected("historical path must retain its canonical absolute spelling", "corrupt")
+                        raise Rejected("prior path must retain its canonical absolute spelling", "corrupt")
             if release["accepted"] is not None:
                 if release["to"] is None or timestamp(release["accepted"]) < released_at:
                     raise Rejected("invalid acceptance time or recipient", "corrupt")
@@ -392,6 +393,8 @@ class Board:
     def read(self):
         if not self.path.is_dir():
             raise Rejected("board is absent; use init only after agreeing its location")
+        if (self.path / "protocol.json").exists():
+            raise Rejected("board migrated to the record protocol; use agent_session.py", "migrated")
         allowed = {"state.json", "registry.lock", "notes", "artifacts"}
         unknown = [p.name for p in self.path.iterdir() if p.name not in allowed]
         if unknown:
@@ -482,6 +485,8 @@ class Board:
             offset, limit = request.get("offset", 0), request.get("limit", 20)
             if type(offset) is not int or type(limit) is not int or offset < 0 or not 1 <= limit <= 50:
                 raise Rejected("offset must be nonnegative and limit 1–50")
+            if offset and "revision" not in request:
+                raise Rejected("later pages require the first page revision", "stale")
             if operation == "inbox":
                 identifier(request["id"])
                 entries = [m for m in state["messages"] if m["to"] == request["id"]]

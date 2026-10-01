@@ -1,0 +1,499 @@
+{
+  "schema_version": 1,
+  "meaning": "Maintained requirements and coverage references; execution evidence is recorded separately.",
+  "practices": [
+    {
+      "id": "ARCH-1",
+      "requirement": "One owner for behavior and public contracts.",
+      "documents": [
+        "docs/architecture.md",
+        "docs/engineering-contract.md"
+      ],
+      "implementation": [
+        "include/foundation/store.hpp",
+        "src/store.cpp"
+      ],
+      "checks": [
+        "tests/store_test.cpp"
+      ]
+    },
+    {
+      "id": "ARCH-2",
+      "requirement": "Trace caller ownership, failure atomicity and externally visible output.",
+      "documents": [
+        "docs/engineering-contract.md"
+      ],
+      "implementation": [
+        "src/main.cpp"
+      ],
+      "checks": [
+        "tests/check_cli.py",
+        "tests/store_test.cpp"
+      ]
+    },
+    {
+      "id": "BUILD-1",
+      "requirement": "One graph; build prerequisites before selected tests; isolate incompatible configurations.",
+      "documents": [
+        "docs/building.md"
+      ],
+      "implementation": [
+        "CMakeLists.txt",
+        "tools/build.py"
+      ],
+      "checks": [
+        "tests/test_build.py"
+      ]
+    },
+    {
+      "id": "BUILD-2",
+      "requirement": "Bookworm bootstrap, separate host/target requirements, generic CPU floor.",
+      "documents": [
+        "docs/portability.md",
+        "docs/sdk.md"
+      ],
+      "implementation": [
+        "tools/distro_sdk.py",
+        "tools/verify_abi.py",
+        "CMakeLists.txt"
+      ],
+      "checks": [
+        "tests/test_portability.py",
+        "tests/test_sdk.py"
+      ]
+    },
+    {
+      "id": "DEP-1",
+      "requirement": "Pin suppliers, terms, patches, complete sources and upgrade checks.",
+      "documents": [
+        "docs/dependencies.md",
+        "third_party/README.md"
+      ],
+      "implementation": [
+        "third_party/dependencies.json",
+        "tools/dependency_archive.py"
+      ],
+      "checks": [
+        "tests/test_dependencies.py"
+      ]
+    },
+    {
+      "id": "DEP-2",
+      "requirement": "Ordinary builds consume immutable prepared groups without cold rebuilds.",
+      "documents": [
+        "docs/sdk.md"
+      ],
+      "implementation": [
+        "tools/dependency_store.py",
+        "tools/sdk.py"
+      ],
+      "checks": [
+        "tests/test_dependencies.py",
+        "tests/test_sdk.py"
+      ]
+    },
+    {
+      "id": "SDK-1",
+      "requirement": "Separate source production, archive export, install/relocation and runtime audit.",
+      "documents": [
+        "docs/sdk.md"
+      ],
+      "implementation": [
+        "tools/distro_sdk.py",
+        "tools/sdk.py",
+        "tools/sdk_manifest.py"
+      ],
+      "checks": [
+        "tests/test_sdk.py",
+        "tests/test_portability.py"
+      ]
+    },
+    {
+      "id": "SDK-2",
+      "requirement": "Windows compiler remains host-supplied; retained dependencies bind producer toolset/runtime.",
+      "documents": [
+        "docs/sdk.md",
+        "docs/portability.md"
+      ],
+      "implementation": [
+        "tools/sdk_windows.py",
+        "tools/select-windows-toolchain.ps1"
+      ],
+      "checks": [
+        "tests/test_sdk.py"
+      ]
+    },
+    {
+      "id": "SDK-3",
+      "requirement": "Browser toolchain is retained with warmed generic cache and explicit source availability.",
+      "documents": [
+        "docs/sdk.md"
+      ],
+      "implementation": [
+        "tools/sdk_wasm.py"
+      ],
+      "checks": [
+        "tests/test_sdk.py"
+      ]
+    },
+    {
+      "id": "PORT-1",
+      "requirement": "Audit every native executable and private library; reject host leakage and excessive runtime requirements.",
+      "documents": [
+        "docs/portability.md"
+      ],
+      "implementation": [
+        "tools/verify_abi.py",
+        "tools/stage_runtime.py",
+        "tools/verify_pe.py"
+      ],
+      "checks": [
+        "tests/test_portability.py"
+      ]
+    },
+    {
+      "id": "PORT-2",
+      "requirement": "Verify actual archives after relocation and install a matching-toolchain external consumer.",
+      "documents": [
+        "docs/installed.md"
+      ],
+      "implementation": [
+        "tools/artifact.py",
+        "tests/check_install.py"
+      ],
+      "checks": [
+        "tests/test_artifact.py",
+        "examples/consumer/main.cpp"
+      ]
+    },
+    {
+      "id": "GUI-1",
+      "requirement": "Feature logic and layout belong to one insulated application across all seven hosts.",
+      "documents": [
+        "docs/gui-boundary.md",
+        "docs/gui-audit.md"
+      ],
+      "implementation": [
+        "gui/shared/application.cpp",
+        "gui/CMakeLists.txt"
+      ],
+      "checks": [
+        "gui/tests/application_test.cpp",
+        "gui/tests/parity_test.cpp"
+      ]
+    },
+    {
+      "id": "GUI-2",
+      "requirement": "Native and browser hosts preserve event identity, services, resize, editing and lifecycle.",
+      "documents": [
+        "docs/gui-boundary.md"
+      ],
+      "implementation": [
+        "gui/hosts"
+      ],
+      "checks": [
+        "gui/tests",
+        "tests/test_gui_boundary.py"
+      ]
+    },
+    {
+      "id": "GUI-3",
+      "requirement": "Pin adapter sources and exact patches; block redistribution without verified terms.",
+      "documents": [
+        "docs/gui-audit.md"
+      ],
+      "implementation": [
+        "third_party/gui-boundary.lock.json",
+        "gui/patches",
+        "cmake/PackagePolicy.cmake.in"
+      ],
+      "checks": [
+        "tests/test_gui_boundary.py",
+        "tests/test_build.py"
+      ]
+    },
+    {
+      "id": "TEST-1",
+      "requirement": "Focused diagnosis advances to complete applicable regression and certification.",
+      "documents": [
+        "docs/testing.md",
+        "AGENTS.md"
+      ],
+      "implementation": [
+        "tools/build.py",
+        "tools/ci_plan.py"
+      ],
+      "checks": [
+        "tests/test_build.py",
+        "tests/test_ci_plan.py"
+      ]
+    },
+    {
+      "id": "TEST-2",
+      "requirement": "Freeze inventory, divide without overlap, reject missing/duplicate/stale/skipped results.",
+      "documents": [
+        "docs/testing.md"
+      ],
+      "implementation": [
+        "tools/test_plan.py",
+        "tools/coverage.py"
+      ],
+      "checks": [
+        "tests/test_test_plan.py",
+        "tests/test_coverage.py"
+      ]
+    },
+    {
+      "id": "TEST-3",
+      "requirement": "Bound process/output lifetime, retain attempts and warn only after complete correctness.",
+      "documents": [
+        "docs/testing.md",
+        "docs/certification.md"
+      ],
+      "implementation": [
+        "tools/coverage.py",
+        "tools/process_tree.py",
+        "tools/run_tests.py"
+      ],
+      "checks": [
+        "tests/test_coverage.py",
+        "tests/test_process_tree.py",
+        "tests/test_run_tests.py"
+      ]
+    },
+    {
+      "id": "CI-1",
+      "requirement": "Explicit runner routing, bounded jobs, lightweight feedback, independent packages/source checks.",
+      "documents": [
+        "docs/ci.md"
+      ],
+      "implementation": [
+        "tools/ci_plan.py",
+        ".github/workflows/candidate.yml"
+      ],
+      "checks": [
+        "tests/test_ci_plan.py"
+      ]
+    },
+    {
+      "id": "REL-1",
+      "requirement": "Exact SDK binary/source/checksum copies accompany every binary release.",
+      "documents": [
+        "docs/releases.md",
+        "docs/sdk.md"
+      ],
+      "implementation": [
+        "tools/release.py",
+        "tools/dependency_store.py"
+      ],
+      "checks": [
+        "tests/test_release.py",
+        "tests/test_dependencies.py"
+      ]
+    },
+    {
+      "id": "REL-2",
+      "requirement": "Offline recovery works from surviving binary release when base disappears.",
+      "documents": [
+        "docs/releases.md"
+      ],
+      "implementation": [
+        "tools/release.py",
+        "tools/sdk.py"
+      ],
+      "checks": [
+        "tests/test_release.py",
+        "tests/test_sdk.py"
+      ]
+    },
+    {
+      "id": "REL-3",
+      "requirement": "Certify exact source/inventory/policy with full target/backend coverage; experiments never promote.",
+      "documents": [
+        "docs/certification.md"
+      ],
+      "implementation": [
+        "tools/certify_release.py",
+        "docs/release-policy.json",
+        "tools/release_check.py"
+      ],
+      "checks": [
+        "tests/test_certification.py",
+        "tests/test_release_check.py"
+      ]
+    },
+    {
+      "id": "DIST-1",
+      "requirement": "Wrap verified archives; verify private payloads, no hidden hooks, immutable URLs and signed indexes.",
+      "documents": [
+        "docs/distribution.md"
+      ],
+      "implementation": [
+        "tools/apt_repo.py"
+      ],
+      "checks": [
+        "tests/test_apt_repo.py"
+      ]
+    },
+    {
+      "id": "DIST-2",
+      "requirement": "Reject metadata tampering, expired/future versions, rollback and same-sequence replacement.",
+      "documents": [
+        "docs/distribution.md"
+      ],
+      "implementation": [
+        "tools/apt_repo.py"
+      ],
+      "checks": [
+        "tests/test_apt_repo.py"
+      ]
+    },
+    {
+      "id": "AGENT-1",
+      "requirement": "Complete checked ownership before any shared write; brief mutex distinct from durable claims.",
+      "documents": [
+        "docs/agent-coordination.md",
+        "AGENTS.md"
+      ],
+      "implementation": [
+        "tools/agent_session.py",
+        "tools/agent_publish.py"
+      ],
+      "checks": [
+        "tests/test_agent_session.py",
+        "tests/test_agent_publish.py"
+      ]
+    },
+    {
+      "id": "AGENT-2",
+      "requirement": "Review relevant ownership, release acknowledgment, exact input identity and filesystem version.",
+      "documents": [
+        "docs/agent-recipes.md"
+      ],
+      "implementation": [
+        "tools/agent_session.py"
+      ],
+      "checks": [
+        "tests/test_agent_session.py",
+        "tests/test_agent_stress.py"
+      ]
+    },
+    {
+      "id": "AGENT-3",
+      "requirement": "Guarded source save rechecks current ownership and exact file identity under mutex.",
+      "documents": [
+        "docs/agent-recipes.md"
+      ],
+      "implementation": [
+        "tools/agent_edit.py"
+      ],
+      "checks": [
+        "tests/test_agent_edit.py",
+        "tests/test_agent_stress.py"
+      ]
+    },
+    {
+      "id": "AGENT-4",
+      "requirement": "Reject malformed/unknown state, changed ancestors, unsafe aliases and unstable paged observations.",
+      "documents": [
+        "docs/agent-coordination.md"
+      ],
+      "implementation": [
+        "tools/check_agent_record.py",
+        "tools/agent_publish.py"
+      ],
+      "checks": [
+        "tests/test_agent_record.py",
+        "tests/test_agent_publish.py"
+      ]
+    },
+    {
+      "id": "AGENT-5",
+      "requirement": "Register work before launch; stop all writers before release; uncertain outcomes require reconciliation.",
+      "documents": [
+        "docs/agent-lifecycle.md",
+        "docs/agent-recipes.md"
+      ],
+      "implementation": [
+        "tools/agent_session.py"
+      ],
+      "checks": [
+        "tests/test_agent_session.py",
+        "tests/test_agent_stress.py"
+      ]
+    },
+    {
+      "id": "AGENT-6",
+      "requirement": "Keep attributable temporary knowledge ignored; explicit recovery and bounded closed-record retention.",
+      "documents": [
+        "docs/agent-lifecycle.md",
+        "docs/templates/temporary-note.md"
+      ],
+      "implementation": [
+        "tools/check_agent_record.py",
+        "tools/agent_migrate.py"
+      ],
+      "checks": [
+        "tests/test_agent_record.py",
+        "tests/test_agent_migrate.py"
+      ]
+    },
+    {
+      "id": "DOC-1",
+      "requirement": "Maintain runnable procedures and separate requirements from actual qualification.",
+      "documents": [
+        "docs/documentation.md",
+        "docs/validation.md"
+      ],
+      "implementation": [
+        "tools/check_docs.py",
+        "docs/practice-map.json"
+      ],
+      "checks": [
+        "tools/check_docs.py"
+      ]
+    },
+    {
+      "id": "REL-4",
+      "requirement": "Immutable durable base and candidate delivery; append exact certification and promote only reverified bytes.",
+      "documents": [
+        "docs/github-delivery.md"
+      ],
+      "implementation": [
+        "tools/github_release.py"
+      ],
+      "checks": [
+        "tests/test_github_release.py"
+      ]
+    },
+    {
+      "id": "DIST-3",
+      "requirement": "Arch and Gentoo verified archive wrappers, signed indexes and atomic anti-rollback channel updates.",
+      "documents": [
+        "docs/distro-channels.md"
+      ],
+      "implementation": [
+        "tools/distro_channel.py"
+      ],
+      "checks": [
+        "tests/test_distro_channel.py"
+      ]
+    },
+    {
+      "id": "SOURCE-1",
+      "requirement": "Complete generic source snapshot binds packaged build metadata and survives loss of the original checkout.",
+      "documents": [
+        "docs/releases.md",
+        "docs/dependencies.md"
+      ],
+      "implementation": [
+        "tools/source_identity.py",
+        "tools/release.py"
+      ],
+      "checks": [
+        "tests/test_source_identity.py",
+        "tests/test_release.py"
+      ]
+    }
+  ]
+}

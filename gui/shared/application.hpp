@@ -3,6 +3,7 @@
 #include <gui/contract.hpp>
 #include <gui/runtime.hpp>
 #include <foundation/store.hpp>
+#include <functional>
 
 namespace foundation::ui {
 
@@ -19,6 +20,9 @@ public:
 
     // Demonstrates an ordinary feature extension without modifying a renderer.
     void enable_remove_feature();
+    // Installed qualification keeps every feature identity on the shared side.
+    // The host supplies only a bounded presentation/event-loop step.
+    void qualify(const std::function<void()>& present);
 
 private:
     gui::Adapter& adapter_;

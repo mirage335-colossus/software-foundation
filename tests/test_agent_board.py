@@ -338,7 +338,7 @@ class CoordinationTests(unittest.TestCase):
         with self.assertRaisesRegex(Rejected, "pending handoff"):
             self.call("close", "beta", state="done", writers_stopped=True, result="Complete.", disposition="No changes.")
 
-    def test_invalid_pending_transfer_and_historical_scopes_fail_closed(self):
+    def test_invalid_pending_transfer_and_prior_scopes_fail_closed(self):
         self.claim()
         self.call("handoff", scopes=[self.scope("src/example.cpp")], to="beta", writers_stopped=True, disposition="Ready.")
         original = self.board.state_path.read_bytes()
@@ -504,7 +504,7 @@ transact('release', scopes=[scope], writers_stopped=True, disposition='Contribut
         def output(*args, **kwargs):
             if not observed:
                 observed.append("failed stdout")
-                raise BrokenPipeError("receipt receiver disappeared")
+                raise BrokenPipeError("receipt recipient disappeared")
             observed.append(args[0])
         with mock.patch.object(MODULE.sys, "stdin", fake_input), mock.patch("builtins.print", output):
             result = MODULE.main(["claim", "--root", str(self.root)])
@@ -514,8 +514,12 @@ transact('release', scopes=[scope], writers_stopped=True, disposition='Contribut
 
     def test_registration_template_is_usable_after_real_values_are_substituted(self):
         template = json.loads((TOOL.parents[1] / "docs/templates/session.json").read_text())
-        template.update(id="from-template", revision=self.revision(), next_check=MODULE.now())
-        receipt = self.board.apply("register", template)
+        # The primary template is now a complete record-protocol input; existing
+        # JSON callers retain their explicit original registration contract.
+        request = dict(id="from-template", revision=self.revision(), next_check=MODULE.now(),
+                       task=template['identity']['Task and approach'], approach="Inspect and verify.",
+                       baseline=template['baseline'], next_action="Review scope.")
+        receipt = self.board.apply("register", request)
         self.assertEqual(receipt["id"], "from-template")
 
 

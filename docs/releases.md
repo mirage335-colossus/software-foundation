@@ -5,10 +5,10 @@ and evidence. Build and verify that set before making it the default download.
 Preserve the exact released bytes; a later branch fix does not repair an older
 download.
 
-The example supports local packaging and candidate workflow artifacts. It does
-not create a public GitHub release, operate a Debian repository, or establish
-multi-platform support merely by containing a workflow. The procedures below
-are requirements for adopting those delivery mechanisms.
+The repository implements local packaging, immutable SDK groups, complete local
+release assembly/recovery, exact-evidence certification and Debian repository
+metadata generation. These operations do not publish remotely. Having an
+implementation or workflow does not establish multi-platform qualification.
 
 Local packaging uses `./build.sh package release --jobs 2` and writes to
 `build/release/packages/`. The default is TGZ on Unix-like systems and ZIP on
@@ -25,13 +25,14 @@ records the local producer's archive digest and member inventory; it does not
 authenticate a downloaded archive. `verify` checks that identity, rejects unsafe
 members, relocates the package into a path containing spaces, runs the CLI, and
 builds an independent installed-library consumer. The current helper intentionally
-accepts only ordinary files/directories and bounded archive sizes. It does not
-yet perform a complete older-runtime ABI audit, native GUI qualification, or
-Debian installation testing. Those remain release adoption requirements below.
+accepts only ordinary files/directories and bounded archive sizes. Separate
+`verify_abi.py`, native GUI execution and Debian installation scopes must also
+pass for a release that claims them. A package smoke result is not a substitute
+for those independent checks.
 
 Optional GUI source integration currently has unresolved upstream package
-licensing. GUI executables are for local evaluation, have no install rules, and
-cannot be included by the example's package command. Resolve the documented
+licensing. GUI executables are available for local evaluation. Installation/package guards
+reject GUI distribution until the license requirement is resolved. Resolve the documented
 license prerequisite before implementing a complete GUI release matrix.
 
 ## Target and asset inventory
@@ -199,3 +200,96 @@ completeness, gathers applicable evidence, and records publication results.
 Release automation needs explicit repository permissions and credentials; a
 generic template must not contain real keys, tokens, or account-specific runner
 names. See [CI](ci.md) and [agent coordination](agent-coordination.md).
+
+## Executable local assembly and recovery
+
+[`tools/release.py`](../tools/release.py) is the release assembler. It takes a
+frozen JSON specification with `schema_version: 1`, a source archive path and
+SHA-256, a nonempty artifact list, and required scope names. Each artifact names
+its path, expected SHA-256, manifest path, target, backends and exact `sdk_recipe`.
+Use [the specification template](templates/release-manifest.json); replace every
+placeholder with observed values. This specification is input to assembly;
+`release.json` is the resulting checked inventory.
+
+Scope names are the exact identifiers in the [checked policy](release-policy.json):
+`source` rebuilds retained source and checks its installed consumer, `archive`
+exercises the delivered application archive, `recovery` restores exclusively
+from release-owned dependency groups, and `abi` inspects target compatibility.
+The Linux package policy additionally requires `apt`. Copy the applicable policy
+inventory into the frozen plan; these names do not replace the required target,
+backend and environment rows. A candidate's scope list cannot weaken that policy.
+
+```sh
+python3 tools/release.py assemble --spec candidate-spec.json --base /owned/base --output /owned/candidate
+python3 tools/release.py verify /owned/candidate
+python3 tools/release.py recover /owned/candidate --output /owned/recovered
+```
+
+Assembly requires one packaged `build-info.txt` whose `sdk_recipe_id` matches the
+frozen specification. It verifies every package member, checks frozen source and
+archive identities, copies the full exact dependency groups and validates the
+complete assembled tree before atomically exposing the new directory. A missing
+source archive, missing/partial base recipe, changed input, wrong packaged SDK
+identity, duplicate asset or incomplete inventory fails. Existing destinations
+are preserved.
+
+Every binary release MUST contain its exact SDK binary, source and checksum
+groups under `dependencies/<recipe>/`. A base URL, independently retained group,
+cache or workflow artifact cannot replace these release-owned copies. Recovery
+uses only the release tree and never consults the base, package manager or
+upstream server. Restore a dependency group's sources or install its binary with
+[`sdk.py`](../tools/sdk.py); use the retained producer for source replay.
+
+The `release.json` output binds source bytes, application archive/member
+inventories, complete dependency-group hashes, target/backend identity and
+required scopes. Assembly marks it `candidate`. [Certification](certification.md)
+binds complete evidence to its exact digest; it does not infer success from
+queued workflows, missing reports or a later source checkout. Keep generated
+certificates outside the immutable candidate tree unless a new manifest
+explicitly includes them.
+
+For hosting, publish the assembled bytes and their authenticated inventory using
+an authorized release job. A local success is not remote publication. GitHub
+release download assets and a usable APT repository are distinct delivery forms;
+see [Debian distribution](distribution.md) for generated Packages/Release
+metadata, signing and repository-install qualification.
+
+## Qualification evidence and adoption limits
+
+A production claim requires the exact candidate to pass each policy scope on its
+stated target: portable ABI/runtime closure, clean relocated package, installed
+library consumer, every shipped GUI backend, browser execution where applicable,
+Debian installation where supplied, retained-input offline recovery and selected
+regression checks. Record unavailable scopes as unavailable; never convert them
+into a green status. Optional omissions remain visible in the report.
+
+The native source producer is implemented but its full cold build and oldest-host
+matrix need execution evidence for the selected recipe. Windows fixture coverage
+checks archive/provenance/linker policy; it is not a Windows compiler run. Browser
+Node smoke is separate from actual browser-host behavior. Always consult the
+[validation record](validation.md) before advertising support.
+
+## Source and feature identity
+
+Create the source archive with the same source inventory used during compilation:
+
+```sh
+python3 tools/source_identity.py digest --root .
+python3 tools/source_identity.py archive --root . --output /owned/application-source.tar.gz
+python3 tools/source_identity.py verify --archive /owned/application-source.tar.gz
+```
+
+When using an external GUI checkout, pass `--supplement /owned/gui-source` to
+both identity and archive operations. Its actual source bytes are retained under
+`third_party/retained/gui/`; recovery must not depend on an upstream URL surviving.
+A source archive includes `source.json`, complete per-file hashes and executable
+modes. Generated build outputs and ignored coordination files are excluded.
+Snapshot creation rechecks the input tree before publishing the archive.
+
+Release assembly verifies that each package's `source_tree_sha256`, normalized
+`target`, `gui_backends` and full `dependency_recipes` list match the source
+archive and frozen specification. The `sdk_recipe` is the primary prepared
+input; optional `dependency_recipes` lists additional required groups and must
+include that primary input. Every distinct group in the artifact union is
+copied into the release. Relabeling a package or replacing its source with an
+unrelated archive fails even if the replacement has a valid checksum.

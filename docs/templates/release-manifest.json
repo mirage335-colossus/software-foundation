@@ -1,36 +1,26 @@
 {
   "schema_version": 1,
-  "template_only": true,
-  "release": {
-    "version": null,
-    "tag": null,
-    "created_at_utc": null,
-    "prerelease": true,
-    "source_commit": null,
-    "source_dirty": null,
-    "packaging_commit": null,
-    "run_id": null,
-    "run_attempt": null
+  "source": {
+    "path": "replace-with-exact-source-archive.tar.gz",
+    "sha256": "replace-with-source-archive-sha256"
   },
-  "target_inventory": [],
-  "enabled_gui_backends": [],
-  "toolchains": [],
-  "dependency_recipes": [],
-  "assets": [],
-  "required_checks": [],
-  "qualification": {
-    "status": "not_run",
-    "inventory_sha256": null,
-    "reports": [],
-    "omitted_scopes": [],
-    "accepted_exceptions": []
-  },
-  "requirements_for_real_manifests": {
-    "target_inventory_entry": ["os", "architecture", "minimum_runtime", "instruction_set_baseline", "features", "gui_backend"],
-    "toolchain_entry": ["name", "version", "host", "target", "configuration", "sdk_recipe_id", "sdk_archive_sha256"],
-    "dependency_recipe_entry": ["name", "recipe_id", "binary_asset", "source_asset", "checksum_asset"],
-    "asset_entry": ["name", "size_bytes", "sha256", "target", "kind"],
-    "check_entry": ["scope", "target", "required", "status", "source_commit", "inventory_sha256", "report_sha256"],
-    "reject": ["template_only", "unset required fields", "duplicate names", "unsafe paths", "missing planned targets", "mismatched evidence identity"]
-  }
+  "artifacts": [
+    {
+      "path": "replace-with-application-archive.tar.gz",
+      "sha256": "replace-with-application-archive-sha256",
+      "manifest_path": "replace-with-application-archive.tar.gz.json",
+      "target": "linux-x86_64",
+      "backends": [],
+      "sdk_recipe": "replace-with-complete-sdk-recipe-sha256",
+      "dependency_recipes": [
+        "replace-with-complete-sdk-recipe-sha256"
+      ]
+    }
+  ],
+  "required_scopes": [
+    "source",
+    "archive",
+    "recovery",
+    "abi"
+  ]
 }

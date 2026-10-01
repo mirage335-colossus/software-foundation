@@ -35,6 +35,12 @@ are emitted until the complete input has passed validation. An invalid argument
 cannot leave a partial successful-looking listing. Failures return nonzero;
 usage errors are distinguished from runtime/input failures.
 
+The browser-target SDK also builds a Node CLI and runs the same core and CLI
+contracts through its retained Node executable. The small
+[`src/platform/node_console.js`](../src/platform/node_console.js) adapter uses
+synchronous writes so an output failure reaches the C++ stream error state.
+The default asynchronous JavaScript console cannot provide that guarantee.
+
 `Store::add` validates text, checks capacity and ID availability, creates an
 owned record, and advances the ID only after insertion succeeds. `update`
 validates first, finds by stable ID, prepares a replacement, then swaps it into
@@ -60,6 +66,12 @@ CMake compiles `foundation_core` once per tree and links consumers to it. The
 exported target carries the required language level and installed include path.
 Private warnings do not become downstream consumer policy.
 
+The prepared browser toolchain reapplies its retained compiler wrappers after
+CMake loads the supplier's platform rules. Both direct CMake builds and the Python
+entry point therefore use the frozen SDK cache. Configuration probes, application
+targets and installed consumers use the same retained exception/assertion variant;
+an unavailable cache variant is an error requiring explicit SDK maintenance.
+
 `tests/check_install.py` installs into a temporary prefix, renames it to a path
 with spaces, then builds an external consumer through `find_package`.
 `tools/artifact.py` separately verifies the actual produced archive, rejects
@@ -83,3 +95,22 @@ all advertised capabilities and conformance tests together.
 
 Favor composition and a few explicit targets. Do not manufacture plugin systems,
 network services or persistence layers until a requirement justifies them.
+
+
+## Source, dependency and qualification identity
+
+`source_identity.py` inventories the complete retained source and executable modes.
+The build graph writes that identity, target, GUI backend inventory and all dependency
+recipe identities into `build-info.txt`. `release.py` compares those fields with
+the archived source and retained groups before accepting an application archive.
+A surviving release therefore supplies its own source and dependency inputs even
+when its supplier or original base release disappears.
+
+`coverage.py` runs frozen commands under process ownership and binds complete
+receipts to source, release inventory and policy. `run_tests.py` exposes every
+inner unit-test outcome; `release_check.py` exercises actual source, delivered
+archives, rebuilt recovery inputs and installed consumers. `certify_release.py`
+requires the complete target/backend/environment inventory before promotion
+eligibility. `github_release.py` separately verifies remote bytes and the selected
+certification before updating Latest. Distribution helpers wrap verified archives
+without rebuilding application code.

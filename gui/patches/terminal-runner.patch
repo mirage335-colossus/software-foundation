@@ -1,0 +1,44 @@
+--- terminal_main.cpp
++++ terminal_runner.hpp
+@@ -1,5 +1,5 @@
+ #include "gui/terminal.hpp"
+-#include "../../examples/application.hpp"
++#include "host/contract.hpp"
+ #include <chrono>
+ #include <iostream>
+ #include <stdexcept>
+@@ -215,7 +215,8 @@
+ #endif
+ }
+ 
+-int main(int argc,char** argv) {
++namespace foundation::host {
++template<Application App> int run_terminal(int argc,char** argv) {
+     if(argc==2&&std::string_view(argv[1])=="--help") {
+         std::cout<<"Standalone terminal UI example\n"
+                  <<"Tab/Shift-Tab: focus; Enter/Space: activate; arrows: edit/select;\n"
+@@ -227,7 +228,7 @@
+     if(argc!=1) {std::cerr<<"Usage: "<<argv[0]<<" [--help]\n";return 2;}
+     try {
+         TerminalHost host;
+-        Example* application=nullptr;
++        App* application=nullptr;
+         std::function<void()> service_pump;
+         gui::TerminalAdapter adapter([&](const gui::Event& event) {
+             if(application)application->handle(event);
+@@ -235,7 +236,7 @@
+             // Establish modality before the next decoded input is dispatched.
+             if(service_pump)service_pump();
+         });
+-        Example example(adapter);application=&example;
++        App example(adapter);application=&example;
+         service_pump=[&] {
+             if(!adapter.closed()&&!adapter.prompt())if(auto request=example.next_service())
+                 adapter.service(std::move(*request),[&](gui::ServiceResult result) {example.complete_service(std::move(result));});
+@@ -252,4 +253,6 @@
+             host.poll(adapter);
+         }
+     } catch(const std::exception& error) {std::cerr<<"Terminal example: "<<error.what()<<'\n';return 1;}
++    return 0;
+ }
++}

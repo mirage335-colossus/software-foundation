@@ -173,3 +173,17 @@ For each completed change, report commands, actual pass/failure status, omitted
 coverage, and remaining external qualification. Use the
 [validation template](templates/validation.md) for durable evidence and the
 ignored coordination directory for transient investigation notes.
+
+## Unit-case evidence and release attempts
+
+CMake runs each Python suite through [`run_tests.py`](../tools/run_tests.py).
+The helper discovers its complete case inventory, records each outcome and exposes
+narrow platform exclusions separately. Missing fixture privileges or tools are
+incomplete coverage and return failure. Unittest's successful process exit after
+an internal skip cannot become a complete passing receipt. Optimized C++ tests use
+explicit checks rather than assertions removed by the compiler.
+
+For multi-environment release work use [the frozen coverage and certification
+protocol](certification.md). Its immutable attempt directories and supervised
+process trees add source/asset/policy identity to the local CTest shard mechanism.
+Neither local helper authorizes concurrent writes to a common build directory.

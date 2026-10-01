@@ -1,13 +1,14 @@
 # Software Foundation
 
 A generic reference repository for developing, testing, maintaining and delivering
-software. The executable example is deliberately small: an owning, bounded record
+software. The application is deliberately domain-neutral: an owning, bounded record
 collection, a command-line application, and an optional shared GUI application.
-The engineering requirements apply to larger projects without prescribing their
-features. C++20 and CMake make the build and binary compatibility examples concrete;
+The engineering mechanisms are comprehensive: application size does not reduce
+coordination, supply, recovery or qualification requirements. C++20 and CMake make the build and binary compatibility examples concrete;
 the ownership, testing, documentation and delivery rules apply across languages.
 
-Start with the [requirements](docs/requirements.md), [repository map](docs/architecture.md),
+Start with the [engineering contract](docs/engineering-contract.md),
+[requirements and practice map](docs/requirements.md), [repository map](docs/architecture.md),
 and [documentation index](docs/README.md). Contributors and automated assistants
 read [AGENTS.md](AGENTS.md) before editing shared resources.
 
@@ -39,18 +40,23 @@ after installation. [COMPILE](COMPILE) is the short command reference;
 
 | Area | Included example | Qualification boundary |
 | --- | --- | --- |
-| Application | Library, CLI, validation, owned data, stable IDs | A small teaching application, not a persistence service |
+| Application | Library, CLI, validation, owned data, stable IDs | Bounded in-memory record contract with explicit failure guarantees |
 | Build | One CMake graph, presets, wrapper, focused prerequisite targets | One build tree per configuration and toolchain |
 | Tests | Contract checks, tool regressions, installed consumer, disjoint shards | Full means all tests enabled in that configuration |
-| GUI | One shared application using pinned terminal and framebuffer adapters; optional FLTK | See [GUI audit](docs/gui-audit.md) for vocabulary, display and dependency limits |
-| SDK | Manifest validation and Linux target sysroot toolchain entry point | A prepared compiler/sysroot must be supplied; no compiled SDK is shipped |
-| Packages | Native TGZ/ZIP, complete member inventory, relocation and consumer test | Native package is not an old-OS compatibility claim |
-| CI | Lightweight automatic checks, manual full matrix, separate sanitizer lane | Workflow files are examples until executed on an actual remote |
-| Coordination | Tested cooperative board with claims, handoff and job lifecycle | Shared filesystem coordination does not enforce source access permissions |
-| Releases | Immutable asset, compatibility, source retention and package-repository requirements | No remote publication or signed package repository is configured |
+| GUI | All seven hosts use one feature/controller/layout; native, browser and Wasm fixtures | [GUI audit](docs/gui-audit.md) records actual coverage and the unresolved redistribution gate |
+| SDK | Source producer, strict prepared-input archives, source replay, relocation, host/target checks, Windows and browser recipes | Cold native SDK production requires the declared Bookworm builder |
+| Packages | Native TGZ/ZIP, full member inventory, runtime closure/ABI audits, relocation and external consumer | A native build alone cannot establish an older runtime floor |
+| CI | Disjoint source scopes, independent producers/copied-package jobs, explicit faster pools, sanitizer and supply checks | Hosted workflows need execution on a configured remote before claiming hosted qualification |
+| Coordination | Scoped review, guarded saves, descriptor-relative atomic publication, handoffs, lifecycle and concurrency tests | Unsupported filesystem APIs require a qualified adapter or enforced private checkouts |
+| Releases | Immutable complete groups, mandatory per-release copies, offline recovery and exact-byte certification | No remote is configured or publication performed |
+| Distribution | Debian, Arch and Gentoo wrapping, signed indexes, payload verification, atomic update/rollback checks | Native installation remains a separately named qualification scope |
 
 [Validation](docs/validation.md) records what has actually run and what remains
 unverified. Planned platforms and release gates are requirements, not claimed passes.
+
+The [practice map](docs/practice-map.json) provides requirement-to-implementation-to-test
+navigation. It is checked for missing references, and does not substitute for the
+[actual validation record](docs/validation.md).
 
 ## Use this as a project specification
 

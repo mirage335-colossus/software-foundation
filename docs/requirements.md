@@ -3,8 +3,11 @@
 Use MUST for adoption gates, SHOULD for defaults with a recorded reason for an
 exception, and MAY for optional capabilities. Tailor supported products and
 platforms explicitly; an unimplemented capability must never be advertised as
-verified. These are a minimal foundation of responsibilities, not a requirement
-to adopt every optional tool or delivery channel.
+verified. The full normative [engineering contract](engineering-contract.md) covers lifecycle,
+failure handling, supply recovery and qualification. The machine-readable
+[practice map](practice-map.json) binds the obligations below to concrete tools,
+procedures and tests. Optional delivery channels must pass their own gates before
+being advertised; omission must never be disguised as successful coverage.
 
 | ID | Requirement | Evidence or maintained home |
 | --- | --- | --- |
@@ -24,6 +27,10 @@ to adopt every optional tool or delivery channel.
 | COLLAB-2 | Temporary knowledge MUST be bounded, attributable, ignored by Git and promoted when durable | [Lifecycle](agent-lifecycle.md) |
 | REL-1 | Published artifacts MUST have immutable identities and verification of their actual bytes | [Release requirements](releases.md) |
 | REL-2 | Source, recipes, notices and required dependency inputs MUST remain recoverable with each release | Release inventory and source bundles |
+| SDK-1 | Ordinary consumers MUST use the exact immutable prepared recipe; base maintenance MUST retain complete reconstruction inputs | [SDK lifecycle](sdk.md) |
+| SDK-2 | Binary releases MUST carry the exact compiled/source/checksum groups, with recovery tested without the base | [Release assembly](releases.md), [certification](certification.md) |
+| DIST-1 | Package channels MUST preserve archive bytes and verify signed metadata, update identity and installed payloads | [Distribution](distribution.md) |
+| COLLAB-3 | Source saves MUST recheck current ownership, reviewed input identity and predecessor handoffs through a qualified helper | [Checked operations](agent-recipes.md) |
 | DOC-1 | Maintained docs MUST separate requirements, proposals, procedures and observed evidence | [Documentation rules](documentation.md) |
 | MAINT-1 | Failures MUST preserve diagnostic context without leaking sensitive material or corrupting state | [Maintenance](maintenance.md) |
 
@@ -44,6 +51,6 @@ one tab-separated record per line only after all input is valid. The CLI's defau
 collection is limited to 64 records. Exit status 0 means success, 2 means invalid
 command shape, and 1 means input/runtime/output failure.
 
-Version 0.x is a teaching API under development. Do not infer a stable C++ binary
+Version 0.x is a reference API under development. Do not infer a stable C++ binary
 interface across compilers, standard libraries, runtime choices or future releases.
 The installed static library is intended for matching-toolchain consumers.

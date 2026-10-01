@@ -1,0 +1,86 @@
+name: Prepared SDK application
+on:
+  workflow_dispatch:
+    inputs:
+      recipe:
+        description: Exact 64-character Linux x86_64 prepared base recipe
+        type: string
+        required: true
+      base_tag:
+        description: Durable dependency release tag
+        type: string
+        default: base
+      jobs:
+        description: Build concurrency
+        type: choice
+        options: ['2', '4', '8']
+        default: '2'
+permissions:
+  contents: read
+concurrency:
+  group: sdk-application-${{ github.ref }}-${{ inputs.recipe }}
+  cancel-in-progress: true
+jobs:
+  application:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fetch the complete existing group; missing inputs never trigger compilation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RECIPE: ${{ inputs.recipe }}
+          BASE_TAG: ${{ inputs.base_tag }}
+        shell: python
+        run: |
+          import os, re, subprocess, sys
+          from pathlib import Path
+          sys.path.insert(0, 'tools')
+          from dependency_store import names, verify_group
+          recipe, tag = os.environ['RECIPE'], os.environ['BASE_TAG']
+          if not re.fullmatch(r'[0-9a-f]{64}', recipe): raise SystemExit('Exact recipe required')
+          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,100}', tag): raise SystemExit('Invalid base tag')
+          group = Path('build/base') / recipe
+          group.mkdir(parents=True)
+          subprocess.run(['gh', 'release', 'download', tag, '--dir', str(group),
+                          *[arg for name in names(recipe) for arg in ('--pattern', name)]], check=True)
+          verify_group(group, recipe)
+      - name: Execute in Bookworm user space with the prepared compiler
+        env:
+          RECIPE: ${{ inputs.recipe }}
+          JOBS: ${{ inputs.jobs }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -e RECIPE -e JOBS -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE" debian:bookworm bash -euc '
+            apt-get update
+            apt-get install -y --no-install-recommends ca-certificates python3 cmake ninja-build git binutils
+            python3 tools/sdk.py install --group "build/base/$RECIPE" --recipe "$RECIPE" --output build/prepared-sdk
+            python3 tools/build.py test release --sdk build/prepared-sdk --portable --full --jobs "$JOBS" --build-dir build/sdk-application
+            python3 tools/build.py package release --sdk build/prepared-sdk --portable --jobs "$JOBS" --build-dir build/sdk-application
+          '
+      - name: Check the exact archive with the host compiler absent from the runtime contract
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess, sys
+          archives = list(Path('build/sdk-application/packages').glob('*.tar.gz'))
+          if not archives: raise SystemExit('No application archives produced')
+          for archive in archives:
+              manifest = str(archive) + '.json'
+              subprocess.run([sys.executable, 'tools/artifact.py', 'create', str(archive), '--manifest', manifest], check=True)
+              subprocess.run([sys.executable, 'tools/artifact.py', 'verify', str(archive), '--manifest', manifest,
+                              '--abi', '--runtime-only'], check=True)
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-application-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/sdk-application/packages/
+            build/sdk-application/Testing/Temporary/
+            build/sdk-application/build-info.txt
+          if-no-files-found: error
+          compression-level: 0

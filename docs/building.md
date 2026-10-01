@@ -47,8 +47,8 @@ arguments must be passed as arguments, never evaluated as shell text.
 An explicit `--gui-source /absolute/path/to/pinned-checkout` adds the optional
 GUI integration and a `-gui` directory suffix. Follow
 [the GUI guide](gui-boundary.md) for extra native-host options. GUI distribution
-is currently blocked by unresolved upstream package licensing, and `package`
-accepts only the release core configuration.
+is guarded by unresolved upstream package licensing. `package` requires a
+Release configuration and all selected dependencies and notices.
 
 `test` builds prerequisites before invoking CTest. Its default runs the complete
 enabled local test suite. `--label fast`, `core`, `tools`, `integration`, or
@@ -162,3 +162,37 @@ API without a guard.
 The preset format and toolchain behavior are defined in the
 [CMake 3.24 documentation](https://cmake.org/cmake/help/v3.24/manual/cmake-presets.7.html)
 and [toolchain manual](https://cmake.org/cmake/help/v3.24/manual/cmake-toolchains.7.html).
+
+## Explicit output, portability and host-check controls
+
+Use `--build-dir /owned/build-tree` for an independently claimed session tree.
+The wrapper still binds it to the exact compiler, SDK, feature choices and
+configuration; a different identity requires a fresh tree. Do not share one
+build directory between simultaneous writers.
+
+`--portable` selects generic CPU code and the chosen static C++/compiler-runtime
+policy. It cannot lower libc requirements by itself. Linux release candidates
+must use the qualified glibc 2.36 sysroot, then pass `verify_abi.py` against every
+ELF file. A modern native compiler on a newer distro remains a development
+configuration until that inspection and oldest-host execution pass.
+
+`--gui-backends` explicitly selects optional backends from the wrapper's checked
+inventory. `--host-tests` enables real GUI host execution and requires GUI input;
+run it only where the corresponding display/browser prerequisites are available.
+`--distribution-tests` enables additional packaging/tool checks. These controls
+reduce development work without claiming omitted coverage as successful.
+
+```sh
+./build.sh test dev --build-dir /owned/session-build --label core --jobs 2
+./build.sh test release --build-dir /owned/release-build --sdk /owned/sdk --portable --full --jobs 2
+./build.sh package release --build-dir /owned/release-build --sdk /owned/sdk --portable --jobs 2
+```
+
+Native Windows dependency groups are separate from compiler/sysroot SDKs. Use
+`--dependency-group PATH` to bind an exact verified group; its recipe is read
+from the complete group's checksum filename. After restoring it with
+`sdk_windows.py install`, add `--windows-dependencies RESTORED_PATH` to consume
+its checked CMake prefix. Initialize the separately installed Microsoft toolchain
+first. The package build
+record identifies the dependency recipe for mandatory release retention. See the
+[Windows base contract](sdk.md#windows-dependency-base-and-separately-installed-host-tools).

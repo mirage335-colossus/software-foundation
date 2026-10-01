@@ -1,4 +1,6 @@
 #include "shared/application.hpp"
+#include "host/contract.hpp"
+#include "host/qualification.hpp"
 #include <gui/framebuffer.hpp>
 
 #include <fstream>
@@ -6,6 +8,15 @@
 
 // The host owns output and lifecycle; application identities never appear here.
 int main(int argc, char** argv) {
+    if (foundation::host::smoke_requested(argc, argv)) try {
+        foundation::host::Session<foundation::ui::Application, gui::FramebufferAdapter> session;
+        session.application.qualify([&] {
+            session.tick(); const auto frame = session.adapter.frame();
+            if (!frame.pixels || frame.pixels->empty() || !frame.width || !frame.height)
+                throw std::runtime_error("Framebuffer produced no pixels");
+        });
+        return foundation::host::finish_smoke(session.application, session.adapter);
+    } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
     if (argc != 2) {
         std::cerr << "Usage: foundation-gui-framebuffer OUTPUT.ppm\n";
         return 2;

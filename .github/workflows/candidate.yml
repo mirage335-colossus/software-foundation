@@ -7,17 +7,17 @@ on:
         type: boolean
         default: false
       linux_pool:
-        description: Larger pool requires configured FOUNDATION_FAST_LINUX_RUNNER variable
+        description: Faster needs an authorized FOUNDATION_FAST_LINUX_RUNNER variable
         type: choice
         options: [standard, faster]
         default: standard
       build_jobs:
-        description: Compile concurrency; test concurrency remains two
+        description: Compile concurrency; tests remain bounded independently
         type: choice
         options: ['2', '4', '8']
         default: '2'
       include_arm:
-        description: Include Linux ARM64 native execution
+        description: Include native Linux ARM64 execution
         type: boolean
         default: true
 permissions:
@@ -29,98 +29,117 @@ jobs:
   plan:
     runs-on: ubuntu-24.04
     outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
-    steps:
-      - id: matrix
-        name: Validate configured runner choice
-        env:
-          POOL: ${{ inputs.linux_pool }}
-          FAST_RUNNER: ${{ vars.FOUNDATION_FAST_LINUX_RUNNER }}
-          INCLUDE_ARM: ${{ inputs.include_arm }}
-        shell: python
-        run: |
-          import json, os, re
-          pool = os.environ['POOL']
-          if pool not in ('standard', 'faster'):
-              raise SystemExit('Unknown runner pool')
-          runner = 'ubuntu-24.04'
-          if pool == 'faster':
-              runner = os.environ['FAST_RUNNER']
-              if not re.fullmatch(r'foundation-linux-[a-z0-9-]+', runner):
-                  raise SystemExit('Configure an authorized larger Linux runner label first')
-          entries = [{'runner': runner, 'target': 'linux-x86_64'},
-                     {'runner': 'windows-2022', 'target': 'windows-x86_64'}]
-          if os.environ['INCLUDE_ARM'] == 'true':
-              entries.append({'runner': 'ubuntu-24.04-arm', 'target': 'linux-aarch64'})
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write('matrix=' + json.dumps({'include': entries}) + '\n')
-  native:
-    needs: plan
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    name: ${{ matrix.target }} / ${{ inputs.devfast && 'focused' || 'full' }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    env:
-      CMAKE_BUILD_PARALLEL_LEVEL: ${{ inputs.build_jobs }}
-      CTEST_PARALLEL_LEVEL: '2'
+      checks: ${{ steps.plan.outputs.checks }}
+      packages: ${{ steps.plan.outputs.packages }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Confirm actual target architecture
-        env:
-          TARGET: ${{ matrix.target }}
-        shell: python
-        run: |
-          import os, platform
-          machine = platform.machine().lower()
-          aliases = {'amd64': 'x86_64', 'arm64': 'aarch64'}
-          machine = aliases.get(machine, machine)
-          expected = os.environ['TARGET'].split('-', 1)[1]
-          if machine != expected:
-              raise SystemExit('Runner architecture does not match the selected target')
-      - name: Select Windows developer environment
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./tools/ci_windows.ps1
-      - name: Build and test
+      - id: plan
         env:
           DEVFAST: ${{ inputs.devfast }}
+          ARM: ${{ inputs.include_arm }}
+          POOL: ${{ inputs.linux_pool }}
+          FAST: ${{ vars.FOUNDATION_FAST_LINUX_RUNNER }}
         shell: python
         run: |
           import os, subprocess, sys
-          selection = ['--label', 'core'] if os.environ['DEVFAST'] == 'true' else ['--full']
-          subprocess.run([sys.executable, 'tools/build.py', 'test', 'release', *selection], check=True)
-      - name: Build and verify final native archive
-        if: ${{ !inputs.devfast }}
+          command = [sys.executable, 'tools/ci_plan.py', 'plan', '--pool', os.environ['POOL'],
+                     '--configured', os.environ['FAST'], '--github-output', os.environ['GITHUB_OUTPUT']]
+          if os.environ['DEVFAST'] == 'true': command.append('--devfast')
+          if os.environ['ARM'] != 'true': command.append('--no-arm')
+          subprocess.run(command, check=True)
+  source:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.checks) }}
+    runs-on: ${{ matrix.runner }}
+    name: Source ${{ matrix.target }} / ${{ matrix.scope }}
+    timeout-minutes: 30
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: ${{ inputs.build_jobs }}
+      CTEST_PARALLEL_LEVEL: '2'
+      TARGET: ${{ matrix.target }}
+      SCOPE: ${{ matrix.scope }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/ci_windows.ps1
+      - name: Verify host and execute disjoint scope
         shell: python
         run: |
-          from pathlib import Path
-          import subprocess, sys
-          subprocess.run([sys.executable, 'tools/build.py', 'package', 'release'], check=True)
-          packages = list(Path('build/release/packages').glob('*.tar.gz')) + list(Path('build/release/packages').glob('*.zip'))
-          if len(packages) != 1:
-              raise SystemExit('Expected exactly one package')
-          archive = packages[0]
-          manifest = archive.with_name(archive.name + '.json')
-          for operation in ('create', 'verify'):
-              subprocess.run([sys.executable, 'tools/artifact.py', operation, str(archive), '--manifest', str(manifest)], check=True)
-      - name: Retain logs and native archives
-        if: always()
+          import os, subprocess, sys
+          subprocess.run([sys.executable, 'tools/ci_plan.py', 'host', os.environ['TARGET']], check=True)
+          subprocess.run([sys.executable, 'tools/build.py', 'test', 'release', '--label', os.environ['SCOPE']], check=True)
+      - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: candidate-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: source-${{ matrix.target }}-${{ matrix.scope }}-${{ github.run_attempt }}
           path: |
             build/release/Testing/Temporary/
             build/release/build-info.txt
-            build/release/packages/*.tar.gz
-            build/release/packages/*.zip
-            build/release/packages/*.json
+          if-no-files-found: error
+  package:
+    if: ${{ !inputs.devfast }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.packages) }}
+    runs-on: ${{ matrix.runner }}
+    name: Independent package ${{ matrix.target }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/ci_windows.ps1
+      - env:
+          JOBS: ${{ inputs.build_jobs }}
+          TARGET: ${{ matrix.target }}
+        shell: python
+        run: |
+          import os, subprocess, sys
+          subprocess.run([sys.executable, 'tools/ci_plan.py', 'host', os.environ['TARGET']], check=True)
+          subprocess.run([sys.executable, 'tools/ci_plan.py', 'package', '--build', 'build/package',
+                          '--jobs', os.environ['JOBS']], check=True)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-${{ matrix.target }}-${{ github.run_attempt }}
+          path: build/package/packages/
           if-no-files-found: error
           compression-level: 0
-          retention-days: 14
+  copied:
+    if: ${{ !inputs.devfast }}
+    needs: [plan, package]
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.packages) }}
+    runs-on: ${{ matrix.runner }}
+    name: Fresh copied archive ${{ matrix.target }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARTIFACT: package-${{ matrix.target }}-${{ github.run_attempt }}
+        shell: python
+        run: |
+          import os, subprocess, sys
+          subprocess.run(['gh', 'run', 'download', os.environ['GITHUB_RUN_ID'], '--name', os.environ['ARTIFACT'],
+                          '--dir', 'build/copied'], check=True)
+          subprocess.run([sys.executable, 'tools/ci_plan.py', 'check-archives', 'build/copied', '--runtime-only'], check=True)
   sanitizer:
     if: ${{ !inputs.devfast }}
     runs-on: ubuntu-24.04
@@ -129,26 +148,32 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: python3 tools/build.py test asan --full --jobs 2
+      - run: python3 tools/build.py test asan --label core --jobs 2
+  distribution:
+    if: ${{ !inputs.devfast }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Debian payload and signed update failure fixtures
+        run: python3 -B -m unittest discover -s tests -p test_apt_repo.py
   verdict:
     if: always()
-    needs: [plan, native, sanitizer]
+    needs: [plan, source, package, copied, sanitizer, distribution]
     runs-on: ubuntu-24.04
     steps:
-      - name: Require complete applicable outcomes
-        env:
-          PLAN: ${{ needs.plan.result }}
-          NATIVE: ${{ needs.native.result }}
-          SANITIZER: ${{ needs.sanitizer.result }}
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
           DEVFAST: ${{ inputs.devfast }}
         shell: python
         run: |
-          import os
-          if os.environ['PLAN'] != 'success' or os.environ['NATIVE'] != 'success':
-              raise SystemExit('Required native checks failed or did not finish')
-          full = os.environ['DEVFAST'] != 'true'
-          if full and os.environ['SANITIZER'] != 'success':
-              raise SystemExit('Required sanitizer checks failed or did not finish')
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          required = ['plan', 'source'] if os.environ['DEVFAST'] == 'true' else list(results)
+          if any(results[name]['result'] != 'success' for name in required):
+              raise SystemExit('Required jobs failed, were skipped or did not finish')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as report:
-              report.write('Selected candidate scopes passed.\n' if full else 'Focused diagnostic passed; broader checks omitted.\n')
-              report.write('GUI, prepared SDKs and older-OS qualification are not exercised by this workflow. No release is published.\n')
+              report.write('Selected source scopes and applicable native package checks passed.\n')
+              report.write('Prepared SDK, old-runtime, all-GUI and exact release certification remain separate required qualification scopes.\n')

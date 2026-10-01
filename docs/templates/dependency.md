@@ -46,3 +46,15 @@ Replace every placeholder with evidence or an explicit unresolved status.
 - Last successful upgrade evidence:
 - Rollback and offline recovery procedure:
 - Next review condition and responsible maintainer:
+
+## Mandatory retained group
+
+- Full producing recipe identity, including helper/configuration/patch bytes:
+- Exact compiled archive name and SHA-256:
+- Exact complete-source/input archive name and SHA-256:
+- Matched checksum filename and SHA-256:
+- Source-rebuild scope, including any retained upstream precompiled inputs:
+- Host tools excluded from redistribution and their offline-bootstrap procedure:
+- Immutable base storage location:
+- Per-binary-release copied group location (required; references do not suffice):
+- Empty-cache source replay, relocated compiler smoke and oldest-host results:

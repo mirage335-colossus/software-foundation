@@ -139,3 +139,24 @@ operations. Validate workflow syntax with an available maintained validator.
 Treat hosted acceptance as an additional required check after local validation,
 and periodically review runner images, action pins, timeouts, cache size,
 retention, permissions, and obsolete matrix entries.
+
+## Supplied workflow entry points
+
+- `ci.yml`: inexpensive automatic feedback.
+- `candidate.yml`: validated native runner inventory, disjoint core/tool/install
+  scopes, independent portable packaging, fresh copied-package execution,
+  instrumentation, signed-distribution fixtures and a complete final verdict.
+  `devfast` runs only the declared focused selection; ARM omission is visible.
+- `sdk-maintenance.yml`: explicitly dispatched cold SDK production on the old
+  host baseline. A successful job retains the complete new recipe group for
+  reviewed durable-base delivery.
+- `sdk-application.yml`: consume an exact existing group from the base release;
+  missing assets fail before compilation. Ordinary application work does not
+  silently become SDK maintenance.
+
+[`github_release.py`](../tools/github_release.py) provides checked durable delivery
+operations and offline plans. Keep write credentials in a protected, separately
+serialized publication job. A build workflow's green status cannot promote a
+candidate. Follow [exact delivery and promotion](github-delivery.md) and
+[certification](certification.md), preserving every selected result and its
+run/attempt identity. All workflow definitions still require hosted qualification.

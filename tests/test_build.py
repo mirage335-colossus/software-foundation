@@ -11,13 +11,25 @@ spec.loader.exec_module(builder)
 
 
 class BuildTests(unittest.TestCase):
+    def test_retained_host_tools_are_selected_and_cannot_escape(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "tools").mkdir()
+            (root / "tools/cmake").write_text("fixture")
+            (root / "sdk.json").write_text(json.dumps({"host_tools": {"cmake": "tools/cmake"}}))
+            self.assertEqual(builder.host_programs(root)["cmake"], str(root / "tools/cmake"))
+            self.assertEqual(builder.host_programs(root)["ctest"], "ctest")
+            (root / "sdk.json").write_text(json.dumps({"host_tools": {"cmake": "../outside"}}))
+            with self.assertRaises(ValueError):
+                builder.host_programs(root)
+
     def test_sdk_inventory_is_complete(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "bin").mkdir()
             (root / "sysroot").mkdir()
             (root / "bin/cxx").write_bytes(b"compiler fixture")
-            data = {"schema_version": 1, "recipe_id": "test-only", "target": {
+            data = {"schema_version": 1, "recipe_id": "a" * 64, "target": {
                 "system": "Linux", "processor": "x86_64", "triple": "x86_64-linux-gnu",
                 "sysroot": "sysroot", "cxx_compiler": "bin/cxx"},
                 "files": {"bin/cxx": hashlib.sha256(b"compiler fixture").hexdigest()}}
@@ -59,6 +71,38 @@ class BuildTests(unittest.TestCase):
                 result = subprocess.run([cmake, '-DCPACK_BUILD_CONFIG=' + requested, '-P', str(policy)], capture_output=True)
                 self.assertEqual(result.returncode == 0, success, result.stderr)
 
+    def test_mutation_during_packaging_invalidates_result(self):
+        from unittest.mock import patch
+        import sys
+        sys.path.insert(0, str(Path(builder.__file__).parent))
+        import source_identity
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            count = 0
+            def run(command, **kwargs):
+                nonlocal count
+                if command[0] == 'cpack': count += 1
+            def identity(*args): return {'revision': count}
+            with patch.object(builder, 'ROOT', root), patch.object(builder, 'run', side_effect=run), \
+                    patch.object(builder, 'cache_identity', return_value={}), \
+                    patch.object(source_identity, 'source_tree', side_effect=identity):
+                with self.assertRaisesRegex(ValueError, 'source changed during the operation'):
+                    builder.main(['package', 'release'])
+
+    def test_normal_variable_compiler_is_read_from_active_cmake_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compiler = root / 'compiler with spaces'
+            compiler.write_text('fixture compiler')
+            (root / 'CMakeCache.txt').write_text('CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3\nCMAKE_CACHE_MINOR_VERSION:INTERNAL=31\nCMAKE_CACHE_PATCH_VERSION:INTERNAL=6\n')
+            record = root / 'CMakeFiles/3.31.6/CMakeCXXCompiler.cmake'
+            record.parent.mkdir(parents=True)
+            record.write_text('set(CMAKE_CXX_COMPILER "' + str(compiler) + '")\n')
+            self.assertEqual(builder.cache_identity(root)['compiler_resolved_path'], str(compiler))
+            record.unlink()
+            with self.assertRaises(OSError):
+                builder.cache_identity(root)
+
     def test_unstamped_tree_is_not_silently_adopted(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as directory:
@@ -70,3 +114,19 @@ class BuildTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     builder.main(['build', 'dev'])
                 run.assert_not_called()
+
+    def test_link_runtime_launcher_and_dependency_cache_edits_change_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compiler = root / 'compiler'
+            compiler.write_text('fixture compiler')
+            cache = root / 'CMakeCache.txt'
+            base = 'CMAKE_CXX_COMPILER:FILEPATH=' + str(compiler) + '\n'
+            for name in ('CMAKE_EXE_LINKER_FLAGS', 'CMAKE_SHARED_LINKER_FLAGS_RELEASE',
+                         'CMAKE_MODULE_LINKER_FLAGS', 'CMAKE_STATIC_LINKER_FLAGS',
+                         'CMAKE_INSTALL_RPATH', 'CMAKE_LINKER', 'CMAKE_CXX_COMPILER_LAUNCHER',
+                         'CMAKE_PREFIX_PATH', 'Toolkit_DIR'):
+                cache.write_text(base + name + ':STRING=original\n')
+                before = builder.cache_identity(root)
+                cache.write_text(base + name + ':STRING=changed\n')
+                self.assertNotEqual(before, builder.cache_identity(root), name)

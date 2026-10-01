@@ -1,5 +1,5 @@
-if("@FOUNDATION_SANITIZERS@" OR "@FOUNDATION_BUILD_GUI@")
-  message(FATAL_ERROR "Packaging requires a non-instrumented core build. Optional GUI distribution awaits dependency license review.")
+if("@FOUNDATION_SANITIZERS@" OR ("@FOUNDATION_BUILD_GUI@" AND NOT "@FOUNDATION_GUI_DISTRIBUTABLE@"))
+  message(FATAL_ERROR "Packaging requires a non-instrumented build and verified GUI redistribution terms.")
 endif()
 if(NOT "@CMAKE_CONFIGURATION_TYPES@" STREQUAL "")
   if(NOT CPACK_BUILD_CONFIG STREQUAL "Release")

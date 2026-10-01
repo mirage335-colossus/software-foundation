@@ -15,5 +15,31 @@
       "distributed_by_default": false
     }
   ],
-  "policy_document": "docs/dependencies.md"
+  "policy_document": "docs/dependencies.md",
+  "prepared_sdk_recipes": [
+    {
+      "name": "native-source-sdk",
+      "recipe": "third_party/sdk/recipe.json",
+      "producer": "tools/distro_sdk.py",
+      "kind": "source-build",
+      "baseline": "Debian 12 Bookworm / glibc 2.36",
+      "qualification": "See docs/validation.md; cold compiler build pending"
+    },
+    {
+      "name": "browser-sdk",
+      "recipe": "third_party/sdk/wasm.json",
+      "producer": "tools/sdk_wasm.py",
+      "kind": "retained-upstream",
+      "source_scope": "Exact source and precompiled supplier archives retained; no native LLVM/Node source rebuild claim",
+      "qualification": "See docs/validation.md"
+    },
+    {
+      "name": "windows-dependencies",
+      "recipe": "third_party/sdk/windows-base.json",
+      "producer": "tools/sdk_windows.py",
+      "kind": "windows-dependencies",
+      "host_tools": "Separately installed v143 and pinned Windows SDK; offline installer layout retained separately",
+      "qualification": "Native Windows execution pending"
+    }
+  ]
 }

@@ -1,0 +1,432 @@
+#!/usr/bin/env python3
+"""Supervise one command and finish its inherited output writers before evidence.
+
+Linux uses a private child-subreaper process, including nested sessions and groups.
+Commands must not transfer writable handles or ask another service to keep writing;
+such workloads require a qualified container/service supervisor. This is lifetime
+supervision of cooperating programs, not hostile-process confinement. Other POSIX
+systems fail closed until an equivalent descendant owner is supplied.
+Windows starts suspended and assigns a no-breakaway, kill-on-close Job Object
+before resuming the initial thread; assignment failure never runs child code.
+Native qualification is required for each supported platform and environment.
+"""
+import ctypes
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+
+
+class ProcessTreeError(RuntimeError):
+    pass
+
+
+def _direct_children():
+    """The private supervisor has one thread and is its children's only reaper."""
+    text = Path('/proc/self/task/' + str(os.getpid()) + '/children').read_text()
+    values = text.split()
+    if any(not value.isdecimal() or int(value) <= 0 for value in values):
+        raise ProcessTreeError('invalid private supervisor child inventory')
+    return [int(value) for value in values]
+
+
+def _linux_supervise(parent, report_fd, control_fd, argv):
+    """Run only in a dedicated process, never inside the calling Python harness.
+
+    Reaping all children to ECHILD proves no descendant can still create writers.
+    During cleanup, killing direct children makes their descendants direct adopted
+    children of this subreaper. Repeat until the kernel reports no children. PID
+    identity cannot be reused between inventory and kill: this single-threaded
+    process performs no wait/reap between those operations.
+    """
+    stopping = False
+    primary = None
+    code = None
+    outlived = False
+    error = None
+    reaped = 0
+    def stop(_signum, _frame):
+        nonlocal stopping
+        stopping = True
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+    os.set_blocking(control_fd, False)
+    def requested():
+        try:
+            # Data requests termination; EOF means the caller disappeared.
+            os.read(control_fd, 1)
+            return True
+        except BlockingIOError:
+            return False
+    try:
+        api = ctypes.CDLL(None, use_errno=True)
+        api.prctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
+        api.prctl.restype = ctypes.c_int
+        if api.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
+            raise ProcessTreeError('private Linux child-subreaper setup failed')
+        if api.prctl(1, signal.SIGTERM, 0, 0, 0) != 0:  # PR_SET_PDEATHSIG
+            raise ProcessTreeError('private Linux parent-death notification failed')
+        if os.getppid() != parent:
+            raise ProcessTreeError('command owner exited before launch')
+        _direct_children()  # Require the cleanup primitive before any command code.
+        if stopping or requested():
+            stopping = True
+            code = -signal.SIGTERM
+        else:
+            child = subprocess.Popen(argv, stdin=subprocess.DEVNULL, close_fds=True)
+            primary = child.pid
+    except BaseException as failure:
+        error = 'supervisor launch failed: ' + str(failure)[:1024]
+        stopping = True
+    # Even a failed inspection keeps this owner alive while children remain. The
+    # caller times out and retains ownership instead of claiming uncertain cleanup.
+    while True:
+        empty = False
+        try:
+            stopping = stopping or requested()
+            while True:
+                try:
+                    pid, status = os.waitpid(-1, os.WNOHANG)
+                except ChildProcessError:
+                    empty = True
+                    break
+                if not pid:
+                    break
+                reaped += 1
+                if pid == primary:
+                    code = os.waitstatus_to_exitcode(status)
+                    child.returncode = code
+            if empty:
+                break
+            if code is not None and not stopping:
+                outlived = True
+            if stopping or outlived:
+                for pid in _direct_children():
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+        except BaseException as failure:
+            error = 'descendant cleanup inspection failed: ' + str(failure)[:1024]
+            stopping = True
+        time.sleep(0.01)
+    report = {'schema_version': 1, 'primary_returncode': code, 'descendants_outlived': outlived,
+              'terminated': stopping, 'error': error, 'reaped': reaped}
+    data = (json.dumps(report, sort_keys=True) + '\n').encode()
+    if len(data) > 4096:
+        report['error'] = 'supervisor failure exceeded the bounded diagnostic size'
+        data = (json.dumps(report, sort_keys=True) + '\n').encode()
+    # The pipe is private, has one small final record, and is not inherited by the
+    # command. A lost receipt remains uncertain to the caller, even after cleanup.
+    try:
+        os.write(report_fd, data)
+    finally:
+        os.close(report_fd)
+        os.close(control_fd)
+
+
+class _LinuxProcess:
+    """Popen-compatible observation of a privately supervised primary command."""
+    def __init__(self, supervisor, report_fd, argv, control_fd=None):
+        self.supervisor, self.report_fd, self.args = supervisor, report_fd, argv
+        self.control_fd = control_fd
+        self.pid = supervisor.pid
+        self.returncode = None
+        self.report = None
+        self.failure = None
+
+    def _collect(self):
+        if self.failure is not None:
+            raise ProcessTreeError(self.failure)
+        if self.report is not None:
+            return self.returncode
+        try:
+            raw = os.read(self.report_fd, 8193)
+            if len(raw) > 8192 or self.supervisor.returncode != 0:
+                raise ValueError('private supervisor failed or excessive receipt')
+            report = json.loads(raw)
+            required = {'schema_version', 'primary_returncode', 'descendants_outlived', 'terminated', 'error', 'reaped'}
+            if (not isinstance(report, dict) or set(report) != required or report['schema_version'] != 1
+                    or type(report['descendants_outlived']) is not bool or type(report['terminated']) is not bool
+                    or type(report['reaped']) is not int or report['reaped'] < 0
+                    or (report['error'] is not None and not isinstance(report['error'], str))
+                    or (report['primary_returncode'] is not None and type(report['primary_returncode']) is not int)):
+                raise ValueError('invalid private supervisor receipt')
+            if report['primary_returncode'] is None and not report['error']:
+                raise ValueError('primary completion missing from supervisor receipt')
+            self.report = report
+            self.returncode = report['primary_returncode'] if report['primary_returncode'] is not None else 125
+        except (OSError, ValueError) as failure:
+            self.failure = 'private supervisor completion uncertain; retain output ownership'
+            raise ProcessTreeError(self.failure) from failure
+        finally:
+            if self.report_fd is not None:
+                os.close(self.report_fd)
+                self.report_fd = None
+            if self.control_fd is not None:
+                os.close(self.control_fd)
+                self.control_fd = None
+        return self.returncode
+
+    def poll(self):
+        return None if self.supervisor.poll() is None else self._collect()
+
+    def wait(self, timeout=None):
+        self.supervisor.wait(timeout=timeout)
+        return self._collect()
+
+    def terminate(self):
+        if self.supervisor.poll() is None:
+            # A pipe request is safe before the private interpreter has installed
+            # handlers; an immediate signal could otherwise kill it at startup.
+            try:
+                os.write(self.control_fd, b'T')
+            except BrokenPipeError:
+                pass
+
+
+def _linux_launch(argv, cwd, stream):
+    incoming, outgoing = os.pipe()
+    try:
+        control_incoming, control_outgoing = os.pipe()
+    except BaseException:
+        os.close(incoming)
+        os.close(outgoing)
+        raise
+    try:
+        process = subprocess.Popen([sys.executable, '-B', str(Path(__file__).resolve()),
+                                    '--supervise-linux', str(os.getpid()), str(outgoing), str(control_incoming), *argv],
+                                   cwd=cwd, stdin=subprocess.DEVNULL, stdout=stream,
+                                   stderr=subprocess.STDOUT, start_new_session=True, pass_fds=(outgoing,control_incoming))
+    except BaseException:
+        os.close(incoming)
+        os.close(control_outgoing)
+        raise
+    finally:
+        os.close(outgoing)
+        os.close(control_incoming)
+    return ProcessTree(_LinuxProcess(process, incoming, argv,control_outgoing))
+
+
+class _WindowsJob:
+    """Native handle owner; constructed only on Windows."""
+    def __init__(self):
+        from ctypes import wintypes as w
+        self.api = ctypes.WinDLL('kernel32', use_last_error=True)
+        self.handle = None
+        self.w = w
+        class BasicLimits(ctypes.Structure):
+            _fields_ = [('process_time', ctypes.c_longlong), ('job_time', ctypes.c_longlong),
+                        ('flags', w.DWORD), ('min_working_set', ctypes.c_size_t),
+                        ('max_working_set', ctypes.c_size_t), ('active_limit', w.DWORD),
+                        ('affinity', ctypes.c_size_t), ('priority', w.DWORD), ('scheduling', w.DWORD)]
+        class IoCounters(ctypes.Structure):
+            _fields_ = [(name, ctypes.c_ulonglong) for name in
+                        ('read_ops', 'write_ops', 'other_ops', 'read_bytes', 'write_bytes', 'other_bytes')]
+        class ExtendedLimits(ctypes.Structure):
+            _fields_ = [('basic', BasicLimits), ('io', IoCounters),
+                        ('process_memory', ctypes.c_size_t), ('job_memory', ctypes.c_size_t),
+                        ('peak_process_memory', ctypes.c_size_t), ('peak_job_memory', ctypes.c_size_t)]
+        class Accounting(ctypes.Structure):
+            _fields_ = [('user_time', ctypes.c_longlong), ('kernel_time', ctypes.c_longlong),
+                        ('period_user', ctypes.c_longlong), ('period_kernel', ctypes.c_longlong),
+                        ('page_faults', w.DWORD), ('total', w.DWORD), ('active', w.DWORD),
+                        ('terminated', w.DWORD)]
+        class ThreadEntry(ctypes.Structure):
+            _fields_ = [('size', w.DWORD), ('usage', w.DWORD), ('thread', w.DWORD),
+                        ('owner', w.DWORD), ('base_priority', w.LONG), ('delta_priority', w.LONG),
+                        ('flags', w.DWORD)]
+        self.Accounting, self.ThreadEntry = Accounting, ThreadEntry
+        signatures = {
+            'CreateJobObjectW': ([ctypes.c_void_p, w.LPCWSTR], w.HANDLE),
+            'SetInformationJobObject': ([w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD], w.BOOL),
+            'QueryInformationJobObject': ([w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD, ctypes.c_void_p], w.BOOL),
+            'AssignProcessToJobObject': ([w.HANDLE, w.HANDLE], w.BOOL),
+            'TerminateJobObject': ([w.HANDLE, w.UINT], w.BOOL),
+            'CloseHandle': ([w.HANDLE], w.BOOL),
+            'CreateToolhelp32Snapshot': ([w.DWORD, w.DWORD], w.HANDLE),
+            'Thread32First': ([w.HANDLE, ctypes.POINTER(ThreadEntry)], w.BOOL),
+            'Thread32Next': ([w.HANDLE, ctypes.POINTER(ThreadEntry)], w.BOOL),
+            'OpenThread': ([w.DWORD, w.BOOL, w.DWORD], w.HANDLE),
+            'ResumeThread': ([w.HANDLE], w.DWORD),
+        }
+        for name, (arguments, result) in signatures.items():
+            function = getattr(self.api, name)
+            function.argtypes, function.restype = arguments, result
+        self.handle = self.api.CreateJobObjectW(None, None)
+        if not self.handle:
+            self.fail('create job')
+        try:
+            limits = ExtendedLimits()
+            limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE; no breakaway flags.
+            if not self.api.SetInformationJobObject(self.handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
+                self.fail('configure non-breakaway job')
+        except BaseException:
+            self.close()
+            raise
+
+    def fail(self, operation):
+        raise ProcessTreeError(operation + ' failed: ' + str(ctypes.WinError(ctypes.get_last_error())))
+
+    def assign(self, process):
+        if not self.api.AssignProcessToJobObject(self.handle, self.w.HANDLE(int(process._handle))):
+            self.fail('assign suspended process to job')
+
+    def resume(self, process):
+        snapshot = self.api.CreateToolhelp32Snapshot(0x4, 0)  # TH32CS_SNAPTHREAD
+        if snapshot == ctypes.c_void_p(-1).value:
+            self.fail('inspect suspended process thread')
+        matches = []
+        try:
+            entry = self.ThreadEntry()
+            entry.size = ctypes.sizeof(entry)
+            found = self.api.Thread32First(snapshot, ctypes.byref(entry))
+            while found:
+                if entry.owner == process.pid:
+                    matches.append(entry.thread)
+                entry.size = ctypes.sizeof(entry)
+                found = self.api.Thread32Next(snapshot, ctypes.byref(entry))
+            if ctypes.get_last_error() != 18:  # ERROR_NO_MORE_FILES
+                self.fail('enumerate suspended process thread')
+        finally:
+            if not self.api.CloseHandle(snapshot):
+                self.fail('close thread snapshot')
+        if len(matches) != 1:
+            raise ProcessTreeError('expected exactly one suspended initial thread')
+        thread = self.api.OpenThread(0x2, False, matches[0])  # THREAD_SUSPEND_RESUME
+        if not thread:
+            self.fail('open suspended initial thread')
+        try:
+            count = self.api.ResumeThread(thread)
+            if count == 0xffffffff:
+                self.fail('resume initial thread')
+            if count != 1:
+                raise ProcessTreeError('unexpected initial thread suspension count')
+        finally:
+            if not self.api.CloseHandle(thread):
+                self.fail('close initial thread handle')
+
+    def active(self):
+        accounting = self.Accounting()
+        if not self.api.QueryInformationJobObject(self.handle, 1, ctypes.byref(accounting),
+                                                  ctypes.sizeof(accounting), None):
+            self.fail('inspect job membership')
+        return accounting.active
+
+    def terminate(self):
+        if not self.api.TerminateJobObject(self.handle, 1):
+            self.fail('terminate job')
+
+    def close(self):
+        if self.handle is not None:
+            if not self.api.CloseHandle(self.handle):
+                self.fail('close job')
+            self.handle = None
+
+
+class ProcessTree:
+    def __init__(self, process, job=None):
+        self.process, self.job = process, job
+        self.closed = False
+
+    def poll(self):
+        return self.process.poll()
+
+    def wait(self, timeout=None):
+        return self.process.wait(timeout=timeout)
+
+    def _live(self):
+        if isinstance(self.process, _LinuxProcess):
+            return self.process.poll() is None
+        return bool(self.job.active())
+
+    def terminate(self, timeout=5):
+        """Stop all supervised members and wait for their output-writing lifetimes."""
+        if self.closed:
+            return
+        if isinstance(self.process, _LinuxProcess):
+            self.process.terminate()
+        elif self.job is not None:
+            self.job.terminate()
+        self.process.wait(timeout=timeout)
+        deadline = time.monotonic() + timeout
+        while self._live():
+            if time.monotonic() >= deadline:
+                raise ProcessTreeError('descendant exit remains unconfirmed; retain output ownership')
+            time.sleep(0.01)
+
+    def finish(self):
+        """A successful parent with surviving writers is an incomplete command."""
+        if self.closed:
+            raise ProcessTreeError('process owner already closed')
+        if self.process.poll() is None:
+            raise ProcessTreeError('parent has not exited')
+        if isinstance(self.process, _LinuxProcess):
+            report = self.process.report
+            if report['error']:
+                raise ProcessTreeError(report['error'])
+            if report['descendants_outlived']:
+                raise ProcessTreeError('descendants outlived the command; output completion was not valid')
+        if self._live():
+            self.terminate()
+            raise ProcessTreeError('descendants outlived the command; output completion was not valid')
+        return self.process.returncode
+
+    def close(self):
+        if not self.closed:
+            try:
+                if self.process.poll() is None or self._live():
+                    self.terminate()
+            finally:
+                if self.job is not None:
+                    self.job.close()
+            self.closed = True
+
+
+def launch(argv, cwd, stream):
+    """Launch direct argv, owning descendants before they can execute on Windows."""
+    if os.name == 'posix' and sys.platform.startswith('linux'):
+        return _linux_launch(argv, cwd, stream)
+    if os.name != 'nt':
+        raise ProcessTreeError('no qualified process supervisor for this operating system')
+    job = _WindowsJob() if os.name == 'nt' else None
+    process = None
+    try:
+        process = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.DEVNULL,
+                                   stdout=stream, stderr=subprocess.STDOUT,
+                                   start_new_session=os.name == 'posix',
+                                   creationflags=0x4 if job is not None else 0)
+        if job is not None:
+            job.assign(process)
+            job.resume(process)
+        return ProcessTree(process, job)
+    except BaseException as original:
+        # Assignment failure leaves the child suspended; no child code ran.
+        cleanup_errors = []
+        actions = []
+        if process is not None:
+            if job is not None:
+                actions.append(job.terminate)
+            actions.extend((lambda: process.kill() if process.poll() is None else None,
+                            lambda: process.wait(timeout=5)))
+        if job is not None:
+            actions.append(job.close)
+        for action in actions:
+            try:
+                action()
+            except BaseException as error:
+                cleanup_errors.append(str(error))
+        if cleanup_errors:
+            raise ProcessTreeError('launch failed and writer cleanup is uncertain: '
+                                   + '; '.join(cleanup_errors)) from original
+        raise
+
+
+if __name__ == '__main__':
+    if len(sys.argv) < 6 or sys.argv[1] != '--supervise-linux' or not sys.platform.startswith('linux'):
+        raise SystemExit('private supervisor requires its complete internal invocation')
+    _linux_supervise(int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), sys.argv[5:])

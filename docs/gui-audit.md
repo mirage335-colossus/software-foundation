@@ -1,103 +1,170 @@
-# GUI integration audit
+# GUI boundary audit and qualification
 
-Scope: the pinned gui-boundary revision
-`bff416308f87dd0c1a7cc5b55476d757c971e879` and the consuming example in this
-repository. These findings describe inspectable responsibilities and current
-verification, not an assurance about every possible future UI requirement.
+The consuming project integrates every host supplied by the pinned gui-boundary
+revision: terminal, framebuffer output, FLTK, SDL window, Rev, hosted browser and
+compiled browser Wasm. Every path composes the same application/core library and
+shared layout. Ordinary changes within the existing public vocabulary require no
+backend-specific feature implementation. This is a tested finite contract, not
+a promise that every future OS facility or new control needs no adapter work.
 
-## Source and call-path review
+## Inspected paths and resolved maintenance gaps
 
-| Path inspected | Responsibility traced | Conclusion |
+The review followed declarations through application publication, retained state,
+input normalization, rendering, host event loops and service completion. It
+included shared geometry/text/bitmap/runtime rules, all native adapters, terminal
+mode management, framebuffer input/damage, both browser transports and renderer,
+resource preparation, pinned dependency manifests and relevant conformance tests.
+
+The public boundary supports groups, labels, buttons, toggles, choices, text,
+lists, bitmaps and menus; shared logical bounds, clipping, scrolling, pages,
+availability, stable identities, immutable image ownership and queued services.
+Application identifiers occur only in shared code and fixtures. Native adapters
+select behavior by generic widget kind and declared values.
+
+This integration closes these practical consumer gaps:
+
+- Every backend has an explicit build target, dependencies and host lifecycle;
+  previously uncomposed paths are not left as references to a different example.
+- Terminal/SDL platform runners accept a typed application. Maintained exact
+  patches replace hardwired demonstration composition and remove SDL's
+  demonstration-specific smoke actions; host qualification calls one shared
+  application scenario and contains no feature dispatch.
+- Native and Wasm browser bridges instantiate one runtime; both use identical
+  verified DOM renderer/assets. The portable hosted transport avoids POSIX-only
+  pipe readiness, bounds request/response queues and time, and reaps failed children.
+- The feature fixture adds a real control at runtime and exercises its meaning
+  through each selected adapter. Canonical serialization compares declarations,
+  geometry, actions and values; a browser fixture compares actual DOM geometry.
+- GUI install destinations exist behind reviewed lock metadata. Local development
+  can build all hosts; an unresolved dependency license cannot silently turn into
+  a redistributable binary package.
+
+[Patch provenance and upgrade rules](../gui/patches/README.md) identify the exact
+local adaptations. The source dependency remains unchanged. Upstreaming typed
+runners and portable pipe handling would eliminate those maintained changes.
+
+## Capability and fallback policy
+
+| Concern | Shared contract and required behavior | Qualification limit |
 | --- | --- | --- |
-| `include/gui/contract.hpp` | Snapshot validation, generation keys, effective availability, event normalization, adapter interface | Shared vocabulary contains no toolkit or application type |
-| `include/gui/memory_adapter.hpp`, `retained_adapter.hpp` | Snapshot staging, generation history, focus, text selection, options, rows, scroll and render ownership | Common mechanics are reused by concrete renderers |
-| `include/gui/interaction.hpp` | Software keys, pointer handling, editing, list navigation and prompt state | Terminal and framebuffer share interaction policy |
-| `include/gui/layout.hpp`, `presentation.hpp` | Measured allocation, parent clipping, page placement, drawing order, modal scope | Layout and composition remain shared values |
-| `include/gui/runtime.hpp` | Service IDs and completion, shutdown, bounded owner-thread queue | Side-effect lifetime and UI-thread ownership are explicit |
-| `include/gui/terminal.hpp`, `backends/terminal/main.cpp` | Cell projection, input decoding, platform I/O, bounded pending output, restoration | Generic adapter; host composition is coupled to the upstream example |
-| `include/gui/framebuffer.hpp`, `backends/framebuffer/` | Shared interaction to RGB frames, retained pixels and damage, image and SDL hosts | No feature IDs needed to render or interact |
-| `backends/fltk/adapter.hpp` | Native callbacks to shared events, retained reconciliation, text metrics, clipping, prompt and clipboard | Native mechanics stay below the boundary |
-| `backends/rev/adapter.hpp`, `adapter.cpp`, clipboard implementation | Private toolkit types, native controls, texture upload, platform service lifetime | Public adapter facade does not expose toolkit modules |
-| `include/gui/web.hpp`, `backends/web/` | Sequenced input, bounded decoding, epochs, acknowledgments, measurements, DOM updates, native/module roots | One browser renderer and protocol serve two execution arrangements |
-| `examples/application.hpp`, conformance and extension tests | Shared commands/layout to snapshots, normalized input back to state, feature extension across adapters | Existing vocabulary supports feature development on the insulated side |
+| Geometry | One logical layout; scale applies at the renderer; clipping/hit testing use the same resolved geometry | Native fonts and terminal cells need not have identical pixels |
+| Input | Shared edit/selection normalization; stable record keys; stale generation/base rejection; disabled/hidden controls cannot act | Native IME, touch, drag capture and complex text need selected-platform checks/extensions |
+| Text | UTF-8 at the boundary, explicit byte limits, common editor policy, visible rejection status from core validation | Bitmap font coverage is finite; this core intentionally accepts printable ASCII records |
+| Accessibility | Shared labels/names, row descriptions, keyboard traversal, readable status text; browser uses semantic controls/ARIA | Accessible names alone do not qualify a screen reader; terminal/framebuffer/native accessibility bridges remain profile-specific |
+| Services | Explicit request identity, exactly one accepted completion, cancel/error distinguished, late completion rejected after shutdown | Prompt is the common implemented service; file/location calls explicitly fail in these native hosts |
+| Clipboard | Adapter/host owns platform access, application never receives native handles | FLTK/Rev expose host clipboard writes; SDL handles editor clipboard keys; browser permissions can reject requests |
+| Rendering | Immutable frame ownership, revision/damage tracking, retry presentation without repeating core mutation | GPU drivers and physical high-DPI displays require native target qualification |
+| Async work | UI thread owns adapters; workers publish owned values through shared runtime; close cancels queues | Never retain toolkit objects in workers or apply stale callbacks to recreated controls |
+| Session lifecycle | New browser epoch on recreation, ordered operations, duplicate command suppression, bounded transport | Hosted server is loopback-only and is not a multiuser deployment framework |
 
-The reference source for each path is the
-[pinned upstream tree](https://github.com/mirage335-colossus/gui-boundary/tree/bff416308f87dd0c1a7cc5b55476d757c971e879).
-Review also covered the upstream specification, layout, runtime, bitmap,
-adapter, feature, conformance, font, build and running guides. The cross-reference
-checks follow calls from application publication into retained state and
-rendering, and from actual renderer input back through common normalization into
-the application. A native callback's successful delivery is distinct from the
-application accepting its effect.
+Capabilities belong to the selected deployment profile, not toolkit-name branches
+inside shared features. Before adding a service, state required semantics and
+which profiles support it; supply a generic fallback or disable the shared action
+with an explanation. Unsupported requests must complete with a visible error,
+never claim success. A shared contract extension must land with all required
+adapter implementations and fixtures before a feature depends on it.
 
-## What this example establishes
+Practical checks include unsupported file-service errors completed exactly once,
+prompt cancellation, close with pending service, invalid core text and recovery,
+stale events, browser retry/session isolation, transport timeout/blocked-pipe
+cleanup, disabled-action behavior, resize/minimize recovery, frame lifetime and
+injected presentation failure. The browser fixture verifies accessible control
+and row names. It does not substitute for assistive-device testing.
 
-Record state and validation reside in the same `foundation::Store` library used
-by the CLI. GUI behavior and geometry reside in `gui/shared/`, which projects
-core records and displays core validation errors. Its feature extension adds a button, availability rule, command,
-and layout allocation without changing backend code. Both concrete adapters
-produce the same declarations and rectangles, accept edits through their own
-input mechanisms, and reach the same state. All upstream renderers remain
-unchanged. The optional FLTK composition uses that same library.
+Remaining vocabulary limits include multiwindow application coordination, rich
+text, complex script shaping, drag capture, native accessibility trees, file
+objects and more elaborate layout rules. If an adopted project needs them, extend
+the common contract first and prove behavior in every required backend. Do not
+invent unrelated backend-specific implementations to conceal an unsupported need.
 
-The integration imports verified upstream inputs directly, builds the shared
-application once, and makes dependency upgrades explicit. It does not copy
-renderers into this repository. Its one generated host adaptation changes only
-the application include/type binding and fails closed if that source shape or
-any pinned input changes.
+## Executed verification
 
-This is evidence for the finite supported widget and service vocabulary. It is
-not a promise that drag capture, every text system, every platform service, or
-arbitrary future interaction can be added without a public contract extension.
+The local profile uses Debian 13 x86-64, Clang 19.1.7 and its matching module scanner,
+CMake 3.31.6, Ninja, FLTK 1.3.11, SDL 2.32.4, system GLEW/FreeType and the pinned
+Rev sources. Optional distribution packages were extracted into an isolated build
+prefix; none are fetched by CMake. This newer development host does not establish
+Debian 12 or any older release's binary baseline.
 
-## Crucial remaining information and capabilities
+| Path | Executed evidence |
+| --- | --- |
+| Terminal | Real process on private PTY; input, normal close and interruption restore modes; shared extension/geometry suites |
+| Framebuffer | Real pixel renderer, pointer/keyboard input, shared extension, immutable frame and resize checks |
+| SDL | Real SDL queue, text/key input, added control, resize, software texture upload and close using dummy video |
+| Rev | Compiled 46 toolkit modules; real native callback paths and OpenGL capture under Xvfb; shared extension, services, close and serialized parity |
+| FLTK | Actual native editor/button/list callbacks under Xvfb; shared extension, serialized parity, capture, unavailable-service error and pending-service shutdown |
+| Hosted browser | Actual child and loopback sessions, identity/retry/security checks, child/worker cleanup; real Firefox/Chromium editing and prompt cancellation using copied assets |
+| Wasm browser | Actual Emscripten 3.1.69 compilation and Node execution; real Firefox/Chromium editing, prompt cancellation and DOM geometry equality with hosted mode |
 
-| Finding | Practical consequence | Required action before claiming support |
-| --- | --- | --- |
-| No top-level upstream license declaration in the pinned tree | A source pin and public availability do not establish binary redistribution terms | Obtain upstream licensing and review dependency notices; GUI binaries remain excluded from packages |
-| Upstream hosts directly construct their example; no installed CMake package/exported integration contract | Downstream reuse needs a small reviewed composition patch | Keep the pinned patch here; an upstream generic runner/factory and installable target would improve maintenance |
-| No universal accessibility or input-method implementation across all profiles | A framebuffer or terminal does not acquire OS accessibility merely by carrying descriptive strings | Declare target capabilities and qualify screen readers, keyboard operation and input methods on each shipping host |
-| Bundled software font has limited character coverage and no comprehensive shaping | Stored UTF-8 can remain correct while unsupported text uses a replacement glyph | Use the paired measurement/drawing extension for required scripts and verify caret/selection behavior |
-| Terminal cells and native glyph metrics differ | Pixel identity is not achievable across every profile | Require common logical composition and usability, then review captures at matching dimensions |
-| Browser text metrics arrive asynchronously | Initial layout can be provisional | Preserve measurement identity and recompose shared layout after valid replies |
-| Browser host is a local demonstration transport; supported services are narrower than the vocabulary | An available enum value is not evidence of a working file chooser or deployment service | Publish a backend capability table and explicit errors; specify richer services before use |
-| Pointer capture/dragging, touch, rich text, native trees, multiple windows and richer file transport are outside the finite core | These features cannot truthfully be promised as shared-only edits today | Extend public semantics and conformance for every supported adapter before introducing them |
-| Layout lacks universal minimum-size negotiation and docking | Complex resizable interfaces need additional allocation policy | Add reusable shared layout policy and narrow/long-text tests; do not author separate backend arrangements |
-| Optional native and browser checks need actual target environments | Linux source inspection or memory tests do not qualify a Windows desktop or a browser | Record real target build, input, visual, service and shutdown evidence with each release |
+Firefox 153.4.0 ESR and Chromium 154.0.8037.57 rendered both transport modes
+successfully. Shared DOM geometry also matched between those engines. Their captured
+screens show the same ordered controls, spacing and logical sizing, with only the
+transport status text differing. SDL/framebuffer and Rev captures retain the same
+shared arrangement; native glyph rendering may differ. Captures are diagnostic
+build artifacts, not golden images asserting exact pixels across machines.
 
-These are explicit adoption limits, not reasons to duplicate ordinary features
-inside adapters. No feature-specific renderer dispatch was found in the inspected
-generic adapters, and the provided feature-extension checks require none.
-Full production suitability depends on the chosen requirements and evidence for
-the supported platforms.
+The initial 20 native GUI checks passed. After adding installed qualification,
+all six native executable smoke checks plus the four affected shared/parity/PTY/HTTP
+checks passed, as did the rebuilt Wasm check, seven source/patch guards and the
+separate actual Firefox/Chromium runs. Eleven unchanged pinned
+upstream suites cover contract, bitmap, adapter, layout, runtime,
+presentation, extension, interaction, framebuffer, terminal and web behavior.
+The upstream DOM-renderer suite and local source/patch guards supplement them.
+Tests that depend on a display, Node, browser or toolkit are explicit; an omitted
+lane is missing evidence. See [build and test commands](gui-boundary.md#build-and-run)
+and the optional real-browser command below.
 
-## Verification of this consuming example
+```sh
+python3 -B gui/tests/browser_test.py \
+  --server build/gui-native/gui/web/serve.py \
+  --executable build/gui-native/gui/foundation-gui-web \
+  --wasm-dir build/gui-wasm/gui --output build/gui-browser-check
+python3 -B gui/tests/browser_test.py --browser chromium \
+  --browser-executable /path/to/chromium --driver /path/to/chromedriver \
+  --mode hosted --server /copied/share/software-foundation/web/serve.py \
+  --executable /copied/bin/foundation-gui-web --output build/chromium-hosted-check
+python3 -B gui/tests/browser_test.py --browser firefox --firefox /path/to/firefox \
+  --mode wasm --server /copied/share/software-foundation/web/serve.py \
+  --wasm-dir /copied/share/software-foundation/web --output build/firefox-wasm-check
+```
 
-The local Linux build used GCC 14.2, C++20, CMake and Ninja. The following checks
-were run against the pinned dependency and the consuming code:
+The browser fixture needs the explicitly selected browser, a matching ChromeDriver
+for Chromium, and permission to bind private local sockets. Inputs are prepared
+outside the fixture; it never installs browser packages. Chromium uses the
+[documented driver setup](https://developer.chrome.com/docs/chromedriver/get-started)
+and [WebDriver HTTP commands](https://www.w3.org/TR/webdriver2/).
+`--mode hosted`, `--mode wasm` and default `--mode both` let artifact qualification
+exercise each deliverable separately. Source-build server assets and Wasm modules
+may reside in different directories. Installed modules and server assets share
+`share/software-foundation/web`. The output directory must be new.
 
-- The shared application, real terminal executable and framebuffer executable
-  compiled in one build configuration.
-- The shared feature scenario passed through terminal and framebuffer input,
-  including core validation and recovery, stale-value rejection, added feature behavior, geometry equality,
-  exactly-once service completion, resize, frame lifetime, close and failure recovery.
-- The six upstream contract, retained-adapter, layout, runtime, presentation and
-  cross-renderer extension suites passed.
-- Four source-boundary/lock checks passed, including deliberately invalid
-  dependency examples.
-- The actual terminal process passed private pseudo-terminal editing, normal
-  exit, and interruption/restoration checks.
-- A generated 640 by 480 framebuffer image was inspected for alignment,
-  clipping, labels and readable controls.
+Only after successful checks and cleanup does the fixture publish
+`qualification.json`: schema version `1`, status `passed`, engine, actual browser
+version, selected mode, completed checks, explicit browser arguments and the
+verified input SHA256 map. It rejects changed input bytes, saves captures and
+`geometry.json`, removes its temporary profile and stops browser/server children.
+Failure leaves no success receipt. Retain that receipt with the release's broader
+environment and compatibility evidence. `FOUNDATION_GUI_CAPTURE_DIR` optionally saves native fixture captures
+to an existing claimed output directory. Keep browser/display runs separate from
+ordinary focused edit loops unless those paths changed.
 
-Optional FLTK, Rev, SDL, a real browser, a compiled browser module, Windows,
-macOS, hardware display drivers, native input methods and screen readers were
-not qualified by these checks. The selected upstream extension suite exercises
-browser semantics but is not a real-browser rendering test. The optional FLTK
-composition is provided for target-host verification; this environment did not
-provide its development package or display runner.
+Windows, ARM64, macOS, Debian 12 execution, physical GPU/input devices, screen
+readers and browser engines beyond the two listed above were not qualified by this
+local profile. Cross-platform code and CI recipes are implementation support;
+release claims require execution in the actual declared profile.
 
-To reproduce the relevant local profile, follow [the integration commands](gui-boundary.md#build-and-run)
-and turn on `FOUNDATION_GUI_HOST_TESTS`. Preserve current test output and the
-exact source/configuration alongside any release claim. Do not replace fresh
-evidence with this prose after changing the dependency or application.
+## Distribution gate
+
+The pinned dependency has no top-level license declaration. Its font, bundled
+library and toolkit notices are separate and do not establish permission for the
+whole GUI integration. The lock records `license: NOASSERTION` and
+`redistribution.approved: false`. CMake propagates
+`FOUNDATION_GUI_DISTRIBUTABLE=false`; packaging must reject GUI configurations.
+
+After upstream supplies reviewed terms, update the dependency pin/inventory and
+record every required license/notice under `redistribution.license_files`. Only
+reviewed metadata with a declared license, approval and verified license files
+activates installation. Native executables go under `bin`, browser assets/modules
+under `share/software-foundation/web`, and dependency notices under the installed
+documentation directory. Then verify the complete runtime library closure and
+license bundle on every target before issuing release artifacts. No configure
+switch waives this review.
