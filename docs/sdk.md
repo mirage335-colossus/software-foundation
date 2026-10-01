@@ -53,6 +53,54 @@ and separate host/target audit results. `sdk_verify.py --release` rejects missin
 production evidence. Windows dependency bases deliberately name an external
 Microsoft toolchain; they never claim to contain the compiler.
 
+## Linux SDK filenames and destination filesystems
+
+Native Linux producers explicitly declare `path_policy: "linux-case-sensitive-v1"`
+in the binary `sdk.json`. This policy requires both `host.system` and
+`target.system` to be `Linux`. Linux target headers can contain distinct names
+such as `xt_CONNMARK.h` and `xt_connmark.h`; both are required inputs. Preserve
+both names and their complete bytes. Never omit or rename a header to accommodate
+a filesystem or archive validator.
+
+An absent `path_policy` retains the strict portable default. Unknown values,
+non-Linux host/target combinations, and Windows dependency bases cannot select
+the Linux policy. Source inventories, source archives, release asset names,
+Windows and WebAssembly SDKs, and ordinary archive operations retain portable
+case-insensitive collision checks. These checks include implicit directories,
+file-versus-directory conflicts, and excluded manifest entries. Retained supplier
+source archives are ordinary byte blobs inside the portable source group; they
+are not unpacked there.
+
+The binary SDK verifier reads one bounded, exact root `sdk.json` before applying
+the declared policy to every archive member and complete file hash. Metadata
+ordering does not affect policy selection. Exact duplicate names, traversal,
+links, special entries, privileged modes and files used as directories remain
+invalid under both policies. Inspection of a retained binary group is read-only
+and may run on any supported host; installing or exporting a Linux-policy tree
+requires Linux and a filesystem that preserves distinct names.
+
+Before copying supplier files or extracting an SDK, the implementation checks
+each newly created destination directory with two exclusive case-distinct files.
+It validates independent identities and bytes, then removes only verified owned
+probe files. Payload copies also use exclusive creation. A filesystem that folds
+these names is rejected before it can discard compiler inputs. If a probe entry
+changes or cleanup becomes uncertain, the owned staging tree is preserved and
+the reported path must be inspected before retrying; a failed attempt never
+qualifies an installation. Do not relocate an SDK onto an unsupported mount.
+
+Verification remains read-only: it checks current case lookup in every populated
+directory and compares the complete exact-name inventory. Installation, binary
+export and post-relocation resealing all use the same validated policy. A moved
+SDK with recorded absolute locations must be reinstalled from its retained group;
+changing a manifest field does not perform relocation. Paired-header regression
+checks preserve both digests across deterministic export, byte-identical group
+copy, installation, relocation and actual consumer compilation.
+
+The policy and its helpers are producer recipe inputs. Introducing or changing
+them creates new recipe identities for every recipe that retains those helpers;
+old archives are never relabeled or treated as byte-equivalent. Filesystem fixture
+success is separate from complete cold SDK preparation and target qualification.
+
 ## Recipe and archive identity
 
 Track the recipe, not a large generated SDK tree. The recipe must identify every

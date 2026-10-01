@@ -39,7 +39,7 @@ def verify_group(directory, recipe):
     for name, expected_hash in values.items():
         if digest(directory / name) != expected_hash:
             raise ValueError('dependency archive checksum mismatch')
-    binary_info, _ = inspect_manifest_archive(directory / binary, 'sdk.json')
+    binary_info, _ = inspect_manifest_archive(directory / binary, 'sdk.json', sdk_archive=True)
     source_info, source_hash = inspect_manifest_archive(directory / source, 'sources.json')
     if binary_info.get('recipe_id') != recipe or source_info.get('recipe_id') != recipe:
         raise ValueError('retained archive recipe identity mismatch')

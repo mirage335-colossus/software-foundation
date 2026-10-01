@@ -39,6 +39,25 @@ class SDKTests(unittest.TestCase):
 
     def tearDown(self): self.temp.cleanup()
 
+    def test_unknown_or_incompatible_sdk_path_policy_is_rejected(self):
+        from dependency_archive import LINUX_SDK_PATHS, sdk_path_policy
+        from unittest.mock import patch
+        baseline = read_json(self.tree/'sdk.json')
+        for policy, host, target in (('unknown', 'Linux', 'Linux'), (None, 'Linux', 'Linux'),
+                                     (LINUX_SDK_PATHS, 'Windows', 'Linux'),
+                                     (LINUX_SDK_PATHS, 'Linux', 'Windows'),
+                                     (LINUX_SDK_PATHS, 'Linux', 'Emscripten')):
+            with self.subTest(policy=policy, host=host, target=target):
+                import copy
+                metadata = copy.deepcopy(baseline)
+                metadata['path_policy'] = policy
+                metadata['host']['system'] = host; metadata['target']['system'] = target
+                write_json(self.tree/'sdk.json', metadata)
+                with self.assertRaisesRegex(ValueError, 'path policy'): verify_sdk(self.tree)
+                with self.assertRaisesRegex(ValueError, 'path policy'): sdk_path_policy(metadata)
+        write_json(self.tree/'sdk.json', baseline)
+        verify_sdk(self.tree)
+
     def test_roundtrip_relocation_and_sources(self):
         result = sdk.install(self.group, self.recipe, self.root / 'moved SDK with spaces', production=False)
         self.assertEqual(result['recipe_id'], self.recipe)
@@ -447,6 +466,165 @@ class ProducerContractTests(unittest.TestCase):
 
 
 class NativeLinuxToolchainTests(unittest.TestCase):
+
+    def paired_header_sdk(self, root, *, relocation=False):
+        import shlex, shutil
+        from dependency_archive import LINUX_SDK_PATHS
+        recipe, tree, sources, original = fixture(root)
+        (tree / 'sdk.json').unlink()
+        headers = tree / 'sysroot/usr/include/linux/netfilter'
+        headers.mkdir(parents=True)
+        # Real Linux UAPI names are distinct compiler inputs, not duplicate files.
+        (headers / 'xt_CONNMARK.h').write_bytes(b'#pragma once\n#include "xt_connmark.h"\n#define UPPER_HEADER_VALUE 17\n')
+        (headers / 'xt_connmark.h').write_bytes(b'#pragma once\n#define LOWER_HEADER_VALUE 25\n')
+        compiler = shutil.which('c++')
+        if not compiler: raise ValueError('paired-header fixture requires native C++ compiler')
+        (tree / 'bin/c++').write_text('#!/bin/sh\nexec ' + shlex.quote(compiler) + ' "$@"\n')
+        if relocation:
+            (tree / 'relocate-sdk.sh').write_bytes(b'#!/bin/sh\nset -eu\nprintf relocated > relocation-state\n')
+            (tree / 'relocate-sdk.sh').chmod(0o755)
+        metadata = sdk.seal(tree, recipe, {'system':'Linux','processor':'x86_64','triple':'x86_64-linux-gnu',
+            'sysroot':'sysroot','cxx_compiler':'bin/c++'}, digest(sources/'sources.json'),
+            kind='diagnostic', licenses=['LICENSE'], production=False, path_policy=LINUX_SDK_PATHS)
+        if relocation:
+            metadata['relocation'] = 'buildroot'; write_json(tree/'sdk.json', metadata)
+        group = root / 'case group'; sdk.export_group(tree, sources, group)
+        return recipe, tree, sources, group
+
+    def test_case_distinct_headers_survive_complete_sdk_lifecycle_and_compile(self):
+        import shutil, subprocess
+        from dependency_archive import LINUX_SDK_PATHS, inspect_manifest_archive
+        from dependency_store import copy_group, names, verify_group
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            recipe, tree, sources, group = self.paired_header_sdk(root, relocation=True)
+            expected = file_inventory(tree, path_policy=LINUX_SDK_PATHS)
+            metadata, _ = inspect_manifest_archive(group/names(recipe)[0], 'sdk.json', sdk_archive=True)
+            self.assertEqual(metadata['path_policy'], LINUX_SDK_PATHS)
+            copy_group(group, root/'retained exact group', recipe)
+            self.assertEqual(verify_group(group, recipe), verify_group(root/'retained exact group', recipe))
+            sdk.export_group(tree, sources, root/'repeat group')
+            self.assertEqual(file_inventory(group), file_inventory(root/'repeat group'))
+            for index in (1, 2):
+                output = root / ('installed SDK ' + str(index))
+                sdk.install(root/'retained exact group', recipe, output, production=False)
+                verify_sdk(output)
+                for name, value in expected.items():
+                    if name != 'sdk.json': self.assertEqual(digest(output/name), value, name)
+                self.assertEqual((output/'relocation-state').read_bytes(), b'relocated')
+                source = root / ('consumer'+str(index)+'.cpp')
+                source.write_text('#include <linux/netfilter/xt_CONNMARK.h>\n#include <linux/netfilter/xt_connmark.h>\nstatic_assert(UPPER_HEADER_VALUE + LOWER_HEADER_VALUE == 42);\nint main(){return 0;}\n')
+                result = subprocess.run([str(output/'bin/c++'), '-std=c++20', '-I'+str(output/'sysroot/usr/include'),
+                                         str(source), '-o', str(root/('consumer'+str(index)))], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+                subprocess.run([str(root/('consumer'+str(index)))], check=True)
+                verify_sdk(output)
+                if index == 1:
+                    moved = root/'moved without relocation'; output.rename(moved)
+                    with self.assertRaisesRegex(ValueError, 'moved'): verify_sdk(moved)
+            sdk.restore_sources(group, recipe, root/'restored sources')
+            self.assertEqual(file_inventory(sources), file_inventory(root/'restored sources'))
+            # Ordinary extraction does not infer or silently enable SDK policy.
+            from dependency_archive import extract
+            with self.assertRaisesRegex(ValueError, 'case-insensitive'):
+                extract(group/names(recipe)[0], root/'generic extraction')
+            self.assertFalse((root/'generic extraction').exists())
+
+    def test_case_sensitive_materialization_is_exclusive_and_policy_gated(self):
+        from dependency_archive import LINUX_SDK_PATHS
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); supplier = root/'supplier'; supplier.mkdir()
+            (supplier/'Header.h').write_bytes(b'upper'); (supplier/'header.h').write_bytes(b'lower')
+            with self.assertRaisesRegex(ValueError, 'case-insensitive'):
+                sdk.materialize(supplier, root/'portable')
+            self.assertEqual((root/'portable/Header.h').read_bytes(), b'upper')
+            sdk.materialize(supplier, root/'linux', path_policy=LINUX_SDK_PATHS)
+            self.assertEqual((root/'linux/Header.h').read_bytes(), b'upper')
+            self.assertEqual((root/'linux/header.h').read_bytes(), b'lower')
+            with patch('sdk.probe_case_sensitive', side_effect=ValueError('case-insensitive destination')):
+                with self.assertRaisesRegex(ValueError, 'case-insensitive destination'):
+                    sdk.materialize(supplier, root/'unsupported', path_policy=LINUX_SDK_PATHS)
+            self.assertEqual(list((root/'unsupported').iterdir()), [])
+
+    def test_case_probe_rejects_alias_filesystem_without_removing_foreign_files(self):
+        import dependency_archive as archive
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); keep = root/'keep'; keep.write_bytes(b'untouched')
+            original = Path.open
+            def alias_open(path, mode='r', *args, **kwargs):
+                if path.name.startswith('.sdk-case-') and path.name.endswith('a') and mode == 'xb':
+                    raise FileExistsError('case-folded destination')
+                return original(path, mode, *args, **kwargs)
+            with patch.object(Path, 'open', alias_open), self.assertRaisesRegex(ValueError, 'case-distinct'):
+                archive.probe_case_sensitive(root)
+            self.assertEqual(list(root.iterdir()), [keep]); self.assertEqual(keep.read_bytes(), b'untouched')
+
+    def test_uncertain_probe_preserves_its_stage_through_sdk_install(self):
+        import dependency_archive as archive
+        from dependency_store import names
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); recipe, _, _, group = self.paired_header_sdk(root)
+            original = Path.read_bytes
+            def changed_probe(path):
+                value = original(path)
+                if path.name.startswith('.sdk-case-') and path.name.endswith('A'):
+                    return b'unexpected bytes'
+                return value
+            with patch.object(Path, 'read_bytes', changed_probe):
+                with self.assertRaisesRegex(archive.CaseProbeError, 'preserve destination'):
+                    sdk.install(group, recipe, root/'output', production=False)
+            self.assertFalse((root/'output').exists())
+            stages = list(root.glob('.sdk-install-*'))
+            self.assertEqual(len(stages), 1)
+            probes = list(stages[0].rglob('.sdk-case-*'))
+            self.assertEqual(len(probes), 2)
+            self.assertEqual(sorted(path.read_bytes() for path in probes), [b'lower\n', b'upper\n'])
+            self.assertFalse(list(stages[0].rglob('xt_CONNMARK.h')))
+
+    def test_case_sensitive_install_rejects_unsupported_destination_before_payload(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); recipe, _, _, group = self.paired_header_sdk(root)
+            with patch('dependency_archive.probe_case_sensitive', side_effect=ValueError('case-insensitive destination')):
+                with self.assertRaisesRegex(ValueError, 'case-insensitive destination'):
+                    sdk.install(group, recipe, root/'output', production=False)
+            self.assertFalse((root/'output').exists()); self.assertFalse(list(root.glob('.sdk-install-*')))
+
+    def test_case_sensitive_verify_checks_nested_lookups_without_writes(self):
+        from dependency_archive import LINUX_SDK_PATHS
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); _, tree, _, _ = self.paired_header_sdk(root)
+            before = file_inventory(tree, path_policy=LINUX_SDK_PATHS)
+            original = Path.exists
+            def alias_exists(path):
+                if path == tree/'sysroot/usr/INCLUDE': return True
+                return original(path)
+            with patch.object(Path, 'exists', alias_exists):
+                with self.assertRaisesRegex(ValueError, 'case-insensitive lookup'): verify_sdk(tree)
+            self.assertEqual(before, file_inventory(tree, path_policy=LINUX_SDK_PATHS))
+            (tree/'sysroot/usr/include/linux/netfilter/xt_connmark.h').write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError, 'inventory'): verify_sdk(tree)
+
+    def test_case_sensitive_policy_requires_linux_at_every_consumer(self):
+        from dependency_archive import LINUX_SDK_PATHS, archive_tree, extract
+        from unittest.mock import patch
+        from dependency_store import verify_group
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); recipe, tree, _, group = self.paired_header_sdk(root)
+            # Byte-only group inspection remains portable; installation does not.
+            with patch.object(sys, 'platform', 'win32'):
+                verify_group(group, recipe)
+                with self.assertRaisesRegex(ValueError, 'Linux filesystem host'): verify_sdk(tree)
+                with self.assertRaisesRegex(ValueError, 'Linux filesystem host'):
+                    sdk.install(group, recipe, root/'output', production=False)
+                with self.assertRaisesRegex(ValueError, 'Linux filesystem host'):
+                    archive_tree(tree, root/'no.tar.gz', path_policy=LINUX_SDK_PATHS)
+            self.assertFalse((root/'output').exists()); self.assertFalse((root/'no.tar.gz').exists())
+
 
     def test_exact_host_compatibility_alias_is_omitted_without_target_changes(self):
         import distro_sdk

@@ -2,7 +2,7 @@
 """Validate prepared SDK bytes and separate host, target and source contracts."""
 from pathlib import Path
 import re
-from dependency_archive import digest, read_json, relative, verify_inventory
+from dependency_archive import digest, read_json, relative, verify_inventory, sdk_path_policy
 
 
 def contained(root, name):
@@ -27,7 +27,7 @@ def verify_sdk(root, release=False):
     fields = ('sysroot',) if data.get('kind') == 'windows-dependencies' else ('cxx_compiler', 'sysroot')
     for field in fields:
         contained(root, target[field])
-    verify_inventory(root, data['files'], exclude=('sdk.json',))
+    verify_inventory(root, data['files'], exclude=('sdk.json',), path_policy=sdk_path_policy(data))
     for name in data.get('host_tools', {}).values():
         if not contained(root, name).is_file() or name not in data['files']:
             raise ValueError('host tool omitted from SDK inventory')

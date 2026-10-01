@@ -11,7 +11,7 @@ import subprocess
 import tarfile
 import tempfile
 import urllib.request
-from dependency_archive import digest, encoded, file_inventory, read_json, relative, verify_inventory, write_json
+from dependency_archive import sdk_temporary_directory, digest, encoded, file_inventory, read_json, relative, verify_inventory, write_json
 from sdk import export_group, materialize, seal
 
 TOOLS = ('distro_sdk.py', 'sdk.py', 'sdk_manifest.py', 'dependency_archive.py', 'dependency_store.py', 'verify_abi.py')
@@ -335,7 +335,7 @@ def build(recipe, cache, destination, jobs):
     destination = Path(destination).absolute()
     if destination.exists(): raise ValueError('SDK group destination must be new')
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=destination.parent, prefix='sdk-build-') as temporary:
+    with sdk_temporary_directory(dir=destination.parent, prefix='sdk-build-') as temporary:
         work = Path(temporary)
         supplier = output / 'host'
         remove_host_compatibility_alias(supplier)
@@ -356,7 +356,7 @@ def build(recipe, cache, destination, jobs):
                     path.symlink_to(os.path.relpath(candidate, path.parent))
                 else: raise ValueError('unresolved absolute SDK link: ' + str(path))
         tree = work / 'sdk'
-        materialize(supplier, tree)
+        materialize(supplier, tree, path_policy='linux-case-sensitive-v1')
         omitted = omit_target_runtime(tree, manifest['target'] + '/sysroot', manifest['glibc_source']['sha256'])
         licenses = tree / 'share/sdk-licenses'
         shutil.copytree(output / 'legal-info', licenses, ignore=lambda directory, entries: set(entries) & {'sources', 'host-sources'})
@@ -367,7 +367,7 @@ def build(recipe, cache, destination, jobs):
                   'sysroot': manifest['target'] + '/sysroot', 'cxx_compiler': 'bin/' + manifest['target'] + '-g++',
                   'c_compiler': 'bin/' + manifest['target'] + '-gcc'}
         metadata = seal(tree, identity, target, digest(sources / 'sources.json'), licenses=['share/sdk-licenses'],
-                        runtime_source_sha256=manifest['glibc_source']['sha256'],
+                        runtime_source_sha256=manifest['glibc_source']['sha256'], path_policy='linux-case-sensitive-v1',
                         host_tools={'cmake': 'bin/cmake', 'ctest': 'bin/ctest', 'cpack': 'bin/cpack', 'ninja': 'bin/ninja', 'python': 'bin/python3'})
         metadata['relocation'] = 'buildroot'
         metadata['omitted_target_runtime'] = omitted

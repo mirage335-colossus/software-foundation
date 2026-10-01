@@ -7,7 +7,9 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-from dependency_archive import archive_tree, digest, encoded, extract, file_inventory, read_json, verify_inventory, write_json
+from dependency_archive import (archive_tree, digest, encoded, extract, file_inventory, read_json, verify_inventory, write_json,
+                                PORTABLE_PATHS, LINUX_SDK_PATHS, PathInventory, sdk_path_policy,
+                                probe_case_sensitive, inspect_manifest_archive, require_linux_case_host, sdk_temporary_directory)
 from dependency_store import create_sums, names, verify_group
 from sdk_manifest import verify_sdk
 from verify_abi import audit, SDK_RUNTIME_NAMES
@@ -17,29 +19,37 @@ def recipe_identity(recipe_directory):
     return hashlib.sha256(encoded(file_inventory(recipe_directory))).hexdigest()
 
 
-def materialize(source, output):
+def materialize(source, output, *, path_policy=PORTABLE_PATHS):
     """Convert confined supplier links into ordinary archived files/directories."""
     source, output = Path(source).resolve(strict=True), Path(output)
+    registry = PathInventory(path_policy)
+    if path_policy == LINUX_SDK_PATHS:
+        require_linux_case_host()
     def copy(path, destination, ancestors):
         real = path.resolve(strict=True)
         if real != source and source not in real.parents:
             raise ValueError('supplier link escapes SDK tree')
         if real in ancestors:
             raise ValueError('supplier directory link cycle')
+        if destination != output:
+            registry.add(destination.relative_to(output).as_posix(), real.is_dir())
         if real.is_dir():
             destination.mkdir()
+            if path_policy == LINUX_SDK_PATHS:
+                probe_case_sensitive(destination)
             for child in sorted(real.iterdir()):
                 copy(child, destination / child.name, ancestors | {real})
         elif real.is_file():
-            shutil.copyfile(real, destination)
+            with real.open('rb') as source_file, destination.open('xb') as output_file:
+                shutil.copyfileobj(source_file, output_file)
             destination.chmod(0o755 if real.stat().st_mode & 0o111 else 0o644)
         else:
             raise ValueError('supplier tree contains a special file')
-    if output.exists(): raise ValueError('materialization output must be new')
+    if output.exists() or output.is_symlink(): raise ValueError('materialization output must be new')
     copy(source, output, set())
 
 
-def seal(root, recipe, target, sources_hash, kind='source-build', licenses=None, production=True, host_tools=None, runtime_source_sha256=None):
+def seal(root, recipe, target, sources_hash, kind='source-build', licenses=None, production=True, host_tools=None, runtime_source_sha256=None, *, path_policy=PORTABLE_PATHS):
     root = Path(root)
     if (root / 'sdk.json').exists(): raise ValueError('SDK is already sealed')
     metadata = {'schema_version': 1, 'recipe_id': recipe, 'kind': kind, 'target': target,
@@ -47,10 +57,15 @@ def seal(root, recipe, target, sources_hash, kind='source-build', licenses=None,
                 'host': {'system': 'Linux', 'processor': target['processor'], 'glibc': '2.36'}, 'host_tools': host_tools or {},
                 'sources_sha256': sources_hash, 'licenses': licenses or [],
                 'relocation': 'relative-paths', 'audits': {}}
+    if path_policy != PORTABLE_PATHS:
+        metadata['path_policy'] = path_policy
+    policy = sdk_path_policy(metadata)
+    if policy == LINUX_SDK_PATHS:
+        probe_case_sensitive(root)
     if production:
         if target['system'] == 'Linux':
             sysroot = root / target['sysroot']
-            cohort = {name: value for name, value in file_inventory(sysroot).items()
+            cohort = {name: value for name, value in file_inventory(sysroot, path_policy=policy).items()
                       if Path(name).name in SDK_RUNTIME_NAMES
                       and Path(name).parent.as_posix() in ('lib', 'lib64', 'usr/lib', 'usr/lib64')}
             runtime = {'recipe_id': recipe, 'processor': target['processor'], 'glibc': '2.36',
@@ -65,7 +80,7 @@ def seal(root, recipe, target, sources_hash, kind='source-build', licenses=None,
                         if str(error) != 'no ELF files inspected': raise
             if not host_files: raise ValueError('SDK contains no auditable host executables')
             metadata['audits']['host'] = {'status': 'passed', 'directories': host_files}
-    metadata['files'] = file_inventory(root)
+    metadata['files'] = file_inventory(root, path_policy=policy)
     write_json(root / 'sdk.json', metadata)
     verify_sdk(root, release=production)
     return metadata
@@ -88,7 +103,7 @@ def export_group(tree, sources, output, epoch=0):
         group = Path(temporary) / 'group'
         group.mkdir()
         binary, source_name, _ = names(recipe)
-        archive_tree(tree, group / binary, epoch)
+        archive_tree(tree, group / binary, epoch, path_policy=sdk_path_policy(metadata))
         archive_tree(sources, group / source_name, epoch)
         create_sums(group, recipe)
         group.rename(output)
@@ -135,9 +150,11 @@ def install(group, recipe, output, production=True):
     verify_group(group, recipe)
     if output.exists() or output.is_symlink(): raise ValueError('SDK installation destination must be new')
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=output.parent, prefix='.sdk-install-') as temporary:
+    with sdk_temporary_directory(dir=output.parent, prefix='.sdk-install-') as temporary:
         staged = Path(temporary) / 'sdk'
-        extract(group / names(recipe)[0], staged)
+        archived, _ = inspect_manifest_archive(group / names(recipe)[0], 'sdk.json', sdk_archive=True)
+        policy = sdk_path_policy(archived)
+        extract(group / names(recipe)[0], staged, path_policy=policy)
         verify_sdk(staged, release=production)
         metadata = read_json(staged / 'sdk.json')
         if metadata['recipe_id'] != recipe: raise ValueError('SDK binary recipe identity mismatch')
@@ -151,7 +168,7 @@ def install(group, recipe, output, production=True):
                 subprocess.run([str(output / 'relocate-sdk.sh')], cwd=output, env=clean_environment(output), check=True)
                 metadata['installed_root'] = str(output.resolve())
                 metadata['archive_sha256'] = digest(group / names(recipe)[0])
-                metadata['files'] = file_inventory(output, exclude=('sdk.json',))
+                metadata['files'] = file_inventory(output, exclude=('sdk.json',), path_policy=policy)
                 write_json(output / 'sdk.json', metadata)
                 verify_sdk(output, release=production)
                 if production:

@@ -30,13 +30,13 @@ explicit. No public release was published by these checks.
 | Documentation | Local destinations, heading anchors, strict JSON and requirement-to-code/test references checked |
 | Workflows | Eight workflows passed actionlint; 49 CI helper, 21 SDK-retention and 11 source-identity cases passed; hosted execution remains separate evidence |
 | Installed documentation | Both manual pages passed formatting checks and relocated installation checks; Debian, Arch and Gentoo fixtures preserve variant-specific public manual names |
-| Windows host graphics | 25 prerequisite fixtures and 15 artifact fixtures passed; exact pinned driver extraction and cleanup passed; native WGL probing and real Windows GUI captures require hosted execution |
+| Windows host graphics | 28 prerequisite fixtures and 15 artifact fixtures passed; exact pinned driver extraction, native WGL probing and cleanup passed; real Windows GUI captures remain a separate qualification scope |
 | APT client adapter | Disposable-container preflight and descendant-timeout regressions passed; actual signed HTTPS install/update/tamper-rejection/removal passed in the hosted Bookworm workflow |
 
 Combined native Release verification with distribution tests passed all 32 CTest
 entries in one invocation, including the relocated installed consumer and both
 manual pages. The signing suites used disposable local GnuPG agent sockets. Its
-28 inner Python suites recorded 607 executed passing cases and two explicit
+28 inner Python suites recorded 623 executed passing cases and two explicit
 native-Windows exclusions.
 The selected-linker native case passed separately on Windows as recorded below.
 No unexpected skips were accepted. The preceding
@@ -55,90 +55,65 @@ local implementation checks, not a complete release-policy certification.
 
 ## Hosted candidate and maintenance observations
 
-Full candidate [36898077179](https://github.com/mirage335-colossus/software-foundation/actions/runs/36898077179)
-passed at `ac8ca19867b832ba33dae6cc2bc5abcbb46047a5` on Windows x86_64,
-Linux x86_64 and Linux ARM64. Native source/tool suites, independent packaging,
-fresh copied-archive execution and sanitizer checks passed. The real Debian client
-receipt records signed HTTPS refresh, installation, exact payload verification,
-runtime execution, upgrade, tampered-signature rejection and removal. This
-supersedes earlier candidate failures for those exact scopes and inputs.
+Candidate [36911723772](https://github.com/mirage335-colossus/software-foundation/actions/runs/36911723772)
+passed at `a00e8b7d083e9b3e9f7b015064c245aa30f32fa2` on Windows x86_64,
+Linux x86_64 and Linux ARM64. All source/tool, packaging, fresh copied-archive
+consumer, sanitizer and distribution jobs succeeded. The disposable Bookworm
+client check exercised signed HTTPS refresh, installation, exact payload
+verification, execution, upgrade, tampered-signature rejection and removal.
+These results qualify the recorded environments and inputs; they do not establish
+every declared older-runtime baseline.
 
-The browser job of SDK maintenance [36898087108](https://github.com/mirage335-colossus/software-foundation/actions/runs/36898087108)
-passed at `ac8ca19867b832ba33dae6cc2bc5abcbb46047a5` with `execute=false`.
-Production, two core and 29 GUI/source consumer checks, and all three artifact
-uploads succeeded. This also qualified the container builder's host UID/GID mapping and
-readable retained output. Actual browser-engine interactions remain the separately
-observed scope recorded above; this maintenance run did not execute browser engines.
+Browser SDK maintenance [36906409188](https://github.com/mirage335-colossus/software-foundation/actions/runs/36906409188)
+passed at `43780010adc170848a094170ea1ac649c2dba497` with `execute=false`.
+Production, relocated consumption, two core checks, 29 GUI/source checks and all
+retention uploads succeeded. JUnit recorded no skipped checks; 572 tool cases
+passed with two explicitly excluded native-Windows cases. Recipe
+`52098b801a6a7fd8daac7657158a6a161cd5869ac231856962bc1a11e365fabb`
+produced group artifact `11185901696`, proof `11185271833` and plan `11185426964`.
+Proof and plan bytes were checksum-verified. This run exercised compiled Wasm
+through retained Node; real Firefox and Chromium interactions remain the separate
+supporting evidence above.
 
-Windows SDK maintenance [36892089929](https://github.com/mirage335-colossus/software-foundation/actions/runs/36892089929)
-completed the maintenance download closure, fresh offline build and export of all
-17 dependencies, then failed before consumer execution because a linker help
-command returned a nonzero status. Consumers now use validated native PE file
-version inspection. The real selected-linker test passed on the Windows tools job
-of [36896590427](https://github.com/mirage335-colossus/software-foundation/actions/runs/36896590427)
-at `25a674d6c564b6068c0c73c0ee0e2fd6c2444062`: the build suite recorded 12 passes
-and no exclusions. That candidate exposed one short-path fixture mismatch;
-correcting it preserves the producer's existing canonical-path behavior.
+Windows production [36906320107](https://github.com/mirage335-colossus/software-foundation/actions/runs/36906320107)
+completed a fresh offline dependency build with normalized LF recipe inputs and
+retained a verified complete binary/source/checksum group. Its consumer failure
+left that group explicitly unqualified. Explicit reuse verifies exact producer,
+run, attempt, job, recipe, artifact and complete byte identities before running
+fresh consumers; no different recipe or failed consumer is promoted implicitly.
 
-The Windows job of maintenance run `36898087108` then completed SDK production
-and both core consumer checks. Its GUI compilation exposed Windows header macros
-colliding with standard C++ minimum/maximum calls. The shared GUI interface now
-sets `NOMINMAX` for all Windows consumers; 15 boundary tests passed, including
-actual CMake direct/transitive consumers and removal controls. Native GUI execution
-still needs a successful retry. The failed job retained a verified complete SDK
-group with an explicitly unqualified receipt; retaining those bytes does not make
-the failed consumer checks pass.
+The retained Windows retry [36911711394](https://github.com/mirage335-colossus/software-foundation/actions/runs/36911711394)
+at `a00e8b7d083e9b3e9f7b015064c245aa30f32fa2` passed native GUI compilation
+and both core checks. The actual WGL probe passed with Mesa 26.2.3, llvmpipe using
+LLVM 23.1.2, an OpenGL 4.6 core context, both required WGL entry points and
+buffer-storage support. Loaded module paths and hashes matched the pinned staged
+inputs, and cleanup succeeded. Repeated GUI input restoration then failed before
+CTest because host-specific directory separators differed from the retained
+logical paths. No GUI assertions or captures executed in that run; the overall
+maintenance job remains failed. The repair uses portable logical parent paths;
+14 source-group cases pass, including a failing old-code Windows control and
+preservation of changed or foreign files and directories. Hosted execution of
+that repair remains a separate required check.
 
-Retained Windows retry [36903597192](https://github.com/mirage335-colossus/software-foundation/actions/runs/36903597192)
-at `49e3178f0ef83fa98a139acd52aee1c569d0918b` verified the exact prior
-producer/artifacts, restored the complete SDK, and passed both core checks without
-cold SDK production. The GUI macro repair compiled successfully. MSVC then rejected
-an upstream test callback's self-reference during its adapter's initialization;
-review identified a second matching test. Reviewed generated-source adaptations
-preserve both tests' event, selection, mutation and recursion assertions. Native
-execution of those corrected GUI tests remains necessary. Both actual generated
-contract/adapter executables passed locally, with all original assertions and
-supplier bytes preserved; the 16 boundary fixtures also passed.
+ARM64 maintenance [36904727103](https://github.com/mirage335-colossus/software-foundation/actions/runs/36904727103),
+at `c87c6905fa9049ab7759e4ce797842e266965d38`, completed supplier compilation
+and license-information collection, then failed before sealing on valid
+case-distinct Linux headers. The exact supplier compatibility-link repair passed,
+but this run produced no completed SDK group or consumer qualification. The
+Linux-specific path-policy repair preserves required header names and bytes through
+materialization, archive verification, installation and relocation. Its 184 affected
+contract cases passed without skips; a separate actual-header fixture preserved
+eight Linux UAPI headers and compiled and ran a consumer using both case-distinct
+headers after relocation. Destination probes reject lossy filesystems before
+copying inputs. Windows and ordinary archive policies remain strict.
 
-The same candidate's Windows tools job exposed ZIP-name normalization in a malformed
-archive fixture. Recovery now checks original stored member names before Python's
-host-dependent cleanup; fixtures preserve raw backslash and NUL names in both ZIP
-headers. The 21 retention tests and 49 CI tests pass locally, with a failing old-code
-control; the corrected Windows tools suite still requires its hosted result.
-
-PowerShell checkout attributes now require LF. The earlier Windows CRLF checkout
-had changed the exact SDK recipe identity despite the same Git revision. Every
-Windows producer helper has matching LF attributes and bytes; the CRLF control
-reproduces the prior identity. A freshly normalized Windows group must be produced,
-rather than treating different recipe bytes as interchangeable.
-
-The initial ARM64 cold build completed compilation, the SDK target and supplier
-license-information collection, then rejected runtime-only skeleton aliases during
-assembly. The subsequent source review identified additional target-only libc
-programs/modules and required development-library aliases. Exact source-bound
-omission and identical-provider checks preserve compiler inputs and strict
-application ABI policy; 39 SDK and 27 actual-ELF/portability fixture cases passed.
-Corrected native production and all GUI consumers still require hosted results.
-
-Twenty-one complete-group retention and recovery tests verify that a consumer failure
-remains a failure while checked binary/source/checksum bytes can be retained and
-explicitly reused. Producer, artifact, recipe, receipt and complete byte identities
-are verified before fresh consumers run. The latest combined verification
-passed all 16 GUI boundary, 49 CI and 21 retention cases. Their receipt remains
-explicitly unqualified; no failed-run artifact becomes a qualified base automatically.
-
-The ARM64 producer in maintenance run `36898087108` completed compilation and
-supplier license-information collection, then rejected a supplier directory-link
-cycle before SDK sealing. This failed scope has no completed group or consumer
-qualification. Exact pinned supplier initialization rules reproduce the host
-`usr -> .` compatibility cycle for both native architectures. Native assembly now
-validates and removes only that alias; 42 SDK tests and both supplier-rule fixtures
-pass while preserving target inputs and arbitrary-cycle rejection. Complete
-corrected native producers still need hosted qualification.
-
-A requested, queued or running job is not successful qualification. Evidence is
-reused only for identical relevant inputs; the latest repairs still need their
-prepared-SDK hosted checks. No release publication is authorized by these runs.
+The shared SDK helper changes create new recipe identities, including Windows and
+WebAssembly recipes that retain those helpers. Earlier archives are never
+relabeled. Complete production and consumption of the changed recipes require
+new hosted results. Earlier checks remain supporting evidence only where relevant
+inputs are unchanged. Requested, queued, running, cancelled and failed jobs are
+not successful qualification. These observations do not establish that every SDK
+passes, approve GUI redistribution, or authorize release publication.
 
 ## Reproduce the integrated checks
 
