@@ -12,13 +12,14 @@ HOST_LIBRARIES = {'libc.so.6', 'libm.so.6', 'libpthread.so.0', 'libdl.so.2', 'li
                   'libresolv.so.2', 'libutil.so.1', 'ld-linux-x86-64.so.2', 'ld-linux-aarch64.so.1'}
 
 SDK_RUNTIME_ALIASES = {
+    'libc_malloc_debug.so': 'libc_malloc_debug.so.0', 'libcrypt.so': 'libcrypt.so.1',
     'libmvec.so': 'libmvec.so.1', 'libresolv.so': 'libresolv.so.2',
     'libBrokenLocale.so': 'libBrokenLocale.so.1', 'libnss_compat.so': 'libnss_compat.so.2',
     'libnss_db.so': 'libnss_db.so.2', 'libnss_hesiod.so': 'libnss_hesiod.so.2', 'libnsl.so': 'libnsl.so.1',
 }
 SDK_RUNTIME_NAMES = HOST_LIBRARIES | {'libanl.so.1', 'libBrokenLocale.so.1', 'libnss_compat.so.2',
     'libnss_dns.so.2', 'libnss_files.so.2', 'libnss_hesiod.so.2', 'libnss_db.so.2',
-    'libnsl.so.1', 'libmvec.so.1', 'libmemusage.so', 'libpcprofile.so'} | set(SDK_RUNTIME_ALIASES)
+    'libnsl.so.1', 'libmvec.so.1', 'libmemusage.so', 'libpcprofile.so', 'libc_malloc_debug.so.0', 'libcrypt.so.1'} | set(SDK_RUNTIME_ALIASES)
 
 
 def version(value):

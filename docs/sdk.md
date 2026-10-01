@@ -53,6 +53,15 @@ and separate host/target audit results. `sdk_verify.py --release` rejects missin
 production evidence. Windows dependency bases deliberately name an external
 Microsoft toolchain; they never claim to contain the compiler.
 
+Review the supplier's complete installed shared-library inventory, including
+optional facilities enabled by default and development aliases. Preserve static
+linking inputs and developer debugging support. Source-proven private libc or
+loader imports are accepted only in the exact declared SDK libc inventory, with
+the matched provider, source/recipe identities, approved library locations,
+byte-identical development aliases and runtime version checks. Arbitrary files
+with private ABI requirements remain rejected, and application packages cannot
+inherit this SDK allowance or bundle the target libc/loader.
+
 ## Linux SDK filenames and destination filesystems
 
 Native Linux producers explicitly declare `path_policy: "linux-case-sensitive-v1"`

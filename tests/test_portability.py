@@ -216,8 +216,8 @@ class PortabilityTests(unittest.TestCase):
         loader = 'ld-linux-x86-64.so.2' if self.processor == 'x86_64' else 'ld-linux-aarch64.so.1'
         (self.root / 'loader.c').write_text('int internal_value(void) { return 1; }\n')
         (self.root / 'loader.map').write_text('GLIBC_PRIVATE { global: internal_value; local: *; };\n')
-        (self.root / 'libc.c').write_text('extern int internal_value(void); int public_value(void) { return internal_value(); }\n')
-        (self.root / 'libc.map').write_text('GLIBC_' + libc_version + ' { global: public_value; local: *; };\n')
+        (self.root / 'libc.c').write_text('extern int internal_value(void); int public_value(void) { return internal_value(); } int libc_internal_value(void) { return internal_value(); }\n')
+        (self.root / 'libc.map').write_text('GLIBC_' + libc_version + ' { global: public_value; local: *; };\nGLIBC_PRIVATE { global: libc_internal_value; };\n')
         subprocess.run(['cc', '-shared', '-nostdlib', '-fPIC', str(self.root / 'loader.c'),
                         '-Wl,--version-script=' + str(self.root / 'loader.map'), '-Wl,-soname,' + loader,
                         '-o', str(libraries / loader)], check=True)
@@ -234,14 +234,73 @@ class PortabilityTests(unittest.TestCase):
         loader = next(path for path in (sysroot / 'lib').iterdir() if path.name.startswith('ld-'))
         (self.root / 'companion.c').write_text('extern int internal_value(void); int companion(void) { return internal_value(); }\n')
         (self.root / 'companion.map').write_text('GLIBC_2.22 { global: companion; local: *; };\n')
-        for name in ('libmvec.so.1', 'libresolv.so.2', 'libnss_db.so.2'):
+        for name in ('libmvec.so.1', 'libresolv.so.2', 'libnss_db.so.2', 'libc_malloc_debug.so.0', 'libcrypt.so.1'):
             path = sysroot / 'lib' / name
-            subprocess.run(['cc', '-shared', '-nostdlib', '-fPIC', str(self.root / 'companion.c'), str(loader),
+            body = 'internal_value()'
+            providers = [loader]
+            if name in ('libc_malloc_debug.so.0', 'libcrypt.so.1'):
+                body = ('internal_value() + ' if name == 'libc_malloc_debug.so.0' else '') + 'libc_internal_value()'
+                providers = ([loader] if name == 'libc_malloc_debug.so.0' else []) + [sysroot/'lib/libc.so.6']
+            (self.root/'companion.c').write_text('extern int internal_value(void); extern int libc_internal_value(void); int companion(void) { return '+body+'; }\n')
+            subprocess.run(['cc', '-shared', '-nostdlib', '-fPIC', str(self.root / 'companion.c'), *map(str, providers),
                             '-Wl,--version-script=' + str(self.root / 'companion.map'), '-Wl,-soname,' + name,
                             '-o', str(path)], check=True)
             shutil.copyfile(path, path.with_name(name.rsplit('.', 1)[0]))
         context['files'] = file_inventory(sysroot)
         return sysroot, context
+
+    def test_sdk_debug_library_and_linking_inputs_remain_in_exact_cohort(self):
+        from dependency_archive import file_inventory
+        sysroot, context = self.sdk_companion_fixture()
+        # The real supplier installs this independent static linking input too.
+        linking = sysroot / 'lib/libmcheck.a'; linking.write_bytes(b'!<arch>\n')
+        legacy = dict(context, files={name: value for name, value in context['files'].items()
+                                    if Path(name).name not in ('libc_malloc_debug.so', 'libc_malloc_debug.so.0', 'libcrypt.so', 'libcrypt.so.1')})
+        with self.assertRaisesRegex(ValueError, 'PRIVATE'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=legacy)
+        before = file_inventory(sysroot)
+        report = verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+        for name in ('lib/libc_malloc_debug.so', 'lib/libc_malloc_debug.so.0'):
+            self.assertEqual(report['files'][name]['private_requirements'],
+                             ['ld-linux-x86-64.so.2' if self.processor == 'x86_64' else 'ld-linux-aarch64.so.1', 'libc.so.6'])
+        for name in ('lib/libcrypt.so', 'lib/libcrypt.so.1'):
+            self.assertEqual(report['files'][name]['private_requirements'], ['libc.so.6'])
+        self.assertEqual(file_inventory(sysroot), before)
+        self.assertEqual(linking.read_bytes(), b'!<arch>\n')
+        with self.assertRaisesRegex(ValueError, 'PRIVATE'):
+            verify_abi.audit(sysroot / 'lib/libc_malloc_debug.so.0', processor=self.processor)
+        with self.assertRaisesRegex(ValueError, 'application packages'):
+            verify_abi.audit(sysroot, processor=self.processor, sdk_sysroot=context)
+        with self.assertRaisesRegex(ValueError, 'must not bundle'):
+            verify_abi.resolve_closure(sysroot, report['files'])
+
+    def test_sdk_debug_cohort_rejects_wrong_name_location_provider_or_hash(self):
+        from dependency_archive import digest, file_inventory
+        sysroot, context = self.sdk_companion_fixture()
+        alias = sysroot/'lib/libc_malloc_debug.so'; provider = sysroot/'lib/libc_malloc_debug.so.0'
+        original = provider.read_bytes()
+        context['files']['lib/libc_malloc_debug.so.0'] = '0'*64
+        with self.assertRaisesRegex(ValueError, 'path or digest'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+        context['files'] = file_inventory(sysroot)
+        for name in ('lib/libc_malloc_debug_extra.so', 'bin/libc_malloc_debug.so.0'):
+            destination = sysroot/name; destination.parent.mkdir(exist_ok=True)
+            shutil.copyfile(provider, destination)
+            context['files'] = file_inventory(sysroot)
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'path or digest'):
+                verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+            del context['files'][name]
+            with self.assertRaisesRegex(ValueError, 'PRIVATE'):
+                verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+            destination.unlink()
+        provider.write_bytes(original+b'different provider bytes')
+        context['files'] = file_inventory(sysroot)
+        with self.assertRaisesRegex(ValueError, 'identical runtime provider'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+        provider.write_bytes(original); context['files'] = file_inventory(sysroot)
+        del context['files']['lib/libc_malloc_debug.so.0']
+        with self.assertRaisesRegex(ValueError, 'identical runtime provider'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
 
     def test_sdk_companions_and_identical_development_aliases_are_audited(self):
         sysroot, context = self.sdk_companion_fixture()
