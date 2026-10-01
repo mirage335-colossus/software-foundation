@@ -141,6 +141,17 @@ requirements, an unexpected loader, absolute/escaping runtime search paths,
 incomplete non-system library closure and declared x86 instruction requirements
 above the generic baseline. No ELF files is an error, not passing coverage.
 
+A named ABI capability needs an explicit, supplier-documented minimum runtime;
+never silently discard it or parse every nonnumeric requirement as acceptable.
+The known `GLIBC_ABI_DT_RELR` capability maps to glibc 2.36, following the
+[glibc 2.36 release notes](https://sourceware.org/pipermail/libc-alpha/2022-August/141193.html)
+and the supplier's `elf/Versions` declaration. Its original name and effective
+floor remain in the audit report. The same rule applies to SDK host tools,
+target inputs and application binaries. A lower ceiling still fails, a newer
+numeric requirement still wins, unknown names remain errors, and application
+imports of private libc interfaces remain prohibited. An actual linked executable
+with packed relocations tests the rule and runs as a consumer.
+
 ```sh
 python3 tools/verify_abi.py /owned/extracted-package --processor x86_64 --output /owned/abi.json
 python3 tools/stage_runtime.py --executable /owned/staging/bin/foundation-cli \

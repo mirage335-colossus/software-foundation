@@ -7,6 +7,9 @@ import subprocess
 from dependency_archive import digest, encoded, write_json
 
 BOOKWORM = {'GLIBC': '2.36', 'GLIBCXX': '3.4.30', 'CXXABI': '1.3.13', 'GCC': '12.0.0'}
+# Explicit capability-to-runtime floors; unknown names still fail version().
+# glibc 2.36 NEWS and elf/Versions establish this loader capability.
+NAMED_ABI_FLOORS = {('GLIBC', 'ABI_DT_RELR'): '2.36'}
 MACHINES = {'x86_64': 'Advanced Micro Devices X86-64', 'aarch64': 'AArch64'}
 HOST_LIBRARIES = {'libc.so.6', 'libm.so.6', 'libpthread.so.0', 'libdl.so.2', 'librt.so.1',
                   'libresolv.so.2', 'libutil.so.1', 'ld-linux-x86-64.so.2', 'ld-linux-aarch64.so.1'}
@@ -52,6 +55,7 @@ def inspect(path, readelf='readelf', sdk_private=False):
     loader = re.findall(r'Requesting program interpreter:\s*([^\]]+)', headers)
     info = run(readelf, '--version-info', path)
     requirements = {}
+    named_requirements = {}
     # Only dependency imports matter; version definitions in an exported library
     # describe its capabilities rather than its own runtime requirements.
     needs = info.split('Version needs section', 1)
@@ -59,12 +63,16 @@ def inspect(path, readelf='readelf', sdk_private=False):
         for family, value in re.findall(r'Name:\s*(GLIBCXX|GLIBC|CXXABI|GCC)_([^\s]+)', needs[1]):
             if sdk_private and family == 'GLIBC' and value == 'PRIVATE':
                 continue
+            floor = NAMED_ABI_FLOORS.get((family, value))
+            if floor is not None:
+                named_requirements[family + '_' + value] = floor
+                value = floor
             parsed = version(value)
             if parsed > version(requirements.get(family, '0')):
                 requirements[family] = value
     result = {'sha256': digest(path), 'machine': machine.group(1).strip(), 'needed': sorted(needed),
             'rpaths': rpath + runpath, 'rpath': rpath, 'runpath': runpath,
-            'loader': loader, 'requirements': requirements}
+            'loader': loader, 'requirements': requirements, 'named_requirements': named_requirements}
     if sdk_private:
         definitions = needs[0].split('Version definition section', 1)
         definition_text = definitions[1] if len(definitions) == 2 else ''

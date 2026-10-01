@@ -36,7 +36,7 @@ explicit. No public release was published by these checks.
 Combined native Release verification with distribution tests passed all 34 CTest
 entries in one invocation, including the relocated installed consumer and both
 manual pages. The signing suites used disposable local GnuPG agent sockets. Its
-30 inner Python suites recorded 650 executed passing cases and two explicit
+30 inner Python suites recorded 664 executed passing cases and two explicit
 native-Windows exclusions.
 The selected-linker native case passed separately on Windows as recorded below.
 No unexpected skips were accepted. The preceding
@@ -55,8 +55,8 @@ local implementation checks, not a complete release-policy certification.
 
 ## Hosted candidate and maintenance observations
 
-Candidate [36914367685](https://github.com/mirage335-colossus/software-foundation/actions/runs/36914367685)
-passed at `ec347ba63f6d9c80a7b82dff332490f72fb93ebc` on Windows x86_64,
+Candidate [36917699345](https://github.com/mirage335-colossus/software-foundation/actions/runs/36917699345)
+passed at `00848a1d005badcf2ed66a4c99be5e0af05d8fc9` on Windows x86_64,
 Linux x86_64 and Linux ARM64. All source/tool, packaging, fresh copied-archive
 consumer, sanitizer and distribution jobs succeeded. The disposable Bookworm
 client check exercised signed HTTPS refresh, installation, exact payload
@@ -64,13 +64,13 @@ verification, execution, upgrade, tampered-signature rejection and removal.
 These results qualify the recorded environments and inputs; they do not establish
 every declared older-runtime baseline.
 
-Browser SDK maintenance [36906409188](https://github.com/mirage335-colossus/software-foundation/actions/runs/36906409188)
-passed at `43780010adc170848a094170ea1ac649c2dba497` with `execute=false`.
-Production, relocated consumption, two core checks, 29 GUI/source checks and all
-retention uploads succeeded. JUnit recorded no skipped checks; 572 tool cases
-passed with two explicitly excluded native-Windows cases. Recipe
-`52098b801a6a7fd8daac7657158a6a161cd5869ac231856962bc1a11e365fabb`
-produced group artifact `11185901696`, proof `11185271833` and plan `11185426964`.
+Browser SDK maintenance [36917750824](https://github.com/mirage335-colossus/software-foundation/actions/runs/36917750824)
+passed at `00848a1d005badcf2ed66a4c99be5e0af05d8fc9` with `execute=false`.
+Production, relocated consumption, two core checks, 30 GUI/source checks and all
+retention uploads succeeded. JUnit recorded no skipped checks; 615 tool cases
+passed with two explicitly excluded native-Windows cases. Independently recomputed recipe
+`a0f666f8c77487513ab3254de429c986f5a8da8fb40b0c08b57aa317288da340`
+produced group artifact `11190318715`, proof `11190388669` and plan `11190558603`.
 Proof and plan bytes were checksum-verified. This run exercised compiled Wasm
 through retained Node; real Firefox and Chromium interactions remain the separate
 supporting evidence above.
@@ -110,10 +110,31 @@ for FLTK at the two sizes, and 0.11736/255 and 0.33521/255 for Rev. Native font 
 and strokes differ within these bounds; this is close appearance, not pixel identity.
 Re-evaluating retained images does not claim new native binary execution.
 
+Fresh Windows production
+[36917725513](https://github.com/mirage335-colossus/software-foundation/actions/runs/36917725513)
+at `00848a1d005badcf2ed66a4c99be5e0af05d8fc9` retained its new complete SDK
+and passed both core checks, but passed only 49 of 51 GUI/source CTests. One
+failure was delayed Job Object accounting after a joined child exited. The
+supervisor now checks retained process handles and fresh complete membership;
+a live descendant still fails immediately, while only terminated members permit
+bounded accounting retirement. Thirty-one applicable local cases passed, with
+one explicit native Windows exclusion and independent review.
+
+The second failure was an off-screen FLTK capture: its bottom 59 rows were black;
+all remaining pixels and the other five captures matched preceding captures.
+The fixture now positions and verifies its full viewport inside the display work
+area. Actual native capture passed on a 1024-by-768 display with unchanged pixels;
+omitted placement and an undersized display fail. No visual limit was broadened.
+These repairs need a new native Windows prepared-SDK result.
+
 Dependency-free source-group and visual-metric suites now run once in ordinary
 native candidate jobs, with individual case receipts and GUI-focused labels.
-Their corrected native Windows execution and the complete prepared-SDK retry
-remain separately required hosted results.
+Windows candidate job `110555736524` passed all 16 source-group and nine visual
+metric cases without exclusions. Its checksum-verified artifact `11190337365`
+also records all twelve build cases, including real native linker inspection, and
+fourteen process cases including Job Object containment. Seven Linux-only process
+cases were explicitly excluded. Complete prepared-SDK execution remains separate
+from these dependency-free fixture results.
 
 ARM64 maintenance [36904727103](https://github.com/mirage335-colossus/software-foundation/actions/runs/36904727103),
 at `c87c6905fa9049ab7759e4ce797842e266965d38`, completed supplier compilation
@@ -133,9 +154,18 @@ pairs requiring matched private libc/loader providers. The SDK-only inventory no
 retains and checks them with exact names, locations, hashes, source/recipe identity
 and byte-identical development aliases. Seventy-nine portability/SDK cases pass,
 including old-code rejection, incorrect-provider cases and unchanged application
-package rejection. No developer inputs were discarded. Replacement native
-producers run at `769390b136d5d649de0605807344c758f89383a9`; their outcomes
-remain pending.
+package rejection. No developer inputs were discarded. ARM64 replacement
+[36916386510](https://github.com/mirage335-colossus/software-foundation/actions/runs/36916386510)
+at `769390b136d5d649de0605807344c758f89383a9` completed compilation, then
+failed before sealing because its audit rejected the known `GLIBC_ABI_DT_RELR`
+capability. No completed SDK group or consumer qualification resulted. The
+[explicit capability rule](portability.md#enforced-baseline-and-runtime-closure)
+now enforces its documented glibc 2.36 floor. Thirty-two portability and fifty SDK
+cases passed, including actual packed-relocation execution, rejection below the
+floor, rejection of unknown names and preservation of newer numeric requirements.
+The prior implementation rejects that same actual executable. Independent source
+review verified the pinned supplier's declaration; cold production still needs
+its new recipe and complete consumer result.
 
 The shared SDK helper changes create new recipe identities, including Windows and
 WebAssembly recipes that retain those helpers. Earlier archives are never

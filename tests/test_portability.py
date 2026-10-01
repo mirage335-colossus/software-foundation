@@ -32,6 +32,56 @@ class PortabilityTests(unittest.TestCase):
         self.assertEqual(report['status'], 'passed')
         self.assertIn('application', report['files'])
 
+    def test_actual_packed_relocations_require_glibc_236(self):
+        (self.root / 'relr.c').write_text('int value=7; int *reference=&value; int main(void) { return *reference!=7; }\n')
+        executable = self.root / 'relr'
+        subprocess.run(['cc', '-fPIE', '-pie', str(self.root / 'relr.c'),
+                        '-Wl,-z,pack-relative-relocs', '-o', str(executable)], check=True)
+        dynamic = subprocess.check_output(['readelf', '--wide', '--dynamic', str(executable)], text=True)
+        self.assertIn('(RELR)', dynamic)
+        versions = subprocess.check_output(['readelf', '--wide', '--version-info', str(executable)], text=True)
+        self.assertIn('GLIBC_ABI_DT_RELR', versions)
+        for sdk_private in (False, True):
+            with self.subTest(sdk_private=sdk_private):
+                report = verify_abi.inspect(executable, sdk_private=sdk_private)
+                self.assertEqual({'GLIBC_ABI_DT_RELR': '2.36'}, report['named_requirements'])
+                self.assertEqual('2.36', report['requirements']['GLIBC'])
+        self.assertEqual('passed', verify_abi.audit(executable, processor=self.processor)['status'])
+        with self.assertRaisesRegex(ValueError, 'above ceiling: GLIBC_2.36'):
+            verify_abi.audit(executable, processor=self.processor, ceilings={'GLIBC': '2.35'})
+        subprocess.run([str(executable)], check=True, cwd=self.root,
+                       env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
+
+    def test_named_requirement_rules_remain_exact_and_family_specific(self):
+        original_run = verify_abi.run
+        import re
+        for name in ('GLIBC_ABI_FUTURE', 'GLIBC_PRIVATE', 'GLIBCXX_ABI_DT_RELR', 'CXXABI_ABI_DT_RELR'):
+            with self.subTest(name=name):
+                def altered(readelf, *args):
+                    data = original_run(readelf, *args)
+                    if args[0] == '--version-info':
+                        data, count = re.subn(r'Name: GLIBC_[0-9.]+', 'Name: ' + name, data, count=1)
+                        self.assertEqual(1, count)
+                    return data
+                with patch('verify_abi.run', side_effect=altered):
+                    with self.assertRaisesRegex(ValueError, 'unsupported named ABI requirement'):
+                        verify_abi.inspect(self.root / 'application')
+
+    def test_named_floor_does_not_hide_newer_numerical_requirement(self):
+        original_run = verify_abi.run
+        def altered(readelf, *args):
+            data = original_run(readelf, *args)
+            if args[0] == '--version-info':
+                self.assertIn('Version needs section', data)
+                data += '\n  Name: GLIBC_ABI_DT_RELR\n  Name: GLIBC_2.37\n'
+            return data
+        with patch('verify_abi.run', side_effect=altered):
+            report = verify_abi.inspect(self.root / 'application')
+            self.assertEqual('2.37', report['requirements']['GLIBC'])
+            self.assertEqual({'GLIBC_ABI_DT_RELR': '2.36'}, report['named_requirements'])
+            with self.assertRaisesRegex(ValueError, 'above ceiling: GLIBC_2.37'):
+                verify_abi.audit(self.root / 'application', processor=self.processor)
+
     def test_above_runtime_floor_rejected(self):
         with self.assertRaisesRegex(ValueError, 'above ceiling'):
             verify_abi.audit(self.root / 'application', processor=self.processor, ceilings={'GLIBC': '2.2.5'})

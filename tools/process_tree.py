@@ -8,6 +8,8 @@ supervision of cooperating programs, not hostile-process confinement. Other POSI
 systems fail closed until an equivalent descendant owner is supplied.
 Windows starts suspended and assigns a no-breakaway, kill-on-close Job Object
 before resuming the initial thread; assignment failure never runs child code.
+Windows completion checks signaled member handles and a fresh complete Job list
+before waiting for accounting retirement; a running descendant fails immediately.
 Native qualification is required for each supported platform and environment.
 """
 import ctypes
@@ -253,6 +255,9 @@ class _WindowsJob:
             'Thread32Next': ([w.HANDLE, ctypes.POINTER(ThreadEntry)], w.BOOL),
             'OpenThread': ([w.DWORD, w.BOOL, w.DWORD], w.HANDLE),
             'ResumeThread': ([w.HANDLE], w.DWORD),
+            'OpenProcess': ([w.DWORD, w.BOOL, w.DWORD], w.HANDLE),
+            'IsProcessInJob': ([w.HANDLE, w.HANDLE, ctypes.POINTER(w.BOOL)], w.BOOL),
+            'WaitForSingleObject': ([w.HANDLE, w.DWORD], w.DWORD),
         }
         for name, (arguments, result) in signatures.items():
             function = getattr(self.api, name)
@@ -317,6 +322,81 @@ class _WindowsJob:
             self.fail('inspect job membership')
         return accounting.active
 
+    def process_ids(self):
+        """Take a complete, bounded Job snapshot, including nested members."""
+        capacity = 32
+        for _ in range(8):
+            class ProcessIds(ctypes.Structure):
+                _fields_ = [('assigned', self.w.DWORD), ('count', self.w.DWORD),
+                            ('ids', ctypes.c_size_t * capacity)]
+            members = ProcessIds()
+            ok = self.api.QueryInformationJobObject(self.handle, 3, ctypes.byref(members),
+                                                    ctypes.sizeof(members), None)
+            if not ok and ctypes.get_last_error() != 234:  # ERROR_MORE_DATA
+                self.fail('inspect job process list')
+            if members.count > capacity or members.count > members.assigned:
+                raise ProcessTreeError('invalid job process list counts')
+            if ok and members.count == members.assigned:
+                result = list(members.ids[:members.count])
+                if len(set(result)) != len(result) or any(not 0 < pid <= 0xffffffff for pid in result):
+                    raise ProcessTreeError('invalid job process identifiers')
+                return result
+            capacity = max(capacity * 2, members.assigned)
+            if capacity > 65536:
+                break
+        raise ProcessTreeError('job process inventory remains incomplete; retain output ownership')
+
+    def has_running_process(self):
+        """Separate executable members from already-signaled process objects.
+
+        Job accounting and process-handle completion are separate observations.
+        Never give a running descendant a grace period to finish successfully.
+        Open handles pin identity; membership rejects a reused foreign PID.
+        """
+        observed = {}
+        try:
+            pending = self.process_ids()
+            for _ in range(8):
+                disappeared = set()
+                for pid in pending:
+                    if pid in observed:
+                        continue  # The retained signaled handle pins this identity.
+                    # SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION; no inheritance.
+                    handle = self.api.OpenProcess(0x101000, False, pid)
+                    if not handle:
+                        error = ctypes.get_last_error()
+                        if error == 87:  # Possibly retired since the snapshot.
+                            disappeared.add(pid)
+                            continue
+                        raise ProcessTreeError('open job member failed: ' + str(error) +
+                                               '; retain output ownership')
+                    observed[pid] = handle
+                    member = self.w.BOOL()
+                    if not self.api.IsProcessInJob(handle, self.handle, ctypes.byref(member)):
+                        self.fail('confirm job process identity')
+                    if not member.value:
+                        raise ProcessTreeError('job process identity changed; retain output ownership')
+                    state = self.api.WaitForSingleObject(handle, 0)
+                    if state == 0x102:  # WAIT_TIMEOUT: still executable now.
+                        return True
+                    if state != 0:  # Only WAIT_OBJECT_0 establishes termination.
+                        self.fail('inspect job process completion')
+                # A member could have created another member before terminating.
+                # Inspect every newly found process before permitting any sleep.
+                pending = self.process_ids()
+                if disappeared.intersection(pending):
+                    raise ProcessTreeError('job member lookup remains ambiguous; retain output ownership')
+                if all(pid in observed for pid in pending):
+                    return False
+            raise ProcessTreeError('job membership did not settle; retain output ownership')
+        finally:
+            failed = False
+            for handle in observed.values():
+                if not self.api.CloseHandle(handle):
+                    failed = True
+            if failed:
+                self.fail('close job process observation')
+
     def terminate(self):
         if not self.api.TerminateJobObject(self.handle, 1):
             self.fail('terminate job')
@@ -371,9 +451,16 @@ class ProcessTree:
                 raise ProcessTreeError(report['error'])
             if report['descendants_outlived']:
                 raise ProcessTreeError('descendants outlived the command; output completion was not valid')
-        if self._live():
-            self.terminate()
-            raise ProcessTreeError('descendants outlived the command; output completion was not valid')
+        deadline = time.monotonic() + 5
+        while self._live():
+            if self.job is None or self.job.has_running_process():
+                self.terminate()
+                raise ProcessTreeError('descendants outlived the command; output completion was not valid')
+            # All observed members have terminated. Wait only for accounting to
+            # retire them, rechecking for any actual live member on every turn.
+            if time.monotonic() >= deadline:
+                raise ProcessTreeError('job retirement remains unconfirmed; retain output ownership')
+            time.sleep(0.01)
         return self.process.returncode
 
     def close(self):

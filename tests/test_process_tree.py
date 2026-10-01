@@ -1,4 +1,5 @@
 """Real process-lifetime scenarios plus native launch ordering checks."""
+import ctypes
 import importlib.util
 import os
 from pathlib import Path
@@ -7,6 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,11 +51,12 @@ class NativeProcessTree(unittest.TestCase):
         self.assertEqual((self.root/'console.log').read_text().splitlines(),['child-only','child-only'])
 
     def test_complete_parent_and_joined_child_leave_stable_output(self):
-        owner = self.launch("import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True);print('done')")
-        self.assertEqual(owner.wait(timeout=10), 0)
-        self.assertEqual(owner.finish(), 0)
-        owner.close()
-        self.assertIn(b'42', (self.root / 'console.log').read_bytes())
+        for _ in range(8):
+            owner = self.launch("import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True);print('done')")
+            self.assertEqual(owner.wait(timeout=10), 0)
+            self.assertEqual(owner.finish(), 0)
+            owner.close()
+        self.assertEqual((self.root / 'console.log').read_text().splitlines(), ['42', 'done'] * 8)
 
     def test_successful_parent_with_inherited_output_child_is_rejected_and_stopped(self):
         body = ("import subprocess,sys; subprocess.Popen([sys.executable,'-c',"
@@ -91,6 +94,169 @@ class NativeProcessTree(unittest.TestCase):
         self.assertEqual(owner.wait(timeout=10), 0)
         self.assertEqual(owner.finish(), 0)
         self.assertIn(b'breakaway denied', (self.root / 'console.log').read_bytes())
+
+
+class WindowsCompletionObservation(unittest.TestCase):
+    """Native API fixtures distinguish terminated objects from surviving writers."""
+    def job(self, pids=(101,), state=0, member=True):
+        job = TREE._WindowsJob.__new__(TREE._WindowsJob)
+        job.handle = 700
+        job.w = SimpleNamespace(BOOL=ctypes.c_int32, DWORD=ctypes.c_uint32)
+        job.api = mock.Mock()
+        job.process_ids = mock.Mock(return_value=list(pids))
+        job.api.OpenProcess.side_effect = lambda rights, inherit, pid: pid + 1000
+        def membership(handle, exact_job, output):
+            self.assertEqual(exact_job, 700)
+            output._obj.value = member
+            return True
+        job.api.IsProcessInJob.side_effect = membership
+        job.api.WaitForSingleObject.return_value = state
+        job.api.CloseHandle.return_value = True
+        job.fail = mock.Mock(side_effect=lambda operation: (_ for _ in ()).throw(TREE.ProcessTreeError(operation)))
+        return job
+
+    def owner(self, job):
+        process = mock.Mock(returncode=0)
+        process.poll.return_value = 0
+        return TREE.ProcessTree(process, job)
+
+    def test_signaled_members_wait_for_accounting_retirement_without_termination(self):
+        job = self.job(pids=(101, 102))
+        job.active = mock.Mock(side_effect=[2, 1, 0])
+        job.terminate = mock.Mock()
+        owner = self.owner(job)
+        with mock.patch.object(TREE.time, 'sleep') as sleep:
+            self.assertEqual(owner.finish(), 0)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(job.api.WaitForSingleObject.call_args_list,
+                         [mock.call(1101, 0), mock.call(1102, 0)] * 2)
+        self.assertEqual(job.api.OpenProcess.call_args_list,
+                         [mock.call(0x101000, False, 101), mock.call(0x101000, False, 102)] * 2)
+        self.assertEqual(job.api.CloseHandle.call_count, 4)
+        job.terminate.assert_not_called()
+
+    def test_a_live_member_is_rejected_immediately_even_if_it_would_exit_next(self):
+        job = self.job(state=0x102)
+        job.active = mock.Mock(side_effect=[1, 0])
+        owner = self.owner(job)
+        with mock.patch.object(owner, 'terminate') as terminate, mock.patch.object(TREE.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(TREE.ProcessTreeError, 'descendants outlived'):
+                owner.finish()
+        terminate.assert_called_once_with()
+        sleep.assert_not_called()
+        self.assertEqual(job.active.call_count, 1)
+        job.api.CloseHandle.assert_called_once_with(1101)
+
+    def test_nonretiring_accounting_is_bounded_and_keeps_owner_unclosed(self):
+        job = self.job(pids=())
+        job.active = mock.Mock(return_value=1)
+        owner = self.owner(job)
+        with mock.patch.object(TREE.time, 'monotonic', side_effect=[10, 16]):
+            with self.assertRaisesRegex(TREE.ProcessTreeError, 'retirement remains unconfirmed'):
+                owner.finish()
+        self.assertFalse(owner.closed)
+        job.api.CloseHandle.assert_not_called()
+
+    def test_new_member_created_before_observed_exit_is_inspected_before_sleep(self):
+        job = self.job()
+        job.active = mock.Mock(return_value=1)
+        job.process_ids.side_effect = [[101], [102]]
+        job.api.WaitForSingleObject.side_effect = [0, 0x102]
+        def open_process(rights, inherit, pid):
+            job.api.CloseHandle.assert_not_called()  # Keep prior identity pinned.
+            return pid + 1000
+        job.api.OpenProcess.side_effect = open_process
+        owner = self.owner(job)
+        with mock.patch.object(owner, 'terminate') as terminate, mock.patch.object(TREE.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(TREE.ProcessTreeError, 'descendants outlived'):
+                owner.finish()
+        sleep.assert_not_called()
+        terminate.assert_called_once_with()
+        self.assertEqual(job.api.WaitForSingleObject.call_args_list, [mock.call(1101, 0), mock.call(1102, 0)])
+        self.assertEqual(job.api.CloseHandle.call_args_list, [mock.call(1101), mock.call(1102)])
+
+    def test_membership_churn_is_bounded_without_waiting_for_running_processes(self):
+        job = self.job()
+        job.process_ids.side_effect = [[101 + i] for i in range(9)]
+        with self.assertRaisesRegex(TREE.ProcessTreeError, 'membership did not settle'):
+            job.has_running_process()
+        self.assertEqual(job.api.CloseHandle.call_count, 8)
+
+    def test_reused_foreign_process_identity_is_ambiguous_even_if_signaled(self):
+        job = self.job(member=False)
+        with self.assertRaisesRegex(TREE.ProcessTreeError, 'identity changed'):
+            job.has_running_process()
+        job.api.WaitForSingleObject.assert_not_called()
+        job.api.CloseHandle.assert_called_once_with(1101)
+
+    def test_inaccessible_member_cannot_be_treated_as_completed(self):
+        job = self.job()
+        job.api.OpenProcess.return_value = None
+        job.api.OpenProcess.side_effect = None
+        with mock.patch.object(TREE.ctypes, 'get_last_error', return_value=5, create=True):
+            with self.assertRaisesRegex(TREE.ProcessTreeError, 'open job member failed: 5'):
+                job.has_running_process()
+        job.api.CloseHandle.assert_not_called()
+
+    def test_missing_member_requires_a_new_complete_snapshot_without_that_pid(self):
+        for second, success in (([], True), ([101], False)):
+            with self.subTest(second=second):
+                job = self.job()
+                job.process_ids.side_effect = [[101], second]
+                job.api.OpenProcess.side_effect = None
+                job.api.OpenProcess.return_value = None
+                with mock.patch.object(TREE.ctypes, 'get_last_error', return_value=87, create=True):
+                    if success:
+                        self.assertFalse(job.has_running_process())
+                    else:
+                        with self.assertRaisesRegex(TREE.ProcessTreeError, 'lookup remains ambiguous'):
+                            job.has_running_process()
+                self.assertEqual(job.process_ids.call_count, 2)
+
+    def test_membership_wait_and_close_failures_remain_failures(self):
+        for failure in ('membership', 'wait', 'close'):
+            with self.subTest(failure=failure):
+                job = self.job()
+                if failure == 'membership':
+                    job.api.IsProcessInJob.side_effect = None
+                    job.api.IsProcessInJob.return_value = False
+                elif failure == 'wait':
+                    job.api.WaitForSingleObject.return_value = 0xffffffff
+                else:
+                    job.api.CloseHandle.return_value = False
+                with self.assertRaises(TREE.ProcessTreeError):
+                    job.has_running_process()
+                job.api.CloseHandle.assert_called_once_with(1101)
+
+    def test_process_list_grows_to_return_every_member(self):
+        job = self.job()
+        del job.process_ids
+        observed = []
+        def query(handle, kind, pointer, size, returned):
+            self.assertEqual((handle, kind, returned), (700, 3, None))
+            value = pointer._obj; observed.append(len(value.ids))
+            self.assertEqual(size, ctypes.sizeof(value))
+            value.assigned = 40; value.count = min(40, len(value.ids))
+            for i in range(value.count): value.ids[i] = 100 + i
+            return len(value.ids) >= 40
+        job.api.QueryInformationJobObject.side_effect = query
+        with mock.patch.object(TREE.ctypes, 'get_last_error', return_value=234, create=True):
+            self.assertEqual(job.process_ids(), list(range(100, 140)))
+        self.assertEqual(observed, [32, 64])
+
+    def test_invalid_or_unbounded_process_list_never_becomes_empty_success(self):
+        for assigned, count, pids, ok, error in [(1, 2, [], True, 0),
+                (2, 2, [101, 101], True, 0), (1, 1, [0], True, 0),
+                (65537, 0, [], False, 234), (0, 0, [], False, 5)]:
+            with self.subTest(assigned=assigned, count=count, pids=pids, error=error):
+                job = self.job(); del job.process_ids
+                def query(handle, kind, pointer, size, returned):
+                    value = pointer._obj; value.assigned = assigned; value.count = count
+                    for i, pid in enumerate(pids): value.ids[i] = pid
+                    return ok
+                job.api.QueryInformationJobObject.side_effect = query
+                with mock.patch.object(TREE.ctypes, 'get_last_error', return_value=error, create=True):
+                    with self.assertRaises(TREE.ProcessTreeError): job.process_ids()
 
 
 class WindowsLaunchOrdering(unittest.TestCase):

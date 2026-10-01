@@ -14,9 +14,27 @@ int main(){try{
     adapter.window().size(800,640);sync();
     fixture::parity(session.application.view());
     fixture::unavailable_service(adapter);
+    int work_x=0,work_y=0,work_width=0,work_height=0;
+    Fl::screen_work_area(work_x,work_y,work_width,work_height,0);
+    // Begin at the display edge: enlarging a default-positioned window can leave
+    // part of its client area off screen, which native pixel reads cannot retain.
+    adapter.window().position(work_x+work_width-32,work_y+work_height-32);sync();
     fixture::visual_sizes(session.application,adapter,"fltk",[&]{
         const auto size=session.application.view().client_size;
-        adapter.window().size(int(size.width),int(size.height));sync();
+        auto& window=adapter.window();window.size(int(size.width),int(size.height));sync();
+        const int decorated_width=window.decorated_w(),decorated_height=window.decorated_h();
+        fixture::check(decorated_width<=work_width&&decorated_height<=work_height,
+            "Display work area is too small for the complete native capture");
+        window.position(work_x+(work_width-window.w())/2,
+                        work_y+(work_height-decorated_height)/2+decorated_height-window.h());
+        window.redraw();sync();
+        fixture::check(window.x_root()>=work_x&&window.y_root()>=work_y&&
+            window.x_root()+window.w()<=work_x+work_width&&
+            window.y_root()+window.h()<=work_y+work_height,
+            "Native capture viewport extends outside the display work area");
+        std::cout<<"FLTK capture client "<<window.x_root()<<','<<window.y_root()<<' '
+            <<window.w()<<'x'<<window.h()<<" inside work area "<<work_x<<','<<work_y<<' '
+            <<work_width<<'x'<<work_height<<'\n';
     },[&](const std::string& name){
         Fl::flush();
         fixture::check(Fl::focus()==nullptr,"Native focus was not cleared");
