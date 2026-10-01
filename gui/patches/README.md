@@ -23,6 +23,20 @@ identity inside a renderer.
   No application identity or command occurs in this adapter patch. Real native
   control, toggle, focus and pixel-comparison fixtures protect its behavior.
 
+- `contract-portability.patch` makes the upstream synchronous text acknowledgment
+  test capture an explicitly declared pointer, then assigns it after construction.
+  The adapter constructor only stores the handler. A guard rejects any callback
+  before assignment; the original event-delivery and selection assertions remain.
+  This avoids MSVC's rejection of self-reference from the initializer's implicit
+  capture. Only the generated test is patched. Remove this adaptation when the
+  pinned upstream uses a supported capture and passes the same Windows test.
+
+- `adapter-portability.patch` applies the same explicit target binding to the
+  metrics callback. Mutation and recursive measurement still execute inside the
+  callback and must be rejected by the adapter's original guards. Constructor
+  timing, exception recovery and all original assertions remain checked. Remove
+  it when the pinned upstream passes these checks with supported MSVC captures.
+
 Small FLTK/Rev loops and the two browser composition roots implement the common
 host contract directly. `host/browser.hpp` is the single native/Wasm runtime.
 The portable loopback transport replaces only the pinned server's pipe session

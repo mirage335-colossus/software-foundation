@@ -173,7 +173,15 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
     def pack(self, kind, entries):
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, 'w') as stream:
-            for name, data in (entries.items() if isinstance(entries, dict) else entries): stream.writestr(name, data)
+            for name, data in (entries.items() if isinstance(entries, dict) else entries):
+                if isinstance(name, str):
+                    # Bypass ZipInfo's constructor cleanup so malformed test names
+                    # are stored unchanged on every host, including Windows.
+                    item = zipfile.ZipInfo()
+                    item.filename = item.orig_filename = name
+                else:
+                    item = name
+                stream.writestr(item, data)
         raw = buffer.getvalue(); artifact_id = self.request[kind]['id']; self.payloads[artifact_id] = raw
         digest = hashlib.sha256(raw).hexdigest(); self.request[kind]['sha256'] = digest
         self.rows[self.base + '/actions/artifacts/' + str(artifact_id)] = dict(id=artifact_id,
@@ -184,9 +192,10 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
         self.assertEqual(repository, self.repository); self.downloads.append(artifact_id)
         with output.open('xb') as stream: stream.write(self.payloads[artifact_id])
 
-    def recover(self):
+    def recover(self, destination=None):
         return lifecycle.ci.retained_sdk(self.repository, self.request, 'windows-x86_64', 'core', self.recipe,
-            self.root / 'restored group', transport=self.transport, download=self.download)
+            self.root / 'restored group' if destination is None else destination,
+            transport=self.transport, download=self.download)
 
     def test_completed_failed_job_with_active_siblings_reuses_exact_unqualified_triplet(self):
         self.prepare(); result = self.recover()
@@ -291,6 +300,7 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
                         # Unrelated regular proof reports are inspected but never extracted.
                         continue
                     with self.assertRaises(ValueError): self.recover()
+                    self.assertFalse((self.root/'restored group').exists())
                 self.pack(kind,good)
             first = next(iter(good))
             self.pack(kind,[*good.items(),(first.upper(),b'alias')])
@@ -299,6 +309,36 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
         self.pack('group',dict(list(group.items())[1:]))
         with self.assertRaisesRegex(ValueError, 'exactly'): self.recover()
         self.assertFalse((self.root/'restored group').exists())
+
+    def test_stored_raw_names_are_rejected_before_host_filename_cleanup(self):
+        self.prepare()
+        group = {p.name:p.read_bytes() for p in self.group.iterdir()}
+        case = 0
+        for separator in ('/', '\\'):
+            for kind, good in [('group',group), ('proof',self.proof)]:
+                for name in ('bad\\name', 'bad\x00name', 'folder\\', '\x00hidden'):
+                    case += 1
+                    destination = self.root / ('raw-name-case-' + str(case))
+                    with self.subTest(separator=separator, kind=kind, name=repr(name)):
+                        self.pack(kind,[*good.items(),(name,b'x')])
+                        raw = self.payloads[self.request[kind]['id']]
+                        # Both local and central records contain the actual unsafe
+                        # spelling; writing the test must not repair it first.
+                        self.assertEqual(raw.count(name.encode()),2)
+                        with patch.object(zipfile.os,'sep',separator):
+                            with zipfile.ZipFile(io.BytesIO(raw)) as source:
+                                member = source.infolist()[-1]
+                                self.assertEqual(member.orig_filename,name)
+                                if '\x00' in name or separator == '\\':
+                                    self.assertNotEqual(member.filename,name)
+                            with self.assertRaisesRegex(ValueError,'portable|name changes'):
+                                self.recover(destination)
+                        self.assertFalse(destination.exists())
+                self.pack(kind,good)
+        # Canonical directories and unrelated reports remain valid proof input.
+        self.pack('proof',dict(self.proof, **{'reports/':b'', 'reports/result.txt':b'ok'}))
+        self.assertEqual(self.recover()['qualification'],'unqualified')
+        self.assertFalse((self.root/'reports').exists())
 
     def test_retained_lifecycle_reruns_consumer_without_cold_production(self):
         archive.write_json(self.root/'build/sdk-origin.json',{'origin':'retained','recipe':self.recipe,

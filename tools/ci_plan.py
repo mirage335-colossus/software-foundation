@@ -498,7 +498,12 @@ def _retained_zip(path, *, max_bytes):
         if len(members) > 10000:
             raise ValueError('retained ZIP inventory exceeds supported limit')
         for item in members:
-            name = str(a.relative(item.filename[:-1] if item.is_dir() else item.filename))
+            # ZipInfo truncates NUL bytes and normalizes host separators. Validate
+            # the stored spelling before consulting its cleaned lookup name.
+            original = item.orig_filename
+            name = str(a.relative(original[:-1] if original.endswith('/') else original))
+            if original != item.filename:
+                raise ValueError('retained ZIP member name changes during decoding')
             key = name.casefold(); mode = item.external_attr >> 16
             kind = stat.S_IFMT(mode)
             if (key in folded or kind not in (0, stat.S_IFDIR if item.is_dir() else stat.S_IFREG) or

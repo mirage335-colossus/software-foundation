@@ -3,6 +3,8 @@
 from pathlib import Path
 import importlib.util
 import json
+import re
+import sys
 import subprocess
 import unittest
 import tempfile
@@ -284,6 +286,68 @@ endfunction()
         for source in ("different\nold\n", "first\nchanged\n", "prefix\nfirst\nold\n"):
             with self.assertRaises(ValueError): module.apply(source, patch)
         with self.assertRaises(ValueError): module.apply("first\nold\n", patch.replace("-1,2", "-1,3"))
+
+    def test_portability_patches_select_exact_generated_tests_and_preserve_inputs(self):
+        # Execute the actual patch function and upstream target-selection block.
+        # Full behavior stays in the upstream executable tests; this fixture
+        # detects compiling the unchanged supplier file or losing patch inputs.
+        cmake = (ROOT / "gui/CMakeLists.txt").read_text()
+        patch_function = "function(foundation_gui_patch" + cmake.split(
+            "function(foundation_gui_patch", 1)[1].split("endfunction()", 1)[0] + "endfunction()\n"
+        tests = "foreach(test_name contract " + cmake.split(
+            "foreach(test_name contract ", 1)[1].split("endforeach()", 1)[0] + "endforeach()\n"
+        lock = json.loads((ROOT / "third_party/gui-boundary.lock.json").read_text())
+        declared = {entry.split(": ", 1)[0] for entry in lock["patches"]}
+        with tempfile.TemporaryDirectory(prefix="GUI test patches ") as temporary:
+            source = Path(temporary) / "source"; source.mkdir()
+            upstream = source / "upstream"; (upstream / "tests").mkdir(parents=True)
+            (source / "patches").mkdir()
+            (source / "patches/apply.py").write_bytes((ROOT / "gui/patches/apply.py").read_bytes())
+            originals = {}
+            for name in ("contract", "adapter"):
+                patch_name = "gui/patches/" + name + "-portability.patch"
+                self.assertIn(patch_name, declared)
+                patch = (ROOT / patch_name).read_text(encoding="utf-8")
+                (source / "patches" / Path(patch_name).name).write_text(patch, encoding="utf-8")
+                lines = patch.splitlines(keepends=True)
+                start = int(re.match(r"@@ -(\d+)", lines[2]).group(1))
+                original = "\n" * (start - 1) + "".join(line[1:] for line in lines[3:] if line.startswith((" ", "-")))
+                path = upstream / "tests" / (name + "_test.cpp")
+                path.write_text(original, encoding="utf-8"); originals[name] = path.read_bytes()
+            for name in ("bitmap", "layout", "runtime", "presentation", "extension", "interaction", "framebuffer", "terminal", "web"):
+                (upstream / "tests" / (name + "_test.cpp")).write_text("int main() { return 0; }\n")
+            project = """cmake_minimum_required(VERSION 3.24)
+project(PatchedSupplierTests LANGUAGES CXX)
+set(FOUNDATION_GUI_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/upstream")
+add_library(foundation_gui_boundary INTERFACE)
+function(foundation_options target)
+    target_compile_features(${target} PRIVATE cxx_std_20)
+endfunction()
+function(foundation_gui_check)
+endfunction()
+"""
+            project += 'set(Python3_EXECUTABLE "' + Path(sys.executable).as_posix() + '")\n'
+            project += patch_function + tests
+            for name in ("contract", "adapter", "bitmap"):
+                project += 'get_target_property(selected foundation_gui_upstream_' + name + ' SOURCES)\n'
+                project += 'file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/' + name + '.source" "${selected}")\n'
+            (source / "CMakeLists.txt").write_text(project, encoding="utf-8")
+            build = Path(temporary) / "build"
+            result = subprocess.run(["cmake", "-G", "Ninja", "-S", str(source), "-B", str(build)],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30)
+            self.assertEqual(0, result.returncode, result.stdout)
+            for name in ("contract", "adapter"):
+                generated = build / "tests" / (name + "_test.cpp")
+                self.assertEqual(generated.resolve(strict=True), Path((build / (name + ".source")).read_text()).resolve(strict=True))
+                self.assertIn("MemoryAdapter* active=nullptr;", generated.read_text())
+                self.assertEqual(originals[name], (upstream / "tests" / (name + "_test.cpp")).read_bytes())
+            self.assertEqual((upstream / "tests/bitmap_test.cpp").resolve(strict=True), Path((build / "bitmap.source").read_text()).resolve(strict=True))
+            changed = upstream / "tests/contract_test.cpp"
+            changed.write_text(changed.read_text().replace("const Event& event", "const Event& changed", 1))
+            rejected = subprocess.run(["cmake", "-G", "Ninja", "-S", str(source), "-B", str(Path(temporary) / "rejected")],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30)
+            self.assertNotEqual(0, rejected.returncode)
+            self.assertIn("Patch context differs", rejected.stdout)
 
     def test_browser_startup_diagnostics_survive_cleanup(self):
         spec = importlib.util.spec_from_file_location("gui_browser", ROOT / "gui/tests/browser_test.py")

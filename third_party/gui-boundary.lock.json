@@ -10,7 +10,9 @@
     "gui/patches/sdl-runner.patch: typed application runner and injected test observer; removes demonstration actions",
     "gui/patches/rev-build.patch: explicit dependency root and reusable targets without upstream demonstration or install rules",
     "gui/patches/rev-dependencies.patch: explicit preserved archive root",
-    "gui/patches/fltk-appearance.patch: generic flat shared-palette controls and matching monospaced font class; native event handling retained"
+    "gui/patches/fltk-appearance.patch: generic flat shared-palette controls and matching monospaced font class; native event handling retained",
+    "gui/patches/contract-portability.patch: explicit callback target binding for portable synchronous acknowledgment test; assertions retained",
+    "gui/patches/adapter-portability.patch: explicit metrics callback target binding; mutation and recursion assertions retained"
   ],
   "files": {
     "backends/fltk/adapter.hpp": "49ee88480c7058f17ccf3bdc2ddeae78ca5e183820355143d7e64afeb45bc76e",

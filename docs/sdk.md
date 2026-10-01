@@ -61,6 +61,14 @@ digest, patch, configuration, and relevant build helper. Include host tools in
 the inventory, including generators required only while preparing dependencies.
 Content-address the recipe from normalized paths and complete input bytes.
 
+Cross-host recipe identity requires identical checkout bytes, including line
+endings. The project [attributes](../.gitattributes) pin owned text inputs,
+including PowerShell helpers, to LF. Verify effective attributes and actual bytes
+in existing worktrees before computing an identity or reusing a retained group;
+a changed attribute does not rewrite an already checked-out file. Preserve exact
+supplier bytes and retained source archives. Never normalize during hashing or
+treat different recipe IDs as equivalent because only line endings differ.
+
 Keep mutable build outcomes and qualification status in separate receipts bound
 to the recipe and archive digests. They are not recipe inputs: recording a
 successful cold build must not change the identity of the exact group it verified.

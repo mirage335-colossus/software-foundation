@@ -28,16 +28,16 @@ explicit. No public release was published by these checks.
 | Distribution | Seven actual Debian payload/signature/update tests and 17 Arch/Gentoo generation/channel tests passed; combined archives select the requested backend without compilation, preserve shared files and provenance, and reject unknown executables, rollback, tampering and same-version replacement |
 | GitHub delivery | 29 offline lifecycle/transport fixtures passed; they exercise exact inventories, immutable bytes, retained certification and promotion rejection, without remote mutation |
 | Documentation | Local destinations, heading anchors, strict JSON and requirement-to-code/test references checked |
-| Workflows | Eight workflows passed actionlint; 49 CI helper, eight SDK-retention and 11 source-identity cases passed; hosted execution remains separate evidence |
+| Workflows | Eight workflows passed actionlint; 49 CI helper, 21 SDK-retention and 11 source-identity cases passed; hosted execution remains separate evidence |
 | Installed documentation | Both manual pages passed formatting checks and relocated installation checks; Debian, Arch and Gentoo fixtures preserve variant-specific public manual names |
 | Windows host graphics | 25 prerequisite fixtures and 15 artifact fixtures passed; exact pinned driver extraction and cleanup passed; native WGL probing and real Windows GUI captures require hosted execution |
 | APT client adapter | Disposable-container preflight and descendant-timeout regressions passed; actual signed HTTPS install/update/tamper-rejection/removal passed in the hosted Bookworm workflow |
 
 Combined native Release verification with distribution tests passed all 32 CTest
-entries, including the relocated installed consumer and both manual pages. Thirty
-passed in the initial run; two signing suites passed on a focused rerun after
-allowing their disposable local GnuPG agent sockets. Its 28 inner Python suites
-recorded 588 executed passing cases and two explicit native-Windows exclusions.
+entries in one invocation, including the relocated installed consumer and both
+manual pages. The signing suites used disposable local GnuPG agent sockets. Its
+28 inner Python suites recorded 607 executed passing cases and two explicit
+native-Windows exclusions.
 The selected-linker native case passed separately on Windows as recorded below.
 No unexpected skips were accepted. The preceding
 portable native archive also passed complete inventory verification, relocated
@@ -89,6 +89,29 @@ still needs a successful retry. The failed job retained a verified complete SDK
 group with an explicitly unqualified receipt; retaining those bytes does not make
 the failed consumer checks pass.
 
+Retained Windows retry [36903597192](https://github.com/mirage335-colossus/software-foundation/actions/runs/36903597192)
+at `49e3178f0ef83fa98a139acd52aee1c569d0918b` verified the exact prior
+producer/artifacts, restored the complete SDK, and passed both core checks without
+cold SDK production. The GUI macro repair compiled successfully. MSVC then rejected
+an upstream test callback's self-reference during its adapter's initialization;
+review identified a second matching test. Reviewed generated-source adaptations
+preserve both tests' event, selection, mutation and recursion assertions. Native
+execution of those corrected GUI tests remains necessary. Both actual generated
+contract/adapter executables passed locally, with all original assertions and
+supplier bytes preserved; the 16 boundary fixtures also passed.
+
+The same candidate's Windows tools job exposed ZIP-name normalization in a malformed
+archive fixture. Recovery now checks original stored member names before Python's
+host-dependent cleanup; fixtures preserve raw backslash and NUL names in both ZIP
+headers. The 21 retention tests and 49 CI tests pass locally, with a failing old-code
+control; the corrected Windows tools suite still requires its hosted result.
+
+PowerShell checkout attributes now require LF. The earlier Windows CRLF checkout
+had changed the exact SDK recipe identity despite the same Git revision. Every
+Windows producer helper has matching LF attributes and bytes; the CRLF control
+reproduces the prior identity. A freshly normalized Windows group must be produced,
+rather than treating different recipe bytes as interchangeable.
+
 The initial ARM64 cold build completed compilation, the SDK target and supplier
 license-information collection, then rejected runtime-only skeleton aliases during
 assembly. The subsequent source review identified additional target-only libc
@@ -97,11 +120,11 @@ omission and identical-provider checks preserve compiler inputs and strict
 application ABI policy; 39 SDK and 27 actual-ELF/portability fixture cases passed.
 Corrected native production and all GUI consumers still require hosted results.
 
-Twenty complete-group retention and recovery tests verify that a consumer failure
+Twenty-one complete-group retention and recovery tests verify that a consumer failure
 remains a failure while checked binary/source/checksum bytes can be retained and
 explicitly reused. Producer, artifact, recipe, receipt and complete byte identities
-are verified before fresh consumers run. The latest combined focused verification
-passed 15 GUI boundary, 49 CI and all 20 retention cases. Their receipt remains
+are verified before fresh consumers run. The latest combined verification
+passed all 16 GUI boundary, 49 CI and 21 retention cases. Their receipt remains
 explicitly unqualified; no failed-run artifact becomes a qualified base automatically.
 
 The ARM64 producer in maintenance run `36898087108` completed compilation and
