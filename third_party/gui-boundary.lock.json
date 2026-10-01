@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "name": "gui-boundary",
+  "upstream": "https://github.com/mirage335-colossus/gui-boundary",
+  "revision": "bff416308f87dd0c1a7cc5b55476d757c971e879",
+  "license": "NOASSERTION",
+  "license_note": "The pinned source has no top-level license. Font notices have separate terms. Obtain and review package licensing before binary redistribution.",
+  "patches": [
+    "gui/CMakeLists.txt: replace one application include in each enabled host with the shared application include and type alias; no renderer edits"
+  ],
+  "files": {
+    "backends/fltk/adapter.hpp": "49ee88480c7058f17ccf3bdc2ddeae78ca5e183820355143d7e64afeb45bc76e",
+    "backends/fltk/main.cpp": "75e4adf340fedca47b586c2d91cf2f7c9b20e03f2c591f5fcf19eb02a2f0e544",
+    "backends/terminal/main.cpp": "d79188988ac9771beb15ab9227107945f1c0d24f27f9dd0914059e41c9562ad8",
+    "examples/application.hpp": "45260f74dcf1d5c6c24514130d58c197d70711d6e06bab283832ce1fd0b3cbf4",
+    "include/gui/bitmap.hpp": "56ccb0b056f5364c2782f6190f20f385db5a7d33a25aeff971cf5a06812f5ad1",
+    "include/gui/contract.hpp": "f78b419b1a1e02ce808d85b3f7e8540dad7628c461a00ffd9db629a404d40da8",
+    "include/gui/detail/framebuffer_font_data.hpp": "95333603138db2617e8a34c963c6ffe96548962f909e481639a61775052afb22",
+    "include/gui/framebuffer.hpp": "6f2923601799b6abc699f889c642cccd23c349e38c4345d41a4f5fa56505848c",
+    "include/gui/geometry.hpp": "e5b8e7adcda1c4e268bbb374b22bdf13706c97cca0e414d78ad747da2336958e",
+    "include/gui/interaction.hpp": "48d12a99321b75e5f3cb923f39aa6c41e0fd98177ac0bfc90cc6589457d4a92d",
+    "include/gui/layout.hpp": "b2e23de48c06d0195cd95ec63b0275ae79790ce88a737cab01bfbcaa65fb0f8d",
+    "include/gui/memory_adapter.hpp": "96bea409565fa1be8d737db0325c054b8bc7e16fe31b179705a4ee26d6d5d2fe",
+    "include/gui/presentation.hpp": "70c593ad1086d99dfec0f1f745e6842a90fcd8ba19801e0774d28d22430608ab",
+    "include/gui/retained_adapter.hpp": "9a161fc94386e7d0d58497c5343a704dcccff1a79d6ed5c6c701655f71f74bbf",
+    "include/gui/runtime.hpp": "7471f14b2f9f677b40d7f21b23cfa3927aebc2a24f4a696955562967683f2c0f",
+    "include/gui/terminal.hpp": "b9ee485ff4677c495c61d9a438fa093ff105baef25fca89b854c3c9b69a11262",
+    "include/gui/text.hpp": "7f0f6c5c67a3e84234088b632556c9c78f28fe3557b156b6b60224bb7f990caa",
+    "include/gui/web.hpp": "8aab9646a31596c8ea95d711d6c7895312e732dd93cf8332b3ec9ca2876b1111",
+    "tests/adapter_test.cpp": "76b0eaa9e1f27cb814e261c1fe8a9c0b74a8ac1a7755de2dc1b9ebd1fd71b074",
+    "tests/contract_test.cpp": "40543403879a9e714124bead9ec56e5c584fe953af3c0ec24eefa79ccfada6d6",
+    "tests/extension_test.cpp": "012fa3b8af8be944366d4fa29cd06a8d375d029f4275247c5ea59a530c24e51f",
+    "tests/layout_test.cpp": "777bae38e01208e637f5beac61ad8c95d574c11a0fdbc8f5654d0fc6b37fec4c",
+    "tests/presentation_test.cpp": "4037a9b7255659e385da0209314caa20a7162de673a749cf9dfee1b61e965e45",
+    "tests/runtime_test.cpp": "9a064273209bb17903f731de98f836282554da638bde67fb9914fea4e11cc103",
+    "third_party/rev/resources/DejaVu-AUTHORS": "915a742f0b242ea43fcbef934b6d24353b51351470f71d8a8d00c751892fad50",
+    "third_party/rev/resources/DejaVu-LICENSE": "e180b3d65bf650dffffd71dd21b6180767b469a18dd87e1d8552be69bb9ecdf0",
+    "third_party/rev/resources/DejaVu-SOURCES.json": "2b54776b4b2734c634a5783b312247d9dab7a22a1675768b30999e57aff07cfc"
+  }
+}

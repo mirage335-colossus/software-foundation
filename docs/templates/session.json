@@ -1,0 +1,12 @@
+{
+  "id": "editor-example",
+  "revision": 0,
+  "task": "Implement the agreed change and verify its public behavior.",
+  "approach": "Read the relevant callers and contracts, make a bounded change, run focused checks, then required regression coverage.",
+  "baseline": "Replace with checkout revision, branch, observed worktree/index changes and relevant file digests; identify pre-existing changes owned by others.",
+  "dependencies": [
+    "Replace with relevant interface or data-format assumptions, input digests, source stability arrangement and integration order."
+  ],
+  "next_action": "Inspect current ownership and relevant releases, then claim exact intended outputs.",
+  "next_check": "2030-01-01T12:05:00+00:00"
+}

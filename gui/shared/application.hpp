@@ -1,0 +1,42 @@
+#pragma once
+
+#include <gui/contract.hpp>
+#include <gui/runtime.hpp>
+#include <foundation/store.hpp>
+
+namespace foundation::ui {
+
+// Only the composition root knows which concrete adapter is supplied.
+class Application {
+public:
+    explicit Application(gui::Adapter& adapter);
+    const gui::Snapshot& view() const noexcept { return view_; }
+    void handle(gui::Event event);
+    void retry_presentation();
+    bool presentation_pending() const noexcept { return presentation_pending_; }
+    std::optional<gui::ServiceRequest> next_service();
+    bool complete_service(gui::ServiceResult result);
+
+    // Demonstrates an ordinary feature extension without modifying a renderer.
+    void enable_remove_feature();
+
+private:
+    gui::Adapter& adapter_;
+    gui::Snapshot view_;
+    gui::ServiceQueue services_;
+    static constexpr std::size_t entry_limit_ = 1000;
+    foundation::Store entries_{entry_limit_};
+    std::uint64_t next_service_ = 1;
+    bool presentation_pending_ = false;
+    bool remove_feature_ = false;
+    std::string status_ = "Ready";
+    bool status_error_ = false;
+
+    gui::Widget& add(std::string id, gui::Kind kind, std::string parent = {});
+    static gui::Widget& lookup(gui::Snapshot& view, std::string_view id);
+    gui::Widget& get(std::string_view id) { return lookup(view_, id); }
+    void append_entry();
+    void publish();
+};
+
+} // namespace foundation::ui

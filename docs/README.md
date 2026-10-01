@@ -1,0 +1,21 @@
+# Documentation index
+
+Each topic has one maintained home. Requirements describe expected behavior;
+implementation references explain current code; validation records establish
+what was observed. A proposed platform or procedure is not execution evidence.
+
+| Topic | Start here |
+| --- | --- |
+| Scope and specification | [Requirements](requirements.md), [architecture and directory map](architecture.md) |
+| Build and SDK | [Building](building.md), [SDK](sdk.md), [portability](portability.md), [COMPILE](../COMPILE) |
+| Verification speed and coverage | [Testing](testing.md), [CI](ci.md), [validation](validation.md) |
+| Dependency maintenance | [Dependency requirements](dependencies.md), [inventory](../third_party/README.md) |
+| Interfaces | [GUI contract and integration](gui-boundary.md), [GUI audit](gui-audit.md), [core source](../include/foundation/store.hpp) |
+| Collaboration | [Agent requirements](../AGENTS.md), [coordination](agent-coordination.md), [lifecycle](agent-lifecycle.md) |
+| Delivery | [Release requirements](releases.md), [installed package instructions](installed.md), [RELEASE](../RELEASE) |
+| Sustained maintenance | [Engineering practices](maintenance.md), [documentation rules](documentation.md) |
+| Reusable forms | [Decision](templates/decision.md), [dependency](templates/dependency.md), [temporary note](templates/temporary-note.md), [validation](templates/validation.md), [release inventory](templates/release-manifest.json) |
+
+Search current source and the relevant topic before opening large logs. Follow
+linked contracts through callers and tests; do not treat this index as a limit on
+investigation. Update the relevant topic and backlinks when adding documents.

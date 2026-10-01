@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.24)
+project(FoundationConsumer LANGUAGES CXX)
+find_package(Foundation 0.1 CONFIG REQUIRED)
+add_executable(consumer main.cpp)
+target_link_libraries(consumer PRIVATE foundation::core)

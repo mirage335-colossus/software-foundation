@@ -1,0 +1,24 @@
+name: Development feedback
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: feedback-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  focused:
+    name: Focused checks (not release qualification)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and test inexpensive contracts
+        run: python3 tools/build.py test dev --label fast --jobs 2
+      - name: Scope
+        if: always()
+        run: echo 'Focused feedback only. Full tools, platform, package and GUI qualification are separate.' >> "$GITHUB_STEP_SUMMARY"

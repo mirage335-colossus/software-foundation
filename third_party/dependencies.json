@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "application_runtime_dependencies": [],
+  "platform_runtime_policy": "docs/portability.md",
+  "build_requirements": "docs/building.md",
+  "optional_integrations": [
+    {
+      "name": "gui-boundary",
+      "upstream_repository": "https://github.com/mirage335-colossus/gui-boundary",
+      "acquisition": "explicit external source checkout",
+      "identity_record": "third_party/gui-boundary.lock.json",
+      "revision_policy": "Select the exact reviewed revision documented by the integration; never use a moving branch implicitly.",
+      "maintenance_document": "docs/gui-boundary.md",
+      "license_status": "NOASSERTION: the pinned source has no top-level package license; binary redistribution is blocked pending review",
+      "distributed_by_default": false
+    }
+  ],
+  "policy_document": "docs/dependencies.md"
+}

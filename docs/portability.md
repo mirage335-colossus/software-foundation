@@ -1,0 +1,132 @@
+# Portability and compatibility contracts
+
+Source portability, build-host compatibility, and released-binary compatibility
+are different promises. State and test each separately. A successful build on a
+new machine does not establish that its binaries run on an older one.
+
+## Declare the supported environment
+
+For every supported release target, record operating system, architecture,
+minimum operating-system/runtime version, instruction-set baseline, compiler
+runtime policy, enabled features, and required host services. Record the oldest
+tested environment and at least one newer environment. Label untested targets
+as proposed, even if the source appears portable.
+
+| Target identity | Architecture aliases | Normal release form | Status in this example |
+| --- | --- | --- | --- |
+| Linux `x86_64` | `amd64`, `x64` | TGZ; optionally Debian `amd64` | Reference native build; release baseline must be chosen and qualified |
+| Linux `aarch64` | `arm64`, `ARM64` | TGZ; optionally Debian `arm64` | Intended CI/release target; qualification requires execution on that architecture |
+| Windows `x86_64` | `AMD64`, `x64` | ZIP; optionally a separately maintained installer | Intended native CI target; qualification requires Windows results |
+| macOS or another target | Platform-specific naming | Platform-specific package | Extension requiring an explicit support decision |
+
+Aliases identify an architecture, not an interchangeable operating-system ABI.
+A 32-bit system cannot run a 64-bit package merely because its processor is
+capable. A Linux `aarch64` archive is not a Windows ARM64 archive. Normalize names
+once when generating filenames and translate to a package manager's vocabulary
+at the packaging boundary.
+
+This repository supplies example code and checks; it does not contain published
+multi-platform release qualification. Actual observations belong in
+[validation records](templates/validation.md), with the revision and environment.
+
+## Linux runtime baseline
+
+Choose the oldest maintained target runtime that the product intends to support.
+Build against that target using a baseline builder or an isolated
+[SDK sysroot](sdk.md). A newer compiler can generate code for an older target
+runtime when its headers, libraries, linker defaults, and generated requirements
+remain compatible. Setting an audit ceiling only detects excess requirements;
+it cannot lower them.
+
+Audit every executable and bundled shared library, including indirect
+dependencies. Inspect ELF architecture, loader path, dynamic dependencies,
+versioned runtime requirements, and RPATH/RUNPATH. Reject requirements above the
+declared baseline and unsupported named ABI additions. Audit dynamically loaded
+plugins too; dependency inspection alone cannot discover every library selected
+at runtime. Keep an explicit inventory of such loads.
+
+Do not bundle the builder's C runtime, system loader, or vendor device/graphics
+drivers as a shortcut. Classify each dependency as application-owned,
+redistributable compiler runtime, or deliberately host-provided. An exclusion
+requires a documented host requirement and a test on a minimal target image.
+
+An old target runtime is a compatibility decision, not permission to retain
+known defects. Prefer maintained fixes within the chosen ABI family, pin their
+exact source, and requalify the result. Record the target runtime's maintenance
+and end-of-support plan. A glibc-based package does not promise musl compatibility.
+
+## C++ and Windows runtimes
+
+Choose static or shared compiler-runtime linkage deliberately. Static C++
+runtime linkage can remove one host dependency, but it does not make every
+other dependency static or remove the operating-system baseline. When loading
+host plugins, avoid exposing a private older C++ runtime in a way that overrides
+the runtime their own libraries need. Verify actual dependency resolution.
+
+For Windows, document the minimum supported OS, architecture, toolset, Windows
+SDK, and CRT policy. If the package uses shared redistributable runtime DLLs,
+include them according to their redistribution terms or require a supported
+redistributable installation. A DLL found in a system directory is not
+automatically part of the operating system. If the project uses static CRT
+linkage, compile all cooperating objects consistently and avoid incompatible
+allocation ownership across module boundaries.
+
+When consuming archived MSVC-built dependencies, check the documented toolset
+compatibility and use a sufficiently recent consuming linker and redistributable.
+Treat link-time optimized objects as a separate compatibility constraint. The
+compiler and Windows SDK are build prerequisites; do not redistribute them as
+ordinary application dependencies. See Microsoft's
+[C++ binary compatibility guidance](https://learn.microsoft.com/en-us/cpp/porting/binary-compat-2015-2017?view=msvc-170).
+
+## Relocation and installation
+
+A package is a complete directory: keep executables, private libraries,
+resources, licenses, and metadata together. Resolve installed resources relative
+to the installation, not the current working directory or source checkout.
+Export CMake usage requirements using install-relative paths. The installed
+developer package and runnable application may share a source release, but have
+different consumers and dependency requirements.
+
+After packaging, extract into a fresh directory whose path contains spaces.
+Run it outside the checkout with development-library paths removed. For Linux,
+test in the oldest supported runtime image without development packages. For
+Windows, test without compiler directories on `PATH`. Verify application startup,
+representative behavior, resources, error handling, and an installed library
+consumer. If a GUI is enabled, test every shipped backend separately and apply
+the shared [GUI boundary contract](gui-boundary.md).
+
+Inspect the exact archives users will download, not just an install staging
+directory. Verify archive and internal file digests, file permissions, complete
+inventory, licenses, and relocatability after extraction. Do not execute
+unverified downloaded bytes to discover their version.
+
+## CPU, data, and platform boundaries
+
+Portable release builds must not inherit `-march=native` or equivalent
+builder-specific tuning. If an accelerated implementation is added, retain a
+tested baseline implementation and an explicit capability check before dispatch.
+Never infer execution support from compilation alone.
+
+Use fixed-width types where persisted or exchanged data requires them; specify
+byte order, length limits, encoding, and overflow behavior. Do not serialize
+compiler struct layouts, native pointer sizes, or platform-specific path types.
+Use filesystem APIs for path operations and preserve non-ASCII names. Document
+case sensitivity, line endings, permissions, locking, atomic replacement, and
+Windows long-path assumptions wherever they affect behavior.
+
+Treat thread scheduling, timeout clocks, cancellation, environment variables,
+locale, timezone, and current working directory as explicit dependencies.
+Correctness tests should exercise these boundaries without weakening the public
+contract to accommodate a different host.
+
+## Evidence required for a compatibility claim
+
+Retain source and artifact digests, complete dependency inventory, baseline
+audit, target execution results, skipped scopes, and known limits. Emulation is
+useful additional evidence but does not by itself qualify native GUI, driver,
+timing, or device behavior. A container tests user-space compatibility against
+the host kernel; document kernel coverage separately when relevant.
+
+Repeat affected qualification after changing compiler, linker, SDK, runtime
+linkage, dependencies, CPU flags, install layout, or minimum supported platform.
+The [release procedure](releases.md) binds this evidence to the delivered files.

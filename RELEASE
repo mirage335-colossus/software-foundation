@@ -1,0 +1,22 @@
+Software Foundation — release order
+
+1. Choose an immutable source revision, version and complete asset matrix.
+2. Confirm dependency terms, pinned sources, notices, SDK recipe and target policy.
+3. Complete applicable regression, backend, platform and ABI checks for that source.
+4. Build each configuration once; package the resulting binaries. Never move a
+   configured build tree between hosts. Preserve source and dependency inputs.
+5. Inventory each final archive and verify that exact archive after relocation:
+   python3 tools/artifact.py create ARCHIVE --manifest MANIFEST.json
+   python3 tools/artifact.py verify ARCHIVE --manifest MANIFEST.json
+6. Populate docs/templates/release-manifest.json and attach actual evidence,
+   source identity, runtime floor, notices, checksums and remaining omissions.
+7. Stage immutable release assets. Verify downloads and inventories before making
+   the release generally available. Never replace published bytes under one name.
+8. Publish package-repository metadata only after packages exist and verify fully.
+   GitHub download assets alone do not constitute an APT repository.
+9. Certify the exact published artifacts, retain reports, and promote only when
+   all required gates pass. A diagnostic or incomplete run cannot qualify them.
+
+This repository supplies native archive examples and a release specification.
+It does not include credentials, remote publishing, a compiled cross SDK, or a
+qualified older-runtime release. See docs/releases.md and docs/validation.md.

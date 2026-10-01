@@ -1,0 +1,27 @@
+Software Foundation — command reference
+
+Native prerequisites: CMake >=3.24, Ninja, C++20 compiler, Python >=3.9.
+No configuration or normal build downloads or installs software.
+
+./build.sh                                      # incremental Debug build
+./build.sh test dev --label core --jobs 2        # smallest core group
+./build.sh test dev --label tools --jobs 2       # development-tool contracts
+./build.sh test release --full --jobs 2          # all enabled local tests
+./build.sh test asan --full --jobs 2             # GCC/Clang instrumentation
+./build.sh package release --jobs 2             # native archive; not certification
+
+Windows developer prompt: replace ./build.sh with python tools/build.py.
+GUI: ./build.sh test dev --gui-source /absolute/pinned/gui-boundary --label gui
+SDK: ./build.sh build release --sdk /absolute/prepared-sdk --jobs 2
+These use separate build/dev-gui and build/release-sdk directories.
+
+Direct CMake (also supports generators other than Ninja):
+cmake --preset dev
+cmake --build build/dev --target foundation-tests --parallel 2
+ctest --test-dir build/dev --output-on-failure --no-tests=error --parallel 2
+cmake --install build/release --prefix /absolute/staging-prefix
+
+Visual Studio and Ninja Multi-Config require --config Release for build/install,
+-C Release for CTest and -C Release for CPack. See docs/building.md.
+Do not run tests from a stale build tree or assume CTest compiles prerequisites.
+See docs/testing.md, docs/sdk.md and docs/portability.md for scope and prerequisites.
