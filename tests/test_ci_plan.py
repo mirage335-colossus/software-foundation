@@ -1,6 +1,9 @@
 import importlib.util
 from pathlib import Path
 import tempfile
+import json
+import sys
+import copy
 import unittest
 from unittest.mock import patch
 
@@ -46,6 +49,611 @@ class CiPlanTests(unittest.TestCase):
                 (root / name / "same.zip").touch()
             with self.assertRaises(ValueError):
                 ci.archives(root)
+
+    def test_cpack_private_duplicates_are_not_deliverables(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'app.zip').write_bytes(b'archive')
+            (root / '_CPack_Packages').mkdir()
+            (root / '_CPack_Packages/app.zip').write_bytes(b'archive')
+            self.assertEqual(ci.archives(root, recursive=False), [root / 'app.zip'])
+            with self.assertRaisesRegex(ValueError, 'duplicate'):
+                ci.archives(root)
+
+    def test_release_matrix_requires_every_exact_target_recipe(self):
+        recipes = {key: 'a' * 64 for key in ci.STANDARD}
+        self.assertEqual({x['target'] for x in ci.release_matrix(recipes)['include']}, set(ci.STANDARD))
+        for malformed in ({}, {'linux-x86_64': 'a' * 64}, dict(recipes, unknown='b' * 64), dict(recipes, **{'linux-x86_64': 'latest'})):
+            with self.assertRaises(ValueError): ci.release_matrix(malformed)
+
+    def test_gui_publication_preflight_preserves_unresolved_supplier_terms(self):
+        recipes = {key: 'a' * 64 for key in (*ci.STANDARD, 'browser-wasm32')}
+        with self.assertRaisesRegex(ValueError, 'licensing'):
+            ci.release_matrix(recipes, 'all-gui')
+
+    def test_complete_commit_required(self):
+        self.assertEqual(ci.exact_commit('b' * 40), 'b' * 40)
+        for text in ('main', 'HEAD', 'abc123', 'a' * 41, 'B' * 40):
+            with self.assertRaises(ValueError): ci.exact_commit(text)
+
+
+class BrowserPrerequisiteTests(unittest.TestCase):
+    def selection(self, target='linux-x86_64', environment='ubuntu-24.04'):
+        return ci.browser_prerequisite(target, environment, 'hosted-web')
+
+    def test_only_scopes_executing_browser_assertions_install_prerequisites(self):
+        for backend in ('core', 'hosted-web', 'wasm', 'fltk'):
+            for scope in ('source', 'recovery', 'archive', 'abi', 'apt'):
+                self.assertEqual(ci.needs_browser_prerequisite(backend, scope),
+                                 backend == 'hosted-web' and scope == 'archive' or
+                                 backend == 'wasm' and scope in ('source', 'recovery', 'archive'))
+
+    def test_distribution_and_engine_selection_is_explicit(self):
+        for target, arch in (('linux-x86_64', 'amd64'), ('linux-aarch64', 'arm64')):
+            selected = self.selection(target)
+            self.assertEqual((selected['image'], selected['architecture'], selected['packages']), ('ubuntu:24.04', arch, ['firefox']))
+            self.assertEqual(selected['executable'], '/usr/bin/firefox')
+        self.assertEqual(self.selection(environment='debian-12')['packages'], ['firefox-esr'])
+        chromium = ci.browser_prerequisite('browser-wasm32', 'chromium', 'wasm')
+        self.assertEqual((chromium['image'], chromium['packages']), ('debian:bookworm', ['chromium', 'chromium-driver']))
+        for target, environment, backend in (('windows-x86_64', 'ubuntu-24.04', 'hosted-web'),
+                ('browser-wasm32', 'ubuntu-24.04', 'wasm'), ('linux-x86_64', 'ubuntu-24.04', 'core')):
+            with self.assertRaises(ValueError): ci.browser_prerequisite(target, environment, backend)
+
+    def test_setup_requires_disposable_root_and_actual_distribution_and_architecture(self):
+        from contextlib import ExitStack
+        from subprocess import CompletedProcess
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(ci.platform, 'system', return_value='Linux'))
+            machine = stack.enter_context(patch.object(ci.platform, 'machine', return_value='x86_64'))
+            release = stack.enter_context(patch.object(ci.platform, 'freedesktop_os_release', create=True,
+                                                       return_value={'ID': 'ubuntu', 'VERSION_ID': '24.04'}))
+            uid = stack.enter_context(patch.object(ci.os, 'geteuid', create=True, return_value=0))
+            marker = stack.enter_context(patch.object(Path, 'is_file', return_value=True))
+            launch = stack.enter_context(patch.object(ci.subprocess, 'run', return_value=CompletedProcess([], 0, 'amd64\n')))
+            stack.enter_context(patch.dict(ci.os.environ, {'FOUNDATION_DISPOSABLE_CHECK': '1', 'CHECK_IMAGE': 'ubuntu:24.04'}))
+            ci.browser_setup_preflight(self.selection())
+            for obj, bad, good in ((uid, 1000, 0), (marker, False, True),
+                    (release, {'ID': 'debian', 'VERSION_ID': '12'}, {'ID': 'ubuntu', 'VERSION_ID': '24.04'}),
+                    (machine, 'aarch64', 'x86_64')):
+                launch.reset_mock(); obj.return_value = bad
+                with self.assertRaises(ValueError): ci.browser_setup_preflight(self.selection())
+                launch.assert_not_called(); obj.return_value = good
+            for variable in ('FOUNDATION_DISPOSABLE_CHECK', 'CHECK_IMAGE'):
+                with patch.dict(ci.os.environ, {variable: ''}):
+                    launch.reset_mock()
+                    with self.assertRaises(ValueError): ci.browser_setup_preflight(self.selection())
+                    launch.assert_not_called()
+            launch.return_value.stdout = 'arm64\n'
+            with self.assertRaisesRegex(ValueError, 'package architecture'): ci.browser_setup_preflight(self.selection())
+
+    def test_key_requires_exact_single_primary_fingerprint(self):
+        listing = 'pub:::::::::\nfpr:::::::::' + ci.MOZILLA_FINGERPRINT + ':\nsub:::::::::\nfpr:::::::::' + 'A' * 40 + ':\n'
+        self.assertEqual(ci.mozilla_key_fingerprint(listing), ci.MOZILLA_FINGERPRINT)
+        for invalid in ('', listing + 'pub:::::::::\n', listing.replace(ci.MOZILLA_FINGERPRINT, 'A' * 40), listing + listing,
+                        'sub:::::::::\nfpr:::::::::' + ci.MOZILLA_FINGERPRINT + ':\n'):
+            with self.assertRaisesRegex(ValueError, 'fingerprint'): ci.mozilla_key_fingerprint(invalid)
+
+    def test_candidate_must_be_exact_official_origin_and_architecture(self):
+        policy = 'firefox:\n  Installed: (none)\n  Candidate: 157.0~build1\n'
+        official = ' firefox | 157.0~build1 | https://packages.mozilla.org/apt mozilla/main amd64 Packages\n'
+        self.assertEqual(ci.mozilla_candidate(policy, official, 'amd64'), '157.0~build1')
+        for raw in (official.replace('packages.mozilla.org', 'example.invalid'), official.replace('amd64', 'arm64'),
+                    official + official.replace('packages.mozilla.org', 'example.invalid'), ''):
+            with self.assertRaisesRegex(ValueError, 'origin'): ci.mozilla_candidate(policy, raw, 'amd64')
+        with self.assertRaises(ValueError): ci.mozilla_candidate(policy.replace('157.0~build1', '(none)'), official, 'amd64')
+
+    def test_install_command_preserves_trust_scope_and_records_actual_packages(self):
+        import io
+        from contextlib import ExitStack
+        from subprocess import CompletedProcess
+        with tempfile.TemporaryDirectory() as temporary, ExitStack() as stack:
+            commands, files = [], {}
+            original_open, original_mkdir = Path.open, Path.mkdir
+            def opened(path, mode='r', *args, **kwargs):
+                if str(path).startswith('/etc/apt/'):
+                    self.assertEqual(mode, 'x'); files[str(path)] = io.StringIO()
+                    class Retained(io.StringIO):
+                        def close(self): files[str(path)] = self.getvalue(); super().close()
+                    return Retained()
+                return original_open(path, mode, *args, **kwargs)
+            def mkdir(path, *args, **kwargs):
+                if str(path).startswith('/etc/apt/'): return None
+                return original_mkdir(path, *args, **kwargs)
+            def launched(argv, **kwargs):
+                commands.append(argv)
+                if argv[0] == 'curl': stdout = 'PUBLIC KEY'
+                elif argv[0] == 'gpg': stdout = 'pub:::::::::\nfpr:::::::::' + ci.MOZILLA_FINGERPRINT + ':\n'
+                elif argv[:2] == ['apt-cache', 'policy']: stdout = 'firefox:\n  Candidate: 157.0~build1\n'
+                elif argv[:2] == ['apt-cache', 'madison']: stdout = 'firefox | 157.0~build1 | https://packages.mozilla.org/apt mozilla/main amd64 Packages\n'
+                elif argv[0] == 'dpkg-query': stdout = 'firefox\t157.0~build1\tamd64\tinstalled\n'
+                elif argv[0] == '/usr/bin/firefox': stdout = 'Mozilla Firefox 157.0'
+                else: stdout = ''
+                return CompletedProcess(argv, 0, stdout)
+            guard = stack.enter_context(patch.object(ci, 'browser_setup_preflight'))
+            stack.enter_context(patch.object(ci.subprocess, 'run', side_effect=launched))
+            stack.enter_context(patch.object(Path, 'open', opened)); stack.enter_context(patch.object(Path, 'mkdir', mkdir))
+            stack.enter_context(patch.object(Path, 'chmod'))
+            result = ci.install_browser_prerequisite('linux-x86_64', 'ubuntu-24.04', 'hosted-web', Path(temporary) / 'receipt')
+            guard.assert_called_once_with(self.selection())
+            self.assertIn(['apt-get', 'install', '-y', '--no-install-recommends', 'firefox=157.0~build1'], commands)
+            self.assertIn('[signed-by=/etc/apt/keyrings/foundation-mozilla.asc]', files['/etc/apt/sources.list.d/foundation-mozilla.list'])
+            self.assertIn('Pin: origin packages.mozilla.org', files['/etc/apt/preferences.d/foundation-mozilla'])
+            self.assertIn('Pin: release o=Ubuntu\nPin-Priority: -1', files['/etc/apt/preferences.d/foundation-mozilla'])
+            self.assertEqual(result['installed'][0]['architecture'], 'amd64')
+            self.assertEqual(result['signing_key_fingerprint'], ci.MOZILLA_FINGERPRINT)
+            self.assertEqual(result['browser_version'], 'Mozilla Firefox 157.0')
+            commands.clear(); files.clear()
+            guard.side_effect = ValueError('not disposable')
+            with self.assertRaisesRegex(ValueError, 'not disposable'):
+                ci.install_browser_prerequisite('linux-x86_64', 'ubuntu-24.04', 'hosted-web', Path(temporary) / 'refused')
+            self.assertEqual(commands, []); self.assertEqual(files, {})
+            self.assertFalse((Path(temporary) / 'refused').exists())
+
+    def test_bad_signing_key_prevents_apt_configuration_and_installation(self):
+        from subprocess import CompletedProcess
+        commands = []
+        def launched(argv, **kwargs):
+            commands.append(argv)
+            self.assertEqual(kwargs['env']['LC_ALL'], 'C')
+            return CompletedProcess(argv, 0, 'pub:::::::::\nfpr:::::::::' + 'A' * 40 + ':\n')
+        with tempfile.TemporaryDirectory() as temporary, patch.object(ci, 'browser_setup_preflight'), \
+             patch.object(ci.subprocess, 'run', side_effect=launched), \
+             patch.object(Path, 'open', side_effect=AssertionError('unexpected configuration write')):
+            with self.assertRaisesRegex(ValueError, 'fingerprint'):
+                ci.install_browser_prerequisite('linux-x86_64', 'ubuntu-24.04', 'hosted-web', Path(temporary) / 'refused')
+        self.assertEqual([argv[0] for argv in commands], ['curl', 'gpg'])
+
+    def test_lifecycle_receipt_preserves_new_evidence_directory(self):
+        helper_spec = importlib.util.spec_from_file_location('ci_lifecycle_fixture', ci.ROOT / '.github/scripts/lifecycle.py')
+        helper = importlib.util.module_from_spec(helper_spec); helper_spec.loader.exec_module(helper)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root / 'build').mkdir()
+            item = dict(id='ubuntu-check', target='linux-x86_64', environment='ubuntu-24.04', backend='hosted-web', scope='archive')
+            frozen = dict(id='plan-id', checks=[item])
+            def install(*args): args[-1].mkdir(parents=True); return {'schema_version': 1, 'installed': []}
+            def run_case(*args):
+                output = args[3]
+                self.assertFalse(output.exists())
+                self.assertTrue((root / 'build/prerequisites/ubuntu-check/browser.json').is_file())
+                return {'status': 'passed'}
+            with patch.object(helper, 'ROOT', root), patch.object(helper.os, 'chdir'), \
+                 patch.object(helper.evidence, 'load', return_value=frozen), patch.object(helper.evidence, 'validate'), \
+                 patch.object(helper.evidence, 'check_inputs'), patch.object(helper.evidence, 'run_case', side_effect=run_case), \
+                 patch.object(helper.ci.platform, 'system', return_value='Linux'), \
+                 patch.object(helper.ci, 'install_browser_prerequisite', side_effect=install), \
+                 patch.dict(helper.os.environ, {'CHECK': 'ubuntu-check', 'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2'}):
+                helper.main('check')
+            receipt = json.loads((root / 'build/prerequisites/ubuntu-check/browser.json').read_text())
+            self.assertEqual((receipt['plan'], receipt['check'], receipt['run_id'], receipt['attempt']), ('plan-id', 'ubuntu-check', '123', 2))
+
+
+class CandidateFetchTests(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, str(Path(__file__).parent))
+        import test_github_release
+        self.fixture = test_github_release.DeliveryTests()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.fixture.publish()
+        self.remote = self.fixture.remote
+        self.root = self.fixture.root
+        self.inventory = self.fixture.delivery['inventory_sha256']
+
+    def fetch(self, **changes):
+        args = dict(repository='example/project', tag='v1', inventory=self.inventory,
+                    output=self.root / 'fetched', transport=self.remote)
+        args.update(changes)
+        return ci.fetch_candidate(**args)
+
+    def test_fetch_reconstructs_complete_tree_and_never_mutates_remote(self):
+        count = len(self.remote.mutations)
+        result = self.fetch()
+        self.assertEqual(result, self.fixture.delivery)
+        self.assertEqual(ci.module('release').verify_release(self.root / 'fetched/candidate'),
+                         ci.module('release').verify_release(self.fixture.directory))
+        self.assertEqual(len(self.remote.mutations), count)
+
+    def test_wrong_inventory_does_not_publish_local_destination(self):
+        with self.assertRaisesRegex(ValueError, 'identity'): self.fetch(inventory='b' * 64)
+        self.assertFalse((self.root / 'fetched').exists())
+
+    def test_changed_asset_during_fetch_is_rejected(self):
+        self.remote.change_download = lambda: self.remote.replace_asset('delivery.json')
+        with self.assertRaisesRegex(ValueError, 'identities changed'): self.fetch()
+        self.assertFalse((self.root / 'fetched').exists())
+
+    def test_untrusted_descriptor_cannot_write_outside_destination(self):
+        altered = copy.deepcopy(self.fixture.delivery)
+        altered['files']['../escape'] = altered['files'].pop('release.json')
+        self.remote.replace_asset('delivery.json', ci.module('github_release').archive.encoded(altered))
+        with self.assertRaises(ValueError): self.fetch()
+        self.assertFalse((self.root / 'escape').exists())
+
+
+    def test_prepared_producer_uses_one_build_and_retains_matching_inventory(self):
+        import shutil
+        from unittest.mock import Mock
+        original = ci.module
+        sdk = Mock()
+        artifacts = original('artifact')
+        fake_artifact = Mock(describe=artifacts.describe)
+        def selected(name):
+            if name == 'sdk': return sdk
+            if name == 'artifact': return fake_artifact
+            return original(name)
+        produced = self.root / 'produced'
+        archive = self.fixture.directory / ci.module('release').verify_release(self.fixture.directory)['artifacts'][0]['archive']
+        commands = []
+        def launch(argv, **kwargs):
+            commands.append(argv)
+            if argv[2] == 'package':
+                destination = produced / 'work/build/packages'
+                destination.mkdir(parents=True)
+                shutil.copyfile(archive, destination / 'application.tar.gz')
+        with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run', side_effect=launch):
+            entry = ci.prepared_package('linux-x86_64', self.fixture.fixture.recipe, self.fixture.root / 'group',
+                    self.fixture.directory / ci.module('release').verify_release(self.fixture.directory)['source']['archive'], produced, 2)
+        self.assertEqual([x[2] for x in commands], ['test', 'package'])
+        self.assertIn('--full', commands[0]); self.assertNotIn('--full', commands[1])
+        self.assertNotIn('--junit', commands[1])
+        self.assertEqual(entry['sdk_recipe'], self.fixture.fixture.recipe)
+        self.assertEqual(entry['dependency_recipes'], [self.fixture.fixture.recipe])
+        self.assertTrue((produced / 'artifact.json').is_file())
+        sdk.install.assert_called_once()
+        fake_artifact.verify.assert_called_once()
+
+    def test_policy_derived_plan_binds_inputs_and_every_required_scope(self):
+        target = self.fixture.target
+        rows = [dict(target=target, backend='core', environment='fixture', scope=scope) for scope in ('source', 'archive', 'recovery')]
+        policy = {'schema_version': 1, 'profiles': {'fixture': {'description': 'fixture inventory', 'targets': {target: ['core']}, 'checks': rows}}}
+        output = self.root / 'check-plan.json'
+        matrix = ci.qualification_plan(self.fixture.directory, 'fixture', output, policy)
+        plan = json.loads(output.read_text())
+        self.assertEqual(len(matrix['include']), 3)
+        self.assertEqual({x['scope'] for x in plan['checks']}, {'source', 'archive', 'recovery'})
+        self.assertTrue(all(x['required'] and x['qualification'] == 'qualification.json' for x in plan['checks']))
+        self.assertEqual(plan['subject']['inventory_sha256'], self.inventory)
+        self.assertIn('tools/release_check.py', plan['inputs'])
+        self.assertIn('build/candidate/release.json', plan['inputs'])
+
+    def test_ubuntu_check_uses_explicit_real_firefox_and_binds_setup_inputs(self):
+        from unittest.mock import Mock
+        target = 'linux-x86_64'
+        policy = {'schema_version': 1, 'profiles': {'fixture': {'description': 'fixture browser',
+                  'targets': {target: ['hosted-web']}, 'checks': [dict(target=target, backend='hosted-web',
+                  environment='ubuntu-24.04', scope=scope) for scope in ('source', 'archive', 'recovery')]}}}
+        original = ci.module
+        release = Mock(verify_release=Mock(return_value=dict(original('release').verify_release(self.fixture.directory))))
+        release.verify_release.return_value['artifacts'][0]['target'] = target
+        release.verify_release.return_value['artifacts'][0]['backends'] = ['hosted-web']
+        with patch.object(ci, 'module', side_effect=lambda name: release if name == 'release' else original(name)):
+            output = self.root / 'browser-plan.json'
+            matrix = ci.qualification_plan(self.fixture.directory, 'fixture', output, policy)
+        frozen = json.loads(output.read_text())
+        self.assertEqual(matrix['include'][0]['image'], 'ubuntu:24.04')
+        archive = next(item for item in frozen['checks'] if item['scope'] == 'archive')
+        self.assertIn('/usr/bin/firefox', archive['argv'])
+        self.assertIn('--browser-prerequisite-plan', archive['argv'])
+        self.assertIn('{root}/build/check-plan.json', archive['argv'])
+        self.assertIn('.github/scripts/lifecycle.py', frozen['inputs'])
+        self.assertIn('.github/workflows/certify.yml', frozen['inputs'])
+        for case in frozen['checks']:
+            self.assertEqual('--browser-prerequisite' in case['argv'], case['scope'] == 'archive')
+
+
+    def test_windows_gui_plan_freezes_graphics_inputs_and_passes_explicit_archive(self):
+        from unittest.mock import Mock
+        target = 'windows-x86_64'
+        policy = {'schema_version': 1, 'profiles': {'fixture': {'description': 'fixture graphics',
+                  'targets': {target: ['rev']}, 'checks': [dict(target=target, backend='rev',
+                  environment='windows-2022', scope=scope) for scope in ('source', 'archive', 'recovery')]}}}
+        original = ci.module
+        release = Mock(verify_release=Mock(return_value=dict(original('release').verify_release(self.fixture.directory))))
+        release.verify_release.return_value['artifacts'][0].update(target=target, backends=['rev'])
+        with patch.object(ci, 'module', side_effect=lambda name: release if name == 'release' else original(name)):
+            output = self.root / 'graphics-plan.json'
+            matrix = ci.qualification_plan(self.fixture.directory, 'fixture', output, policy)
+        frozen = json.loads(output.read_text())
+        self.assertTrue(all(item['graphics'] for item in matrix['include']))
+        for item in frozen['checks']:
+            self.assertIn('--windows-graphics-archive', item['argv'])
+            self.assertNotIn('--browser-prerequisite', item['argv'])
+        self.assertIn('tools/windows_gl_probe.cpp', frozen['inputs'])
+        self.assertIn('third_party/host-graphics/mesa-windows.json', frozen['inputs'])
+
+
+
+class SdkMaintenanceTests(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, str(Path(__file__).parent))
+        import test_github_release
+        self.fixture = test_github_release.DeliveryTests(); self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.remote = self.fixture.remote; self.root = self.fixture.root
+        self.recipe = self.fixture.fixture.recipe
+
+    def choose(self, **changes):
+        args = dict(repository='example/project', recipe=self.recipe, output=self.root / 'selected', transport=self.remote)
+        args.update(changes); return ci.maintenance_base(**args)
+
+    def test_absence_is_explicit_and_base_only_never_rebuilds(self):
+        self.assertEqual(self.choose()['origin'], 'absent-base')
+        with self.assertRaisesRegex(ValueError, 'absent'): self.choose(source='base')
+        self.assertFalse((self.root / 'selected').exists())
+        self.remote.refs['base'] = 'a' * 40
+        with self.assertRaisesRegex(ValueError, 'orphan'): self.choose()
+        self.assertEqual(self.remote.mutations, [])
+
+    def test_complete_base_is_verified_and_reused(self):
+        self.fixture.base(execute=True); before = len(self.remote.mutations)
+        result = self.choose()
+        self.assertEqual(result['origin'], 'base')
+        self.assertTrue((self.root / 'selected').is_dir())
+        self.assertEqual(len(self.remote.mutations), before)
+
+    def test_partial_corrupt_and_network_errors_never_fall_back(self):
+        self.fixture.base(execute=True)
+        complete = copy.deepcopy(self.remote.releases[0]['assets'])
+        self.remote.releases[0]['assets'].pop()
+        with self.assertRaisesRegex(ValueError, 'partial'): self.choose()
+        self.remote.releases[0]['assets'] = complete
+        first = complete[0]; self.remote.data[first['id']] = b'corrupt'
+        with self.assertRaisesRegex(ValueError, 'bytes'): self.choose()
+        with patch.object(self.remote, 'pages', side_effect=OSError('network unavailable')):
+            with self.assertRaisesRegex(OSError, 'network'): self.choose()
+        self.assertFalse((self.root / 'selected').exists())
+
+    def test_only_explicit_rebuild_skips_remote_and_other_recipe_absence_is_checked(self):
+        with patch.object(self.remote, 'pages', side_effect=AssertionError('unexpected network')):
+            self.assertEqual(self.choose(source='rebuild')['origin'], 'rebuild')
+        self.fixture.base(execute=True)
+        self.assertEqual(self.choose(recipe='b' * 64)['origin'], 'absent-recipe')
+        with self.assertRaises(ValueError): self.choose(source='latest')
+
+    def test_core_sdk_probe_requires_copied_installed_consumer_success(self):
+        import shutil
+        from unittest.mock import Mock
+        original = ci.module; sdk = Mock(); artifacts = original('artifact')
+        verifier = Mock(describe=artifacts.describe)
+        def selected(name):
+            return sdk if name == 'sdk' else verifier if name == 'artifact' else original(name)
+        manifest = original('release').verify_release(self.fixture.directory)
+        archive = self.fixture.directory / manifest['artifacts'][0]['archive']
+        output = self.root / 'probe'; commands = []
+        def run(argv, **kwargs):
+            commands.append(argv)
+            if argv[2] == 'package':
+                packages = Path(argv[argv.index('--build-dir') + 1]) / 'packages'; packages.mkdir(parents=True)
+                shutil.copyfile(archive, packages / 'application.tar.gz')
+        with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run', side_effect=run):
+            result = ci.prepared_check('linux-x86_64', self.recipe, self.root / 'group', output)
+            self.assertIn('installed-consumer', result['checks'])
+            self.assertEqual([x[2] for x in commands], ['test', 'package'])
+            self.assertIn('--label', commands[0]); self.assertNotIn('--label', commands[1])
+            self.assertNotIn('--junit', commands[1]); verifier.verify.assert_called_once()
+            verifier.verify.side_effect = ValueError('installed consumer failed')
+            with self.assertRaisesRegex(ValueError, 'consumer failed'):
+                ci.prepared_check('linux-x86_64', self.recipe, self.root / 'group', self.root / 'failed-probe')
+            self.assertFalse((self.root / 'failed-probe/qualification.json').exists())
+
+    def test_browser_core_probe_selects_wasm_for_test_and_package_without_gui(self):
+        import shutil
+        from unittest.mock import Mock
+        original = ci.module; sdk = Mock(); artifacts = original('artifact')
+        verifier = Mock(describe=artifacts.describe)
+        def selected(name):
+            return sdk if name == 'sdk' else verifier if name == 'artifact' else original(name)
+        manifest = original('release').verify_release(self.fixture.directory)
+        archive = self.fixture.directory / manifest['artifacts'][0]['archive']
+        output = self.root / 'browser-probe'; commands = []
+        def run(argv, **kwargs):
+            commands.append(argv)
+            if argv[2] == 'package':
+                packages = output / 'build/packages'; packages.mkdir(parents=True)
+                shutil.copyfile(archive, packages / 'application.tar.gz')
+        with patch.object(ci, 'module', side_effect=selected), patch.object(ci.platform, 'system', return_value='Linux'), patch.object(ci.platform, 'machine', return_value='x86_64'), patch.object(ci.subprocess, 'run', side_effect=run):
+            result = ci.prepared_check('browser-wasm32', self.recipe, self.root / 'group', output)
+        self.assertEqual([argv[2] for argv in commands], ['test', 'package'])
+        for argv in commands:
+            self.assertEqual(argv[argv.index('--gui-backends') + 1], 'wasm')
+            self.assertNotIn('--gui-input-group', argv); self.assertNotIn('--gui-source', argv)
+        self.assertIn('--label', commands[0]); self.assertNotIn('--label', commands[1])
+        self.assertEqual(result['target'], 'browser-wasm32')
+        self.assertEqual(verifier.verify.call_args.kwargs['sdk'], output / 'sdk')
+
+    def test_gui_qualification_never_packages_or_uploads_inputs(self):
+        from unittest.mock import Mock
+        original = ci.module; sdk = Mock()
+        sdk.install.return_value = {'capabilities': ['core', 'terminal', 'framebuffer', 'fltk', 'rev', 'sdl', 'hosted-web']}
+        def selected(name): return sdk if name == 'sdk' else original(name)
+        group = self.root / 'group'; output = self.root / 'gui-check'
+        with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run') as run:
+            result = ci.prepared_check('linux-x86_64', self.recipe, group, output, gui_group=group)
+        self.assertEqual(run.call_count, 1)
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[2], 'test'); self.assertIn('--full', argv); self.assertIn('--host-tests', argv)
+        self.assertFalse(result['redistribution'])
+        self.assertEqual(self.remote.mutations, [])
+        with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run') as run:
+            sdk.install.return_value = {'capabilities': ['core']}
+            with self.assertRaisesRegex(ValueError, 'capabilities'):
+                ci.prepared_check('linux-x86_64', self.recipe, group, self.root / 'insufficient', gui_group=group)
+            run.assert_not_called()
+
+
+class WindowsGraphicsCiTests(unittest.TestCase):
+    def test_graphics_selection_covers_combined_source_and_specific_archive_only(self):
+        for backend in ('terminal', 'fltk', 'rev', 'hosted-web'):
+            for scope in ('source', 'recovery', 'archive', 'abi', 'apt'):
+                self.assertEqual(ci.needs_windows_graphics('windows-x86_64', ['fltk', 'rev'], backend, scope),
+                                 scope in ('source', 'recovery') or backend == 'rev' and scope == 'archive')
+                self.assertFalse(ci.needs_windows_graphics('windows-x86_64', ['core'], backend, scope))
+                self.assertFalse(ci.needs_windows_graphics('linux-x86_64', ['rev'], backend, scope))
+
+    def test_graphics_input_cannot_enter_core_or_non_windows_probe(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for target, gui, archive in (('windows-x86_64', root, None),
+                    ('windows-x86_64', None, root / 'graphics.7z'), ('linux-x86_64', root, root / 'graphics.7z')):
+                with self.assertRaisesRegex(ValueError, 'explicit retained'):
+                    ci.prepared_check(target, 'a' * 64, root, root / 'output', gui_group=gui, graphics_archive=archive)
+            self.assertFalse((root / 'output').exists())
+
+    def test_gui_runner_uses_bounded_shared_owner_and_propagates_failures(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); runtime = Mock(); staged = SimpleNamespace(environment={'PATH': 'controlled'})
+            with patch.object(ci, 'module', return_value=runtime):
+                ci.graphics_test(['test-command'], root, staged)
+                runtime.run_owned.assert_called_once_with(['test-command'], root, root / 'graphics-test.log',
+                    environment=staged.environment, timeout=3600, max_bytes=16 * 1024 * 1024)
+                runtime.run_owned.side_effect = RuntimeError('writer cleanup unknown')
+                with self.assertRaisesRegex(RuntimeError, 'cleanup unknown'):
+                    ci.graphics_test(['test-command'], root, staged)
+
+    def test_windows_gui_uses_shared_build_then_probe_and_test_before_cleanup(self):
+        from types import SimpleNamespace
+        from contextlib import contextmanager
+        from unittest.mock import Mock
+        sys.path.insert(0, str(Path(__file__).parent)); import test_github_release
+        fixture = test_github_release.DeliveryTests(); fixture.setUp(); self.addCleanup(fixture.doCleanups)
+        root = fixture.root; output = root / 'graphics-check'; events = []; commands = []
+        original = ci.module; sdk = Mock(); graphics = Mock()
+        sdk.install.return_value = {'capabilities': ['terminal', 'framebuffer', 'fltk', 'rev', 'sdl', 'hosted-web']}
+        @contextmanager
+        def stage(archive, directories, **options):
+            self.assertEqual(events, ['build', 'prerequisites'])
+            self.assertEqual(directories, [output / 'build/gui'])
+            self.assertIn(output / 'dependencies', options['protected_roots'])
+            current = SimpleNamespace(environment={'TEST_GRAPHICS': 'owned'}, receipt={'cleanup': 'active'},
+                                      probe_receipt={'status': 'passed'})
+            events.append('probe')
+            try: yield current
+            finally: events.append('cleanup'); current.receipt['cleanup'] = 'removed'
+        graphics.qualified_stage.side_effect = stage
+        def selected(name): return sdk if name == 'sdk_windows' else graphics if name == 'windows_graphics' else original(name)
+        def command(argv, **kwargs):
+            commands.append(argv)
+            if argv[0] == 'cmake': events.append('prerequisites')
+            else:
+                self.assertEqual(argv[2], 'build'); self.assertNotIn('--junit', argv); self.assertNotIn('--full', argv)
+                (output / 'build/gui').mkdir(parents=True); events.append('build')
+        def tested(argv, destination, staged):
+            self.assertEqual(argv[2], 'test'); self.assertIn('--full', argv); self.assertIn('--host-tests', argv)
+            self.assertEqual(staged.environment, {'TEST_GRAPHICS': 'owned'}); events.append('test')
+            captures = output / 'build/gui/visual-evidence/run-one'; captures.mkdir(parents=True)
+            for name in ('qualification.json', 'capture.png', 'capture.ppm'): (captures / name).write_bytes(b'fixture')
+        with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
+             patch.object(ci.subprocess, 'check_output', return_value='Version 14.44.35207'), \
+             patch.object(ci.subprocess, 'run', side_effect=command), patch.object(ci, 'graphics_test', side_effect=tested):
+            result = ci.prepared_check('windows-x86_64', fixture.fixture.recipe, root / 'group', output,
+                                      gui_group=root / 'group', graphics_archive=root / 'graphics.7z')
+        self.assertEqual(events, ['build', 'prerequisites', 'probe', 'test', 'cleanup'])
+        self.assertEqual(json.loads((output / 'graphics.json').read_text())['cleanup'], 'removed')
+        self.assertIn('graphics.json', result['graphics_evidence'])
+        self.assertIn('build/gui/visual-evidence/run-one/capture.png', result['graphics_evidence'])
+        self.assertFalse(result['redistribution'])
+        self.assertNotIn('package', [item[2] for item in commands])
+        graphics.fetch.assert_not_called(); graphics.fetch_retained.assert_not_called()
+        events.clear(); commands.clear(); output = root / 'failed-graphics-check'
+        with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
+             patch.object(ci.subprocess, 'check_output', return_value='Version 14.44.35207'), \
+             patch.object(ci.subprocess, 'run', side_effect=command), \
+             patch.object(ci, 'graphics_test', side_effect=RuntimeError('GUI assertion failed')):
+            with self.assertRaisesRegex(RuntimeError, 'GUI assertion failed'):
+                ci.prepared_check('windows-x86_64', fixture.fixture.recipe, root / 'group', output,
+                                  gui_group=root / 'group', graphics_archive=root / 'graphics.7z')
+        self.assertEqual(events, ['build', 'prerequisites', 'probe', 'cleanup'])
+        self.assertFalse((output / 'qualification.json').exists())
+        self.assertEqual(json.loads((output / 'graphics.json').read_text())['cleanup'], 'removed')
+        events.clear(); output = root / 'failed-setup'
+        failure = RuntimeError('probe setup failed'); failure.graphics_receipt = {'cleanup': 'retained-uncertain'}
+        graphics.qualified_stage.side_effect = failure
+        with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
+             patch.object(ci.subprocess, 'check_output', return_value='Version 14.44.35207'), \
+             patch.object(ci.subprocess, 'run', side_effect=command):
+            with self.assertRaisesRegex(RuntimeError, 'probe setup failed'):
+                ci.prepared_check('windows-x86_64', fixture.fixture.recipe, root / 'group', output,
+                                  gui_group=root / 'group', graphics_archive=root / 'graphics.7z')
+        self.assertFalse((output / 'qualification.json').exists())
+        self.assertEqual(json.loads((output / 'graphics.json').read_text()), failure.graphics_receipt)
+
+    def test_only_explicit_maintenance_uses_supplier_fetch(self):
+        from unittest.mock import Mock
+        helper_spec = importlib.util.spec_from_file_location('graphics_ci_lifecycle', ci.ROOT / '.github/scripts/lifecycle.py')
+        helper = importlib.util.module_from_spec(helper_spec); helper_spec.loader.exec_module(helper)
+        graphics = Mock(); graphics.fetch.return_value = {'acquisition': 'explicit-maintenance'}
+        graphics.fetch_retained.return_value = {'acquisition': 'operator-retained-https'}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch.dict(sys.modules, {'windows_graphics': graphics}), patch.object(helper, 'ROOT', root), \
+                 patch.object(helper.os, 'chdir'), patch.object(helper.ci, 'assert_host'), \
+                 patch.object(helper, 'write') as published, \
+                 patch.dict(helper.os.environ, {'GRAPHICS_ARCHIVE_URL': 'https://storage.example/retained.7z'}):
+                helper.main('graphics-input')
+                graphics.fetch.assert_not_called()
+                graphics.fetch_retained.assert_called_once_with('https://storage.example/retained.7z', root / 'build/host-graphics/mesa-windows.7z')
+                published.assert_called_once_with('build/host-graphics/acquisition.json', {'acquisition': 'operator-retained-https'})
+                published.reset_mock()
+                helper.main('graphics-maintain')
+                graphics.fetch.assert_called_once_with(root / 'build/host-graphics/mesa-windows.7z', network=True)
+        for workflow in ('sdk-maintenance.yml', 'native-gui.yml', 'certify.yml'):
+            text = (ci.ROOT / '.github/workflows' / workflow).read_text()
+            self.assertNotIn('path: build/host-graphics/', text)
+            self.assertNotIn('mesa-windows.7z\n', text)
+
+
+class GuiInputDeliveryTests(unittest.TestCase):
+    def setUp(self):
+        from types import SimpleNamespace
+        import test_github_release
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name); self.group = self.root / 'group'; self.group.mkdir()
+        self.files = {'gui-inputs.tar.gz': b'retained inputs', 'manifest.json': b'{"redistributable":true}', 'SHA256SUMS': b'complete group'}
+        for name, data in self.files.items(): (self.group / name).write_bytes(data)
+        self.remote = test_github_release.FakeGitHub()
+        def verify(group, redistribution=False):
+            if {p.name: p.read_bytes() for p in Path(group).iterdir()} != self.files:
+                raise ValueError('fixture group differs')
+            return {'redistributable': True}
+        self.patch = patch.object(ci, 'gui_group_module', return_value=SimpleNamespace(verify=verify))
+        self.patch.start(); self.addCleanup(self.patch.stop)
+        self.identity = ci.module('coverage').sha(self.group / 'manifest.json')
+
+    def publish(self, execute=False):
+        return ci.publish_gui_group('example/project', self.group, 'a' * 40, execute=execute, transport=self.remote)
+
+    def test_plan_never_contacts_remote_and_complete_group_roundtrips(self):
+        self.assertFalse(self.publish()['execute']); self.assertEqual(self.remote.calls, [])
+        self.assertFalse(self.publish(True)['reused']); self.assertIsNone(self.remote.latest)
+        self.assertTrue(self.publish(True)['reused'])
+        ci.fetch_gui_group('example/project', self.identity, self.root / 'fetched', self.remote)
+        self.assertEqual({p.name: p.read_bytes() for p in (self.root / 'fetched').iterdir()}, self.files)
+
+    def test_missing_partial_and_conflicting_groups_fail_without_replacement(self):
+        with self.assertRaises(ValueError): ci.fetch_gui_group('example/project', self.identity, self.root / 'missing', self.remote)
+        self.publish(True)
+        self.remote.releases[0]['assets'].pop()
+        count = len(self.remote.mutations)
+        with self.assertRaisesRegex(ValueError, 'partial'): self.publish(True)
+        self.assertEqual(len(self.remote.mutations), count)
+
+    def test_replaced_asset_identity_blocks_fetch_even_with_same_bytes(self):
+        self.publish(True)
+        asset = ci.gui_group_names(self.identity)['manifest.json']
+        self.remote.change_download = lambda: self.remote.replace_asset(asset)
+        with self.assertRaisesRegex(ValueError, 'identities changed'):
+            ci.fetch_gui_group('example/project', self.identity, self.root / 'fetched', self.remote)
+        self.assertFalse((self.root / 'fetched').exists())
+
+    def test_unresolved_redistribution_prevents_all_remote_mutations(self):
+        from types import SimpleNamespace
+        with patch.object(ci, 'gui_group_module', return_value=SimpleNamespace(verify=lambda *a, **k: (_ for _ in ()).throw(ValueError('unresolved terms')))):
+            with self.assertRaisesRegex(ValueError, 'unresolved'): self.publish(True)
+        self.assertEqual(self.remote.mutations, [])
+
 
 
 if __name__ == "__main__":

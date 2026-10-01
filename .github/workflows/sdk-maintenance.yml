@@ -1,44 +1,169 @@
-name: Explicit native SDK maintenance
-on:
+name: Explicit prepared SDK maintenance
+'on':
   workflow_dispatch:
     inputs:
-      jobs:
-        description: Cold toolchain compilation is explicit maintenance work
+      target:
+        description: Explicit producer target
         type: choice
-        options: ['2', '4', '8']
+        options:
+        - linux-x86_64
+        - linux-aarch64
+        - windows-x86_64
+        - browser-wasm32
+        - all
+        default: windows-x86_64
+      jobs:
+        description: Compilation concurrency
+        type: choice
+        options:
+        - '2'
+        - '4'
+        - '8'
         default: '2'
+      execute:
+        description: Publish verified complete groups into durable base storage
+        type: boolean
+        default: false
+      profile:
+        description: Dependency capability recipe, separate from application features
+        type: choice
+        options:
+        - core
+        - all-gui
+        default: core
+      source:
+        description: Reuse exact base when available, require base, or explicitly rebuild
+        type: choice
+        options:
+        - auto
+        - base
+        - rebuild
+        default: auto
 permissions:
   contents: read
-concurrency:
-  group: sdk-maintenance-${{ github.ref }}
-  cancel-in-progress: false
+  actions: read
 jobs:
-  prepare:
+  plan:
     runs-on: ubuntu-24.04
-    timeout-minutes: 360
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Fetch and build using the declared old host baseline
-        env:
-          JOBS: ${{ inputs.jobs }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker run --rm -e JOBS -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE" debian:bookworm bash -euc '
-            apt-get update
-            apt-get install -y --no-install-recommends ca-certificates python3 git build-essential cmake ninja-build file cpio rsync unzip wget patch bc bzip2 xz-utils perl gawk libncurses-dev
-            python3 tools/distro_sdk.py fetch --cache build/sdk-inputs --jobs "$JOBS"
-            python3 tools/distro_sdk.py build --cache build/sdk-inputs --output build/sdk-produced --jobs "$JOBS"
-          '
-      - name: Retain maintenance outputs for reviewed durable-base publication
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: prepared-sdk-${{ github.run_id }}-${{ github.run_attempt }}
-          path: build/sdk-produced/
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 30
-      - name: Explain storage boundary
-        run: echo 'Workflow artifacts are temporary transport. Copy the verified complete recipe group into durable base storage before ordinary consumers use it.' >> "$GITHUB_STEP_SUMMARY"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'sdk-plan'], check=True)
+      id: plan
+      env:
+        TARGET: ${{ inputs.target }}
+  produce:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    env:
+      TARGET: ${{ matrix.target }}
+      JOBS: ${{ inputs.jobs }}
+      SDK_PROFILE: ${{ inputs.profile }}
+      SDK_SOURCE: ${{ inputs.source }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Explicitly acquire the pinned disposable Windows graphics prerequisite
+      if: runner.os == 'Windows' && inputs.profile == 'all-gui'
+      run: python .github/scripts/lifecycle.py graphics-maintain
+    - name: Resolve exact retained group or positively observed absence
+      run: python .github/scripts/lifecycle.py sdk-inputs
+    - if: runner.os == 'Windows'
+      shell: pwsh
+      run: ./tools/ci_windows.ps1 -Output 'build/windows-toolchain.json'
+    - shell: python
+      run: |
+        import os, subprocess
+        subprocess.run(['docker','run','--rm','-e','SDK_PROFILE','-e','JOBS','-e','TARGET','-e','GITHUB_REPOSITORY','-e','GITHUB_SHA','-e','PYTHONUTF8=1','-e','PYTHONDONTWRITEBYTECODE=1','-v',os.getcwd()+':/work','-w','/work','debian:bookworm','bash','-euc',
+         'apt-get update; apt-get install -y --no-install-recommends ca-certificates python3 nodejs openssl git build-essential cmake ninja-build file cpio rsync unzip wget patch bc bzip2 xz-utils perl gawk libncurses-dev binutils xvfb xauth fonts-dejavu-core libgl1 libopengl0 libgl1-mesa-dri libx11-dev libxext-dev libxft-dev libxinerama-dev libxcursor-dev libxrender-dev libxfixes-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev; useradd --create-home sdkbuilder; chown -R sdkbuilder:sdkbuilder /work; runuser -u sdkbuilder -- xvfb-run -a python3 .github/scripts/lifecycle.py sdk-produce'],check=True)
+      if: runner.os == 'Linux'
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'sdk-produce'], check=True)
+      if: runner.os == 'Windows'
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: sdk-group-${{ matrix.target }}-${{ github.run_attempt }}
+        path: build/sdk-group/
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: sdk-plan-${{ matrix.target }}-${{ github.run_attempt }}
+        path: build/sdk-publication-plan.json
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: sdk-proof-${{ matrix.target }}-${{ github.run_attempt }}
+        path: |-
+          build/sdk-origin.json
+          build/sdk-consumer/qualification.json
+          build/sdk-consumer/source.junit.xml
+          build/sdk-consumer/build/Testing/Temporary/
+          build/sdk-gui-consumer/qualification.json
+          build/sdk-gui-consumer/source.junit.xml
+          build/sdk-gui-consumer/build/Testing/Temporary/
+          build/sdk-gui-consumer/build/test-reports/
+          build/sdk-gui-consumer/graphics.json
+          build/sdk-gui-consumer/graphics-probe.json
+          build/sdk-gui-consumer/graphics-test.log
+          build/sdk-gui-consumer/graphics-compile.log
+          build/sdk-gui-consumer/build/gui/visual-evidence/**/*.json
+          build/sdk-gui-consumer/build/gui/visual-evidence/**/*.png
+          build/sdk-gui-consumer/build/gui/visual-evidence/**/*.ppm
+          build/sdk-gui-consumer/build/gui/visual-evidence/**/*.log
+          build/host-graphics/acquisition.json
+        if-no-files-found: warn
+        compression-level: 0
+        retention-days: 30
+      if: always()
+  publish:
+    if: inputs.execute
+    needs: produce
+    runs-on: ubuntu-24.04
+    environment: release-publisher
+    concurrency:
+      group: foundation-release-lifecycle
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |
+        import os,subprocess
+        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--pattern','sdk-group-*-'+os.environ['GITHUB_RUN_ATTEMPT'],'--dir','build/sdk-groups'],check=True)
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'publish-bases'], check=True)
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: sdk-delivery-${{ github.run_attempt }}
+        path: build/receipts/
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+      if: always()
+env:
+  GH_TOKEN: ${{ github.token }}
+  PYTHONUTF8: '1'
+  PYTHONDONTWRITEBYTECODE: '1'

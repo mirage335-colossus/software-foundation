@@ -172,6 +172,10 @@ files, public launchers and combined retained notices. Each backend lives under
 variant gets `foundation-cli-BACKEND` plus its distinct `foundation-gui-*` launcher.
 No private library enters a system library directory. The launcher executes the
 private binary directly and preserves its arguments.
+Public manual pages follow the same coexistence rule: `foundation-cli.1` belongs
+to core, `foundation-cli-BACKEND.1` belongs to other variants, and each has
+`software-foundation-BACKEND.7`. The generated Arch/Gentoo install bodies use
+those exact filenames and preserve the archive's original private manuals.
 
 `recipes/arch/` includes a complete `PKGBUILD`, matching `.SRCINFO`, notices and
 launchers. Exact source digests bind the download and local helper files.

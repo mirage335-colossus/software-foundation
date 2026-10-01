@@ -14,8 +14,10 @@ int main(){try{
         [&](std::string id){gui::rev::Probe::select_record(adapter,{"entries.list",1},std::move(id));},sync);
     fixture::parity(session.application.view());
     fixture::unavailable_service(adapter);
-    const auto image=adapter.capture();fixture::check(image.width()>0&&image.height()>0,"Native capture failed");
-    fixture::capture(image.pixels().data(),image.width(),image.height(),"rev");
+    fixture::visual_sizes(session.application,adapter,"rev",sync,[&](const std::string& name){
+        const auto image=adapter.capture();fixture::check(image.width()>0&&image.height()>0,"Native capture failed");
+        fixture::capture(image.pixels().data(),image.width(),image.height(),name.c_str());
+    });
     gui::rev::Probe::select_option(adapter,{"entries.options",1},"heading");sync();
     fixture::check(adapter.service_active(),"Native service not started");
     gui::rev::Probe::complete_prompt(adapter,"New heading");sync();

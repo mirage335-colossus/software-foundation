@@ -21,6 +21,26 @@ availability, stable identities, immutable image ownership and queued services.
 Application identifiers occur only in shared code and fixtures. Native adapters
 select behavior by generic widget kind and declared values.
 
+The exact application-to-renderer routes are:
+
+| Host | Application definition and generic consumer |
+| --- | --- |
+| Terminal | `view_definition.hpp` → `Application` → typed terminal runner → `TerminalAdapter` |
+| Framebuffer | Same definition/application → framebuffer composition → `FramebufferAdapter` |
+| SDL window | Same definition/application → typed SDL runner → the same framebuffer adapter |
+| FLTK | Same definition/application → `Session<Application, fltk::Adapter>` → verified patched native adapter |
+| Rev | Same definition/application → `Session<Application, rev::Adapter>` → retained native adapter/toolkit |
+| Hosted browser | Same definition/application → `Browser<Application>` → `WebAdapter`/`WebSession` → shared renderer/assets |
+| Browser Wasm | Same definition/application → the same browser runtime and adapter/session → the same renderer/assets |
+
+Widget construction and layout iterate the same shared definition table. Shared
+reducers own product actions and data projections. Backend files contain no
+application widget IDs; the maintained adapter changes select only generic kinds,
+palette roles and public state. Extending an existing button/list/menu feature
+changes shared declarations/reducers and shared fixtures, without editing any
+backend. A new primitive or service legitimately extends the public contract and
+its selected adapters.
+
 This integration closes these practical consumer gaps:
 
 - Every backend has an explicit build target, dependencies and host lifecycle;
@@ -35,13 +55,22 @@ This integration closes these practical consumer gaps:
 - The feature fixture adds a real control at runtime and exercises its meaning
   through each selected adapter. Canonical serialization compares declarations,
   geometry, actions and values; a browser fixture compares actual DOM geometry.
+- Generic FLTK appearance now uses the same flat surface/disabled/border roles
+  and monospaced font class as the pixel/native reference. Native focus clearing
+  is explicit; actual controls retain their input/callback behavior. Real capture
+  checks detect geometry, palette and missing-text regressions.
+- A complete offline source input group retains all upstream implementation and
+  reviewed integration patches. Complete source-tree verification covers files
+  outside the consumed-header lock, and the ordinary build entry point restores
+  the group before configuring the same selected targets.
 - GUI install destinations exist behind reviewed lock metadata. Local development
   can build all hosts; an unresolved dependency license cannot silently turn into
   a redistributable binary package.
 
 [Patch provenance and upgrade rules](../gui/patches/README.md) identify the exact
 local adaptations. The source dependency remains unchanged. Upstreaming typed
-runners and portable pipe handling would eliminate those maintained changes.
+runners, shared appearance roles and portable pipe handling would eliminate those
+maintained changes.
 
 ## Capability and fallback policy
 
@@ -93,20 +122,51 @@ Debian 12 or any older release's binary baseline.
 | Rev | Compiled 46 toolkit modules; real native callback paths and OpenGL capture under Xvfb; shared extension, services, close and serialized parity |
 | FLTK | Actual native editor/button/list callbacks under Xvfb; shared extension, serialized parity, capture, unavailable-service error and pending-service shutdown |
 | Hosted browser | Actual child and loopback sessions, identity/retry/security checks, child/worker cleanup; real Firefox/Chromium editing and prompt cancellation using copied assets |
-| Wasm browser | Actual Emscripten 3.1.69 compilation and Node execution; real Firefox/Chromium editing, prompt cancellation and DOM geometry equality with hosted mode |
+| Wasm browser | Actual retained Emscripten 6.0.10-git compilation and Node execution; real Firefox/Chromium editing, prompt cancellation and DOM geometry equality with hosted mode |
 
 Firefox 153.4.0 ESR and Chromium 154.0.8037.57 rendered both transport modes
 successfully. Shared DOM geometry also matched between those engines. Their captured
 screens show the same ordered controls, spacing and logical sizing, with only the
 transport status text differing. SDL/framebuffer and Rev captures retain the same
-shared arrangement; native glyph rendering may differ. Captures are diagnostic
-build artifacts, not golden images asserting exact pixels across machines.
+shared arrangement; native glyph rendering may differ. Captures are retained build artifacts with explicit comparison assertions;
+there is no exact-pixel guarantee across fonts, window systems or machines.
 
-The initial 20 native GUI checks passed. After adding installed qualification,
-all six native executable smoke checks plus the four affected shared/parity/PTY/HTTP
-checks passed, as did the rebuilt Wasm check, seven source/patch guards and the
-separate actual Firefox/Chromium runs. Eleven unchanged pinned
-upstream suites cover contract, bitmap, adapter, layout, runtime,
+The real native visual fixture runs framebuffer, FLTK and Rev at 800×640 and
+480×360. Canonical declarations must match exactly. Pixel checks require shared
+fills and border positions, visible text for each control, horizontal/vertical
+text extent within eight pixels of the framebuffer reference, and bounded text
+coverage. Overall RGB channel error must remain below 4 on the 0–255 scale; this
+secondary check cannot replace the per-control assertions. Negative checks must
+reject an erased heading, changed disabled fill and shifted editor. The executed
+profile passed with mean channel error below 1.01 across all compared captures.
+Native font rasterization remains different; normal-size controls have the same
+order, dimensions, spacing and shared palette.
+
+Run the automated comparison with the prepared display/toolkits:
+
+```sh
+cmake --build build/gui-native --target foundation-gui-tests --parallel 2
+xvfb-run -a ctest --test-dir build/gui-native -R '^foundation.gui.visual$' \
+  --output-on-failure
+```
+
+Each comparison creates a fresh `gui/visual-evidence/run-*` directory containing
+real RGB captures, PNG previews, canonical declaration JSON, process logs and a
+success-only `qualification.json` with binary/capture hashes and measured error.
+The fixture clears actual native focus after resize delivery before comparison;
+a separate focus assertion checks that behavior. Physical display, high-DPI and
+assistive-device behavior still require their selected native profile.
+
+The current native profile passed all 28 enabled GUI CTests, including all six
+native executable smoke checks, shared/parity/PTY/HTTP checks and the actual
+native visual comparison. The current shared view also compiled against an
+unchanged prepared browser SDK and passed the Wasm/Node check. Real
+Firefox/Chromium runs cover both hosted and Wasm modes. The retained-group fixtures cover complete-tree tampering,
+unsafe/duplicate entries, changed integration inputs, dirty source, deterministic
+export, mode handling, and atomic/idempotent restore with foreign output preserved.
+A real offline group was exported from the pinned dependency and consumed through
+the normal build wrapper; all 19 enabled GUI checks passed using restored sources.
+Eleven pinned upstream suites cover contract, bitmap, adapter, layout, runtime,
 presentation, extension, interaction, framebuffer, terminal and web behavior.
 The upstream DOM-renderer suite and local source/patch guards supplement them.
 Tests that depend on a display, Node, browser or toolkit are explicit; an omitted
@@ -142,7 +202,10 @@ Only after successful checks and cleanup does the fixture publish
 version, selected mode, completed checks, explicit browser arguments and the
 verified input SHA256 map. It rejects changed input bytes, saves captures and
 `geometry.json`, removes its temporary profile and stops browser/server children.
-Failure leaves no success receipt. Retain that receipt with the release's broader
+Failure leaves no success receipt. Browser/driver logs survive both startup
+failure and normal temporary-profile cleanup. On systems with bounded local
+socket names, use a short owned `TMPDIR`; a long temporary path can prevent
+Chromium startup before any application assertion. Retain that receipt with the release's broader
 environment and compatibility evidence. `FOUNDATION_GUI_CAPTURE_DIR` optionally saves native fixture captures
 to an existing claimed output directory. Keep browser/display runs separate from
 ordinary focused edit loops unless those paths changed.

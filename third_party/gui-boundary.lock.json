@@ -9,7 +9,8 @@
     "gui/patches/terminal-runner.patch: typed application runner with unchanged platform I/O",
     "gui/patches/sdl-runner.patch: typed application runner and injected test observer; removes demonstration actions",
     "gui/patches/rev-build.patch: explicit dependency root and reusable targets without upstream demonstration or install rules",
-    "gui/patches/rev-dependencies.patch: explicit preserved archive root"
+    "gui/patches/rev-dependencies.patch: explicit preserved archive root",
+    "gui/patches/fltk-appearance.patch: generic flat shared-palette controls and matching monospaced font class; native event handling retained"
   ],
   "files": {
     "backends/fltk/adapter.hpp": "49ee88480c7058f17ccf3bdc2ddeae78ca5e183820355143d7e64afeb45bc76e",
@@ -85,5 +86,6 @@
   "redistribution": {
     "approved": false,
     "license_files": []
-  }
+  },
+  "source_tree": "81454aa463e9f0d1776bf9e6cb74a7f27b4d254f"
 }

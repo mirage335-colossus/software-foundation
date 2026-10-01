@@ -70,7 +70,7 @@ its actual attempt and logs remain visible.
 ## Authoritative check adapters
 
 [`release_check.py`](../tools/release_check.py) implements `source`,
-`archive`, `recovery` and native `abi` scopes. It verifies the candidate before and after
+`archive`, `recovery`, native `abi` and disposable-container `apt` scopes. It verifies the candidate before and after
 execution, checks actual target identity, and writes the receipt only after the
 operation completes. For example, the argument array for a native archive check is:
 
@@ -101,9 +101,42 @@ in the exact source archive. Pass `--browser firefox --firefox /path/to/firefox`
 `--browser chromium --browser-executable /path/to/chromium --driver /path/to/chromedriver`.
 The receipt retains engine/version, exact input hashes, interaction checks, geometry
 and captures. Missing browsers fail; no browser is downloaded by qualification.
+Desktop browsers remain host prerequisites, outside the compiler SDK. The explicit
+CI bootstrap chooses the distribution package or verified vendor repository for the
+actual operating system. It records package versions, repository policy and signing
+identity before the test; it does not substitute another distribution for the named
+check. Pass its receipt with `--browser-prerequisite` and the frozen plan with
+`--browser-prerequisite-plan`. The adapter checks the source/inventory, target,
+backend, scope, plan, check, run and attempt, actual host and selected executable.
+It then compares the observed browser version and preserves the unchanged receipt
+as hashed evidence. A package-install log alone cannot certify browser behavior.
 
-Native package-manager install/update/remove scopes use environment adapters with the same receipt
-contract. The adapter must verify the candidate, execute that scope against its
+Windows Rev qualification uses a separately retained host graphics input through
+`--windows-graphics-archive`. The application and SDK contain no software graphics
+driver or desktop browser. The [Windows graphics prerequisite](windows-graphics.md)
+is qualified with a real native WGL probe, exact loaded DLL paths and bytes, and
+required capabilities before running unchanged GUI checks. Temporary driver staging
+is confined to the disposable executable directories and removed only after every
+owned child has stopped. Compiler/probe/test logs and final cleanup receipts stay
+with the check; driver files are excluded from application archives. Failed graphics
+setup is an incomplete qualification, never permission to skip appearance checks.
+
+The `apt` adapter requires Linux running as root inside an explicitly selected
+Docker/Podman container and `FOUNDATION_DISPOSABLE_CHECK=1`. It refuses ordinary
+host use, already installed application packages and colliding payload paths.
+Prepare `apt-get`, `dpkg-deb`, `gpg`, `gpgv`, `gpgconf` and `openssl` outside the
+check. It packages the exact archive twice with increasing disposable packaging
+versions, creates a temporary signing key and HTTPS loopback repository, validates
+TLS against its own CA, and runs real APT refresh, installation, upgrade and purge.
+Each installed file, version and runtime self-check must match; corrupted signed
+metadata must fail specifically at signature validation. Private signing keys are
+neither served nor retained in evidence. Cleanup stops the server and signing
+agents; failure never produces a passing receipt. Retain `apt.log` with its bound
+digest. These synthetic package versions qualify the delivery mechanism while
+preserving the exact candidate archive, not an invented application-version upgrade.
+
+Arch and Gentoo client install/update/remove scopes require native environment
+adapters with the same receipt contract. The adapter must verify the candidate, execute that scope against its
 exact assets and retain observations; a label or placeholder command is insufficient.
 `qualification.json` contains schema version, source and inventory digests, target,
 backend, scope, actual `coverage.host_identity()`, passing status, nonempty executed

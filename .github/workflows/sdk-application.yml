@@ -1,86 +1,203 @@
-name: Prepared SDK application
-on:
+name: Prepared SDK application and candidate
+'on':
   workflow_dispatch:
     inputs:
-      recipe:
-        description: Exact 64-character Linux x86_64 prepared base recipe
+      profile:
+        description: Exact release inventory
+        type: choice
+        options:
+        - core
+        - all-gui
+        default: core
+      recipes:
+        description: JSON target-to-recipe map; every selected target is mandatory
         type: string
         required: true
-      base_tag:
-        description: Durable dependency release tag
+      tag:
+        description: Optional new candidate tag
         type: string
-        default: base
+        required: false
+      experiment:
+        description: Keep this candidate a prerelease and ineligible for Latest
+        type: boolean
+        default: true
       jobs:
-        description: Build concurrency
+        description: Compile concurrency
         type: choice
-        options: ['2', '4', '8']
+        options:
+        - '2'
+        - '4'
+        - '8'
         default: '2'
+      execute:
+        description: Publish candidate after exact local verification
+        type: boolean
+        default: false
+      gui_group:
+        description: Exact retained GUI manifest SHA-256 for all-gui; empty for core
+        type: string
+        required: false
 permissions:
   contents: read
-concurrency:
-  group: sdk-application-${{ github.ref }}-${{ inputs.recipe }}
-  cancel-in-progress: true
+  actions: read
 jobs:
-  application:
+  prepare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Fetch the complete existing group; missing inputs never trigger compilation
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RECIPE: ${{ inputs.recipe }}
-          BASE_TAG: ${{ inputs.base_tag }}
-        shell: python
-        run: |
-          import os, re, subprocess, sys
-          from pathlib import Path
-          sys.path.insert(0, 'tools')
-          from dependency_store import names, verify_group
-          recipe, tag = os.environ['RECIPE'], os.environ['BASE_TAG']
-          if not re.fullmatch(r'[0-9a-f]{64}', recipe): raise SystemExit('Exact recipe required')
-          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,100}', tag): raise SystemExit('Invalid base tag')
-          group = Path('build/base') / recipe
-          group.mkdir(parents=True)
-          subprocess.run(['gh', 'release', 'download', tag, '--dir', str(group),
-                          *[arg for name in names(recipe) for arg in ('--pattern', name)]], check=True)
-          verify_group(group, recipe)
-      - name: Execute in Bookworm user space with the prepared compiler
-        env:
-          RECIPE: ${{ inputs.recipe }}
-          JOBS: ${{ inputs.jobs }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker run --rm -e RECIPE -e JOBS -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE" debian:bookworm bash -euc '
-            apt-get update
-            apt-get install -y --no-install-recommends ca-certificates python3 cmake ninja-build git binutils
-            python3 tools/sdk.py install --group "build/base/$RECIPE" --recipe "$RECIPE" --output build/prepared-sdk
-            python3 tools/build.py test release --sdk build/prepared-sdk --portable --full --jobs "$JOBS" --build-dir build/sdk-application
-            python3 tools/build.py package release --sdk build/prepared-sdk --portable --jobs "$JOBS" --build-dir build/sdk-application
-          '
-      - name: Check the exact archive with the host compiler absent from the runtime contract
-        shell: python
-        run: |
-          from pathlib import Path
-          import subprocess, sys
-          archives = list(Path('build/sdk-application/packages').glob('*.tar.gz'))
-          if not archives: raise SystemExit('No application archives produced')
-          for archive in archives:
-              manifest = str(archive) + '.json'
-              subprocess.run([sys.executable, 'tools/artifact.py', 'create', str(archive), '--manifest', manifest], check=True)
-              subprocess.run([sys.executable, 'tools/artifact.py', 'verify', str(archive), '--manifest', manifest,
-                              '--abi', '--runtime-only'], check=True)
-      - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: sdk-application-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            build/sdk-application/packages/
-            build/sdk-application/Testing/Temporary/
-            build/sdk-application/build-info.txt
-          if-no-files-found: error
-          compression-level: 0
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'application-plan'], check=True)
+      id: plan
+      env:
+        RECIPES: ${{ inputs.recipes }}
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: source-${{ github.run_attempt }}
+        path: |-
+          build/source.tar.gz
+          build/recipes.json
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+  application:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    env:
+      TARGET: ${{ matrix.target }}
+      RECIPE: ${{ matrix.recipe }}
+      JOBS: ${{ inputs.jobs }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |-
+        import os, subprocess
+        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','source-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build/source'],check=True)
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'fetch-sdk'], check=True)
+      name: Fetch exact complete existing dependency group; never cold-build
+    - if: runner.os == 'Windows'
+      shell: pwsh
+      run: ./tools/ci_windows.ps1
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'application-build'], check=True)
+      if: runner.os == 'Windows'
+    - shell: python
+      run: |
+        import os,subprocess
+        subprocess.run(['docker','run','--rm','-e','TARGET','-e','RECIPE','-e','JOBS','-e','PYTHONUTF8=1','-e','PYTHONDONTWRITEBYTECODE=1','-v',os.getcwd()+':/work','-w','/work','debian:bookworm','bash','-euc',
+         'apt-get update; apt-get install -y --no-install-recommends ca-certificates python3 nodejs openssl cmake ninja-build git binutils make gpg patch xvfb xauth fonts-dejavu-core libgl1 libopengl0 libgl1-mesa-dri libx11-dev libxext-dev libxft-dev libxinerama-dev libxcursor-dev libxrender-dev libxfixes-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev; xvfb-run -a python3 .github/scripts/lifecycle.py application-build'],check=True)
+      if: runner.os == 'Linux'
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: application-${{ matrix.target }}-${{ github.run_attempt }}
+        path: |-
+          build/produced/*.tar.gz
+          build/produced/*.zip
+          build/produced/*.json
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: application-evidence-${{ matrix.target }}-${{ github.run_attempt }}
+        path: |-
+          build/produced/source.junit.xml
+          build/produced/work/build/Testing/Temporary/
+          build/produced/work/build/test-reports/
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+      if: always()
+  assemble:
+    needs:
+    - prepare
+    - application
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |-
+        import os, subprocess
+        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','source-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build/source'],check=True)
+    - shell: python
+      run: |
+        import json,os,subprocess
+        from pathlib import Path
+        recipes=json.loads(Path('build/source/recipes.json').read_text())
+        for target in recipes:
+         subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','application-'+target+'-'+os.environ['GITHUB_RUN_ATTEMPT'],'--dir','build/packages/'+target],check=True)
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'assemble'], check=True)
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: candidate-${{ github.run_attempt }}
+        path: |-
+          build/candidate/
+          build/delivery.json
+          build/publication-request.json
+          build/publication-plan.json
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+  publish:
+    if: inputs.execute
+    needs: assemble
+    runs-on: ubuntu-24.04
+    environment: release-publisher
+    concurrency:
+      group: foundation-release-lifecycle
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |-
+        import os, subprocess
+        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','candidate-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build'],check=True)
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'publish-candidate'], check=True)
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: candidate-delivery-${{ github.run_attempt }}
+        path: build/receipts/
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+      if: always()
+env:
+  GH_TOKEN: ${{ github.token }}
+  PYTHONUTF8: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+  PROFILE: ${{ inputs.profile }}
+  EXPERIMENT: ${{ inputs.experiment }}
+  TAG: ${{ inputs.tag }}
+  GUI_GROUP: ${{ inputs.gui_group }}
+concurrency:
+  group: prepared-application-${{ github.ref }}-${{ inputs.profile }}
+  cancel-in-progress: false

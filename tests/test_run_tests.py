@@ -43,6 +43,14 @@ class RunnerTests(unittest.TestCase):
         self.assertIsNotNone(runner.inapplicable(name, 'Linux'))
         self.assertIsNone(runner.inapplicable(name, 'Windows'))
         self.assertIsNone(runner.inapplicable(Named('unknown.missing_tool'), 'Linux'))
+        native = Named('test_sdk.NativeLinuxToolchainTests.test_compiler_selection')
+        self.assertIsNone(runner.inapplicable(native, 'Linux'))
+        self.assertIsNotNone(runner.inapplicable(native, 'Windows'))
+        self.assertIsNone(runner.inapplicable(Named('test_sdk.SdkTests.test_inventory'), 'Windows'))
+        apt = Named('test_release_check.ReleaseCheckTests.test_apt_timeout_stops_descendant_before_cleanup')
+        self.assertIsNone(runner.inapplicable(apt, 'Linux'))
+        self.assertIsNotNone(runner.inapplicable(apt, 'Windows'))
+        self.assertIsNone(runner.inapplicable(Named('test_release_check.ReleaseCheckTests.test_apt_refuses_ordinary_host_before_any_package_command'), 'Windows'))
 
 
 if __name__ == '__main__':

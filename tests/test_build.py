@@ -11,13 +11,30 @@ spec.loader.exec_module(builder)
 
 
 class BuildTests(unittest.TestCase):
+    def test_windows_linker_banner_and_file_version_use_same_order(self):
+        from unittest.mock import patch
+        for actual, minimum, success in (
+                ('14.44.35207', '14.44.35207.0', True),
+                ('14.44.35207.0', '14.44.35207', True),
+                ('14.44.35207', '14.44.35207.1', False),
+                ('14.44.35206.9', '14.44.35207.0', False),
+                ('14.45.1', '14.44.35207.0', True)):
+            with self.subTest(actual=actual, minimum=minimum), patch.object(
+                    builder.subprocess, 'check_output', return_value='Linker Version ' + actual):
+                if success:
+                    builder.verify_windows_linker(minimum)
+                else:
+                    with self.assertRaises(ValueError): builder.verify_windows_linker(minimum)
+        with patch.object(builder.subprocess, 'check_output', return_value='unrecognized tool'):
+            with self.assertRaises(ValueError): builder.verify_windows_linker('14.44.35207.0')
+
     def test_retained_host_tools_are_selected_and_cannot_escape(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "tools").mkdir()
             (root / "tools/cmake").write_text("fixture")
             (root / "sdk.json").write_text(json.dumps({"host_tools": {"cmake": "tools/cmake"}}))
-            self.assertEqual(builder.host_programs(root)["cmake"], str(root / "tools/cmake"))
+            self.assertEqual(builder.host_programs(root)["cmake"], str((root / "tools/cmake").resolve()))
             self.assertEqual(builder.host_programs(root)["ctest"], "ctest")
             (root / "sdk.json").write_text(json.dumps({"host_tools": {"cmake": "../outside"}}))
             with self.assertRaises(ValueError):
@@ -98,7 +115,7 @@ class BuildTests(unittest.TestCase):
             record = root / 'CMakeFiles/3.31.6/CMakeCXXCompiler.cmake'
             record.parent.mkdir(parents=True)
             record.write_text('set(CMAKE_CXX_COMPILER "' + str(compiler) + '")\n')
-            self.assertEqual(builder.cache_identity(root)['compiler_resolved_path'], str(compiler))
+            self.assertEqual(builder.cache_identity(root)['compiler_resolved_path'], str(compiler.resolve()))
             record.unlink()
             with self.assertRaises(OSError):
                 builder.cache_identity(root)

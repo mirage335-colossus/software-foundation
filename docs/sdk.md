@@ -6,7 +6,7 @@ requirements describe where the generated application runs. Keep these
 contracts separate in metadata, documentation, and tests.
 
 The default example builds with native tools. This repository also implements
-pinned native source SDK preparation, browser-target SDK preparation, Windows
+pinned native source SDK preparation, WebAssembly build SDK preparation, Windows
 dependency bases, immutable local base storage, strict installation and complete
 release recovery. These are executable maintenance facilities. Compiled SDK
 archives are generated outputs, not committed inputs. A runnable producer does
@@ -39,7 +39,12 @@ The current manifest is `SDK_ROOT/sdk.json` with `schema_version: 1`, a nonempty
 `triple`, `sysroot`, and `cxx_compiler`. The last two are existing relative paths
 whose resolved locations stay inside the SDK. The `files` object maps every
 SDK file other than the root manifest to its SHA-256; the compiler must be
-included. The wrapper verifies completeness and every digest before configuration
+included. Native producer manifests also declare `target.c_compiler`, naming the
+retained `<triple>-gcc` executable. The validator checks its containment and full
+file inventory; CMake selects it again in nested compilation checks. Legacy
+native manifests without this field support C++-only consumers; enabling C fails
+instead of selecting a host compiler. Emscripten's retained rules explicitly select
+its C and C++ wrappers. The wrapper verifies completeness and every digest before configuration
 and retains the manifest digest in the build-tree identity.
 
 Production manifests also carry host requirements, target runtime ceilings,
@@ -55,6 +60,10 @@ direct and transitive source, bootstrap input, exact revision, source archive
 digest, patch, configuration, and relevant build helper. Include host tools in
 the inventory, including generators required only while preparing dependencies.
 Content-address the recipe from normalized paths and complete input bytes.
+
+Keep mutable build outcomes and qualification status in separate receipts bound
+to the recipe and archive digests. They are not recipe inputs: recording a
+successful cold build must not change the identity of the exact group it verified.
 
 A recipe identifier is not an archive digest. Two cold builds of one recipe may
 produce different bytes until reproducibility is demonstrated. Preserve the
@@ -191,10 +200,18 @@ python3 tools/distro_sdk.py build --cache /owned/sdk-cache --output /owned/sdk-g
 ```
 
 `fetch` is the explicit network operation. `build` verifies all retained input
-hashes and disables every Buildroot download command. A missing input fails;
+hashes, the retained dependency-resolution digest and complete resolved download
+inventory, then disables every Buildroot download command. A missing input fails;
 the producer never substitutes a moving upstream version. Use an OS network
 restriction when demonstrating disconnected recovery, as disabled application
 download commands alone do not establish network isolation.
+
+The x86_64 recipe is the default. The native ARM64 recipe is
+[`aarch64/recipe.json`](../third_party/sdk/aarch64/recipe.json); pass it with
+`--recipe` to every producer command on a Debian 12 ARM64 host. It selects the
+same maintained runtime and newer compiler, with a checked generic CPU override.
+Its tools run on ARM64, and its outputs target ARM64. Neither recipe silently
+executes foreign binaries or claims emulation as native qualification.
 
 The source group includes the recipe, overlay, exact preparation helpers, selected
 source downloads, resolution record, input inventory and available project license.
@@ -246,14 +263,20 @@ Installation refuses an existing destination. Buildroot relocation runs at the
 new final root, records that root and the original archive digest, then rehashes
 the installed tree. A moved installation must be reinstalled from the retained
 archive. Compiler smoke compiles C++20 code, audits the generated ELF and executes
-it in a clean environment. Browser SDK smoke uses its retained Node executor.
+it in a clean environment. WebAssembly SDK smoke uses its retained Node executor.
 Diagnostic fixtures can be installed with `--diagnostic`, but cannot satisfy
 release-readiness validation.
 
-## Browser-target SDK
+## WebAssembly build SDK and separate browser validation
 
 [`third_party/sdk/wasm.json`](../third_party/sdk/wasm.json) pins Emscripten, its
-compiler bundle and Node by exact archive digests. Preparation consumes retained
+compiler bundle and Node by exact archive digests. This SDK builds WebAssembly
+applications. Node runs compiler support code and command-line checks; it is not
+a desktop browser and is not an end-user prerequisite for a browser application.
+The SDK includes no Chromium, Firefox, browser profile, or browser installer.
+Use ordinary distro browsers or separately installed no-cost browsers for GUI
+validation, with their versions recorded in that validation environment. Do not
+add browsers to a compiler recipe merely to run GUI tests. Preparation consumes retained
 inputs, warms the declared C++ library/exception configuration, and verifies a
 second compile using a frozen cache. Ordinary compiles fail when a new library
 variant is needed; change and prepare the recipe deliberately.
@@ -296,10 +319,46 @@ python tools/sdk_windows.py recipe-id
 python tools/sdk_windows.py empty-base --provenance producer.json --output prepared-group
 ```
 
-`producer.json` must contain the exact recipe fields plus `linker_version` and
-`windows_sdk` observed from the selected installed tools. For a nonempty port
-selection, prepare the pinned package-manager checkout and exact input cache,
-build both configurations with the selected toolset and static triplet, then use:
+`producer.json` contains the exact recipe fields plus `linker_version` and
+`windows_sdk` observed from the selected installed tools. The SDK version must
+match the pinned policy. Nonempty port recipes also require `tools_version` and
+`installation_path` from that selection; the producer checks the actual active
+linker before building. Initialize that environment before invoking the producer.
+
+The same executable lifecycle handles empty and nonempty port selections:
+
+```powershell
+python tools/sdk_windows.py fetch --provenance producer.json --cache retained-inputs --jobs 2
+python tools/sdk_windows.py verify-inputs --cache retained-inputs
+python tools/sdk_windows.py build --provenance producer.json --cache retained-inputs --output prepared-group --jobs 2
+```
+
+`fetch` is the explicit network operation. For a nonempty recipe it resolves the
+full pinned vcpkg commit, retains its Git source archive and bootstrap executable,
+and collects the dependency/tool download cache. Its generated triplet fixes the
+selected v143 tools, Windows SDK, static CRT/libraries, both configurations and
+no LTO. The empty core recipe fetches no package manager or external libraries.
+
+`build` verifies every retained input and restores a fresh supplier tree. It
+clears remote binary-cache settings and inherited overlays, disables new asset
+downloads with `--no-downloads` and `clear;x-block-origin`, then creates a raw
+export with transitive libraries and integration files. Required selected-port
+notices and installed inventory records are checked before archive assembly.
+A source group retains the complete cache, exact recipe, host policy and helpers;
+restore with `sdk.py restore-sources` and run its retained `sdk_windows.py build`
+using `--recipe-file restored/recipe/windows-base.json --cache restored/cache`.
+Microsoft host tools still come from the separately retained installer layout.
+
+A successful `--only-downloads` operation alone does not establish source closure:
+some port recipes fetch additional inputs later. The fresh offline build must
+pass before publication. A missing late input requires explicit maintenance of
+the selected recipe/cache and a new complete qualification attempt; never enable
+network fallback in `build`. See the supplier's
+[download controls](https://learn.microsoft.com/en-us/vcpkg/commands/install),
+[asset caching](https://learn.microsoft.com/en-us/vcpkg/users/assetcaching), and
+[raw export contract](https://learn.microsoft.com/en-us/vcpkg/commands/export).
+
+For a separately reviewed export, the lower-level assembly command remains:
 
 ```powershell
 python tools/sdk_windows.py assemble --export-root prepared-export --source-root retained-inputs --provenance producer.json --output prepared-group
@@ -314,15 +373,89 @@ port recipes and input downloads in the source tree. Consumers must use a linker
 at least as recent as the producing linker. Runtime, configuration and LTO rules
 are checked rather than inferred from an archive filename.
 
+The shipped example can use the no-cost Community edition where its terms
+permit, or Build Tools for qualifying open-source use. No paid IDE feature is
+required. Eligibility is governed by Microsoft
+[licensing guidance](https://www.microsoft.com/licensing/guidance/Visual-Studio);
+availability without a purchase does not grant unrestricted use.
+
 Microsoft compiler and Windows SDK installation media are not dependency-base
 contents. Offline setup of a host without them requires a separately retained,
-complete Microsoft offline installer layout. Tool availability and an edition's
+complete Microsoft offline installer layout, with its component configuration,
+installer version, checksums and local verification result. Install from that
+layout using the supplier
+[offline procedure](https://learn.microsoft.com/en-us/visualstudio/install/create-an-offline-installation-of-visual-studio).
+Do not retain only an online bootstrap executable. Tool availability and an edition's
 license eligibility are separate questions; this repository does not certify
 eligibility for every organization. Native Windows execution remains required.
 
 Prepared SDK trees remain immutable during ordinary builds. Tool environments and
-browser compiler wrappers disable Python bytecode writes, browser library caches
+WebAssembly compiler wrappers disable Python bytecode writes, WebAssembly library caches
 are frozen, and production installation rechecks the complete inventory after
 compiler smoke. A successful program run followed by changed SDK files is a
 failed installation. Do not repair such a failure by accepting newly generated
 files into the old published recipe; prepare and qualify a new immutable group.
+
+## Qualification boundaries for the supplied recipes
+
+The executable tests cover corruption, incomplete inventories, host/target
+selection, fresh offline Windows command construction, retained-source replay,
+relocation and immutable installation. The two native Buildroot configurations
+are checked against their pinned source. Configuration success and mocked
+supplier execution do not establish a cold compiler or Windows library build.
+Record native Bookworm x86_64/ARM64 cold-build results, actual Windows producer
+results and oldest-host execution before claiming those facilities qualified.
+The WebAssembly compiler/Node preparation is a separate qualification scope from
+the ordinary Chromium/Firefox validation-host matrix. Each release must identify
+which exact retained recipe groups and actual execution records it uses.
+
+
+## Select a complete dependency profile
+
+Keep the small default core build independent of native GUI libraries. A release
+that enables all native backends must select the matching GUI profile before
+fetching or preparing its dependency group:
+
+| Native host and target | Core recipe | All-native-GUI recipe |
+| --- | --- | --- |
+| Debian 12 x86_64 | `third_party/sdk/recipe.json` | `third_party/sdk/gui-x86_64/recipe.json` |
+| Debian 12 ARM64 | `third_party/sdk/aarch64/recipe.json` | `third_party/sdk/gui-aarch64/recipe.json` |
+| Windows x64 | `third_party/sdk/windows-base.json` | `third_party/sdk/windows-gui/windows-base.json` |
+
+Use `--recipe` for each native producer command and `--recipe-file` for each
+Windows producer command. Pass the same selected recipe throughout fetch,
+verification, build and identity calculation. Every profile has its own immutable
+recipe ID. An all-GUI release cannot substitute the smaller core group.
+
+The native GUI profile selects FLTK, SDL2 with X11, X11 development libraries,
+and GLVND OpenGL dispatch libraries. Required selections are checked after real
+Buildroot configuration; disappearing options fail preparation. Upstream
+Buildroot recipes pin their full transitive inputs, and `legal-info` supplies
+their notices. FLTK is built as a static toolkit so its C++ objects use the
+application's chosen static compiler runtime. The selected Buildroot recipe pins
+FLTK 1.3.7 for the compatible 1.3 API baseline. Upstream marks the 1.3 series
+end-of-life; see the [supplier release status](https://www.fltk.org/software.php).
+Review fixes and the supported distro's maintenance separately, and upgrade the
+pinned toolkit through the documented dependency procedure when appropriate.
+A newer toolkit is not required merely to build this generic example.
+The Windows GUI profile selects `fltk[core]` and `sdl2[core]` with
+the common static runtime/toolset policy. Its OpenGL development interface comes
+from the pinned Windows SDK. The retained GUI source group already contains the
+exact GLEW and FreeType inputs compiled by its adapter; do not compile duplicate
+copies into the dependency base.
+
+The native GUI runtime requires an X11 service and a compatible installed OpenGL
+vendor driver. GLVND dispatch libraries may select that driver at runtime; it is
+an explicit host service, outside the private application library inventory.
+Test the exact package on both the oldest declared host and the intended display
+hosts. The SDK does not include an X server, desktop browser, or vendor driver.
+Prepared manifests record the profile's `capabilities` and `runtime_host_services`;
+qualification still requires actual builds and execution of every selected host.
+
+The SDK-only libc audit binds its ordinary files, target architecture, retained
+source digest and complete recipe identity to one sysroot. It permits the private
+interface only between the declared libc cohort and its matching loader, checks
+numeric runtime versions, and rejects changed files, wrong locations or missing
+providers. Application package audits retain their strict private-interface and
+bundled-libc rejection. This distinction is required to inspect a compiler
+sysroot without weakening the deployed application's runtime policy.

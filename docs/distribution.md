@@ -13,6 +13,11 @@ and signed flat repository path using distro-provided `dpkg-deb`, `gpg` and `gpg
 It verifies the portable archive inventory, compares the final Debian payload with
 the staged source payload, rejects hidden installation hooks, and keeps each backend
 under `/opt/software-foundation/BACKEND`. Public launchers preserve the private tree.
+When the archive includes the installed manuals, expose the core CLI as
+`man foundation-cli` and each GUI variant's CLI as `man foundation-cli-BACKEND`.
+Each package exposes `man 7 software-foundation-BACKEND`; private original manuals
+remain byte-identical. These regular public copies are part of the verified
+payload and are removed with the owning package, so variants can coexist.
 Backend suffixes let multiple GUI variants coexist. GUI redistribution remains
 blocked while the dependency's recorded terms are unresolved.
 

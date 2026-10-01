@@ -36,6 +36,25 @@ template<class Adapter> void unavailable_service(Adapter& adapter) {
 inline std::string declarations(const gui::Snapshot& view) {
     gui::WebAdapter recorder; recorder.present(view); return gui::web_detail::encode(recorder.presentation());
 }
+inline void capture_declarations(gui::Snapshot view, const std::string& name) {
+    const auto* directory=std::getenv("FOUNDATION_GUI_CAPTURE_DIR");if(!directory)return;
+    view.revision=1;
+    std::ofstream output(std::filesystem::path(directory)/(name+".json"));
+    output<<declarations(view)<<'\n';
+    if(!output)throw std::runtime_error("Cannot save native fixture declarations");
+}
+template<class Adapter, class Sync, class Capture>
+void visual_sizes(foundation::ui::Application& app, Adapter& adapter, const std::string& name, Sync sync, Capture capture) {
+    for(const gui::Size size : {gui::Size{800,640},gui::Size{480,360}}) {
+        app.handle(gui::ResizeEvent{size,1});
+        adapter.focus(std::nullopt);sync();
+        // Native resize delivery can acquire focus; clear it after that delivery.
+        adapter.focus(std::nullopt);
+        const auto stem=name+"-"+std::to_string(int(size.width));
+        capture_declarations(app.view(),stem);capture(stem);
+    }
+    app.handle(gui::ResizeEvent{{800,640},1});sync();
+}
 template<class Edit, class Activate, class Select, class Sync>
 void feature(foundation::ui::Application& app, Edit edit, Activate activate, Select select, Sync sync) {
     edit("Rejected \xc3\xa9"); sync(); activate("entries.add"); sync();

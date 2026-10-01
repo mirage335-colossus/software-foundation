@@ -18,6 +18,28 @@ SPEC.loader.exec_module(MODULE)
 Board, Rejected = MODULE.Board, MODULE.Rejected
 
 
+class RegularReadTests(unittest.TestCase):
+    def test_distinct_path_and_descriptor_ctime_still_reads_and_detects_changes(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'record'
+            path.write_bytes(b'content')
+            original = os.fstat
+            def changed(fd, delta):
+                info = original(fd)
+                values = {key: getattr(info, key) for key in
+                          ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns')}
+                values['st_ctime_ns'] += delta
+                return SimpleNamespace(**values)
+            with mock.patch.object(MODULE, 'cross_version', lambda info: MODULE.version(info)[:-1]):
+                with mock.patch.object(MODULE.os, 'fstat', side_effect=lambda fd: changed(fd, 100)):
+                    self.assertEqual(MODULE.read_regular(path), b'content')
+                deltas = iter((100, 200))
+                with mock.patch.object(MODULE.os, 'fstat', side_effect=lambda fd: changed(fd, next(deltas))):
+                    with self.assertRaisesRegex(Rejected, 'changed while reading'):
+                        MODULE.read_regular(path)
+
+
 class CoordinationTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

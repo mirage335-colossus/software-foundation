@@ -1,5 +1,20 @@
 # Explicit, preserved source input. Configuration never fetches dependencies.
 set(FOUNDATION_GUI_SOURCE "" CACHE PATH "Verified gui-boundary source checkout or archive")
+set(FOUNDATION_GUI_INPUT_GROUP "" CACHE PATH "Retained complete GUI input group")
+if(FOUNDATION_GUI_INPUT_GROUP)
+    if(FOUNDATION_GUI_SOURCE)
+        message(FATAL_ERROR "Select FOUNDATION_GUI_INPUT_GROUP or FOUNDATION_GUI_SOURCE, not both")
+    endif()
+    execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/source_group.py"
+        restore "${FOUNDATION_GUI_INPUT_GROUP}" --output "${CMAKE_CURRENT_BINARY_DIR}/retained-inputs"
+        OUTPUT_VARIABLE restored_gui COMMAND_ERROR_IS_FATAL ANY)
+    string(JSON FOUNDATION_GUI_SOURCE GET "${restored_gui}" source)
+    set(FOUNDATION_GUI_SOURCE "${FOUNDATION_GUI_SOURCE}" PARENT_SCOPE)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${FOUNDATION_GUI_INPUT_GROUP}/manifest.json" "${FOUNDATION_GUI_INPUT_GROUP}/SHA256SUMS"
+        "${FOUNDATION_GUI_INPUT_GROUP}/gui-inputs.tar.gz" "${CMAKE_CURRENT_SOURCE_DIR}/source_group.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tools/dependency_archive.py")
+endif()
 option(FOUNDATION_GUI_FLTK "Build the FLTK native host" OFF)
 option(FOUNDATION_GUI_SDL "Build the SDL framebuffer window host" OFF)
 option(FOUNDATION_GUI_REV "Build the Rev native host" OFF)
@@ -87,6 +102,8 @@ function(foundation_gui_executable target source)
     endif()
 endfunction()
 function(foundation_gui_patch source patch output)
+    get_filename_component(output_directory "${CMAKE_CURRENT_BINARY_DIR}/${output}" DIRECTORY)
+    file(MAKE_DIRECTORY "${output_directory}")
     execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.py"
         "${FOUNDATION_GUI_SOURCE}/${source}" "${CMAKE_CURRENT_SOURCE_DIR}/patches/${patch}"
         "${CMAKE_CURRENT_BINARY_DIR}/${output}" COMMAND_ERROR_IS_FATAL ANY)
@@ -101,6 +118,9 @@ function(foundation_gui_check name target labels)
 endfunction()
 if(BUILD_TESTING)
     add_custom_target(foundation-gui-tests DEPENDS foundation-gui-hosts)
+    add_test(NAME foundation.gui.source-group COMMAND "${Python3_EXECUTABLE}" -B
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/source_group_test.py")
+    set_tests_properties(foundation.gui.source-group PROPERTIES LABELS "gui;focused" TIMEOUT 60)
 endif()
 find_program(FOUNDATION_NODE_EXECUTABLE NAMES node nodejs)
 # Keep the browser asset names stable; both transport modes use the same renderer.
@@ -158,10 +178,17 @@ if(FOUNDATION_GUI_FLTK)
     set(FLTK_SKIP_IMAGES TRUE)
     set(FLTK_SKIP_FLUID TRUE)
     find_package(FLTK REQUIRED)
+    foundation_gui_patch(backends/fltk/adapter.hpp fltk-appearance.patch fltk/adapter.hpp)
     add_library(foundation_gui_fltk INTERFACE)
     target_include_directories(foundation_gui_fltk SYSTEM INTERFACE
-        "${FOUNDATION_GUI_SOURCE}/backends/fltk" ${FLTK_INCLUDE_DIR})
+        "${CMAKE_CURRENT_BINARY_DIR}/fltk" ${FLTK_INCLUDE_DIR})
     target_link_libraries(foundation_gui_fltk INTERFACE ${FLTK_LIBRARIES})
+    if(FOUNDATION_SDK_ROOT AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        # The prepared static FLTK uses Xft; FindFLTK's autotools path does not
+        # carry that closure. Xft also imports Xrender, Fontconfig and FreeType.
+        find_package(X11 REQUIRED COMPONENTS Xft Xrender)
+        target_link_libraries(foundation_gui_fltk INTERFACE X11::Xft)
+    endif()
     foundation_gui_executable(foundation-gui-fltk hosts/fltk_main.cpp)
     target_link_libraries(foundation-gui-fltk PRIVATE foundation_gui_fltk)
 endif()
@@ -175,6 +202,14 @@ if(FOUNDATION_GUI_SDL)
     endif()
 endif()
 if(FOUNDATION_GUI_REV)
+    if(FOUNDATION_SDK_ROOT)
+        # Prepared GUI SDKs supply platform libraries; the retained GUI input
+        # supplies the exact GLEW/FreeType sources. Never search the host for them.
+        if(DEFINED GUI_REV_BUNDLED_DEPS AND NOT GUI_REV_BUNDLED_DEPS)
+            message(FATAL_ERROR "Prepared SDK Rev requires GUI_REV_BUNDLED_DEPS=ON")
+        endif()
+        set(GUI_REV_BUNDLED_DEPS ON CACHE BOOL "Build preserved local GLEW/FreeType sources")
+    endif()
     foundation_gui_patch(cmake/GuiRev.cmake rev-build.patch Rev.cmake)
     foundation_gui_patch(cmake/RevDependencies.cmake rev-dependencies.patch RevDependencies.cmake)
     include("${CMAKE_CURRENT_BINARY_DIR}/Rev.cmake")
@@ -200,6 +235,8 @@ if(BUILD_TESTING)
         set_tests_properties(foundation.gui.installed-${backend} PROPERTIES LABELS "gui;host" TIMEOUT 40)
         if(backend STREQUAL "sdl")
             set_tests_properties(foundation.gui.installed-${backend} PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+        elseif(backend STREQUAL "fltk" OR backend STREQUAL "rev")
+            set_tests_properties(foundation.gui.installed-${backend} PROPERTIES RESOURCE_LOCK foundation_native_display)
         endif()
     endforeach()
     foundation_gui_executable(foundation_gui_test tests/application_test.cpp)
@@ -251,8 +288,19 @@ if(BUILD_TESTING)
                     target_link_libraries(foundation_gui_${backend}_test PRIVATE foundation_gui_fltk)
                 endif()
                 foundation_gui_check("${backend}-host" foundation_gui_${backend}_test host)
+                set_tests_properties("foundation.gui.${backend}-host" PROPERTIES RESOURCE_LOCK foundation_native_display)
             endif()
         endforeach()
+        if(FOUNDATION_GUI_FLTK AND FOUNDATION_GUI_REV)
+            add_test(NAME foundation.gui.visual COMMAND "${Python3_EXECUTABLE}" -B
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/visual_test.py"
+                --parity $<TARGET_FILE:foundation_gui_parity_test>
+                --fltk $<TARGET_FILE:foundation_gui_fltk_test>
+                --rev $<TARGET_FILE:foundation_gui_rev_test>
+                --output "${CMAKE_CURRENT_BINARY_DIR}/visual-evidence")
+            set_tests_properties(foundation.gui.visual PROPERTIES LABELS "gui;host;visual" TIMEOUT 180
+                RESOURCE_LOCK foundation_native_display)
+        endif()
         if(FOUNDATION_GUI_SDL)
             foundation_gui_executable(foundation_gui_sdl_test tests/sdl_test.cpp)
             target_link_libraries(foundation_gui_sdl_test PRIVATE SDL2::SDL2)

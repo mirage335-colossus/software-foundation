@@ -1,4 +1,4 @@
-param([string]$MinimumLinker = '')
+param([string]$MinimumLinker = '', [string]$Output = 'build/windows-toolchain.json')
 $ErrorActionPreference = 'Stop'
 $chosen = & (Join-Path $PSScriptRoot 'select-windows-toolchain.ps1') -MinimumLinker $MinimumLinker
 $setup = Join-Path $chosen.InstallationPath 'VC/Auxiliary/Build/vcvars64.bat'
@@ -8,10 +8,16 @@ foreach ($line in $environment) {
     if ($line -match '^([^=]+)=(.*)$') {
         $name = $Matches[1]
         $value = $Matches[2]
+        # Export only the compiler environment. Copying every inherited variable
+        # would unnecessarily expose unrelated environment values in later logs.
+        if ($name -notmatch '^(PATH|INCLUDE|LIB|LIBPATH|EXTERNAL_INCLUDE|VC.*|VS.*|WindowsSdk.*|WindowsSDK.*|WindowsLibPath|UniversalCRTSdkDir|UCRTVersion|Framework.*|NETFXSDKDir|ExtensionSdkDir|DevEnvDir|CommandPromptType|Platform|PreferredToolArchitecture)$') { continue }
+        if ($value.Contains("`n") -or $value.Contains("`r")) { throw 'Multiline compiler environment value rejected' }
         [Environment]::SetEnvironmentVariable($name, $value, 'Process')
         if ($env:GITHUB_ENV) { "$name=$value" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append }
     }
 }
-# Record exact selected tool versions so a consuming job can require a sufficiently
-# recent linker. A dependency base does not include Microsoft installer media.
+$destination = [IO.Path]::GetFullPath($Output)
+[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) | Out-Null
+if (Test-Path -LiteralPath $destination) { throw 'Toolchain receipt must be a new attempt' }
+$chosen | ConvertTo-Json | Out-File -LiteralPath $destination -Encoding utf8NoBOM
 $chosen | ConvertTo-Json -Compress

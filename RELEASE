@@ -25,7 +25,7 @@ Software Foundation — release and recovery order
     Experiments and incomplete qualification cannot become a stable release.
 
 Every publication and report is append-only. Preserve earlier failures and releases.
-No remote is configured for this repository. SDK/source producers, local assembly,
-Debian repository creation, coverage and certification tools are included. Actual
+SDK/source producers, local assembly, Debian repository creation, hosted delivery,
+coverage and certification tools are included. Actual
 execution and remaining environment qualification are documented in docs/validation.md.
 See docs/releases.md, docs/sdk.md, docs/certification.md and docs/distribution.md.

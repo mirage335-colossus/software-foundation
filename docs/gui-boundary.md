@@ -9,7 +9,9 @@ This repository consumes [gui-boundary](https://github.com/mirage335-colossus/gu
 at the revision and SHA-256 inventory in [the lock](../third_party/gui-boundary.lock.json).
 All seven provided host paths are integrated. The [audit](gui-audit.md) distinguishes
 implemented paths, executed checks and remaining platform qualification work.
-There is no second widget vocabulary or maintained renderer implementation here.
+The complete backend source is an explicit retained dependency, with reviewed
+adapter/runner patches in this repository. There is one public widget vocabulary;
+there is no independently evolving copy of the upstream renderer tree.
 
 ## Dependency direction
 
@@ -31,7 +33,9 @@ GUI library compiles, even with `BUILD_TESTING=OFF`; unchanged inputs reuse its 
 uses `foundation::Store`, the same core library as the CLI. The core owns record
 validation, capacity, identities and mutation. Shared GUI code projects records
 and owns editor state, error recovery, enabled actions, count, menu, heading prompt
-and responsive layout. Its [header](../gui/shared/application.hpp) exposes only
+and responsive layout. The ordered [view definition](../gui/shared/view_definition.hpp)
+is consumed by both widget construction and layout: control identity, kind, text,
+font role, order and height have one declaration. Its [header](../gui/shared/application.hpp) exposes only
 `gui::Adapter`. No native object crosses into application code.
 
 The shared library is linked into every selected executable. One native build
@@ -39,13 +43,65 @@ graph builds all selected native hosts and their tests; Emscripten uses a separa
 toolchain build directory because its output is a different target platform.
 Source changes and tests still use the same library and CMake definitions.
 
+## Complete offline GUI input group
+
+[The source-group tool](../gui/source_group.py) exports every tracked file from the
+clean pinned dependency, including all adapters, host code, tests, documentation,
+font files and retained toolkit/library archives. It also retains the exact
+Foundation dependency lock, integration patches and patch applicator. Git metadata,
+build outputs and ignored local files are excluded. The group contains
+`gui-inputs.tar.gz`, `manifest.json` and `SHA256SUMS`; it is a source input group,
+not an SDK. Compiler, platform headers and toolkit system dependencies still come
+from the selected prepared [SDK](sdk.md).
+
+```sh
+python3 -B gui/source_group.py export --source /path/to/gui-boundary \
+  --output /path/to/retained-gui
+python3 -B gui/source_group.py verify /path/to/retained-gui
+python3 -B tools/build.py test dev --label gui --jobs 2 \
+  --gui-input-group /path/to/retained-gui \
+  --gui-backends terminal,framebuffer,hosted-web --build-dir build/gui-offline
+```
+
+Export verifies the clean Git revision and complete tree identity. Preserve exact
+repository bytes when acquiring sources; disable automatic checkout newline
+conversion with `git clone -c core.autocrlf=false`. Verification
+checks every archive file's name, size, logical mode and SHA-256, rejects links,
+duplicates, case collisions, unsupported entries, extra/missing inputs and bounded
+size violations, then reconstructs the complete upstream Git tree identity from
+bytes and modes. That tree must match the reviewed lock; changes to uncompiled
+source are therefore detected too. Retained patches must match this checkout
+exactly. The group checksum detects transfer damage; the repository's reviewed
+lock supplies input identity. Keep the group under the signed release inventory
+when transferring it through a release channel.
+
+The build wrapper restores into its owned build inputs before computing source
+identity. Direct CMake consumers can select
+`-DFOUNDATION_GUI_INPUT_GROUP=/path/to/retained-gui` instead of
+`FOUNDATION_GUI_SOURCE`. Both routes use the same verification and atomic restore,
+require no network or Git in the restored tree, and expose the verified upstream
+source to the ordinary build graph. Repeating restore accepts only the exact
+existing inventory; changed or foreign output is preserved and rejected. Select
+a new owned destination after an intentional input upgrade. Windows retains Git
+logical executable modes without relying on POSIX permission bits; native Windows
+qualification remains a separate platform check.
+
+For explicit restoration, use
+`python3 -B gui/source_group.py restore /path/to/retained-gui --output /path/to/restored`.
+Its JSON receipt records the `source` directory, group manifest SHA-256, revision
+and redistribution status. Source exports retain this input as the GUI supplement;
+prepared consumers use that retained input. Local retention and build remain
+available while terms are unresolved. `verify --redistribution` fails until the
+reviewed dependency terms permit redistribution; ordinary export does not grant
+permission to publish the group.
+
 ## Build and run
 
 Acquire the locked revision as a preparation step. Configure/build never download
 source, libraries, toolchains, fonts or browser modules.
 
 ```sh
-git clone https://github.com/mirage335-colossus/gui-boundary.git /path/to/gui-boundary
+git clone -c core.autocrlf=false https://github.com/mirage335-colossus/gui-boundary.git /path/to/gui-boundary
 git -C /path/to/gui-boundary checkout --detach bff416308f87dd0c1a7cc5b55476d757c971e879
 cmake -S . -B build/gui -G Ninja -DCMAKE_BUILD_TYPE=Debug \
   -DFOUNDATION_BUILD_GUI=ON -DFOUNDATION_GUI_SOURCE=/path/to/gui-boundary
@@ -171,7 +227,8 @@ Pinned terminal and SDL mechanics become typed runners through
 [reviewed exact patches](../gui/patches/README.md). SDL test observers inject input
 and inspect results; production uses a no-op observer. FLTK/Rev loops remain small
 composition roots. No `Example` alias or replacement of an application include
-is used. Native adapters and browser assets remain the pinned implementations.
+is used. Native adapters and browser assets remain the pinned implementations, with the
+reviewed generic FLTK appearance/focus patch applied in the build directory.
 The loopback transport uses one bounded worker per child, including bounded input,
 output and deadlines, and terminates/reaps it during failure or release. It works
 without POSIX-only pipe readiness operations.
@@ -187,7 +244,9 @@ or toolkit notices do not resolve that missing declaration.
 ## Adding a feature
 
 1. Change the core library for new product meaning or validation.
-2. Add shared declarations, stable keys, state bindings, action handling and layout.
+2. Add control declarations to `gui/shared/view_definition.hpp`; update shared
+   state bindings and action handling in `gui/shared/application.cpp`. Construction
+   and vertical layout consume that same ordered definition.
 3. Add a shared behavior/geometry scenario, including rejected and stale input.
 4. Exercise that scenario through public events and actual selected host input.
 5. Run the focused GUI tests; run broad upstream/native suites when changing the
@@ -197,7 +256,10 @@ The remove-selected extension adds a real button after initial publication. Its
 meaning and layout exist only in shared code. The fixture runs through terminal,
 framebuffer, browser, FLTK, Rev and SDL paths without backend feature branches.
 Canonical serialization compares declarations, logical geometry, actions and
-values. Native glyph rasterization and terminal cell rounding are intentionally
+values. The native visual fixture also compares real framebuffer, FLTK and Rev
+captures at normal and compact viewport sizes. It checks borders, shared fills,
+visible text and bounded text placement, and proves rejection of erased labels,
+wrong disabled colors and shifted controls. Native glyph rasterization and terminal cell rounding are intentionally
 qualified separately from declaration equality.
 
 New rendering primitives, input models or OS services can require a public

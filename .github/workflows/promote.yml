@@ -1,0 +1,100 @@
+name: Promote exact certified candidate
+'on':
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact published candidate tag
+        type: string
+        required: true
+      inventory:
+        description: Exact release.json SHA-256
+        type: string
+        required: true
+      profile:
+        description: Support policy profile
+        type: choice
+        options:
+        - core
+        - all-gui
+        default: core
+      execute:
+        description: Set Latest only after remote certificate and asset revalidation
+        type: boolean
+        default: false
+      certification_run:
+        description: Exact certificate run ID
+        type: string
+        required: true
+      certification_attempt:
+        description: Exact certificate attempt
+        type: string
+        required: true
+      certificate:
+        description: Exact certificate JSON SHA-256
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'promotion-plan'], check=True)
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: promotion-inputs-${{ github.run_attempt }}
+        path: |-
+          build/candidate/
+          build/delivery.json
+          build/receipts/
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+  promote:
+    if: inputs.execute
+    needs: plan
+    runs-on: ubuntu-24.04
+    environment: release-publisher
+    concurrency:
+      group: foundation-release-lifecycle
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |-
+        import os, subprocess
+        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','promotion-inputs-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build'],check=True)
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'promote'], check=True)
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: promotion-delivery-${{ github.run_attempt }}
+        path: build/receipts/
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+      if: always()
+env:
+  GH_TOKEN: ${{ github.token }}
+  PYTHONUTF8: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+  TAG: ${{ inputs.tag }}
+  INVENTORY: ${{ inputs.inventory }}
+  PROFILE: ${{ inputs.profile }}
+  CERTIFICATION_RUN: ${{ inputs.certification_run }}
+  CERTIFICATION_ATTEMPT: ${{ inputs.certification_attempt }}
+  CERTIFICATE: ${{ inputs.certificate }}

@@ -6,12 +6,14 @@ checks accessible labels, editing and geometry, and saves comparable captures.
 """
 import argparse
 import base64
+import contextlib
 import importlib.util
 import hashlib
 import json
 import os
 from pathlib import Path
 import socket
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -147,6 +149,17 @@ class ChromiumBrowser(Browser):
         finally:stop_process(self.process);self.log.close()
 
 
+@contextlib.contextmanager
+def browser_workspace(output):
+    with tempfile.TemporaryDirectory(prefix='browser-', dir=output) as directory:
+        try:
+            yield Path(directory)
+        finally:
+            # Preserve startup failures as well as completed-run diagnostics.
+            for log in Path(directory).glob('*.log'):
+                shutil.copyfile(log, output / log.name)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--firefox',default='firefox');parser.add_argument('--server',type=Path,required=True)
@@ -172,7 +185,7 @@ def main():
     host=server.boundary.Host(('127.0.0.1',0),args.executable,args.wasm_dir)
     thread=threading.Thread(target=host.serve_forever);thread.start()
     try:
-        with tempfile.TemporaryDirectory(prefix='browser-',dir=args.output) as directory:
+        with browser_workspace(args.output) as directory:
             browser=(Browser(args.firefox,Path(directory)) if args.browser=='firefox' else
                 ChromiumBrowser(args.browser_executable,args.driver,Path(directory),args.browser_argument))
             try:

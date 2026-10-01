@@ -29,6 +29,7 @@ def default_jobs():
 
 
 def contained(root, relative):
+    root = Path(root).resolve(strict=True)
     path = Path(relative)
     if path.is_absolute() or ".." in path.parts or not path.parts:
         raise ValueError("SDK paths must be nonempty relative paths")
@@ -51,17 +52,28 @@ def host_programs(root=None):
     """Select retained build tools where the SDK declares them."""
     programs = {name: name for name in ("cmake", "ctest", "cpack", "ninja")}
     if root:
-        metadata = json.loads((root / "sdk.json").read_text())
+        metadata = json.loads((root / "sdk.json").read_text(encoding="utf-8"))
         for name, relative in metadata.get("host_tools", {}).items():
             if name in programs or name == "python":
                 programs[name] = str(contained(root, relative))
     return programs
 
 
+def verify_windows_linker(minimum):
+    tools = str(Path(__file__).resolve().parent)
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    from sdk_windows import linker_version
+    output = subprocess.check_output(["link.exe", "/?"], stderr=subprocess.STDOUT, text=True)
+    actual = re.search(r"Version\s+(\d+(?:\.\d+)+)", output)
+    if not actual or linker_version(actual[1]) < linker_version(minimum):
+        raise ValueError("actual consuming linker is older than the dependency producer")
+
+
 def cache_identity(build):
     selected = {}
     cache_version = {}
-    for line in (build / "CMakeCache.txt").read_text().splitlines():
+    for line in (build / "CMakeCache.txt").read_text(encoding="utf-8").splitlines():
         if "=" not in line or ":" not in line or line.startswith(("#", "//")):
             continue
         name_type, value = line.split("=", 1)
@@ -75,7 +87,7 @@ def cache_identity(build):
     if "CMAKE_CXX_COMPILER" not in selected:
         version = ".".join(cache_version["CMAKE_CACHE_" + part + "_VERSION"] for part in ("MAJOR", "MINOR", "PATCH"))
         record = build / "CMakeFiles" / version / "CMakeCXXCompiler.cmake"
-        match = re.search(r'^set\(CMAKE_CXX_COMPILER "([^"\n]+)"\)$', record.read_text(), re.M)
+        match = re.search(r'^set\(CMAKE_CXX_COMPILER "([^"\n]+)"\)$', record.read_text(encoding="utf-8"), re.M)
         if not match:
             raise ValueError("configured compiler identity is absent")
         selected["CMAKE_CXX_COMPILER"] = match[1]
@@ -102,9 +114,11 @@ def main(argv=None):
     parser.add_argument("--windows-dependencies", type=Path, help="verified restored Windows dependency export")
     parser.add_argument("--dependency-group", type=Path, action="append", default=[],
                         help="verified retained group; first group is primary for host-supplied toolchains")
-    parser.add_argument("--gui-source", type=Path)
+    gui_input = parser.add_mutually_exclusive_group()
+    gui_input.add_argument("--gui-source", type=Path)
+    gui_input.add_argument("--gui-input-group", type=Path, help="verified offline GUI source group")
     parser.add_argument("--gui-backends", default="terminal,framebuffer,hosted-web",
-                        help="comma-separated native backends; requires --gui-source")
+                        help="comma-separated backends; requires a GUI source or input group")
     parser.add_argument("--host-tests", action="store_true")
     parser.add_argument("--portable", action="store_true", help="generic CPU and private static C++ runtime")
     parser.add_argument("--build-dir", type=Path, help="owned per-session output tree")
@@ -120,14 +134,24 @@ def main(argv=None):
     allowed = {"terminal", "framebuffer", "fltk", "rev", "sdl", "hosted-web", "wasm"}
     if len(set(backends)) != len(backends) or not set(backends) <= allowed:
         parser.error("unknown or duplicate GUI backend")
-    if args.host_tests and not args.gui_source:
-        parser.error("host checks require --gui-source")
+    has_gui = bool(args.gui_source or args.gui_input_group)
+    if args.host_tests and not has_gui:
+        parser.error("host checks require GUI inputs")
     if "wasm" in backends and (backends != ["wasm"] or not args.sdk or args.host_tests):
         parser.error("Wasm requires one backend and a prepared SDK; native host tests are separate")
     jobs = args.jobs or positive(os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL") or str(default_jobs()))
     test_jobs = args.jobs or positive(os.environ.get("CTEST_PARALLEL_LEVEL") or str(jobs))
-    suffix = ("-sdk" if args.sdk else "") + ("-gui" if args.gui_source else "")
+    suffix = ("-sdk" if args.sdk else "") + ("-gui" if has_gui else "")
     build = args.build_dir.resolve() if args.build_dir else ROOT / "build" / (preset + suffix + ("-portable" if args.portable else ""))
+    gui_group_identity = None
+    if args.gui_input_group:
+        gui_group = args.gui_input_group.resolve(strict=True)
+        helper = ROOT / "gui/source_group.py"
+        restored = json.loads(subprocess.check_output(
+            [sys.executable, "-B", str(helper), "restore", str(gui_group), "--output", str(build / "inputs/gui")],
+            text=True, encoding="utf-8"))
+        args.gui_source = Path(restored["source"]).resolve(strict=True)
+        gui_group_identity = {"root": str(gui_group), "sha256": restored["group_sha256"]}
     configure = ["cmake", "--preset", preset, "-B", str(build),
                  "-DFOUNDATION_BUILD_GUI=" + ("ON" if args.gui_source else "OFF"),
                  "-DFOUNDATION_SANITIZERS=" + ("ON" if preset == "asan" else "OFF"),
@@ -143,6 +167,8 @@ def main(argv=None):
                 "windows_dependencies": None,
                 "environment": {key: os.environ.get(key) for key in
                  ("CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS", "CMAKE_GENERATOR")}}
+    if gui_group_identity:
+        identity["gui_input_group"] = gui_group_identity
     programs = host_programs()
     child_environment = os.environ.copy()
     if args.sdk:
@@ -151,7 +177,7 @@ def main(argv=None):
             if os.environ.get(key):
                 parser.error("unset host search override for SDK builds: " + key)
         identity["sdk"] = {"root": str(sdk), "sha256": sdk_identity(sdk)}
-        is_browser = json.loads((sdk / "sdk.json").read_text())["target"]["system"] == "Emscripten"
+        is_browser = json.loads((sdk / "sdk.json").read_text(encoding="utf-8"))["target"]["system"] == "Emscripten"
         if is_browser != (backends == ["wasm"]):
             raise ValueError("prepared SDK target and selected GUI backend disagree")
         if is_browser:
@@ -172,7 +198,7 @@ def main(argv=None):
                       "-DFOUNDATION_SDK_ROOT=" + str(sdk)]
     dependency_ids = []
     if args.sdk:
-        dependency_ids.append(json.loads((args.sdk.resolve() / "sdk.json").read_text())["recipe_id"])
+        dependency_ids.append(json.loads((args.sdk.resolve() / "sdk.json").read_text(encoding="utf-8"))["recipe_id"])
     if args.dependency_group:
         tools = str(Path(__file__).resolve().parent)
         if tools not in sys.path:
@@ -212,11 +238,7 @@ def main(argv=None):
                 provenance.get("toolset") != "v143" or provenance.get("crt_linkage") != "static" or
                 provenance.get("library_linkage") != "static" or provenance.get("lto") is not False):
             raise ValueError("incompatible Windows dependency ABI contract")
-        linker_output = subprocess.check_output(["link.exe", "/?"], stderr=subprocess.STDOUT, text=True)
-        linker = re.search(r"Version\s+(\d+(?:\.\d+)+)", linker_output)
-        floor = metadata["external_toolchain"]["minimum_linker"]
-        if not linker or tuple(map(int, linker[1].split("."))) < tuple(map(int, floor.split("."))):
-            raise ValueError("actual consuming linker is older than the dependency producer")
+        verify_windows_linker(metadata["external_toolchain"]["minimum_linker"])
         verify_inventory(dependencies, metadata["files"], exclude=("sdk.json",))
         identity["windows_dependencies"] = {"root": str(dependencies), "sha256": hashlib.sha256((dependencies / "sdk.json").read_bytes()).hexdigest()}
         installed = dependencies / "prefix/installed/x64-windows-static"
@@ -236,10 +258,10 @@ def main(argv=None):
     stamp = build / "wrapper-identity.json"
     if (build / "CMakeCache.txt").exists() and not stamp.exists():
         raise ValueError("refusing to adopt a populated unstamped build tree; move it aside or use CMake directly")
-    if stamp.exists() and json.loads(stamp.read_text()) != identity:
+    if stamp.exists() and json.loads(stamp.read_text(encoding="utf-8")) != identity:
         raise ValueError("toolchain/configuration changed; use a fresh build tree or move the old one aside")
     cache_stamp = build / "configured-identity.json"
-    if cache_stamp.exists() and json.loads(cache_stamp.read_text()) != cache_identity(build):
+    if cache_stamp.exists() and json.loads(cache_stamp.read_text(encoding="utf-8")) != cache_identity(build):
         raise ValueError("configured compiler/options changed outside this wrapper; use a fresh tree or CMake directly")
     # Failed configuration must not leave a tree silently reusable with another SDK.
     stamp.write_text(json.dumps(identity, indent=2) + "\n")
@@ -271,6 +293,11 @@ def main(argv=None):
         run([programs["cpack"], "--config", str(build / "CPackConfig.cmake"), "-C", "Release"], env=child_environment)
     if source_tree(ROOT, args.gui_source) != source_before:
         raise ValueError("source changed during the operation; outputs are not qualification")
+    if gui_group_identity:
+        verified = json.loads(subprocess.check_output(
+            [sys.executable, "-B", str(helper), "verify", str(gui_group)], text=True, encoding="utf-8"))
+        if verified["group_sha256"] != gui_group_identity["sha256"]:
+            raise ValueError("GUI input group changed during execution; evidence is invalid")
     if args.sdk and sdk_identity(args.sdk.resolve()) != identity["sdk"]["sha256"]:
         raise ValueError("prepared SDK changed during execution; evidence is invalid")
     if args.windows_dependencies:

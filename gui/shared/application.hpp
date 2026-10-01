@@ -1,6 +1,6 @@
 #pragma once
 
-#include <gui/contract.hpp>
+#include "view_definition.hpp"
 #include <gui/runtime.hpp>
 #include <foundation/store.hpp>
 #include <functional>
@@ -36,7 +36,7 @@ private:
     std::string status_ = "Ready";
     bool status_error_ = false;
 
-    gui::Widget& add(std::string id, gui::Kind kind, std::string parent = {});
+    gui::Widget& add(const ViewDefinition& definition);
     static gui::Widget& lookup(gui::Snapshot& view, std::string_view id);
     gui::Widget& get(std::string_view id) { return lookup(view_, id); }
     void append_entry();

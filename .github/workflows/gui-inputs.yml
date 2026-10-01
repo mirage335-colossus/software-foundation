@@ -1,0 +1,76 @@
+name: Explicit retained GUI input maintenance
+'on':
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: Publish verified redistributable complete group into base
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: read
+env:
+  GH_TOKEN: ${{ github.token }}
+  PYTHONUTF8: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - run: python3 .github/scripts/lifecycle.py gui-maintain
+      id: maintain
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: gui-inputs-${{ github.run_attempt }}
+        path: |-
+          build/gui-group/
+          build/gui-publication-plan.json
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+      if: steps.maintain.outputs.redistributable == 'true'
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: gui-inspection-${{ github.run_attempt }}
+        path: build/gui-publication-plan.json
+        if-no-files-found: warn
+        compression-level: 0
+        retention-days: 30
+      if: always()
+    - if: inputs.execute && steps.maintain.outputs.redistributable != 'true'
+      shell: python
+      run: raise SystemExit('GUI redistribution terms are unresolved; retained source stays runner-local')
+    outputs:
+      redistributable: ${{ steps.maintain.outputs.redistributable }}
+  publish:
+    if: inputs.execute && needs.prepare.outputs.redistributable == 'true'
+    needs: prepare
+    runs-on: ubuntu-24.04
+    environment: release-publisher
+    concurrency:
+      group: foundation-release-lifecycle
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |-
+        import os,subprocess
+        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','gui-inputs-'+os.environ['GITHUB_RUN_ATTEMPT'],'--dir','build'],check=True)
+    - run: python3 .github/scripts/lifecycle.py publish-gui
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: gui-delivery-${{ github.run_attempt }}
+        path: build/receipts/
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+      if: always()

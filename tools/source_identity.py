@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Bind a build to a complete portable source snapshot, including retained inputs."""
 import argparse
+import gzip
 import hashlib
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import tarfile
 import tempfile
 from dependency_archive import archive_tree, digest, encoded, file_inventory, inspect_manifest_archive, read_json, relative, write_json
+
+WINDOWS = os.name == 'nt'
 
 SUPPLEMENT_PREFIX = 'third_party/retained/gui/'
 
@@ -52,25 +56,67 @@ def snapshot_paths(root, supplement=None):
     return files
 
 
-def describe_paths(paths):
+def portable_executables(root, paths):
+    """Windows cannot represent POSIX mode bits; retain reviewed source metadata.
+
+    Bytes and complete path inventory are still recomputed. POSIX always inspects
+    actual file modes so a local chmod remains a source change.
+    """
+    root = Path(root).resolve(strict=True)
+    if not WINDOWS:
+        return {name for name, path in paths.items() if path.stat().st_mode & 0o111}
+    if (root / '.git').exists():
+        raw = subprocess.check_output(['git', '-C', str(root), 'ls-files', '--stage', '-z'])
+        names = set(); seen = set()
+        for row in raw.split(b'\0'):
+            if not row: continue
+            metadata, name = row.split(b'\t', 1)
+            mode, _, stage = metadata.split()
+            if stage != b'0': raise ValueError('unmerged source index cannot define portable modes')
+            decoded = name.decode('utf-8')
+            if mode not in (b'100644', b'100755') or decoded in seen:
+                raise ValueError('unsupported or duplicate source index mode')
+            seen.add(decoded)
+            if mode == b'100755': names.add(decoded)
+        return names & set(paths)
+    authority = next((parent for parent in [root, *root.parents] if (parent / 'source.json').is_file()), None)
+    if authority is not None:
+        data = read_json(authority / 'source.json')
+        names = data.get('executables')
+        if (not isinstance(names, list) or len(names) != len(set(names)) or
+                any(not isinstance(n, str) or n not in data.get('files', {}) for n in names)):
+            raise ValueError('invalid retained executable inventory')
+        prefix = '' if authority == root else root.relative_to(authority).as_posix() + '/'
+        return {name[len(prefix):] for name in names if name.startswith(prefix)} & set(paths)
+    return {name for name, path in paths.items() if path.stat().st_mode & 0o111}
+
+
+def describe_paths(paths, executables=None):
     files = {name: digest(path) for name, path in sorted(paths.items())}
-    executables = sorted(name for name, path in paths.items() if path.stat().st_mode & 0o111)
+    executables = sorted(executables if executables is not None else
+                         (name for name, path in paths.items() if path.stat().st_mode & 0o111))
     identity = hashlib.sha256(encoded({'files': files, 'executables': executables})).hexdigest()
     return {'schema_version': 1, 'tree_sha256': identity, 'files': files, 'executables': executables}
 
 
 def source_tree(root, supplement=None):
-    return describe_paths(snapshot_paths(root, supplement))
+    paths = snapshot_paths(root, supplement)
+    executable = portable_executables(root, paths)
+    if supplement:
+        extra = selected_files(supplement)
+        executable.difference_update({name for name in executable if name.startswith(SUPPLEMENT_PREFIX)})
+        executable.update(SUPPLEMENT_PREFIX + name for name in portable_executables(supplement, extra))
+    return describe_paths(paths, executable)
 
 
 def archive_source(root, output, supplement=None, epoch=0):
-    output = Path(output).absolute()
+    output = Path(output).resolve()
     source_root = Path(root).resolve(strict=True)
     if source_root in output.parents and source_root / 'build' not in output.parents:
         raise ValueError('source archive output must be outside source inputs or under ignored build/')
     if output.exists(): raise ValueError('source archive destination must be new')
     paths = snapshot_paths(root, supplement)
-    before = describe_paths(paths)
+    before = source_tree(root, supplement)
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=output.parent, prefix='.source-') as temporary:
         staged = Path(temporary) / 'source'
@@ -80,11 +126,26 @@ def archive_source(root, output, supplement=None, epoch=0):
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, destination)
             destination.chmod(0o755 if name in before['executables'] else 0o644)
+        write_json(staged / 'source.json', before)
         copied = source_tree(staged)
         if copied != before or source_tree(root, supplement) != before:
             raise ValueError('source inputs changed while snapshotting')
-        write_json(staged / 'source.json', before)
-        archive_tree(staged, output, epoch)
+        # Set archive modes from the verified logical inventory, including on
+        # Windows where chmod cannot represent POSIX executable permission.
+        ready = Path(temporary) / 'source.tar.gz'
+        with ready.open('xb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=epoch, compresslevel=1) as zipped:
+            with tarfile.open(fileobj=zipped, mode='w', format=tarfile.PAX_FORMAT) as archive:
+                for name in sorted([*before['files'], 'source.json']):
+                    path = staged / name
+                    info = tarfile.TarInfo(name)
+                    info.size = path.stat().st_size
+                    info.mode = 0o755 if name in before['executables'] else 0o644
+                    info.mtime = epoch
+                    with path.open('rb') as stream: archive.addfile(info, stream)
+        verify_source_archive(ready)
+        # Same-filesystem link publishes complete bytes without replacing an
+        # output another writer may have created after the initial inspection.
+        os.link(ready, output)
     verify_source_archive(output)
     return before
 

@@ -39,6 +39,13 @@ filesystem effects, display or invoking external programs. Specify bounds in uni
 that callers understand. Check multiplication/addition overflow before allocating;
 include cumulative output limits, nesting limits, collection counts and decompressed
 size. Unknown schema versions, duplicate keys and truncated records fail explicitly.
+Use an explicit file encoding on every host. Filesystem metadata fields can have
+different meanings across APIs: compare each API's before/after versions and bind
+their shared identity fields separately. Windows path and descriptor `ctime` may
+mean creation and change time respectively; neither should be silently discarded
+from its own before/after mutation check. See the
+[upstream metadata issue](https://github.com/python/cpython/issues/157671).
+
 A partial read is not a complete message; EOF, cancellation and malformed content
 must have distinct outcomes. Do not derive unbounded work from untrusted counts.
 

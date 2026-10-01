@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Wrap verified archives and assemble a local signed flat APT repository."""
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime, parsedate_to_datetime
 import gzip
@@ -108,12 +109,23 @@ def launchers(backend, selected):
     return result
 
 
+def manual_paths(backend, files):
+    suffix = "-" + backend if backend != "core" else ""
+    mapping = {"share/man/man1/foundation-cli.1": "usr/share/man/man1/foundation-cli" + suffix + ".1",
+               "share/man/man7/software-foundation.7": "usr/share/man/man7/software-foundation-" + backend + ".7"}
+    if any(files[source]["mode"] != 0o644 for source in mapping if source in files):
+        raise ValueError("manual pages must have ordinary data-file permissions")
+    return {source: destination for source, destination in mapping.items() if source in files}
+
+
 def projected_payload(chosen):
     backend = chosen["backend"]
     private = "opt/software-foundation/" + backend + "/"
     result = {private + name: value for name, value in chosen["retained_files"].items()}
     result[private + SELECTION_PATH] = byte_record(encoded(chosen), 0o644)
     result.update({name: byte_record(data, 0o755) for name, data in launchers(backend, chosen["selected_executables"]).items()})
+    result.update({destination: chosen["retained_files"][source]
+                   for source, destination in manual_paths(backend, chosen["retained_files"]).items()})
     return result
 
 
@@ -247,6 +259,11 @@ def package(archive, manifest, version, arch, backend, output):
             launcher = stage / relative
             launcher.write_bytes(data)
             launcher.chmod(0o755)
+        for source_name, destination in manual_paths(backend, chosen["retained_files"]).items():
+            manual = stage / destination
+            manual.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / source_name, manual)
+            manual.chmod(chosen["retained_files"][source_name]["mode"])
         ctl = stage / "DEBIAN"
         ctl.mkdir(mode=0o755)
         text = (f"Package: {name}\nVersion: {version}\nArchitecture: {arch}\n"
@@ -298,6 +315,17 @@ def verify_package(path, receipt):
     return fields
 
 
+@contextmanager
+def signing_home():
+    with tempfile.TemporaryDirectory(prefix="foundation-signing-") as home:
+        os.chmod(home, 0o700)
+        try:
+            yield home
+        finally:
+            # Stop the agent before deleting its socket/configuration directory.
+            run("gpgconf", "--homedir", home, "--kill", "gpg-agent")
+
+
 def repository(receipts, output, base_url, key, trusted, sequence, valid_days=30):
     trusted = full_fingerprint(trusted)
     url = urlsplit(base_url)
@@ -342,8 +370,7 @@ def repository(receipts, output, base_url, key, trusted, sequence, valid_days=30
         p = output / filename
         release += f" {c.sha(p)} {p.stat().st_size} {filename}\n"
     (output / "Release").write_text(release)
-    with tempfile.TemporaryDirectory(prefix="foundation signing ") as temp:
-        os.chmod(temp, 0o700)
+    with signing_home() as temp:
         args = ["gpg", "--batch", "--homedir", temp]
         run(*args, "--import", key)
         (output / "archive-keyring.gpg").write_bytes(run(*args, "--export", trusted))

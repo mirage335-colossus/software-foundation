@@ -34,6 +34,15 @@ cannot express. Avoid repeating obvious statements or maintaining competing
 copies of the same list in prose, CMake and workflows. Prefer generated inventories
 and stable references to authoritative declarations.
 
+## Installed user documentation
+
+Ship usage, exit status, configuration and removal instructions with the binaries.
+Provide native manual pages where appropriate; their source should build and install
+offline with ordinary distro tools. Keep command help and manuals synchronized,
+check formatting, and verify installed documentation after package relocation.
+Backend packages that coexist must use distinct public manual aliases just as
+they use distinct launchers. See [the maintained manual sources](man/README.md).
+
 ## Evidence and maintenance
 
 Instructions and proposed improvements do not prove execution. Mark example

@@ -124,6 +124,54 @@ error and attempt count. Install from the chosen supported package sources;
 do not silently rewrite system package configuration or lower verification
 requirements to make a job pass.
 
+## Grouped qualification work
+
+The current all-GUI policy retains every required backend row. Its native source
+and recovery commands each build/test the complete delivered backend inventory;
+ABI checks audit the complete native archive. These rows presently repeat some
+identical work. Do not delete mandatory rows or relabel one backend's receipt as
+another backend to reduce that cost.
+
+A future grouped executor may share one immutable execution only when source,
+release inventory, dependency bytes, build configuration, actual execution
+platform, scope and required backend inventory are identical. It must record the
+complete covered backend set and actual test inventory, preserve any required
+per-backend assertions, and bind every projected backend result to that same
+execution and its real run/attempt. Certification and merge validation must reject
+missing backend coverage, changed inputs, different environments and reuse across
+source/recovery scopes. Add those evidence-schema checks and negative fixtures
+before consolidating policy rows; current required coverage remains unchanged.
+
+## Windows graphics execution input
+
+Native GUI checks use the [pinned external graphics prerequisite](windows-graphics.md)
+on the declared Windows runner. The compiler SDK contains development dependencies;
+the test runtime stays in a separate owned input directory. SDK maintenance
+explicitly fetches its reviewed supplier archive. Ordinary `native-gui.yml` and
+Windows GUI certification require `graphics_archive_url`, an operator-retained
+HTTPS archive location. There is no automatic fallback to a live supplier URL.
+The helper checks the pinned size and digest, rejects credentials and insecure
+redirects, and keeps transient redirect query values out of receipts and logs.
+Linux checks do not use this input.
+
+Build GUI prerequisites in one configured tree, then stage the verified runtime
+beside the native probe and GUI test executables. The selected compiler builds
+the probe; the bounded process owner executes it and verifies the loaded module
+paths, actual renderer and required graphics capabilities. Run the normal complete
+GUI tests in that environment, preserving their real captures and checks. Only
+after all child writers stop may staging remove its own runtime files. Uncertain
+termination retains them and fails qualification. Packaging uses a clean runtime
+state and never receives these test DLLs.
+
+The workflows retain the graphics receipt, probe result, build/test diagnostics,
+and actual visual capture evidence (`.json`, `.png`, `.ppm`, `.log`). The successful
+GUI qualification receipt binds the capture and graphics receipt digests. The
+archive, extracted DLLs, probe executable, GUI source and application executables
+are excluded from those uploads. Maintainers must separately retain allowed
+supplier inputs, source and notices and review redistribution terms before
+operating an archive mirror. Qualification demonstrates the tested software
+rendering environment; physical display and device checks remain separate.
+
 ## Evidence and maintenance
 
 Every job should retain exact source revision, toolchain/dependency identities,
@@ -140,23 +188,125 @@ Treat hosted acceptance as an additional required check after local validation,
 and periodically review runner images, action pins, timeouts, cache size,
 retention, permissions, and obsolete matrix entries.
 
-## Supplied workflow entry points
 
-- `ci.yml`: inexpensive automatic feedback.
-- `candidate.yml`: validated native runner inventory, disjoint core/tool/install
-  scopes, independent portable packaging, fresh copied-package execution,
-  instrumentation, signed-distribution fixtures and a complete final verdict.
-  `devfast` runs only the declared focused selection; ARM omission is visible.
-- `sdk-maintenance.yml`: explicitly dispatched cold SDK production on the old
-  host baseline. A successful job retains the complete new recipe group for
-  reviewed durable-base delivery.
-- `sdk-application.yml`: consume an exact existing group from the base release;
-  missing assets fail before compilation. Ordinary application work does not
-  silently become SDK maintenance.
+## Executable hosted lifecycle
 
-[`github_release.py`](../tools/github_release.py) provides checked durable delivery
-operations and offline plans. Keep write credentials in a protected, separately
-serialized publication job. A build workflow's green status cannot promote a
-candidate. Follow [exact delivery and promotion](github-delivery.md) and
-[certification](certification.md), preserving every selected result and its
-run/attempt identity. All workflow definitions still require hosted qualification.
+Use the workflow revision itself as the packaging revision. All mutation jobs
+checkout the same immutable `github.sha` as their read-only preparation jobs,
+use the protected `release-publisher` environment, and share
+`foundation-release-lifecycle` with cancellation disabled. Set that environment's
+required reviewers and allowed branches before authorizing publication. Workflow
+files cannot create those repository settings. The default `execute=false`
+produces reviewable plans and retained artifacts without modifying releases.
+
+| Workflow | Inputs and resulting contract |
+| --- | --- |
+| `candidate.yml` | `devfast=false`, `include_arm=true` verifies independent Windows x64, Linux x64 and Linux ARM64 source scopes, native packages, fresh copies and actual signed APT installation/upgrade/rejection/removal in disposable Debian. It uses host toolchains and does not claim the older SDK baseline. |
+| `sdk-maintenance.yml` | Select one target or `all`, the `core` or `all-gui` dependency profile, a bounded compile job count, and optionally `execute=true`. Select `source=auto` to verify and reuse the exact existing group, `base` to require it, or `rebuild` for explicit production. Linux producers run as an unprivileged account in Debian 12 on matching architecture; Windows selects its separate installed compiler and records provenance; Wasm retains its compiler and Node runtime. Every producer consumes the relocated SDK, compiles/runs the application, and validates a package and installed consumer before retaining the complete binary/source/checksum triplet. The GUI profile additionally tests all selected GUI backends locally. |
+| `gui-inputs.yml` | Explicitly acquire the pinned supplier checkout, export and verify a complete retained GUI group. Upload the group only when its verified redistribution metadata allows it; otherwise retain only the inspection plan. Optional execution appends an eligible group to base. |
+| `native-gui.yml` | Explicit maintenance/qualification on native Windows x64, Linux x64 or Linux ARM64. Fetch an exact GUI-capable SDK, acquire the pinned GUI inputs, and run all native backends. Windows also requires the explicit retained host graphics URL. Upload only test evidence; source and binaries remain runner-local. |
+| `sdk-application.yml` | Supply `profile` and a JSON `recipes` object mapping every profile target to its exact 64-character recipe. Freeze one source archive, independently restore each existing dependency group and build/test/package on its target, then assemble a complete candidate. Optional execution publishes without selecting Latest. |
+| `certify.yml` | Supply candidate `tag`, exact `release.json` `inventory` digest and policy `profile`. Download and revalidate remote identities, derive all checks from the support policy, execute independent exact-byte checks, retain every report and optionally append a new certificate attempt. |
+| `promote.yml` | Supply the same candidate identity, policy profile, exact certification run/attempt and certificate JSON digest. The explicit mutation job revalidates the remote certificate, policy and asset IDs before setting Latest and verifying the resulting pointer. |
+
+For example, `core` currently requires these recipe-map keys; replace each value
+with a produced, verified recipe identity before dispatch:
+
+```json
+{
+  "linux-x86_64": "<exact-64-character-recipe>",
+  "linux-aarch64": "<exact-64-character-recipe>",
+  "windows-x86_64": "<exact-64-character-recipe>"
+}
+```
+
+The `all-gui` profile also requires `browser-wasm32` and `gui_group`, the exact
+retained GUI manifest digest. Ordinary jobs fetch that complete group from base
+and freeze its verified restored source into the application archive. They never
+clone upstream or silently perform maintenance. Use SDK groups from the explicit
+GUI-capable native recipes; the producer checks the required capability list. Publication preparation
+fails early while redistribution terms remain unresolved; source-group inspection
+and local development remain available. Native GUI dependency headers and libraries
+must be present in each prepared target sysroot/export. Host libraries cannot
+satisfy a missing target dependency. Browsers used for qualification come from the
+execution environment, not from the compiler SDK.
+
+Linux certification executes each declared baseline in a disposable container on
+its native runner architecture. APT checks additionally require the explicit
+disposable-runtime marker; never invoke that scope on a development host. Container
+success establishes that user-space environment on the hosted kernel, not every
+physical system. Browser setup validates the actual distribution, package and CPU
+architecture, root Docker marker and explicit disposable-runtime flag before
+changing package configuration. Debian browser checks use its distribution packages.
+Ubuntu 24.04 hosted-web archive checks install Firefox from [Mozilla's official APT repository](https://support.mozilla.org/en-US/kb/install-firefox-linux):
+the complete primary signing-key fingerprint must match the reviewed constant,
+`Signed-By` scopes that key, and package-origin preferences exclude Ubuntu's Snap
+transition. The chosen version must come from Mozilla's HTTPS origin before its
+explicit version is installed; the harness uses `/usr/bin/firefox`. Both native
+architectures keep their real Ubuntu runtime and browser assertions. Browsers are
+external execution prerequisites and never enter the compiler SDK.
+
+A separate `browser-prerequisite-<check>-<attempt>` artifact records the plan/check,
+run/attempt, actual package versions and architecture, package policy and browser
+version. Setup initially retains this receipt outside the qualification output directory,
+which the checked runner must create afresh. After actual browser assertions, the
+qualification helper validates and copies the receipt into its browser evidence
+and binds its digest to the report. Browser setup applies only to hosted-web
+archive checks and Wasm source/recovery/archive checks. Setup failure remains a failed job;
+a package receipt alone is not browser qualification. Actual interactive assertions
+and their bound reports remain required. Windows source and copied-archive checks use the recorded native
+compiler and SDK, and the actual Windows runner image is checked by the certifier.
+
+All steps obtain event-derived data through environment variables and argument
+arrays. Package discovery excludes CPack's private staging tree; copied-package
+validation rejects duplicate public names. Toolchain setup exports only compiler
+variables and retains its selected versions without copying unrelated inherited
+values into later step environments. Per-suite JSON and CTest failure logs are
+uploaded even when the source shard fails.
+
+Actions artifacts are temporary transport. Names include the actual attempt and
+all downloads identify the current run. Rerunning only failed jobs does not
+silently relabel earlier successful artifacts: use a complete new attempt, or
+perform explicitly reviewed report selection with the local helpers. Failure
+before a report exists leaves the certification incomplete. Complete failed
+reports can be attached as a new attempt; they never permit promotion.
+
+The local helpers and offline transport scenarios validate scheduling and
+identity contracts. `actionlint` checks workflow syntax and expressions. Actual
+runner setup, GitHub permissions, SDK compilation and service behavior require
+successful jobs on the exact integrated commit. Inspect all mandatory jobs and
+retained internal outcomes before reporting success; a successful feedback job
+alone does not establish Windows or release qualification.
+
+The GUI base adapter stores `gui-<manifest-digest>-inputs.tar.gz`,
+`gui-<manifest-digest>-manifest.json` and `gui-<manifest-digest>-SHA256SUMS`. It
+reconstructs their original names locally before complete group verification.
+SDK and GUI groups coexist in base; adding one preserves every existing asset
+ID and never advances Latest. Missing, partial, changed or inaccessible groups
+stop ordinary consumers. Source-group maintenance retains only a non-source inspection plan when terms
+are unresolved. Actions artifact upload is redistribution too: unresolved source
+groups and their binaries remain runner-local even with `execute=false`. An
+execution request fails clearly instead of silently skipping this gate.
+
+`source=auto` authorizes cold production only inside explicit SDK maintenance,
+after a successful complete remote inventory proves that the base or recipe is
+absent. A partial group, orphan tag, changed asset, malformed response, access
+failure or network failure must be repaired; none becomes permission to rebuild.
+The receipt distinguishes reuse, missing base, missing recipe and explicit rebuild.
+Ordinary application workflows remain base-only. Rebuilding an existing recipe
+never grants permission to replace its assets; publication checks identical bytes
+or rejects the conflict.
+
+The SDK maintenance GUI probe runs before base publication, so a first GUI-capable
+SDK can be qualified without a preexisting base. `native-gui.yml` repeats that
+qualification using an already retained group. Both acquire the supplier revision
+only as explicitly dispatched maintenance, run source checks locally, and leave
+unresolved source and binaries on the disposable runner. These results do not
+certify redistribution or a complete release. Windows GUI qualification remains
+outstanding until its actual native job and all internal tests pass on the exact
+revision. The ordinary candidate workflow verifies the core application only.
+
+Cold Linux producers use an owning unprivileged account; never bypass supplier
+root-user rejection. Root package-manager checks run only in explicitly disposable
+containers. Any container Git trust exception names only its mounted checkout and
+is written only to the container account, never the developer or runner host.

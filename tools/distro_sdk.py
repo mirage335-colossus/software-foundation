@@ -80,6 +80,12 @@ def unpack_source(archive, output):
 
 
 def overlay(source, manifest):
+    if manifest['architecture'] == 'aarch64':
+        architecture = source / 'arch/Config.in.arm'
+        before = architecture.read_text()
+        after, count = re.subn(r'default \"cortex-a53\"(\s+if BR2_cortex_a53)', r'default "generic"\1', before)
+        if count != 1: raise ValueError('upstream generic ARM CPU context changed')
+        architecture.write_text(after)
     item = manifest['glibc_source']
     path = source / 'package/glibc/glibc.mk'
     text = path.read_text()
@@ -100,19 +106,24 @@ def overlay(source, manifest):
 
 
 def host_check(recipe):
-    if platform.system() != 'Linux' or platform.machine() != 'x86_64':
-        raise ValueError('the source SDK recipe requires an x86_64 Linux builder')
+    target = read_json(recipe)['architecture']
+    if target not in ('x86_64', 'aarch64'):
+        raise ValueError('unsupported native SDK architecture')
+    if platform.system() != 'Linux' or platform.machine() != target:
+        raise ValueError('the source SDK recipe requires a native ' + target + ' Linux builder')
     info = dict(line.split('=', 1) for line in Path('/etc/os-release').read_text().splitlines() if '=' in line)
     if info.get('ID', '').strip('"') != 'debian' or info.get('VERSION_ID', '').strip('"') != '12':
         raise ValueError('production source SDK must be built on the declared Debian 12 host baseline')
     for name in ('make', 'gcc', 'g++', 'patch', 'tar', 'gzip', 'bzip2', 'xz', 'cpio', 'rsync', 'gawk', 'wget', 'python3'):
         if not shutil.which(name): raise ValueError('missing bootstrap tool: ' + name)
-    return {'host': 'debian-12-x86_64', 'status': 'passed'}
+    return {'host': 'debian-12-' + target, 'status': 'passed'}
 
 
 def prepare(recipe, cache, jobs, network):
     recipe, cache = Path(recipe).resolve(strict=True), Path(cache).absolute()
     manifest = read_json(recipe)
+    if manifest['architecture'] not in ('x86_64', 'aarch64') or manifest['target'] != manifest['architecture'] + '-buildroot-linux-gnu':
+        raise ValueError('unsupported native SDK target identity')
     identity = recipe_id(recipe)
     if any(not re.fullmatch(r'[A-Za-z0-9_./+-]+', str(path)) for path in (recipe, cache)):
         raise ValueError('upstream source preparation requires simple paths without spaces')
@@ -137,7 +148,7 @@ def prepare(recipe, cache, jobs, network):
         command += ['BR2_WGET=wget --timeout=30 --tries=2 -nv']
     subprocess.run(command + ['BR2_DEFCONFIG=' + str(recipe.parent / 'config'), 'defconfig'], check=True)
     text = (output / '.config').read_text().splitlines()
-    for required in ('BR2_GCC_VERSION_15_X=y', 'BR2_TOOLCHAIN_BUILDROOT_GLIBC=y', 'BR2_DOWNLOAD_FORCE_CHECK_HASHES=y', 'BR2_PACKAGE_HOST_CMAKE=y'):
+    for required in ('BR2_GCC_VERSION_15_X=y', 'BR2_TOOLCHAIN_BUILDROOT_GLIBC=y', 'BR2_DOWNLOAD_FORCE_CHECK_HASHES=y', 'BR2_PACKAGE_HOST_CMAKE=y', 'BR2_' + manifest['architecture'] + '=y') + tuple(key + '=y' for key in manifest.get('required_packages', [])):
         if required not in text: raise ValueError('required source SDK configuration disappeared')
     return manifest, identity, command, output
 
@@ -158,17 +169,36 @@ def fetch(recipe, cache, jobs):
     bootstrap = 'bootstrap/' + manifest['buildroot']['file']
     files[bootstrap] = digest(Path(cache) / bootstrap)
     if len(files) < 2: raise ValueError('incomplete resolved source closure')
-    write_json(Path(cache) / 'source-inputs.json', {'schema_version': 1, 'recipe_id': identity, 'files': files})
     write_json(Path(cache) / 'resolution.json', packages)
+    write_json(Path(cache) / 'source-inputs.json', {'schema_version': 1, 'recipe_id': identity, 'files': files,
+               'resolution_sha256': digest(Path(cache) / 'resolution.json')})
     return {'recipe_id': identity, 'input_count': len(files)}
 
 
 def verify_inputs(recipe, cache):
     state = read_json(Path(cache) / 'source-inputs.json')
     if state.get('recipe_id') != recipe_id(recipe): raise ValueError('source cache belongs to another complete recipe')
+    cache = Path(cache).resolve(strict=True)
+    if state.get('schema_version') != 1 or not isinstance(state.get('files'), dict) or not state['files']:
+        raise ValueError('missing complete offline source inventory')
     for name, value in state['files'].items():
-        path = Path(cache).joinpath(*relative(name).parts)
-        if not path.is_file() or digest(path) != value: raise ValueError('missing or changed offline source input: ' + name)
+        path = cache.joinpath(*relative(name).parts)
+        if path.is_symlink() or not path.is_file() or cache not in path.resolve().parents or digest(path) != value:
+            raise ValueError('missing or changed offline source input: ' + name)
+    resolution = cache / 'resolution.json'
+    if not resolution.is_file() or digest(resolution) != state.get('resolution_sha256'):
+        raise ValueError('missing or changed retained dependency resolution')
+    manifest = read_json(recipe)
+    expected = {'bootstrap/' + manifest['buildroot']['file']}
+    for package in read_json(resolution).values():
+        for item in package.get('downloads', []):
+            expected.add(str(relative('downloads/' + package['dl_dir'] + '/' + item['source'])))
+    if set(state['files']) != expected or 'downloads/glibc/' + manifest['glibc_source']['file'] not in expected:
+        raise ValueError('offline source inventory does not cover the complete resolved inputs')
+    for item, name in ((manifest['buildroot'], 'bootstrap/' + manifest['buildroot']['file']),
+                       (manifest['glibc_source'], 'downloads/glibc/' + manifest['glibc_source']['file'])):
+        if state['files'].get(name) != item['sha256']:
+            raise ValueError('offline source inventory differs from pinned bootstrap inputs')
     return state
 
 
@@ -230,10 +260,14 @@ def build(recipe, cache, destination, jobs):
         sources = work / 'sources'
         preserve_sources(recipe, cache, sources)
         target = {'system': 'Linux', 'processor': manifest['architecture'], 'triple': manifest['target'],
-                  'sysroot': manifest['target'] + '/sysroot', 'cxx_compiler': 'bin/' + manifest['target'] + '-g++'}
+                  'sysroot': manifest['target'] + '/sysroot', 'cxx_compiler': 'bin/' + manifest['target'] + '-g++',
+                  'c_compiler': 'bin/' + manifest['target'] + '-gcc'}
         metadata = seal(tree, identity, target, digest(sources / 'sources.json'), licenses=['share/sdk-licenses'],
+                        runtime_source_sha256=manifest['glibc_source']['sha256'],
                         host_tools={'cmake': 'bin/cmake', 'ctest': 'bin/ctest', 'cpack': 'bin/cpack', 'ninja': 'bin/ninja', 'python': 'bin/python3'})
         metadata['relocation'] = 'buildroot'
+        metadata['capabilities'] = manifest.get('capabilities', ['core', 'terminal', 'framebuffer', 'hosted-web'])
+        metadata['runtime_host_services'] = manifest.get('runtime_host_services', [])
         write_json(tree / 'sdk.json', metadata)
         return export_group(tree, sources, destination, manifest['source_date_epoch'])
 

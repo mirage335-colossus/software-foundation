@@ -43,13 +43,13 @@ after installation. [COMPILE](COMPILE) is the short command reference;
 | Application | Library, CLI, validation, owned data, stable IDs | Bounded in-memory record contract with explicit failure guarantees |
 | Build | One CMake graph, presets, wrapper, focused prerequisite targets | One build tree per configuration and toolchain |
 | Tests | Contract checks, tool regressions, installed consumer, disjoint shards | Full means all tests enabled in that configuration |
-| GUI | All seven hosts use one feature/controller/layout; native, browser and Wasm fixtures | [GUI audit](docs/gui-audit.md) records actual coverage and the unresolved redistribution gate |
+| GUI | All seven hosts consume one application widget-definition table; native appearance, browser and Wasm fixtures | [GUI audit](docs/gui-audit.md) records actual coverage and the unresolved redistribution gate |
 | SDK | Source producer, strict prepared-input archives, source replay, relocation, host/target checks, Windows and browser recipes | Cold native SDK production requires the declared Bookworm builder |
 | Packages | Native TGZ/ZIP, full member inventory, runtime closure/ABI audits, relocation and external consumer | A native build alone cannot establish an older runtime floor |
 | CI | Disjoint source scopes, independent producers/copied-package jobs, explicit faster pools, sanitizer and supply checks | Hosted workflows need execution on a configured remote before claiming hosted qualification |
 | Coordination | Scoped review, guarded saves, descriptor-relative atomic publication, handoffs, lifecycle and concurrency tests | Unsupported filesystem APIs require a qualified adapter or enforced private checkouts |
-| Releases | Immutable complete groups, mandatory per-release copies, offline recovery and exact-byte certification | No remote is configured or publication performed |
-| Distribution | Debian, Arch and Gentoo wrapping, signed indexes, payload verification, atomic update/rollback checks | Native installation remains a separately named qualification scope |
+| Releases | Immutable complete groups, mandatory per-release copies, offline recovery and exact-byte certification | Publication, certification attachment and promotion are explicit protected operations |
+| Distribution | Debian, Arch and Gentoo wrapping, signed indexes, payload verification, atomic update/rollback checks | Signed fixtures and disposable native APT install/upgrade/purge adapter; client qualification recorded separately |
 
 [Validation](docs/validation.md) records what has actually run and what remains
 unverified. Planned platforms and release gates are requirements, not claimed passes.

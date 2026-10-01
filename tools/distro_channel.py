@@ -320,7 +320,15 @@ def recipe_files(spec, root_name, payload, archive_name):
             raise ValueError('missing retained license file')
         notices.append(path.encode() + b'\n' + payload[path][0] + b'\n')
     terms = b'\n'.join(notices)
+    suffix = '-' + backend if backend != 'core' else ''
+    manuals = {source: destination for source, destination in {
+        'share/man/man1/foundation-cli.1': 'usr/share/man/man1/foundation-cli' + suffix + '.1',
+        'share/man/man7/software-foundation.7': 'usr/share/man/man7/software-foundation-' + backend + '.7'
+    }.items() if source in payload}
+    if any(payload[source][1] != 0o644 for source in manuals):
+        raise ValueError('manual pages must have ordinary data-file permissions')
     native = {private + '/' + path: value for path, value in payload.items()}
+    native.update({destination: payload[source] for source, destination in manuals.items()})
     native.update({'usr/bin/' + path: value for path, value in launchers.items()})
     native[f'usr/share/licenses/{name}/LICENSE'] = (terms, 0o644)
     version = spec['version'] + '-' + str(spec['package_release'])
@@ -347,6 +355,8 @@ def recipe_files(spec, root_name, payload, archive_name):
         install += f'  install -Dm644 "$srcdir/selection.json" "$pkgdir/{private}/{SELECTION_PATH}"\n'
     install += f'  install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/{name}/LICENSE"\n'
     install += ''.join(f'  install -Dm755 "$srcdir/{launcher}" "$pkgdir/usr/bin/{launcher}"\n' for launcher in launchers)
+    install += ''.join(f'  install -Dm644 "$srcdir/{root_name}/{source}" "$pkgdir/{destination}"\n'
+                       for source, destination in manuals.items())
     source_values[0] = archive_name + '::' + source_values[0]
     quotes = lambda values: ' '.join("'" + value + "'" for value in values)
     pkgbuild = (f'pkgname={name}\npkgver={spec["version"]}\npkgrel={spec["package_release"]}\n'
@@ -383,7 +393,10 @@ def recipe_files(spec, root_name, payload, archive_name):
         ebuild += ''.join(f'  rm -- "${{D}}/{private}/{path}" || die\n' for path in sorted(selection['excluded_executables']))
         ebuild += f'  insinto /{private}/{str(Path(SELECTION_PATH).parent)}\n  newins "${{FILESDIR}}/selection.json" distro-selection.json\n'
     ebuild += ''.join(f'  fperms 0755 /{private}/{path}\n' for path, (_, mode) in sorted(payload.items()) if mode == 0o755)
-    ebuild += ''.join(f'  dobin "${{FILESDIR}}/{path}"\n' for path in launchers) + '}\n'
+    ebuild += ''.join(f'  dobin "${{FILESDIR}}/{path}"\n' for path in launchers)
+    ebuild += ''.join(f'  insinto /{Path(destination).parent.as_posix()}\n  newins "${{S}}/{source}" {Path(destination).name}\n'
+                      for source, destination in manuals.items())
+    ebuild += '}\n'
     output[gentoo_prefix + ebuild_name] = (ebuild.encode(), 0o644)
     gentoo_aux = dict(launchers)
     if selection is not None:

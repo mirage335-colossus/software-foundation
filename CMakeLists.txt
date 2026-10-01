@@ -97,7 +97,7 @@ if(BUILD_TESTING)
     set_tests_properties(core.store core.cli PROPERTIES LABELS "fast;core" TIMEOUT 30)
   endif()
   # Only explicitly named suites run; adding one requires registering its label.
-  set(_tool_suites build agent_board test_plan artifact gui_boundary coverage certification ci_plan process_tree sdk dependencies source_identity release portability release_check run_tests github_release)
+  set(_tool_suites build agent_board test_plan artifact gui_boundary coverage certification ci_plan process_tree sdk dependencies source_identity release portability release_check run_tests github_release windows_graphics)
   # Native Windows must use enforced private checkouts until its source-save
   # adapter is separately qualified; skipped POSIX fixtures are not a pass.
   if(UNIX)
@@ -166,6 +166,8 @@ write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/FoundationConfigVe
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/FoundationConfig.cmake"
   "${CMAKE_CURRENT_BINARY_DIR}/FoundationConfigVersion.cmake"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Foundation)
+install(FILES docs/man/foundation-cli.1 DESTINATION "${CMAKE_INSTALL_MANDIR}/man1")
+install(FILES docs/man/software-foundation.7 DESTINATION "${CMAKE_INSTALL_MANDIR}/man7")
 install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
 install(FILES docs/installed.md DESTINATION ${CMAKE_INSTALL_DOCDIR} RENAME README.md)
 install(FILES third_party/dependencies.json DESTINATION ${CMAKE_INSTALL_DOCDIR}/third_party)

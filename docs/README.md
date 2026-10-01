@@ -10,7 +10,8 @@ what was observed. A proposed platform or procedure is not execution evidence.
 | Build and SDK | [Building](building.md), [SDK](sdk.md), [portability](portability.md), [COMPILE](../COMPILE) |
 | Verification speed and coverage | [Testing](testing.md), [CI](ci.md), [validation](validation.md) |
 | Dependency maintenance | [Dependency requirements](dependencies.md), [inventory](../third_party/README.md) |
-| Interfaces | [GUI contract and integration](gui-boundary.md), [GUI audit](gui-audit.md), [core source](../include/foundation/store.hpp) |
+| Installed manuals | [Manual sources and preview](man/README.md) |
+| Interfaces | [GUI contract and integration](gui-boundary.md), [GUI audit](gui-audit.md), [Windows graphics prerequisite](windows-graphics.md), [core source](../include/foundation/store.hpp) |
 | Collaboration | [Agent requirements](../AGENTS.md), [coordination](agent-coordination.md), [checked operation recipes](agent-recipes.md), [lifecycle](agent-lifecycle.md) |
 | Delivery | [Release requirements](releases.md), [certification](certification.md), [Debian distribution](distribution.md), [Arch and Gentoo channels](distro-channels.md), [GitHub delivery](github-delivery.md), [installed package instructions](installed.md), [RELEASE](../RELEASE) |
 | Sustained maintenance | [Engineering practices](maintenance.md), [documentation rules](documentation.md) |

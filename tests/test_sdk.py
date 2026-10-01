@@ -61,6 +61,25 @@ class SDKTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'inventory'):
             verify_sdk(self.tree)
 
+    def test_optional_c_compiler_is_verified_and_retained(self):
+        (self.tree / 'bin/cc').write_text('retained C compiler fixture')
+        metadata = read_json(self.tree / 'sdk.json')
+        metadata['target']['c_compiler'] = 'bin/cc'
+        metadata['files'] = file_inventory(self.tree, exclude=('sdk.json',))
+        write_json(self.tree / 'sdk.json', metadata)
+        verify_sdk(self.tree)
+        (self.tree / 'bin/cc').write_text('changed C compiler')
+        with self.assertRaisesRegex(ValueError, 'inventory'):
+            verify_sdk(self.tree)
+
+    def test_c_compiler_must_be_contained_file_in_inventory(self):
+        metadata = read_json(self.tree / 'sdk.json')
+        for name in ('../outside-cc', 'sysroot', ''):
+            metadata['target']['c_compiler'] = name
+            write_json(self.tree / 'sdk.json', metadata)
+            with self.subTest(path=name), self.assertRaises(ValueError):
+                verify_sdk(self.tree)
+
     def test_archive_export_is_deterministic(self):
         other = self.root / 'second-group'
         sdk.export_group(self.tree, self.sources, other)
@@ -108,10 +127,21 @@ class SDKTests(unittest.TestCase):
         sdk.export_group(self.tree, self.sources, replacement)
         def mutating_smoke(root, work):
             (Path(root) / 'unexpected-cache.pyc').write_bytes(b'changed by a tool')
-        with patch('sdk.smoke', side_effect=mutating_smoke):
+        # This fixture isolates post-use inventory checking from real SDK ABI qualification.
+        with patch('sdk.verify_sdk', side_effect=lambda root, release=False: verify_sdk(root)), \
+             patch('sdk.smoke', side_effect=mutating_smoke):
             with self.assertRaisesRegex(ValueError, 'inventory'):
                 sdk.install(replacement, self.recipe, self.root / 'rejected')
         self.assertFalse((self.root / 'rejected').exists())
+
+    def test_runtime_audit_cannot_claim_another_recipe(self):
+        metadata = read_json(self.tree / 'sdk.json')
+        metadata['kind'] = 'source-build'
+        metadata['audits'] = {'host': {'status': 'passed'}, 'target': {'status': 'passed',
+            'scope': 'sdk-sysroot', 'sdk_runtime': {'recipe_id': 'b' * 64}}}
+        write_json(self.tree / 'sdk.json', metadata)
+        with self.assertRaisesRegex(ValueError, 'bound to its retained'):
+            verify_sdk(self.tree, release=True)
 
     def test_moved_installed_root_rejected(self):
         metadata = read_json(self.tree / 'sdk.json')
@@ -129,7 +159,7 @@ class SupplierRecipeTests(unittest.TestCase):
             root = Path(temporary)
             text = '#!/bin/sh\nexec "$_EM_PY" -E "$0.py" "$@"\n'
             for name in ('emcc', 'em++', 'emar', 'emranlib'):
-                (root / name).write_text(text)
+                (root / name).write_bytes(text.encode('utf-8'))
             self.assertEqual(len(sdk_wasm.prepare_launchers(root)), 4)
             self.assertIn('-B -E', (root / 'em++').read_text())
             with self.assertRaisesRegex(ValueError, 'pinned patch contract'):
@@ -152,6 +182,44 @@ class SupplierRecipeTests(unittest.TestCase):
             sdk_windows.install(root / 'group', result['recipe_id'], root / 'installed', '14.44.35217.0')
             self.assertTrue((root / 'installed/prefix/README.txt').is_file())
 
+    def test_windows_linker_version_normalizes_only_missing_revision(self):
+        import sdk_windows
+        self.assertEqual(sdk_windows.linker_version('14.44.35217'), (14, 44, 35217, 0))
+        self.assertEqual(sdk_windows.linker_version('14.44.35217'), sdk_windows.linker_version('14.44.35217.0'))
+        self.assertLess(sdk_windows.linker_version('14.44.35217'), sdk_windows.linker_version('14.44.35217.1'))
+        self.assertLess(sdk_windows.linker_version('14.43.99999.9'), sdk_windows.linker_version('14.44.1'))
+        for invalid in ('14.44', '14.44.1.0.0', '14.44.1-preview', ' 14.44.1', '14.44.-1', '', None):
+            with self.subTest(value=invalid), self.assertRaisesRegex(ValueError, 'linker version'):
+                sdk_windows.linker_version(invalid)
+
+    def test_windows_dependency_install_compares_three_and_four_components(self):
+        import sdk_windows
+        recipe = Path(__file__).resolve().parents[1] / 'third_party/sdk/windows-base.json'
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for index, (producer, consumer, accepted) in enumerate((
+                    ('14.44.35217.0', '14.44.35217', True),
+                    ('14.44.35217', '14.44.35217.0', True),
+                    ('14.44.35217.1', '14.44.35217', False))):
+                provenance = dict(read_json(recipe), linker_version=producer, windows_sdk='10.0.22621.0')
+                write_json(root / 'producer.json', provenance)
+                group = root / ('group-' + str(index)); output = root / ('installed-' + str(index))
+                result = sdk_windows.empty_base(recipe, root / 'producer.json', group)
+                if accepted:
+                    sdk_windows.install(group, result['recipe_id'], output, consumer)
+                    self.assertTrue((output / 'prefix/README.txt').is_file())
+                else:
+                    with self.assertRaisesRegex(ValueError, 'older'):
+                        sdk_windows.install(group, result['recipe_id'], output, consumer)
+                    self.assertFalse(output.exists())
+
+    def test_native_gui_recipes_require_rev_display_dependency(self):
+        root = Path(__file__).resolve().parents[1] / 'third_party/sdk'
+        for profile in ('gui-x86_64', 'gui-aarch64'):
+            recipe = read_json(root / profile / 'recipe.json')
+            self.assertIn('BR2_PACKAGE_XLIB_LIBXRANDR', recipe['required_packages'])
+            self.assertIn('select BR2_PACKAGE_XLIB_LIBXRANDR', (root / profile / 'Config.in').read_text())
+
     def test_windows_wrong_runtime_policy_rejected(self):
         import sdk_windows
         recipe = read_json(Path(__file__).resolve().parents[1] / 'third_party/sdk/windows-base.json')
@@ -172,8 +240,200 @@ class SupplierRecipeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             recipe = Path(__file__).resolve().parents[1] / 'third_party/sdk/recipe.json'
-            write_json(root / 'source-inputs.json', {'recipe_id': distro_sdk.recipe_id(recipe), 'files': {'downloads/missing.tar': '0' * 64}})
+            write_json(root / 'source-inputs.json', {'schema_version': 1, 'recipe_id': distro_sdk.recipe_id(recipe), 'files': {'downloads/missing.tar': '0' * 64}})
             with self.assertRaisesRegex(ValueError, 'missing or changed'):
                 distro_sdk.verify_inputs(recipe, root)
+
+
+class ProducerContractTests(unittest.TestCase):
+    def test_wasm_inputs_are_build_tools_not_validation_browsers(self):
+        recipe = read_json(Path(__file__).resolve().parents[1] / 'third_party/sdk/wasm.json')
+        self.assertEqual({i['name'] for i in recipe['inputs']}, {'emsdk', 'compiler', 'node'})
+
+    def test_native_recipes_require_matching_bookworm_hosts(self):
+        import distro_sdk
+        from unittest.mock import patch
+        root = Path(__file__).resolve().parents[1]
+        for architecture, path in (('x86_64', 'third_party/sdk/recipe.json'),
+                                   ('aarch64', 'third_party/sdk/aarch64/recipe.json')):
+            with self.subTest(architecture=architecture):
+                recipe = root / path
+                manifest = read_json(recipe)
+                with patch('distro_sdk.read_json', return_value=manifest), \
+                     patch('distro_sdk.platform.system', return_value='Linux'), \
+                     patch('distro_sdk.platform.machine', return_value=architecture), \
+                     patch('distro_sdk.Path.read_text', return_value='ID=debian\nVERSION_ID="12"\n'), \
+                     patch('distro_sdk.shutil.which', return_value='/usr/bin/tool'):
+                    self.assertEqual(distro_sdk.host_check(recipe)['host'], 'debian-12-' + architecture)
+                with patch('distro_sdk.platform.system', return_value='Linux'), \
+                     patch('distro_sdk.platform.machine', return_value='unsupported'):
+                    with self.assertRaisesRegex(ValueError, 'native'):
+                        distro_sdk.host_check(recipe)
+        self.assertNotEqual(distro_sdk.recipe_id(root / 'third_party/sdk/recipe.json'),
+                            distro_sdk.recipe_id(root / 'third_party/sdk/aarch64/recipe.json'))
+
+    def test_native_resolution_cannot_omit_or_substitute_pinned_inputs(self):
+        import distro_sdk
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); recipe_dir = root / 'recipe'; recipe_dir.mkdir()
+            source = Path(__file__).resolve().parents[1] / 'third_party/sdk'
+            for name in ('config', 'Config.in', 'external.desc', 'external.mk'):
+                (recipe_dir / name).write_bytes((source / name).read_bytes())
+            recipe = read_json(source / 'recipe.json')
+            files = {}
+            for item, directory in ((recipe['buildroot'], 'bootstrap'), (recipe['glibc_source'], 'downloads/glibc')):
+                path = root / 'cache' / directory / item['file']; path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'Pinned fixture input.'); item['sha256'] = digest(path)
+                files[str(path.relative_to(root / 'cache'))] = digest(path)
+            write_json(recipe_dir / 'recipe.json', recipe)
+            resolution = {'glibc': {'dl_dir': 'glibc', 'downloads': [{'source': recipe['glibc_source']['file']}]}}
+            write_json(root / 'cache/resolution.json', resolution)
+            state = {'schema_version': 1, 'recipe_id': distro_sdk.recipe_id(recipe_dir / 'recipe.json'),
+                     'resolution_sha256': digest(root / 'cache/resolution.json'), 'files': files}
+            write_json(root / 'cache/source-inputs.json', state)
+            distro_sdk.verify_inputs(recipe_dir / 'recipe.json', root / 'cache')
+            omitted = next(p for p in files if p.startswith('downloads/')); del state['files'][omitted]
+            write_json(root / 'cache/source-inputs.json', state)
+            with self.assertRaisesRegex(ValueError, 'complete resolved'):
+                distro_sdk.verify_inputs(recipe_dir / 'recipe.json', root / 'cache')
+
+    def test_windows_empty_fetch_build_recovery_needs_no_supplier(self):
+        import sdk_windows
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); recipe_path = Path(__file__).resolve().parents[1] / 'third_party/sdk/windows-base.json'
+            recipe = read_json(recipe_path); provenance = dict(recipe, linker_version='14.44.35217.0', windows_sdk='10.0.22621.0')
+            write_json(root / 'producer.json', provenance)
+            with patch('sdk_windows.host_provenance', return_value=(recipe, provenance)), \
+                 patch('sdk_windows.subprocess.run', side_effect=AssertionError('empty recipe invoked supplier')):
+                sdk_windows.fetch(recipe_path, root / 'producer.json', root / 'cache')
+                result = sdk_windows.build(recipe_path, root / 'producer.json', root / 'cache', root / 'group')
+            sdk.restore_sources(root / 'group', result['recipe_id'], root / 'restored')
+            self.assertEqual(sdk_windows.recipe_identity(root / 'restored/recipe/windows-base.json'), result['recipe_id'])
+            sdk_windows.verify_inputs(root / 'restored/recipe/windows-base.json', root / 'restored/cache')
+            sdk_windows.install(root / 'group', result['recipe_id'], root / 'installed', '14.44.35217.0')
+            self.assertTrue((root / 'installed/prefix/README.txt').is_file())
+
+    def test_windows_supplier_source_rejects_links_and_wrong_commit(self):
+        import sdk_windows, zipfile
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); archive = root / 'source.zip'; revision = 'a' * 40
+            with zipfile.ZipFile(archive, 'w') as output:
+                output.comment = revision.encode(); entry = zipfile.ZipInfo('escape')
+                entry.external_attr = 0o120777 << 16; output.writestr(entry, '../escape')
+            with self.assertRaisesRegex(ValueError, 'unsupported'):
+                sdk_windows.extract_supplier(archive, root / 'tree', revision)
+            self.assertFalse((root / 'tree').exists())
+            with self.assertRaisesRegex(ValueError, 'revision'):
+                sdk_windows.extract_supplier(archive, root / 'tree', 'b' * 40)
+
+    def test_windows_offline_environment_blocks_origin_and_ambient_caches(self):
+        import sdk_windows
+        from unittest.mock import patch
+        with patch.dict(os.environ, {'VCPKG_BINARY_SOURCES': 'untrusted', 'VCPKG_OVERLAY_PORTS': 'untrusted'}):
+            env = sdk_windows.supplier_environment(Path('supplier'), Path('downloads'), 3, False)
+        self.assertEqual(env['VCPKG_BINARY_SOURCES'], 'clear')
+        self.assertEqual(env['X_VCPKG_ASSET_SOURCES'], 'clear;x-block-origin')
+        self.assertEqual(env['VCPKG_MAX_CONCURRENCY'], '3')
+        self.assertNotIn('VCPKG_OVERLAY_PORTS', env)
+
+    def test_windows_nonempty_offline_build_replays_retained_inputs(self):
+        import sdk_windows, zipfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); recipe_dir = root / 'recipe'; recipe_dir.mkdir()
+            templates = Path(__file__).resolve().parents[1] / 'third_party/sdk'
+            recipe = read_json(templates / 'windows-base.json'); recipe['ports'] = ['example[core]']
+            write_json(recipe_dir / 'windows-base.json', recipe)
+            (recipe_dir / 'windows-toolchain.json').write_bytes((templates / 'windows-toolchain.json').read_bytes())
+            cache = root / 'cache'; (cache / 'downloads').mkdir(parents=True)
+            with zipfile.ZipFile(cache / 'vcpkg-source.zip', 'w') as output:
+                output.comment = recipe['vcpkg_ref'].encode(); output.writestr('LICENSE.txt', 'Supplier fixture terms.')
+            (cache / 'vcpkg.exe').write_bytes(b'Retained inert supplier executable.')
+            (cache / 'downloads/source.tar').write_bytes(b'Retained source fixture.')
+            write_json(cache / 'inputs.json', {'schema_version': 1, 'recipe_id': sdk_windows.recipe_identity(recipe_dir / 'windows-base.json'), 'files': file_inventory(cache)})
+            provenance = dict(recipe, linker_version='14.44.35217.0', windows_sdk='10.0.22621.0', tools_version='14.44.35217', installation_path=str(root))
+            write_json(root / 'producer.json', provenance); actions = []
+            def runner(argv, **kwargs):
+                actions.append(argv[1]); self.assertEqual(kwargs['env']['X_VCPKG_ASSET_SOURCES'], 'clear;x-block-origin')
+                self.assertIn('--overlay-triplets=', ' '.join(argv))
+                if argv[1] == 'install': self.assertIn('--no-downloads', argv)
+                elif argv[1] == 'export':
+                    self.assertIn('example:x64-windows-static', argv)
+                    self.assertNotIn('example[core]:x64-windows-static', argv)
+                    output = Path(next(arg.split('=', 1)[1] for arg in argv if arg.startswith('--output-dir='))) / 'prepared'
+                    for name in ('.vcpkg-root', 'scripts/buildsystems/vcpkg.cmake', 'installed/x64-windows-static/share/example/copyright', 'installed/vcpkg/info/example_1_x64-windows-static.list'):
+                        target = output / name; target.parent.mkdir(parents=True, exist_ok=True); target.write_text('fixture')
+                else: raise AssertionError('unexpected supplier action')
+            with patch('sdk_windows.host_provenance', return_value=(recipe, provenance)), patch('sdk_windows.subprocess.run', side_effect=runner):
+                result = sdk_windows.build(recipe_dir / 'windows-base.json', root / 'producer.json', cache, root / 'group')
+            self.assertEqual(actions, ['install', 'export'])
+            sdk.restore_sources(root / 'group', result['recipe_id'], root / 'restored')
+            sdk_windows.verify_inputs(root / 'restored/recipe/windows-base.json', root / 'restored/cache')
+            (cache / 'downloads/source.tar').write_bytes(b'corrupt')
+            with self.assertRaisesRegex(ValueError, 'inventory'):
+                sdk_windows.verify_inputs(recipe_dir / 'windows-base.json', cache)
+
+    def test_windows_host_sdk_must_match_pinned_policy(self):
+        import sdk_windows
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); recipe = Path(__file__).resolve().parents[1] / 'third_party/sdk/windows-base.json'
+            provenance = dict(read_json(recipe), linker_version='14.44.35217.0', windows_sdk='10.0.99999.0')
+            write_json(root / 'producer.json', provenance)
+            with self.assertRaisesRegex(ValueError, 'pinned host policy'):
+                sdk_windows.empty_base(recipe, root / 'producer.json', root / 'group')
+            self.assertFalse((root / 'group').exists())
+
+
+class NativeLinuxToolchainTests(unittest.TestCase):
+    def make_sdk(self, root, c=True):
+        import platform, shlex, shutil
+        tree = root / 'sdk'; (tree / 'bin').mkdir(parents=True); (tree / 'sysroot').mkdir()
+        for name, program in (('cc', 'cc'), ('c++', 'c++')):
+            compiler = shutil.which(program)
+            if not compiler: raise ValueError('native compiler fixture requires ' + program)
+            path = tree / 'bin' / name
+            path.write_text('#!/bin/sh\nexec ' + shlex.quote(compiler) + ' "$@"\n'); path.chmod(0o755)
+        target = {'system':'Linux','processor':platform.machine(),'triple':platform.machine()+'-linux-gnu',
+                  'sysroot':'sysroot','cxx_compiler':'bin/c++'}
+        if c: target['c_compiler'] = 'bin/cc'
+        write_json(tree / 'sdk.json', {'schema_version':1,'recipe_id':'a'*64,'kind':'diagnostic',
+                   'target':target,'files':file_inventory(tree)})
+        return tree
+
+    def configure(self, source, build, sdk_root, extra=()):
+        import subprocess
+        root = Path(__file__).resolve().parents[1]
+        command = ['cmake','-S',str(source),'-B',str(build),'-G','Ninja',
+                   '-DCMAKE_TOOLCHAIN_FILE='+str(root/'cmake/toolchains/sdk.cmake'),
+                   '-DFOUNDATION_SDK_ROOT='+str(sdk_root),'-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY',*extra]
+        return subprocess.run(command,text=True,capture_output=True)
+
+    def test_declared_c_compiler_is_used_in_nested_checks_and_build(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);sdk_root=self.make_sdk(root);source=root/'source';source.mkdir();build=root/'build'
+            (source/'probe.c').write_text('int probe(void) { return 0; }\n')
+            (source/'probe.cpp').write_text('int value() { return 0; }\n')
+            (source/'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.24)\nproject(CompilerProbe LANGUAGES C CXX)\ntry_compile(CHECK_C "${CMAKE_BINARY_DIR}/nested" SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/probe.c")\nif(NOT CHECK_C)\n message(FATAL_ERROR "nested retained C compiler check failed")\nendif()\nadd_library(c_probe STATIC probe.c)\nadd_library(cxx_probe STATIC probe.cpp)\nfile(WRITE "${CMAKE_BINARY_DIR}/selected-c.txt" "${CMAKE_C_COMPILER}")\n')
+            result=self.configure(source,build,sdk_root)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertEqual((build/'selected-c.txt').read_text(),str(sdk_root/'bin/cc'))
+            result=subprocess.run(['cmake','--build',str(build),'--parallel','2'],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            verify_sdk(sdk_root)
+
+    def test_legacy_cxx_manifest_cannot_fall_back_to_host_c(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);sdk_root=self.make_sdk(root,c=False);source=root/'source';source.mkdir()
+            cmake=source/'CMakeLists.txt';cmake.write_text('cmake_minimum_required(VERSION 3.24)\nproject(CompilerProbe LANGUAGES CXX)\n')
+            result=self.configure(source,root/'cxx-build',sdk_root)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            cmake.write_text(cmake.read_text()+'enable_language(C)\n')
+            result=self.configure(source,root/'c-build',sdk_root,('-DCMAKE_C_COMPILER='+shutil.which('cc'),))
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('SDK-manifest-does-not-declare-a-C-compiler',result.stdout+result.stderr)
+            verify_sdk(sdk_root)
 
 if __name__ == '__main__': unittest.main()

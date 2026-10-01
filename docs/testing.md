@@ -86,9 +86,13 @@ The supplied [`tools/test_plan.py`](../tools/test_plan.py) freezes the test
 inventory and source identity, runs disjoint selections, and rejects incomplete
 aggregation. It incrementally rebuilds `foundation-tests` before planning and
 before each shard run, preventing an old executable from representing newly
-edited source. The plan binds source bytes, normalized CMake configuration and
-build information, and complete registered test definitions. Execution rechecks
-the bound inputs; changing a command or configuration requires a fresh plan.
+edited source. Plans bind the complete source snapshot, including configured GUI
+sources, current compiler bytes and resolved path, normalized complete CMake cache,
+build metadata, test definitions, and verified SDK/dependency/GUI input inventories.
+Shards recheck these before rebuilding prerequisites, after compilation, and after
+test execution; changed inputs invalidate the plan. Retained SDK CMake/CTest and
+environment are used when configured. Direct native CMake trees remain supported;
+prepared external groups require their verified wrapper metadata.
 Prior result and aggregate files are removed before an attempt so a failed run
 cannot leave an earlier successful receipt available for reuse. Completed records
 are published atomically. This example runs two shards
@@ -109,8 +113,8 @@ python3 tools/test_plan.py merge --plan build/plan.json --output build/coverage.
 For simultaneous execution, give each shard its own build tree or runner and
 unique output. Match the frozen source/configuration and planned inventory.
 Do not launch multiple CTest writers against one tree's `Testing/` directory.
-Larger distributed production plans may need extra target/SDK identities and
-weighted assignment based on recorded durations.
+Distributed production plans can add weighted assignment based on recorded
+durations while preserving the same input and completeness checks.
 
 For tests divided internally across workers, retain every required case and
 input identifier. Aggregate original raw results before applying any combined

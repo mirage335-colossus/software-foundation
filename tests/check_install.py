@@ -37,6 +37,10 @@ with tempfile.TemporaryDirectory(prefix="foundation install ") as directory:
     moved = root / "relocated prefix"
     run(["cmake", "--install", args.build, "--config", args.config, "--prefix", original])
     original.rename(moved)
+    for section, name in (("man1", "foundation-cli.1"), ("man7", "software-foundation.7")):
+        copies = list(moved.rglob(section + "/" + name))
+        if len(copies) != 1 or copies[0].read_bytes() != (args.source / "docs/man" / name).read_bytes():
+            raise RuntimeError("installed manual missing, duplicated or changed: " + name)
     # Build only against the install, without access to its original location.
     consumer = root / "consumer source"
     shutil.copytree(args.source / "examples/consumer", consumer)

@@ -380,7 +380,7 @@ class TransportTests(unittest.TestCase):
         with mock.patch.object(G.subprocess,'run',return_value=subprocess.CompletedProcess([],1,b'',b'private token value')) as call:
             with self.assertRaises(G.DeliveryError) as caught:transport.upload('v1',Path('/owned/file.zip'))
         argv=call.call_args.args[0]
-        self.assertEqual(argv,['gh','release','upload','v1','--repo','github.com/example/project','/owned/file.zip'])
+        self.assertEqual(argv,['gh','release','upload','v1','--repo','github.com/example/project',str(Path('/owned/file.zip'))])
         self.assertNotIn('clobber',' '.join(argv));self.assertNotIn('private token',str(caught.exception))
         self.assertNotIn('shell',call.call_args.kwargs)
 

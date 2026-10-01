@@ -33,8 +33,13 @@ def verify_sdk(root, release=False):
             raise ValueError('host tool omitted from SDK inventory')
     for name in data.get('licenses', []):
         contained(root, name)
-    if data.get('kind') != 'windows-dependencies' and target['cxx_compiler'] not in data['files']:
-        raise ValueError('compiler omitted from SDK inventory')
+    compiler_fields = [] if data.get('kind') == 'windows-dependencies' else ['cxx_compiler']
+    if 'c_compiler' in target:
+        compiler_fields.append('c_compiler')
+    for field in compiler_fields:
+        name = target[field]
+        if not isinstance(name, str) or not name or not contained(root, name).is_file() or name not in data['files']:
+            raise ValueError('compiler omitted from SDK inventory or invalid: ' + field)
     if release:
         if data.get('kind') not in ('source-build', 'retained-upstream', 'windows-dependencies'):
             raise ValueError('SDK preparation kind is not qualified for release')
@@ -42,6 +47,18 @@ def verify_sdk(root, release=False):
             raise ValueError('SDK lacks retained source/license identity')
         if target['system'] == 'Linux' and data.get('baseline') != {'distribution': 'debian-12', 'glibc': '2.36'}:
             raise ValueError('Linux release SDK must declare the Bookworm runtime baseline')
+        if target['system'] == 'Linux':
+            report = data.get('audits', {}).get('target', {})
+            runtime = report.get('sdk_runtime') or {}
+            if (report.get('scope') != 'sdk-sysroot' or runtime.get('recipe_id') != data['recipe_id']
+                    or runtime.get('processor') != target['processor'] or runtime.get('glibc') != '2.36'
+                    or not re.fullmatch(r'[0-9a-f]{64}', runtime.get('source_sha256', ''))
+                    or not isinstance(runtime.get('files'), dict) or not runtime['files']):
+                raise ValueError('SDK runtime audit is not bound to its retained recipe and target')
+            for name, value in runtime['files'].items():
+                key = str(relative(target['sysroot'])) + '/' + str(relative(name))
+                if data['files'].get(key) != value:
+                    raise ValueError('SDK runtime audit differs from retained target files')
         for scope in (() if data.get('kind') == 'windows-dependencies' else ('host', 'target')):
             report = data.get('audits', {}).get(scope, {})
             if report.get('status') != 'passed': raise ValueError('SDK compatibility audit missing: ' + scope)

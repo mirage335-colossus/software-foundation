@@ -3,7 +3,9 @@
 from pathlib import Path
 import importlib.util
 import json
+import subprocess
 import unittest
+import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,9 +32,22 @@ class GuiBoundaryTests(unittest.TestCase):
         for path in (ROOT / "gui/hosts").glob("*.cpp"):
             self.assertNotIn('"entries.', path.read_text(), str(path))
 
+    def test_shared_declaration_has_one_construction_and_layout_source(self):
+        source = (ROOT / "gui/shared/application.cpp").read_text()
+        definition = (ROOT / "gui/shared/view_definition.hpp").read_text()
+        self.assertIn("definition : view_definition", source)
+        self.assertIn("definition.height", source)
+        for identity in ("entries.heading", "entries.editor", "entries.add", "entries.remove"):
+            self.assertEqual(1, definition.count('"' + identity + '"'))
+        for path in (ROOT / "gui/patches").glob("*.patch"):
+            self.assertNotIn('"entries.', path.read_text(), str(path))
+        visual = (ROOT / "gui/tests/visual_test.py").read_text()
+        self.assertIn("negative_checks(images['framebuffer'], baseline)", visual)
+
     def test_dependency_lock_is_complete_for_consumed_inputs(self):
         lock = json.loads((ROOT / "third_party/gui-boundary.lock.json").read_text())
         self.assertRegex(lock["revision"], r"^[0-9a-f]{40}$")
+        self.assertRegex(lock["source_tree"], r"^[0-9a-f]{40}$")
         for path in ("include/gui/contract.hpp", "include/gui/layout.hpp",
                      "include/gui/terminal.hpp", "include/gui/framebuffer.hpp",
                      "backends/terminal/main.cpp", "backends/fltk/adapter.hpp",
@@ -57,6 +72,131 @@ class GuiBoundaryTests(unittest.TestCase):
         for name in ("FLTK", "SDL", "REV", "WEB"):
             self.assertIn("FOUNDATION_GUI_" + name, cmake)
 
+    def rev_dependency_configuration(self, *, sdk=False, bundled=None, windows=False):
+        # Execute the real composition block in CMake. The fixture replaces only
+        # the toolkit build, so this stays independent of native SDK availability.
+        cmake = (ROOT / "gui/CMakeLists.txt").read_text()
+        block = cmake.split("if(FOUNDATION_GUI_REV)\n", 1)[1].split("\nif(BUILD_TESTING)", 1)[0]
+        block = "if(FOUNDATION_GUI_REV)\n" + block
+        with tempfile.TemporaryDirectory(prefix="rev dependency ") as directory:
+            root = Path(directory)
+            source = root / "source"; source.mkdir()
+            project = """cmake_minimum_required(VERSION 3.24)
+project(RevDependencySelection LANGUAGES NONE)
+set(FOUNDATION_GUI_REV ON)
+function(foundation_gui_patch source patch output)
+    if(output STREQUAL "Rev.cmake")
+        file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/Rev.cmake" [=[
+option(GUI_REV_BUNDLED_DEPS "Retained dependencies" ${WIN32})
+if(GUI_REV_BUNDLED_DEPS)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/selection.txt" "retained")
+else()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/selection.txt" "system")
+endif()
+]=])
+    endif()
+endfunction()
+function(foundation_gui_executable)
+endfunction()
+function(target_link_libraries)
+endfunction()
+"""
+            project += "set(WIN32 " + ("ON" if windows else "OFF") + ")\n"
+            if sdk:
+                project += 'set(FOUNDATION_SDK_ROOT "retained SDK")\n'
+            (source / "CMakeLists.txt").write_text(project + block, encoding="utf-8")
+            command = ["cmake", "-G", "Ninja", "-S", str(source), "-B", str(root / "build")]
+            if bundled is not None:
+                command.append("-DGUI_REV_BUNDLED_DEPS=" + bundled)
+            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, timeout=30)
+            selected = root / "build/selection.txt"
+            return result, selected.read_text() if selected.exists() else None
+
+    def test_prepared_sdk_rev_selects_retained_dependencies(self):
+        for setting in (None, "ON"):
+            with self.subTest(setting=setting):
+                result, selected = self.rev_dependency_configuration(sdk=True, bundled=setting)
+                self.assertEqual(0, result.returncode, result.stdout)
+                self.assertEqual("retained", selected)
+
+    def test_prepared_sdk_rev_rejects_system_dependency_override(self):
+        result, selected = self.rev_dependency_configuration(sdk=True, bundled="OFF")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Prepared SDK Rev requires GUI_REV_BUNDLED_DEPS=ON", result.stdout)
+        self.assertIsNone(selected, "Reject the conflict before entering the toolkit build")
+
+    def test_local_rev_dependency_defaults_and_overrides_remain_available(self):
+        for windows, setting, expected in ((False, None, "system"), (False, "ON", "retained"),
+                                            (True, None, "retained"), (True, "OFF", "system")):
+            with self.subTest(windows=windows, setting=setting):
+                result, selected = self.rev_dependency_configuration(windows=windows, bundled=setting)
+                self.assertEqual(0, result.returncode, result.stdout)
+                self.assertEqual(expected, selected)
+
+    def fltk_static_link_fixture(self, *, sdk):
+        # Model the SDK's autotools FindFLTK result: the static archive itself
+        # omits its Xft closure. Every imported edge must reach the final link.
+        cmake = (ROOT / "gui/CMakeLists.txt").read_text()
+        block = "if(FOUNDATION_GUI_FLTK)\n" + cmake.split("if(FOUNDATION_GUI_FLTK)\n", 1)[1].split(
+            "\nif(FOUNDATION_GUI_SDL)", 1)[0]
+        with tempfile.TemporaryDirectory(prefix="fltk dependency ") as directory:
+            root = Path(directory); source = root / "source"; source.mkdir()
+            units = {
+                "main": "int fltk_entry(void); int main(void) { return fltk_entry(); }",
+                "fltk": "int xft_entry(void); int fltk_entry(void) { return xft_entry(); }",
+                "xft": "int render_entry(void); int font_entry(void); int type_entry(void); "
+                       "int xft_entry(void) { return render_entry()+font_entry()+type_entry(); }",
+                "render": "int render_entry(void) { return 0; }",
+                "font": "int font_entry(void) { return 0; }",
+                "type": "int type_entry(void) { return 0; }"}
+            for name, content in units.items():
+                (source / (name + ".c")).write_text(content, encoding="utf-8")
+            (source / "FindFLTK.cmake").write_text(
+                "set(FLTK_LIBRARIES fixture_fltk)\nset(FLTK_FOUND TRUE)\n", encoding="utf-8")
+            (source / "FindX11.cmake").write_text("""
+if(NOT "Xft" IN_LIST X11_FIND_COMPONENTS OR NOT "Xrender" IN_LIST X11_FIND_COMPONENTS)
+    message(FATAL_ERROR "The SDK must require the static toolkit dependencies")
+endif()
+foreach(name xft render font type)
+    add_library(fixture_${name} STATIC "${CMAKE_CURRENT_SOURCE_DIR}/${name}.c")
+endforeach()
+add_library(X11::Xft ALIAS fixture_xft)
+add_library(X11::Xrender ALIAS fixture_render)
+add_library(Fontconfig::Fontconfig ALIAS fixture_font)
+add_library(Freetype::Freetype ALIAS fixture_type)
+target_link_libraries(fixture_xft PUBLIC X11::Xrender Fontconfig::Fontconfig Freetype::Freetype)
+""", encoding="utf-8")
+            project = """cmake_minimum_required(VERSION 3.24)
+project(StaticToolkitClosure LANGUAGES C)
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
+set(FOUNDATION_GUI_FLTK ON)
+set(CMAKE_SYSTEM_NAME Linux)
+add_library(fixture_fltk STATIC fltk.c)
+function(foundation_gui_patch)
+endfunction()
+function(foundation_gui_executable name source)
+    add_executable(${name} "${CMAKE_CURRENT_SOURCE_DIR}/main.c")
+endfunction()
+"""
+            if sdk:
+                project += 'set(FOUNDATION_SDK_ROOT "retained SDK")\n'
+            (source / "CMakeLists.txt").write_text(project + block, encoding="utf-8")
+            result = subprocess.run(["cmake", "-G", "Ninja", "-S", str(source), "-B", str(root / "build")],
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30)
+            self.assertEqual(0, result.returncode, result.stdout)
+            return subprocess.run(["cmake", "--build", str(root / "build"), "--config", "Debug",
+                                   "--parallel", "2", "--target", "foundation-gui-fltk"],
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=60)
+
+    def test_prepared_sdk_fltk_carries_complete_static_link_dependencies(self):
+        with_sdk = self.fltk_static_link_fixture(sdk=True)
+        self.assertEqual(0, with_sdk.returncode, with_sdk.stdout)
+        # Negative control proves the fixture actually needs the new closure.
+        without_sdk_closure = self.fltk_static_link_fixture(sdk=False)
+        self.assertNotEqual(0, without_sdk_closure.returncode)
+        self.assertIn("xft_entry", without_sdk_closure.stdout)
+
     def test_patch_application_is_exact_and_fail_closed(self):
         spec = importlib.util.spec_from_file_location("gui_patch", ROOT / "gui/patches/apply.py")
         module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
@@ -65,6 +205,18 @@ class GuiBoundaryTests(unittest.TestCase):
         for source in ("different\nold\n", "first\nchanged\n", "prefix\nfirst\nold\n"):
             with self.assertRaises(ValueError): module.apply(source, patch)
         with self.assertRaises(ValueError): module.apply("first\nold\n", patch.replace("-1,2", "-1,3"))
+
+    def test_browser_startup_diagnostics_survive_cleanup(self):
+        spec = importlib.util.spec_from_file_location("gui_browser", ROOT / "gui/tests/browser_test.py")
+        browser = importlib.util.module_from_spec(spec); spec.loader.exec_module(browser)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, "startup failed"):
+                with browser.browser_workspace(output) as work:
+                    (work / "chromedriver.log").write_text("startup evidence")
+                    raise RuntimeError("startup failed")
+            self.assertEqual("startup evidence", (output / "chromedriver.log").read_text())
+            self.assertFalse(any(path.name.startswith("browser-") for path in output.iterdir()))
 
     def test_browser_transport_has_bounded_worker_and_cleanup(self):
         source = (ROOT / "gui/hosts/web_host.py").read_text()

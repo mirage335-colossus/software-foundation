@@ -97,7 +97,15 @@ def identity(info):
 
 
 def version(info):
-    return identity(info) + (info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+    return identity(info) + (info.st_mode, info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def cross_version(info):
+    # Windows path stat can expose creation time as ctime while fstat exposes
+    # change time (CPython issue 157671). Compare each API's full version with
+    # itself, and use their common fields only across APIs. Never discard the
+    # descriptor ctime check that detects write-and-restore during the read.
+    return version(info)[:-1] if os.name == "nt" else version(info)
 
 
 def safe_path(path):
@@ -132,11 +140,14 @@ def read_regular(path):
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     fd = os.open(path, flags)
     with os.fdopen(fd, "rb") as stream:
-        if version(os.fstat(stream.fileno())) != version(before):
+        opened = os.fstat(stream.fileno())
+        if cross_version(opened) != cross_version(before):
             raise Rejected("file changed before reading", "stale")
         data = stream.read(MAX_BYTES + 1)
         after = os.fstat(stream.fileno())
-    if version(before) != version(after) or version(after) != version(path.lstat()):
+    current = path.lstat()
+    if (version(opened) != version(after) or version(before) != version(current)
+            or cross_version(after) != cross_version(current)):
         raise Rejected("file changed while reading", "stale")
     return data
 

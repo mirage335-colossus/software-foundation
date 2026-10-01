@@ -10,7 +10,12 @@ The default library and CLI use the C++ standard library and platform/compiler
 runtimes. They have no added third-party application runtime dependency. Optional
 GUI integration consumes a separately prepared checkout, with its own source,
 toolchain, runtime, and redistribution requirements. Build/test tools are still
-dependencies and must be identified in environment records.
+dependencies and must be identified in environment records. Keep three inventories
+separate: tools needed to build, files shipped with the application, and tools
+needed only for validation. A WebAssembly compiler and its Node executor belong
+to build inputs; desktop browsers belong to validation hosts. Ordinary native
+builds do not need either. Avoid adding a package manager, browser download,
+container runtime or prepared SDK to the default build when distro tools suffice.
 
 ## Required record
 
@@ -119,3 +124,25 @@ source URL/date, dependency revision, affected environments, evidence, confidenc
 and recheck condition. Promote durable verified findings into this inventory,
 maintenance documentation, and regression tests. Community workarounds remain
 hypotheses until validated against the pinned dependency and current callers.
+
+
+## Bootstrap without recurring supplier access
+
+Debian 12 supplies the default C++20 compiler, CMake, Ninja and Python through its
+normal package repositories. Native SDK preparation also uses the explicit
+`bootstrap_packages` list in its pinned recipe. Capture installed package
+versions and retain a supported installation image or permitted package cache
+when a machine must be recoverable without network access. The compiled SDK does
+not replace the host operating system, its loader or every bootstrap package.
+
+Windows host setup uses the selected v143 compiler and pinned Windows SDK from a
+complete local Microsoft installer layout. No paid IDE feature is required for
+this example; follow the edition's applicable terms. Prepared Windows dependency
+bases contain only the selected reusable third-party inputs, including an empty
+base when none are needed. A recipe must not fetch unused libraries to justify
+the existence of a dependency bundle.
+
+Initial acquisition and reviewed upgrades may need supplier access. Ordinary
+builds consume verified retained inputs, and every binary release keeps exact
+binary/source/checksum copies. Test the recovery path with networking disabled;
+a URL list and an expiring CI cache do not establish disconnected recovery.

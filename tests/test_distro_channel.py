@@ -26,6 +26,8 @@ def source_group(root, version='1.0.0', release=1, backends=(), backend='core', 
         'prefix/bin/foundation-cli': (b'#!/bin/sh\nprintf "' + version.encode() + b'\\n"\n', 0o755),
         'prefix/share/doc/Foundation/LICENSE': (b'Fixture redistribution terms\n', 0o644),
         'prefix/lib/private-data.txt': (b'Preserved companion data\n', 0o644),
+        'prefix/share/man/man1/foundation-cli.1': (b'.TH FOUNDATION-CLI 1\n', 0o644),
+        'prefix/share/man/man7/software-foundation.7': (b'.TH SOFTWARE-FOUNDATION 7\n', 0o644),
     }
     for item in backends:
         name = 'foundation-gui-' + ('web' if item == 'hosted-web' else item)
@@ -137,7 +139,7 @@ src_install
                        env=dict(os.environ, D=str(gentoo), WORKDIR=str(source), FILESDIR=str(ebuild.parent / 'files')),
                        check=True, capture_output=True, timeout=20)
         self.assertEqual(d.tree(gentoo), {path: value for path, value in installed.items()
-                                       if path.startswith(('opt/', 'usr/bin/'))})
+                                       if path.startswith(('opt/', 'usr/bin/', 'usr/share/man/'))})
 
     def test_combined_projection_rejects_unknown_missing_bad_mode_and_receipt_collision(self):
         base = {'bin/foundation-cli': (b'cli', 0o755), 'bin/foundation-gui-fltk': (b'gui', 0o755),

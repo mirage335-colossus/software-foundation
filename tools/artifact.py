@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Inventory and verify a locally produced package, then test it after relocation."""
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -41,6 +42,8 @@ def inspect_archive(archive, destination=None):
         if mode & 0o7000:
             raise ValueError("unexpected privileged archive permissions")
         path = member_path(name)
+        if path.name.casefold() in ("opengl32.dll", "libgallium_wgl.dll"):
+            raise ValueError("host graphics DLLs must not be embedded in an application archive")
         canonical = unicodedata.normalize("NFC", str(path)).casefold()
         if canonical in seen:
             raise ValueError("duplicate archive path")
@@ -91,12 +94,93 @@ def describe(archive):
             "files": inspect_archive(archive)}
 
 
-def verify(archive, manifest, runtime_only=False, abi=False, processor="x86_64", sdk=None, backend="core"):
+@contextmanager
+def _workspace():
+    directory = Path(tempfile.mkdtemp(prefix="foundation package "))
+    disposition = {"retain": False}
+    try:
+        yield directory, disposition
+    finally:
+        # A failed supervisor must never trigger removal beneath possible writers.
+        if not disposition["retain"]:
+            shutil.rmtree(directory)
+
+
+def _windows_rev_smoke(executable, prefix, clean, archive, evidence, workspace, disposition, sdk):
+    tools = str(Path(__file__).resolve().parent)
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import windows_graphics
+    evidence = Path(evidence).absolute()
+    resolved = evidence.resolve()
+    protected = [prefix.resolve(), workspace.resolve()]
+    if sdk:
+        protected.append(sdk.resolve())
+    if any(resolved == value or value in resolved.parents or resolved in value.parents for value in protected):
+        raise ValueError("graphics evidence must be outside the extracted package, probe workspace and SDK")
+    if evidence.is_symlink() or evidence.exists():
+        raise ValueError("graphics evidence requires a fresh external directory")
+    evidence.mkdir()
+    probe = workspace / "graphics probe"
+    probe.mkdir()
+    # Keep selected compiler tools available only to compile/probe qualification.
+    developer = {key: value for key, value in os.environ.items() if key not in
+                 ("LD_LIBRARY_PATH", "LD_PRELOAD", "DYLD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES")}
+    staged = None
+    smoke = None
+    failure = None
+    receipt = None
+    try:
+        with windows_graphics.qualified_stage(
+                archive, [executable.parent], probe_directory=probe,
+                compile_log=evidence / "compile.log", environment=developer,
+                protected_roots=([sdk] if sdk else [])) as staged:
+            environment = {key: value for key, value in staged.environment.items() if key.upper() != "PATH"}
+            environment["PATH"] = clean["PATH"]
+            smoke = windows_graphics.run_owned(
+                [str(executable), "--smoke-test"], prefix, evidence / "test.log",
+                environment=environment, timeout=60, max_bytes=64 * 1024)
+            if (evidence / "test.log").read_text(encoding="utf-8") != "software-foundation gui smoke: ok\n":
+                raise ValueError("packaged GUI smoke contract did not complete")
+        receipt = staged.receipt
+        if receipt.get("cleanup") != "removed":
+            raise ValueError("graphics qualification did not confirm staged file removal")
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        if staged is not None:
+            receipt = staged.receipt
+        elif failure is not None:
+            receipt = getattr(failure, "graphics_receipt", None)
+        if (windows_graphics.retain_required(failure) or not receipt
+                or receipt.get("cleanup") != "removed"):
+            disposition["retain"] = True
+        report = {"schema_version": 1, "status": "failed" if failure else "passed",
+                  "stage": receipt, "smoke": smoke,
+                  "error": str(failure)[:1024] if failure else "",
+                  "retained_workspace": str(workspace) if disposition["retain"] else None}
+        with (evidence / "graphics.json").open("x", encoding="utf-8") as output:
+            json.dump(report, output, indent=2); output.write("\n")
+        if receipt and receipt.get("native_probe"):
+            with (evidence / "probe.json").open("x", encoding="utf-8") as output:
+                json.dump(receipt["native_probe"], output, indent=2); output.write("\n")
+    return report
+
+
+def verify(archive, manifest, runtime_only=False, abi=False, processor="x86_64", sdk=None, backend="core", *,
+           windows_graphics_archive=None, windows_graphics_evidence=None):
+    graphics_required = os.name == "nt" and backend == "rev"
+    if graphics_required and (windows_graphics_archive is None or windows_graphics_evidence is None):
+        raise ValueError("Windows Rev verification requires retained graphics archive and external evidence directory")
+    if not graphics_required and (windows_graphics_archive is not None or windows_graphics_evidence is not None):
+        raise ValueError("host graphics qualification inputs apply only to Windows Rev verification")
+    graphics_result = None
     expected = json.loads(manifest.read_text())
     if describe(archive) != expected:
         raise ValueError("archive identity or member inventory mismatch")
     browser_sdk = bool(sdk and json.loads((sdk / "sdk.json").read_text())["target"]["system"] == "Emscripten")
-    with tempfile.TemporaryDirectory(prefix="foundation package ") as temp:
+    with _workspace() as (temp, disposition):
         prefix = Path(temp) / "relocated prefix"
         prefix.mkdir()
         inspect_archive(archive, prefix)
@@ -138,12 +222,17 @@ def verify(archive, manifest, runtime_only=False, abi=False, processor="x86_64",
             hosts_found = list(prefix.rglob(name))
             if len(hosts_found) != 1 or hosts_found[0].parent.name != "bin":
                 raise ValueError("packaged backend absent or ambiguous")
-            smoke = subprocess.run([str(hosts_found[0]), "--smoke-test"], cwd=prefix,
-                                   env=clean, check=True, timeout=60, text=True, capture_output=True)
-            if smoke.stdout != "software-foundation gui smoke: ok\n":
-                raise ValueError("packaged GUI smoke contract did not complete")
+            if graphics_required:
+                graphics_result = _windows_rev_smoke(
+                    hosts_found[0], prefix, clean, windows_graphics_archive,
+                    windows_graphics_evidence, temp, disposition, sdk)
+            else:
+                smoke = subprocess.run([str(hosts_found[0]), "--smoke-test"], cwd=prefix,
+                                       env=clean, check=True, timeout=60, text=True, capture_output=True)
+                if smoke.stdout != "software-foundation gui smoke: ok\n":
+                    raise ValueError("packaged GUI smoke contract did not complete")
         if runtime_only:
-            return
+            return {"windows_graphics": graphics_result} if graphics_result else None
         # Use only the extracted SDK export to compile a separate consumer.
         source = Path(__file__).resolve().parents[1] / "examples/consumer"
         consumer = Path(temp) / "consumer source"
@@ -177,6 +266,7 @@ def verify(archive, manifest, runtime_only=False, abi=False, processor="x86_64",
         subprocess.run([*executor, str(build / ("consumer" + suffix))], check=True)
         if sdk and sdk_identity(sdk) != sdk_before:
             raise ValueError("SDK changed during installed-consumer validation")
+        return {"windows_graphics": graphics_result} if graphics_result else None
 
 
 def main():
@@ -189,13 +279,19 @@ def main():
     parser.add_argument("--processor", choices=("x86_64", "aarch64"), default="x86_64")
     parser.add_argument("--sdk", type=Path, help="matching prepared toolchain for installed-library consumer")
     parser.add_argument("--backend", default="core", choices=("core", "terminal", "framebuffer", "fltk", "rev", "sdl", "hosted-web"))
+    parser.add_argument("--windows-graphics-archive", type=Path, help="retained host input for native Windows Rev validation")
+    parser.add_argument("--windows-graphics-evidence", type=Path, help="fresh external directory for graphics qualification evidence")
     args = parser.parse_args()
     if args.archive.resolve() == args.manifest.resolve():
         raise ValueError("manifest must not overwrite its archive")
     if args.action == "create":
+        if args.windows_graphics_archive is not None or args.windows_graphics_evidence is not None:
+            raise ValueError("host graphics inputs are supported only by verify")
         args.manifest.write_text(json.dumps(describe(args.archive), indent=2) + "\n")
     else:
-        verify(args.archive, args.manifest, args.runtime_only, args.abi, args.processor, args.sdk, args.backend)
+        verify(args.archive, args.manifest, args.runtime_only, args.abi, args.processor, args.sdk, args.backend,
+               windows_graphics_archive=args.windows_graphics_archive,
+               windows_graphics_evidence=args.windows_graphics_evidence)
     return 0
 
 

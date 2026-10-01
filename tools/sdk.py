@@ -10,7 +10,7 @@ import tempfile
 from dependency_archive import archive_tree, digest, encoded, extract, file_inventory, read_json, verify_inventory, write_json
 from dependency_store import create_sums, names, verify_group
 from sdk_manifest import verify_sdk
-from verify_abi import audit
+from verify_abi import audit, SDK_RUNTIME_NAMES
 
 
 def recipe_identity(recipe_directory):
@@ -39,17 +39,23 @@ def materialize(source, output):
     copy(source, output, set())
 
 
-def seal(root, recipe, target, sources_hash, kind='source-build', licenses=None, production=True, host_tools=None):
+def seal(root, recipe, target, sources_hash, kind='source-build', licenses=None, production=True, host_tools=None, runtime_source_sha256=None):
     root = Path(root)
     if (root / 'sdk.json').exists(): raise ValueError('SDK is already sealed')
     metadata = {'schema_version': 1, 'recipe_id': recipe, 'kind': kind, 'target': target,
                 'baseline': {'distribution': 'debian-12', 'glibc': '2.36'},
-                'host': {'system': 'Linux', 'glibc': '2.36'}, 'host_tools': host_tools or {},
+                'host': {'system': 'Linux', 'processor': target['processor'], 'glibc': '2.36'}, 'host_tools': host_tools or {},
                 'sources_sha256': sources_hash, 'licenses': licenses or [],
                 'relocation': 'relative-paths', 'audits': {}}
     if production:
         if target['system'] == 'Linux':
-            metadata['audits']['target'] = audit(root / target['sysroot'], target['processor'], host=True)
+            sysroot = root / target['sysroot']
+            cohort = {name: value for name, value in file_inventory(sysroot).items()
+                      if Path(name).name in SDK_RUNTIME_NAMES
+                      and Path(name).parent.as_posix() in ('lib', 'lib64', 'usr/lib', 'usr/lib64')}
+            runtime = {'recipe_id': recipe, 'processor': target['processor'], 'glibc': '2.36',
+                       'source_sha256': runtime_source_sha256, 'files': cohort}
+            metadata['audits']['target'] = audit(sysroot, target['processor'], host=True, sdk_sysroot=runtime)
             # Host compiler support is inspected separately from the target tree.
             host_files = {}
             for directory in ('bin', 'libexec', 'lib'):

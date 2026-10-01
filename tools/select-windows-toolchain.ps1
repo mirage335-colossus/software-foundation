@@ -32,8 +32,15 @@ $chosen = $candidates | Sort-Object @{Expression={$_.Major};Descending=$false}, 
 if (-not $chosen) { throw 'No installed v143 toolchain satisfies the retained dependency linker requirement' }
 $kitRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10'
 $kitVersion = $policyData.windows_sdk
-if (-not (Test-Path -LiteralPath (Join-Path $kitRoot "Include/$kitVersion/um/Windows.h"))) {
-    throw "The pinned Windows SDK $kitVersion must be installed explicitly"
+$requiredKitFiles = @(
+    "Include/$kitVersion/um/Windows.h", "Include/$kitVersion/shared/sdkddkver.h",
+    "Include/$kitVersion/ucrt/stdio.h", "Lib/$kitVersion/um/x64/kernel32.lib",
+    "Lib/$kitVersion/ucrt/x64/ucrt.lib", "bin/$kitVersion/x64/rc.exe", "bin/$kitVersion/x64/mt.exe"
+)
+foreach ($relative in $requiredKitFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $kitRoot $relative) -PathType Leaf)) {
+        throw "The pinned Windows SDK $kitVersion is incomplete: $relative"
+    }
 }
 [pscustomobject]@{
     InstallationPath=$chosen.Instance.installationPath

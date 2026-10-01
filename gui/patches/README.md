@@ -16,6 +16,12 @@ identity inside a renderer.
   toolkit/adapter targets, without the upstream demonstration or install rules.
 - `rev-dependencies.patch` passes the preserved archive root explicitly to the
   upstream GLEW/FreeType recipe.
+- `fltk-appearance.patch` renders generic groups, buttons, toggles and menus with
+  the shared flat palette, border and font roles. It uses a monospaced font class
+  throughout, including measurement, and clears native focus when requested.
+  Native button/editor callbacks and keyboard handling remain in the toolkit.
+  No application identity or command occurs in this adapter patch. Real native
+  control, toggle, focus and pixel-comparison fixtures protect its behavior.
 
 Small FLTK/Rev loops and the two browser composition roots implement the common
 host contract directly. `host/browser.hpp` is the single native/Wasm runtime.
@@ -24,7 +30,7 @@ class; its existing assets, HTTP checks and session registry are reused.
 
 For an upgrade, review upstream changes, refresh the pin and hashes, regenerate
 and inspect each diff, and run every selected host/conformance check. Never
-refresh hashes just to bypass a mismatch. Upstreaming typed runners and portable
-pipe transport would remove these local integration changes. Their provenance
+refresh hashes just to bypass a mismatch. Upstreaming typed runners, portable
+pipe transport and shared appearance roles would remove these local adaptations. Their provenance
 is the locked gui-boundary revision; its unresolved license also applies to
 changes derived from its code. Do not redistribute GUI binaries until resolved.

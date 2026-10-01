@@ -15,7 +15,7 @@ as proposed, even if the source appears portable.
 | Target identity | Architecture aliases | Normal release form | Status in this example |
 | --- | --- | --- | --- |
 | Linux `x86_64` | `amd64`, `x64` | TGZ; optionally Debian `amd64` | Bookworm baseline selected; full source SDK and oldest-runtime qualification remain required |
-| Linux `aarch64` | `arm64`, `ARM64` | TGZ; optionally Debian `arm64` | Intended CI/release target; qualification requires execution on that architecture |
+| Linux `aarch64` | `arm64`, `ARM64` | TGZ; optionally Debian `arm64` | Native Bookworm SDK recipe supplied; cold build and execution on that architecture remain required |
 | Windows `x86_64` | `AMD64`, `x64` | ZIP; optionally a separately maintained installer | Intended native CI target; qualification requires Windows results |
 | macOS or another target | Platform-specific naming | Platform-specific package | Extension requiring an explicit support decision |
 
@@ -188,3 +188,26 @@ shared compiler runtimes, including DLLs found in System32. The layout follows
 A header/import inspection cannot establish the availability of every called
 Windows API or dynamically selected plugin; clean-machine native execution is a
 separate required scope.
+
+
+## Build environment versus validation environment
+
+The ordinary baseline developer build uses Debian 12 distro packages or the
+selected no-cost Microsoft tooling under its applicable terms. Newer generated
+SDK tools may be supplied to improve language support while retaining the older
+target runtime. Record both host requirements and target requirements; none of
+these choices requires shipping a browser with an SDK.
+
+WebAssembly outputs execute in an end user's supported browser. The prepared
+WebAssembly build SDK includes Emscripten, its compiler bundle, frozen compiler
+cache and Node support runtime. Browser GUI validation separately uses installed
+Chromium/Firefox or other declared hosts. Their executable versions and results
+belong to validation evidence, and changing a validation browser does not by
+itself change the compiled SDK recipe.
+
+
+The all-GUI SDK profiles are selected explicitly in the [SDK profile table](sdk.md#select-a-complete-dependency-profile).
+Native OpenGL dispatch needs a compatible host vendor driver; dynamic driver
+selection is declared in SDK host-service metadata and exercised on the actual
+validation host. Private library staging must not silently copy a builder's
+vendor driver into an otherwise portable release.

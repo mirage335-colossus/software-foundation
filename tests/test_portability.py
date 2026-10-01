@@ -153,6 +153,66 @@ class PortabilityTests(unittest.TestCase):
 
 
 
+    def sdk_runtime_fixture(self, libc_version='2.36'):
+        from dependency_archive import file_inventory
+        sysroot = self.root / 'sysroot'; libraries = sysroot / 'lib'; libraries.mkdir(parents=True)
+        loader = 'ld-linux-x86-64.so.2' if self.processor == 'x86_64' else 'ld-linux-aarch64.so.1'
+        (self.root / 'loader.c').write_text('int internal_value(void) { return 1; }\n')
+        (self.root / 'loader.map').write_text('GLIBC_PRIVATE { global: internal_value; local: *; };\n')
+        (self.root / 'libc.c').write_text('extern int internal_value(void); int public_value(void) { return internal_value(); }\n')
+        (self.root / 'libc.map').write_text('GLIBC_' + libc_version + ' { global: public_value; local: *; };\n')
+        subprocess.run(['cc', '-shared', '-nostdlib', '-fPIC', str(self.root / 'loader.c'),
+                        '-Wl,--version-script=' + str(self.root / 'loader.map'), '-Wl,-soname,' + loader,
+                        '-o', str(libraries / loader)], check=True)
+        subprocess.run(['cc', '-shared', '-nostdlib', '-fPIC', str(self.root / 'libc.c'), str(libraries / loader),
+                        '-Wl,--version-script=' + str(self.root / 'libc.map'), '-Wl,-soname,libc.so.6',
+                        '-o', str(libraries / 'libc.so.6')], check=True)
+        context = {'recipe_id': 'a' * 64, 'source_sha256': 'b' * 64, 'glibc': '2.36',
+                   'processor': self.processor, 'files': file_inventory(sysroot)}
+        return sysroot, context
+
+    def test_sdk_private_cohort_does_not_weaken_package_audit(self):
+        sysroot, context = self.sdk_runtime_fixture()
+        with self.assertRaisesRegex(ValueError, 'PRIVATE'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True)
+        report = verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+        self.assertEqual(report['scope'], 'sdk-sysroot')
+        self.assertTrue(report['files']['lib/libc.so.6']['private_requirements'])
+        with self.assertRaisesRegex(ValueError, 'application packages'):
+            verify_abi.audit(sysroot, processor=self.processor, sdk_sysroot=context)
+
+    def test_sdk_private_cohort_requires_exact_files_and_locations(self):
+        sysroot, context = self.sdk_runtime_fixture()
+        context['files']['lib/libc.so.6'] = '0' * 64
+        with self.assertRaisesRegex(ValueError, 'path or digest'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+        from dependency_archive import file_inventory
+        (sysroot / 'bin').mkdir(); (sysroot / 'lib/libc.so.6').rename(sysroot / 'bin/libc.so.6')
+        context['files'] = file_inventory(sysroot)
+        with self.assertRaisesRegex(ValueError, 'path or digest'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+
+    def test_sdk_private_cohort_checks_runtime_version_and_source_binding(self):
+        sysroot, context = self.sdk_runtime_fixture('2.37')
+        with self.assertRaisesRegex(ValueError, 'definition exceeds'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+        context['source_sha256'] = 'missing'
+        with self.assertRaisesRegex(ValueError, 'source identities'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+
+    def test_sdk_private_cohort_requires_matching_provider(self):
+        from dependency_archive import file_inventory
+        sysroot, context = self.sdk_runtime_fixture()
+        loader = next(path for path in (sysroot / 'lib').iterdir() if path.name.startswith('ld-'))
+        (self.root / 'loader.map').write_text('UNRELATED { global: internal_value; local: *; };\n')
+        subprocess.run(['cc', '-shared', '-nostdlib', '-fPIC', str(self.root / 'loader.c'),
+                        '-Wl,--version-script=' + str(self.root / 'loader.map'), '-Wl,-soname,' + loader.name,
+                        '-o', str(loader)], check=True)
+        context['files'] = file_inventory(sysroot)
+        with self.assertRaisesRegex(ValueError, 'matched runtime provider'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+
+
 class WindowsInspectionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

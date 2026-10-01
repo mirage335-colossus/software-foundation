@@ -59,3 +59,163 @@ class ReceiptTests(unittest.TestCase):
                 result = subprocess.run(command, capture_output=True)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(output.exists())
+
+class InputIdentityTests(unittest.TestCase):
+    def setUp(self):
+        import json
+        from unittest.mock import patch
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.source = self.root / 'application'; self.source.mkdir()
+        (self.source / 'main.cpp').write_text('int main() { return 0; }\n')
+        self.build = self.root / 'build'; self.build.mkdir()
+        self.compiler = self.root / 'compiler'; self.compiler.write_bytes(b'first compiler')
+        self.cache = {'CMAKE_CXX_COMPILER': str(self.compiler), 'FOUNDATION_BUILD_GUI': 'OFF',
+                      'FOUNDATION_DEPENDENCY_RECIPES': ''}
+        (self.build / 'build-info.txt').write_text('fixture build\n')
+        self.root_patch = patch.object(plan, 'ROOT', self.source); self.root_patch.start()
+        self.definitions_patch = patch.object(plan, 'test_definitions', return_value=[{'name': 'core.store', 'command': ['inert']}])
+        self.definitions_patch.start(); self.write_cache()
+
+    def tearDown(self):
+        self.definitions_patch.stop(); self.root_patch.stop(); self.temporary.cleanup()
+
+    def write_cache(self):
+        (self.build / 'CMakeCache.txt').write_text(''.join(name + ':STRING=' + value + '\n' for name, value in self.cache.items()))
+
+    def freeze(self):
+        return plan.make_plan(['core.store'], 1, plan.source_id(self.build), plan.configuration_id(self.build))
+
+    def wrapper(self, **extra):
+        import json
+        value = {'sdk': None, 'gui': None, 'dependencies': [], 'windows_dependencies': None}
+        value.update(extra)
+        (self.build / 'wrapper-identity.json').write_text(json.dumps(value))
+        (self.build / 'configured-identity.json').write_text(json.dumps(plan.builder.cache_identity(self.build)))
+        return value
+
+    def test_unchanged_native_tree_retains_valid_plan(self):
+        frozen = self.freeze()
+        plan.require_current(self.build, frozen)
+        self.assertEqual(self.freeze(), frozen)
+
+    def test_compiler_bytes_change_with_unchanged_path_size_and_time(self):
+        import os
+        frozen = self.freeze(); stat = self.compiler.stat()
+        self.compiler.write_bytes(b'other compiler')
+        os.utime(self.compiler, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        with self.assertRaisesRegex(ValueError, 'compiler'):
+            plan.require_current(self.build, frozen)
+
+    def test_wrapper_configured_compiler_receipt_is_reverified(self):
+        self.wrapper(); self.freeze()
+        self.compiler.write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError, 'configured compiler'):
+            plan.build_inputs(self.build)
+
+    def test_prepared_sdk_target_header_mutation_rejected_before_compile(self):
+        import json, sys
+        from unittest.mock import patch
+        from test_sdk import fixture
+        recipe, sdk, _, _ = fixture(self.root / 'dependency')
+        self.cache.update(FOUNDATION_SDK_ROOT=str(sdk), CMAKE_CXX_COMPILER=str(sdk / 'bin/c++'))
+        self.write_cache()
+        # Direct CMake appends its SDK recipe outside the cache; verify that
+        # ordinary SDK configurations remain supported without a wrapper stamp.
+        frozen = self.freeze()
+        (self.root / 'plan.json').write_text(json.dumps(frozen))
+        (sdk / 'sysroot/usr/include/example.h').write_bytes(b'changed target input')
+        with patch.object(sys, 'argv', ['test_plan.py', 'run', '--build', str(self.build), '--plan', str(self.root / 'plan.json'), '--shard', '0', '--output', str(self.root / 'report.json')]), patch.object(plan.subprocess, 'run') as run:
+            with self.assertRaises(ValueError): plan.main()
+            run.assert_not_called()
+        self.assertFalse((self.root / 'report.json').exists())
+
+    def test_external_gui_bytes_change_source_identity(self):
+        gui = self.root / 'gui-source'; gui.mkdir(); (gui / 'view.hpp').write_text('first input')
+        self.cache.update(FOUNDATION_BUILD_GUI='ON', FOUNDATION_GUI_SOURCE=str(gui)); self.write_cache()
+        frozen = self.freeze()
+        (gui / 'view.hpp').write_text('other input')
+        with self.assertRaisesRegex(ValueError, 'source'):
+            plan.require_current(self.build, frozen)
+
+    def test_retained_dependency_archive_mutation_is_reverified(self):
+        from test_sdk import fixture
+        from dependency_store import names, verify_group
+        recipe, _, _, group = fixture(self.root / 'dependency')
+        self.cache['FOUNDATION_DEPENDENCY_RECIPES'] = recipe; self.write_cache()
+        self.wrapper(dependencies=[{'root': str(group), 'recipe': recipe, 'files': verify_group(group, recipe)}])
+        self.freeze()
+        (group / names(recipe)[1]).write_bytes(b'changed source archive')
+        with self.assertRaisesRegex(ValueError, 'checksum'):
+            plan.build_inputs(self.build)
+
+    def test_native_search_environment_change_invalidates_plan(self):
+        import os
+        from unittest.mock import patch
+        frozen = self.freeze()
+        with patch.dict(os.environ, {'CPATH': str(self.root / 'other-headers')}):
+            with self.assertRaisesRegex(ValueError, 'configuration'):
+                plan.require_current(self.build, frozen)
+
+    def test_primary_recipe_without_retained_inputs_is_rejected(self):
+        self.cache['FOUNDATION_DEPENDENCY_RECIPE'] = 'b' * 64; self.write_cache()
+        with self.assertRaisesRegex(ValueError, 'complete verified'):
+            self.freeze()
+
+    def test_prepared_recipe_without_group_location_is_rejected(self):
+        self.cache['FOUNDATION_DEPENDENCY_RECIPES'] = 'a' * 64; self.write_cache()
+        with self.assertRaisesRegex(ValueError, 'complete verified'):
+            self.freeze()
+
+    def test_gui_group_is_verified_on_every_configuration_capture(self):
+        from unittest.mock import patch
+        group = self.root / 'gui-group'; group.mkdir()
+        self.wrapper(gui_input_group={'root': str(group), 'sha256': 'a' * 64})
+        with patch.object(plan, 'verify_gui_group', side_effect=['a' * 64, 'b' * 64]) as verify:
+            self.freeze()
+            with self.assertRaisesRegex(ValueError, 'GUI input group'):
+                self.freeze()
+            self.assertEqual(verify.call_count, 2)
+
+    def test_compiler_mutation_during_prerequisite_build_leaves_no_plan(self):
+        import sys
+        from unittest.mock import patch
+        output = self.root / 'plan.json'
+        def changed(*args, **kwargs): self.compiler.write_bytes(b'changed during build')
+        with patch.object(sys, 'argv', ['test_plan.py', 'plan', '--build', str(self.build), '--shards', '1', '--output', str(output)]), patch.object(plan.subprocess, 'run', side_effect=changed):
+            with self.assertRaisesRegex(ValueError, 'compiling test prerequisites'):
+                plan.main()
+        self.assertFalse(output.exists())
+
+    def test_mutation_during_test_execution_leaves_no_receipt(self):
+        import json,sys,subprocess
+        from unittest.mock import patch
+        frozen = self.freeze(); path=self.root / 'plan.json';path.write_text(json.dumps(frozen))
+        output=self.root / 'report.json';output.write_text('previous receipt')
+        def runner(argv, **kwargs):
+            if '--output-junit' in argv:
+                Path(argv[argv.index('--output-junit')+1]).write_text('<testsuite><testcase name="core.store" status="run"/></testsuite>')
+                self.compiler.write_bytes(b'changed during test')
+            return subprocess.CompletedProcess(argv,0)
+        with patch.object(sys, 'argv', ['test_plan.py','run','--build',str(self.build),'--plan',str(path),'--shard','0','--output',str(output)]), patch.object(plan.subprocess,'run',side_effect=runner):
+            with self.assertRaisesRegex(ValueError,'compiler'):
+                plan.main()
+        self.assertFalse(output.exists())
+
+class NativeExecutionTests(unittest.TestCase):
+    def test_actual_cmake_plan_run_and_merge(self):
+        import json, subprocess, sys
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); source = root / 'source'; source.mkdir(); build = root / 'build'
+            (source / 'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.24)\nproject(PlanProbe LANGUAGES CXX)\nenable_testing()\nadd_executable(probe main.cpp)\nadd_custom_target(foundation-tests DEPENDS probe)\nadd_test(NAME core.probe COMMAND probe)\nfile(WRITE "${CMAKE_BINARY_DIR}/build-info.txt" "fixture\\n")\n')
+            (source / 'main.cpp').write_text('int main() { return 0; }\n')
+            subprocess.run(['cmake','-S',str(source),'-B',str(build),'-G','Ninja','-DCMAKE_BUILD_TYPE=Release'],check=True,capture_output=True)
+            recipe = root / 'plan.json'; result = root / 'shard.json'; merged = root / 'merged.json'
+            with patch.object(plan, 'ROOT', source):
+                for argv in (['plan','--build',str(build),'--shards','1','--output',str(recipe)],
+                             ['run','--build',str(build),'--plan',str(recipe),'--shard','0','--output',str(result)],
+                             ['merge','--plan',str(recipe),'--output',str(merged),str(result)]):
+                    with patch.object(sys,'argv',['test_plan.py',*argv]): self.assertEqual(plan.main(),0)
+            self.assertEqual(json.loads(merged.read_text())['status'],'passed')
+            self.assertEqual(json.loads(merged.read_text())['tests'],1)

@@ -11,12 +11,14 @@ No configuration or normal build downloads or installs software.
 ./build.sh package release --jobs 2             # native archive; not certification
 
 Windows developer prompt: replace ./build.sh with python tools/build.py.
-GUI: ./build.sh test dev --gui-source /absolute/pinned/gui-boundary --label gui
+GUI inputs: python3 -B gui/source_group.py export --source /absolute/pinned/gui-boundary --output /absolute/gui-input-group
+GUI offline: ./build.sh test dev --gui-input-group /absolute/gui-input-group --label gui
+GUI source: ./build.sh test dev --gui-source /absolute/pinned/gui-boundary --label gui
 SDK: ./build.sh build release --sdk /absolute/prepared-sdk --jobs 2
-Wasm: ./build.sh test release --sdk /absolute/browser-sdk --gui-source /absolute/pinned/gui-boundary --gui-backends wasm --label gui
-Browser Release retains assertions and exceptions to match the prepared frozen cache.
+Wasm: ./build.sh test release --sdk /absolute/wasm-sdk --gui-source /absolute/pinned/gui-boundary --gui-backends wasm --label gui
+WebAssembly Release retains assertions and exceptions to match the prepared frozen cache.
 The same SDK can test core/CLI contracts under retained Node without GUI inputs:
-./build.sh test release --sdk /absolute/browser-sdk --gui-backends wasm --label core --build-dir build/wasm-core
+./build.sh test release --sdk /absolute/wasm-sdk --gui-backends wasm --label core --build-dir build/wasm-core
 These use separate build/dev-gui and build/release-sdk directories.
 
 Direct CMake (also supports generators other than Ninja):

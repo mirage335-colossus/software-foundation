@@ -14,14 +14,39 @@ int main(){try{
     adapter.window().size(800,640);sync();
     fixture::parity(session.application.view());
     fixture::unavailable_service(adapter);
-    adapter.window().make_current();
-    const std::unique_ptr<unsigned char[]> image(fl_read_image(nullptr,0,0,adapter.window().w(),adapter.window().h()));
-    fixture::check(bool(image),"Native capture failed");
-    fixture::capture(image.get(),unsigned(adapter.window().w()),unsigned(adapter.window().h()),"fltk");
+    fixture::visual_sizes(session.application,adapter,"fltk",[&]{
+        const auto size=session.application.view().client_size;
+        adapter.window().size(int(size.width),int(size.height));sync();
+    },[&](const std::string& name){
+        Fl::flush();
+        fixture::check(Fl::focus()==nullptr,"Native focus was not cleared");
+        adapter.window().make_current();
+        const std::unique_ptr<unsigned char[]> image(fl_read_image(nullptr,0,0,adapter.window().w(),adapter.window().h()));
+        fixture::check(bool(image),"Native capture failed");
+        fixture::capture(image.get(),unsigned(adapter.window().w()),unsigned(adapter.window().h()),name.c_str());
+    });
     adapter.policy().send(gui::WidgetEvent{{"entries.options",1},gui::ChooseOption{"heading"}});sync();
     fixture::check(adapter.service_active(),"Native service not started");
     session.application.handle(gui::CloseEvent{});sync();
     fixture::check(!adapter.window().shown()&&!adapter.service_active(),"Native close did not release service/window");
     fixture::check(adapter.error().empty(),"Native callback failed");
+    // Generic kind coverage protects the maintained flat-control adapter patch.
+    unsigned toggles=0;
+    gui::fltk::Adapter generic([&](const gui::Event& event){
+        if(const auto* widget=std::get_if<gui::WidgetEvent>(&event))
+            if(const auto* value=std::get_if<gui::SetChecked>(&widget->input))
+                if(value->value)++toggles;
+    });
+    gui::Snapshot declaration;declaration.client_size={320,120};
+    gui::Widget toggle;toggle.spec.key.id="fixture.toggle";toggle.spec.kind=gui::Kind::toggle;
+    toggle.state.label="Enable option";toggle.state.bounds={16,16,288,32};
+    declaration.widgets.push_back(toggle);generic.present(declaration);generic.show();generic.sync();Fl::check();
+    auto* native_toggle=dynamic_cast<Fl_Check_Button*>(generic.native_widget(toggle.spec.key));
+    fixture::check(native_toggle,"Missing generic native toggle");
+    native_toggle->value(1);native_toggle->do_callback();
+    fixture::check(toggles==1,"Flat toggle changed native callback meaning");
+    fixture::check(generic.focus(toggle.spec.key),"Generic toggle focus failed");
+    generic.focus(std::nullopt);fixture::check(Fl::focus()==nullptr,"Generic clear focus failed");
+    generic.close();
     std::cout<<"FLTK real controls, shared extension, declarations, capture and close passed\n";
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

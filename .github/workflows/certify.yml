@@ -1,0 +1,201 @@
+name: Certify exact published candidate
+'on':
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact published candidate tag
+        type: string
+        required: true
+      inventory:
+        description: Exact release.json SHA-256
+        type: string
+        required: true
+      profile:
+        description: Support policy profile
+        type: choice
+        options:
+        - core
+        - all-gui
+        default: core
+      graphics_archive_url:
+        description: Operator-retained HTTPS host graphics archive; required for Windows GUI checks
+        type: string
+        default: ''
+      execute:
+        description: Append this immutable certificate attempt to the candidate
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'certification-plan'], check=True)
+      id: plan
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: qualification-inputs-${{ github.run_attempt }}
+        path: |-
+          build/candidate/
+          build/delivery.json
+          build/check-plan.json
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+  check:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 100
+    env:
+      CHECK: ${{ matrix.id }}
+      CHECK_IMAGE: ${{ matrix.image }}
+      CHECK_BROWSER: ${{ ((matrix.backend == 'hosted-web' && matrix.scope == 'archive') || (matrix.backend == 'wasm' && (matrix.scope == 'source' || matrix.scope == 'recovery' || matrix.scope == 'archive'))) && 'yes' || 'no' }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |-
+        import os, subprocess
+        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','qualification-inputs-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build'],check=True)
+    - name: Verify the explicitly supplied retained Windows graphics input
+      if: runner.os == 'Windows' && matrix.graphics
+      run: python .github/scripts/lifecycle.py graphics-input
+    - if: runner.os == 'Windows'
+      shell: pwsh
+      run: ./tools/ci_windows.ps1
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'check'], check=True)
+      if: runner.os == 'Windows'
+    - shell: python
+      run: |
+        import os,subprocess
+        subprocess.run(['docker','run','--rm','-e','CHECK','-e','CHECK_IMAGE','-e','CHECK_BROWSER','-e','GITHUB_RUN_ID','-e','GITHUB_RUN_ATTEMPT','-e','FOUNDATION_DISPOSABLE_CHECK=1','-e','PYTHONUTF8=1','-e','PYTHONDONTWRITEBYTECODE=1','-v',os.getcwd()+':/work','-w','/work',os.environ['CHECK_IMAGE'],'bash','-euc',
+         'apt-get update; apt-get install -y --no-install-recommends ca-certificates python3 git nodejs openssl cmake ninja-build binutils build-essential dpkg-dev apt-utils gnupg curl patch xvfb xauth fonts-dejavu-core libgl1 libopengl0 libgl1-mesa-dri libx11-dev libxext-dev libxft-dev libxinerama-dev libxcursor-dev libxrender-dev libxfixes-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev; xvfb-run -a python3 .github/scripts/lifecycle.py check'],check=True)
+      if: runner.os == 'Linux'
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: evidence-${{ matrix.id }}-${{ github.run_attempt }}
+        path: build/evidence/${{ matrix.id }}/
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+      if: always()
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: browser-prerequisite-${{ matrix.id }}-${{ github.run_attempt }}
+        path: build/prerequisites/${{ matrix.id }}/browser.json
+        if-no-files-found: error
+        retention-days: 30
+      if: always() && runner.os == 'Linux' && env.CHECK_BROWSER == 'yes'
+  record:
+    if: always() && needs.prepare.result == 'success'
+    needs:
+    - prepare
+    - check
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |-
+        import os, subprocess
+        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','qualification-inputs-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build'],check=True)
+    - shell: python
+      run: |
+        import json,os,subprocess
+        from pathlib import Path
+        plan=json.loads(Path('build/check-plan.json').read_text())
+        for item in plan['checks']:
+         subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','evidence-'+item['id']+'-'+os.environ['GITHUB_RUN_ATTEMPT'],'--dir','build/evidence/'+item['id']],check=True)
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'certificate'], check=True)
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: certificate-${{ github.run_attempt }}
+        path: |-
+          build/candidate/
+          build/delivery.json
+          build/check-plan.json
+          build/evidence/
+          build/certificate.json
+          build/attachment-plan.json
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+      if: always()
+  attach:
+    if: inputs.execute && always() && needs.record.result == 'success'
+    needs: record
+    runs-on: ubuntu-24.04
+    environment: release-publisher
+    concurrency:
+      group: foundation-release-lifecycle
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - shell: python
+      run: |-
+        import os, subprocess
+        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','certificate-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build'],check=True)
+    - shell: python
+      run: |-
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'attach-certificate'], check=True)
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: certification-delivery-${{ github.run_attempt }}
+        path: build/receipts/
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+      if: always()
+  verdict:
+    if: always()
+    needs:
+    - prepare
+    - check
+    - record
+    - attach
+    runs-on: ubuntu-24.04
+    env:
+      RESULTS: ${{ toJSON(needs) }}
+      EXECUTE: ${{ inputs.execute }}
+    steps:
+    - shell: python
+      run: |
+        import json,os
+        results=json.loads(os.environ['RESULTS'])
+        required=['prepare','check','record'] + (['attach'] if os.environ['EXECUTE']=='true' else [])
+        if any(results[k]['result'] != 'success' for k in required): raise SystemExit('Incomplete or failed exact qualification; inspect retained evidence')
+env:
+  GH_TOKEN: ${{ github.token }}
+  PYTHONUTF8: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+  TAG: ${{ inputs.tag }}
+  INVENTORY: ${{ inputs.inventory }}
+  PROFILE: ${{ inputs.profile }}
+  GRAPHICS_ARCHIVE_URL: ${{ inputs.graphics_archive_url }}

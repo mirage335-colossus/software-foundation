@@ -15,6 +15,10 @@ template<class Adapter> void check_adapter() {
         [&](std::string id){adapter.policy().send(gui::WidgetEvent{{"entries.list",1},gui::SelectRecord{std::move(id)}});}, []{});
     fixture::parity(application.view());
     fixture::unavailable_service(adapter);
+    if constexpr(std::is_same_v<Adapter,gui::FramebufferAdapter>)
+        fixture::visual_sizes(application,adapter,"framebuffer",[]{},[&](const std::string& name){
+            const auto frame=adapter.frame();fixture::capture(frame.pixels->data(),frame.width,frame.height,name.c_str());
+        });
 }
 void browser() {
     using namespace gui::web_detail;

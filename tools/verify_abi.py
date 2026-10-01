@@ -11,6 +11,9 @@ MACHINES = {'x86_64': 'Advanced Micro Devices X86-64', 'aarch64': 'AArch64'}
 HOST_LIBRARIES = {'libc.so.6', 'libm.so.6', 'libpthread.so.0', 'libdl.so.2', 'librt.so.1',
                   'libresolv.so.2', 'libutil.so.1', 'ld-linux-x86-64.so.2', 'ld-linux-aarch64.so.1'}
 
+SDK_RUNTIME_NAMES = HOST_LIBRARIES | {'libanl.so.1', 'libBrokenLocale.so.1', 'libnss_compat.so.2',
+    'libnss_dns.so.2', 'libnss_files.so.2', 'libnss_hesiod.so.2', 'libnsl.so.1', 'libmemusage.so', 'libpcprofile.so'}
+
 
 def version(value):
     if not re.fullmatch(r'\d+(?:\.\d+)*', value):
@@ -28,7 +31,7 @@ def run(readelf, *args):
                                    env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'}, stderr=subprocess.STDOUT)
 
 
-def inspect(path, readelf='readelf'):
+def inspect(path, readelf='readelf', sdk_private=False):
     path = Path(path)
     header = run(readelf, '--file-header', path)
     machine = re.search(r'^\s*Machine:\s*(.+)$', header, re.M)
@@ -47,12 +50,30 @@ def inspect(path, readelf='readelf'):
     needs = info.split('Version needs section', 1)
     if len(needs) == 2:
         for family, value in re.findall(r'Name:\s*(GLIBCXX|GLIBC|CXXABI|GCC)_([^\s]+)', needs[1]):
+            if sdk_private and family == 'GLIBC' and value == 'PRIVATE':
+                continue
             parsed = version(value)
             if parsed > version(requirements.get(family, '0')):
                 requirements[family] = value
-    return {'sha256': digest(path), 'machine': machine.group(1).strip(), 'needed': sorted(needed),
+    result = {'sha256': digest(path), 'machine': machine.group(1).strip(), 'needed': sorted(needed),
             'rpaths': rpath + runpath, 'rpath': rpath, 'runpath': runpath,
             'loader': loader, 'requirements': requirements}
+    if sdk_private:
+        definitions = needs[0].split('Version definition section', 1)
+        definition_text = definitions[1] if len(definitions) == 2 else ''
+        result['glibc_definitions'] = sorted(set(re.findall(r'Name:\s*GLIBC_([0-9.]+)\b', definition_text)), key=version)
+        result['defines_private'] = bool(re.search(r'Name:\s*GLIBC_PRIVATE\b', definition_text))
+        private = []
+        if len(needs) == 2:
+            provider = None
+            for line in needs[1].splitlines():
+                match = re.search(r'File:\s*(\S+)', line)
+                if match: provider = match[1]
+                if re.search(r'Name:\s*GLIBC_PRIVATE\b', line):
+                    if provider is None: raise ValueError('missing SDK private provider identity')
+                    private.append(provider)
+        result['private_requirements'] = sorted(set(private))
+    return result
 
 
 def resolve_closure(root, results):
@@ -117,11 +138,58 @@ def resolve_closure(root, results):
             for (name, needed), provider in sorted(resolutions.items())]
 
 
-def audit(root, processor='x86_64', ceilings=None, readelf='readelf', host=False, runtime_resolution=True):
+def sdk_runtime_context(root, processor, declaration):
+    """Validate the declared, retained libc/loader cohort inside one target root."""
+    if not root.is_dir() or declaration.get('glibc') != '2.36' or declaration.get('processor') != processor:
+        raise ValueError('SDK runtime audit needs the exact Bookworm target sysroot')
+    for key in ('recipe_id', 'source_sha256'):
+        if not re.fullmatch(r'[0-9a-f]{64}', declaration.get(key, '')):
+            raise ValueError('SDK runtime audit needs retained recipe and source identities')
+    files = declaration.get('files')
+    if not isinstance(files, dict) or not files: raise ValueError('missing SDK runtime cohort inventory')
+    approved = set()
+    for name, value in files.items():
+        path = root / name
+        if (str(Path(name)) != name or Path(name).is_absolute() or '..' in Path(name).parts
+                or Path(name).parent.as_posix() not in ('lib', 'lib64', 'usr/lib', 'usr/lib64')
+                or path.name not in SDK_RUNTIME_NAMES or path.is_symlink() or not path.is_file()
+                or root not in path.resolve().parents or digest(path) != value):
+            raise ValueError('SDK runtime cohort path or digest differs from retained input')
+        approved.add(name)
+    loader = 'ld-linux-x86-64.so.2' if processor == 'x86_64' else 'ld-linux-aarch64.so.1'
+    if not {'libc.so.6', loader} <= {Path(name).name for name in approved}:
+        raise ValueError('SDK runtime cohort must contain its matched libc and loader')
+    by_name = {}
+    for name in approved:
+        by_name.setdefault(Path(name).name, set()).add(files[name])
+    if any(len(values) != 1 for values in by_name.values()):
+        raise ValueError('SDK runtime cohort has conflicting providers')
+    return approved
+
+
+def check_sdk_runtime(results, approved, declaration):
+    providers = {Path(name).name: value for name, value in results.items() if name in approved}
+    if set(approved) - set(results): raise ValueError('SDK runtime cohort contains a non-ELF input')
+    for name in approved:
+        entry = results[name]
+        for defined in entry.get('glibc_definitions', []):
+            if version(defined) > version(declaration['glibc']):
+                raise ValueError('SDK libc definition exceeds its pinned runtime version')
+        if Path(name).name == 'libc.so.6' and declaration['glibc'] not in entry.get('glibc_definitions', []):
+            raise ValueError('SDK libc does not expose the pinned runtime version')
+        for provider in entry.get('private_requirements', []):
+            if provider not in providers or not providers[provider].get('defines_private'):
+                raise ValueError('SDK private requirement lacks its matched runtime provider')
+
+
+def audit(root, processor='x86_64', ceilings=None, readelf='readelf', host=False, runtime_resolution=True, sdk_sysroot=None):
     root = Path(root).resolve(strict=True)
     ceilings = BOOKWORM if ceilings is None else ceilings
     if processor not in MACHINES:
         raise ValueError('unsupported processor')
+    if sdk_sysroot is not None and not host:
+        raise ValueError('SDK runtime allowance cannot be used for application packages')
+    approved = sdk_runtime_context(root, processor, sdk_sysroot) if sdk_sysroot is not None else set()
     results = {}
     for path in sorted(root.rglob('*')) if root.is_dir() else [root]:
         if path.is_symlink():
@@ -130,7 +198,8 @@ def audit(root, processor='x86_64', ceilings=None, readelf='readelf', host=False
             continue
         if not path.is_file() or not elf(path):
             continue
-        entry = inspect(path, readelf)
+        name = path.relative_to(root).as_posix() if root.is_dir() else path.name
+        entry = inspect(path, readelf, sdk_private=True) if name in approved else inspect(path, readelf)
         notes = run(readelf, '--notes', path)
         if not host and re.search(r'x86 ISA needed:.*x86-64-v[234]', notes):
             raise ValueError('ELF requires instructions above the generic x86_64 baseline')
@@ -154,6 +223,8 @@ def audit(root, processor='x86_64', ceilings=None, readelf='readelf', host=False
         results[name] = entry
     if not results:
         raise ValueError('no ELF files inspected')
+    if sdk_sysroot is not None:
+        check_sdk_runtime(results, approved, sdk_sysroot)
     resolution = []
     if not host:
         provided = {Path(name).name for name in results}
@@ -164,7 +235,8 @@ def audit(root, processor='x86_64', ceilings=None, readelf='readelf', host=False
         if runtime_resolution:
             resolution = resolve_closure(root, results)
     return {'schema_version': 1, 'processor': processor, 'ceilings': ceilings,
-            'scope': 'host' if host else ('target' if runtime_resolution else 'staged-requirements'),
+            'scope': 'sdk-sysroot' if sdk_sysroot is not None else ('host' if host else ('target' if runtime_resolution else 'staged-requirements')),
+            'sdk_runtime': sdk_sysroot,
             'runtime_resolution': 'passed' if not host and runtime_resolution else 'not_checked',
             'resolution': resolution, 'files': results, 'status': 'passed'}
 

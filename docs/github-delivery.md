@@ -7,10 +7,10 @@ pointer. The implementation uses the authenticated `gh` executable through argum
 arrays. It never builds missing inputs, deletes assets, force-updates a tag or
 uploads with overwrite enabled.
 
-The repository's qualification is **offline transport testing**. No live publication,
-GitHub permission setup or hosted workflow execution is implied by those tests.
-Use a dedicated repository to qualify hosting behavior before adopting this for
-production. Read [release requirements](releases.md), [dependency groups](dependencies.md)
+The transport adapter has **offline transport tests** and concrete
+[hosted lifecycle workflows](ci.md#executable-hosted-lifecycle). Those tests do not
+prove live publication, repository permission setup or successful hosted execution.
+Qualify the deployed workflow revision and repository settings before production use. Read [release requirements](releases.md), [dependency groups](dependencies.md)
 and [certification](certification.md) first.
 
 ## Explicit execution and owned inputs
@@ -245,3 +245,79 @@ deployment before describing a production release as supported.
 The transport contract follows the primary documentation for
 [`gh api` pagination and JSON input](https://cli.github.com/manual/gh_api) and
 [GitHub release REST operations](https://docs.github.com/en/rest/releases/releases).
+
+## Hosted operation ordering
+
+Dispatch SDK maintenance explicitly when a recipe is absent or has changed. Its
+optional publisher verifies the complete new group and appends it to `base`;
+ordinary application jobs only fetch exact existing groups. Dispatch the prepared
+application workflow with the complete recipe map. Review its retained candidate,
+`delivery.json` and publication request before enabling execution for a new
+candidate identity. Published candidates are immutable and remain outside Latest.
+
+Certify a published candidate by its exact tag and release-inventory digest.
+The prepare job captures complete paged remote assets, downloads the descriptor
+and mapped files, verifies the complete local release, and rereads remote IDs
+and the direct tag before publishing the local download. Independent checks use
+the same transported candidate and frozen plan. The recording job rejects
+missing, stale, mixed-run or altered evidence. A failed full report may be
+attached as a new attempt, preserving previous reports and binaries.
+
+Promotion is a separate manual workflow with `execute=false` by default. Its
+plan names one certificate run, attempt and digest; execution validates that
+remote certificate against the current reviewed policy and then verifies the
+Latest pointer. An updated qualification attempt never rebuilds or overwrites
+the candidate. A changed source or dependency inventory requires a new candidate.
+
+The protected publishing jobs all use one repository-wide concurrency group.
+Other workflows and manual publishers must honor that same exclusion. A failed
+publication step retains an uncertainty receipt whenever possible. A lost
+receipt still requires remote reconciliation before retrying; do not rerun
+an interrupted mutation blindly. Setup failures and incomplete artifacts remain
+failed gates, even if a later upload step succeeds.
+
+The hosted GUI input maintenance workflow uses the same checked `Remote`
+transport and base lifecycle through `ci_plan.publish_gui_group`. Its complete
+three-file group is namespaced by the manifest digest, verified before planning,
+and verified again after remote download. Partial/conflicting existing groups
+are never overwritten; changed asset IDs invalidate an observation. Ordinary
+GUI application jobs use `fetch_gui_group` and an explicit digest, so only
+maintenance jobs acquire upstream sources. The GUI source group remains separate
+from compiler SDK recipe groups and its full source is retained in the candidate.
+
+
+Workflow artifact storage is also publication of those bytes. GUI input inspection
+with unresolved terms uploads only its non-source plan. Source groups and compiled
+GUI outputs are neither workflow artifacts nor release assets until verified terms
+allow redistribution. Explicit SDK maintenance and native GUI qualification may
+consume those inputs on a disposable runner and retain only test evidence. The
+GUI maintenance execution gate rejects unresolved terms before any remote write.
+
+SDK maintenance defaults to verified reuse with `source=auto`. Only positively
+observed complete absence permits cold production in that maintenance workflow;
+`base` requires existing bytes, and `rebuild` explicitly prepares a fresh group.
+Every resulting group passes a relocated application and installed-consumer probe,
+and GUI-capable groups additionally run the native GUI checks before eligibility.
+Receipts distinguish reuse from new production. Existing groups remain immutable,
+including after an explicit rebuild that produces different bytes.
+
+
+## External Windows graphics qualification input
+
+For native Windows GUI qualification, supply `graphics_archive_url` to the
+ordinary GUI or certification workflow. It must identify operator-retained bytes
+matching the [reviewed host graphics input](windows-graphics.md); HTTPS redirects
+remain HTTPS and embedded credentials are rejected. The ordinary workflow never
+substitutes a supplier download after an absent or invalid retained input. Explicit
+SDK maintenance is the separate operation that may acquire the pinned supplier
+archive. Maintain allowed source, notices and redistribution records alongside
+any operator-retained copy.
+
+The runtime is staged temporarily beside test consumers and a native capability
+probe, with the selected compiler SDK protected from modification. Full GUI tests
+retain actual visual captures and their qualification records. All test writers
+must finish before cleanup or packaging. Uncertain cleanup fails the job and
+preserves ownership for recovery. Uploaded evidence contains receipts, captures
+and diagnostics; it excludes graphics archives/DLLs and GUI source/executables.
+This host input neither changes the application SDK recipe nor waives any release
+policy check or unresolved redistribution requirement.

@@ -70,6 +70,8 @@ class AptTests(unittest.TestCase):
             binaries = ['foundation-cli', 'foundation-gui-terminal', 'foundation-gui-framebuffer', 'foundation-gui-web']
             extra = {'share/doc/Foundation/gui-boundary/LICENSE': (b'GUI fixture terms\n', 0o644),
                      'lib/runtime/shared-data.txt': (b'unchanged shared runtime data\n', 0o644),
+                     'share/man/man1/foundation-cli.1': (b'.TH FOUNDATION-CLI 1\n', 0o644),
+                     'share/man/man7/software-foundation.7': (b'.TH SOFTWARE-FOUNDATION 7\n', 0o644),
                      'share/software-foundation/web/renderer.mjs': (b'export const fixture = true;\n', 0o644)}
             archive, manifest = self.archive(root, binaries, extra)
             original = archive.read_bytes()
@@ -93,6 +95,8 @@ class AptTests(unittest.TestCase):
                         subprocess.run([str(private / 'bin' / name)], check=True)
                     for name, (data, _) in extra.items():
                         self.assertEqual((private / name).read_bytes(), data)
+                    for source_name, destination in apt.manual_paths(backend, receipt['selection']['retained_files']).items():
+                        self.assertEqual((extracted / destination).read_bytes(), (private / source_name).read_bytes())
                     self.assertEqual(apt.c.load(private / apt.SELECTION_PATH), receipt['selection'])
                     self.assertEqual(set(receipt['selection']['excluded_executables']),
                                      {'bin/' + name for name in set(binaries) - selected})

@@ -189,7 +189,7 @@ class _LinuxProcess:
                 pass
 
 
-def _linux_launch(argv, cwd, stream):
+def _linux_launch(argv, cwd, stream, *, env=None):
     incoming, outgoing = os.pipe()
     try:
         control_incoming, control_outgoing = os.pipe()
@@ -201,7 +201,7 @@ def _linux_launch(argv, cwd, stream):
         process = subprocess.Popen([sys.executable, '-B', str(Path(__file__).resolve()),
                                     '--supervise-linux', str(os.getpid()), str(outgoing), str(control_incoming), *argv],
                                    cwd=cwd, stdin=subprocess.DEVNULL, stdout=stream,
-                                   stderr=subprocess.STDOUT, start_new_session=True, pass_fds=(outgoing,control_incoming))
+                                   stderr=subprocess.STDOUT, start_new_session=True, pass_fds=(outgoing,control_incoming), env=env)
     except BaseException:
         os.close(incoming)
         os.close(control_outgoing)
@@ -387,10 +387,10 @@ class ProcessTree:
             self.closed = True
 
 
-def launch(argv, cwd, stream):
-    """Launch direct argv, owning descendants before they can execute on Windows."""
+def launch(argv, cwd, stream, *, env=None):
+    """Own descendants before execution; env affects only the supervised tree."""
     if os.name == 'posix' and sys.platform.startswith('linux'):
-        return _linux_launch(argv, cwd, stream)
+        return _linux_launch(argv, cwd, stream, env=env)
     if os.name != 'nt':
         raise ProcessTreeError('no qualified process supervisor for this operating system')
     job = _WindowsJob() if os.name == 'nt' else None
@@ -399,7 +399,7 @@ def launch(argv, cwd, stream):
         process = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.DEVNULL,
                                    stdout=stream, stderr=subprocess.STDOUT,
                                    start_new_session=os.name == 'posix',
-                                   creationflags=0x4 if job is not None else 0)
+                                   creationflags=0x4 if job is not None else 0, env=env)
         if job is not None:
             job.assign(process)
             job.resume(process)

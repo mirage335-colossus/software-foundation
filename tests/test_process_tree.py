@@ -24,10 +24,29 @@ class NativeProcessTree(unittest.TestCase):
         self.stream = (self.root / 'console.log').open('wb')
         self.addCleanup(self.stream.close)
 
-    def launch(self, body):
-        owner = TREE.launch([sys.executable, '-B', '-c', body], self.root, self.stream)
+    def launch(self, body, *, env=None):
+        owner = TREE.launch([sys.executable, '-B', '-c', body], self.root, self.stream, env=env)
         self.addCleanup(owner.close)
         return owner
+
+    def test_default_environment_is_inherited(self):
+        with mock.patch.dict(os.environ, {'FOUNDATION_PROCESS_ENV_FIXTURE':'inherited'}):
+            owner=self.launch("import os;print(os.environ['FOUNDATION_PROCESS_ENV_FIXTURE'])")
+            self.assertEqual(owner.wait(timeout=10),0);self.assertEqual(owner.finish(),0);owner.close()
+            self.assertEqual(os.environ['FOUNDATION_PROCESS_ENV_FIXTURE'],'inherited')
+        self.assertEqual((self.root/'console.log').read_text().strip(),'inherited')
+
+    def test_environment_override_is_child_only_and_reaches_descendants(self):
+        variable='FOUNDATION_PROCESS_ENV_FIXTURE'
+        with mock.patch.dict(os.environ,{variable:'parent'}):
+            environment=dict(os.environ,FOUNDATION_PROCESS_ENV_FIXTURE='child-only',GALLIUM_DRIVER='llvmpipe')
+            body=("import os,subprocess,sys;print(os.environ['FOUNDATION_PROCESS_ENV_FIXTURE'],flush=True);"
+                  "subprocess.run([sys.executable,'-B','-c',\"import os;print(os.environ['FOUNDATION_PROCESS_ENV_FIXTURE'])\"],check=True)")
+            owner=self.launch(body,env=environment)
+            self.assertEqual(owner.wait(timeout=10),0);self.assertEqual(owner.finish(),0);owner.close()
+            self.assertEqual(os.environ[variable],'parent')
+            self.assertEqual(environment[variable],'child-only')
+        self.assertEqual((self.root/'console.log').read_text().splitlines(),['child-only','child-only'])
 
     def test_complete_parent_and_joined_child_leave_stable_output(self):
         owner = self.launch("import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True);print('done')")
@@ -75,7 +94,7 @@ class NativeProcessTree(unittest.TestCase):
 
 
 class WindowsLaunchOrdering(unittest.TestCase):
-    def check_order(self, failure=None):
+    def check_order(self, failure=None, environment=None):
         events = []
         class Job:
             def __init__(self):events.append('job')
@@ -96,17 +115,22 @@ class WindowsLaunchOrdering(unittest.TestCase):
         def create(*args, **kwargs):
             self.assertEqual(kwargs['creationflags'], 0x4)
             self.assertFalse(kwargs['start_new_session'])
+            self.assertIs(kwargs['env'],environment)
             events.append('create suspended')
             return process
         with mock.patch.object(TREE.os, 'name', 'nt'), mock.patch.object(TREE, '_WindowsJob', Job), \
                 mock.patch.object(TREE.subprocess, 'Popen', side_effect=create):
             if failure:
                 with self.assertRaises(TREE.ProcessTreeError):
-                    TREE.launch(['program'], '.', None)
+                    TREE.launch(['program'], '.', None, env=environment)
             else:
-                owner = TREE.launch(['program'], '.', None)
+                owner = TREE.launch(['program'], '.', None, env=environment)
                 self.assertIs(owner.process, process)
         return events
+
+    def test_windows_launch_passes_child_environment_without_changing_order(self):
+        self.assertEqual(self.check_order(environment={'GALLIUM_DRIVER':'llvmpipe'}),
+                         ['job','create suspended','assign','resume'])
 
     def test_child_cannot_execute_before_job_assignment(self):
         self.assertEqual(self.check_order(), ['job', 'create suspended', 'assign', 'resume'])

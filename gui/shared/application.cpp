@@ -9,34 +9,27 @@ namespace foundation::ui {
 
 Application::Application(gui::Adapter& adapter) : adapter_(adapter) {
     view_.title = "Entry list";
-    add("entries.form", gui::Kind::group);
-    auto& heading = add("entries.heading", gui::Kind::label, "entries.form");
-    heading.state.text = "Entry list";
-    heading.state.font.bold = true;
-    auto& editor = add("entries.editor", gui::Kind::text, "entries.form");
-    editor.state.label = "New entry";
-    editor.state.placeholder = "Type an entry";
-    editor.spec.text_policy = {false, false, foundation::Store::max_text_bytes, gui::SubmitKey::enter};
-    add("entries.add", gui::Kind::button, "entries.form").state.label = "Add entry";
-    auto& options = add("entries.options", gui::Kind::menu, "entries.form");
-    options.state.label = "Actions";
-    options.state.options = {{"clear", "Clear entries", "", true},
-                             {"heading", "Change heading", "", true}};
-    auto& entries = add("entries.list", gui::Kind::list, "entries.form");
-    entries.state.label = "Entries";
-    entries.state.placeholder = "No entries";
+    for (const auto& definition : view_definition)
+        if (!definition.remove_extension) add(definition);
+    get("entries.editor").spec.text_policy = {false, false, foundation::Store::max_text_bytes, gui::SubmitKey::enter};
+    get("entries.options").state.options = {{"clear", "Clear entries", "", true},
+                                           {"heading", "Change heading", "", true}};
+    auto& entries = get("entries.list");
     entries.spec.row_height = 32;
     entries.spec.follow_tail = true;
-    add("entries.count", gui::Kind::label, "entries.form");
-    add("entries.status", gui::Kind::label, "entries.form").state.wrap = gui::TextWrap::word;
     publish();
 }
 
-gui::Widget& Application::add(std::string id, gui::Kind kind, std::string parent) {
+gui::Widget& Application::add(const ViewDefinition& definition) {
     gui::Widget widget;
-    widget.spec.key.id = std::move(id);
-    widget.spec.kind = kind;
-    widget.spec.parent = std::move(parent);
+    widget.spec.key.id = definition.id;
+    widget.spec.kind = definition.kind;
+    if (definition.id != view_definition.front().id) widget.spec.parent = view_definition.front().id;
+    widget.state.text = definition.text;
+    widget.state.label = definition.label;
+    widget.state.placeholder = definition.placeholder;
+    widget.state.font.bold = definition.bold;
+    widget.state.wrap = definition.wrap;
     view_.widgets.push_back(std::move(widget));
     return view_.widgets.back();
 }
@@ -130,7 +123,8 @@ void Application::handle(gui::Event event) {
 
 void Application::enable_remove_feature() {
     if (remove_feature_ || adapter_.closed()) return;
-    add("entries.remove", gui::Kind::button, "entries.form").state.label = "Remove selected";
+    for (const auto& definition : view_definition)
+        if (definition.remove_extension) add(definition);
     remove_feature_ = true;
     publish();
 }
@@ -218,14 +212,9 @@ void Application::publish() {
         node.height = height;
         panel.children.push_back(std::move(node));
     };
-    child("entries.heading", 32);
-    child("entries.editor", 32);
-    child("entries.add", 32);
-    child("entries.options", 32);
-    child("entries.list", 128);
-    child("entries.count", 32);
-    child("entries.status", 32);
-    if (remove_feature_) child("entries.remove", 32);
+    for (const auto& definition : view_definition)
+        if (definition.id != panel.id && (!definition.remove_extension || remove_feature_))
+            child(std::string(definition.id), definition.height);
     const auto width = std::max(0.0, next.client_size.width - 32);
     const auto height = std::max(0.0, next.client_size.height - 32);
     const auto boxes = gui::compose_layout(panel, {16, 16, width, height},
