@@ -30,13 +30,13 @@ explicit. No public release was published by these checks.
 | Documentation | Local destinations, heading anchors, strict JSON and requirement-to-code/test references checked |
 | Workflows | Eight workflows passed actionlint; 49 CI helper, 21 SDK-retention and 11 source-identity cases passed; hosted execution remains separate evidence |
 | Installed documentation | Both manual pages passed formatting checks and relocated installation checks; Debian, Arch and Gentoo fixtures preserve variant-specific public manual names |
-| Windows host graphics | 28 prerequisite fixtures and 15 artifact fixtures passed; exact pinned driver extraction, native WGL probing and cleanup passed; real Windows GUI captures remain a separate qualification scope |
+| Windows host graphics | 28 prerequisite fixtures and 15 artifact fixtures passed; exact pinned driver extraction, native WGL probing and cleanup passed; six actual Windows captures passed corrected offline comparison, while complete updated SDK execution remains pending |
 | APT client adapter | Disposable-container preflight and descendant-timeout regressions passed; actual signed HTTPS install/update/tamper-rejection/removal passed in the hosted Bookworm workflow |
 
-Combined native Release verification with distribution tests passed all 32 CTest
+Combined native Release verification with distribution tests passed all 34 CTest
 entries in one invocation, including the relocated installed consumer and both
 manual pages. The signing suites used disposable local GnuPG agent sockets. Its
-28 inner Python suites recorded 623 executed passing cases and two explicit
+30 inner Python suites recorded 650 executed passing cases and two explicit
 native-Windows exclusions.
 The selected-linker native case passed separately on Windows as recorded below.
 No unexpected skips were accepted. The preceding
@@ -55,8 +55,8 @@ local implementation checks, not a complete release-policy certification.
 
 ## Hosted candidate and maintenance observations
 
-Candidate [36911723772](https://github.com/mirage335-colossus/software-foundation/actions/runs/36911723772)
-passed at `a00e8b7d083e9b3e9f7b015064c245aa30f32fa2` on Windows x86_64,
+Candidate [36914367685](https://github.com/mirage335-colossus/software-foundation/actions/runs/36914367685)
+passed at `ec347ba63f6d9c80a7b82dff332490f72fb93ebc` on Windows x86_64,
 Linux x86_64 and Linux ARM64. All source/tool, packaging, fresh copied-archive
 consumer, sanitizer and distribution jobs succeeded. The disposable Bookworm
 client check exercised signed HTTPS refresh, installation, exact payload
@@ -82,18 +82,38 @@ left that group explicitly unqualified. Explicit reuse verifies exact producer,
 run, attempt, job, recipe, artifact and complete byte identities before running
 fresh consumers; no different recipe or failed consumer is promoted implicitly.
 
-The retained Windows retry [36911711394](https://github.com/mirage335-colossus/software-foundation/actions/runs/36911711394)
-at `a00e8b7d083e9b3e9f7b015064c245aa30f32fa2` passed native GUI compilation
-and both core checks. The actual WGL probe passed with Mesa 26.2.3, llvmpipe using
-LLVM 23.1.2, an OpenGL 4.6 core context, both required WGL entry points and
-buffer-storage support. Loaded module paths and hashes matched the pinned staged
-inputs, and cleanup succeeded. Repeated GUI input restoration then failed before
-CTest because host-specific directory separators differed from the retained
-logical paths. No GUI assertions or captures executed in that run; the overall
-maintenance job remains failed. The repair uses portable logical parent paths;
-14 source-group cases pass, including a failing old-code Windows control and
-preservation of changed or foreign files and directories. Hosted execution of
-that repair remains a separate required check.
+Retained Windows retry [36913909389](https://github.com/mirage335-colossus/software-foundation/actions/runs/36913909389)
+at `797d88210c6e6448818b971ff1b462d4a72ae272` passed both core checks and
+48 of 50 CTests, including 25 of 27 GUI checks. All six installed host smoke tests,
+FLTK/Rev/SDL host scenarios, shared-feature/parity checks, web host/renderer checks
+and all eleven upstream suites passed. Actual WGL probing confirmed the pinned
+Mesa driver, required context entries and buffer storage; loaded module identities
+and cleanup passed. The failed job retained verified SDK inputs; its overall
+result remains a failure.
+
+The remaining source-group fixture failure occurred before assertions: host text
+newline conversion differed from Git's committed bytes. Fixtures now write exact
+bytes and configure their private repository explicitly, including logical
+executable modes. Sixteen cases pass with inherited newline conversion and under
+the logical Windows mode branch; the old fixture reproduces the observed failure.
+Production complete-tree verification remains unchanged.
+
+The visual failure counted only fully dark pixels, discarding native antialiased
+ink. Measurement now uses declared foreground/background contrast for visible
+extents and integrated ink, including all four supported text tones. Acceptance
+bounds remain eight pixels for text extents, 0.45–2.2 for relative ink, and below
+4/255 for mean channel error. Regression checks reject absent, faint, clipped,
+moved and excessive text, altered palette/geometry, and assertion-disabled Python.
+The corrected comparator passes all twelve retained Linux/Windows captures without
+changing their bytes. Windows mean channel errors are 0.61927/255 and 1.41589/255
+for FLTK at the two sizes, and 0.11736/255 and 0.33521/255 for Rev. Native font faces
+and strokes differ within these bounds; this is close appearance, not pixel identity.
+Re-evaluating retained images does not claim new native binary execution.
+
+Dependency-free source-group and visual-metric suites now run once in ordinary
+native candidate jobs, with individual case receipts and GUI-focused labels.
+Their corrected native Windows execution and the complete prepared-SDK retry
+remain separately required hosted results.
 
 ARM64 maintenance [36904727103](https://github.com/mirage335-colossus/software-foundation/actions/runs/36904727103),
 at `c87c6905fa9049ab7759e4ce797842e266965d38`, completed supplier compilation
@@ -106,6 +126,16 @@ contract cases passed without skips; a separate actual-header fixture preserved
 eight Linux UAPI headers and compiled and ran a consumer using both case-distinct
 headers after relocation. Destination probes reject lossy filesystems before
 copying inputs. Windows and ordinary archive policies remain strict.
+
+A subsequent complete review of the pinned supplier's installed shared libraries
+and actual build configuration identified two additional developer/runtime library
+pairs requiring matched private libc/loader providers. The SDK-only inventory now
+retains and checks them with exact names, locations, hashes, source/recipe identity
+and byte-identical development aliases. Seventy-nine portability/SDK cases pass,
+including old-code rejection, incorrect-provider cases and unchanged application
+package rejection. No developer inputs were discarded. Replacement native
+producers run at `769390b136d5d649de0605807344c758f89383a9`; their outcomes
+remain pending.
 
 The shared SDK helper changes create new recipe identities, including Windows and
 WebAssembly recipes that retain those helpers. Earlier archives are never

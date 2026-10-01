@@ -10,6 +10,9 @@ import subprocess
 import tempfile
 import zlib
 
+if not __debug__:
+    raise RuntimeError('visual qualification requires active Python assertions')
+
 BACKENDS = ('framebuffer', 'fltk', 'rev')
 SIZES = ((800, 640), (480, 360))
 
@@ -41,6 +44,20 @@ def near(left, right, tolerance=3):
     return max(abs(a - b) for a, b in zip(left, right)) <= tolerance
 
 
+def ink_coverage(pixel, background, foreground):
+    # Integrate RGB contrast: subpixel antialiasing can leave one channel light
+    # even where the other two carry ink. Counting only fully dark pixels loses it.
+    contrast = sum(background[c] - foreground[c] for c in range(3))
+    assert contrast > 0, 'text foreground must contrast with the light surface'
+    return max(0.0, min(1.0, sum(background[c] - pixel[c] for c in range(3)) / contrast))
+
+
+def compare_text(actual, expected, identity):
+    assert max(abs(actual[i] - expected[i]) for i in (0, 2)) <= 8, identity + ': text horizontal extent differs'
+    assert max(abs(actual[i] - expected[i]) for i in (1, 3)) <= 8, identity + ': text vertical placement differs'
+    assert 0.45 <= actual[4] / expected[4] <= 2.2, identity + ': text coverage differs'
+
+
 def inspect(image, view):
     width, height, _ = image
     assert (width, height) == (view['width'], view['height']), 'capture viewport differs'
@@ -68,11 +85,21 @@ def inspect(image, view):
         if not text:
             continue
         margin = 0 if kind == 1 else 3
-        points = [(xx, yy) for yy in range(y + margin, min(bottom - margin, y + 30))
-                  for xx in range(x + margin, min(width - margin, x + w - margin))
-                  if max(color(image, xx, yy)) < 160]
+        background = fill if kind in (2, 5, 6, 8) else palette['surface']
+        foreground = palette[('text', 'muted', 'accent', 'error')[widget['font']['tone']]]
+        if not widget['enabled'] or (not widget['text'] and not widget['label'] and kind != 6):
+            foreground = palette['muted']
+        samples = [(xx, yy, ink_coverage(color(image, xx, yy), background, foreground))
+                   for yy in range(y + margin, min(bottom - margin, y + 30))
+                   for xx in range(x + margin, min(width - margin, x + w - margin))]
+        # Quarter-opacity edges count as visible; weaker antialiasing fringes do
+        # not expand the bounds. This is relative to the declared text contrast,
+        # so legitimate accent/error colors receive the same visibility rule.
+        points = [(xx, yy) for xx, yy, opacity in samples if opacity >= 0.25]
         assert len(points) >= max(8, len(text) * 2), identity + ': missing visible text'
-        text_boxes[identity] = [min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points), len(points)]
+        coverage = sum(opacity for _, _, opacity in samples)
+        # Four visible extents followed by equivalent opaque RGB pixels.
+        text_boxes[identity] = [min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points), coverage]
     return text_boxes
 
 
@@ -120,12 +147,10 @@ def compare(directory):
             assert boxes[name].keys() == boxes['framebuffer'].keys(), 'visible control set differs'
             for identity, expected in boxes['framebuffer'].items():
                 actual = boxes[name][identity]
-                assert max(abs(actual[i] - expected[i]) for i in (0, 2)) <= 8, identity + ': text horizontal extent differs'
-                assert max(abs(actual[i] - expected[i]) for i in (1, 3)) <= 8, identity + ': text vertical placement differs'
-                assert 0.45 <= actual[4] / expected[4] <= 2.2, identity + ': text coverage differs'
+                compare_text(actual, expected, identity)
             error = sum(abs(a - b) for a, b in zip(images[name][2], images['framebuffer'][2])) / len(images[name][2])
             assert error < 4.0, name + ': excessive overall rendering difference'
-            result[f'{name}-{width}'] = {'mean_channel_error': round(error, 5), 'text_bounds': boxes[name], 'capture_sha256': hashlib.sha256((directory / f'{name}-{width}.ppm').read_bytes()).hexdigest()}
+            result[f'{name}-{width}'] = {'mean_channel_error': round(error, 5), 'text_bounds': boxes[name], 'text_coverage_metric': 'normalized-rgb-ink', 'capture_sha256': hashlib.sha256((directory / f'{name}-{width}.ppm').read_bytes()).hexdigest()}
             write_png(directory / f'{name}-{width}.png', *images[name])
     return result
 

@@ -509,7 +509,8 @@
         "gui/shared/view_definition.hpp"
       ],
       "checks": [
-        "gui/tests/source_group_test.py",
+        "tests/test_gui_source_group.py",
+        "tests/test_gui_visual.py",
         "gui/tests/visual_test.py"
       ]
     },

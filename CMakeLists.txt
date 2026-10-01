@@ -97,7 +97,7 @@ if(BUILD_TESTING)
     set_tests_properties(core.store core.cli PROPERTIES LABELS "fast;core" TIMEOUT 30)
   endif()
   # Only explicitly named suites run; adding one requires registering its label.
-  set(_tool_suites build agent_board test_plan artifact gui_boundary coverage certification ci_plan process_tree sdk sdk_retention dependencies source_identity release portability release_check run_tests github_release windows_graphics)
+  set(_tool_suites build agent_board test_plan artifact gui_boundary gui_source_group gui_visual coverage certification ci_plan process_tree sdk sdk_retention dependencies source_identity release portability release_check run_tests github_release windows_graphics)
   # Docker account IDs, ownership and privilege fixtures apply to Linux hosts.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND _tool_suites container_job)
@@ -128,6 +128,7 @@ if(BUILD_TESTING)
         --suite "${suite}" --output "${CMAKE_BINARY_DIR}/test-reports/${suite}.json")
     set_tests_properties(tools.${suite} PROPERTIES LABELS "tools" TIMEOUT 120)
   endforeach()
+  set_tests_properties(tools.gui_source_group tools.gui_visual PROPERTIES LABELS "tools;gui;focused")
   if(NOT CMAKE_CROSSCOMPILING AND NOT EMSCRIPTEN)
     add_test(NAME integration.install COMMAND ${Python3_EXECUTABLE}
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_install.py"

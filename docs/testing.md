@@ -17,7 +17,11 @@ for the change and what remains outstanding.
 Choose the first label for the actual change: `core`, `tools`, `integration`, or
 `gui`. `fast` is the inexpensive cross-cutting selection. These labels can
 overlap; running several overlapping labels is not additional independent
-coverage. The wrapper rebuilds test prerequisites. Direct `ctest` alone does
+coverage. The dependency-free GUI input and visual-comparison fixtures also belong
+to `tools`, so ordinary native candidate jobs exercise them before any GUI SDK
+preparation. Their `gui;focused` labels preserve targeted GUI selection; each
+suite is registered once and records every case through the common test runner.
+The wrapper rebuilds test prerequisites. Direct `ctest` alone does
 not compile modified source.
 
 | Change | First useful evidence | Candidate checks |
@@ -48,7 +52,9 @@ Use unique temporary output directories and deterministic inputs. A test must
 not overwrite another test's files, use a fixed shared port without coordination,
 or depend on execution order. Always clean up owned resources, while retaining
 diagnostics on failure. Set individual timeouts and test process exit status as
-well as output. Test assertions must remain active in optimized builds.
+well as output. Test assertions must remain active in optimized builds. Visual
+qualification rejects an interpreter started with assertions disabled; setting
+Python optimization flags must never turn a failed comparison into a pass.
 
 Keep contract regressions when refactoring. Modify an assertion only when the
 intended public contract changes and the change is reviewed. Document numerical

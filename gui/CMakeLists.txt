@@ -122,9 +122,6 @@ function(foundation_gui_check name target labels)
 endfunction()
 if(BUILD_TESTING)
     add_custom_target(foundation-gui-tests DEPENDS foundation-gui-hosts)
-    add_test(NAME foundation.gui.source-group COMMAND "${Python3_EXECUTABLE}" -B
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/source_group_test.py")
-    set_tests_properties(foundation.gui.source-group PROPERTIES LABELS "gui;focused" TIMEOUT 60)
 endif()
 find_program(FOUNDATION_NODE_EXECUTABLE NAMES node nodejs)
 # Keep the browser asset names stable; both transport modes use the same renderer.

@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('source_group', ROOT / 'gui/source_group.py')
 subject = importlib.util.module_from_spec(spec); spec.loader.exec_module(subject)
 
@@ -26,21 +26,25 @@ class SourceGroupTests(unittest.TestCase):
         self.foundation = self.root / 'foundation'
         (self.foundation / 'third_party').mkdir(parents=True)
         (self.foundation / 'gui/patches').mkdir(parents=True)
-        (self.foundation / 'gui/patches/apply.py').write_text('apply = True\n')
-        (self.foundation / 'gui/patches/host.patch').write_text('reviewed patch\n')
-        (self.source / 'api.hpp').write_text('int result();\n')
-        (self.source / 'retained.txt').write_text('Complete retained source\n')
-        (self.source / 'run.sh').write_text('#!/bin/sh\nexit 0\n'); (self.source / 'run.sh').chmod(0o755)
+        (self.foundation / 'gui/patches/apply.py').write_bytes(b'apply = True\n')
+        (self.foundation / 'gui/patches/host.patch').write_bytes(b'reviewed patch\n')
+        (self.source / 'api.hpp').write_bytes(b'int result();\n')
+        (self.source / 'retained.txt').write_bytes(b'Complete retained source\n')
+        (self.source / 'run.sh').write_bytes(b'#!/bin/sh\nexit 0\n'); (self.source / 'run.sh').chmod(0o755)
         def git(*args):
             return subprocess.run(['git', '-C', str(self.source), *args], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.decode().strip()
         git('init', '-q'); git('config', 'user.email', 'fixture@example.invalid'); git('config', 'user.name', 'Fixture')
-        git('add', '.'); git('commit', '-qm', 'Fixture input')
+        # Retain exact fixture bytes and index modes on every host, independently
+        # of user Git newline settings or filesystem executable-bit support.
+        git('config', 'core.autocrlf', 'false'); git('config', 'core.filemode', 'false')
+        git('add', '.'); git('update-index', '--chmod=+x', 'run.sh')
+        git('commit', '-qm', 'Fixture input')
         self.lock = {'revision': git('rev-parse', 'HEAD'), 'source_tree': git('rev-parse', 'HEAD^{tree}'),
                      'upstream': 'https://example.invalid/gui', 'license': 'NOASSERTION',
                      'redistribution': {'approved': False, 'license_files': []},
                      'patches': ['gui/patches/host.patch: fixture'],
                      'files': {'api.hpp': subject.archive.digest(self.source / 'api.hpp')}}
-        (self.foundation / 'third_party/gui-boundary.lock.json').write_text(json.dumps(self.lock))
+        (self.foundation / 'third_party/gui-boundary.lock.json').write_bytes(subject.archive.encoded(self.lock))
         self.group = self.root / 'group'
         subject.export(self.source, self.group, self.foundation)
 
@@ -68,7 +72,37 @@ class SourceGroupTests(unittest.TestCase):
         self.assertEqual(str(output / 'upstream'), result['source'])
         self.assertEqual(result, subject.restore(self.group, output, self.foundation))
         self.assertEqual(self.source.joinpath('retained.txt').read_bytes(), output.joinpath('upstream/retained.txt').read_bytes())
-        self.assertTrue(output.joinpath('upstream/run.sh').stat().st_mode & 0o111)
+        restored = output / 'upstream/run.sh'
+        self.assertEqual(0o755, self.verify()['files']['upstream/run.sh']['mode'])
+        with tarfile.open(self.group / 'gui-inputs.tar.gz') as archive:
+            self.assertEqual(0o755, archive.getmember('upstream/run.sh').mode)
+        self.assertEqual(0o755, subject.metadata(restored, 0o755)['mode'])
+        if not subject.WINDOWS:
+            self.assertTrue(restored.stat().st_mode & 0o111)
+
+    def test_fixture_retains_exact_git_bytes_and_executable_index_mode(self):
+        for name in ('api.hpp', 'retained.txt', 'run.sh'):
+            content = (self.source / name).read_bytes()
+            self.assertNotIn(b'\r', content)
+            committed = subprocess.check_output(['git', '-C', str(self.source), 'show', 'HEAD:' + name])
+            self.assertEqual(content, committed)
+        entry = subprocess.check_output(['git', '-C', str(self.source), 'ls-files', '-s', 'run.sh'])
+        self.assertEqual(b'100755', entry.split()[0])
+        self.assertEqual(0o755, self.verify()['files']['upstream/run.sh']['mode'])
+
+    def test_git_clean_newline_conversion_still_fails_complete_tree_check(self):
+        target = self.source / 'retained.txt'
+        changed = target.read_bytes().replace(b'\n', b'\r\n')
+        target.write_bytes(changed)
+        subprocess.run(['git', '-C', str(self.source), 'config', 'core.autocrlf', 'true'], check=True)
+        subprocess.run(['git', '-C', str(self.source), 'add', 'retained.txt'], check=True)
+        status = subprocess.check_output(['git', '-C', str(self.source), 'status', '--porcelain'])
+        self.assertEqual(b'', status, 'Git normalizes these bytes; complete-tree verification must still reject them')
+        output = self.root / 'newline-mismatch'
+        with self.assertRaisesRegex(ValueError, 'complete source tree'):
+            subject.export(self.source, output, self.foundation)
+        self.assertFalse(output.exists())
+        self.assertEqual(changed, target.read_bytes())
 
     def test_repeat_restore_uses_archive_paths_and_keeps_strict_inventory(self):
         output = self.root / 'restored'
