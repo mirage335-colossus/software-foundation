@@ -4,7 +4,7 @@ import hashlib
 import importlib.util
 import io
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import shutil
 import subprocess
 import tarfile
@@ -69,6 +69,43 @@ class SourceGroupTests(unittest.TestCase):
         self.assertEqual(result, subject.restore(self.group, output, self.foundation))
         self.assertEqual(self.source.joinpath('retained.txt').read_bytes(), output.joinpath('upstream/retained.txt').read_bytes())
         self.assertTrue(output.joinpath('upstream/run.sh').stat().st_mode & 0o111)
+
+    def test_repeat_restore_uses_archive_paths_and_keeps_strict_inventory(self):
+        output = self.root / 'restored'
+        result = subject.restore(self.group, output, self.foundation)
+        original = subject.archive.file_inventory(output)
+        expected_dirs = {'foundation', 'foundation/gui', 'foundation/gui/patches',
+                         'foundation/third_party', 'upstream'}
+        self.assertEqual(expected_dirs, {p.relative_to(output).as_posix()
+                                       for p in output.rglob('*') if p.is_dir()})
+        logical_names = self.verify()['files']
+
+        def host_path(value):
+            # Emulate Windows spelling for logical names while keeping actual
+            # fixture filesystem operations native to the running test host.
+            if isinstance(value, str) and value in logical_names:
+                return PureWindowsPath(value)
+            return Path(value)
+
+        with patch.object(subject, 'Path', side_effect=host_path):
+            self.assertEqual(result, subject.restore(self.group, output, self.foundation))
+            foreign_dir = output / 'foundation/gui/foreign'; foreign_dir.mkdir()
+            with self.assertRaisesRegex(ValueError, 'foreign entries'):
+                subject.restore(self.group, output, self.foundation)
+            self.assertTrue(foreign_dir.is_dir()); foreign_dir.rmdir()
+            foreign_file = output / 'upstream/foreign.txt'; foreign_file.write_bytes(b'local')
+            with self.assertRaisesRegex(ValueError, 'foreign entries'):
+                subject.restore(self.group, output, self.foundation)
+            self.assertEqual(b'local', foreign_file.read_bytes()); foreign_file.unlink()
+            target = output / 'upstream/api.hpp'; saved = target.read_bytes()
+            target.write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError, 'foreign entries'):
+                subject.restore(self.group, output, self.foundation)
+            self.assertEqual(b'changed', target.read_bytes()); target.write_bytes(saved)
+            self.assertEqual(result, subject.restore(self.group, output, self.foundation))
+        self.assertEqual(original, subject.archive.file_inventory(output))
+        self.assertEqual(expected_dirs, {p.relative_to(output).as_posix()
+                                       for p in output.rglob('*') if p.is_dir()})
 
     def test_terms_block_redistribution_only(self):
         self.assertFalse(self.verify()['redistributable'])

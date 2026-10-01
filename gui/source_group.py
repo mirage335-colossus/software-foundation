@@ -6,7 +6,7 @@ import gzip
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
@@ -265,7 +265,7 @@ def restore(group, output, foundation_root=ROOT):
     output = ordinary(output)
     if output.exists():
         actual = {p.relative_to(output).as_posix(): metadata(ordinary(p), manifest['files'].get(p.relative_to(output).as_posix(), {}).get('mode')) for p in output.rglob('*') if not p.is_dir() or p.is_symlink()}
-        expected_dirs = {str(parent) for name in manifest['files'] for parent in Path(name).parents if str(parent) != '.'}
+        expected_dirs = {str(parent) for name in manifest['files'] for parent in PurePosixPath(name).parents if str(parent) != '.'}
         actual_dirs = {p.relative_to(output).as_posix() for p in output.rglob('*') if p.is_dir()}
         if actual != manifest['files'] or actual_dirs != expected_dirs:
             raise ValueError('existing restored output changed or contains foreign entries')
