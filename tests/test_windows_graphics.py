@@ -183,6 +183,54 @@ class WindowsGraphicsTests(unittest.TestCase):
             with self.subTest(listing=value), self.assertRaises(graphics.GraphicsError):
                 graphics._listing(value, self.metadata)
 
+    def test_actual_windows_7zip_listing_matches_locked_members(self):
+        # Selected records from Windows 7-Zip 26.03, -slt -ba -sccUTF-8, reading
+        # the locked archive. This is console-output evidence, not WGL evidence.
+        raw = (b'Path = x64\\libgallium_wgl.dll\r\nSize = 61868544\r\nPacked Size = \r\n'
+               b'Modified = 2026-09-26 20:58:33.3376780\r\nAttributes = A\r\nCRC = 0BA88BAC\r\n'
+               b'Encrypted = -\r\nMethod = BCJ2 LZMA2:28 LZMA:20:lc0:lp2 LZMA:20:lc0:lp2\r\nBlock = 1\r\n\r\n'
+               b'Path = x64\\opengl32.dll\r\nSize = 139264\r\nPacked Size = \r\n'
+               b'Modified = 2026-09-26 21:04:22.6457865\r\nAttributes = A\r\nCRC = 118B73A7\r\n'
+               b'Encrypted = -\r\nMethod = BCJ2 LZMA2:28 LZMA:20:lc0:lp2 LZMA:20:lc0:lp2\r\nBlock = 1\r\n\r\n')
+        metadata = json.loads((ROOT/'third_party/host-graphics/mesa-windows.json').read_bytes())
+        graphics._listing(raw,metadata)
+        graphics._listing(raw.replace(b'\\',b'/').replace(b'\r\n',b'\n'),metadata)
+
+    def test_native_separator_listing_stages_only_canonical_locked_members(self):
+        raw = self.listing().replace(b'/',b'\\').replace(b'\n',b'\r\n')
+        def command(argv, **kwargs):
+            if argv[1] == 'l': return raw
+            self.assertIn(argv[-1],['x64/'+name for name in graphics.SELECTED])
+            return self.command(argv,**kwargs)
+        with patch.object(graphics,'_command',side_effect=command) as commands:
+            with self.stage() as staged:
+                self.assertEqual(set(graphics.SELECTED),{p.name for p in self.app.iterdir()})
+                for name, data in self.payloads.items(): self.assertEqual(data,(self.app/name).read_bytes())
+            self.assertEqual(3,commands.call_count)
+        self.assertEqual('removed',staged.receipt['cleanup'])
+        self.assertEqual([],list(self.app.iterdir()))
+
+    def test_native_listing_separators_do_not_enable_path_aliases_or_links(self):
+        raw = self.listing().replace(b'/',b'\\')
+        invalid = (b'..\\opengl32.dll', b'x64\\..\\opengl32.dll', b'\\opengl32.dll',
+                   b'C:\\x64\\opengl32.dll', b'\\\\server\\share\\opengl32.dll',
+                   b'x64\\.\\opengl32.dll', b'x64\\\\opengl32.dll',
+                   b'x64/child\\opengl32.dll', b'x64/opengl32.dll')
+        for name in invalid:
+            value = raw.replace(b'x64\\opengl32.dll',name)
+            with self.subTest(name=name),self.assertRaisesRegex(graphics.GraphicsError,'archive.*path') as caught:
+                graphics._listing(value,self.metadata)
+            displayed = [line[7:].decode() for line in value.splitlines() if line.startswith(b'Path = ')]
+            self.assertTrue(any(repr(path) in str(caught.exception) for path in displayed))
+        for value in (raw + raw.replace(b'x64',b'X64'),
+                      raw.replace(b'Folder = -',b'Symbolic Link = target'),
+                      raw.replace(b'Folder = -',b'Hard Link = target'),
+                      raw.replace(b'Folder = -',b'Folder = +'),
+                      raw.replace(b'Size = ',b'Size = 9'),
+                      raw.replace(b'x64\\opengl32.dll',b'x64\\OpenGL32.dll')):
+            with self.subTest(value=value),self.assertRaises(graphics.GraphicsError):
+                graphics._listing(value,self.metadata)
+
     def test_partial_extraction_failure_removes_only_owned_files(self):
         def command(argv, **kwargs):
             return b'bad' if argv[-1].endswith('libgallium_wgl.dll') else self.command(argv, **kwargs)

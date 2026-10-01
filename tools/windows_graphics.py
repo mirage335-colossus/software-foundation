@@ -309,6 +309,7 @@ def _listing(raw, metadata):
     except UnicodeDecodeError as error:
         raise GraphicsError('archive listing must be UTF-8') from error
     entries = {}
+    separator = None
     for block in re.split(r'\r?\n\s*\r?\n', text.strip()):
         fields = {}
         for line in block.splitlines():
@@ -318,11 +319,21 @@ def _listing(raw, metadata):
             if key in fields:
                 raise GraphicsError('duplicate archive metadata')
             fields[key] = value
-        path = fields.get('Path', '')
+        displayed = fields.get('Path', '')
+        # 7-Zip displays archive names with the host's separator. Interpret one
+        # consistent form, then apply the same canonical member checks below.
+        style = '\\' if '\\' in displayed else '/' if '/' in displayed else None
+        if ('\\' in displayed and '/' in displayed or
+                style is not None and separator is not None and style != separator):
+            raise GraphicsError('mixed archive entry path separators: ' + repr(displayed[:240]))
+        if style is not None:
+            separator = style
+        path = displayed.replace('\\', '/')
         posix = PurePosixPath(path)
-        if (not path or '\\' in path or ':' in path or posix.is_absolute() or '..' in posix.parts
+        if (not path or ':' in path or posix.is_absolute() or '..' in posix.parts
                 or str(posix) != path or any(ord(char) < 32 for char in path)):
-            raise GraphicsError('unsafe archive entry path')
+            raise GraphicsError('unsafe archive entry path: ' + repr(displayed[:240]))
+        fields['Path'] = path
         key = path.casefold()
         if key in entries:
             raise GraphicsError('duplicate archive entry')
