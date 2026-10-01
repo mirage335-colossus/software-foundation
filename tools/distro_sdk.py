@@ -225,6 +225,28 @@ def preserve_sources(recipe, cache, output):
     return state['recipe_id']
 
 
+def remove_runtime_aliases(sysroot):
+    """Omit exact target OS service links that have no meaning in a compiler SDK."""
+    sysroot = Path(sysroot)
+    expected = {'etc/mtab': '../proc/self/mounts', 'etc/resolv.conf': '../run/resolv.conf'}
+    candidates = []
+    for name, target in expected.items():
+        path = sysroot / name
+        if path.parent.is_symlink():
+            raise ValueError('runtime alias parent must be an ordinary directory: ' + name)
+        if not path.is_symlink():
+            if path.exists():
+                raise ValueError('unexpected runtime alias entry: ' + name)
+            continue
+        if os.readlink(path) != target:
+            raise ValueError('unexpected runtime alias target: ' + name)
+        candidates.append(path)
+    # Validate both entries before removing either. Other dangling links still
+    # fail the ordinary confined materialization check below.
+    for path in candidates:
+        path.unlink()
+
+
 def build(recipe, cache, destination, jobs):
     host_check(recipe)
     verify_inputs(recipe, cache)
@@ -240,6 +262,7 @@ def build(recipe, cache, destination, jobs):
         # Remove virtual filesystem aliases from the target sysroot. They are
         # runtime host services, never compiler inputs or application libraries.
         sysroot = supplier / manifest['target'] / 'sysroot'
+        remove_runtime_aliases(sysroot)
         for name in ('dev', 'proc', 'sys', 'run', 'tmp', 'var'):
             path = sysroot / name
             if path.is_symlink(): path.unlink()

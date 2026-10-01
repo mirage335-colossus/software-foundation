@@ -92,13 +92,27 @@ preserve exact artifact bytes and modes. Eleven Linux container-helper cases pas
 including actual same-owner transfers of private files; different-UID Docker
 execution remains hosted qualification. Forty-eight CI helper cases passed with
 the shared Windows GUI probe/test/cleanup adapter also used before packaging.
-Native cold builds remained in progress.
+The ARM64 job completed cold compilation, the SDK target and license-information
+collection, then assembly rejected unresolved runtime-service aliases inherited
+from the supplier skeleton. Exact-target normalization now omits those two aliases;
+36 local SDK cases passed, including atomic rejection of unexpected entries and
+continued rejection of other missing or escaping links. The native SDK group and
+its consumers still require the corrected hosted attempt.
 Windows-only maintenance [36889465586](https://github.com/mirage335-colossus/software-foundation/actions/runs/36889465586)
 passed graphics acquisition, then the cold offline dependency build correctly
 rejected a missing late build-tool download. Explicit maintenance now traverses
 full dependency installation to retain those late inputs, discards its compiled
 output, and still requires a separate fresh offline build. All 33 local SDK cases
 passed, including late-input retention and failed-preparation rejection.
+Candidate [36892065203](https://github.com/mirage335-colossus/software-foundation/actions/runs/36892065203)
+completed successfully at `cad7886508b0f5d95f16835fa2d70d68d4c19477` on Windows
+x86_64, Linux x86_64 and Linux ARM64. It supersedes the preceding candidate failures
+for those exact scopes. The real Debian client receipt records signed HTTPS refresh,
+installation, exact payload verification, runtime execution, upgrade, rejection of
+a tampered signature, and removal. Independent packaging, copied-archive execution,
+native source/tool suites and sanitizer checks passed. The later native-SDK
+normalization change has its focused evidence above and is a separate qualification.
+
 A requested, queued or running job is not successful qualification, and no release
 publication is authorized by these checks.
 

@@ -206,6 +206,15 @@ the producer never substitutes a moving upstream version. Use an OS network
 restriction when demonstrating disconnected recovery, as disabled application
 download commands alone do not establish network isolation.
 
+A development sysroot is not a bootable operating-system image. Assembly omits
+virtual runtime directories and the pinned skeleton's mount-table and resolver
+aliases (`etc/mtab` and `etc/resolv.conf`). Validate both exact supplier link targets
+before removing either; a changed target, redirected parent or unexpected regular
+file is a maintenance decision, not permission to discard it. All other unresolved
+or escaping aliases still fail materialization. Never resolve a target runtime
+service through the build host's filesystem or relax general link validation to
+make a supplier skeleton copy succeed.
+
 The x86_64 recipe is the default. The native ARM64 recipe is
 [`aarch64/recipe.json`](../third_party/sdk/aarch64/recipe.json); pass it with
 `--recipe` to every producer command on a Debian 12 ARM64 host. It selects the

@@ -447,6 +447,55 @@ class ProducerContractTests(unittest.TestCase):
 
 
 class NativeLinuxToolchainTests(unittest.TestCase):
+    def test_target_os_aliases_do_not_obstruct_retained_sdk_materialization(self):
+        import distro_sdk
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); supplier = root / 'supplier'; sysroot = supplier / 'sysroot'
+            (sysroot / 'etc').mkdir(parents=True); (sysroot / 'usr/include').mkdir(parents=True)
+            (sysroot / 'usr/include/example.h').write_bytes(b'/* compiler input */')
+            (sysroot / 'usr/include/alias.h').symlink_to('example.h')
+            (sysroot / 'etc/mtab').symlink_to('../proc/self/mounts')
+            (sysroot / 'etc/resolv.conf').symlink_to('../run/resolv.conf')
+            # These exact links exist in the pinned supplier skeleton. Runtime
+            # service directories are absent from the compiler-only sysroot.
+            with self.assertRaises(FileNotFoundError): sdk.materialize(supplier, root / 'before')
+            distro_sdk.remove_runtime_aliases(sysroot)
+            distro_sdk.remove_runtime_aliases(sysroot)
+            sdk.materialize(supplier, root / 'after')
+            self.assertEqual((root / 'after/sysroot/usr/include/alias.h').read_bytes(), b'/* compiler input */')
+            self.assertFalse((root / 'after/sysroot/usr/include/alias.h').is_symlink())
+            self.assertFalse((sysroot / 'etc/mtab').is_symlink())
+            self.assertFalse((sysroot / 'etc/resolv.conf').is_symlink())
+
+    def test_changed_runtime_aliases_are_rejected_before_any_removal(self):
+        import distro_sdk
+        with tempfile.TemporaryDirectory() as temporary:
+            sysroot = Path(temporary); (sysroot / 'etc').mkdir()
+            known = sysroot / 'etc/mtab'; known.symlink_to('../proc/self/mounts')
+            changed = sysroot / 'etc/resolv.conf'; changed.symlink_to('../usr/include/important.h')
+            with self.assertRaisesRegex(ValueError, 'unexpected runtime alias target'):
+                distro_sdk.remove_runtime_aliases(sysroot)
+            self.assertTrue(known.is_symlink()); self.assertTrue(changed.is_symlink())
+            changed.unlink(); changed.write_bytes(b'real retained input')
+            with self.assertRaisesRegex(ValueError, 'unexpected runtime alias entry'):
+                distro_sdk.remove_runtime_aliases(sysroot)
+            self.assertTrue(known.is_symlink()); self.assertEqual(changed.read_bytes(), b'real retained input')
+
+    def test_other_broken_or_escaping_supplier_aliases_remain_rejected(self):
+        import distro_sdk
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); supplier = root / 'supplier'; sysroot = supplier / 'sysroot'
+            (sysroot / 'etc').mkdir(parents=True)
+            other = sysroot / 'etc/other'; other.symlink_to('../proc/other')
+            distro_sdk.remove_runtime_aliases(sysroot)
+            with self.assertRaises(FileNotFoundError): sdk.materialize(supplier, root / 'broken')
+            self.assertTrue(other.is_symlink())
+            outside = root / 'outside'; outside.write_bytes(b'not a supplier input')
+            other.unlink(); other.symlink_to(outside)
+            with self.assertRaisesRegex(ValueError, 'escapes'): sdk.materialize(supplier, root / 'escaped')
+            self.assertEqual(outside.read_bytes(), b'not a supplier input')
+
+
     def make_sdk(self, root, c=True):
         import platform, shlex, shutil
         tree = root / 'sdk'; (tree / 'bin').mkdir(parents=True); (tree / 'sysroot').mkdir()
