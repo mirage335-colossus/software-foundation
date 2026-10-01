@@ -107,13 +107,14 @@ jobs:
       contents: write
       actions: read
   copied:
+    # Draft listings require push access even when this job only fetches bytes.
+    permissions:
+      contents: write
+      actions: read
     if: ${{ !inputs.devfast }}
     needs:
     - plan
     - package
-    permissions:
-      contents: read
-      actions: read
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.packages) }}

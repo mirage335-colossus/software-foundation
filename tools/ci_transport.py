@@ -15,6 +15,7 @@ import shutil
 import stat
 import tarfile
 import tempfile
+import time
 import unicodedata
 
 import dependency_archive as archive
@@ -128,13 +129,22 @@ def _store(remote, context, repository_id, *, create=False):
             try: remote.change('/git/refs', body={'ref': 'refs/tags/' + tag, 'sha': context['source_commit']})
             except delivery.DeliveryError:
                 if remote.reference(tag, missing=True) != context['source_commit']: raise
+        creation_error = None
         try:
             remote.change('/releases', body={'tag_name': tag, 'target_commitish': context['source_commit'],
                 'name': tag, 'body': archive.encoded(identity).decode(), 'draft': True,
                 'prerelease': True, 'make_latest': 'false'})
-        except delivery.DeliveryError:
-            if remote.find(tag, required=False) is None: raise
-        info = remote.find(tag)
+        except delivery.DeliveryError as error:
+            creation_error = error
+        # A successful creation can precede its appearance in the list endpoint.
+        # Reconcile by bounded reads only; never repeat the uncertain mutation.
+        for delay in (0, .25, .5, 1, 2, 4):
+            if delay: time.sleep(delay)
+            info = remote.find(tag, required=False)
+            if info is not None: break
+        if info is None:
+            if creation_error is not None: raise creation_error
+            raise TransportError('created transport draft is not visible; preserve and reconcile')
     if (info is None or info.get('draft') is not True or info.get('prerelease') is not True or
             info.get('name') != tag or delivery.parse(info.get('body', 'null')) != identity or
             remote.reference(tag) != context['source_commit']):

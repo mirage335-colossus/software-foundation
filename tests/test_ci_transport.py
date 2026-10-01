@@ -356,6 +356,32 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(uploads, len([c for c in self.remote.calls if c[0] == 'upload']))
         self.remote.complete(); self.fetch()
 
+    def test_created_draft_visibility_is_reconciled_with_reads_only(self):
+        original = self.remote.pages; hidden = 3
+        def delayed(endpoint):
+            nonlocal hidden
+            if endpoint.endswith('/releases?per_page=100') and self.remote.releases and hidden:
+                hidden -= 1
+                return []
+            return original(endpoint)
+        with patch.object(self.remote, 'pages', side_effect=delayed), patch.object(t.time, 'sleep') as sleep:
+            self.publish()
+        self.assertEqual(0, hidden); self.assertEqual(3, sleep.call_count)
+        self.assertEqual(1, len([c for c in self.remote.calls if c == ('POST', 'repos/example/project/releases')]))
+        self.remote.complete(); self.fetch()
+
+    def test_unobserved_created_draft_fails_without_repeating_mutation(self):
+        original = self.remote.pages
+        def hidden(endpoint):
+            if endpoint.endswith('/releases?per_page=100'): return []
+            return original(endpoint)
+        with patch.object(self.remote, 'pages', side_effect=hidden), patch.object(t.time, 'sleep'), \
+                self.assertRaisesRegex(ValueError, 'not visible'):
+            self.publish()
+        self.assertEqual(1, len(self.remote.releases))
+        self.assertEqual(1, len([c for c in self.remote.calls if c == ('POST', 'repos/example/project/releases')]))
+        self.assertFalse(self.remote.releases[0]['assets'])
+
     def test_manifest_identity_replacement_after_upload_is_rejected(self):
         original = t._put
         def replaced(*args, **kwargs):

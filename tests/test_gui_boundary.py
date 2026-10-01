@@ -37,7 +37,7 @@ class GuiBoundaryTests(unittest.TestCase):
 
     def test_nested_shared_and_host_sources_are_checked_by_real_entry_point(self):
         with tempfile.TemporaryDirectory(prefix="nested GUI boundary ") as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             guard = root / "check_boundary.py"
             guard.write_bytes((ROOT / "gui/check_boundary.py").read_bytes())
             paths = [root / "shared/feature/detail/control.hh",
