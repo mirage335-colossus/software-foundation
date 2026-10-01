@@ -4,6 +4,7 @@ permissions:
 env:
   PYTHONUTF8: '1'
   PYTHONDONTWRITEBYTECODE: '1'
+  GH_TOKEN: ${{ github.token }}
 concurrency:
   group: candidate-${{ github.ref }}-${{ inputs.devfast }}-${{ inputs.linux_pool }}-${{ inputs.include_arm }}
   cancel-in-progress: true
@@ -58,14 +59,17 @@ jobs:
         subprocess.run([sys.executable, 'tools/ci_plan.py', 'host', os.environ['TARGET']], check=True)
         subprocess.run([sys.executable, 'tools/build.py', 'test', 'release', '--label', os.environ['SCOPE']], check=True)
     - if: always()
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: source-${{ matrix.target }}-${{ matrix.scope }}-${{ github.run_attempt }}
-        path: |
+      name: Retain verified source-${{ matrix.target }}-${{ matrix.scope }}-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: source-${{ matrix.target }}-${{ matrix.scope }}-${{ github.run_attempt }}
+        BUNDLE_PATHS: |
           build/release/Testing/Temporary/
           build/release/build-info.txt
           build/release/test-reports/
-        if-no-files-found: error
+    permissions:
+      contents: write
+      actions: read
   package:
     if: ${{ !inputs.devfast }}
     needs: plan
@@ -91,15 +95,17 @@ jobs:
         subprocess.run([sys.executable, 'tools/ci_plan.py', 'host', os.environ['TARGET']], check=True)
         subprocess.run([sys.executable, 'tools/ci_plan.py', 'package', '--build', 'build/package',
                         '--jobs', os.environ['JOBS']], check=True)
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: package-${{ matrix.target }}-${{ github.run_attempt }}
-        path: |
+    - name: Retain verified package-${{ matrix.target }}-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: package-${{ matrix.target }}-${{ github.run_attempt }}
+        BUNDLE_PATHS: |
           build/package/packages/*.tar.gz
           build/package/packages/*.zip
           build/package/packages/*.json
-        if-no-files-found: error
-        compression-level: 0
+    permissions:
+      contents: write
+      actions: read
   copied:
     if: ${{ !inputs.devfast }}
     needs:
@@ -121,13 +127,13 @@ jobs:
     - env:
         GH_TOKEN: ${{ github.token }}
         GH_REPO: ${{ github.repository }}
-        ARTIFACT: package-${{ matrix.target }}-${{ github.run_attempt }}
+        BUNDLE_NAME: package-${{ matrix.target }}-${{ github.run_attempt }}
+        BUNDLE_OUTPUT: build/copied
       shell: python
       run: |
-        import os, subprocess, sys
-        subprocess.run(['gh', 'run', 'download', os.environ['GITHUB_RUN_ID'], '--name', os.environ['ARTIFACT'],
-                        '--dir', 'build/copied'], check=True)
-        subprocess.run([sys.executable, 'tools/ci_plan.py', 'check-archives', 'build/copied', '--runtime-only'], check=True)
+        import subprocess,sys
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
+        subprocess.run([sys.executable,'tools/ci_plan.py','check-archives','build/copied','--runtime-only'],check=True)
   sanitizer:
     if: ${{ !inputs.devfast }}
     runs-on: ubuntu-24.04
@@ -153,12 +159,14 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/container_job.py', 'apt-native-smoke'], check=True)
     - if: always()
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: apt-mechanism-${{ github.run_attempt }}
-        path: build/apt-evidence/
-        if-no-files-found: error
-        retention-days: 30
+      name: Retain verified apt-mechanism-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: apt-mechanism-${{ github.run_attempt }}
+        BUNDLE_PATHS: build/apt-evidence/
+    permissions:
+      contents: write
+      actions: read
   verdict:
     if: always()
     needs:
@@ -204,6 +212,24 @@ jobs:
         - '2'
         - '4'
         - '8'
+        default: '2'
+      include_arm:
+        description: Include native Linux ARM64 execution
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      devfast:
+        description: Focused diagnostic only; cannot qualify a release
+        type: boolean
+        default: false
+      linux_pool:
+        description: Faster needs an authorized FOUNDATION_FAST_LINUX_RUNNER variable
+        type: string
+        default: standard
+      build_jobs:
+        description: Compile concurrency; tests remain bounded independently
+        type: string
         default: '2'
       include_arm:
         description: Include native Linux ARM64 execution

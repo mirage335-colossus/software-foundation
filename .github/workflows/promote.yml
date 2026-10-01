@@ -33,6 +33,40 @@ name: Promote exact certified candidate
         description: Exact certificate JSON SHA-256
         type: string
         required: true
+  workflow_call:
+    inputs:
+      tag:
+        description: Exact published candidate tag
+        type: string
+        required: true
+      inventory:
+        description: Exact release.json SHA-256
+        type: string
+        required: true
+      profile:
+        description: Support policy profile
+        type: string
+        default: core
+      execute:
+        description: Set Latest only after remote certificate and asset revalidation
+        type: boolean
+        default: false
+      certification_run:
+        description: Exact certificate run ID
+        type: string
+        required: true
+      certification_attempt:
+        description: Exact certificate attempt
+        type: string
+        required: true
+      certificate:
+        description: Exact certificate JSON SHA-256
+        type: string
+        required: true
+    outputs:
+      promoted:
+        description: Verified promoted
+        value: ${{ jobs.promote.outputs.promoted }}
 permissions:
   contents: read
   actions: read
@@ -40,23 +74,24 @@ jobs:
   plan:
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
     - shell: python
       run: |-
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'promotion-plan'], check=True)
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-      with:
-        name: promotion-inputs-${{ github.run_attempt }}
-        path: |-
+    - name: Retain verified promotion-inputs-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: promotion-inputs-${{ github.run_attempt }}
+        BUNDLE_PATHS: |-
           build/candidate/
           build/delivery.json
           build/receipts/
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
+    permissions:
+      contents: write
+      actions: read
   promote:
     if: inputs.execute
     needs: plan
@@ -69,25 +104,29 @@ jobs:
       contents: write
       actions: read
     steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
     - shell: python
-      run: |-
-        import os, subprocess
-        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','promotion-inputs-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build'],check=True)
+      run: |
+        import subprocess,sys
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
+      env:
+        BUNDLE_NAME: promotion-inputs-${{ github.run_attempt }}
+        BUNDLE_OUTPUT: build
     - shell: python
       run: |-
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'promote'], check=True)
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-      with:
-        name: promotion-delivery-${{ github.run_attempt }}
-        path: build/receipts/
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
-      if: always()
+      id: result
+    - if: always()
+      name: Retain verified promotion-delivery-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: promotion-delivery-${{ github.run_attempt }}
+        BUNDLE_PATHS: build/receipts/
+    outputs:
+      promoted: ${{ steps.result.outputs.promoted }}
 env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'

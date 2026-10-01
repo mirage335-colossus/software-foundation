@@ -510,7 +510,7 @@ silently satisfying absolute paths through the original compiler or target files
 
 `build/sdk-isolation.json` records the exact recipe, group digests, workflow commit,
 run and attempt, initial state, checked boundaries and restoration outcome. It is
-retained in the SDK proof artifact. Consumer `qualification.json` files include
+retained in the SDK proof bundle. Consumer `qualification.json` files include
 its SHA-256 and are published only after successful guard exit; the publication
 plan follows those receipts. A failed consumer or filesystem operation emits a
 failed isolation receipt, when its original parent remains accessible, and preserves
@@ -603,41 +603,80 @@ sysroot without weakening the deployed application's runtime policy.
 
 ## Retain complete SDK bytes after a consumer failure
 
-SDK maintenance runs a separate retention check even when production or consumer
-qualification fails. It recomputes the recipe for the selected target and profile,
-checks the selected origin, and verifies the exact binary/source/checksum triplet,
-including both complete inner inventories. Only a successful check permits the
-`sdk-group-<target>-<attempt>` workflow artifact to upload. Missing, partial,
-unexpected or changed bytes produce no retention success output.
+SDK maintenance runs a separate retention check even when consumer qualification
+fails. It recomputes the recipe for the selected target/profile, checks the origin,
+and verifies the exact binary/source/checksum triplet and complete inner
+inventories. Only a successful retention check may store the
+`sdk-group-<target>-<attempt>` draft-release bundle. Missing, partial, unexpected
+or changed bytes produce no retention success output.
 
-The sibling `sdk-proof-<target>-<attempt>` artifact includes `sdk-retention.json`.
-It binds the target, profile, recipe, source commit, run, attempt and every group
-file digest. Its `qualification` is always `unqualified`, and
-`publication_approved` is false: this receipt establishes reusable bytes, not a
-working consumer. Existing consumer failures remain failures. The publisher still
-needs successful producer jobs and explicit execution authorization.
+The sibling `sdk-proof-<target>-<attempt>` bundle includes bounded
+`sdk-retention.json` and `sdk-origin.json` records. Retention binds target, profile,
+recipe, source commit, run, attempt and all three file digests. Its qualification
+is always `unqualified` and `publication_approved` is false: reusable bytes do not
+establish a working consumer. A failed consumer remains failed; publication still
+requires successful current consumers and an explicit execution gate.
 
-For a local retry, select an exact repository, maintenance run, source commit,
-target and attempt. Inspect its identity and download its exact named artifacts
-into new private directories; do not select the newest similarly named artifact.
-The examples below use Windows and a placeholder complete recipe ID. Replace all
-uppercase placeholders with the reviewed values before running commands.
+Hosted replay selects `source=retained`, one exact target/profile, and this strict
+version-2 `retained_input` object. Replace every placeholder with reviewed values:
+
+```json
+{
+  "schema_version": 2,
+  "repository": "OWNER/REPOSITORY",
+  "target": "windows-x86_64",
+  "profile": "all-gui",
+  "recipe_id": "REPLACE_WITH_64_LOWERCASE_HEX_DIGITS",
+  "run_id": 123,
+  "source_commit": "REPLACE_WITH_EXACT_PRODUCER_COMMIT",
+  "attempt": 1,
+  "job_id": 456,
+  "workflow": "sdk-maintenance.yml",
+  "group": {
+    "manifest_id": 789,
+    "manifest_sha256": "REPLACE_WITH_GROUP_MANIFEST_SHA256"
+  },
+  "proof": {
+    "manifest_id": 790,
+    "manifest_sha256": "REPLACE_WITH_PROOF_MANIFEST_SHA256"
+  }
+}
+```
+
+The manifest IDs identify release assets, and each digest covers its complete
+manifest JSON. These are not Actions artifact IDs or transport ZIP hashes. The
+manifest binds exact chunk IDs and hashes, whole archive bytes, complete file
+inventory, repository/source/run/attempt and producer job. Only explicit SDK
+maintenance or SDK import workflows are accepted. A consumer uses its current
+recipe and application source; the selected producer identifies the earlier
+retained bytes. A changed recipe requires an appropriate other group or explicit
+maintenance, never relabelling or a silent cold-build fallback.
+
+[`ci_plan.retained_sdk`](../tools/ci_plan.py) fetches both pinned bundles through
+[`ci_transport.py`](../tools/ci_transport.py), checks the completed producer and
+both records, verifies the exact SDK triplet, then publishes a fresh local group.
+Completed failed producers are deliberately accepted for this retention path;
+running, cancelled and timed-out jobs are not. Overall run success is neither
+required nor inferred. All remote identities and downloaded bytes are verified.
+Missing, changed or incomplete inputs fail. Normal consumption never reads
+Actions artifact storage.
+
+For local recovery, save the exact version-2 request as `build/retry/request.json`
+in an owned output tree and inspect its producer through the authenticated API:
 
 ```text
 gh run view RUN_ID --repo OWNER/REPOSITORY --json headSha,status,conclusion,event,workflowName,url
-gh run download RUN_ID --repo OWNER/REPOSITORY --name sdk-group-windows-x86_64-ATTEMPT --dir build/retry/group
-gh run download RUN_ID --repo OWNER/REPOSITORY --name sdk-proof-windows-x86_64-ATTEMPT --dir build/retry/proof
+python tools/ci_transport.py fetch --repository OWNER/REPOSITORY --run-id RUN_ID --attempt ATTEMPT --source-commit COMMIT --workflow sdk-maintenance.yml --name sdk-group-windows-x86_64-ATTEMPT --job-id JOB_ID --manifest-id GROUP_MANIFEST_ID --manifest-sha256 GROUP_MANIFEST_SHA256 --allow-failed --output build/retry/group --receipt build/retry/group-receipt.json
+python tools/ci_transport.py fetch --repository OWNER/REPOSITORY --run-id RUN_ID --attempt ATTEMPT --source-commit COMMIT --workflow sdk-maintenance.yml --name sdk-proof-windows-x86_64-ATTEMPT --job-id JOB_ID --manifest-id PROOF_MANIFEST_ID --manifest-sha256 PROOF_MANIFEST_SHA256 --allow-failed --output build/retry/proof --receipt build/retry/proof-receipt.json
 python tools/sdk_windows.py recipe-id --recipe-file third_party/sdk/windows-gui/windows-base.json
 python tools/dependency_store.py verify --group build/retry/group --recipe RECIPE
 ```
 
-Use `third_party/sdk/windows-base.json` for the core profile. Confirm the printed
-recipe matches the receipt and the selected checkout's recipe, and compare the
-verification output's three file digests with the receipt. Find the receipt inside
-the downloaded proof artifact; its relative directory depends on which evidence
-files were present. A mismatch requires investigation rather than relabelling the
-group. A workflow artifact from another repository or source commit is not trusted
-merely because its filenames and self-contained checksums match.
+Use `third_party/sdk/windows-base.json` for the core profile. Compare the selected
+recipe and all triplet hashes with `sdk-retention.json` and verify its target,
+profile and producer identity before using the bytes. The hosted helper performs
+these comparisons automatically. A local fetch alone is not SDK qualification.
+Use `sdk-import.yml` as the workflow argument when the exact origin is an import.
 
 On a matching Windows host, select the pinned external compiler in PowerShell,
 then install the dependencies into a new location and run a fresh consumer:
@@ -675,58 +714,29 @@ python tools/build.py test release --sdk build/retry/sdk --build-dir build/retry
 Choose a new output directory for every attempt and preserve failure evidence.
 Native GUI and browser requirements still need their relevant full consumers.
 Hosted `source=auto` and `source=base` continue to use qualified base storage;
-artifact reuse requires the separate explicit `source=retained` selection.
+draft bundle reuse requires the separate explicit `source=retained` selection.
 A retained group or local retry does not itself authorize base publication.
 
-For a hosted retry, select `source=retained`, one exact `target`, its `profile`,
-and an explicit `retained_input` JSON object. This is separate from ordinary
-base selection; there is no fallback from failed download or validation to a cold
-build. All fields below are required. Replace the illustrative IDs and full-length
-hexadecimal values with the reviewed producer and artifact identities:
+## Explicit migration from legacy Actions storage
 
-```json
-{
-  "schema_version": 1,
-  "repository": "OWNER/REPOSITORY",
-  "target": "windows-x86_64",
-  "profile": "all-gui",
-  "recipe_id": "REPLACE_WITH_64_LOWERCASE_HEX_DIGITS",
-  "run_id": 123,
-  "source_commit": "REPLACE_WITH_EXACT_PRODUCER_COMMIT",
-  "attempt": 1,
-  "job_id": 456,
-  "group": {"id": 789, "sha256": "REPLACE_WITH_GROUP_ZIP_SHA256"},
-  "proof": {"id": 790, "sha256": "REPLACE_WITH_PROOF_ZIP_SHA256"}
-}
-```
+[`sdk-import.yml`](../.github/workflows/sdk-import.yml) is a one-time migration
+entry point for older retained SDK groups. It accepts the exact legacy schema-1
+request: the same repository, target/profile, recipe, run/attempt/job and source
+fields, with `group` and `proof` containing immutable artifact `id` and full ZIP
+`sha256`, and no `workflow` field. It does not infer the latest run or artifact.
+The legacy reader exists only for this explicit import; ordinary SDK replay
+rejects version 1 and never falls back to that reader.
 
-Read the exact job and artifact metadata through the authenticated GitHub API.
-The artifact digest describes the entire transport ZIP; it differs from the
-binary/source archive digests inside `sdk-retention.json`. A retry uses the current
-checkout's recipe and new consumer source. Its declared producer commit identifies
-the earlier checkout that created the retained SDK. The recipes must still match;
-a changed producer recipe requires another appropriate group or explicit rebuild.
+The importer verifies the original maintenance workflow, repository and producer
+identity, completed job, complete artifact metadata and ZIP hashes, safe bounded
+members, both inner SDK inventories and exact retention receipt. It preserves the
+original request and lineage, writes new import-run origin/retention records, and
+stores the unchanged triplet and proof as draft bundles. Its output is a concrete
+version-2 request referencing `sdk-import.yml`; use that exact request for a fresh
+consumer. Importing verified bytes never certifies the consumer or publishes base.
 
-[`ci_plan.retained_sdk`](../tools/ci_plan.py) checks the repository's numeric and
-text identity, the producer's head repository and source commit, exact maintenance
-workflow and attempt, completed target job, and the artifacts' immutable IDs,
-names, digests, size limits and creation times within that job. The producer job
-may have failed its consumers while sibling jobs are still running. A running,
-cancelled or timed-out producer is not accepted. Overall run success is neither
-required nor inferred. The existing successful-run download interface is unchanged.
-
-Both ZIP hashes are checked before their contents are used. Every member is
-validated for portable paths, entry type, duplicate/case aliases and size limits.
-Only the two bounded JSON proof records are read; other proof reports are never
-extracted. The group must contain exactly three ordinary SDK files, and both
-inner inventories and the receipt's exact hashes are verified. Remote identities
-are reread before a new group directory is published. Missing, changed, expired,
-ambiguous or partial inputs fail without any cold-build fallback.
-
-The new `sdk-origin.json` retains the complete selected request, immutable artifact
-metadata, producer job and prior unqualified receipt. Core and, when selected,
-complete GUI consumers then run again with the current application sources.
-The GUI input and host graphics prerequisites remain explicit maintenance steps;
-reusing SDK bytes does not suppress them. A fresh failure stays failed and can
-retain only another unqualified group. Base publication still requires successful
-current consumers and the independent explicit `execute` gate.
+Preserve the old assets until the new bundles have been fetched independently,
+the triplet matches byte for byte and the replay is usable. Then review exact
+superseded artifact IDs and dependencies before an authorized cleanup. Never
+remove unrelated artifacts or the sole surviving qualification evidence. The
+importer does not delete remote data or create new Actions artifacts.

@@ -41,6 +41,56 @@ name: Prepared SDK application and candidate
         description: Exact retained GUI manifest SHA-256 for all-gui; empty for core
         type: string
         required: false
+  workflow_call:
+    inputs:
+      profile:
+        description: Exact release inventory
+        type: string
+        default: core
+      recipes:
+        description: JSON target-to-recipe map; every selected target is mandatory
+        type: string
+        required: true
+      tag:
+        description: Optional new candidate tag
+        type: string
+        required: true
+      experiment:
+        description: Keep this candidate a prerelease and ineligible for Latest
+        type: boolean
+        default: false
+      jobs:
+        description: Compile concurrency
+        type: string
+        default: '2'
+      execute:
+        description: Publish candidate after exact local verification
+        type: boolean
+        default: false
+      graphics_archive_url:
+        description: Operator-retained HTTPS host graphics archive; required for Windows all-gui
+        type: string
+        default: ''
+      gui_group:
+        description: Exact retained GUI manifest SHA-256 for all-gui; empty for core
+        type: string
+        required: false
+    outputs:
+      tag:
+        description: Verified tag
+        value: ${{ jobs.assemble.outputs.tag }}
+      inventory_sha256:
+        description: Verified inventory sha256
+        value: ${{ jobs.assemble.outputs.inventory_sha256 }}
+      source_commit:
+        description: Verified source commit
+        value: ${{ jobs.assemble.outputs.source_commit }}
+      delivery_sha256:
+        description: Verified delivery sha256
+        value: ${{ jobs.assemble.outputs.delivery_sha256 }}
+      published:
+        description: Verified published
+        value: ${{ jobs.publish.outputs.published || 'false' }}
 permissions:
   contents: read
   actions: read
@@ -60,15 +110,16 @@ jobs:
       id: plan
       env:
         RECIPES: ${{ inputs.recipes }}
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: source-${{ github.run_attempt }}
-        path: |-
+    - name: Retain verified source-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: source-${{ github.run_attempt }}
+        BUNDLE_PATHS: |-
           build/source.tar.gz
           build/recipes.json
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
+    permissions:
+      contents: write
+      actions: read
   application:
     needs: prepare
     strategy:
@@ -85,9 +136,12 @@ jobs:
       with:
         persist-credentials: false
     - shell: python
-      run: |-
-        import os, subprocess
-        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','source-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build/source'],check=True)
+      run: |
+        import subprocess,sys
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
+      env:
+        BUNDLE_NAME: source-${{ github.run_attempt }}
+        BUNDLE_OUTPUT: build/source
     - shell: python
       run: |-
         import subprocess, sys
@@ -109,20 +163,20 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/container_job.py', 'application-build'], check=True)
       if: runner.os == 'Linux'
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: application-${{ matrix.target }}-${{ github.run_attempt }}
-        path: |-
+    - name: Retain verified application-${{ matrix.target }}-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: application-${{ matrix.target }}-${{ github.run_attempt }}
+        BUNDLE_PATHS: |-
           build/produced/*.tar.gz
           build/produced/*.zip
           build/produced/*.json
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: application-evidence-${{ matrix.target }}-${{ github.run_attempt }}
-        path: |-
+    - if: always()
+      name: Retain verified application-evidence-${{ matrix.target }}-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: application-evidence-${{ matrix.target }}-${{ github.run_attempt }}
+        BUNDLE_PATHS: |-
           build/produced/source.junit.xml
           build/produced/work/build/Testing/Temporary/
           build/produced/work/build/test-reports/
@@ -135,10 +189,9 @@ jobs:
           build/produced/work/build/gui/visual-evidence/**/*.png
           build/produced/work/build/gui/visual-evidence/**/*.ppm
           build/produced/work/build/gui/visual-evidence/**/*.log
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
-      if: always()
+    permissions:
+      contents: write
+      actions: read
   assemble:
     needs:
     - prepare
@@ -149,31 +202,38 @@ jobs:
       with:
         persist-credentials: false
     - shell: python
-      run: |-
-        import os, subprocess
-        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','source-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build/source'],check=True)
+      run: |
+        import subprocess,sys
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
+      env:
+        BUNDLE_NAME: source-${{ github.run_attempt }}
+        BUNDLE_OUTPUT: build/source
     - shell: python
       run: |
-        import json,os,subprocess
-        from pathlib import Path
-        recipes=json.loads(Path('build/source/recipes.json').read_text())
-        for target in recipes:
-         subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','application-'+target+'-'+os.environ['GITHUB_RUN_ATTEMPT'],'--dir','build/packages/'+target],check=True)
+        import subprocess,sys
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-application-bundles'],check=True)
     - shell: python
       run: |-
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'assemble'], check=True)
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: candidate-${{ github.run_attempt }}
-        path: |-
+      id: result
+    - name: Retain verified candidate-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: candidate-${{ github.run_attempt }}
+        BUNDLE_PATHS: |-
           build/candidate/
           build/delivery.json
           build/publication-request.json
           build/publication-plan.json
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      tag: ${{ steps.result.outputs.tag }}
+      inventory_sha256: ${{ steps.result.outputs.inventory_sha256 }}
+      source_commit: ${{ steps.result.outputs.source_commit }}
+      delivery_sha256: ${{ steps.result.outputs.delivery_sha256 }}
   publish:
     if: inputs.execute
     needs: assemble
@@ -190,21 +250,25 @@ jobs:
       with:
         persist-credentials: false
     - shell: python
-      run: |-
-        import os, subprocess
-        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','candidate-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build'],check=True)
+      run: |
+        import subprocess,sys
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
+      env:
+        BUNDLE_NAME: candidate-${{ github.run_attempt }}
+        BUNDLE_OUTPUT: build
     - shell: python
       run: |-
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'publish-candidate'], check=True)
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: candidate-delivery-${{ github.run_attempt }}
-        path: build/receipts/
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
-      if: always()
+      id: result
+    - if: always()
+      name: Retain verified candidate-delivery-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: candidate-delivery-${{ github.run_attempt }}
+        BUNDLE_PATHS: build/receipts/
+    outputs:
+      published: ${{ steps.result.outputs.published }}
 env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'

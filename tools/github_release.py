@@ -100,12 +100,26 @@ class GitHub:
         return parse(payload)
 
     def pages(self, endpoint):
-        result = self._run(['api', '--hostname', 'github.com', '--paginate', '--slurp', endpoint])
+        # Distribution CLI versions support --paginate without the newer
+        # --slurp option. Decode its complete concatenated JSON page stream.
+        result = self._run(['api', '--hostname', 'github.com', '--paginate', endpoint])
         if result.returncode:
             raise DeliveryError('complete remote pagination failed')
-        pages = parse(result.stdout)
-        if not isinstance(pages, list) or not pages or any(not isinstance(p, list) for p in pages):
-            raise DeliveryError('expected every page of a remote array')
+        raw = result.stdout.decode('utf-8')
+        if len(raw) > 16 * 1024 * 1024:
+            raise DeliveryError('remote pagination exceeds supported inventory limit')
+        decoder = json.JSONDecoder(object_pairs_hook=coverage.object_pairs,
+            parse_constant=lambda _: (_ for _ in ()).throw(DeliveryError('nonfinite remote JSON')))
+        pages, offset = [], 0
+        while offset < len(raw):
+            while offset < len(raw) and raw[offset] in ' \r\n\t': offset += 1
+            if offset == len(raw): break
+            page, offset = decoder.raw_decode(raw, offset)
+            if not isinstance(page, list):
+                raise DeliveryError('expected every page of a remote array')
+            pages.append(page)
+        if not pages:
+            raise DeliveryError('complete remote pagination returned no pages')
         return [item for page in pages for item in page]
 
     def upload(self, tag, path):

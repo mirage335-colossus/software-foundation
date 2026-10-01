@@ -1,0 +1,141 @@
+"""Fail-closed orchestration contracts and exact final remote pointer verification."""
+import copy
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+import latest_release as L
+import test_github_release as fixtures
+
+
+def request(execute=True):
+    return {'repository': 'example/project', 'source_commit': 'a' * 40, 'run_id': '123', 'attempt': 1,
+            'tag': 'v1', 'profile': 'core', 'recipes': {target: 'b' * 64 for target in L.ci.STANDARD},
+            'gui_group': '', 'graphics_archive_url': '', 'execute': execute, 'jobs': '2'}
+
+
+def results(execute=True):
+    value = {name: {'result': 'success', 'outputs': {}} for name in L.STAGES}
+    value['application']['outputs'] = {'source_commit': 'a' * 40, 'tag': 'v1', 'inventory_sha256': 'c' * 64,
+                                      'delivery_sha256': 'd' * 64, 'published': 'true' if execute else 'false'}
+    value['certification']['outputs'] = {'inventory_sha256': 'c' * 64, 'certificate_sha256': 'e' * 64,
+        'certification_run': '123', 'certification_attempt': '1', 'eligible_for_promotion': 'true', 'attached': 'true'}
+    value['promotion']['outputs'] = {'promoted': 'true'}
+    if not execute:
+        for name in L.STAGES[3:]: value[name] = {'result': 'skipped', 'outputs': {}}
+    return value
+
+
+class LatestReleaseTests(unittest.TestCase):
+    def test_cli_creates_fresh_receipt_parent_without_overwriting(self):
+        # Run the CLI entry point in a fresh child. Only preflight remote lookup
+        # is replaced; argument parsing, Git identity and publication are real.
+        program = '''
+import json, subprocess, sys
+sys.path.insert(0, sys.argv.pop(1))
+import latest_release as L
+request = json.loads(sys.argv.pop(1))
+request['source_commit'] = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=L.ROOT,
+    check=True, capture_output=True, text=True).stdout.strip()
+L.environment_request = lambda: request
+L.preflight = lambda value: dict(value, status='prepared')
+L.main()
+'''
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / 'absent' / 'build' / 'receipt.json'
+            command = [sys.executable, '-B', '-c', program, str(L.ROOT / 'tools'),
+                       json.dumps(request(False)), 'preflight', '--output', str(output)]
+            first = subprocess.run(command, cwd=temporary, capture_output=True, text=True)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            original = output.read_bytes()
+            self.assertEqual(json.loads(original)['status'], 'prepared')
+            second = subprocess.run(command, cwd=temporary, capture_output=True, text=True)
+            self.assertNotEqual(second.returncode, 0)
+            self.assertIn('FileExistsError', second.stderr)
+            self.assertEqual(output.read_bytes(), original)
+
+    def test_preflight_requires_complete_target_recipes_and_separate_tag(self):
+        self.assertEqual(L.preflight(request(), remote=False)['tag'], 'v1')
+        for changes in ({'recipes': {}}, {'tag': 'base'}, {'tag': 'screenshots-1'}, {'tag': 'ci-1'},
+                        {'execute': 'true'}, {'source_commit': 'main'}, {'gui_group': 'a' * 64}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                L.preflight(dict(request(), **changes), remote=False)
+        self.assertEqual(L.preflight(dict(request(), tag=''), remote=False)['tag'], 'release-123-attempt-1')
+
+    def test_unresolved_gui_redistribution_fails_before_remote_work(self):
+        with self.assertRaisesRegex(ValueError, 'licens'):
+            L.preflight(dict(request(), profile='all-gui', recipes={**request()['recipes'], 'browser-wasm32': 'b' * 64}), remote=False)
+
+    def test_preflight_missing_base_has_no_cold_build_or_mutation(self):
+        remote = fixtures.FakeGitHub()
+        with self.assertRaisesRegex(ValueError, 'absent'):
+            L.preflight(request(), transport=remote)
+        self.assertEqual(remote.mutations, [])
+
+    def test_every_mandatory_stage_must_actually_succeed(self):
+        L.require_stages(results(), request())
+        for stage in L.STAGES:
+            for outcome in ('failure', 'cancelled', 'skipped', 'neutral'):
+                value = results(); value[stage]['result'] = outcome
+                with self.subTest(stage=stage, outcome=outcome), self.assertRaisesRegex(ValueError, 'mandatory'):
+                    L.require_stages(value, request())
+
+    def test_incomplete_inventory_is_not_a_successful_orchestration(self):
+        value = results(); value.pop('regression')
+        with self.assertRaisesRegex(ValueError, 'inventory'):
+            L.require_stages(value, request())
+
+    def test_source_tag_inventory_and_publication_outputs_are_bound(self):
+        for key, changed in [('source_commit', 'b' * 40), ('tag', 'v2'), ('inventory_sha256', ''),
+                             ('delivery_sha256', ''), ('published', 'false')]:
+            value = results(); value['application']['outputs'][key] = changed
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'application outputs'):
+                L.require_stages(value, request())
+
+    def test_certificate_cannot_come_from_another_attempt_or_delivery(self):
+        for key, changed in [('inventory_sha256', 'f' * 64), ('certificate_sha256', ''),
+                             ('certification_run', '124'), ('certification_attempt', '2'),
+                             ('eligible_for_promotion', 'false'), ('attached', 'false')]:
+            value = results(); value['certification']['outputs'][key] = changed
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'certificate'):
+                L.require_stages(value, request())
+
+    def test_plan_only_explicitly_omits_qualification_and_remote_calls(self):
+        remote = fixtures.FakeGitHub()
+        value = L.verify_latest(request(False), results(False), transport=remote)
+        self.assertEqual(value['status'], 'prepared'); self.assertFalse(value['qualified'])
+        self.assertFalse(value['published']); self.assertEqual(remote.calls, [])
+        unexpected = results(False); unexpected['certification']['result'] = 'success'
+        with self.assertRaisesRegex(ValueError, 'unexpectedly entered'):
+            L.verify_latest(request(False), unexpected, transport=remote)
+
+    def test_final_remote_review_reproduces_real_certificate_and_detects_latest_change(self):
+        fixture = fixtures.DeliveryTests(); fixture.setUp(); self.addCleanup(fixture.doCleanups)
+        fixture.publish(); cert = fixture.cert()
+        fixture.remote.latest = fixture.remote.releases[0]['id']
+        L.delivery.attach_certificate(**cert, execute=True, transport=fixture.remote)
+        req = dict(request(), profile='fixture', run_id='qualification-run')
+        value = results(); app = value['application']['outputs']; app['inventory_sha256'] = fixture.delivery['inventory_sha256']
+        app['delivery_sha256'] = L.delivery.sha(L.delivery.archive.encoded(fixture.delivery))
+        value['certification']['outputs'].update(inventory_sha256=app['inventory_sha256'],
+            certificate_sha256=L.delivery.archive.digest(cert['certificate']), certification_run='qualification-run')
+        real_verify = L.delivery.verify_certificate
+        def verify(*args):
+            args = list(args); args[4] = cert['policy']
+            return real_verify(*args)
+        with mock.patch.object(L.delivery, 'verify_certificate', side_effect=verify):
+            checked = L.verify_latest(req, value, transport=fixture.remote)
+            self.assertTrue(checked['qualified']); self.assertEqual(checked['assets'].keys(),
+                {a['name'] for a in fixture.remote.releases[0]['assets']})
+            fixture.remote.releases.append(dict(id=99, tag_name='different', draft=False, prerelease=False, name='different', assets=[]))
+            fixture.remote.latest = 99
+            with self.assertRaisesRegex(ValueError, 'identity|Latest'):
+                L.verify_latest(req, value, transport=fixture.remote)
+
+
+if __name__ == '__main__': unittest.main()

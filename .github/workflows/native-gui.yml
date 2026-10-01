@@ -62,10 +62,12 @@ jobs:
       run: |
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/container_job.py', 'native-gui-check'], check=True)
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: native-gui-evidence-${{ inputs.target }}-${{ github.run_attempt }}
-        path: |-
+    - if: always()
+      name: Retain verified native-gui-evidence-${{ inputs.target }}-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: native-gui-evidence-${{ inputs.target }}-${{ github.run_attempt }}
+        BUNDLE_PATHS: |-
           build/native-gui/qualification.json
           build/native-gui/source.junit.xml
           build/native-gui/build/Testing/Temporary/
@@ -80,7 +82,6 @@ jobs:
           build/native-gui/build/gui/visual-evidence/**/*.log
           build/host-graphics/acquisition.json
           build/gui-publication-plan.json
-        if-no-files-found: warn
-        compression-level: 0
-        retention-days: 30
-      if: always()
+    permissions:
+      contents: write
+      actions: read

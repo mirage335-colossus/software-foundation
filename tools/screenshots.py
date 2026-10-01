@@ -1,0 +1,560 @@
+#!/usr/bin/env python3
+"""Capture seven fresh application surfaces and publish an immutable non-Latest gallery."""
+import argparse
+from contextlib import contextmanager
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import platform
+import shutil
+import struct
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import uuid
+
+import ci_plan as ci
+import dependency_archive as archive
+import github_release as delivery
+import process_tree
+
+ROOT = Path(__file__).resolve().parents[1]
+BACKENDS = ('fltk', 'rev', 'sdl', 'terminal', 'framebuffer', 'hosted-web', 'wasm')
+TARGETS = ('fltk', 'rev', 'sdl', 'terminal', 'framebuffer', 'web')
+PUBLIC = {*(name + '.png' for name in BACKENDS), 'BUILD.txt', 'screenshots.json', 'SHA256SUMS'}
+MAX_IMAGE = 16 * 1024 * 1024
+
+
+def command(argv, *, timeout=30, **kwargs):
+    return subprocess.run([str(x) for x in argv], check=True, timeout=timeout, **kwargs)
+
+
+def text(argv):
+    return command(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True).stdout.strip()
+
+
+def image_info(path):
+    width, height, colors = text(['identify', '-format', '%w %h %k', path]).split()
+    return int(width), int(height), int(colors)
+
+
+def png_size(path):
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= MAX_IMAGE:
+        raise ValueError('ordinary bounded PNG required')
+    with path.open('rb') as stream:
+        data = stream.read(24)
+    if len(data) != 24 or data[:16] != b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR':
+        raise ValueError('invalid PNG header')
+    width, height = struct.unpack('>II', data[16:])
+    if not 1 <= width <= 2048 or not 1 <= height <= 2048:
+        raise ValueError('unsupported PNG dimensions')
+    return width, height
+
+
+def valid_dimensions(name, width, height):
+    return (640 <= width <= 900 and 496 <= height <= 700) if name == 'terminal' else (width, height) == (640, 480)
+
+
+@contextmanager
+def process(argv, log_path, *, environment=None):
+    """The private supervisor owns nested children before the application starts."""
+    with log_path.open('xb') as log:
+        child = process_tree.launch([str(x) for x in argv], log_path.parent, log, env=environment)
+        try:
+            yield child
+        finally:
+            child.terminate()
+            child.close()
+
+
+def windows():
+    result = subprocess.run(['xdotool', 'search', '--onlyvisible', '--maxdepth', '1', '--name', '.'],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+    if result.returncode not in (0, 1):
+        raise RuntimeError('cannot inspect the declared native display')
+    return set(result.stdout.split())
+
+
+def capture_window(argv, name, directory):
+    before = windows(); output = directory / (name + '.png')
+    with process(argv, directory / (name + '.log'), environment=os.environ.copy()) as child:
+        deadline = time.monotonic() + 30
+        previous = None; since = time.monotonic()
+        while time.monotonic() < deadline:
+            if child.poll() is not None:
+                raise RuntimeError(name + ' exited before a complete capture')
+            candidates = windows() - before
+            if len(candidates) == 1:
+                window = next(iter(candidates))
+                command(['import', '-silent', '-window', window, '-strip', output],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                width, height, colors = image_info(output)
+                fingerprint = archive.digest(output)
+                if valid_dimensions(name, width, height) and colors >= 4:
+                    if fingerprint != previous:
+                        previous, since = fingerprint, time.monotonic()
+                    elif time.monotonic() - since >= 1:
+                        if child.poll() is not None:
+                            raise RuntimeError(name + ' exited before capture completed')
+                        return {'width': width, 'height': height, 'colors': colors, 'surface': 'native-window'}
+                else:
+                    previous = None
+            time.sleep(.2)
+        raise RuntimeError(name + ': no stable painted window at the declared viewport')
+
+
+@contextmanager
+def web_host(native, wasm):
+    spec = importlib.util.spec_from_file_location('gallery_host', native / 'gui/web/serve.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    with module.boundary.Host(('127.0.0.1', 0), native / 'gui/foundation-gui-web', wasm / 'gui') as host:
+        thread = threading.Thread(target=host.serve_forever); thread.start()
+        try:
+            yield 'http://' + host.authority + '/'
+        finally:
+            host.shutdown(); thread.join(timeout=5)
+            if thread.is_alive():
+                raise RuntimeError('browser host did not stop; retain all output ownership')
+
+
+def capture_web(native, wasm, directory):
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.common.by import By
+    options = webdriver.ChromeOptions(); options.binary_location = shutil.which('chromium')
+    if not options.binary_location or not shutil.which('chromedriver'):
+        raise RuntimeError('explicit distribution Chromium and matching driver required')
+    for value in ('--headless=new', '--disable-dev-shm-usage', '--force-device-scale-factor=1',
+                  '--no-first-run', '--no-default-browser-check', '--user-data-dir=' + str(directory / 'browser-profile')):
+        options.add_argument(value)
+    if hasattr(os, 'geteuid') and os.geteuid() == 0:
+        raise ValueError('capture browser must run as the disposable unprivileged account')
+    service = Service(executable_path=shutil.which('chromedriver'), log_output=str(directory / 'chromedriver.log'))
+    result = {}
+    with web_host(native, wasm) as url, webdriver.Chrome(service=service, options=options) as browser:
+        browser.set_page_load_timeout(30); browser.set_script_timeout(10)
+        browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {'source': '''
+            window.galleryPending=0; const originalFetch=window.fetch;
+            window.fetch=async (...args)=>{++window.galleryPending;
+                try{return await originalFetch(...args);}finally{--window.galleryPending;}};
+        '''})
+        browser.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',
+            {'width': 640, 'height': 512, 'deviceScaleFactor': 1, 'mobile': False})
+        geometry = None
+        for name, mode, status in (('hosted-web', 'hosted', 'Hosted C++'), ('wasm', 'wasm', 'Wasm')):
+            browser.get(url + '?mode=' + mode)
+            deadline = time.monotonic() + 30; previous = None; since = time.monotonic()
+            while time.monotonic() < deadline:
+                state = browser.execute_script('''
+                    const stage=document.querySelector('#stage');
+                    return {status:document.querySelector('#status').textContent,
+                        ready:window.galleryPending===0 && document.fonts.status==='loaded' &&
+                            stage.clientWidth===640 && stage.clientHeight===480 && !!stage.querySelector('.widget') &&
+                            [...stage.querySelectorAll('img')].every(i=>i.complete && i.naturalWidth>0),
+                        html:stage.innerHTML,
+                        geometry:[...stage.querySelectorAll('.widget')].map(e=>({key:e.dataset.key,
+                            box:[e.offsetLeft,e.offsetTop,e.offsetWidth,e.offsetHeight]}))};
+                ''')
+                if state['status'].startswith('Could not start:'):
+                    raise RuntimeError(name + ': application startup failed')
+                if state['ready'] and state['status'].startswith(status + ' ·'):
+                    pixels = browser.find_element(By.ID, 'viewport').screenshot_as_png
+                    fingerprint = hashlib.sha256(state['html'].encode() + pixels).digest()
+                    if fingerprint != previous:
+                        previous, since = fingerprint, time.monotonic()
+                    elif time.monotonic() - since >= 1:
+                        if geometry is not None and state['geometry'] != geometry:
+                            raise RuntimeError('browser initial shared geometry differs between transports')
+                        geometry = state['geometry']
+                        (directory / (name + '.png')).write_bytes(pixels)
+                        result[name] = {'width': 640, 'height': 480, 'surface': 'browser-viewport',
+                                        'mode': mode, 'geometry': geometry}
+                        break
+                else:
+                    previous = None
+                time.sleep(.2)
+            else:
+                raise RuntimeError(name + ': initial browser view did not settle')
+            # Drop the first session before creating the independent next transport.
+            browser.get('about:blank')
+        result['browser'] = {key: browser.capabilities.get(key) for key in ('browserName', 'browserVersion')}
+    return result
+
+
+def surfaces(native, wasm, directory):
+    if sys.platform != 'linux' or not os.environ.get('DISPLAY'):
+        raise ValueError('initial-view capture requires Linux and its declared private display')
+    if any(os.environ.get(k) != v for k, v in {'SDL_VIDEODRIVER': 'x11', 'REV_SCALE': '1',
+                                             'LIBGL_ALWAYS_SOFTWARE': '1'}.items()):
+        raise ValueError('declare native X11, scale one and software rendering explicitly')
+    display = text(['xdpyinfo'])
+    if 'resolution:    96x96 dots per inch' not in display:
+        raise ValueError('the private capture display must use 96 DPI')
+    for name in ('xdotool', 'import', 'identify', 'convert', 'xterm', 'chromium', 'chromedriver'):
+        if not shutil.which(name):
+            raise ValueError('missing screenshot prerequisite: ' + name)
+    directory.mkdir(parents=True, exist_ok=False)
+    command(['xdotool', 'mousemove', '1200', '850'])
+    result = {}
+    for name in ('fltk', 'rev', 'sdl'):
+        result[name] = capture_window([native / 'gui' / ('foundation-gui-' + name)], name, directory)
+    result['terminal'] = capture_window(['xterm', '-geometry', '80x31+0+0', '-fa', 'DejaVu Sans Mono',
+        '-fs', '10', '+sb', '-xrm', 'XTerm*cursorBlink:false', '-e', native / 'gui/foundation-gui-terminal'],
+        'terminal', directory)
+    command([native / 'gui/foundation-gui-framebuffer', directory / 'framebuffer.ppm'])
+    command(['convert', directory / 'framebuffer.ppm', '-strip', directory / 'framebuffer.png'])
+    result['framebuffer'] = {'width': 640, 'height': 480, 'surface': 'application-framebuffer'}
+    result.update(capture_web(native, wasm, directory))
+    for name in BACKENDS:
+        width, height, colors = image_info(directory / (name + '.png'))
+        if not valid_dimensions(name, width, height) or colors < 4:
+            raise ValueError('blank or wrongly sized actual capture: ' + name)
+        result[name].update(width=width, height=height, colors=colors)
+    delivery.coverage.write_new(directory / 'captures.json', result)
+
+
+def collect(native_group, native_recipe, wasm_group, wasm_recipe, gui_group, work, output, jobs=2, origins=None):
+    import sdk
+    import windows_graphics
+    ci.assert_host('linux-x86_64')
+    work, output = Path(work).absolute(), Path(output).absolute()
+    if jobs < 1 or work.exists() or output.exists() or work.is_symlink() or output.is_symlink():
+        raise ValueError('new owned work/output directories and positive concurrency required')
+    gui = ci.gui_group_module().verify(Path(gui_group))
+    inputs = {'native': delivery.store.verify_group(native_group, native_recipe),
+              'wasm': delivery.store.verify_group(wasm_group, wasm_recipe)}
+    origins = origins or {name: {'origin': 'local', 'recipe': recipe} for name, recipe in
+                          [('native', native_recipe), ('wasm', wasm_recipe)]}
+    commit = ci.exact_commit(text(['git', '-C', ROOT, 'rev-parse', 'HEAD']))
+    if text(['git', '-C', ROOT, 'status', '--porcelain', '--untracked-files=normal']):
+        raise ValueError('capture requires a clean source commit')
+    if os.environ.get('GITHUB_SHA', commit) != commit:
+        raise ValueError('capture source differs from workflow revision')
+    source = ci.module('source_identity').source_tree(ROOT)
+    work.mkdir(parents=True)
+    native_metadata = sdk.install(native_group, native_recipe, work / 'native-sdk', production=True)
+    wasm_metadata = sdk.install(wasm_group, wasm_recipe, work / 'wasm-sdk', production=True)
+    if (native_metadata['target']['system'] != 'Linux' or native_metadata['target']['processor'] != 'x86_64' or
+            wasm_metadata['target']['system'] != 'Emscripten' or
+            not {'terminal', 'framebuffer', 'fltk', 'rev', 'sdl', 'hosted-web'} <= set(native_metadata.get('capabilities', []))):
+        raise ValueError('capture requires the declared GUI-capable native and browser SDKs')
+    for name, backends in (('native', 'terminal,framebuffer,fltk,rev,sdl,hosted-web'), ('wasm', 'wasm')):
+        windows_graphics.run_owned([sys.executable, str(ROOT / 'tools/build.py'), 'build', 'release', '--portable',
+            '--sdk', str(work / (name + '-sdk')), '--gui-input-group', str(Path(gui_group).resolve()),
+            '--gui-backends', backends, '--build-dir', str(work / name), '--jobs', str(jobs)],
+            ROOT, work / (name + '-build.log'), timeout=3600)
+    windows_graphics.run_owned([sys.executable, str(Path(__file__).resolve()), 'surfaces',
+        '--native', str(work / 'native'), '--wasm', str(work / 'wasm'), '--output', str(work / 'captures')],
+        ROOT, work / 'capture.log', environment=os.environ.copy(), timeout=300)
+    if (ci.module('source_identity').source_tree(ROOT) != source or
+            ci.gui_group_module().verify(Path(gui_group)) != gui or
+            delivery.store.verify_group(native_group, native_recipe) != inputs['native'] or
+            delivery.store.verify_group(wasm_group, wasm_recipe) != inputs['wasm']):
+        raise ValueError('source or prepared capture inputs changed during execution')
+    captures = delivery.coverage.load(work / 'captures/captures.json')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.gallery-', dir=output.parent) as temporary:
+        stage = Path(temporary) / 'gallery'; stage.mkdir()
+        for name in BACKENDS:
+            shutil.copyfile(work / 'captures' / (name + '.png'), stage / (name + '.png'))
+        binaries = {str(path.relative_to(work)): archive.digest(path) for path in
+            [*(work / 'native/gui' / ('foundation-gui-' + name) for name in TARGETS),
+             work / 'wasm/gui/gui_web_wasm.js', work / 'wasm/gui/gui_web_wasm.wasm']}
+        manifest = {'schema_version': 1, 'kind': 'initial-view-gallery', 'source_commit': commit,
+            'source_sha256': delivery.coverage.digest(source), 'run_id': os.environ.get('GITHUB_RUN_ID', 'local'),
+            'attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')), 'state': 'fresh initial application',
+            'logical_viewport': [640, 480], 'display_dpi': 96, 'display_scale': 1,
+            'terminal': '80x31 cells; DejaVu Sans Mono 10pt; status row and terminal border retained',
+            'host': ci.assert_host('linux-x86_64'), 'distribution': platform.freedesktop_os_release(),
+            'recipes': {'native': native_recipe, 'wasm': wasm_recipe}, 'dependencies': inputs, 'origins': origins,
+            'gui_group': {**{key: gui[key] for key in ('revision', 'source_tree', 'upstream', 'license',
+                           'redistributable', 'archive_sha256')},
+                          'manifest_sha256': archive.digest(Path(gui_group) / 'manifest.json')},
+            'binaries': binaries, 'captures': captures,
+            'tools': {name: text([name, '-version' if name == 'xterm' else '--version']).splitlines()[0]
+                      for name in ('cmake', 'chromium', 'chromedriver', 'xterm')},
+            'images': {name + '.png': {'sha256': archive.digest(stage / (name + '.png')),
+                                     'size': (stage / (name + '.png')).stat().st_size,
+                                     'dimensions': list(png_size(stage / (name + '.png')))} for name in BACKENDS}}
+        delivery.coverage.write_new(stage / 'screenshots.json', manifest)
+        (stage / 'BUILD.txt').write_text('Initial application view for seven actual backends.\n'
+            'Source: ' + commit + '\nRun: ' + manifest['run_id'] + '; attempt: ' + str(manifest['attempt']) + '\n'
+            'Native: X11, 96 DPI, 640x480 client pixels, scale 1. Browser: 640x480 viewport.\n'
+            'Terminal: 80x31 cells; status row and border retained. No content edits or image resampling.\n'
+            'See screenshots.json for exact source, SDK inputs, binaries, runtime and image digests.\n'
+            'These images do not establish release qualification or permission to redistribute dependencies.\n', encoding='utf-8')
+        files = sorted(p.name for p in stage.iterdir())
+        (stage / 'SHA256SUMS').write_text(''.join(archive.digest(stage / name) + '  ' + name + '\n' for name in files), encoding='ascii')
+        verify_gallery(stage)
+        stage.rename(output)
+    return manifest
+
+
+def input_selection(repository, native_recipe, wasm_recipe, source='base', retained_inputs=None):
+    delivery.location(repository)
+    recipes = {'native': native_recipe, 'wasm': wasm_recipe}
+    if any(not isinstance(r, str) or not delivery.SHA.fullmatch(r) for r in recipes.values()):
+        raise ValueError('both exact SDK recipes are required')
+    if source == 'base':
+        if retained_inputs is not None:
+            raise ValueError('base source must not contain retained input requests')
+        return recipes
+    if source != 'retained' or not isinstance(retained_inputs, dict) or set(retained_inputs) != {'native', 'wasm'}:
+        raise ValueError('retained source requires exactly two explicit SDK requests')
+    for name, target in [('native', 'linux-x86_64'), ('wasm', 'browser-wasm32')]:
+        ci.retained_sdk_request(retained_inputs[name], repository, target, 'all-gui', recipes[name])
+    return recipes
+
+
+def prepare_inputs(repository, native_recipe, wasm_recipe, directory, source='base', retained_inputs=None):
+    """SDKs are existing immutable base inputs; only GUI source is explicitly acquired."""
+    recipes = input_selection(repository, native_recipe, wasm_recipe, source, retained_inputs)
+    directory = Path(directory).absolute()
+    if directory.exists() or directory.is_symlink():
+        raise ValueError('screenshot input directory must be new')
+    directory.mkdir(parents=True)
+    origins = {}
+    for name, target in [('native', 'linux-x86_64'), ('wasm', 'browser-wasm32')]:
+        if source == 'base':
+            delivery.fetch_base(repository, recipes[name], directory / name)
+            origins[name] = {'origin': 'base', 'recipe': recipes[name]}
+        else:
+            result = ci.retained_sdk(repository, retained_inputs[name], target, 'all-gui', recipes[name], directory / name)
+            origins[name] = {key: result[key] for key in ('origin', 'recipe', 'qualification', 'publication_approved', 'request')}
+    delivery.coverage.write_new(directory / 'origins.json', origins)
+    lock = delivery.coverage.load(ROOT / 'third_party/gui-boundary.lock.json')
+    ci.exact_commit(lock['revision'])
+    source = directory / 'gui-source'
+    command(['git', 'clone', '--config', 'core.autocrlf=false', '--config', 'core.eol=lf',
+             '--no-checkout', lock['upstream'], source], timeout=300)
+    command(['git', '-C', source, 'checkout', '--detach', lock['revision']], timeout=60)
+    ci.gui_group_module().export(source, directory / 'gui')
+
+
+def hosted_command(native_recipe, wasm_recipe, jobs, *, uid=None, gid=None):
+    """One disposable Debian runtime; credentials stay outside the container."""
+    for recipe in (native_recipe, wasm_recipe):
+        if not delivery.SHA.fullmatch(recipe): raise ValueError('exact SDK recipe required')
+    uid = os.getuid() if uid is None else uid; gid = os.getgid() if gid is None else gid
+    if (type(uid) is not int or type(gid) is not int or not 0 < uid < 2**31 or
+            not 0 < gid < 2**31 or type(jobs) is not int or not 1 <= jobs <= 8):
+        raise ValueError('non-root host account and bounded concurrency required')
+    packages = ('ca-certificates git python3 python3-selenium cmake ninja-build build-essential '
+        'chromium chromium-driver xvfb xauth xterm xdotool x11-utils imagemagick fonts-dejavu-core '
+        'fonts-liberation libgl1 libopengl0 libgl1-mesa-dri libx11-6 libxext6 libxrender1 libxft2 '
+        'libxrandr2 libxcursor1 libxinerama1 libxfixes3 libwayland-client0 libxkbcommon0 libegl1 '
+        'libdbus-1-3 libibus-1.0-5')
+    argv = ['docker', 'run', '--rm', '-v', str(ROOT) + ':/work', '-w', '/work']
+    for name in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT'):
+        if name in os.environ: argv += ['-e', name]
+    argv += ['-e', 'PYTHONUTF8=1', '-e', 'PYTHONDONTWRITEBYTECODE=1', 'debian:bookworm', 'bash', '-euc',
+        'apt-get update; apt-get install -y --no-install-recommends ' + packages +
+        '; groupadd --gid "$1" gallery; useradd --create-home --uid "$2" --gid "$1" gallery; '
+        'exec runuser -u gallery -- xvfb-run -a -s "-screen 0 1280x900x24 -dpi 96" '
+        'env LIBGL_ALWAYS_SOFTWARE=1 SDL_VIDEODRIVER=x11 REV_SCALE=1 LC_ALL=C.UTF-8 '
+        'python3 -B tools/screenshots.py collect --native-group build/screenshots-inputs/native '
+        '--native-recipe "$3" --wasm-group build/screenshots-inputs/wasm --wasm-recipe "$4" '
+        '--gui-group build/screenshots-inputs/gui --origins build/screenshots-inputs/origins.json '
+        '--work build/screenshots-work --output build/gallery --jobs "$5"',
+        'gallery-container', str(gid), str(uid), native_recipe, wasm_recipe, str(jobs)]
+    return argv
+
+
+def run_hosted(argv):
+    """A Docker client timeout alone does not stop its daemon-owned container."""
+    owner = uuid.uuid4().hex
+    name = 'foundation-gallery-' + owner
+    argv = [*argv[:3], '--name', name, '--label', 'foundation.capture-owner=' + owner, *argv[3:]]
+    try:
+        command(argv, timeout=5400, cwd=ROOT)
+    except BaseException as original:
+        # No broad container pruning, host process killing or name-only removal.
+        # Observe the full container ID and our private ownership label first.
+        try:
+            observed = subprocess.run(['docker', 'inspect', '--type', 'container', '--format',
+                '{{.Id}} {{index .Config.Labels "foundation.capture-owner"}}', name],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+            if observed.returncode:
+                raise RuntimeError('container absence or shutdown is unconfirmed; retain capture outputs')
+            fields = observed.stdout.strip().split()
+            if (len(fields) != 2 or not delivery.SHA.fullmatch(fields[0]) or fields[1] != owner):
+                raise RuntimeError('container ownership differs; no removal attempted')
+            command(['docker', 'rm', '--force', fields[0]], timeout=60,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        except BaseException as cleanup:
+            raise RuntimeError('capture container cleanup could not be verified; retain outputs: ' + str(cleanup)) from original
+        raise
+
+
+def verify_gallery(directory):
+    directory = Path(directory)
+    if directory.is_symlink() or not directory.is_dir() or {p.name for p in directory.iterdir()} != PUBLIC:
+        raise ValueError('complete exact screenshot gallery required')
+    for name in PUBLIC:
+        archive.checked_file(directory, name)
+    for name, maximum in [('screenshots.json', 256 * 1024), ('BUILD.txt', 64 * 1024), ('SHA256SUMS', 4096)]:
+        if (directory / name).stat().st_size > maximum:
+            raise ValueError('gallery metadata exceeds supported limit')
+    manifest = delivery.coverage.load(directory / 'screenshots.json')
+    required = {'schema_version', 'kind', 'source_commit', 'source_sha256', 'run_id', 'attempt', 'state',
+                'logical_viewport', 'display_dpi', 'display_scale', 'terminal', 'host', 'distribution',
+                'recipes', 'dependencies', 'origins', 'gui_group', 'binaries', 'captures', 'tools', 'images'}
+    if (set(manifest) != required or manifest.get('schema_version') != 1 or manifest.get('kind') != 'initial-view-gallery' or
+            manifest.get('state') != 'fresh initial application' or manifest.get('logical_viewport') != [640, 480] or
+            manifest.get('display_dpi') != 96 or manifest.get('display_scale') != 1 or
+            set(manifest.get('images', {})) != {name + '.png' for name in BACKENDS}):
+        raise ValueError('gallery metadata does not describe all fresh actual surfaces')
+    ci.exact_commit(manifest.get('source_commit'))
+    if (not delivery.SHA.fullmatch(manifest['source_sha256']) or
+            type(manifest['attempt']) is not int or manifest['attempt'] < 1 or
+            not isinstance(manifest['run_id'], str) or not manifest['run_id'] or
+            set(manifest['recipes']) != {'native', 'wasm'} or set(manifest['dependencies']) != {'native', 'wasm'} or
+            manifest['host'].get('target') != 'linux-x86_64' or not manifest['distribution'] or
+            not manifest['terminal'] or set(manifest['captures']) != {*BACKENDS, 'browser'} or
+            set(manifest['tools']) != {'cmake', 'chromium', 'chromedriver', 'xterm'} or
+            any(not isinstance(v, str) or not v for v in manifest['tools'].values())):
+        raise ValueError('incomplete source, host, input or capture provenance')
+    for name, recipe in manifest['recipes'].items():
+        if (not delivery.SHA.fullmatch(recipe) or set(manifest['dependencies'][name]) != set(delivery.store.names(recipe)) or
+                any(not delivery.SHA.fullmatch(v) for v in manifest['dependencies'][name].values())):
+            raise ValueError('complete exact SDK triplet provenance required')
+    if set(manifest['origins']) != {'native', 'wasm'}:
+        raise ValueError('both SDK acquisition origins are required')
+    for name, origin in manifest['origins'].items():
+        if origin.get('origin') not in ('base', 'retained', 'local') or origin.get('recipe') != manifest['recipes'][name]:
+            raise ValueError('SDK acquisition origin differs from selected input')
+        if origin['origin'] == 'retained':
+            request = origin.get('request', {})
+            ci.retained_sdk_request(request, request.get('repository'), 'linux-x86_64' if name == 'native' else 'browser-wasm32',
+                                    'all-gui', origin['recipe'])
+            if origin.get('qualification') != 'unqualified' or origin.get('publication_approved') is not False:
+                raise ValueError('retained byte reuse must not grant SDK publication eligibility')
+    gui = manifest['gui_group']
+    if (set(gui) != {'revision', 'source_tree', 'upstream', 'license', 'redistributable', 'archive_sha256', 'manifest_sha256'} or
+            not delivery.OID.fullmatch(gui['revision']) or not delivery.OID.fullmatch(gui['source_tree']) or
+            not delivery.SHA.fullmatch(gui['archive_sha256']) or not delivery.SHA.fullmatch(gui['manifest_sha256']) or
+            type(gui['redistributable']) is not bool):
+        raise ValueError('complete reviewed GUI input provenance required')
+    binaries = {*(f'native/gui/foundation-gui-{name}' for name in TARGETS),
+                'wasm/gui/gui_web_wasm.js', 'wasm/gui/gui_web_wasm.wasm'}
+    if set(manifest['binaries']) != binaries or any(not delivery.SHA.fullmatch(v) for v in manifest['binaries'].values()):
+        raise ValueError('every actual native and browser build output must be identified')
+    for name in BACKENDS:
+        path = directory / (name + '.png'); dimensions = list(png_size(path))
+        if (not valid_dimensions(name, *dimensions) or manifest['images'][path.name] !=
+                {'sha256': archive.digest(path), 'size': path.stat().st_size, 'dimensions': dimensions}):
+            raise ValueError('image bytes or viewport differ from gallery inventory')
+        capture = manifest['captures'][name]
+        surface = 'browser-viewport' if name in ('hosted-web', 'wasm') else 'application-framebuffer' if name == 'framebuffer' else 'native-window'
+        if (capture.get('surface') != surface or [capture.get('width'), capture.get('height')] != dimensions or
+                type(capture.get('colors')) is not int or capture['colors'] < 4):
+            raise ValueError('actual surface or painted capture provenance differs')
+    if (manifest['captures']['hosted-web'].get('mode') != 'hosted' or manifest['captures']['wasm'].get('mode') != 'wasm' or
+            not manifest['captures']['hosted-web'].get('geometry') or
+            manifest['captures']['hosted-web']['geometry'] != manifest['captures']['wasm'].get('geometry')):
+        raise ValueError('independent browser captures require matching initial shared geometry')
+    sums = ''.join(archive.digest(directory / name) + '  ' + name + '\n' for name in sorted(PUBLIC - {'SHA256SUMS'}))
+    if (directory / 'SHA256SUMS').read_text(encoding='ascii') != sums:
+        raise ValueError('gallery checksums differ')
+    return manifest
+
+
+def publish(repository, tag, directory, source_commit, *, execute=False, transport=None):
+    delivery.location(repository, tag); ci.exact_commit(source_commit)
+    if not tag.startswith('screenshots-'):
+        raise ValueError('screenshot release requires its separate tag namespace')
+    manifest = verify_gallery(directory)
+    if manifest['source_commit'] != source_commit:
+        raise ValueError('gallery source differs from release tag')
+    directory = Path(directory)
+    files = {name: archive.digest(directory / name) for name in sorted(PUBLIC)}
+    result = delivery.plan('publish-screenshots', repository, tag=tag, source_commit=source_commit,
+                           files=files, lifecycle='immutable prerelease; never Latest')
+    if not execute:
+        return result
+    remote = delivery.Remote(repository, transport)
+    def act():
+        remote.visible()
+        if remote.find(tag, False) is not None or remote.reference(tag, True) is not None:
+            raise ValueError('gallery tag or release already exists; never overwrite')
+        remote.change('/git/refs', body={'ref': 'refs/tags/' + tag, 'sha': source_commit})
+        info = remote.info(remote.change('/releases', body={'tag_name': tag, 'target_commitish': source_commit,
+            'name': tag, 'body': 'Fresh initial application views for seven actual backends. See BUILD.txt and screenshots.json.',
+            'draft': True, 'prerelease': True, 'make_latest': 'false'}), tag)
+        if not info['draft'] or not info['prerelease'] or info['name'] != tag or remote.reference(tag) != source_commit:
+            raise ValueError('created gallery must be the exact private draft before uploading')
+        for name in files:
+            remote.upload(tag, directory / name)
+        current = remote.find(tag); assets = remote.assets(current)
+        if current['id'] != info['id'] or not current['draft'] or not current['prerelease'] or set(assets) != set(files):
+            raise ValueError('gallery draft lifecycle or complete inventory differs')
+        with tempfile.TemporaryDirectory(prefix='gallery-confirm-') as temporary:
+            restored = Path(temporary)
+            for name in files:
+                remote.download(assets[name], restored / name, files[name])
+            if verify_gallery(restored) != manifest or verify_gallery(directory) != manifest:
+                raise ValueError('gallery changed during publication')
+        remote.unchanged(tag, current, assets, source_commit)
+        remote.change(f'/releases/{info["id"]}', method='PATCH',
+                      body={'draft': False, 'prerelease': True, 'make_latest': 'false'})
+        final = remote.find(tag)
+        if (final['id'] != info['id'] or final['draft'] or not final['prerelease'] or
+                remote.assets(final) != assets or remote.reference(tag) != source_commit):
+            raise ValueError('gallery finalization could not be verified')
+        remote.not_latest(final)
+        return dict(result, execute=True, release_id=final['id'], assets=assets)
+    return delivery.run_mutation(remote, act)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__); sub = parser.add_subparsers(dest='operation', required=True)
+    p = sub.add_parser('surfaces'); p.add_argument('--native', type=Path, required=True); p.add_argument('--wasm', type=Path, required=True)
+    p.add_argument('--output', type=Path, required=True)
+    p = sub.add_parser('collect')
+    for name in ('native-group', 'wasm-group', 'gui-group', 'work', 'output'):
+        p.add_argument('--' + name, type=Path, required=True)
+    for name in ('native-recipe', 'wasm-recipe'): p.add_argument('--' + name, required=True)
+    p.add_argument('--jobs', type=int, default=2)
+    p.add_argument('--origins', type=Path)
+    p = sub.add_parser('verify'); p.add_argument('directory', type=Path)
+    p = sub.add_parser('hosted')
+    p.add_argument('--repository', required=True); p.add_argument('--native-recipe', required=True)
+    p.add_argument('--wasm-recipe', required=True); p.add_argument('--jobs', type=int, default=2)
+    p.add_argument('--source', choices=('base', 'retained'), default='base')
+    p.add_argument('--retained-inputs', help='exact version-2 native and wasm requests as one JSON object')
+    p = sub.add_parser('publish'); p.add_argument('directory', type=Path)
+    p.add_argument('--repository', required=True); p.add_argument('--tag', required=True)
+    p.add_argument('--source-commit', required=True); p.add_argument('--execute', action='store_true')
+    p.add_argument('--receipt', type=Path, required=True)
+    args = parser.parse_args(argv)
+    if args.operation == 'surfaces': return surfaces(args.native, args.wasm, args.output)
+    if args.operation == 'collect':
+        return collect(args.native_group, args.native_recipe, args.wasm_group, args.wasm_recipe,
+                       args.gui_group, args.work, args.output, args.jobs,
+                       delivery.coverage.load(args.origins) if args.origins else None)
+    if args.operation == 'verify': return verify_gallery(args.directory)
+    if args.operation == 'hosted':
+        argv = hosted_command(args.native_recipe, args.wasm_recipe, args.jobs)
+        prepare_inputs(args.repository, args.native_recipe, args.wasm_recipe, ROOT / 'build/screenshots-inputs',
+                       args.source, delivery.parse(args.retained_inputs) if args.retained_inputs else None)
+        run_hosted(argv)
+        return verify_gallery(ROOT / 'build/gallery')
+    result = publish(args.repository, args.tag, args.directory, args.source_commit, execute=args.execute)
+    try:
+        delivery.coverage.write_new(args.receipt, result)
+    except BaseException as error:
+        if args.execute: raise delivery.DeliveryError('gallery receipt failed after execution; reconcile remote state', True) from error
+        raise
+    return result
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (KeyError, OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        print(json.dumps({'ok': False, 'uncertain': bool(getattr(error, 'uncertain', False)), 'error': str(error)}), file=sys.stderr)
+        raise SystemExit(1)

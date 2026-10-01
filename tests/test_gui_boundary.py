@@ -3,6 +3,7 @@
 from pathlib import Path
 import importlib.util
 import json
+import os
 import re
 import sys
 import subprocess
@@ -21,7 +22,7 @@ shared_violations = _guard.shared_violations
 
 class GuiBoundaryTests(unittest.TestCase):
     def test_shared_application_is_backend_independent(self):
-        for path in (ROOT / "gui/shared").glob("*pp"):
+        for path in _guard.sources(ROOT / "gui/shared"):
             self.assertEqual([], shared_violations(path.read_text()), str(path))
 
     def test_tripwire_rejects_concrete_backends(self):
@@ -31,8 +32,62 @@ class GuiBoundaryTests(unittest.TestCase):
         self.assertFalse(shared_violations('#include <gui/contract.hpp>\ngui::Adapter& adapter;'))
 
     def test_composition_hosts_do_not_name_feature_ids(self):
-        for path in (ROOT / "gui/hosts").glob("*.cpp"):
+        for path in _guard.sources(ROOT / "gui/hosts"):
             self.assertNotIn('"entries.', path.read_text(), str(path))
+
+    def test_nested_shared_and_host_sources_are_checked_by_real_entry_point(self):
+        with tempfile.TemporaryDirectory(prefix="nested GUI boundary ") as directory:
+            root = Path(directory)
+            guard = root / "check_boundary.py"
+            guard.write_bytes((ROOT / "gui/check_boundary.py").read_bytes())
+            paths = [root / "shared/feature/detail/control.hh",
+                     root / "host/native/detail/dispatch.ipp",
+                     root / "hosts/browser/detail/transport.cpp"]
+            for path in paths: path.parent.mkdir(parents=True, exist_ok=True)
+            paths[0].write_text('#include <FL/Fl.H>\n')
+            for path in paths[1:]: path.write_text('const char* key = "entries.editor";\n')
+            result = subprocess.run([sys.executable, "-B", str(guard)],
+                capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(0, result.returncode)
+            for path in paths: self.assertIn(str(path), result.stderr)
+            paths[0].write_text('#include <gui/contract.hpp>\n')
+            for path in paths[1:]: path.write_text('void generic_dispatch();\n')
+            result = subprocess.run([sys.executable, "-B", str(guard)],
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_incremental_build_rechecks_added_and_modified_nested_header(self):
+        cmake = (ROOT / "gui/CMakeLists.txt").read_text()
+        block = "file(GLOB_RECURSE" + cmake.split("file(GLOB_RECURSE", 1)[1].split(
+            "add_library(foundation_gui_application STATIC", 1)[0]
+        with tempfile.TemporaryDirectory(prefix="incremental GUI boundary ") as directory:
+            root = Path(directory); source = root / "source"; source.mkdir()
+            (source / "check_boundary.py").write_bytes((ROOT / "gui/check_boundary.py").read_bytes())
+            (source / "CMakeLists.txt").write_text(
+                'cmake_minimum_required(VERSION 3.24)\nproject(BoundaryGuard LANGUAGES NONE)\n' +
+                'find_package(Python3 REQUIRED COMPONENTS Interpreter)\n' + block)
+            build = root / "build"
+            subprocess.run(["cmake", "-G", "Ninja", "-S", str(source), "-B", str(build)],
+                check=True, capture_output=True, text=True, timeout=30)
+            def check():
+                return subprocess.run(["cmake", "--build", str(build), "--target", "foundation_gui_contract"],
+                    capture_output=True, text=True, timeout=30)
+            result = check(); self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            path = source / "shared/new/detail/control.hh"; path.parent.mkdir(parents=True)
+            def change(content):
+                path.write_text(content)
+                # Exercise dependency invalidation, independently of filesystem
+                # timestamp granularity when edits follow a build immediately.
+                tick = (build / "boundary-checked").stat().st_mtime_ns + 2_000_000_000
+                os.utime(path, ns=(tick, tick))
+            change('#include <FL/Fl.H>\n')
+            result = check(); self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertIn("control.hh", result.stdout + result.stderr)
+            change('#include <gui/contract.hpp>\n')
+            result = check(); self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            change('#include <gui/framebuffer.hpp>\n')
+            result = check(); self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertIn("control.hh", result.stdout + result.stderr)
 
     def test_shared_declaration_has_one_construction_and_layout_source(self):
         source = (ROOT / "gui/shared/application.cpp").read_text()

@@ -29,7 +29,10 @@ core library <- shared application and layout
 ```
 
 Core headers are GUI independent. A source-boundary guard runs before the shared
-GUI library compiles, even with `BUILD_TESTING=OFF`; unchanged inputs reuse its stamp. [Shared application code](../gui/shared/application.cpp)
+GUI library compiles, even with `BUILD_TESTING=OFF`; unchanged inputs reuse its stamp.
+The guard recursively checks C/C++ source/header variants under shared and host
+trees, so moving a feature or adapter into a nested directory cannot evade the
+application/backend separation checks. [Shared application code](../gui/shared/application.cpp)
 uses `foundation::Store`, the same core library as the CLI. The core owns record
 validation, capacity, identities and mutation. Shared GUI code projects records
 and owns editor state, error recovery, enabled actions, count, menu, heading prompt

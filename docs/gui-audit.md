@@ -43,6 +43,11 @@ its selected adapters.
 
 This integration closes these practical consumer gaps:
 
+- The architecture guard scans nested shared and host source trees and common
+  C/C++ header/implementation suffixes. A real command-line regression places
+  prohibited toolkit dependencies and application IDs in nested files, observes
+  rejection, then verifies the generic replacement succeeds.
+
 - Every backend has an explicit build target, dependencies and host lifecycle;
   previously uncomposed paths are not left as references to a different example.
 - Terminal/SDL platform runners accept a typed application. Maintained exact
@@ -238,3 +243,14 @@ under `share/software-foundation/web`, and dependency notices under the installe
 documentation directory. Then verify the complete runtime library closure and
 license bundle on every target before issuing release artifacts. No configure
 switch waives this review.
+
+## Initial-view gallery
+
+[The screenshot workflow](screenshots.md) is separate from interaction/parity
+qualification. It launches fresh application instances and captures FLTK, Rev,
+SDL, a terminal window, the application framebuffer, hosted web and compiled Wasm
+web from the same view definition. Conformance captures taken after editing state
+are not substituted for initial screenshots. The gallery records viewport, DPI,
+source, exact SDK groups, host prerequisites and image digests. Actual capture
+execution is recorded in [validation](validation.md); a helper fixture pass alone
+is not evidence that every native window was captured.

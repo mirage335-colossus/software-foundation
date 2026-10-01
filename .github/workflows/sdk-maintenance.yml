@@ -41,7 +41,7 @@ name: Explicit prepared SDK maintenance
         - retained
         default: auto
       retained_input:
-        description: Exact JSON producer and group/proof artifact identities for source retained
+        description: Exact version-2 JSON producer and draft-bundle manifest identities for retained input
         type: string
         required: false
         default: ''
@@ -106,25 +106,23 @@ jobs:
       id: retain
       if: always()
       run: python .github/scripts/lifecycle.py sdk-retain
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      if: always() && steps.retain.outcome == 'success' && steps.retain.outputs.retained == 'true'
-      with:
-        name: sdk-group-${{ matrix.target }}-${{ github.run_attempt }}
-        path: build/sdk-group/
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: sdk-plan-${{ matrix.target }}-${{ github.run_attempt }}
-        path: build/sdk-publication-plan.json
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: sdk-proof-${{ matrix.target }}-${{ github.run_attempt }}
-        path: |-
+    - if: always() && steps.retain.outcome == 'success' && steps.retain.outputs.retained == 'true'
+      name: Retain verified sdk-group-${{ matrix.target }}-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: sdk-group-${{ matrix.target }}-${{ github.run_attempt }}
+        BUNDLE_PATHS: build/sdk-group/
+    - name: Retain verified sdk-plan-${{ matrix.target }}-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: sdk-plan-${{ matrix.target }}-${{ github.run_attempt }}
+        BUNDLE_PATHS: build/sdk-publication-plan.json
+    - if: always()
+      name: Retain verified sdk-proof-${{ matrix.target }}-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: sdk-proof-${{ matrix.target }}-${{ github.run_attempt }}
+        BUNDLE_PATHS: |-
           build/sdk-origin.json
           build/sdk-isolation.json
           build/sdk-retention.json
@@ -144,10 +142,9 @@ jobs:
           build/sdk-gui-consumer/build/gui/visual-evidence/**/*.ppm
           build/sdk-gui-consumer/build/gui/visual-evidence/**/*.log
           build/host-graphics/acquisition.json
-        if-no-files-found: warn
-        compression-level: 0
-        retention-days: 30
-      if: always()
+    permissions:
+      contents: write
+      actions: read
   publish:
     if: inputs.execute
     needs: produce
@@ -165,20 +162,20 @@ jobs:
         persist-credentials: false
     - shell: python
       run: |
-        import os,subprocess
-        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--pattern','sdk-group-*-'+os.environ['GITHUB_RUN_ATTEMPT'],'--dir','build/sdk-groups'],check=True)
+        import subprocess,sys
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-sdk-bundles'],check=True)
+      env:
+        SDK_TARGET: ${{ inputs.target }}
     - shell: python
       run: |-
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'publish-bases'], check=True)
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: sdk-delivery-${{ github.run_attempt }}
-        path: build/receipts/
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
-      if: always()
+    - if: always()
+      name: Retain verified sdk-delivery-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: sdk-delivery-${{ github.run_attempt }}
+        BUNDLE_PATHS: build/receipts/
 env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'

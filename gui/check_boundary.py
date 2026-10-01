@@ -17,12 +17,27 @@ def shared_violations(source):
     return result
 
 
-if __name__=='__main__':
-    root=Path(__file__).resolve().parent
+SOURCE_SUFFIXES = {'.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx',
+                   '.ipp', '.tpp', '.inc', '.ixx', '.cppm'}
+
+
+def sources(directory):
+    """Keep nested feature/helper files inside the same architectural boundary."""
+    return sorted(path for path in directory.rglob('*')
+                  if path.is_file() and path.suffix in SOURCE_SUFFIXES)
+
+
+def tree_violations(root):
+    root=Path(root)
     failures=[]
-    for path in (root/'shared').glob('*pp'):
+    for path in sources(root/'shared'):
         failures.extend(str(path)+': '+entry for entry in shared_violations(path.read_text()))
     for directory in ('hosts','host'):
-        for path in (root/directory).glob('*pp'):
+        for path in sources(root/directory):
             if '"entries.' in path.read_text():failures.append(str(path)+': application identity in host')
+    return failures
+
+
+if __name__=='__main__':
+    failures=tree_violations(Path(__file__).resolve().parent)
     if failures:print('\n'.join(failures),file=sys.stderr);sys.exit(1)

@@ -40,6 +40,72 @@ def output(name, item):
         stream.write(name + '=' + json.dumps(item, separators=(',', ':')) + '\n')
 
 
+def scalar_output(name, item):
+    text = str(item).lower() if isinstance(item, bool) else str(item)
+    if any(c in text for c in '\r\n'): raise ValueError('workflow output must occupy one line')
+    with Path(value('GITHUB_OUTPUT')).open('a', encoding='utf-8') as stream:
+        stream.write(name + '=' + text + '\n')
+
+
+def storage_context():
+    # Reusable jobs belong to their caller's exact run, not a new callee run.
+    reference = value('GITHUB_WORKFLOW_REF')
+    prefix = value('GITHUB_REPOSITORY') + '/.github/workflows/'
+    if not reference.startswith(prefix) or '@' not in reference[len(prefix):]:
+        raise ValueError('workflow reference does not belong to this repository')
+    filename = reference[len(prefix):].split('@', 1)[0]
+    if not ci.re.fullmatch(r'[a-zA-Z0-9_-]+\.ya?ml', filename):
+        raise ValueError('invalid workflow identity')
+    return dict(repository=value('GITHUB_REPOSITORY'), run_id=int(value('GITHUB_RUN_ID')),
+        attempt=int(value('GITHUB_RUN_ATTEMPT')), source_commit=value('GITHUB_SHA'), workflow=filename)
+
+
+def bundle_inputs(specification):
+    """Preserve the selected common-root layout, with no implicit entire-tree upload."""
+    import glob
+    declarations = [line.strip() for line in specification.splitlines() if line.strip()]
+    if not declarations or len(declarations) > 100 or len(specification) > 65536:
+        raise ValueError('bounded explicit bundle paths required')
+    bases, matches = [], set()
+    for text in declarations:
+        path = Path(text)
+        if path.is_absolute() or '..' in path.parts or '\\' in text or ':' in text:
+            raise ValueError('bundle path must be relative to the checkout')
+        prefix = []
+        for part in path.parts:
+            if glob.has_magic(part): break
+            prefix.append(part)
+        base = Path(*prefix)
+        if len(prefix) == len(path.parts) and not (ROOT/base).is_dir(): base=base.parent
+        bases.append(ROOT/base)
+        matches.update(Path(item).absolute() for item in glob.glob(str(ROOT/path), recursive=True))
+    base = Path(os.path.commonpath(bases))
+    if base != ROOT and ROOT not in base.parents: raise ValueError('bundle root escaped checkout')
+    if base in matches:
+        matches.remove(base); matches.update(base.iterdir())
+    return base, sorted(str(path.relative_to(base)).replace('\\','/') for path in matches)
+
+
+def store_bundle():
+    import ci_transport
+    base, paths = bundle_inputs(value('BUNDLE_PATHS'))
+    if not paths: raise ValueError('bundle selection contains no files')
+    name=value('BUNDLE_NAME')
+    pointer=ci_transport.publish_bundle(**storage_context(), name=name, root=base, paths=paths,
+        runner_name=value('RUNNER_NAME'))
+    write(ROOT/'build/transport-pointers'/ (name+'.json'), pointer)
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        with Path(value('GITHUB_STEP_SUMMARY')).open('a',encoding='utf-8') as stream:
+            stream.write('Verified CI bundle pointer: `'+json.dumps(pointer,sort_keys=True)+'`\n')
+    if os.environ.get('GITHUB_OUTPUT'): output('bundle_pointer',pointer)
+
+
+def fetch_bundle(name, output, *, allow_failed=False):
+    result=ci.restore_run_bundle(**storage_context(), name=name, output=Path(output), allow_failed=allow_failed)
+    write(ROOT/'build/transport-receipts'/(name+'.json'),result)
+    return result
+
+
 def sdk_recipe(target, profile):
     if profile not in ('core', 'all-gui'): raise ValueError('unknown SDK capability profile')
     if profile == 'all-gui' and target.startswith('linux-'):
@@ -184,7 +250,57 @@ def retained_request(target, profile, *, producer_host=False):
 def main(command):
     os.chdir(ROOT)
     (ROOT / 'build').mkdir(exist_ok=True)
-    if command == 'sdk-plan':
+    if command == 'bundle-store':
+        store_bundle()
+    elif command == 'bundle-fetch':
+        fetch_bundle(value('BUNDLE_NAME'),value('BUNDLE_OUTPUT'),
+                     allow_failed=os.environ.get('BUNDLE_ALLOW_FAILED')=='true')
+    elif command == 'fetch-sdk-bundles':
+        targets=[*ci.STANDARD,'browser-wasm32'] if value('SDK_TARGET')=='all' else [value('SDK_TARGET')]
+        if any(target not in (*ci.STANDARD,'browser-wasm32') for target in targets): raise ValueError('unknown SDK target')
+        for target in targets:
+            fetch_bundle('sdk-group-'+target+'-'+value('GITHUB_RUN_ATTEMPT'),'build/sdk-groups/'+target)
+    elif command == 'fetch-application-bundles':
+        for target in evidence.load(Path('build/source/recipes.json')):
+            fetch_bundle('application-'+target+'-'+value('GITHUB_RUN_ATTEMPT'),'build/packages/'+target)
+    elif command == 'fetch-evidence-bundles':
+        for item in evidence.load(Path('build/check-plan.json'))['checks']:
+            fetch_bundle('evidence-'+item['id']+'-'+value('GITHUB_RUN_ATTEMPT'),
+                         'build/evidence/'+item['id'],allow_failed=True)
+    elif command == 'sdk-import-legacy':
+        raw=value('LEGACY_INPUT')
+        if len(raw.encode('utf-8'))>16384: raise ValueError('legacy import request exceeds supported size')
+        target,profile=value('TARGET'),value('SDK_PROFILE')
+        identity=sdk_identity(target,profile)
+        request=delivery.parse(raw)
+        imported=ci.import_legacy_sdk(value('GITHUB_REPOSITORY'),request,target,profile,identity,
+            ROOT/'build/sdk-group',proof_output=ROOT/'build/legacy-proof')
+        write(ROOT/'build/sdk-import.json',imported)
+        write(ROOT/'build/sdk-origin.json',dict(origin='retained',recipe=identity,
+            qualification='unqualified',publication_approved=False,legacy_import=imported))
+        retain_sdk_group(target,profile)
+    elif command == 'sdk-import-request':
+        context=storage_context();target,profile=value('TARGET'),value('SDK_PROFILE')
+        if context['workflow']!='sdk-import.yml': raise ValueError('import request requires explicit import workflow')
+        pointers={kind:evidence.load(ROOT/'build/transport-pointers'/
+            (f'sdk-{kind}-{target}-{context["attempt"]}.json')) for kind in ('group','proof')}
+        for kind,pointer in pointers.items():
+            if (any(pointer.get(key)!=item for key,item in context.items()) or
+                pointer.get('name')!=f'sdk-{kind}-{target}-{context["attempt"]}' or
+                pointer.get('job_id')!=pointers['group'].get('job_id')):
+                raise ValueError('import bundle pointers do not identify one exact producer')
+        request=dict(schema_version=2,**context,target=target,profile=profile,
+            recipe_id=sdk_identity(target,profile),job_id=pointers['group']['job_id'],
+            **{kind:dict(manifest_id=pointer['manifest']['id'],manifest_sha256=pointer['manifest']['sha256'])
+               for kind,pointer in pointers.items()})
+        ci.retained_sdk_request(request,context['repository'],target,profile,request['recipe_id'])
+        write(ROOT/'build/import-retained-input.json',request)
+        output('retained_input',request)
+        if os.environ.get('GITHUB_STEP_SUMMARY'):
+            with Path(value('GITHUB_STEP_SUMMARY')).open('a',encoding='utf-8') as stream:
+                stream.write('Exact unqualified retained SDK request (no publication approval):\n```json\n'+
+                    json.dumps(request,indent=2,sort_keys=True)+'\n```\n')
+    elif command == 'sdk-plan':
         if value('SDK_SOURCE') == 'retained' and value('TARGET') == 'all':
             raise ValueError('retained SDK reuse selects one exact target per dispatch')
         retained_request(value('TARGET'), value('SDK_PROFILE'))
@@ -331,11 +447,15 @@ def main(command):
         plan = delivery.publish_candidate(**request)
         write('build/publication-plan.json', plan)
         write('build/delivery.json', plan['delivery'])
+        for name,item in dict(tag=tag,inventory_sha256=plan['delivery']['inventory_sha256'],
+                              source_commit=value('GITHUB_SHA'),delivery_sha256=evidence.sha(Path('build/delivery.json'))).items():
+            scalar_output(name,item)
     elif command == 'publish-candidate':
         request = evidence.load(Path('build/publication-request.json'))
         if request['source_commit'] != value('GITHUB_SHA') or request['packager_commit'] != value('GITHUB_SHA'):
             raise ValueError('publication input differs from checked-out workflow revision')
         write('build/receipts/publication.json', delivery.publish_candidate(**request, execute=True))
+        scalar_output('published',True)
     elif command == 'certification-plan':
         ci.fetch_candidate(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'), Path('build/fetched'))
         shutil.move('build/fetched/candidate', 'build/candidate')
@@ -373,6 +493,10 @@ def main(command):
             result = certify_release.certify(directory, ci.module('release').verify_release(directory), plan, reports,
                        evidence.load(policy), value('PROFILE'), identity['experiment'])
             write('build/certificate.json', result)
+            for name,item in dict(certificate_sha256=evidence.sha(Path('build/certificate.json')),
+                certification_run=value('GITHUB_RUN_ID'),certification_attempt=value('GITHUB_RUN_ATTEMPT'),
+                inventory_sha256=identity['inventory_sha256'],eligible_for_promotion=result['eligible_for_promotion']).items():
+                scalar_output(name,item)
             write('build/attachment-plan.json', delivery.attach_certificate(value('GITHUB_REPOSITORY'), value('TAG'), directory,
                     identity, Path('build/certificate.json'), Path('build/check-plan.json'), policy, value('PROFILE'),
                     reports, int(value('GITHUB_RUN_ATTEMPT'))))
@@ -380,6 +504,7 @@ def main(command):
             write('build/receipts/attachment.json', delivery.attach_certificate(value('GITHUB_REPOSITORY'), value('TAG'), directory,
                     identity, Path('build/certificate.json'), Path('build/check-plan.json'), policy, value('PROFILE'),
                     reports, int(value('GITHUB_RUN_ATTEMPT')), execute=True))
+            scalar_output('attached',True)
     elif command in ('promotion-plan', 'promote'):
         if command == 'promotion-plan':
             ci.fetch_candidate(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'), Path('build/fetched'))
@@ -389,13 +514,14 @@ def main(command):
                        delivery=evidence.load(Path('build/delivery.json')), policy=Path('docs/release-policy.json'), profile=value('PROFILE'),
                        run_id=value('CERTIFICATION_RUN'), attempt=int(value('CERTIFICATION_ATTEMPT')), certificate_sha256=value('CERTIFICATE'))
         write('build/receipts/' + command + '.json', delivery.promote(**request, execute=command == 'promote'))
+        if command=='promote': scalar_output('promoted',True)
     else: raise ValueError('unknown workflow operation')
 
 
 if __name__ == '__main__':
     try: main(sys.argv[1])
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error:
-        uncertain = sys.argv[1] in ('publish-bases', 'publish-gui', 'publish-candidate', 'attach-certificate', 'promote')
+        uncertain = sys.argv[1] in ('bundle-store', 'publish-bases', 'publish-gui', 'publish-candidate', 'attach-certificate', 'promote')
         receipt = {'ok': False, 'uncertain': uncertain or bool(getattr(error, 'uncertain', False)),
                    'operation': sys.argv[1], 'error': str(error),
                    'action': 'reconcile remote state before retry' if uncertain else 'repair prerequisites and inspect retained evidence'}

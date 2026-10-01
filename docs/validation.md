@@ -12,6 +12,24 @@ Observed hosted results below identify exact revisions and scopes. Earlier
 failures produced focused regressions and repairs; unqualified scopes remain
 explicit. No public release was published by these checks.
 
+## Delivery workflow expansion
+
+The current update replaces Actions artifact transport with per-run private draft
+release bundles, adds explicit legacy SDK migration, an initial seven-host gallery
+workflow and the `_Publish new Latest release` orchestration. The local focused
+checks passed 32 transport, 108 workflow/retention, 30 GitHub delivery and 22 GUI
+boundary cases. The boundary cases include actual incremental CMake rebuilds when
+nested headers are added or changed. Documentation links and workflow syntax pass.
+The screenshot and Latest suites passed 17 and 10 cases respectively. Combined
+Release verification with distribution enabled passed all 38 CTest entries across
+one complete invocation and one targeted rerun: 770 inner Python cases passed,
+with two explicit native-Windows exclusions and no unexpected skips. The rerun
+made the new incremental-header fixture timestamp deterministically newer than
+its build stamp; all dependency-rejection assertions remain in place.
+New hosted transfer, screenshot and complete lifecycle results are pending; the
+older executions below establish only their recorded revisions and scopes.
+No SDK recipe or retained group bytes changed in this update.
+
 ## Observed mechanisms
 
 | Area | Executed evidence |

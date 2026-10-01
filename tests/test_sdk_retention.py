@@ -128,10 +128,10 @@ class SdkRetentionTests(unittest.TestCase):
 
     def test_workflow_retains_only_verified_group_without_masking_failure(self):
         text = (ROOT / '.github/workflows/sdk-maintenance.yml').read_text()
-        retention = text.split('    - name: Verify complete SDK bytes', 1)[1].split('    - uses:', 1)[0]
+        retention = text.split('    - name: Verify complete SDK bytes', 1)[1].split('    - name:', 1)[0]
         self.assertIn('id: retain', retention); self.assertIn('if: always()', retention)
         self.assertIn('lifecycle.py sdk-retain', retention)
-        group = text.split('name: sdk-group-', 1)[0].rsplit('    - uses:', 1)[1]
+        group = text.split('      name: Retain verified sdk-group-', 1)[0].rsplit('    - ',1)[1]
         self.assertIn("if: always() && steps.retain.outcome == 'success' && steps.retain.outputs.retained == 'true'", group)
         self.assertNotIn('continue-on-error', text)
         publication = text.split('  publish:', 1)[1]
@@ -191,12 +191,17 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
             name='sdk-' + kind + '-windows-x86_64-2', size_in_bytes=len(raw), expired=False, digest='sha256:' + digest,
             created_at='2026-01-01T12:59:00Z', workflow_run=dict(id=123, repository_id=42, head_repository_id=42, head_sha='a'*40))
 
+    def bundle_request(self):
+        return dict(self.request,schema_version=2,workflow='sdk-maintenance.yml',
+            **{kind:dict(manifest_id=self.request[kind]['id'],manifest_sha256=self.request[kind]['sha256'])
+               for kind in ('group','proof')})
+
     def download(self, repository, artifact_id, output):
         self.assertEqual(repository, self.repository); self.downloads.append(artifact_id)
         with output.open('xb') as stream: stream.write(self.payloads[artifact_id])
 
     def recover(self, destination=None):
-        return lifecycle.ci.retained_sdk(self.repository, self.request, 'windows-x86_64', 'core', self.recipe,
+        return lifecycle.ci.import_legacy_sdk(self.repository, self.request, 'windows-x86_64', 'core', self.recipe,
             self.root / 'restored group' if destination is None else destination,
             transport=self.transport, download=self.download)
 
@@ -355,7 +360,7 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
         self.assertTrue((self.root/'build/sdk-publication-plan.json').is_file())
 
     def test_explicit_source_is_required_and_recovery_failure_has_no_cold_fallback(self):
-        self.prepare()
+        self.prepare(); self.request=self.bundle_request()
         with patch.dict(lifecycle.os.environ,{'SDK_SOURCE':'auto','SDK_RETAINED_INPUT':json.dumps(self.request),
                                              'GITHUB_REPOSITORY':self.repository}):
             with self.assertRaisesRegex(ValueError,'explicit source=retained'): lifecycle.main('sdk-inputs')
@@ -394,7 +399,7 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
         self.publisher.assert_not_called(); self.assertFalse((self.root/'build/sdk-publication-plan.json').exists())
 
     def test_linux_planning_does_not_substitute_for_native_recipe_check(self):
-        self.prepare()
+        self.prepare(); self.request=self.bundle_request()
         environment={'SDK_SOURCE':'retained','SDK_RETAINED_INPUT':json.dumps(self.request),
                      'GITHUB_REPOSITORY':self.repository,'SDK_PROFILE':'core','TARGET':'windows-x86_64'}
         with patch.dict(lifecycle.os.environ,environment), patch.object(lifecycle,'sdk_identity',return_value='b'*64) as identity:

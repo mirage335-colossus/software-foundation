@@ -46,10 +46,19 @@ after installation. [COMPILE](COMPILE) is the short command reference;
 | GUI | All seven hosts consume one application widget-definition table; native appearance, browser and Wasm fixtures | [GUI audit](docs/gui-audit.md) records actual coverage and the unresolved redistribution gate |
 | SDK | Source producer, strict prepared-input archives, source replay, relocation, host/target checks, Windows and browser recipes | Cold native SDK production requires the declared Bookworm builder |
 | Packages | Native TGZ/ZIP, full member inventory, runtime closure/ABI audits, relocation and external consumer | A native build alone cannot establish an older runtime floor |
-| CI | Disjoint source scopes, independent producers/copied-package jobs, explicit faster pools, sanitizer and supply checks | Hosted workflows need execution on a configured remote before claiming hosted qualification |
+| CI | Disjoint scopes, reusable lifecycle workflows, explicit faster pools, draft release transport with no Actions artifact uploads | Exact hosted executions and remaining limits appear in [validation](docs/validation.md) |
 | Coordination | Scoped review, guarded saves, descriptor-relative atomic publication, handoffs, lifecycle and concurrency tests | Unsupported filesystem APIs require a qualified adapter or enforced private checkouts |
 | Releases | Immutable complete groups, mandatory per-release copies, offline recovery and exact-byte certification | Publication, certification attachment and promotion are explicit protected operations |
 | Distribution | Debian, Arch and Gentoo wrapping, signed indexes, payload verification, atomic update/rollback checks | Signed fixtures and disposable native APT install/upgrade/purge adapter; client qualification recorded separately |
+
+The [Latest entry point](docs/latest-release.md) composes the prepared-SDK release
+lifecycle, and the [screenshot workflow](docs/screenshots.md) captures all seven
+actual GUI hosts in the same initial state. Both have explicit publication gates.
+
+Large CI outputs use verified private draft release bundles; routine PR feedback
+uses bounded logs. Compiler SDKs contain build inputs, while installed browsers,
+display services and drivers remain explicit host prerequisites. Routine builds
+consume prepared groups and binary releases carry exact copies for recovery.
 
 [Validation](docs/validation.md) records what has actually run and what remains
 unverified. Planned platforms and release gates are requirements, not claimed passes.

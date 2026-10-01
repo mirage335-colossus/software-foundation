@@ -369,11 +369,26 @@ class TransportTests(unittest.TestCase):
 
     def test_paginated_inventory_is_complete_and_never_uses_embedded_assets(self):
         transport=G.GitHub('example/project')
-        with mock.patch.object(transport,'_run',return_value=subprocess.CompletedProcess([],0,b'[[{"id":1}],[],[{"id":2}]]',b'')) as call:
+        with mock.patch.object(transport,'_run',return_value=subprocess.CompletedProcess([],0,b'[{"id":1}]\n[]\n[{"id":2}]\n',b'')) as call:
             self.assertEqual(transport.pages('repos/example/project/releases?per_page=100'),[{'id':1},{'id':2}])
-            self.assertIn('--paginate',call.call_args.args[0]);self.assertIn('--slurp',call.call_args.args[0])
+            self.assertIn('--paginate',call.call_args.args[0]);self.assertNotIn('--slurp',call.call_args.args[0])
         with mock.patch.object(transport,'_run',return_value=subprocess.CompletedProcess([],0,b'{"assets":[]}',b'')):
             with self.assertRaises(ValueError):transport.pages('endpoint')
+
+    def test_pagination_rejects_partial_or_ambiguous_complete_output(self):
+        transport=G.GitHub('example/project')
+        for raw in (b'', b'[] trailing', b'[] {"id":1}', b'[{"id":1}] [{"id":2,"id":3}]',
+                    b'[{"id":1}] [NaN]', b'[] [', b'[]\xff'):
+            with self.subTest(raw=raw), mock.patch.object(transport,'_run',
+                    return_value=subprocess.CompletedProcess([],0,raw,b'')):
+                with self.assertRaises(ValueError):transport.pages('endpoint')
+        with mock.patch.object(transport,'_run',
+                return_value=subprocess.CompletedProcess([],1,b'[{"id":1}]',b'private failure')):
+            with self.assertRaisesRegex(G.DeliveryError,'complete remote pagination failed'):
+                transport.pages('endpoint')
+        with mock.patch.object(transport,'_run',
+                return_value=subprocess.CompletedProcess([],0,b'[]\n',b'')):
+            self.assertEqual([],transport.pages('endpoint'))
 
     def test_transport_never_uses_shell_or_clobber_and_never_prints_credentials(self):
         transport=G.GitHub('example/project')

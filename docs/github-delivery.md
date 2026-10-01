@@ -4,7 +4,9 @@
 release and certification contracts to GitHub. It supports an immutable application
 inventory, append-only certification attempts and a separately controlled Latest
 pointer. The implementation uses the authenticated `gh` executable through argument
-arrays. It never builds missing inputs, deletes assets, force-updates a tag or
+arrays. Pagination consumes the complete concatenated JSON page stream and does
+not require the newer `gh api --slurp` option; older distro-provided CLI versions
+remain usable. Empty, malformed, truncated and failed page streams are rejected. It never builds missing inputs, deletes assets, force-updates a tag or
 uploads with overwrite enabled.
 
 The transport adapter has **offline transport tests** and concrete
@@ -286,12 +288,12 @@ maintenance jobs acquire upstream sources. The GUI source group remains separate
 from compiler SDK recipe groups and its full source is retained in the candidate.
 
 
-Workflow artifact storage is also publication of those bytes. GUI input inspection
-with unresolved terms uploads only its non-source plan. Source groups and compiled
-GUI outputs are neither workflow artifacts nor release assets until verified terms
-allow redistribution. Explicit SDK maintenance and native GUI qualification may
-consume those inputs on a disposable runner and retain only test evidence. The
-GUI maintenance execution gate rejects unresolved terms before any remote write.
+Public release storage publishes its bytes. GUI input inspection with unresolved
+terms retains only its non-source plan. Source groups and compiled GUI outputs
+must not enter public releases until verified terms allow redistribution.
+Explicit SDK maintenance and native GUI qualification consume source on a
+disposable runner and retain only the declared test evidence. Private CI transport
+and successful local builds do not waive the public distribution gate.
 
 SDK maintenance defaults to verified reuse with `source=auto`. Only positively
 observed complete absence permits cold production in that maintenance workflow;
@@ -321,3 +323,32 @@ preserves ownership for recovery. Uploaded evidence contains receipts, captures
 and diagnostics; it excludes graphics archives/DLLs and GUI source/executables.
 This host input neither changes the application SDK recipe nor waives any release
 policy check or unresolved redistribution requirement.
+
+## Run storage separate from product publication
+
+[The CI storage contract](ci.md#storage-caches-and-sdk-reuse) uses
+[`ci_transport.py`](../tools/ci_transport.py) for large run outputs without Actions
+artifact quota. Every store is a draft prerelease tagged by exact run/attempt;
+it stays private, is never Latest and is not a qualified dependency base. Its
+manifest-last bundles permit same-byte reconciliation after an interrupted upload.
+This is deliberately a separate protocol from immutable candidate publication:
+the product publisher does not adopt arbitrary partial drafts.
+
+Even with `execute=false`, trusted workflows may create these transport drafts.
+The execution gate controls public product/base changes and Latest. Small pointers
+live in job outputs and summaries; payloads, screenshots and logs use draft bundles.
+Reference a bundle by repository, exact producer and manifest ID/digest when reusing
+another run. See [SDK retention and legacy migration](sdk.md#retain-complete-sdk-bytes-after-a-consumer-failure).
+Draft cleanup is an explicit reviewed operation after all consumers and durable
+copies are accounted for; there is no automated deletion or Actions fallback.
+
+GitHub's [release API permission rules](https://docs.github.com/en/rest/releases/releases#create-a-release)
+require additional workflow-write authorization when the target commit changes
+workflow files relative to the default branch; `GITHUB_TOKEN` cannot receive that
+permission. Integrate reviewed workflow changes into the default branch before
+running these examples with the ordinary workflow token. Feature branches with
+unchanged workflow files can use the normal path. Do not interpret a 404/403 from
+this rule as an absent release or permission to change the source/tag identity.
+Use an explicitly reviewed operator credential only when a project deliberately
+qualifies that separate permission arrangement. Keep the workflow revision stable
+while the run reserves its source-bound transport draft.

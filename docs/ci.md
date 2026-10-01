@@ -81,27 +81,66 @@ available resources and keep timing-sensitive test concurrency conservative.
 Do not repeat successful qualification only to compare runner sizes unless that
 measurement is itself requested work.
 
-## Artifacts, caches, and SDK reuse
+## Storage, caches, and SDK reuse
 
-Use a compiler cache to accelerate rebuilds and workflow artifacts to transport
-finished packages and reports. Key caches by OS, architecture, compiler/runtime,
-configuration, and dependency identity. Do not cache credentials. Restore caches
-as untrusted accelerators whose absence or corruption must not weaken checks.
+These examples use **no Actions artifact uploads**, including screenshots, SDKs,
+packages and diagnostic bundles. This keeps inherited private repositories within
+small account allowances; GitHub currently lists 500 MB of Actions artifact
+storage for its Free plan. See [the current billing limits](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
+A public origin does not establish an adequate quota for private downstream use.
+Do not introduce `upload-artifact`, Actions artifact ZIP transport or an unbounded
+cache as an alternative large-file store.
 
-Never pass a configured build tree between runners as an ordinary shortcut.
-Its absolute paths, compiler state, generator state, and timestamps can invalidate
-results. Rebuild inexpensive targets or move finished immutable archives.
-Already-compressed packages usually need no second compression in artifact
-upload; retain failure logs even when a test job fails.
+[`ci_transport.py`](../tools/ci_transport.py) stores trusted manual-run outputs in
+one **draft, non-Latest release per run and attempt**. The tag is
+`ci-RUN_ID-attempt-ATTEMPT`; its source and repository identity are fixed. Drafts
+are authenticated transport, not published application releases or SDK base
+qualification. Changing a draft into a public release breaks the transport
+contract. The helper never publishes, overwrites assets, deletes storage or moves
+Latest. Ordinary PR feedback stays read-only and retains bounded text in logs.
+
+Each named bundle uses a complete regular-file inventory, a deterministic tar
+stream split into at most 512 MiB assets, and a bounded JSON manifest uploaded
+**last**. Every file, ordered chunk and complete stream has a size and digest.
+Consumers verify the exact repository, workflow, source, run, attempt, completed
+producer job, manifest asset ID/digest and all bytes before publishing a new local
+output directory. The consumer rereads remote identities to detect replacement.
+GitHub draft listings require push access; qualify the actual consumer token,
+including fetch-only jobs, and grant access only to trusted manual workflows.
+Independent bundles share a draft but own disjoint asset names. Interrupted
+uploads reconcile identical bytes; inconsistent partial state requires inspection,
+not deletion or replacement. An explicitly retained failed SDK producer can supply
+verified bytes to a fresh consumer; it never grants qualification.
+
+Only small JSON pointers go into job outputs and summaries. A pointer is not the
+payload or qualification evidence. Reusable workflows bind the actual outer run's
+workflow identity, and callers keep the returned manifest identity when replaying
+another run. A rerun's new attempt is a separate store; it cannot silently borrow
+an older attempt's successful job. See [SDK retention](sdk.md#retain-complete-sdk-bytes-after-a-consumer-failure)
+for explicit cross-run selection and legacy migration.
+
+Release transport avoids Actions artifact quota; it still consumes transfer,
+runner disk and service resources. Budget bundle counts, bytes and retention.
+Review draft inventories periodically. Delete only specifically approved expired
+stores after confirming that no release, SDK replay or evidence record depends on
+them. Preserve referenced inputs in durable base or release-owned copies first.
+Never delete unknown drafts, active attempts or the sole surviving evidence.
+Respect GitHub's [release asset API](https://docs.github.com/en/rest/releases/assets)
+limits. Large files and SDKs never enter Git history.
+
+An optional compiler cache may accelerate builds. Key it by OS, architecture,
+compiler/runtime, configuration and dependency identity; bound its total size and
+expiry separately. A cache miss or corruption must not weaken checks. Never cache
+credentials or exchange configured build trees between runners: absolute paths,
+compiler state, generator state and timestamps can invalidate results. Rebuild
+inexpensive targets or transport finished verified archives.
 
 Prepared SDKs and dependency bundles use durable storage with exact identities.
 Routine jobs fetch and verify them. Missing recipes fail early with an explicit
 maintenance instruction. SDK compilation belongs in a separately dispatched
 maintenance workflow, with [source preservation and relocation checks](sdk.md).
-
-Set retention intentionally: short-lived diagnostic logs, longer candidate
-reports, and durable release inputs/results. Do not assume an expiring Actions
-artifact remains available to reproduce a supported release.
+Every binary release retains exact SDK binary/source/checksum copies; transport
+storage and base availability are not substitutes for those copies.
 
 ## Credentials and untrusted input
 
@@ -197,12 +236,17 @@ use the protected `release-publisher` environment, and share
 `foundation-release-lifecycle` with cancellation disabled. Set that environment's
 required reviewers and allowed branches before authorizing publication. Workflow
 files cannot create those repository settings. The default `execute=false`
-produces reviewable plans and retained artifacts without modifying releases.
+produces reviewable plans and may create private draft transport releases. It does
+not publish application/base assets or change Latest. Trusted transport producers
+need narrowly scoped `contents: write`; untrusted PR jobs do not receive it.
 
 | Workflow | Inputs and resulting contract |
 | --- | --- |
+| `_release-latest.yml` | The [Latest entry point](latest-release.md) invokes full regression, prepared-SDK application production, exact-byte certification and final promotion verification. Missing base recipes fail before work; preparation remains distinct from publication. |
+| `screenshots.yml` | The [screenshot workflow](screenshots.md) builds all seven hosts from exact existing SDKs, captures fresh initial views, retains the complete image gallery in a draft bundle, and optionally publishes a non-Latest gallery. Explicit retained-input recovery is separate from normal base selection. |
+| `sdk-import.yml` | Explicitly verify selected legacy SDK group/proof ZIPs and their original producer, preserve complete evidence, then emit draft bundles and the exact version-2 replay request. No cold build, certification or deletion. |
 | `candidate.yml` | `devfast=false`, `include_arm=true` verifies independent Windows x64, Linux x64 and Linux ARM64 source scopes, native packages, fresh copies and actual signed APT installation/upgrade/rejection/removal in disposable Debian. It uses host toolchains and does not claim the older SDK baseline. |
-| `sdk-maintenance.yml` | Select one target or `all`, the `core` or `all-gui` dependency profile, a bounded compile job count, and optionally `execute=true`. Select `source=auto` to verify and reuse the exact existing group, `base` to require it, or `rebuild` for explicit production. Linux producers run as an unprivileged account in Debian 12 on matching architecture; Windows selects its separate installed compiler and records provenance; Wasm retains its compiler and Node runtime. An always-run retention check verifies the selected current recipe and complete binary/source/checksum triplet before uploading reusable bytes, even after a consumer failure; its receipt is explicitly unqualified and grants no publication approval. Publication still requires successful relocated SDK, application, package and installed-consumer checks. The GUI profile additionally requires all selected GUI backend checks. |
+| `sdk-maintenance.yml` | Select one target or `all`, the `core` or `all-gui` dependency profile, a bounded compile job count, and optionally `execute=true`. Select `source=auto` to verify and reuse the exact existing group, `base` to require it, or `rebuild` for explicit production. Linux producers run as an unprivileged account in Debian 12 on matching architecture; Windows selects its separate installed compiler and records provenance; Wasm retains its compiler and Node runtime. An always-run retention check verifies the selected current recipe and complete binary/source/checksum triplet before retaining reusable bytes, even after a consumer failure; its receipt is explicitly unqualified and grants no publication approval. Publication still requires successful relocated SDK, application, package and installed-consumer checks. The GUI profile additionally requires all selected GUI backend checks. |
 | `gui-inputs.yml` | Explicitly acquire the pinned supplier checkout, export and verify a complete retained GUI group. Upload the group only when its verified redistribution metadata allows it; otherwise retain only the inspection plan. Optional execution appends an eligible group to base. |
 | `native-gui.yml` | Explicit maintenance/qualification on native Windows x64, Linux x64 or Linux ARM64. Fetch an exact GUI-capable SDK, acquire the pinned GUI inputs, and run all native backends. Windows also requires the explicit retained host graphics URL. Upload only test evidence; source and binaries remain runner-local. |
 | `sdk-application.yml` | Supply `profile` and a JSON `recipes` object mapping every profile target to its exact 64-character recipe. Freeze one source archive, independently restore each existing dependency group and build/test/package on its target, then assemble a complete candidate. Optional execution publishes without selecting Latest. |
@@ -246,7 +290,7 @@ explicit version is installed; the harness uses `/usr/bin/firefox`. Both native
 architectures keep their real Ubuntu runtime and browser assertions. Browsers are
 external execution prerequisites and never enter the compiler SDK.
 
-A separate `browser-prerequisite-<check>-<attempt>` artifact records the plan/check,
+A separate `browser-prerequisite-<check>-<attempt>` draft bundle records the plan/check,
 run/attempt, actual package versions and architecture, package policy and browser
 version. Setup initially retains this receipt outside the qualification output directory,
 which the checked runner must create afresh. After actual browser assertions, the
@@ -264,12 +308,11 @@ variables and retains its selected versions without copying unrelated inherited
 values into later step environments. Per-suite JSON and CTest failure logs are
 uploaded even when the source shard fails.
 
-Actions artifacts are temporary transport. Names include the actual attempt and
-all downloads identify the current run. Rerunning only failed jobs does not
-silently relabel earlier successful artifacts: use a complete new attempt, or
-perform explicitly reviewed report selection with the local helpers. Failure
-before a report exists leaves the certification incomplete. Complete failed
-reports can be attached as a new attempt; they never permit promotion.
+Draft transport bundles identify the actual run and attempt. Rerunning only failed
+jobs does not relabel earlier evidence: use a complete new attempt or explicitly
+select and verify prior origins. Failure before a report exists leaves
+certification incomplete. Complete failed reports can be retained and attached as
+a new certificate attempt; they never permit promotion.
 
 The local helpers and offline transport scenarios validate scheduling and
 identity contracts. `actionlint` checks workflow syntax and expressions. Actual
@@ -284,8 +327,10 @@ reconstructs their original names locally before complete group verification.
 SDK and GUI groups coexist in base; adding one preserves every existing asset
 ID and never advances Latest. Missing, partial, changed or inaccessible groups
 stop ordinary consumers. Source-group maintenance retains only a non-source inspection plan when terms
-are unresolved. Actions artifact upload is redistribution too: unresolved source
-groups and their binaries remain runner-local even with `execute=false`. An
+are unresolved. Public release upload is redistribution too: unresolved source
+groups and their binaries must not enter public releases, even when a separate
+transport operation succeeds. The source-group workflow retains only its inspection
+plan while its terms remain unresolved. An
 execution request fails clearly instead of silently skipping this gate.
 
 `source=auto` authorizes cold production only inside explicit SDK maintenance,
@@ -302,9 +347,8 @@ SDK can be qualified without a preexisting base. `native-gui.yml` repeats that
 qualification using an already retained group. Both acquire the supplier revision
 only as explicitly dispatched maintenance, run source checks locally, and leave
 unresolved source and binaries on the disposable runner. These results do not
-certify redistribution or a complete release. Windows GUI qualification remains
-outstanding until its actual native job and all internal tests pass on the exact
-revision. The ordinary candidate workflow verifies the core application only.
+certify redistribution or a complete release. Windows GUI qualification requires its actual native job and all internal tests
+to pass on the exact revision; observed executions are recorded in [validation](validation.md). The ordinary candidate workflow verifies the core application only.
 
 Cold Linux producers use an owning unprivileged account; never bypass supplier
 root-user rejection. Root package-manager checks run only in explicitly disposable

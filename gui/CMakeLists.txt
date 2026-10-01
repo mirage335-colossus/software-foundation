@@ -74,9 +74,11 @@ endif()
 if(NOT EMSCRIPTEN)
     target_link_libraries(foundation_gui_boundary INTERFACE Threads::Threads)
 endif()
-file(GLOB_RECURSE foundation_gui_owned_sources CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/shared/*.hpp" "${CMAKE_CURRENT_SOURCE_DIR}/shared/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/host/*.hpp" "${CMAKE_CURRENT_SOURCE_DIR}/hosts/*.cpp")
+# Watch every file under the owned source trees, including future source suffixes.
+# The Python guard selects source types; CMake must still invalidate its stamp.
+file(GLOB_RECURSE foundation_gui_owned_sources LIST_DIRECTORIES FALSE CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/shared/*" "${CMAKE_CURRENT_SOURCE_DIR}/host/*"
+    "${CMAKE_CURRENT_SOURCE_DIR}/hosts/*")
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/boundary-checked"
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/check_boundary.py"
     COMMAND "${CMAKE_COMMAND}" -E touch "${CMAKE_CURRENT_BINARY_DIR}/boundary-checked"

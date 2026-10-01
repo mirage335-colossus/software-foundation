@@ -586,6 +586,52 @@
         "tests/test_release_check.py",
         "tests/test_artifact.py"
       ]
+    },
+    {
+      "id": "CI-3",
+      "requirement": "Large CI outputs use exact private draft-release bundles without Actions artifact storage.",
+      "documents": [
+        "docs/ci.md",
+        "docs/sdk.md"
+      ],
+      "implementation": [
+        "tools/ci_transport.py",
+        ".github/workflows/sdk-import.yml",
+        ".github/scripts/lifecycle.py"
+      ],
+      "checks": [
+        "tests/test_ci_transport.py",
+        "tests/test_workflow_storage.py"
+      ]
+    },
+    {
+      "id": "REL-5",
+      "requirement": "One explicit Latest entry point composes complete regression, prepared SDKs, certification and reverified promotion.",
+      "documents": [
+        "docs/latest-release.md"
+      ],
+      "implementation": [
+        "tools/latest_release.py",
+        ".github/workflows/_release-latest.yml"
+      ],
+      "checks": [
+        "tests/test_latest_release.py"
+      ]
+    },
+    {
+      "id": "GUI-6",
+      "requirement": "Seven fresh actual surfaces share one application definition and retain complete capture provenance.",
+      "documents": [
+        "docs/screenshots.md",
+        "docs/gui-audit.md"
+      ],
+      "implementation": [
+        "tools/screenshots.py",
+        ".github/workflows/screenshots.yml"
+      ],
+      "checks": [
+        "tests/test_screenshots.py"
+      ]
     }
   ]
 }

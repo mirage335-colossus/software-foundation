@@ -25,6 +25,47 @@ name: Certify exact published candidate
         description: Append this immutable certificate attempt to the candidate
         type: boolean
         default: false
+  workflow_call:
+    inputs:
+      tag:
+        description: Exact published candidate tag
+        type: string
+        required: true
+      inventory:
+        description: Exact release.json SHA-256
+        type: string
+        required: true
+      profile:
+        description: Support policy profile
+        type: string
+        default: core
+      graphics_archive_url:
+        description: Operator-retained HTTPS host graphics archive; required for Windows GUI checks
+        type: string
+        default: ''
+      execute:
+        description: Append this immutable certificate attempt to the candidate
+        type: boolean
+        default: false
+    outputs:
+      certificate_sha256:
+        description: Verified certificate sha256
+        value: ${{ jobs.record.outputs.certificate_sha256 }}
+      certification_run:
+        description: Verified certification run
+        value: ${{ jobs.record.outputs.certification_run }}
+      certification_attempt:
+        description: Verified certification attempt
+        value: ${{ jobs.record.outputs.certification_attempt }}
+      inventory_sha256:
+        description: Verified inventory sha256
+        value: ${{ jobs.record.outputs.inventory_sha256 }}
+      eligible_for_promotion:
+        description: Verified eligible for promotion
+        value: ${{ jobs.record.outputs.eligible_for_promotion }}
+      attached:
+        description: Verified attached
+        value: ${{ jobs.attach.outputs.attached }}
 permissions:
   contents: read
   actions: read
@@ -42,16 +83,17 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'certification-plan'], check=True)
       id: plan
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: qualification-inputs-${{ github.run_attempt }}
-        path: |-
+    - name: Retain verified qualification-inputs-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: qualification-inputs-${{ github.run_attempt }}
+        BUNDLE_PATHS: |-
           build/candidate/
           build/delivery.json
           build/check-plan.json
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
+    permissions:
+      contents: write
+      actions: read
   check:
     needs: prepare
     strategy:
@@ -62,15 +104,19 @@ jobs:
     env:
       CHECK: ${{ matrix.id }}
       CHECK_IMAGE: ${{ matrix.image }}
-      CHECK_BROWSER: ${{ ((matrix.backend == 'hosted-web' && matrix.scope == 'archive') || (matrix.backend == 'wasm' && (matrix.scope == 'source' || matrix.scope == 'recovery' || matrix.scope == 'archive'))) && 'yes' || 'no' }}
+      CHECK_BROWSER: ${{ ((matrix.backend == 'hosted-web' && matrix.scope == 'archive') || (matrix.backend == 'wasm' && (matrix.scope
+        == 'source' || matrix.scope == 'recovery' || matrix.scope == 'archive'))) && 'yes' || 'no' }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
     - shell: python
-      run: |-
-        import os, subprocess
-        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','qualification-inputs-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build'],check=True)
+      run: |
+        import subprocess,sys
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
+      env:
+        BUNDLE_NAME: qualification-inputs-${{ github.run_attempt }}
+        BUNDLE_OUTPUT: build
     - name: Verify the explicitly supplied retained Windows graphics input
       if: runner.os == 'Windows' && matrix.graphics
       run: python .github/scripts/lifecycle.py graphics-input
@@ -87,21 +133,21 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/container_job.py', 'check'], check=True)
       if: runner.os == 'Linux'
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: evidence-${{ matrix.id }}-${{ github.run_attempt }}
-        path: build/evidence/${{ matrix.id }}/
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
-      if: always()
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: browser-prerequisite-${{ matrix.id }}-${{ github.run_attempt }}
-        path: build/prerequisites/${{ matrix.id }}/browser.json
-        if-no-files-found: error
-        retention-days: 30
-      if: always() && runner.os == 'Linux' && env.CHECK_BROWSER == 'yes'
+    - if: always()
+      name: Retain verified evidence-${{ matrix.id }}-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: evidence-${{ matrix.id }}-${{ github.run_attempt }}
+        BUNDLE_PATHS: build/evidence/${{ matrix.id }}/
+    - if: always() && runner.os == 'Linux' && env.CHECK_BROWSER == 'yes'
+      name: Retain verified browser-prerequisite-${{ matrix.id }}-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: browser-prerequisite-${{ matrix.id }}-${{ github.run_attempt }}
+        BUNDLE_PATHS: build/prerequisites/${{ matrix.id }}/browser.json
+    permissions:
+      contents: write
+      actions: read
   record:
     if: always() && needs.prepare.result == 'success'
     needs:
@@ -113,34 +159,42 @@ jobs:
       with:
         persist-credentials: false
     - shell: python
-      run: |-
-        import os, subprocess
-        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','qualification-inputs-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build'],check=True)
+      run: |
+        import subprocess,sys
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
+      env:
+        BUNDLE_NAME: qualification-inputs-${{ github.run_attempt }}
+        BUNDLE_OUTPUT: build
     - shell: python
       run: |
-        import json,os,subprocess
-        from pathlib import Path
-        plan=json.loads(Path('build/check-plan.json').read_text())
-        for item in plan['checks']:
-         subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','evidence-'+item['id']+'-'+os.environ['GITHUB_RUN_ATTEMPT'],'--dir','build/evidence/'+item['id']],check=True)
+        import subprocess,sys
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-evidence-bundles'],check=True)
     - shell: python
       run: |-
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'certificate'], check=True)
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: certificate-${{ github.run_attempt }}
-        path: |-
+      id: result
+    - if: always()
+      name: Retain verified certificate-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: certificate-${{ github.run_attempt }}
+        BUNDLE_PATHS: |-
           build/candidate/
           build/delivery.json
           build/check-plan.json
           build/evidence/
           build/certificate.json
           build/attachment-plan.json
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
-      if: always()
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      certificate_sha256: ${{ steps.result.outputs.certificate_sha256 }}
+      certification_run: ${{ steps.result.outputs.certification_run }}
+      certification_attempt: ${{ steps.result.outputs.certification_attempt }}
+      inventory_sha256: ${{ steps.result.outputs.inventory_sha256 }}
+      eligible_for_promotion: ${{ steps.result.outputs.eligible_for_promotion }}
   attach:
     if: inputs.execute && always() && needs.record.result == 'success'
     needs: record
@@ -157,21 +211,25 @@ jobs:
       with:
         persist-credentials: false
     - shell: python
-      run: |-
-        import os, subprocess
-        subprocess.run(['gh','run','download',os.environ['GITHUB_RUN_ID'],'--repo',os.environ['GITHUB_REPOSITORY'],'--name','certificate-{attempt}'.replace('{attempt}',os.environ['GITHUB_RUN_ATTEMPT']),'--dir','build'],check=True)
+      run: |
+        import subprocess,sys
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
+      env:
+        BUNDLE_NAME: certificate-${{ github.run_attempt }}
+        BUNDLE_OUTPUT: build
     - shell: python
       run: |-
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'attach-certificate'], check=True)
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: certification-delivery-${{ github.run_attempt }}
-        path: build/receipts/
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
-      if: always()
+      id: result
+    - if: always()
+      name: Retain verified certification-delivery-${{ github.run_attempt }}
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: certification-delivery-${{ github.run_attempt }}
+        BUNDLE_PATHS: build/receipts/
+    outputs:
+      attached: ${{ steps.result.outputs.attached }}
   verdict:
     if: always()
     needs:

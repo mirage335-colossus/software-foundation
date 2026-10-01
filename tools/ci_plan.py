@@ -441,26 +441,110 @@ def qualification_plan(candidate, profile, output, policy=None):
     return {'include': matrix}
 
 
-def download_run(repository, run_id, source_commit, workflow, name, output):
-    g = module('github_release')
-    g.location(repository); exact_commit(source_commit)
-    if not re.fullmatch(r'[1-9][0-9]*', str(run_id)) or not re.fullmatch(r'[a-z0-9-]+\.yml', workflow):
-        raise ValueError('exact run and allowed workflow filename required')
-    g.valid_name(name)
-    remote = g.Remote(repository); remote.visible()
-    observed = remote.transport.json(remote.base + '/actions/runs/' + str(run_id))
-    if (observed.get('head_sha') != source_commit or observed.get('status') != 'completed' or
-        observed.get('conclusion') != 'success' or observed.get('event') != 'workflow_dispatch' or
-        observed.get('path') != '.github/workflows/' + workflow or
-        observed.get('head_repository', {}).get('full_name', '').casefold() != repository.casefold()):
-        raise ValueError('artifact producer run identity or successful completion differs')
-    if output.exists(): raise ValueError('download output must be new')
-    subprocess.run(['gh', 'run', 'download', str(run_id), '--repo', repository, '--name', name, '--dir', str(output)], check=True)
-    return observed
+def _bundle_directory(path):
+    import stat
+    try: info=path.lstat()
+    except FileNotFoundError: return
+    if not stat.S_ISDIR(info.st_mode) or getattr(info,'st_file_attributes',0)&0x400:
+        raise ValueError('bundle destination requires ordinary directories without links or reparse points')
 
+
+def restore_run_bundle(repository, run_id, attempt, source_commit, workflow, name, output, *, allow_failed=False):
+    """Verify into new staging before merging only absent files into an owned output."""
+    import tempfile
+    import shutil
+    a=module('dependency_archive'); transport=module('ci_transport')
+    output=Path(output).absolute()
+    for parent in (output,*output.parents):
+        _bundle_directory(parent)
+    output.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.ci-bundle-',dir=output.parent) as temporary:
+        staged=Path(temporary)/'payload'
+        result=transport.fetch_bundle(repository,run_id,attempt,source_commit,workflow,name,staged,
+                                      allow_failed=allow_failed)
+        entries=result['manifest']['files']
+        for relative in entries:
+            destination=output/a.relative(relative)
+            if destination.exists() or destination.is_symlink():
+                raise ValueError('bundle restore refuses an existing file: '+relative)
+            for parent in destination.parents:
+                if parent==output.parent: break
+                _bundle_directory(parent)
+        output.mkdir(exist_ok=True)
+        for relative,info in entries.items():
+            source=staged/a.relative(relative);destination=output/a.relative(relative)
+            destination.parent.mkdir(parents=True,exist_ok=True)
+            with source.open('rb') as incoming,destination.open('xb') as outgoing:
+                shutil.copyfileobj(incoming,outgoing)
+            destination.chmod(info['mode'])
+    return result
+
+
+def download_run(repository, run_id, source_commit, workflow, name, output):
+    g=module('github_release'); remote=g.Remote(repository);remote.visible()
+    observed=remote.transport.json(remote.base+'/actions/runs/'+str(run_id))
+    if observed.get('status')!='completed' or observed.get('conclusion')!='success':
+        raise ValueError('bundle producer run must complete successfully')
+    return restore_run_bundle(repository,run_id,observed['run_attempt'],source_commit,workflow,name,output)
 
 
 def retained_sdk_request(request, repository, target, profile, recipe):
+    fields={'schema_version','repository','target','profile','recipe_id','run_id','source_commit',
+            'attempt','job_id','workflow','group','proof'}
+    if not isinstance(request,dict) or set(request)!=fields or type(request['schema_version']) is not int or request['schema_version']!=2:
+        raise ValueError('exact version-2 retained bundle request required; legacy storage requires explicit import')
+    if request['workflow'] not in ('sdk-maintenance.yml','sdk-import.yml'):
+        raise ValueError('retained SDK requires an allowed explicit producer workflow')
+    legacy={key:value for key,value in request.items() if key!='workflow'}
+    legacy['schema_version']=1
+    for kind in ('group','proof'):
+        entry=request[kind]
+        if not isinstance(entry,dict) or set(entry)!={'manifest_id','manifest_sha256'}:
+            raise ValueError('exact bundle manifest identity required')
+        legacy[kind]={'id':entry['manifest_id'],'sha256':entry['manifest_sha256']}
+    legacy_sdk_request(legacy,repository,target,profile,recipe)
+    return request
+
+
+def retained_sdk(repository,request,target,profile,recipe,output,*,transport=None):
+    """Ordinary reuse accepts only complete run-scoped draft-release bundles."""
+    import tempfile
+    store=module('dependency_store');g=module('github_release');bundles=module('ci_transport')
+    retained_sdk_request(request,repository,target,profile,recipe)
+    output=Path(output).absolute()
+    if output.exists() or output.is_symlink(): raise ValueError('retained SDK output must be new')
+    output.parent.mkdir(parents=True,exist_ok=True)
+    observed={}
+    with tempfile.TemporaryDirectory(prefix='.retained-bundles-',dir=output.parent) as temporary:
+        stage=Path(temporary)
+        for kind in ('proof','group'):
+            reference=request[kind]
+            observed[kind]=bundles.fetch_bundle(repository,request['run_id'],request['attempt'],request['source_commit'],
+                request['workflow'],f'sdk-{kind}-{target}-{request["attempt"]}',stage/kind,
+                job_id=request['job_id'],manifest_id=reference['manifest_id'],
+                manifest_sha256=reference['manifest_sha256'],allow_failed=True,transport=transport)
+        proof=stage/'proof'
+        for name in ('sdk-retention.json','sdk-origin.json'):
+            path=proof/name
+            if not path.is_file() or path.is_symlink() or path.stat().st_size>128*1024:
+                raise ValueError('retained proof requires bounded retention and origin records')
+        receipt=g.parse((proof/'sdk-retention.json').read_bytes());origin=g.parse((proof/'sdk-origin.json').read_bytes())
+        expected=dict(schema_version=1,status='verified',qualification='unqualified',publication_approved=False,
+            target=target,profile=profile,recipe_id=recipe,source_commit=request['source_commit'],
+            run_id=str(request['run_id']),attempt=request['attempt'])
+        if (not isinstance(receipt,dict) or set(receipt)!=set(expected)|{'files'} or
+            any(type(receipt.get(k)) is not type(v) or receipt[k]!=v for k,v in expected.items()) or
+            not isinstance(origin,dict) or origin.get('recipe')!=recipe or
+            origin.get('origin') not in ('base','rebuild','absent-base','absent-recipe','retained')):
+            raise ValueError('retained bundle receipt or origin differs from exact request')
+        files=store.verify_group(stage/'group',recipe)
+        if files!=receipt['files']: raise ValueError('retained SDK triplet differs from verified receipt')
+        store.copy_group(stage/'group',output,recipe)
+    return dict(origin='retained',recipe=recipe,qualification='unqualified',publication_approved=False,
+                repository=repository,request=request,bundles=observed,retention=receipt,previous_origin=origin)
+
+
+def legacy_sdk_request(request, repository, target, profile, recipe):
     """One explicit producer and two immutable transport objects; no selection fallback."""
     g = module('github_release')
     fields = {'schema_version', 'repository', 'target', 'profile', 'recipe_id',
@@ -526,7 +610,7 @@ def _retained_zip(path, *, max_bytes):
     return entries
 
 
-def _download_action_artifact(repository, artifact_id, path):
+def _download_legacy_artifact(repository, artifact_id, path):
     with Path(path).open('xb') as stream:
         result = subprocess.run(['gh', 'api', '--hostname', 'github.com',
             f'repos/{repository}/actions/artifacts/{artifact_id}/zip'], stdout=stream,
@@ -535,14 +619,14 @@ def _download_action_artifact(repository, artifact_id, path):
         raise ValueError('retained artifact download failed; no fallback is permitted')
 
 
-def retained_sdk(repository, request, target, profile, recipe, output, *, transport=None, download=None):
+def import_legacy_sdk(repository, request, target, profile, recipe, output, *, proof_output=None, transport=None, download=None):
     """Reuse checked bytes from one finished producer, regardless of sibling status."""
     import datetime
     import shutil
     import tempfile
     import zipfile
     g = module('github_release'); a = module('dependency_archive'); store = module('dependency_store')
-    retained_sdk_request(request, repository, target, profile, recipe)
+    legacy_sdk_request(request, repository, target, profile, recipe)
     output = Path(output).absolute()
     if output.exists() or output.is_symlink(): raise ValueError('retained SDK output must be new')
     remote = g.Remote(repository, transport); remote.visible()
@@ -596,12 +680,20 @@ def retained_sdk(repository, request, target, profile, recipe, output, *, transp
         if created.utcoffset() is None or not started <= created <= completed:
             raise ValueError('retained artifact was not created within the exact producer job')
         observed_artifacts[kind] = row
+    if proof_output is not None:
+        proof_output=Path(proof_output).absolute()
+        if proof_output.exists() or proof_output.is_symlink(): raise ValueError('legacy proof output must be new')
+        for parent in proof_output.parents:
+            if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
+                raise ValueError('legacy proof output requires ordinary parents')
+        if proof_output==output or proof_output in output.parents or output in proof_output.parents:
+            raise ValueError('legacy import output trees must be disjoint')
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=output.parent, prefix='.retained-sdk-') as temporary:
         stage = Path(temporary)
         for kind, row in observed_artifacts.items():
             path = stage / (kind + '.zip')
-            (download or _download_action_artifact)(repository, row['id'], path)
+            (download or _download_legacy_artifact)(repository, row['id'], path)
             if path.stat().st_size != row['size_in_bytes'] or a.digest(path) != request[kind]['sha256']:
                 raise ValueError('downloaded retained ZIP differs from pinned bytes')
         proof_entries = _retained_zip(stage / 'proof.zip', max_bytes=64 * 1024**2)
@@ -634,6 +726,14 @@ def retained_sdk(repository, request, target, profile, recipe, output, *, transp
                                       for row in observed_artifacts.values()):
             raise ValueError('retained producer or artifacts changed during verification')
         store.copy_group(group, output, recipe)
+        if proof_output is not None:
+            proof_output=Path(proof_output)
+            if proof_output.exists() or proof_output.is_symlink(): raise ValueError('legacy proof output must be new')
+            proof_output.mkdir(parents=True)
+            with zipfile.ZipFile(stage/'proof.zip') as source:
+                for name in proof_entries:
+                    path=proof_output/a.relative(name);path.parent.mkdir(parents=True,exist_ok=True)
+                    with source.open(name) as incoming,path.open('xb') as outgoing: shutil.copyfileobj(incoming,outgoing)
     return dict(origin='retained', recipe=recipe, qualification='unqualified', publication_approved=False,
                 repository=repository, request=request, producer=job, artifacts=observed_artifacts,
                 retention=receipt, previous_origin=origin)

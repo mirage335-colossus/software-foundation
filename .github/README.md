@@ -1,10 +1,13 @@
 # Workflow examples
 
-These files become usable after this local repository is hosted on GitHub.
+These executable workflows are hosted with this repository. Actual observed
+qualification is recorded in [validation](../docs/validation.md).
 `ci.yml` gives inexpensive automatic feedback for pull requests and main-branch
 pushes. `candidate.yml` is manual, defaults to full selected-platform tests,
-checks actual target architecture, and creates verified native archive artifacts.
-Neither workflow publishes releases or establishes an older-runtime baseline.
+checks actual target architecture, and creates verified native archives. Manual
+producers retain outputs in private draft releases with complete manifests; no
+workflow uses Actions artifact storage. Neither workflow publishes an application
+release or establishes an older-runtime baseline.
 
 Manual candidate inputs:
 
@@ -22,7 +25,7 @@ choice, not an arbitrary workflow input. Confirm image prerequisites, access,
 quotas and cost before configuring the pool. Missing configuration fails early.
 The default uses standard runners and requires no such variable.
 
-After hosting, a development diagnostic can be dispatched with:
+A development diagnostic can be dispatched with:
 
 ```sh
 gh workflow run candidate.yml --ref YOUR_BRANCH \
@@ -36,8 +39,7 @@ run the default full candidate scope or reuse equivalent current evidence.
 runners when justified by elapsed time, without inventing new runner access.
 
 Action revisions are full commit pins checked against the upstream repositories:
-[checkout v7.0.1](https://github.com/actions/checkout/tree/3d3c42e5aac5ba805825da76410c181273ba90b1)
-and [upload-artifact v7.0.1](https://github.com/actions/upload-artifact/tree/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a).
+[checkout v7.0.1](https://github.com/actions/checkout/tree/3d3c42e5aac5ba805825da76410c181273ba90b1).
 Dependabot proposes monthly updates; review requirements and run checks before
 merging. Runner software still changes independently and must be recorded per run.
 
@@ -47,3 +49,25 @@ prerequisites must already be present on custom runner images.
 
 See [CI requirements](../docs/ci.md) for source isolation, complete aggregation,
 permissions, caches, SDK reuse and production publishing requirements.
+
+The manual lifecycle is executable, not only described:
+
+- `sdk-maintenance.yml`: explicitly build/upgrade or reuse SDK groups; publish to
+  base only after required consumers succeed and execution is selected.
+- `sdk-import.yml`: preserve exact legacy SDK/evidence bytes in the current draft
+  transport and emit a version-2 replay request; no rebuilding or deletion.
+- `sdk-application.yml`: consume exact base recipes, package each required target,
+  retain identical SDK copies and optionally publish an ordinary candidate.
+- `certify.yml` and `promote.yml`: qualify exact remote bytes, attach complete
+  evidence, then revalidate the selected certificate before changing Latest.
+- [`_release-latest.yml`](workflows/_release-latest.yml): the visible
+  **_Publish new Latest release** entry point composes the full sequence.
+- [`screenshots.yml`](workflows/screenshots.yml): capture fresh initial views of
+  all seven actual GUI hosts and optionally publish a non-Latest image gallery.
+- `gui-inputs.yml` and `native-gui.yml`: explicit supplier-input maintenance and
+  native host qualification with separate Windows graphics prerequisites.
+
+`execute=false` may write private CI transport drafts. It does not publish a
+public application/base/gallery or advance Latest. See the exact
+[storage contract](../docs/ci.md#storage-caches-and-sdk-reuse),
+[Latest inputs](../docs/latest-release.md) and [capture inputs](../docs/screenshots.md).
