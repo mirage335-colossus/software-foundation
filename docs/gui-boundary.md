@@ -150,8 +150,8 @@ With a multi-configuration generator, add `--config Debug` to builds and
 GUI test executables are excluded from ordinary product builds; build
 `foundation-gui-tests` when selecting the GUI test label. Explicit toolkit options fail configuration if dependencies are missing. Missing
 Node omits renderer/Wasm tests and is not a passing result. Set
-`FOUNDATION_GUI_HOST_TESTS=ON` to include private PTY (POSIX), loopback, SDL dummy
-video and selected native-display checks. Run FLTK/Rev tests with a real display
+`FOUNDATION_GUI_HOST_TESTS=ON` to include private PTY (POSIX), loopback and selected
+native-display checks. Run SDL/FLTK/Rev tests with a real display
 or an explicitly prepared X server. An absent test in `ctest -N` is missing coverage.
 
 ## Prepared platform dependencies
@@ -282,7 +282,12 @@ comparison. Record both scales and dimensions when changing display prerequisite
 Portable SDL builds require the supplier's `SDL2::SDL2-static` target, including
 its exported link dependencies. Hosts and native tests consume the same interface;
 an unavailable static target fails configuration. Ordinary local builds retain the
-supplier's shared target selection.
+supplier's shared target selection. Native host qualification explicitly selects
+X11 on Linux and the Windows video driver on Windows, sharing the display lock
+with other native fixtures. Supply the real display service (Xvfb is supported on
+Linux); an unavailable display is a failed prerequisite. Neither SDK consumers
+nor installed smoke checks assume that optional dummy/offscreen drivers exist.
+The browser build does not enter these native checks.
 
 New rendering primitives, input models or OS services can require a public
 contract extension. Specify semantics and fallback once, implement each selected

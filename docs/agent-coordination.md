@@ -191,6 +191,17 @@ use independent copies/worktrees, or explicitly coordinate all aliases together.
 Canonical path checks alone cannot find every hard-linked descendant of a
 directory; do not assume a disk-saving hard-link snapshot has private source.
 
+`file` claims require regular files; `directory` claims require directories.
+Absent paths are checked again when they materialize. Service-managed sockets,
+named pipes and other special entries are not regular-file claims: agree on exact
+service/endpoint `resource` identifiers, and separately claim private runtime
+directories and regular logs. If an incorrect future-file claim becomes a special
+entry, complete registry discovery correctly fails, even for unrelated acquisitions.
+Stop and join the owning service and all its writers, reconcile and remove only
+its owned runtime entry, then correct the claim through the checked helper before
+restarting under the appropriate reservations. Do not ignore the invalid record,
+relabel the special entry as a directory or bypass registry validation.
+
 Use [checked session operations](agent-recipes.md#checked-session-operations)
 for registration, additions, releases and transfers. The following defines the
 transaction implemented by the helper or a qualified wrapper; it is not an ad hoc

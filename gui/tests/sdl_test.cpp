@@ -14,6 +14,9 @@ struct Scenario {
     static constexpr bool testing=true;
     int step=0;
     template<class Session> void start(Session& session) {
+        const auto* driver=SDL_GetCurrentVideoDriver();
+        fixture::check(driver&&*driver,"SDL native video driver was not initialized");
+        std::cout<<"SDL native video driver: "<<driver<<'\n';
         session.adapter.focus(gui::WidgetKey{"entries.editor",1});
         text("First entry");key(SDLK_RETURN);text("Second entry");key(SDLK_RETURN);
     }

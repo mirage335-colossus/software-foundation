@@ -153,6 +153,54 @@ target_link_libraries(direct_boundary_consumer PRIVATE gui_boundary)
         result = self.windows_macro_fixture(windows=False)
         self.assertEqual(0, result.returncode, result.stdout)
 
+    def test_sdl_host_and_deliverable_checks_select_declared_native_display(self):
+        cmake = (ROOT / "gui/CMakeLists.txt").read_text()
+        setup = "function(foundation_gui_sdl_display_test " + cmake.split(
+            "function(foundation_gui_sdl_display_test ", 1)[1].split("endfunction()", 1)[0] + "endfunction()\n"
+        installed = "foreach(backend IN LISTS smoke_backends)" + cmake.split(
+            "foreach(backend IN LISTS smoke_backends)", 1)[1].split("endforeach()", 1)[0] + "endforeach()\n"
+        native = "foundation_gui_executable(foundation_gui_sdl_test" + cmake.split(
+            "foundation_gui_executable(foundation_gui_sdl_test", 1)[1].split("endif()", 1)[0]
+        project = """cmake_minimum_required(VERSION 3.24)
+project(NativeSdlDisplay LANGUAGES NONE)
+enable_testing()
+set(smoke_backends sdl)
+set(Python3_EXECUTABLE "${CMAKE_COMMAND}")
+add_executable(foundation-gui-sdl IMPORTED)
+set_target_properties(foundation-gui-sdl PROPERTIES IMPORTED_LOCATION "${CMAKE_COMMAND}")
+function(foundation_gui_executable)
+endfunction()
+function(target_link_libraries)
+endfunction()
+function(foundation_gui_check name target labels)
+    add_test(NAME foundation.gui.${name} COMMAND "${CMAKE_COMMAND}" --version)
+endfunction()
+"""
+        with tempfile.TemporaryDirectory(prefix="SDL native display ") as directory:
+            root = Path(directory)
+            for system, driver in (("Linux", "x11"), ("Windows", "windows"), ("Other", None)):
+                with self.subTest(system=system):
+                    source = root / system; source.mkdir()
+                    (source / "CMakeLists.txt").write_text(project + 'set(CMAKE_SYSTEM_NAME "' + system + '")\n' +
+                                                          setup + installed + native)
+                    build = source / "build"
+                    result = subprocess.run(["cmake", "-S", str(source), "-B", str(build)],
+                        capture_output=True, text=True, timeout=30)
+                    if driver is None:
+                        self.assertNotEqual(0, result.returncode)
+                        self.assertIn("Declare the native SDL video driver", result.stderr)
+                        continue
+                    self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                    result = subprocess.run(["ctest", "--test-dir", str(build), "--show-only=json-v1"],
+                        capture_output=True, text=True, check=True, timeout=15)
+                    tests = json.loads(result.stdout)["tests"]
+                    self.assertEqual({"foundation.gui.installed-sdl", "foundation.gui.sdl-host"},
+                                     {test["name"] for test in tests})
+                    for test in tests:
+                        properties = {item["name"]: item["value"] for item in test["properties"]}
+                        self.assertEqual(["SDL_VIDEODRIVER=" + driver], properties["ENVIRONMENT"])
+                        self.assertEqual(["foundation_native_display"], properties["RESOURCE_LOCK"])
+
     def sdl_link_fixture(self, *, portable, static_available=True, remove_selection=False):
         cmake = (ROOT / "gui/CMakeLists.txt").read_text()
         block = "if(FOUNDATION_GUI_SDL)\n" + cmake.split("if(FOUNDATION_GUI_SDL)\n", 1)[1].split(
