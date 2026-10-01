@@ -215,6 +215,15 @@ or escaping aliases still fail materialization. Never resolve a target runtime
 service through the build host's filesystem or relax general link validation to
 make a supplier skeleton copy succeed.
 
+The supplier's host root has a separate legacy alias, `usr -> .`, created by
+Buildroot's `package/skeleton/skeleton.mk`. Native assembly validates that exact
+link after compilation and legal-information collection, then omits it before
+materialization. A replacement directory/file or any other link target fails with
+an explicit `usr` diagnostic. Host tools already live directly under the host
+root; the target's real `sysroot/usr` and normal library aliases remain compiler
+inputs. This exception does not permit arbitrary ancestor cycles. It is confined
+to the native producer and does not change other SDK producers or identities.
+
 The compiler SDK also omits a reviewed, source-bound set of target OS programs
 and conversion modules. Host tools, target headers and link libraries,
 `fltk-config` and `sdl2-config` remain. New libc source identities require an

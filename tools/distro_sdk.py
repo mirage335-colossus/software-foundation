@@ -225,6 +225,23 @@ def preserve_sources(recipe, cache, output):
     return state['recipe_id']
 
 
+def remove_host_compatibility_alias(host):
+    """Omit Buildroot's exact historical host/usr -> . ancestor alias."""
+    host = Path(host)
+    if host.is_symlink() or not host.is_dir():
+        raise ValueError('supplier host root must be an ordinary directory')
+    alias = host / 'usr'
+    if not alias.is_symlink():
+        if alias.exists():
+            raise ValueError("unexpected supplier host alias entry: usr (expected link '.')")
+        return
+    if os.readlink(alias) != '.' or alias.resolve(strict=True) != host.resolve(strict=True):
+        raise ValueError("unexpected supplier host alias target: usr (expected '.')")
+    # package/skeleton/skeleton.mk creates this build-time compatibility alias.
+    # Tools now live directly in host; target sysroot/usr remains untouched.
+    alias.unlink()
+
+
 def remove_runtime_aliases(sysroot):
     """Omit exact target OS service links that have no meaning in a compiler SDK."""
     sysroot = Path(sysroot)
@@ -321,6 +338,7 @@ def build(recipe, cache, destination, jobs):
     with tempfile.TemporaryDirectory(dir=destination.parent, prefix='sdk-build-') as temporary:
         work = Path(temporary)
         supplier = output / 'host'
+        remove_host_compatibility_alias(supplier)
         # Remove virtual filesystem aliases from the target sysroot. They are
         # runtime host services, never compiler inputs or application libraries.
         sysroot = supplier / manifest['target'] / 'sysroot'

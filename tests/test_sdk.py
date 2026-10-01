@@ -447,6 +447,67 @@ class ProducerContractTests(unittest.TestCase):
 
 
 class NativeLinuxToolchainTests(unittest.TestCase):
+
+    def test_exact_host_compatibility_alias_is_omitted_without_target_changes(self):
+        import distro_sdk
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); host = root / 'host'
+            (host / 'bin').mkdir(parents=True); (host / 'lib').mkdir()
+            (host / 'bin/compiler').write_bytes(b'compiler input')
+            (host / 'lib/support').write_bytes(b'host support')
+            target = host / 'target/sysroot/usr/include'; target.mkdir(parents=True)
+            (target / 'header.h').write_bytes(b'target header')
+            # Exact Buildroot2026.08 package/skeleton/skeleton.mk host aliases.
+            (host / 'usr').symlink_to('.'); (host / 'lib64').symlink_to('lib')
+            with self.assertRaisesRegex(ValueError, 'directory link cycle'):
+                sdk.materialize(host, root / 'before')
+            distro_sdk.remove_host_compatibility_alias(host)
+            distro_sdk.remove_host_compatibility_alias(host)
+            sdk.materialize(host, root / 'after')
+            self.assertFalse((host / 'usr').exists()); self.assertFalse((host / 'usr').is_symlink())
+            self.assertTrue((host / 'target/sysroot/usr').is_dir())
+            self.assertEqual((root / 'after/target/sysroot/usr/include/header.h').read_bytes(), b'target header')
+            self.assertEqual((root / 'after/bin/compiler').read_bytes(), b'compiler input')
+            self.assertEqual((root / 'after/lib64/support').read_bytes(), b'host support')
+            self.assertFalse((root / 'after/lib64').is_symlink())
+
+    def test_host_compatibility_alias_rejects_variations_and_replacements(self):
+        import distro_sdk
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); host = root / 'host'; (host / 'lib').mkdir(parents=True)
+            (host / 'lib/support').write_bytes(b'preserve')
+            alias = host / 'usr'
+            for value in ('..', './', str(host.resolve()), 'lib', 'missing'):
+                with self.subTest(target=value):
+                    alias.symlink_to(value)
+                    with self.assertRaisesRegex(ValueError, 'alias target: usr'):
+                        distro_sdk.remove_host_compatibility_alias(host)
+                    self.assertTrue(alias.is_symlink()); self.assertEqual(os.readlink(alias), value)
+                    self.assertEqual((host / 'lib/support').read_bytes(), b'preserve'); alias.unlink()
+            alias.write_bytes(b'preserve ordinary file')
+            with self.assertRaisesRegex(ValueError, 'alias entry: usr'):
+                distro_sdk.remove_host_compatibility_alias(host)
+            self.assertEqual(alias.read_bytes(), b'preserve ordinary file'); alias.unlink(); alias.mkdir()
+            (alias / 'child').write_bytes(b'preserve directory')
+            with self.assertRaisesRegex(ValueError, 'alias entry: usr'):
+                distro_sdk.remove_host_compatibility_alias(host)
+            self.assertEqual((alias / 'child').read_bytes(), b'preserve directory')
+            redirected = root / 'redirected'; redirected.symlink_to('host')
+            with self.assertRaisesRegex(ValueError, 'host root'):
+                distro_sdk.remove_host_compatibility_alias(redirected)
+
+    def test_other_host_or_target_directory_cycles_still_fail(self):
+        import distro_sdk
+        for name, target in (('lib/unrelated', '..'), ('target/sysroot/usr', '.')):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); host = root / 'host'; (host / 'lib').mkdir(parents=True)
+                (host / 'target/sysroot').mkdir(parents=True); (host / 'usr').symlink_to('.')
+                other = host / name; other.symlink_to(target)
+                distro_sdk.remove_host_compatibility_alias(host)
+                with self.assertRaisesRegex(ValueError, 'directory link cycle'):
+                    sdk.materialize(host, root / 'copy')
+                self.assertTrue(other.is_symlink()); self.assertEqual(os.readlink(other), target)
+
     def runtime_projection_fixture(self, root):
         import distro_sdk
         tree = root / 'sdk'; sysroot = tree / 'sysroot'

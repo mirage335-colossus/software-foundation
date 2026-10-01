@@ -107,7 +107,11 @@ explicitly unqualified; no failed-run artifact becomes a qualified base automati
 The ARM64 producer in maintenance run `36898087108` completed compilation and
 supplier license-information collection, then rejected a supplier directory-link
 cycle before SDK sealing. This failed scope has no completed group or consumer
-qualification. Resolving the actual supplier link structure remains necessary.
+qualification. Exact pinned supplier initialization rules reproduce the host
+`usr -> .` compatibility cycle for both native architectures. Native assembly now
+validates and removes only that alias; 42 SDK tests and both supplier-rule fixtures
+pass while preserving target inputs and arbitrary-cycle rejection. Complete
+corrected native producers still need hosted qualification.
 
 A requested, queued or running job is not successful qualification. Evidence is
 reused only for identical relevant inputs; the latest repairs still need their
