@@ -84,9 +84,8 @@ jobs:
       if: runner.os == 'Windows'
     - shell: python
       run: |
-        import os,subprocess
-        subprocess.run(['docker','run','--rm','-e','CHECK','-e','CHECK_IMAGE','-e','CHECK_BROWSER','-e','GITHUB_RUN_ID','-e','GITHUB_RUN_ATTEMPT','-e','FOUNDATION_DISPOSABLE_CHECK=1','-e','PYTHONUTF8=1','-e','PYTHONDONTWRITEBYTECODE=1','-v',os.getcwd()+':/work','-w','/work',os.environ['CHECK_IMAGE'],'bash','-euc',
-         'apt-get update; apt-get install -y --no-install-recommends ca-certificates python3 git nodejs openssl cmake ninja-build binutils build-essential dpkg-dev apt-utils gnupg curl patch xvfb xauth fonts-dejavu-core libgl1 libopengl0 libgl1-mesa-dri libx11-dev libxext-dev libxft-dev libxinerama-dev libxcursor-dev libxrender-dev libxfixes-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev; xvfb-run -a python3 .github/scripts/lifecycle.py check'],check=True)
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/container_job.py', 'check'], check=True)
       if: runner.os == 'Linux'
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:

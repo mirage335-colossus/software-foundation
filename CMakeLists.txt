@@ -98,6 +98,12 @@ if(BUILD_TESTING)
   endif()
   # Only explicitly named suites run; adding one requires registering its label.
   set(_tool_suites build agent_board test_plan artifact gui_boundary coverage certification ci_plan process_tree sdk dependencies source_identity release portability release_check run_tests github_release windows_graphics)
+  # Docker account IDs, ownership and privilege fixtures apply to Linux hosts.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND _tool_suites container_job)
+  else()
+    message(STATUS "Linux Docker ownership qualification is not scheduled on this host")
+  endif()
   # Native Windows must use enforced private checkouts until its source-save
   # adapter is separately qualified; skipped POSIX fixtures are not a pass.
   if(UNIX)

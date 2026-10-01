@@ -65,10 +65,23 @@ solely from a key downloaded beside the assets it authenticates.
 The flat output includes `.deb` files, payload receipts, `Packages`, `Packages.gz`,
 `Release`, `InRelease`, `Release.gpg`, a public keyring and `repository.json`.
 Publish every output immutably as release assets when separately authorized.
-`Packages` uses fixed release URLs so a moving index cannot switch package bytes
-between metadata retrieval and download. A consumer uses `Suites: ./` and a
-`Signed-By` path in its source entry. Do not use `trusted=yes`, disable validity
-checking, or install private libraries into system library directories.
+`Packages` uses repository-relative `Filename` entries, as expected by
+[the Debian index format](https://manpages.debian.org/bookworm/dpkg-dev/dpkg-scanpackages.1.en.html).
+An absolute HTTPS URL in that field is not supported: APT appends it to the source
+URI and requests the wrong path. A consumer pins `URIs:` to the immutable release
+directory used for `--base-url`, uses `Suites: ./` and a `Signed-By` path, and keeps
+that directory available throughout refresh and installation. For GitHub Releases,
+use `/releases/download/EXACT_TAG/`; do not point APT at `/releases/latest/download/`.
+
+To update, publish the complete newer repository under a new immutable tag, verify
+it against the prior accepted record with `--previous`, then change the consumer's
+source URI to that exact tag. Run `apt-get update` and install the explicitly
+selected package version; retain the preceding assets for rollback investigation
+and clients still using them. Signed hashes reject substituted bytes, but cannot
+make a moving URL retain an older payload. A continuously updated repository needs
+a separate publishing design that preserves every indexed payload. Do not use
+`trusted=yes`, disable validity checking, or install private libraries into system
+library directories.
 
 Repository verification checks both signatures, matching signed content, complete
 metadata and payload inventories, expiration/future dates and every payload receipt.

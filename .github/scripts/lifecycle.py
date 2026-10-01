@@ -169,7 +169,9 @@ def main(command):
         delivery.fetch_base(value('GITHUB_REPOSITORY'), value('RECIPE'), Path('build/base') / value('RECIPE'))
     elif command == 'application-build':
         ci.prepared_package(value('TARGET'), value('RECIPE'), (ROOT / 'build/base' / value('RECIPE')),
-                            ROOT / 'build/source/source.tar.gz', ROOT / 'build/produced', int(value('JOBS')))
+                            ROOT / 'build/source/source.tar.gz', ROOT / 'build/produced', int(value('JOBS')),
+                            graphics_archive=ROOT / 'build/host-graphics/mesa-windows.7z'
+                            if value('TARGET') == 'windows-x86_64' and value('PROFILE') == 'all-gui' else None)
     elif command == 'assemble':
         recipes = evidence.load(Path('build/source/recipes.json'))
         for recipe in sorted(set(recipes.values())):
@@ -195,7 +197,7 @@ def main(command):
         shutil.move('build/fetched/delivery.json', 'build/delivery.json')
         matrix = ci.qualification_plan(ROOT / 'build/candidate', value('PROFILE'), ROOT / 'build/check-plan.json')
         output('matrix', matrix)
-    elif command == 'check':
+    elif command in ('check-prerequisites', 'check'):
         plan = evidence.load(Path('build/check-plan.json'))
         evidence.validate(plan); evidence.check_inputs(plan, ROOT)
         matches = [item for item in plan['checks'] if item['id'] == value('CHECK')]
@@ -203,13 +205,19 @@ def main(command):
         item = matches[0]
         if ci.platform.system() == 'Linux' and ci.needs_browser_prerequisite(item['backend'], item['scope']):
             directory = ROOT / 'build/prerequisites' / value('CHECK')
-            receipt = ci.install_browser_prerequisite(item['target'], item['environment'], item['backend'], directory)
-            receipt.update(plan=plan['id'], check=item['id'], run_id=value('GITHUB_RUN_ID'),
-                           attempt=int(value('GITHUB_RUN_ATTEMPT')))
-            write(directory / 'browser.json', receipt)
-        result = evidence.run_case(plan, value('CHECK'), ROOT, ROOT / 'build/evidence' / value('CHECK'),
-                                   value('GITHUB_RUN_ID'), int(value('GITHUB_RUN_ATTEMPT')))
-        if result['status'] != 'passed': raise ValueError('required qualification did not pass')
+            if command == 'check-prerequisites':
+                receipt = ci.install_browser_prerequisite(item['target'], item['environment'], item['backend'], directory)
+                receipt.update(plan=plan['id'], check=item['id'], run_id=value('GITHUB_RUN_ID'),
+                               attempt=int(value('GITHUB_RUN_ATTEMPT')))
+                write(directory / 'browser.json', receipt)
+            elif not (directory / 'browser.json').is_file():
+                raise ValueError('run privileged browser prerequisite setup before unprivileged qualification')
+        if command == 'check':
+            # The invoked release check independently binds this receipt to the
+            # frozen plan, actual host, package/browser bytes and evidence.
+            result = evidence.run_case(plan, value('CHECK'), ROOT, ROOT / 'build/evidence' / value('CHECK'),
+                                       value('GITHUB_RUN_ID'), int(value('GITHUB_RUN_ATTEMPT')))
+            if result['status'] != 'passed': raise ValueError('required qualification did not pass')
     elif command in ('certificate', 'attach-certificate'):
         identity = evidence.load(Path('build/delivery.json'))
         plan = evidence.load(Path('build/check-plan.json'))

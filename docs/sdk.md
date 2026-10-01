@@ -335,9 +335,15 @@ python tools/sdk_windows.py build --provenance producer.json --cache retained-in
 
 `fetch` is the explicit network operation. For a nonempty recipe it resolves the
 full pinned vcpkg commit, retains its Git source archive and bootstrap executable,
-and collects the dependency/tool download cache. Its generated triplet fixes the
-selected v143 tools, Windows SDK, static CRT/libraries, both configurations and
-no LTO. The empty core recipe fetches no package manager or external libraries.
+and collects the dependency/tool download cache through a complete maintenance
+installation. This also reaches downloads requested during configuration or
+compilation, including build tools omitted by `--only-downloads`. Its generated
+triplet fixes the selected v143 tools, Windows SDK, static CRT/libraries, both
+configurations and no LTO. The maintenance installation is discarded; its compiled
+outputs are never reused as proof of the independent cold offline build. This
+extra work belongs to preparing a new base, and is amortized by reusing that exact
+base for ordinary application builds. The empty core recipe fetches no package
+manager or external libraries.
 
 `build` verifies every retained input and restores a fresh supplier tree. It
 clears remote binary-cache settings and inherited overlays, disables new asset

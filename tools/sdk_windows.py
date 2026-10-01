@@ -258,9 +258,11 @@ def fetch(recipe_path, provenance_path, cache, jobs=2):
                            cwd=checkout, env=env, check=True)
             shutil.copyfile(checkout / 'vcpkg.exe', retained / 'vcpkg.exe')
             triplets = work / 'triplets'; write_triplet(triplets, provenance)
-            # Some ports download after configure. Their cold offline build must
-            # still pass; only-downloads alone is never qualification evidence.
-            subprocess.run(supplier_command(checkout, triplets, recipe, 'install') + ['--only-downloads'],
+            # Traverse configure/build-time downloads as well as source URLs.
+            # --only-downloads omits late tools (for example an MSYS build tool).
+            # This explicit maintenance build is discarded: the separate cold
+            # build below must recreate every library with downloads disabled.
+            subprocess.run(supplier_command(checkout, triplets, recipe, 'install'),
                            cwd=checkout, env=env, check=True)
         else:
             (retained / 'README.txt').write_text('The selected core requires no external dependency inputs.\n')

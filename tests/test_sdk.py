@@ -347,6 +347,57 @@ class ProducerContractTests(unittest.TestCase):
         self.assertEqual(env['VCPKG_MAX_CONCURRENCY'], '3')
         self.assertNotIn('VCPKG_OVERLAY_PORTS', env)
 
+    def test_windows_fetch_retains_late_downloads_and_discards_maintenance_install(self):
+        import sdk_windows, zipfile, subprocess
+        from unittest.mock import patch
+        for fail in (False, True):
+            with self.subTest(failure=fail), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); templates = Path(__file__).resolve().parents[1] / 'third_party/sdk'
+                recipe_dir = root / 'recipe'; recipe_dir.mkdir()
+                recipe = read_json(templates / 'windows-base.json'); recipe['ports'] = ['example[core]']
+                recipe_path = recipe_dir / 'windows-base.json'; write_json(recipe_path, recipe)
+                (recipe_dir / 'windows-toolchain.json').write_bytes((templates / 'windows-toolchain.json').read_bytes())
+                provenance = dict(recipe, linker_version='14.44.35217.0', windows_sdk='10.0.22621.0',
+                                  tools_version='14.44.35217', installation_path=str(root))
+                actions = []
+                def runner(argv, **kwargs):
+                    if argv[:2] == ['git', 'init']:
+                        Path(argv[2]).mkdir()
+                    elif argv[0] == 'git' and 'archive' in argv:
+                        archive = Path(next(a.split('=', 1)[1] for a in argv if a.startswith('--output=')))
+                        with zipfile.ZipFile(archive, 'w') as output:
+                            output.comment = recipe['vcpkg_ref'].encode()
+                            output.writestr('LICENSE.txt', 'Supplier fixture terms.')
+                    elif argv[0] == 'git':
+                        self.assertTrue('fetch' in argv or 'checkout' in argv)
+                    elif argv[0] == 'cmd.exe':
+                        (kwargs['cwd'] / 'vcpkg.exe').write_bytes(b'Inert retained supplier.')
+                    else:
+                        actions.append(argv[1]); self.assertEqual(argv[1], 'install')
+                        self.assertNotIn('--only-downloads', argv)
+                        self.assertNotIn('--no-downloads', argv)
+                        self.assertEqual(kwargs['env']['X_VCPKG_ASSET_SOURCES'], 'clear')
+                        self.assertEqual(kwargs['env']['VCPKG_BINARY_SOURCES'], 'clear')
+                        self.assertEqual(kwargs['env']['VCPKG_MAX_CONCURRENCY'], '3')
+                        downloads = Path(kwargs['env']['VCPKG_DOWNLOADS'])
+                        (downloads / 'late-build-tool.tar').write_bytes(b'Available only during full installation.')
+                        installed = kwargs['cwd'] / 'installed'; installed.mkdir()
+                        (installed / 'discarded.lib').write_bytes(b'Not retained as build evidence.')
+                        if fail: raise subprocess.CalledProcessError(1, argv)
+                with patch('sdk_windows.host_provenance', return_value=(recipe, provenance)), \
+                     patch('sdk_windows.subprocess.check_output', return_value=recipe['vcpkg_ref'] + '\n'), \
+                     patch('sdk_windows.subprocess.run', side_effect=runner):
+                    if fail:
+                        with self.assertRaises(subprocess.CalledProcessError):
+                            sdk_windows.fetch(recipe_path, root / 'producer.json', root / 'cache', jobs=3)
+                        self.assertFalse((root / 'cache').exists())
+                    else:
+                        result = sdk_windows.fetch(recipe_path, root / 'producer.json', root / 'cache', jobs=3)
+                        self.assertIn('downloads/late-build-tool.tar', result['files'])
+                        sdk_windows.verify_inputs(recipe_path, root / 'cache')
+                        self.assertFalse(any('discarded.lib' in key or key.startswith('installed/') for key in result['files']))
+                self.assertEqual(actions, ['install'])
+
     def test_windows_nonempty_offline_build_replays_retained_inputs(self):
         import sdk_windows, zipfile
         from unittest.mock import patch

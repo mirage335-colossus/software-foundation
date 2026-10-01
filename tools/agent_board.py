@@ -17,6 +17,7 @@ import socket
 import stat
 import subprocess
 import sys
+import threading
 import unicodedata
 import uuid
 
@@ -132,41 +133,13 @@ def portable_components(path):
             raise Rejected("path component is not portable: " + repr(component))
 
 
-def open_regular_read(path):
-    """Open a nonfollowing reader without preventing another writer's replace."""
-    if os.name != "nt":
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-        return os.open(path, flags)
-    import ctypes
-    from ctypes import wintypes
-    import msvcrt
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    create = kernel.CreateFileW
-    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
-                       wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
-    create.restype = wintypes.HANDLE
-    close = kernel.CloseHandle
-    close.argtypes = [wintypes.HANDLE]
-    close.restype = wintypes.BOOL
-    # GENERIC_READ; share read/write/delete; OPEN_EXISTING; OPEN_REPARSE_POINT.
-    # Delete sharing permits atomic rename while a reader holds the old object.
-    # Identity/version checks below still reject a replaced or modified read.
-    handle = create(str(path), 0x80000000, 0x1 | 0x2 | 0x4, None, 3, 0x00200000, None)
-    if handle == wintypes.HANDLE(-1).value:
-        raise ctypes.WinError(ctypes.get_last_error())
-    try:
-        return msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY | os.O_NOINHERIT)
-    except BaseException:
-        close(handle)
-        raise
-
-
 def read_regular(path):
     safe_path(path)
     before = path.lstat()
     if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > MAX_BYTES:
         raise Rejected("expected a bounded singly linked regular file: " + str(path), "corrupt")
-    fd = open_regular_read(path)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
     with os.fdopen(fd, "rb") as stream:
         opened = os.fstat(stream.fileno())
         if cross_version(opened) != cross_version(before):
@@ -214,6 +187,7 @@ class Board:
         self.lock = self.path / "registry.lock"
         self.token = None
         self._lock_guard = None
+        self._owner_thread = None
 
     def scope(self, value):
         if not isinstance(value, dict) or set(value) != {"kind", "value"}:
@@ -278,6 +252,7 @@ class Board:
             owner_version = version(owner_path.stat())
         except BaseException as error:
             raise Rejected("mutex initialization uncertain; preserve it for recovery", "mutex_uncertain", True) from error
+        self._owner_thread = threading.get_ident()
         self.token = token
         self._lock_guard = (root_identity, lock_identity, owner_version, owner_bytes)
         try:
@@ -285,6 +260,7 @@ class Board:
         finally:
             self.token = None
             self._lock_guard = None
+            self._owner_thread = None
             try:
                 safe_path(self.path)
                 if (identity(self.path.stat()) != root_identity or identity(self.lock.stat()) != lock_identity
@@ -297,6 +273,8 @@ class Board:
                 raise Rejected("mutex cleanup uncertain; inspect saved state and retained lock", "cleanup_uncertain", True) from error
 
     def check_mutex(self):
+        if self.token is not None and self._owner_thread != threading.get_ident():
+            raise Rejected("registry mutex belongs to another thread of this invocation", "busy")
         if self.token is None or self._lock_guard is None:
             raise Rejected("publication requires this invocation's mutex")
         root_identity, lock_identity, owner_version, owner_bytes = self._lock_guard
@@ -434,6 +412,13 @@ class Board:
             raise Rejected("board is absent; use init only after agreeing its location")
         if (self.path / "protocol.json").exists():
             raise Rejected("board migrated to the record protocol; use agent_session.py", "migrated")
+        # Windows MoveFileEx cannot replace an open destination, even when the
+        # reader shares delete access. Serialize complete reads with publication;
+        # close every state descriptor before releasing this brief mutex.
+        if self.token is None:
+            with self.mutex():
+                return self.read()
+        self.check_mutex()
         allowed = {"state.json", "registry.lock", "notes", "artifacts"}
         unknown = [p.name for p in self.path.iterdir() if p.name not in allowed]
         if unknown:

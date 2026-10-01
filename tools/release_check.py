@@ -506,7 +506,10 @@ def run_apt(candidate, entry, backend, work, evidence):
                          ValueError("writer termination uncertain; package cleanup requires container disposal"))
         try:
             if installed and writers_stopped:
-                command(["apt-get", "purge", "-y", name])
+                # Use the same isolated index that supplied the attempted install.
+                # A failed download can leave no installed record; the default
+                # host index may not even know this fixture package.
+                command(valid + ["purge", "-y", name])
         except Exception as error:
             cleanup_error = error
         try:

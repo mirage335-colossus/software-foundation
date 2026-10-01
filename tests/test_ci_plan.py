@@ -221,8 +221,12 @@ class BrowserPrerequisiteTests(unittest.TestCase):
             root = Path(temporary); (root / 'build').mkdir()
             item = dict(id='ubuntu-check', target='linux-x86_64', environment='ubuntu-24.04', backend='hosted-web', scope='archive')
             frozen = dict(id='plan-id', checks=[item])
-            def install(*args): args[-1].mkdir(parents=True); return {'schema_version': 1, 'installed': []}
+            events = []
+            def install(*args):
+                events.append('setup'); args[-1].mkdir(parents=True)
+                return {'schema_version': 1, 'installed': []}
             def run_case(*args):
+                events.append('check')
                 output = args[3]
                 self.assertFalse(output.exists())
                 self.assertTrue((root / 'build/prerequisites/ubuntu-check/browser.json').is_file())
@@ -233,7 +237,13 @@ class BrowserPrerequisiteTests(unittest.TestCase):
                  patch.object(helper.ci.platform, 'system', return_value='Linux'), \
                  patch.object(helper.ci, 'install_browser_prerequisite', side_effect=install), \
                  patch.dict(helper.os.environ, {'CHECK': 'ubuntu-check', 'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2'}):
+                with self.assertRaisesRegex(ValueError, 'browser prerequisite'):
+                    helper.main('check')
+                self.assertEqual(events, [])
+                helper.main('check-prerequisites')
+                self.assertEqual(events, ['setup'])
                 helper.main('check')
+                self.assertEqual(events, ['setup', 'check'])
             receipt = json.loads((root / 'build/prerequisites/ubuntu-check/browser.json').read_text())
             self.assertEqual((receipt['plan'], receipt['check'], receipt['run_id'], receipt['attempt']), ('plan-id', 'ubuntu-check', '123', 2))
 
@@ -625,6 +635,153 @@ class WindowsGraphicsCiTests(unittest.TestCase):
             text = (ci.ROOT / '.github/workflows' / workflow).read_text()
             self.assertNotIn('path: build/host-graphics/', text)
             self.assertNotIn('mesa-windows.7z\n', text)
+
+
+class WindowsGraphicsPackageTests(unittest.TestCase):
+    """Real source/group/archive inventories with isolated host-operation fixtures."""
+    def setUp(self):
+        from unittest.mock import Mock
+        from test_sdk import fixture
+        self.temporary = tempfile.TemporaryDirectory(); self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.recipe, _, _, self.group = fixture(self.root)
+        source = self.root / 'source'; source.mkdir()
+        (source / 'LICENSE').write_text('Inert source fixture\n')
+        self.core_source = self.root / 'core-source.tar.gz'
+        ci.module('source_identity').archive_source(source, self.core_source)
+        gui = source / 'third_party/retained/gui'; gui.mkdir(parents=True)
+        (gui / 'interface.hpp').write_text('/* retained GUI source fixture */\n')
+        self.gui_source = self.root / 'gui-source.tar.gz'
+        ci.module('source_identity').archive_source(source, self.gui_source)
+        self.output = self.root / 'produced'; self.archive = self.root / 'retained.7z'
+        self.archive.write_bytes(b'inert retained archive fixture')
+        self.graphics = Mock(); self.sdk = Mock(); self.events = []; self.commands = []
+        self.sdk.install.return_value = {'capabilities': ['terminal', 'framebuffer', 'fltk', 'rev', 'sdl', 'hosted-web']}
+        self.real_module = ci.module
+        self.artifacts = Mock(describe=self.real_module('artifact').describe)
+        self.cleanup = 'removed'; self.test_error = None; self.write_captures = True; self.setup_error = None
+
+    def produce(self, *, source=None, target='windows-x86_64', graphics=True):
+        from contextlib import contextmanager
+        from types import SimpleNamespace
+        import zipfile
+        build = self.output / 'work/build'
+        drivers = []
+        @contextmanager
+        def stage(archive, directories, **options):
+            self.assertEqual(archive, self.archive)
+            self.assertEqual(self.events, ['build', 'prerequisites'])
+            self.assertEqual(directories, [build / 'gui'])
+            self.assertEqual(options['compile_log'], self.output / 'graphics-compile.log')
+            self.assertIn(self.group.resolve(), options['protected_roots'])
+            self.assertIn(self.output / 'work/source', options['protected_roots'])
+            self.assertIn(self.output / 'work/dependencies', options['protected_roots'])
+            if self.setup_error: raise self.setup_error
+            for directory in [*directories, options['probe_directory']]:
+                for name in ('opengl32.dll', 'libgallium_wgl.dll'):
+                    path = directory / name; path.write_bytes(b'host-only fixture'); drivers.append(path)
+            current = SimpleNamespace(environment={'GRAPHICS_FIXTURE': 'owned'},
+                receipt={'cleanup': 'active'}, probe_receipt={'status': 'passed'})
+            self.events.append('probe')
+            try: yield current
+            finally:
+                self.events.append('cleanup'); current.receipt['cleanup'] = self.cleanup
+                if self.cleanup == 'removed':
+                    for path in drivers: path.unlink()
+        def run_test(argv, cwd, log, **options):
+            self.assertEqual(argv[2:4], ['test', 'release'])
+            self.assertIn('--full', argv); self.assertIn('--host-tests', argv)
+            self.assertEqual(Path(argv[argv.index('--build-dir') + 1]), build)
+            self.assertEqual(options['environment'], {'GRAPHICS_FIXTURE': 'owned'})
+            self.assertEqual((options['timeout'], options['max_bytes']), (3600, 16 * 1024 * 1024))
+            self.assertEqual(cwd, self.output); self.assertEqual(log, self.output / 'graphics-test.log')
+            self.assertTrue(all(path.is_file() for path in drivers)); self.events.append('test')
+            log.write_text('fixture command output\n')
+            if self.test_error: raise self.test_error
+            if self.write_captures:
+                capture = build / 'gui/visual-evidence/fixture'; capture.mkdir(parents=True)
+                for name in ('qualification.json', 'capture.png', 'capture.ppm'): (capture / name).write_bytes(b'fixture')
+        def selected(name):
+            return {'sdk_windows': self.sdk, 'windows_graphics': self.graphics, 'artifact': self.artifacts}.get(name) or self.real_module(name)
+        def launched(argv, **options):
+            self.commands.append(argv)
+            if argv[0] == 'cmake':
+                self.assertEqual(argv[2], str(build)); self.events.append('prerequisites'); return
+            self.assertEqual(options['cwd'], self.output / 'work/source')
+            self.assertEqual(Path(argv[argv.index('--build-dir') + 1]), build)
+            if argv[2] == 'build':
+                self.assertNotIn('--full', argv); self.assertNotIn('--junit', argv)
+                (build / 'gui').mkdir(parents=True); self.events.append('build')
+            elif argv[2] == 'package':
+                self.assertEqual(self.events, ['build', 'prerequisites', 'probe', 'test', 'cleanup'])
+                self.assertFalse(any(path.exists() for path in drivers))
+                self.assertNotIn('--full', argv); self.assertNotIn('--junit', argv)
+                self.events.append('package'); destination = build / 'packages'; destination.mkdir()
+                with zipfile.ZipFile(destination / 'application.zip', 'x') as archive:
+                    archive.writestr('Foundation/bin/foundation-cli.exe', 'inert program fixture')
+            else: raise AssertionError(argv)
+        self.graphics.qualified_stage.side_effect = stage
+        self.graphics.run_owned.side_effect = run_test
+        with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
+             patch.object(ci.subprocess, 'check_output', return_value='Version 14.44.35207'), \
+             patch.object(ci.subprocess, 'run', side_effect=launched):
+            return ci.prepared_package(target, self.recipe, self.group, source or self.gui_source,
+                self.output, 2, graphics_archive=self.archive if graphics else None)
+
+    def test_package_follows_complete_test_and_host_cleanup_and_binds_evidence(self):
+        result = self.produce()
+        self.assertEqual(self.events, ['build', 'prerequisites', 'probe', 'test', 'cleanup', 'package'])
+        self.graphics.verify_archive.assert_called_once_with(self.archive)
+        self.graphics.fetch.assert_not_called(); self.graphics.fetch_retained.assert_not_called()
+        self.artifacts.verify.assert_called_once()
+        receipt = json.loads((self.output / 'graphics-qualification.json').read_text())
+        self.assertEqual(receipt['archive_sha256'], result['sha256'])
+        self.assertEqual(receipt['backends'], result['backends'])
+        self.assertEqual(json.loads((self.output / 'graphics.json').read_text())['cleanup'], 'removed')
+        self.assertIn('work/build/gui/visual-evidence/fixture/capture.png', receipt['evidence'])
+        for name, digest in receipt['evidence'].items():
+            self.assertEqual(self.real_module('coverage').sha(self.output / name), digest)
+        self.assertFalse(list(self.output.rglob('*.dll')))
+
+    def test_absent_gui_input_and_unexpected_core_or_linux_input_never_build(self):
+        for label, options in [('missing', {'graphics': False}), ('core', {'source': self.core_source}),
+                               ('linux', {'target': 'linux-x86_64'})]:
+            with self.subTest(case=label):
+                self.output = self.root / label
+                with self.assertRaisesRegex(ValueError, 'retained host graphics'): self.produce(**options)
+                self.assertEqual(self.commands, [])
+                self.graphics.qualified_stage.assert_not_called()
+                self.assertFalse((self.output / 'artifact.json').exists())
+        self.graphics.fetch.assert_not_called(); self.graphics.fetch_retained.assert_not_called()
+
+    def test_failed_gui_assertion_never_packages_and_keeps_cleanup_receipt(self):
+        self.test_error = RuntimeError('GUI assertion failed')
+        with self.assertRaisesRegex(RuntimeError, 'GUI assertion failed'): self.produce()
+        self.assertEqual(self.events[-1], 'cleanup')
+        self.assertNotIn('package', self.events); self.artifacts.verify.assert_not_called()
+        self.assertFalse((self.output / 'artifact.json').exists())
+        self.assertFalse((self.output / 'graphics-qualification.json').exists())
+        self.assertEqual(json.loads((self.output / 'graphics.json').read_text())['cleanup'], 'removed')
+
+    def test_retained_or_uncertain_host_files_block_packaging_and_survive(self):
+        self.cleanup = 'retained-changed'
+        with self.assertRaisesRegex(ValueError, 'cleanup did not complete') as caught: self.produce()
+        self.assertEqual(caught.exception.graphics_receipt['cleanup'], 'retained-changed')
+        self.assertEqual(len(list(self.output.rglob('*.dll'))), 4)
+        self.assertNotIn('package', self.events); self.assertFalse((self.output / 'artifact.json').exists())
+
+    def test_pre_yield_failure_preserves_evidence_and_output(self):
+        self.setup_error = RuntimeError('probe completion uncertain')
+        self.setup_error.graphics_receipt = {'cleanup': 'retained-uncertain'}
+        with self.assertRaisesRegex(RuntimeError, 'completion uncertain'): self.produce()
+        self.assertEqual(json.loads((self.output / 'graphics.json').read_text()), self.setup_error.graphics_receipt)
+        self.assertTrue((self.output / 'work/source').is_dir())
+        self.assertNotIn('package', self.events); self.assertFalse((self.output / 'artifact.json').exists())
+
+    def test_missing_rendered_capture_inventory_prevents_package(self):
+        self.write_captures = False
+        with self.assertRaisesRegex(ValueError, 'capture evidence'): self.produce()
+        self.assertNotIn('package', self.events); self.assertFalse((self.output / 'artifact.json').exists())
 
 
 class AptMechanismLifecycleTests(unittest.TestCase):

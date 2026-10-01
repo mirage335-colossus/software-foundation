@@ -355,8 +355,9 @@ def repository(receipts, output, base_url, key, trusted, sequence, valid_days=30
         c.write_new(output / record_name, receipt)
         records.append({"package": dst.name, "receipt": record_name, "sha256": c.sha(dst),
                         "receipt_sha256": c.sha(output / record_name)})
-        # Absolute immutable payload URLs remain valid through a moving index URL.
-        stanzas.append(receipt["control"] + f"Filename: {base_url}{src.name}\nSize: {dst.stat().st_size}\nSHA256: {c.sha(dst)}\n")
+        # APT resolves Filename relative to the configured repository directory.
+        # Clients pin that directory to an immutable release tag.
+        stanzas.append(receipt["control"] + f"Filename: {src.name}\nSize: {dst.stat().st_size}\nSHA256: {c.sha(dst)}\n")
     (output / "Packages").write_text("\n".join(stanzas) + "\n")
     (output / "Packages.gz").write_bytes(gzip.compress((output / "Packages").read_bytes(), mtime=0))
     now = datetime.now(timezone.utc).replace(microsecond=0)
@@ -451,7 +452,7 @@ def verify_repository(directory, trusted, previous=None, now=None):
             equal = subprocess.run(["dpkg", "--compare-versions", ctl["Version"], "eq", older])
             if equal.returncode == 0 and previous.get("package_sha256", {}).get(identity_text) != record["sha256"]:
                 raise ValueError("same-version package replacement or missing previous payload identity")
-        stanzas.append(receipt["control"] + f"Filename: {metadata['base_url']}{p.name}\nSize: {p.stat().st_size}\nSHA256: {c.sha(p)}\n")
+        stanzas.append(receipt["control"] + f"Filename: {p.name}\nSize: {p.stat().st_size}\nSHA256: {c.sha(p)}\n")
     if not identities or {p.name for p in directory.iterdir()} != assets:
         raise ValueError("missing or extra repository assets")
     if (directory / "Packages").read_text() != "\n".join(stanzas) + "\n":

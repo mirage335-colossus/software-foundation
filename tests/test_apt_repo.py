@@ -142,11 +142,9 @@ class AptTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("gpg") and shutil.which("gpgv"), "repository signing tools required")
     def test_signed_repository_update_idempotence_rollback_expiry_and_tamper(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory() as temporary, apt.signing_home() as home:
             root = Path(temporary)
             receipt = self.fixture(root)
-            home = root / "keyhome"
-            home.mkdir(mode=0o700)
             apt.run("gpg", "--batch", "--homedir", home, "--pinentry-mode", "loopback", "--passphrase", "",
                     "--quick-generate-key", "Fixture <fixture@example.invalid>", "default", "sign", "1d")
             public = root / "public.gpg"
@@ -156,6 +154,11 @@ class AptTests(unittest.TestCase):
             private.write_bytes(apt.run("gpg", "--batch", "--homedir", home, "--armor", "--export-secret-keys", trusted))
             url = "https://example.invalid/releases/download/v1/"
             apt.repository([receipt], root / "one", url, private, trusted, 1)
+            index = apt.control_fields((root / "one/Packages").read_text().strip())
+            expected_package = apt.c.load(receipt)['package']
+            self.assertEqual(index['Filename'], expected_package)
+            self.assertEqual(url + index['Filename'], url + expected_package)
+            self.assertNotIn('://', index['Filename'])
             first = apt.verify_repository(root / "one", trusted)
             self.assertEqual(apt.verify_repository(root / "one", trusted, first), first)
             apt.repository([receipt], root / "two", url, private, trusted, 2)
@@ -187,7 +190,6 @@ class AptTests(unittest.TestCase):
             (root / "two/Packages").write_text("changed")
             with self.assertRaises(ValueError):
                 apt.verify_repository(root / "two", trusted)
-            apt.run("gpgconf", "--homedir", home, "--kill", "all")
 
     def test_metadata_injection_and_incomplete_trust_rejected(self):
         for value in ("short", "a" * 41, "A\n" * 20):

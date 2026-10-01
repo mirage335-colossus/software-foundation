@@ -150,9 +150,8 @@ jobs:
     - name: Actual signed APT install, update, rejection and removal in disposable Debian
       shell: python
       run: |
-        import os,subprocess
-        subprocess.run(['docker','run','--rm','-e','FOUNDATION_DISPOSABLE_CHECK=1','-e','PYTHONDONTWRITEBYTECODE=1','-v',os.getcwd()+':/work','-w','/work','debian:bookworm','bash','-euc',
-         'apt-get update; apt-get install -y --no-install-recommends ca-certificates python3 git cmake ninja-build build-essential binutils dpkg-dev apt-utils gnupg openssl; git config --global --add safe.directory /work; python3 .github/scripts/lifecycle.py apt-native-smoke'],check=True)
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/container_job.py', 'apt-native-smoke'], check=True)
     - if: always()
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:

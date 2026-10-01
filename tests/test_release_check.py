@@ -222,6 +222,53 @@ class ReleaseCheckTests(unittest.TestCase):
             self.assertIn(b'started', caught.exception.output)
             self.assertFalse(Path('/proc/' + pid.read_text()).exists())
 
+    def test_failed_apt_download_cleans_with_its_isolated_index_and_preserves_primary_error(self):
+        from contextlib import ExitStack
+        from subprocess import CompletedProcess
+        from unittest.mock import Mock
+        import apt_repo
+        import http.server
+        import ssl
+        import threading
+        with tempfile.TemporaryDirectory() as temporary, ExitStack() as stack:
+            root = Path(temporary); work = root / 'work'; evidence = root / 'evidence'
+            commands = []
+            receipt = dict(package='fixture.deb', version='1.0', payload={})
+            def repository(receipts, output, *args):
+                output.mkdir(); (output / 'archive-keyring.gpg').write_bytes(b'fixture public key')
+            def executed(argv, cwd):
+                commands.append(argv)
+                if 'install' in argv:
+                    return CompletedProcess(argv, 100, b'404 injected download failure')
+                if 'purge' in argv:
+                    self.assertIn('Dir::Etc::sourcelist=' + str(work / 'client-valid1/source.list'), argv)
+                    return CompletedProcess(argv, 0, b'package is not installed, so not removed')
+                return CompletedProcess(argv, 0, b'fixture command completed')
+            def unmanaged(argv, **options):
+                self.assertIn(argv[0], ('dpkg-query', 'gpg', 'gpgconf'))
+                return CompletedProcess(argv, 1 if argv[0] == 'dpkg-query' else 0, b'fixture output')
+            stack.enter_context(patch.object(check, 'apt_preflight'))
+            stack.enter_context(patch.object(check, 'apt_command', side_effect=executed))
+            stack.enter_context(patch.object(check.subprocess, 'run', side_effect=unmanaged))
+            stack.enter_context(patch.object(apt_repo, 'package', return_value=receipt))
+            stack.enter_context(patch.object(apt_repo, 'fingerprint', return_value='A' * 40))
+            stack.enter_context(patch.object(apt_repo, 'repository', side_effect=repository))
+            stack.enter_context(patch.object(apt_repo, 'verify_repository', return_value={}))
+            server = Mock(); server.server_address = ('127.0.0.1', 12345)
+            stack.enter_context(patch.object(http.server, 'ThreadingHTTPServer', return_value=server))
+            stack.enter_context(patch.object(ssl, 'SSLContext'))
+            thread = Mock(); thread.is_alive.return_value = False
+            stack.enter_context(patch.object(threading, 'Thread', return_value=thread))
+            entry = dict(target='linux-x86_64', archive='app.tar.gz', manifest='app.json', sha256='b' * 64)
+            with self.assertRaisesRegex(ValueError, 'unexpected outcome'):
+                check.run_apt(root, entry, 'core', work, evidence)
+            self.assertEqual(sum('install' in argv for argv in commands), 1)
+            self.assertEqual(sum('purge' in argv for argv in commands), 1)
+            self.assertIn(b'404 injected download failure', (evidence / 'apt.log').read_bytes())
+            server.shutdown.assert_called_once(); server.server_close.assert_called_once()
+            thread.join.assert_called_once()
+            self.assertFalse((evidence / 'qualification.json').exists())
+
     def test_apt_refuses_ordinary_host_before_any_package_command(self):
         with patch.object(check, 'native_target'), patch.dict(check.os.environ, {}, clear=True), \
                 patch.object(check.subprocess, 'run') as run:

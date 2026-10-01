@@ -140,7 +140,7 @@ def source_archive(output, gui_source=None):
     return {'archive': str(output), 'sha256': module('coverage').sha(output)}
 
 
-def prepared_package(target, recipe, group, source, output, jobs=2):
+def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_archive=None):
     import shutil
     from dependency_archive import extract
     from dependency_store import verify_group
@@ -148,6 +148,8 @@ def prepared_package(target, recipe, group, source, output, jobs=2):
         assert_host(target)
     elif platform.system() != 'Linux':
         raise ValueError('prepared browser producer requires its declared Linux host')
+    if graphics_archive is not None and target != 'windows-x86_64':
+        raise ValueError('retained host graphics input applies only to Windows GUI production')
     if jobs < 1 or output.exists():
         raise ValueError('positive concurrency and new package output required')
     verify_group(group, recipe)
@@ -180,7 +182,17 @@ def prepared_package(target, recipe, group, source, output, jobs=2):
     else:
         backends = []
         if target == 'browser-wasm32': raise ValueError('browser target requires retained GUI source')
-    subprocess.run(command, cwd=root, check=True)
+    graphics_needed = target == 'windows-x86_64' and 'rev' in backends
+    if graphics_needed != (graphics_archive is not None):
+        raise ValueError('Windows GUI production requires one explicit retained host graphics archive; core must omit it')
+    graphics_evidence = None
+    if graphics_needed:
+        module('windows_graphics').verify_archive(Path(graphics_archive))
+        graphics_evidence = windows_gui_qualification(command, Path(graphics_archive), build, output, jobs,
+            protected_roots=(Path(group).resolve(), root, work / 'dependencies'), cwd=root)
+    else:
+        subprocess.run(command, cwd=root, check=True)
+    # Host DLLs must already be removed before installation or package creation.
     package_command = command.copy()
     package_command[2] = 'package'
     package_command.remove('--full')
@@ -202,6 +214,10 @@ def prepared_package(target, recipe, group, source, output, jobs=2):
     entry = {'path': str(archive.resolve()), 'sha256': module('coverage').sha(archive),
              'manifest_path': str(descriptor.resolve()), 'target': target, 'backends': backends,
              'sdk_recipe': recipe, 'dependency_recipes': [recipe]}
+    if graphics_evidence is not None:
+        module('coverage').write_new(output / 'graphics-qualification.json',
+            {'schema_version': 1, 'status': 'passed', 'target': target, 'backends': backends,
+             'archive_sha256': entry['sha256'], 'evidence': graphics_evidence})
     module('coverage').write_new(output / 'artifact.json', entry)
     return entry
 
@@ -479,6 +495,44 @@ def graphics_test(command, output, staged):
              environment=staged.environment, timeout=3600, max_bytes=16 * 1024 * 1024)
 
 
+def windows_gui_qualification(command, archive, build, output, jobs, *, protected_roots, cwd):
+    """One build, actual host probe and complete GUI tests; cleanup precedes packaging."""
+    if command[2:4] != ['test', 'release'] or '--full' not in command or '--host-tests' not in command:
+        raise ValueError('Windows GUI qualification requires the complete release host test command')
+    prepare = command.copy(); prepare[2] = 'build'; prepare.remove('--full')
+    index = prepare.index('--junit'); del prepare[index:index + 2]
+    subprocess.run(prepare, cwd=cwd, check=True)
+    subprocess.run(['cmake', '--build', str(build), '--target', 'foundation-gui-tests',
+                    '--parallel', str(jobs)], cwd=cwd, check=True)
+    probe = output / 'graphics-probe'; probe.mkdir()
+    graphics = None; setup_receipt = None
+    try:
+        with module('windows_graphics').qualified_stage(archive, [build / 'gui'],
+                probe_directory=probe, compile_log=output / 'graphics-compile.log',
+                protected_roots=protected_roots) as graphics:
+            module('coverage').write_new(output / 'graphics-probe.json', graphics.probe_receipt)
+            graphics_test(command, output, graphics)
+    except BaseException as error:
+        setup_receipt = getattr(error, 'graphics_receipt', None)
+        raise
+    finally:
+        module('coverage').write_new(output / 'graphics.json', graphics.receipt if graphics else setup_receipt or
+            {'status': 'incomplete', 'detail': 'graphics setup did not reach the supervised test context'})
+    if graphics.receipt.get('cleanup') != 'removed':
+        error = ValueError('Windows GUI host input cleanup did not complete; packaging is prohibited')
+        error.graphics_receipt = graphics.receipt
+        raise error
+    visual = build / 'gui/visual-evidence'
+    captures = list(visual.rglob('*')) if visual.is_dir() else []
+    files = [p for p in captures if p.is_file()]
+    if (any(p.is_symlink() for p in captures) or not any(p.name == 'qualification.json' for p in files) or
+            not any(p.suffix == '.png' for p in files) or not any(p.suffix == '.ppm' for p in files) or
+            any(p.suffix not in ('.json', '.png', '.ppm', '.log') for p in files)):
+        raise ValueError('complete real native GUI capture evidence is required')
+    return {p.relative_to(output).as_posix(): module('coverage').sha(p)
+            for p in [output / 'graphics.json', output / 'graphics-probe.json', *files]}
+
+
 def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphics_archive=None):
     """Consume a relocated SDK; GUI qualification retains no distributable output."""
     from dependency_store import verify_group
@@ -516,36 +570,8 @@ def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphi
         if target == 'browser-wasm32': command += ['--gui-backends', 'wasm']
     graphics_evidence = None
     if graphics_needed:
-        # Build in the same tree before staging test-only DLLs beside consumers.
-        prepare = command.copy(); prepare[2] = 'build'; prepare.remove('--full')
-        index = prepare.index('--junit'); del prepare[index:index + 2]
-        subprocess.run(prepare, cwd=ROOT, check=True)
-        subprocess.run(['cmake', '--build', str(output / 'build'), '--target', 'foundation-gui-tests',
-                        '--parallel', str(jobs)], cwd=ROOT, check=True)
-        probe = output / 'graphics-probe'; probe.mkdir()
-        graphics = None; setup_receipt = None
-        try:
-            with module('windows_graphics').qualified_stage(Path(graphics_archive), [output / 'build/gui'],
-                    probe_directory=probe, compile_log=output / 'graphics-compile.log',
-                    protected_roots=(group, Path(gui_group).resolve(), output / 'dependencies',
-                                     output / 'build/inputs')) as graphics:
-                module('coverage').write_new(output / 'graphics-probe.json', graphics.probe_receipt)
-                graphics_test(command, output, graphics)
-        except Exception as error:
-            setup_receipt = getattr(error, 'graphics_receipt', None)
-            raise
-        finally:
-            module('coverage').write_new(output / 'graphics.json', graphics.receipt if graphics else setup_receipt or
-                {'status': 'incomplete', 'detail': 'graphics setup did not reach the supervised test context'})
-        visual = output / 'build/gui/visual-evidence'
-        captures = list(visual.rglob('*')) if visual.is_dir() else []
-        files = [p for p in captures if p.is_file()]
-        if (any(p.is_symlink() for p in captures) or not any(p.name == 'qualification.json' for p in files) or
-                not any(p.suffix == '.png' for p in files) or not any(p.suffix == '.ppm' for p in files) or
-                any(p.suffix not in ('.json', '.png', '.ppm', '.log') for p in files)):
-            raise ValueError('complete real native GUI capture evidence is required')
-        graphics_evidence = {p.relative_to(output).as_posix(): module('coverage').sha(p)
-                             for p in [output / 'graphics.json', output / 'graphics-probe.json', *files]}
+        graphics_evidence = windows_gui_qualification(command, Path(graphics_archive), output / 'build', output, jobs,
+            protected_roots=(group, Path(gui_group).resolve(), output / 'dependencies', output / 'build/inputs'), cwd=ROOT)
     else:
         subprocess.run(command, cwd=ROOT, check=True)
     if gui_group is None:

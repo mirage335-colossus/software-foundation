@@ -19,44 +19,6 @@ Board, Rejected = MODULE.Board, MODULE.Rejected
 
 
 class RegularReadTests(unittest.TestCase):
-    def test_open_reader_permits_atomic_replacement_without_changing_its_snapshot(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'record'
-            replacement = Path(directory) / 'replacement'
-            path.write_bytes(b'original')
-            replacement.write_bytes(b'next')
-            with os.fdopen(MODULE.open_regular_read(path), 'rb') as stream:
-                self.assertFalse(os.get_inheritable(stream.fileno()))
-                os.replace(replacement, path)
-                self.assertEqual(stream.read(), b'original')
-                self.assertEqual(path.read_bytes(), b'next')
-
-    def test_replacement_during_read_is_rejected_even_when_reader_allows_it(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'record'
-            replacement = Path(directory) / 'replacement'
-            path.write_bytes(b'original')
-            replacement.write_bytes(b'next')
-            original = os.fstat
-            calls = 0
-            def replace_during_read(fd):
-                nonlocal calls
-                calls += 1
-                if calls == 2:
-                    os.replace(replacement, path)
-                return original(fd)
-            with mock.patch.object(MODULE.os, 'fstat', side_effect=replace_during_read):
-                with self.assertRaisesRegex(Rejected, 'changed while reading'):
-                    MODULE.read_regular(path)
-            self.assertEqual(path.read_bytes(), b'next')
-
-    def test_open_reader_does_not_create_missing_input(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'absent'
-            with self.assertRaises(FileNotFoundError):
-                MODULE.open_regular_read(path)
-            self.assertFalse(path.exists())
-
     def test_distinct_path_and_descriptor_ctime_still_reads_and_detects_changes(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as directory:
@@ -334,11 +296,18 @@ class CoordinationTests(unittest.TestCase):
             if path == self.board.lock:
                 raise OSError("injected cleanup failure")
             return original_rmdir(path)
+        revision = self.revision()
         with mock.patch.object(Path, "rmdir", deny_lock), self.assertRaises(Rejected) as raised:
-            self.claim()
+            self.board.apply('claim', dict(id='alpha', revision=revision, scopes=[self.scope('item')]))
         self.assertTrue(raised.exception.uncertain)
-        self.assertEqual(len(self.board.read()["sessions"]["alpha"]["claims"]), 1)
         self.assertTrue(self.board.lock.exists())
+        with self.assertRaises(Rejected) as blocked:
+            self.board.read()
+        self.assertEqual(blocked.exception.code, 'busy')
+        # Diagnostic inspection of saved bytes does not steal the retained mutex
+        # or establish authority for another operation.
+        saved = self.board.validate(MODULE.decode(MODULE.read_regular(self.board.state_path)))
+        self.assertEqual(len(saved['sessions']['alpha']['claims']), 1)
 
     def test_owner_replacement_with_same_bytes_blocks_cleanup(self):
         with self.assertRaises(Rejected) as raised:
@@ -469,6 +438,69 @@ class CoordinationTests(unittest.TestCase):
         self.assertEqual(sum(process.returncode == 0 for process in processes), 1, results)
         state = self.board.read()
         self.assertEqual(sum(bool(s["claims"]) for s in state["sessions"].values()), 1)
+
+    def test_open_state_reader_excludes_writer_until_its_descriptor_is_closed(self):
+        before = self.board.state_path.read_bytes()
+        revision = self.revision()
+        script = r'''
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('board', sys.argv[1])
+module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+board = module.Board(sys.argv[2]); original = module.read_regular
+def held_read(path):
+    if path == board.state_path:
+        # Keep a real descriptor open across the competing writer's attempt.
+        with path.open('rb') as stream:
+            print('state-open', flush=True)
+            if sys.stdin.readline().strip() != 'continue': raise RuntimeError('gate lost')
+            return original(path)
+    return original(path)
+module.read_regular = held_read
+print(board.read()['revision'], flush=True)
+'''
+        process = subprocess.Popen([sys.executable, '-B', '-c', script, str(TOOL), str(self.root)],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(process.stdout.readline().strip(), 'state-open')
+            with self.assertRaises(Rejected) as raised:
+                self.board.apply('claim', dict(id='alpha', revision=revision, scopes=[self.scope('item')]))
+            self.assertEqual(raised.exception.code, 'busy')
+            self.assertFalse(raised.exception.uncertain)
+            self.assertEqual(self.board.state_path.read_bytes(), before)
+            stdout, stderr = process.communicate('continue\n', timeout=15)
+            self.assertEqual(process.returncode, 0, stderr)
+            self.assertEqual(int(stdout.strip()), revision)
+            self.assertFalse(self.board.lock.exists())
+            self.claim('item')
+            self.assertEqual(len(self.board.read()['sessions']['alpha']['claims']), 1)
+        finally:
+            if process.poll() is None:
+                process.kill(); process.wait(timeout=5)
+
+    def test_shared_instance_cannot_borrow_another_threads_mutex(self):
+        from concurrent.futures import ThreadPoolExecutor
+        before = self.board.state_path.read_bytes()
+        with self.board.mutex(), ThreadPoolExecutor(max_workers=1) as executor:
+            for operation in (self.board.read, self.board.check_mutex):
+                with self.assertRaises(Rejected) as raised:
+                    executor.submit(operation).result(timeout=5)
+                self.assertEqual(raised.exception.code, 'busy')
+                self.assertFalse(raised.exception.uncertain)
+            self.assertIsInstance(self.board.read()['revision'], int)
+        self.assertEqual(self.board.state_path.read_bytes(), before)
+        self.assertFalse(self.board.lock.exists())
+
+    def test_read_reuses_owned_mutex_and_does_not_change_revision(self):
+        before = self.board.state_path.read_bytes()
+        with self.board.mutex():
+            owner = self.board.token
+            self.assertIsInstance(self.board.read()['revision'], int)
+            self.assertEqual(self.board.token, owner)
+            with self.assertRaises(Rejected) as raised:
+                Board(self.root).read()
+            self.assertEqual(raised.exception.code, 'busy')
+        self.assertEqual(self.board.state_path.read_bytes(), before)
+        self.assertFalse(self.board.lock.exists())
 
     def test_eight_independent_writers_preserve_every_contribution(self):
         names = ["worker-" + str(index) for index in range(8)]

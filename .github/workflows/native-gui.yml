@@ -60,9 +60,8 @@ jobs:
     - if: runner.os == 'Linux'
       shell: python
       run: |
-        import os,subprocess
-        subprocess.run(['docker','run','--rm','-e','TARGET','-e','RECIPE','-e','JOBS','-e','PYTHONUTF8=1','-e','PYTHONDONTWRITEBYTECODE=1','-v',os.getcwd()+':/work','-w','/work','debian:bookworm','bash','-euc',
-         'apt-get update; apt-get install -y --no-install-recommends ca-certificates python3 nodejs openssl cmake ninja-build git binutils make gpg patch xvfb xauth fonts-dejavu-core libgl1 libopengl0 libgl1-mesa-dri libx11-dev libxext-dev libxft-dev libxinerama-dev libxcursor-dev libxrender-dev libxfixes-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev; git config --global --add safe.directory /work; xvfb-run -a python3 .github/scripts/lifecycle.py native-gui-check'],check=True)
+        import subprocess, sys
+        subprocess.run([sys.executable, '.github/scripts/container_job.py', 'native-gui-check'], check=True)
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: native-gui-evidence-${{ inputs.target }}-${{ github.run_attempt }}
