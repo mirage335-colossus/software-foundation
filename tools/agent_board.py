@@ -132,13 +132,41 @@ def portable_components(path):
             raise Rejected("path component is not portable: " + repr(component))
 
 
+def open_regular_read(path):
+    """Open a nonfollowing reader without preventing another writer's replace."""
+    if os.name != "nt":
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        return os.open(path, flags)
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                       wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    create.restype = wintypes.HANDLE
+    close = kernel.CloseHandle
+    close.argtypes = [wintypes.HANDLE]
+    close.restype = wintypes.BOOL
+    # GENERIC_READ; share read/write/delete; OPEN_EXISTING; OPEN_REPARSE_POINT.
+    # Delete sharing permits atomic rename while a reader holds the old object.
+    # Identity/version checks below still reject a replaced or modified read.
+    handle = create(str(path), 0x80000000, 0x1 | 0x2 | 0x4, None, 3, 0x00200000, None)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY | os.O_NOINHERIT)
+    except BaseException:
+        close(handle)
+        raise
+
+
 def read_regular(path):
     safe_path(path)
     before = path.lstat()
     if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > MAX_BYTES:
         raise Rejected("expected a bounded singly linked regular file: " + str(path), "corrupt")
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-    fd = os.open(path, flags)
+    fd = open_regular_read(path)
     with os.fdopen(fd, "rb") as stream:
         opened = os.fstat(stream.fileno())
         if cross_version(opened) != cross_version(before):

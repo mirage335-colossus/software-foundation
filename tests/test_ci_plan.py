@@ -1,5 +1,5 @@
 import importlib.util
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import tempfile
 import json
 import sys
@@ -151,14 +151,17 @@ class BrowserPrerequisiteTests(unittest.TestCase):
             commands, files = [], {}
             original_open, original_mkdir = Path.open, Path.mkdir
             def opened(path, mode='r', *args, **kwargs):
-                if str(path).startswith('/etc/apt/'):
-                    self.assertEqual(mode, 'x'); files[str(path)] = io.StringIO()
+                key = path.as_posix()
+                if key.startswith('/etc/apt/'):
+                    self.assertEqual(mode, 'x'); files[key] = io.StringIO()
                     class Retained(io.StringIO):
-                        def close(self): files[str(path)] = self.getvalue(); super().close()
+                        def close(self): files[key] = self.getvalue(); super().close()
                     return Retained()
+                self.assertTrue(path.resolve().is_relative_to(Path(temporary).resolve()))
                 return original_open(path, mode, *args, **kwargs)
             def mkdir(path, *args, **kwargs):
-                if str(path).startswith('/etc/apt/'): return None
+                if path.as_posix().startswith('/etc/apt/'): return None
+                self.assertTrue(path.resolve().is_relative_to(Path(temporary).resolve()))
                 return original_mkdir(path, *args, **kwargs)
             def launched(argv, **kwargs):
                 commands.append(argv)
@@ -170,6 +173,12 @@ class BrowserPrerequisiteTests(unittest.TestCase):
                 elif argv[0] == '/usr/bin/firefox': stdout = 'Mozilla Firefox 157.0'
                 else: stdout = ''
                 return CompletedProcess(argv, 0, stdout)
+            # Both path spellings must remain intercepted before mocking the host guard.
+            for path_type in (PurePosixPath, PureWindowsPath):
+                mkdir(path_type('/etc/apt/keyrings'), parents=True, exist_ok=True)
+                with opened(path_type('/etc/apt/fixture-guard'), 'x') as stream:
+                    stream.write('intercepted')
+                self.assertEqual(files.pop('/etc/apt/fixture-guard'), 'intercepted')
             guard = stack.enter_context(patch.object(ci, 'browser_setup_preflight'))
             stack.enter_context(patch.object(ci.subprocess, 'run', side_effect=launched))
             stack.enter_context(patch.object(Path, 'open', opened)); stack.enter_context(patch.object(Path, 'mkdir', mkdir))
@@ -177,7 +186,8 @@ class BrowserPrerequisiteTests(unittest.TestCase):
             result = ci.install_browser_prerequisite('linux-x86_64', 'ubuntu-24.04', 'hosted-web', Path(temporary) / 'receipt')
             guard.assert_called_once_with(self.selection())
             self.assertIn(['apt-get', 'install', '-y', '--no-install-recommends', 'firefox=157.0~build1'], commands)
-            self.assertIn('[signed-by=/etc/apt/keyrings/foundation-mozilla.asc]', files['/etc/apt/sources.list.d/foundation-mozilla.list'])
+            self.assertIn('[signed-by=' + str(Path('/etc/apt/keyrings/foundation-mozilla.asc')) + ']',
+                          files['/etc/apt/sources.list.d/foundation-mozilla.list'])
             self.assertIn('Pin: origin packages.mozilla.org', files['/etc/apt/preferences.d/foundation-mozilla'])
             self.assertIn('Pin: release o=Ubuntu\nPin-Priority: -1', files['/etc/apt/preferences.d/foundation-mozilla'])
             self.assertEqual(result['installed'][0]['architecture'], 'amd64')
@@ -584,25 +594,59 @@ class WindowsGraphicsCiTests(unittest.TestCase):
         from unittest.mock import Mock
         helper_spec = importlib.util.spec_from_file_location('graphics_ci_lifecycle', ci.ROOT / '.github/scripts/lifecycle.py')
         helper = importlib.util.module_from_spec(helper_spec); helper_spec.loader.exec_module(helper)
-        graphics = Mock(); graphics.fetch.return_value = {'acquisition': 'explicit-maintenance'}
-        graphics.fetch_retained.return_value = {'acquisition': 'operator-retained-https'}
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            with patch.dict(sys.modules, {'windows_graphics': graphics}), patch.object(helper, 'ROOT', root), \
-                 patch.object(helper.os, 'chdir'), patch.object(helper.ci, 'assert_host'), \
-                 patch.object(helper, 'write') as published, \
-                 patch.dict(helper.os.environ, {'GRAPHICS_ARCHIVE_URL': 'https://storage.example/retained.7z'}):
-                helper.main('graphics-input')
-                graphics.fetch.assert_not_called()
-                graphics.fetch_retained.assert_called_once_with('https://storage.example/retained.7z', root / 'build/host-graphics/mesa-windows.7z')
-                published.assert_called_once_with('build/host-graphics/acquisition.json', {'acquisition': 'operator-retained-https'})
-                published.reset_mock()
-                helper.main('graphics-maintain')
-                graphics.fetch.assert_called_once_with(root / 'build/host-graphics/mesa-windows.7z', network=True)
+        for command in ('graphics-input', 'graphics-maintain'):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                archive = root / 'build/host-graphics/mesa-windows.7z'
+                graphics = Mock()
+                def acquired(*args, **kwargs):
+                    self.assertTrue(archive.parent.is_dir())
+                    self.assertFalse(archive.exists())
+                    return {'acquisition': command}
+                graphics.fetch.side_effect = acquired; graphics.fetch_retained.side_effect = acquired
+                with patch.dict(sys.modules, {'windows_graphics': graphics}), patch.object(helper, 'ROOT', root), \
+                     patch.object(helper.os, 'chdir'), patch.object(helper.ci, 'assert_host'), \
+                     patch.object(helper, 'write') as published, \
+                     patch.dict(helper.os.environ, {'GRAPHICS_ARCHIVE_URL': 'https://storage.example/retained.7z'}):
+                    helper.main(command)
+                    if command == 'graphics-input':
+                        graphics.fetch.assert_not_called()
+                        graphics.fetch_retained.assert_called_once_with('https://storage.example/retained.7z', archive)
+                    else:
+                        graphics.fetch.assert_called_once_with(archive, network=True)
+                        graphics.fetch_retained.assert_not_called()
+                    published.assert_called_once_with('build/host-graphics/acquisition.json', {'acquisition': command})
+                    graphics.reset_mock(); published.reset_mock()
+                    archive.parent.rmdir(); archive.parent.write_bytes(b'not a directory')
+                    with self.assertRaises(FileExistsError): helper.main(command)
+                    graphics.fetch.assert_not_called(); graphics.fetch_retained.assert_not_called()
+                    published.assert_not_called()
         for workflow in ('sdk-maintenance.yml', 'native-gui.yml', 'certify.yml'):
             text = (ci.ROOT / '.github/workflows' / workflow).read_text()
             self.assertNotIn('path: build/host-graphics/', text)
             self.assertNotIn('mesa-windows.7z\n', text)
+
+
+class AptMechanismLifecycleTests(unittest.TestCase):
+    def test_early_package_failure_retains_started_receipt_without_success(self):
+        from subprocess import CalledProcessError
+        helper_spec = importlib.util.spec_from_file_location('apt_ci_lifecycle', ci.ROOT / '.github/scripts/lifecycle.py')
+        helper = importlib.util.module_from_spec(helper_spec); helper_spec.loader.exec_module(helper)
+        import release_check
+        original_write = helper.write
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch.object(helper, 'ROOT', root), patch.object(helper.os, 'chdir'), \
+                 patch.object(release_check, 'apt_preflight'), patch.object(release_check, 'run_apt') as execute, \
+                 patch.object(helper.subprocess, 'run', side_effect=CalledProcessError(1, ['build'])), \
+                 patch.object(helper, 'write', side_effect=lambda path, item: original_write(root / path, item)), \
+                 patch.dict(helper.os.environ, {'GITHUB_SHA': 'a' * 40}):
+                with self.assertRaises(CalledProcessError): helper.main('apt-native-smoke')
+                execute.assert_not_called()
+            record = json.loads((root / 'build/apt-evidence/started.json').read_text())
+            self.assertEqual(record, dict(operation='apt-native-smoke', target='linux-x86_64', backend='core',
+                                         status='started', source_commit='a' * 40))
+            self.assertFalse((root / 'build/apt-evidence/result.json').exists())
 
 
 class GuiInputDeliveryTests(unittest.TestCase):

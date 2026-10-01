@@ -31,7 +31,9 @@ def main():
                         ceilings[family] = required
     report = audit(prefix, a.processor, ceilings=ceilings)
     report["baseline_qualification"] = "bookworm-abi-only" if a.bookworm else "native-observed-requirements-only"
-    write_json(prefix / "share/doc/Foundation/runtime-audit.json", report)
+    installed_report = prefix / "share/doc/Foundation/runtime-audit.json"
+    write_json(installed_report, report)
+    installed_report.chmod(0o644)
 
 
 if __name__ == "__main__":

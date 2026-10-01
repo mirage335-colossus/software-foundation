@@ -284,17 +284,27 @@ class ProducerContractTests(unittest.TestCase):
             for item, directory in ((recipe['buildroot'], 'bootstrap'), (recipe['glibc_source'], 'downloads/glibc')):
                 path = root / 'cache' / directory / item['file']; path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b'Pinned fixture input.'); item['sha256'] = digest(path)
-                files[str(path.relative_to(root / 'cache'))] = digest(path)
+                files[path.relative_to(root / 'cache').as_posix()] = digest(path)
             write_json(recipe_dir / 'recipe.json', recipe)
             resolution = {'glibc': {'dl_dir': 'glibc', 'downloads': [{'source': recipe['glibc_source']['file']}]}}
             write_json(root / 'cache/resolution.json', resolution)
             state = {'schema_version': 1, 'recipe_id': distro_sdk.recipe_id(recipe_dir / 'recipe.json'),
                      'resolution_sha256': digest(root / 'cache/resolution.json'), 'files': files}
             write_json(root / 'cache/source-inputs.json', state)
-            distro_sdk.verify_inputs(recipe_dir / 'recipe.json', root / 'cache')
+            # Retained manifests use portable relative names on every host.
+            self.assertTrue(all('\\' not in name for name in files))
+            self.assertEqual(distro_sdk.verify_inputs(recipe_dir / 'recipe.json', root / 'cache'), state)
+            complete = dict(files)
             omitted = next(p for p in files if p.startswith('downloads/')); del state['files'][omitted]
             write_json(root / 'cache/source-inputs.json', state)
             with self.assertRaisesRegex(ValueError, 'complete resolved'):
+                distro_sdk.verify_inputs(recipe_dir / 'recipe.json', root / 'cache')
+            state['files'] = complete
+            bootstrap = 'bootstrap/' + recipe['buildroot']['file']
+            (root / 'cache' / bootstrap).write_bytes(b'Substituted fixture input.')
+            state['files'][bootstrap] = digest(root / 'cache' / bootstrap)
+            write_json(root / 'cache/source-inputs.json', state)
+            with self.assertRaisesRegex(ValueError, 'pinned bootstrap'):
                 distro_sdk.verify_inputs(recipe_dir / 'recipe.json', root / 'cache')
 
     def test_windows_empty_fetch_build_recovery_needs_no_supplier(self):

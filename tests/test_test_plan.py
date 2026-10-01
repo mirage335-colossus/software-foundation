@@ -143,7 +143,8 @@ class InputIdentityTests(unittest.TestCase):
         from dependency_store import names, verify_group
         recipe, _, _, group = fixture(self.root / 'dependency')
         self.cache['FOUNDATION_DEPENDENCY_RECIPES'] = recipe; self.write_cache()
-        self.wrapper(dependencies=[{'root': str(group), 'recipe': recipe, 'files': verify_group(group, recipe)}])
+        # Match the wrapper's canonical location, including Windows short-name aliases.
+        self.wrapper(dependencies=[{'root': str(group.resolve(strict=True)), 'recipe': recipe, 'files': verify_group(group, recipe)}])
         self.freeze()
         (group / names(recipe)[1]).write_bytes(b'changed source archive')
         with self.assertRaisesRegex(ValueError, 'checksum'):
@@ -170,9 +171,10 @@ class InputIdentityTests(unittest.TestCase):
     def test_gui_group_is_verified_on_every_configuration_capture(self):
         from unittest.mock import patch
         group = self.root / 'gui-group'; group.mkdir()
-        self.wrapper(gui_input_group={'root': str(group), 'sha256': 'a' * 64})
+        self.wrapper(gui_input_group={'root': str(group.resolve(strict=True)), 'sha256': 'a' * 64})
         with patch.object(plan, 'verify_gui_group', side_effect=['a' * 64, 'b' * 64]) as verify:
             self.freeze()
+            verify.assert_called_once_with(str(group.resolve(strict=True)))
             with self.assertRaisesRegex(ValueError, 'GUI input group'):
                 self.freeze()
             self.assertEqual(verify.call_count, 2)

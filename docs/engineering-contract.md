@@ -45,6 +45,15 @@ their shared identity fields separately. Windows path and descriptor `ctime` may
 mean creation and change time respectively; neither should be silently discarded
 from its own before/after mutation check. See the
 [upstream metadata issue](https://github.com/python/cpython/issues/157671).
+Readers of atomically replaced files must also permit the writer's rename on the
+actual platform. On Windows, use an explicitly noninheritable read handle with
+[read/write/delete sharing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+and nonfollowing open semantics, transfer ownership to the managed descriptor,
+and retain before/after identity checks. An open reader can then finish reading its
+old object while detecting replacement. Test real replacement with an open reader
+and competing processes; do not hide access failures through blind retries or
+weaken uncertain-publication recovery. This does not qualify unrelated filesystem
+operations or the complete record protocol on an unsupported host.
 
 A partial read is not a complete message; EOF, cancellation and malformed content
 must have distinct outcomes. Do not derive unbounded work from untrusted counts.

@@ -1,4 +1,8 @@
 from pathlib import Path
+import json
+import os
+import stat
+import tarfile
 import shutil
 import platform
 import subprocess
@@ -63,6 +67,59 @@ class PortabilityTests(unittest.TestCase):
         self.assertEqual(set(result['files']), {'libtiny.so.1'})
         with self.assertRaisesRegex(ValueError, 'missing'):
             stage_runtime.stage([self.root / 'use'], [], self.root / 'missing', processor=self.processor)
+
+    def test_staged_public_metadata_ignores_restrictive_umask(self):
+        from dependency_archive import write_json
+        destination = self.root / 'public-runtime'
+        private = self.root / 'private-metadata.json'
+        previous = os.umask(0o077)
+        try:
+            stage_runtime.stage([self.root / 'application'], [], destination, processor=self.processor)
+            write_json(private, {'private': True})
+        finally:
+            os.umask(previous)
+        self.assertEqual(0o644, stat.S_IMODE((destination / 'runtime-inventory.json').stat().st_mode))
+        self.assertEqual(0o755, stat.S_IMODE(destination.stat().st_mode))
+        self.assertEqual(0o600, stat.S_IMODE(private.stat().st_mode))
+
+    def test_installed_runtime_metadata_survives_archive_package_selection(self):
+        import apt_repo
+        package, binary, libraries = self.linked_package()
+        supplier = self.root / 'supplier'
+        libraries.rename(supplier)
+        executable = binary / 'foundation-cli'
+        (binary / 'application').rename(executable)
+        executable.chmod(0o755)
+        (package / 'share/doc/Foundation').mkdir(parents=True)
+        tool = Path(stage_runtime.__file__).with_name('package_runtime.py')
+        # Execute the installed runtime producer under a restrictive child umask;
+        # actual ELF libraries and the final loader audit stay in this regression.
+        command = ('import os, runpy, sys; os.umask(0o077); '
+                   'sys.path.insert(0, str(__import__("pathlib").Path(sys.argv[1]).parent)); '
+                   'sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name="__main__")')
+        subprocess.run([sys.executable, '-B', '-c', command, str(tool), '--prefix', str(package),
+                        '--root', str(supplier), '--processor', self.processor], check=True)
+        public = ('lib/runtime/runtime-inventory.json', 'share/doc/Foundation/runtime-audit.json')
+        for name in public:
+            with self.subTest(metadata=name):
+                self.assertEqual(0o644, stat.S_IMODE((package / name).stat().st_mode))
+                self.assertEqual(1, json.loads((package / name).read_text())['schema_version'])
+        self.assertEqual('passed', json.loads((package / public[1]).read_text())['status'])
+        subprocess.run([str(executable)], check=True, cwd=self.root,
+                       env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
+        archive = self.root / 'package.tar.gz'
+        with tarfile.open(archive, 'w:gz') as bundle:
+            bundle.add(package, arcname='package')
+        descriptor = apt_repo.artifact.describe(archive)
+        modes = apt_repo.source_modes(archive)
+        files = {name.removeprefix('package/'): dict(record, mode=modes[name])
+                 for name, record in descriptor['files'].items()}
+        chosen = apt_repo.selection('package', files, 'core', descriptor['sha256'])
+        for name in public:
+            self.assertEqual(0o644, chosen['retained_files'][name]['mode'])
+        files[public[0]]['mode'] = 0o600
+        with self.assertRaisesRegex(ValueError, 'invalid source file inventory identity'):
+            apt_repo.selection('package', files, 'core', descriptor['sha256'])
 
     def linked_package(self, inherited=True, middle_path=False):
         package = self.root / 'package'

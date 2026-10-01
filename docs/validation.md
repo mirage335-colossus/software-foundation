@@ -52,6 +52,34 @@ Reuse evidence only for unchanged relevant code, configuration, dependencies and
 environment; documentation edits do not establish a new runtime result. These are
 local implementation checks, not a complete release-policy certification.
 
+## Hosted candidate and maintenance observations
+
+Candidate [36887644570](https://github.com/mirage335-colossus/software-foundation/actions/runs/36887644570)
+executed revision `bb1e775e4a02336e349aa2ed54c24a1c311fd76d` on Linux x86_64,
+Linux ARM64 and Windows x86_64. Native core and installed-consumer checks,
+independent packages, copied-archive execution and sanitizer checks passed.
+Linux tool suites passed. Windows tool suites exposed optimistic readers blocking
+atomic registry replacement and nonportable fixture paths; the Debian integration
+found private permissions on public installed metadata. The overall run failed.
+
+Focused repairs preserve strict inventory and mutation checks. The public runtime
+metadata now uses `0644` and its runtime directory uses `0755`, including under
+`umask 077`; private records retain `0600`. Windows readers explicitly permit
+replacement while retaining object/version validation. Fixtures now match the
+producer's canonical physical roots and portable inventory separators. Local
+verification passed 46 coordination, 42 CI, 24 portability, 32 SDK and 17 test-plan
+cases with no exclusions. These local results require a subsequent native Windows
+run before the hosted failure is superseded.
+
+Prepared-SDK maintenance
+[36887657215](https://github.com/mirage335-colossus/software-foundation/actions/runs/36887657215)
+uses `profile=all-gui`, all targets and `execute=false`. Its Windows startup exposed
+a missing graphics-cache directory before acquisition; that caller now creates the
+directory, and regressions cover both acquisition paths and a conflicting file.
+The other cold builds were still running when these repairs were recorded. A
+requested, queued or running job is not successful qualification, and no release
+publication is authorized by these checks.
+
 ## Reproduce the integrated checks
 
 ```sh

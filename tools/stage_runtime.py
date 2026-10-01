@@ -52,6 +52,7 @@ def stage(executables, roots, destination, processor='x86_64', readelf='readelf'
     with tempfile.TemporaryDirectory(dir=destination.parent) as temporary:
         staged = Path(temporary) / 'lib'
         staged.mkdir()
+        staged.chmod(0o755)
         for name, path in copied.items():
             shutil.copyfile(path, staged / name)
             (staged / name).chmod(0o755)
@@ -70,7 +71,10 @@ def stage(executables, roots, destination, processor='x86_64', readelf='readelf'
             report['abi'] = audit(staged, processor, ceilings=ceilings, readelf=readelf, runtime_resolution=False)
         report['baseline_qualification'] = 'bookworm-abi-only' if audit_baseline else 'native-observed-requirements-only'
         report['runtime_resolution'] = 'requires_final_package_audit'
-        write_json(staged / 'runtime-inventory.json', report)
+        inventory = staged / 'runtime-inventory.json'
+        write_json(inventory, report)
+        # Installed metadata is public even when the build uses a private umask.
+        inventory.chmod(0o644)
         staged.rename(destination)
     return report
 

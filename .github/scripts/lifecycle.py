@@ -73,6 +73,7 @@ def main(command):
         ci.assert_host('windows-x86_64')
         import windows_graphics
         archive = ROOT / 'build/host-graphics/mesa-windows.7z'
+        archive.parent.mkdir(parents=True, exist_ok=True)
         receipt = (windows_graphics.fetch(archive, network=True) if command == 'graphics-maintain' else
                    windows_graphics.fetch_retained(value('GRAPHICS_ARCHIVE_URL'), archive))
         write('build/host-graphics/acquisition.json', receipt)
@@ -126,6 +127,8 @@ def main(command):
     elif command == 'apt-native-smoke':
         import artifact, release_check
         release_check.apt_preflight('linux-x86_64')
+        write('build/apt-evidence/started.json', dict(operation=command, target='linux-x86_64',
+              backend='core', status='started', source_commit=os.environ.get('GITHUB_SHA')))
         subprocess.run([sys.executable, 'tools/build.py', 'package', 'release', '--portable', '--jobs', '2',
                         '--build-dir', 'build/apt-smoke'], check=True)
         packages = ROOT / 'build/apt-smoke/packages'

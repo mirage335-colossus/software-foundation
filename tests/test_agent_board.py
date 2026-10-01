@@ -19,6 +19,44 @@ Board, Rejected = MODULE.Board, MODULE.Rejected
 
 
 class RegularReadTests(unittest.TestCase):
+    def test_open_reader_permits_atomic_replacement_without_changing_its_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'record'
+            replacement = Path(directory) / 'replacement'
+            path.write_bytes(b'original')
+            replacement.write_bytes(b'next')
+            with os.fdopen(MODULE.open_regular_read(path), 'rb') as stream:
+                self.assertFalse(os.get_inheritable(stream.fileno()))
+                os.replace(replacement, path)
+                self.assertEqual(stream.read(), b'original')
+                self.assertEqual(path.read_bytes(), b'next')
+
+    def test_replacement_during_read_is_rejected_even_when_reader_allows_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'record'
+            replacement = Path(directory) / 'replacement'
+            path.write_bytes(b'original')
+            replacement.write_bytes(b'next')
+            original = os.fstat
+            calls = 0
+            def replace_during_read(fd):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    os.replace(replacement, path)
+                return original(fd)
+            with mock.patch.object(MODULE.os, 'fstat', side_effect=replace_during_read):
+                with self.assertRaisesRegex(Rejected, 'changed while reading'):
+                    MODULE.read_regular(path)
+            self.assertEqual(path.read_bytes(), b'next')
+
+    def test_open_reader_does_not_create_missing_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'absent'
+            with self.assertRaises(FileNotFoundError):
+                MODULE.open_regular_read(path)
+            self.assertFalse(path.exists())
+
     def test_distinct_path_and_descriptor_ctime_still_reads_and_detects_changes(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as directory:
