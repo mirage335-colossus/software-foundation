@@ -32,23 +32,38 @@ class PortabilityTests(unittest.TestCase):
         self.assertEqual(report['status'], 'passed')
         self.assertIn('application', report['files'])
 
-    def test_actual_packed_relocations_require_glibc_236(self):
-        (self.root / 'relr.c').write_text('int value=7; int *reference=&value; int main(void) { return *reference!=7; }\n')
-        executable = self.root / 'relr'
-        subprocess.run(['cc', '-fPIE', '-pie', str(self.root / 'relr.c'),
-                        '-Wl,-z,pack-relative-relocs', '-o', str(executable)], check=True)
-        dynamic = subprocess.check_output(['readelf', '--wide', '--dynamic', str(executable)], text=True)
-        self.assertIn('(RELR)', dynamic)
+    def test_real_named_abi_import_requires_glibc_236(self):
+        # A controlled versioned import exercises the ABI reader on baseline
+        # linkers for both Linux architectures. This does not generate RELR.
+        package = self.root / 'named capability package'
+        package.mkdir()
+        provider = package / 'libcapability.so.1'
+        executable = package / 'consumer'
+        (self.root / 'capability.c').write_text('int capability_value(void) { return 42; }\n')
+        (self.root / 'capability.map').write_text('GLIBC_ABI_DT_RELR { global: capability_value; local: *; };\n')
+        subprocess.run(['cc', '-shared', '-nostdlib', '-fPIC', str(self.root / 'capability.c'),
+                        '-Wl,--version-script=' + str(self.root / 'capability.map'),
+                        '-Wl,-soname,libcapability.so.1', '-o', str(provider)], check=True)
+        (self.root / 'consumer.c').write_text('extern int capability_value(void); int main(void) { return capability_value()!=42; }\n')
+        subprocess.run(['cc', str(self.root / 'consumer.c'), str(provider),
+                        '-Wl,-rpath,$ORIGIN', '-o', str(executable)], check=True)
         versions = subprocess.check_output(['readelf', '--wide', '--version-info', str(executable)], text=True)
-        self.assertIn('GLIBC_ABI_DT_RELR', versions)
+        self.assertIn('Version needs section', versions)
+        self.assertIn('File: libcapability.so.1', versions)
+        self.assertIn('Name: GLIBC_ABI_DT_RELR', versions)
+        self.assertEqual({}, verify_abi.inspect(provider)['named_requirements'])
         for sdk_private in (False, True):
             with self.subTest(sdk_private=sdk_private):
                 report = verify_abi.inspect(executable, sdk_private=sdk_private)
+                self.assertIn('libcapability.so.1', report['needed'])
                 self.assertEqual({'GLIBC_ABI_DT_RELR': '2.36'}, report['named_requirements'])
                 self.assertEqual('2.36', report['requirements']['GLIBC'])
-        self.assertEqual('passed', verify_abi.audit(executable, processor=self.processor)['status'])
+        audit = verify_abi.audit(package, processor=self.processor)
+        self.assertEqual('passed', audit['status'])
+        self.assertEqual([{'from': 'consumer', 'needed': 'libcapability.so.1',
+                           'provider': 'libcapability.so.1'}], audit['resolution'])
         with self.assertRaisesRegex(ValueError, 'above ceiling: GLIBC_2.36'):
-            verify_abi.audit(executable, processor=self.processor, ceilings={'GLIBC': '2.35'})
+            verify_abi.audit(package, processor=self.processor, ceilings={'GLIBC': '2.35'})
         subprocess.run([str(executable)], check=True, cwd=self.root,
                        env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
 

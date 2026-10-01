@@ -149,8 +149,15 @@ and the supplier's `elf/Versions` declaration. Its original name and effective
 floor remain in the audit report. The same rule applies to SDK host tools,
 target inputs and application binaries. A lower ceiling still fails, a newer
 numeric requirement still wins, unknown names remain errors, and application
-imports of private libc interfaces remain prohibited. An actual linked executable
-with packed relocations tests the rule and runs as a consumer.
+imports of private libc interfaces remain prohibited. The portable regression
+builds a controlled versioned shared provider and a real ELF consumer with this
+named import using baseline Linux tools on either architecture. It checks the
+imported requirement, effective floor, private dependency resolution, rejection
+below the floor, and consumer execution. This fixture tests ABI requirement
+inspection; it does not establish actual glibc packed-relocation loading.
+Qualification of generated packed relocations remains a separate check using a
+linker that supports their generation for the target architecture, with the
+exact toolchain and execution result recorded.
 
 ```sh
 python3 tools/verify_abi.py /owned/extracted-package --processor x86_64 --output /owned/abi.json
