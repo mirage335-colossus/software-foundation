@@ -48,6 +48,35 @@ def sdk_recipe(target, profile):
     return ROOT / ('third_party/sdk/windows-base.json' if target.startswith('windows-') else 'third_party/sdk/wasm.json')
 
 
+def sdk_identity(target, profile):
+    if target not in (*ci.STANDARD, 'browser-wasm32'):
+        raise ValueError('unknown SDK target')
+    recipe = sdk_recipe(target, profile)
+    if target.startswith('linux-'):
+        import distro_sdk
+        return distro_sdk.recipe_id(recipe)
+    if target == 'windows-x86_64':
+        import sdk_windows
+        return sdk_windows.recipe_identity(recipe)
+    import sdk_wasm
+    return sdk_wasm.recipe_identity(recipe)
+
+
+def retain_sdk_group(target, profile):
+    """Retain checked bytes for diagnosis/retry, without consumer approval."""
+    identity = sdk_identity(target, profile)
+    origin = evidence.load(ROOT / 'build/sdk-origin.json')
+    if origin.get('recipe') != identity:
+        raise ValueError('retained SDK identity differs from the selected current recipe')
+    files = dependency_store.verify_group(ROOT / 'build/sdk-group', identity)
+    receipt = dict(schema_version=1, status='verified', qualification='unqualified',
+        publication_approved=False, target=target, profile=profile, recipe_id=identity,
+        source_commit=value('GITHUB_SHA'), run_id=value('GITHUB_RUN_ID'),
+        attempt=int(value('GITHUB_RUN_ATTEMPT')), files=files)
+    write(ROOT / 'build/sdk-retention.json', receipt)
+    return receipt
+
+
 def main(command):
     os.chdir(ROOT)
     (ROOT / 'build').mkdir(exist_ok=True)
@@ -57,18 +86,12 @@ def main(command):
         if any(t not in (*ci.STANDARD, 'browser-wasm32') for t in targets): raise ValueError('unknown SDK target')
         output('matrix', {'include': [{'target': t, 'runner': ci.STANDARD.get(t, 'ubuntu-24.04')} for t in targets]})
     elif command == 'sdk-inputs':
-        target = value('TARGET'); recipe = sdk_recipe(target, value('SDK_PROFILE'))
-        if target.startswith('linux-'):
-            import distro_sdk
-            identity = distro_sdk.recipe_id(recipe)
-        elif target == 'windows-x86_64':
-            import sdk_windows
-            identity = sdk_windows.recipe_identity(recipe)
-        else:
-            import sdk_wasm
-            identity = sdk_wasm.recipe_identity(recipe)
+        identity = sdk_identity(value('TARGET'), value('SDK_PROFILE'))
         write('build/sdk-origin.json', ci.maintenance_base(value('GITHUB_REPOSITORY'), identity,
               Path('build/sdk-group'), source=value('SDK_SOURCE')))
+    elif command == 'sdk-retain':
+        retain_sdk_group(value('TARGET'), value('SDK_PROFILE'))
+        output('retained', True)
     elif command in ('graphics-maintain', 'graphics-input'):
         ci.assert_host('windows-x86_64')
         import windows_graphics

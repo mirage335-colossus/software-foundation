@@ -447,6 +447,60 @@ class ProducerContractTests(unittest.TestCase):
 
 
 class NativeLinuxToolchainTests(unittest.TestCase):
+    def runtime_projection_fixture(self, root):
+        import distro_sdk
+        tree = root / 'sdk'; sysroot = tree / 'sysroot'
+        for name in distro_sdk.GLIBC_TARGET_PROGRAMS:
+            path = sysroot / name; path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'retained target program')
+        for name in distro_sdk.GLIBC_TARGET_DIRECTORIES:
+            path = sysroot / name; path.mkdir(parents=True, exist_ok=True)
+            (path / 'module').write_bytes(b'target runtime module')
+        keep = ('bin/iconv', 'bin/c++', 'sysroot/usr/bin/fltk-config', 'sysroot/usr/bin/sdl2-config',
+                'sysroot/usr/bin/unrelated', 'sysroot/usr/include/iconv.h', 'sysroot/usr/lib/libmvec.so.1',
+                'sysroot/usr/lib/gconv-extra/keep', 'sysroot/usr/libexec/getconf-extra/keep')
+        for name in keep:
+            path = tree / name; path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(('preserve ' + name).encode())
+        relocations = tree / 'share/buildroot/sdk-relocs'; relocations.parent.mkdir(parents=True)
+        relocations.write_text('./sysroot/usr/bin/fltk-config\n./sysroot/usr/lib/gconv/module\n./bin/c++\n')
+        return tree, {name: (tree / name).read_bytes() for name in keep}
+
+    def test_exact_target_runtime_projection_preserves_compiler_inputs(self):
+        import distro_sdk
+        with tempfile.TemporaryDirectory() as temporary:
+            tree, keep = self.runtime_projection_fixture(Path(temporary))
+            report = distro_sdk.omit_target_runtime(tree, 'sysroot', distro_sdk.GLIBC_RUNTIME_SOURCE)
+            expected = ['sysroot/' + name for name in distro_sdk.GLIBC_TARGET_PROGRAMS + distro_sdk.GLIBC_TARGET_DIRECTORIES]
+            self.assertEqual(sorted(expected), report['paths'])
+            for name in expected: self.assertFalse((tree / name).exists(), name)
+            for name, content in keep.items(): self.assertEqual(content, (tree / name).read_bytes(), name)
+            self.assertEqual('./sysroot/usr/bin/fltk-config\n./bin/c++\n', (tree / 'share/buildroot/sdk-relocs').read_text())
+            self.assertEqual([], distro_sdk.omit_target_runtime(tree, 'sysroot', distro_sdk.GLIBC_RUNTIME_SOURCE)['paths'])
+
+    def test_runtime_projection_rejects_changed_source_before_removal(self):
+        import distro_sdk
+        with tempfile.TemporaryDirectory() as temporary:
+            tree, _ = self.runtime_projection_fixture(Path(temporary)); before = file_inventory(tree)
+            with self.assertRaisesRegex(ValueError, 'reviewed glibc source'):
+                distro_sdk.omit_target_runtime(tree, 'sysroot', '0' * 64)
+            self.assertEqual(before, file_inventory(tree))
+
+    def test_runtime_projection_rejects_unexpected_entries_before_removal(self):
+        import distro_sdk
+        with tempfile.TemporaryDirectory() as temporary:
+            tree, _ = self.runtime_projection_fixture(Path(temporary))
+            bad = tree / 'sysroot/usr/lib/gconv/module'; bad.unlink(); bad.symlink_to('../../include/iconv.h')
+            with self.assertRaisesRegex(ValueError, 'unsupported entry'):
+                distro_sdk.omit_target_runtime(tree, 'sysroot', distro_sdk.GLIBC_RUNTIME_SOURCE)
+            self.assertTrue((tree / 'sysroot/usr/bin/iconv').is_file()); self.assertTrue(bad.is_symlink())
+            bad.unlink(); bad.write_bytes(b'ordinary')
+            relocations = tree / 'share/buildroot/sdk-relocs'; relocations.write_text('./../outside\n')
+            before = file_inventory(tree)
+            with self.assertRaisesRegex(ValueError, 'relative path'):
+                distro_sdk.omit_target_runtime(tree, 'sysroot', distro_sdk.GLIBC_RUNTIME_SOURCE)
+            self.assertEqual(before, file_inventory(tree))
+
     def test_target_os_aliases_do_not_obstruct_retained_sdk_materialization(self):
         import distro_sdk
         with tempfile.TemporaryDirectory() as temporary:

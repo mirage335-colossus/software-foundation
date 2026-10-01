@@ -11,8 +11,14 @@ MACHINES = {'x86_64': 'Advanced Micro Devices X86-64', 'aarch64': 'AArch64'}
 HOST_LIBRARIES = {'libc.so.6', 'libm.so.6', 'libpthread.so.0', 'libdl.so.2', 'librt.so.1',
                   'libresolv.so.2', 'libutil.so.1', 'ld-linux-x86-64.so.2', 'ld-linux-aarch64.so.1'}
 
+SDK_RUNTIME_ALIASES = {
+    'libmvec.so': 'libmvec.so.1', 'libresolv.so': 'libresolv.so.2',
+    'libBrokenLocale.so': 'libBrokenLocale.so.1', 'libnss_compat.so': 'libnss_compat.so.2',
+    'libnss_db.so': 'libnss_db.so.2', 'libnss_hesiod.so': 'libnss_hesiod.so.2', 'libnsl.so': 'libnsl.so.1',
+}
 SDK_RUNTIME_NAMES = HOST_LIBRARIES | {'libanl.so.1', 'libBrokenLocale.so.1', 'libnss_compat.so.2',
-    'libnss_dns.so.2', 'libnss_files.so.2', 'libnss_hesiod.so.2', 'libnsl.so.1', 'libmemusage.so', 'libpcprofile.so'}
+    'libnss_dns.so.2', 'libnss_files.so.2', 'libnss_hesiod.so.2', 'libnss_db.so.2',
+    'libnsl.so.1', 'libmvec.so.1', 'libmemusage.so', 'libpcprofile.so'} | set(SDK_RUNTIME_ALIASES)
 
 
 def version(value):
@@ -164,6 +170,11 @@ def sdk_runtime_context(root, processor, declaration):
         by_name.setdefault(Path(name).name, set()).add(files[name])
     if any(len(values) != 1 for values in by_name.values()):
         raise ValueError('SDK runtime cohort has conflicting providers')
+    # Materialization turns supplier development links into ordinary files.
+    # An exact alias is eligible only with the identical retained SONAME file.
+    for alias, provider in SDK_RUNTIME_ALIASES.items():
+        if alias in by_name and by_name[alias] != by_name.get(provider):
+            raise ValueError('SDK development alias lacks its identical runtime provider')
     return approved
 
 

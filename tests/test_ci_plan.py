@@ -574,7 +574,7 @@ class WindowsGraphicsCiTests(unittest.TestCase):
              patch.object(ci.subprocess, 'run', side_effect=command), patch.object(ci, 'graphics_test', side_effect=tested):
             result = ci.prepared_check('windows-x86_64', fixture.fixture.recipe, root / 'group', output,
                                       gui_group=root / 'group', graphics_archive=root / 'graphics.7z')
-        sdk.install.assert_called_once_with(root / 'group', fixture.fixture.recipe, output / 'dependencies', '14.44.35207.0')
+        sdk.install.assert_called_once_with((root / 'group').resolve(strict=True), fixture.fixture.recipe, output / 'dependencies', '14.44.35207.0')
         self.assertEqual(events, ['build', 'prerequisites', 'probe', 'test', 'cleanup'])
         self.assertEqual(json.loads((output / 'graphics.json').read_text())['cleanup'], 'removed')
         self.assertIn('graphics.json', result['graphics_evidence'])

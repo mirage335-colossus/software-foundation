@@ -92,7 +92,12 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'sdk-produce'], check=True)
       if: runner.os == 'Windows'
+    - name: Verify complete SDK bytes for unqualified retention
+      id: retain
+      if: always()
+      run: python .github/scripts/lifecycle.py sdk-retain
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      if: always() && steps.retain.outcome == 'success' && steps.retain.outputs.retained == 'true'
       with:
         name: sdk-group-${{ matrix.target }}-${{ github.run_attempt }}
         path: build/sdk-group/
@@ -111,6 +116,7 @@ jobs:
         name: sdk-proof-${{ matrix.target }}-${{ github.run_attempt }}
         path: |-
           build/sdk-origin.json
+          build/sdk-retention.json
           build/sdk-consumer/qualification.json
           build/sdk-consumer/source.junit.xml
           build/sdk-consumer/build/Testing/Temporary/

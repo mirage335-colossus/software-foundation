@@ -247,6 +247,68 @@ def remove_runtime_aliases(sysroot):
         path.unlink()
 
 
+# Reviewed glibc install inventory: catgets, iconv, locale, posix, nss, nscd, elf and
+# sysdeps/unix/sysv/linux Makefiles; iconvdata installs the gconv directory.
+# These are target OS programs/modules, not host tools or linker inputs.
+GLIBC_RUNTIME_SOURCE = '42458698e0f9956cf0a8529aa39c318b5130d15a20a40c87fa5cc0054ba19939'
+GLIBC_TARGET_PROGRAMS = (
+    'usr/bin/gencat', 'usr/bin/iconv', 'usr/bin/locale', 'usr/bin/localedef', 'usr/bin/getconf',
+    'usr/bin/getent', 'usr/bin/makedb', 'usr/bin/pldd', 'usr/bin/sprof',
+    'usr/sbin/iconvconfig', 'usr/sbin/nscd',
+)
+GLIBC_TARGET_DIRECTORIES = ('usr/lib/gconv', 'usr/lib64/gconv', 'usr/libexec/getconf')
+
+
+def omit_target_runtime(root, sysroot_name, source_sha256):
+    """Project a reviewed libc install into a compiler SDK after materialization."""
+    if source_sha256 != GLIBC_RUNTIME_SOURCE:
+        raise ValueError('target runtime omission needs a reviewed glibc source identity')
+    root = Path(root).resolve(strict=True)
+    sysroot = root.joinpath(*relative(sysroot_name).parts)
+    if sysroot.is_symlink() or not sysroot.is_dir() or root not in sysroot.resolve().parents:
+        raise ValueError('target runtime omission needs a contained ordinary sysroot')
+    selected = []
+    for name in GLIBC_TARGET_PROGRAMS + GLIBC_TARGET_DIRECTORIES:
+        path = sysroot / name
+        if any(parent.is_symlink() for parent in path.parents if parent != root and root in parent.parents):
+            raise ValueError('target runtime omission parent must be an ordinary directory')
+        if path.is_symlink():
+            raise ValueError('target runtime omission requires materialized inputs')
+        if not path.exists():
+            continue
+        directory = name in GLIBC_TARGET_DIRECTORIES
+        if (directory and not path.is_dir()) or (not directory and not path.is_file()):
+            raise ValueError('unexpected target runtime input type: ' + name)
+        if directory:
+            for child in path.rglob('*'):
+                if child.is_symlink() or not (child.is_file() or child.is_dir()):
+                    raise ValueError('target runtime directory contains an unsupported entry')
+        selected.append(path)
+    omitted = sorted(path.relative_to(root).as_posix() for path in selected)
+    # Supplier relocation lists may name generated text inside an omitted tree.
+    # Preserve every other entry and reject malformed paths before any removal.
+    relocations = root / 'share/buildroot/sdk-relocs'
+    if relocations.is_symlink() or not relocations.is_file():
+        raise ValueError('target runtime omission requires its supplier relocation list')
+    lines = relocations.read_text(encoding='utf-8').splitlines()
+    normalized = []
+    for name in lines:
+        # Buildroot prepare-sdk emits './relative/path'. Accept that exact
+        # prefix, validate the remainder, and preserve original retained text.
+        item = name[2:] if name.startswith('./') else name
+        if relative(item).as_posix() != item:
+            raise ValueError('noncanonical supplier relocation entry')
+        normalized.append(item)
+    retained = [name for name, item in zip(lines, normalized)
+                if not any(item == removed or item.startswith(removed + '/') for removed in omitted)]
+    for path in selected:
+        if path.is_dir(): shutil.rmtree(path)
+        else: path.unlink()
+    if retained != lines:
+        relocations.write_text(''.join(name + '\n' for name in retained), encoding='utf-8')
+    return {'source_sha256': source_sha256, 'paths': omitted}
+
+
 def build(recipe, cache, destination, jobs):
     host_check(recipe)
     verify_inputs(recipe, cache)
@@ -277,6 +339,7 @@ def build(recipe, cache, destination, jobs):
                 else: raise ValueError('unresolved absolute SDK link: ' + str(path))
         tree = work / 'sdk'
         materialize(supplier, tree)
+        omitted = omit_target_runtime(tree, manifest['target'] + '/sysroot', manifest['glibc_source']['sha256'])
         licenses = tree / 'share/sdk-licenses'
         shutil.copytree(output / 'legal-info', licenses, ignore=lambda directory, entries: set(entries) & {'sources', 'host-sources'})
         # Buildroot relocates selected generated text files on installation.
@@ -289,6 +352,7 @@ def build(recipe, cache, destination, jobs):
                         runtime_source_sha256=manifest['glibc_source']['sha256'],
                         host_tools={'cmake': 'bin/cmake', 'ctest': 'bin/ctest', 'cpack': 'bin/cpack', 'ninja': 'bin/ninja', 'python': 'bin/python3'})
         metadata['relocation'] = 'buildroot'
+        metadata['omitted_target_runtime'] = omitted
         metadata['capabilities'] = manifest.get('capabilities', ['core', 'terminal', 'framebuffer', 'hosted-web'])
         metadata['runtime_host_services'] = manifest.get('runtime_host_services', [])
         write_json(tree / 'sdk.json', metadata)

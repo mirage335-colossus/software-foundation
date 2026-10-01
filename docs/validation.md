@@ -8,11 +8,9 @@ Release delivery must preserve its own exact, immutable input and evidence inven
 The main environment is Debian 13 x86_64, GCC 14.2, CMake 3.31.6, Ninja 1.12.1 and
 Python 3.13.5. Native GUI qualification also used an isolated Clang 19 toolchain,
 verified toolkit inputs and a virtual display. A remote repository is configured.
-Development feedback passed on the preceding revision; its first full hosted
-candidate exposed Windows and package-discovery failures. Those failures produced
-focused regressions and fixes. A subsequent hosted result must identify its exact
-revision and scope before it supersedes that failure. No public release was
-published by these local checks.
+Observed hosted results below identify exact revisions and scopes. Earlier
+failures produced focused regressions and repairs; unqualified scopes remain
+explicit. No public release was published by these checks.
 
 ## Observed mechanisms
 
@@ -30,15 +28,18 @@ published by these local checks.
 | Distribution | Seven actual Debian payload/signature/update tests and 17 Arch/Gentoo generation/channel tests passed; combined archives select the requested backend without compilation, preserve shared files and provenance, and reject unknown executables, rollback, tampering and same-version replacement |
 | GitHub delivery | 29 offline lifecycle/transport fixtures passed; they exercise exact inventories, immutable bytes, retained certification and promotion rejection, without remote mutation |
 | Documentation | Local destinations, heading anchors, strict JSON and requirement-to-code/test references checked |
-| Workflows | Eight workflows passed actionlint; 48 CI helper and 11 source-identity cases passed; hosted execution remains separate evidence |
+| Workflows | Eight workflows passed actionlint; 49 CI helper, eight SDK-retention and 11 source-identity cases passed; hosted execution remains separate evidence |
 | Installed documentation | Both manual pages passed formatting checks and relocated installation checks; Debian, Arch and Gentoo fixtures preserve variant-specific public manual names |
 | Windows host graphics | 25 prerequisite fixtures and 15 artifact fixtures passed; exact pinned driver extraction and cleanup passed; native WGL probing and real Windows GUI captures require hosted execution |
-| APT client adapter | Disposable-container preflight and descendant-timeout regressions passed; real signed HTTPS install/update/tamper-rejection/removal is required in the native Bookworm workflow |
+| APT client adapter | Disposable-container preflight and descendant-timeout regressions passed; actual signed HTTPS install/update/tamper-rejection/removal passed in the hosted Bookworm workflow |
 
-The combined native Release run with distribution tests passed all 31 CTest
-entries, including the relocated installed consumer and both manual pages. Its
-27 inner Python suites recorded 567 executed passing cases and one explicit
-native-Windows exclusion. No unexpected skips were accepted. The preceding
+Combined native Release verification with distribution tests passed all 32 CTest
+entries, including the relocated installed consumer and both manual pages. Thirty
+passed in the initial run; two signing suites passed on a focused rerun after
+allowing their disposable local GnuPG agent sockets. Its 28 inner Python suites
+recorded 588 executed passing cases and two explicit native-Windows exclusions.
+The selected-linker native case passed separately on Windows as recorded below.
+No unexpected skips were accepted. The preceding
 portable native archive also passed complete inventory verification, relocated
 execution and an independent installed-library consumer build.
 
@@ -54,67 +55,47 @@ local implementation checks, not a complete release-policy certification.
 
 ## Hosted candidate and maintenance observations
 
-Candidate [36887644570](https://github.com/mirage335-colossus/software-foundation/actions/runs/36887644570)
-executed revision `bb1e775e4a02336e349aa2ed54c24a1c311fd76d` on Linux x86_64,
-Linux ARM64 and Windows x86_64. Native core and installed-consumer checks,
-independent packages, copied-archive execution and sanitizer checks passed.
-Linux tool suites passed. Windows tool suites exposed optimistic readers blocking
-atomic registry replacement and nonportable fixture paths; the Debian integration
-found private permissions on public installed metadata. The overall run failed.
+Full candidate [36893866396](https://github.com/mirage335-colossus/software-foundation/actions/runs/36893866396)
+passed at `a0ceba8f1bf93bc19b8270137639d65cdf710cc4` on Windows x86_64,
+Linux x86_64 and Linux ARM64. Native source/tool suites, independent packaging,
+fresh copied-archive execution and sanitizer checks passed. The real Debian client
+receipt records signed HTTPS refresh, installation, exact payload verification,
+runtime execution, upgrade, tampered-signature rejection and removal. This
+supersedes earlier candidate failures for those exact scopes and inputs.
 
-Focused repairs preserve strict inventory and mutation checks. The public runtime
-metadata now uses `0644` and its runtime directory uses `0755`, including under
-`umask 077`; private records retain `0600`. Fixtures now match the
-producer's canonical physical roots and portable inventory separators. Local
-verification of those repairs passed 46 coordination, 42 CI, 24 portability, 32 SDK
-and 17 test-plan cases with no exclusions.
+Browser SDK maintenance [36892115955](https://github.com/mirage335-colossus/software-foundation/actions/runs/36892115955)
+passed at `cad7886508b0f5d95f16835fa2d70d68d4c19477` with `execute=false`.
+Production, two core and 28 GUI consumer checks, and all three artifact uploads
+succeeded. This also qualified the container builder's host UID/GID mapping and
+readable retained output. Actual browser-engine interactions remain the separately
+observed scope recorded above; this maintenance run did not execute browser engines.
 
-Candidate [36889414403](https://github.com/mirage335-colossus/software-foundation/actions/runs/36889414403)
-at `f9b7bc6035669b542be8b738bdfcc8ce1c4a6606` confirmed the Windows fixture
-repairs, but deterministic open-reader replacement tests exposed the remaining
-Windows primitive limitation. The compatibility board now serializes complete
-reads and writes with one brief, thread-owned mutex; its 46 local coordination cases and 15
-migration cases passed, including a real reader/writer overlap test. APT reached
-actual package retrieval and exposed unsupported absolute payload URLs. The
-repository now uses relative payload paths and immutable source URIs; 15 release
-adapter and seven signed repository cases passed locally. These repairs still
-require a later native hosted result before either failed run is superseded.
+Windows SDK maintenance [36892089929](https://github.com/mirage335-colossus/software-foundation/actions/runs/36892089929)
+completed the maintenance download closure, fresh offline build and export of all
+17 dependencies, then failed before consumer execution because a linker help
+command returned a nonzero status. Consumers now use validated native PE file
+version inspection. The real selected-linker test passed on the Windows tools job
+of [36896590427](https://github.com/mirage335-colossus/software-foundation/actions/runs/36896590427)
+at `25a674d6c564b6068c0c73c0ee0e2fd6c2444062`: the build suite recorded 12 passes
+and no exclusions. That candidate exposed one short-path fixture mismatch;
+correcting it preserves the producer's existing canonical-path behavior.
 
-Prepared-SDK maintenance
-[36887657215](https://github.com/mirage335-colossus/software-foundation/actions/runs/36887657215)
-uses `profile=all-gui`, all targets and `execute=false`. Its Windows startup exposed
-a missing graphics-cache directory before acquisition; that caller now creates the
-directory, and regressions cover both acquisition paths and a conflicting file.
-The browser producer and all 28 GUI consumer CTests passed, but artifact upload
-failed because container output belonged to a different user from the host runner.
-The container workflows now bind the unprivileged builder to the host UID/GID and
-preserve exact artifact bytes and modes. Eleven Linux container-helper cases passed,
-including actual same-owner transfers of private files; different-UID Docker
-execution remains hosted qualification. Forty-eight CI helper cases passed with
-the shared Windows GUI probe/test/cleanup adapter also used before packaging.
-The ARM64 job completed cold compilation, the SDK target and license-information
-collection, then assembly rejected unresolved runtime-service aliases inherited
-from the supplier skeleton. Exact-target normalization now omits those two aliases;
-36 local SDK cases passed, including atomic rejection of unexpected entries and
-continued rejection of other missing or escaping links. The native SDK group and
-its consumers still require the corrected hosted attempt.
-Windows-only maintenance [36889465586](https://github.com/mirage335-colossus/software-foundation/actions/runs/36889465586)
-passed graphics acquisition, then the cold offline dependency build correctly
-rejected a missing late build-tool download. Explicit maintenance now traverses
-full dependency installation to retain those late inputs, discards its compiled
-output, and still requires a separate fresh offline build. All 33 local SDK cases
-passed, including late-input retention and failed-preparation rejection.
-Candidate [36892065203](https://github.com/mirage335-colossus/software-foundation/actions/runs/36892065203)
-completed successfully at `cad7886508b0f5d95f16835fa2d70d68d4c19477` on Windows
-x86_64, Linux x86_64 and Linux ARM64. It supersedes the preceding candidate failures
-for those exact scopes. The real Debian client receipt records signed HTTPS refresh,
-installation, exact payload verification, runtime execution, upgrade, rejection of
-a tampered signature, and removal. Independent packaging, copied-archive execution,
-native source/tool suites and sanitizer checks passed. The later native-SDK
-normalization change has its focused evidence above and is a separate qualification.
+The initial ARM64 cold build completed compilation, the SDK target and supplier
+license-information collection, then rejected runtime-only skeleton aliases during
+assembly. The subsequent source review identified additional target-only libc
+programs/modules and required development-library aliases. Exact source-bound
+omission and identical-provider checks preserve compiler inputs and strict
+application ABI policy; 39 SDK and 27 actual-ELF/portability fixture cases passed.
+Corrected native production and all GUI consumers still require hosted results.
 
-A requested, queued or running job is not successful qualification, and no release
-publication is authorized by these checks.
+Eight complete-group retention tests verify that a consumer failure remains a
+failure while checked binary/source/checksum bytes can be retained for diagnosis
+and local retesting. Their receipt is explicitly unqualified. No failed-run
+artifact becomes a qualified base automatically.
+
+A requested, queued or running job is not successful qualification. Evidence is
+reused only for identical relevant inputs; the latest repairs still need their
+prepared-SDK hosted checks. No release publication is authorized by these runs.
 
 ## Reproduce the integrated checks
 
@@ -133,16 +114,18 @@ scope. The fixtures use disposable keys and never install or publish packages.
 
 ## Material limits
 
-- Native Windows and ARM64 execution, Windows toolchain selection and Job Object
-  behavior, and older Linux user-space/kernel combinations require their actual
-  environments. Mocked format/API checks are not native execution.
+- Native Windows and ARM64 core/tool/package execution is recorded above.
+  Prepared GUI SDKs, the oldest declared Windows runtime, and older Linux
+  user-space/kernel combinations need their own actual environments. Mocked
+  format/API checks do not replace those results.
 - The cold native source SDK recipe requires an actual Debian 12 Bookworm builder.
   Browser SDK tools are retained upstream binaries; their native source rebuild
   is not supplied by that recipe. Source availability is documented separately.
 - GUI redistribution remains blocked by unresolved upstream top-level terms.
   Local compilation and tests do not approve binary redistribution.
-- Arch, Gentoo and Debian client installation/update/removal require disposable
-  native package-manager environments. Signed-channel fixtures are distinct evidence.
+- Arch and Gentoo client installation/update/removal require disposable native
+  package-manager environments; their signed-channel fixtures are distinct
+  evidence. The executed Debian client result is limited to its recorded host.
 - Hosted CI, GitHub permissions/API behavior, publication credentials and live
   package channels need deployment qualification in the adopted repository.
 - Shared-source coordination requires the stated filesystem primitives and

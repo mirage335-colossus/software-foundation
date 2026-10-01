@@ -228,6 +228,57 @@ class PortabilityTests(unittest.TestCase):
                    'processor': self.processor, 'files': file_inventory(sysroot)}
         return sysroot, context
 
+    def sdk_companion_fixture(self):
+        from dependency_archive import file_inventory
+        sysroot, context = self.sdk_runtime_fixture()
+        loader = next(path for path in (sysroot / 'lib').iterdir() if path.name.startswith('ld-'))
+        (self.root / 'companion.c').write_text('extern int internal_value(void); int companion(void) { return internal_value(); }\n')
+        (self.root / 'companion.map').write_text('GLIBC_2.22 { global: companion; local: *; };\n')
+        for name in ('libmvec.so.1', 'libresolv.so.2', 'libnss_db.so.2'):
+            path = sysroot / 'lib' / name
+            subprocess.run(['cc', '-shared', '-nostdlib', '-fPIC', str(self.root / 'companion.c'), str(loader),
+                            '-Wl,--version-script=' + str(self.root / 'companion.map'), '-Wl,-soname,' + name,
+                            '-o', str(path)], check=True)
+            shutil.copyfile(path, path.with_name(name.rsplit('.', 1)[0]))
+        context['files'] = file_inventory(sysroot)
+        return sysroot, context
+
+    def test_sdk_companions_and_identical_development_aliases_are_audited(self):
+        sysroot, context = self.sdk_companion_fixture()
+        report = verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+        for name in ('libmvec.so', 'libmvec.so.1', 'libresolv.so', 'libnss_db.so'):
+            self.assertTrue(report['files']['lib/' + name]['private_requirements'])
+        with self.assertRaisesRegex(ValueError, 'PRIVATE'):
+            verify_abi.audit(sysroot / 'lib/libmvec.so.1', processor=self.processor)
+
+    def test_sdk_development_alias_needs_exact_provider_bytes(self):
+        from dependency_archive import file_inventory
+        sysroot, context = self.sdk_companion_fixture()
+        alias = sysroot / 'lib/libmvec.so'
+        alias.write_bytes(alias.read_bytes() + b'changed')
+        context['files'] = file_inventory(sysroot)
+        with self.assertRaisesRegex(ValueError, 'identical runtime provider'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+        shutil.copyfile(sysroot / 'lib/libmvec.so.1', alias)
+        context['files'] = file_inventory(sysroot); del context['files']['lib/libmvec.so.1']
+        with self.assertRaisesRegex(ValueError, 'identical runtime provider'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+
+    def test_target_projection_does_not_exempt_other_private_consumers(self):
+        import distro_sdk
+        sysroot, context = self.sdk_companion_fixture()
+        (sysroot / 'usr/bin').mkdir(parents=True)
+        for name in ('gencat', 'iconv', 'application'):
+            shutil.copyfile(sysroot / 'lib/libmvec.so.1', sysroot / 'usr/bin' / name)
+        relocations = self.root / 'share/buildroot/sdk-relocs'; relocations.parent.mkdir(parents=True)
+        relocations.write_text('')
+        distro_sdk.omit_target_runtime(self.root, 'sysroot', distro_sdk.GLIBC_RUNTIME_SOURCE)
+        self.assertFalse((sysroot / 'usr/bin/iconv').exists())
+        self.assertFalse((sysroot / 'usr/bin/gencat').exists())
+        self.assertTrue((sysroot / 'usr/bin/application').is_file())
+        with self.assertRaisesRegex(ValueError, 'PRIVATE'):
+            verify_abi.audit(sysroot, processor=self.processor, host=True, sdk_sysroot=context)
+
     def test_sdk_private_cohort_does_not_weaken_package_audit(self):
         sysroot, context = self.sdk_runtime_fixture()
         with self.assertRaisesRegex(ValueError, 'PRIVATE'):

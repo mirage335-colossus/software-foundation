@@ -215,6 +215,12 @@ or escaping aliases still fail materialization. Never resolve a target runtime
 service through the build host's filesystem or relax general link validation to
 make a supplier skeleton copy succeed.
 
+The compiler SDK also omits a reviewed, source-bound set of target OS programs
+and conversion modules. Host tools, target headers and link libraries,
+`fltk-config` and `sdl2-config` remain. New libc source identities require an
+explicit inventory review. Omission records name every removed path and preserve
+the supplier relocation entries for retained files.
+
 The x86_64 recipe is the default. The native ARM64 recipe is
 [`aarch64/recipe.json`](../third_party/sdk/aarch64/recipe.json); pass it with
 `--recipe` to every producer command on a Debian 12 ARM64 host. It selects the
@@ -316,6 +322,12 @@ x64, static CRT and an explicit Windows SDK. `select-windows-toolchain.ps1`
 inventories installed components, prefers the supported installed toolset, and
 fails instead of silently switching to a newer ABI family. `ci_windows.ps1`
 initializes that exact environment and reports its compiler/linker details.
+Consumers inspect the selected native Microsoft linker file through the shared
+[`windows_toolchain.py`](../tools/windows_toolchain.py) adapter. It checks the
+selected toolset path, x64 executable identity, Microsoft version resource and
+unchanged file bytes, then enforces the recorded minimum linker version. A help
+command exit status is not a version probe. The ordinary Windows tools suite
+exercises the actual native resource API before expensive SDK production.
 
 [`windows-base.json`](../third_party/sdk/windows-base.json) pins the upstream
 package-manager revision, target triplet, ports, Debug/Release variants, runtime
@@ -471,6 +483,85 @@ The SDK-only libc audit binds its ordinary files, target architecture, retained
 source digest and complete recipe identity to one sysroot. It permits the private
 interface only between the declared libc cohort and its matching loader, checks
 numeric runtime versions, and rejects changed files, wrong locations or missing
-providers. Application package audits retain their strict private-interface and
+providers. Materialized libc development aliases must have exactly the same
+bytes as their retained versioned provider. Application package audits retain
+their strict private-interface and
 bundled-libc rejection. This distinction is required to inspect a compiler
 sysroot without weakening the deployed application's runtime policy.
+
+## Retain complete SDK bytes after a consumer failure
+
+SDK maintenance runs a separate retention check even when production or consumer
+qualification fails. It recomputes the recipe for the selected target and profile,
+checks the selected origin, and verifies the exact binary/source/checksum triplet,
+including both complete inner inventories. Only a successful check permits the
+`sdk-group-<target>-<attempt>` workflow artifact to upload. Missing, partial,
+unexpected or changed bytes produce no retention success output.
+
+The sibling `sdk-proof-<target>-<attempt>` artifact includes `sdk-retention.json`.
+It binds the target, profile, recipe, source commit, run, attempt and every group
+file digest. Its `qualification` is always `unqualified`, and
+`publication_approved` is false: this receipt establishes reusable bytes, not a
+working consumer. Existing consumer failures remain failures. The publisher still
+needs successful producer jobs and explicit execution authorization.
+
+For a local retry, select an exact repository, maintenance run, source commit,
+target and attempt. Inspect its identity and download its exact named artifacts
+into new private directories; do not select the newest similarly named artifact.
+The examples below use Windows and a placeholder complete recipe ID. Replace all
+uppercase placeholders with the reviewed values before running commands.
+
+```text
+gh run view RUN_ID --repo OWNER/REPOSITORY --json headSha,status,conclusion,event,workflowName,url
+gh run download RUN_ID --repo OWNER/REPOSITORY --name sdk-group-windows-x86_64-ATTEMPT --dir build/retry/group
+gh run download RUN_ID --repo OWNER/REPOSITORY --name sdk-proof-windows-x86_64-ATTEMPT --dir build/retry/proof
+python tools/sdk_windows.py recipe-id --recipe-file third_party/sdk/windows-gui/windows-base.json
+python tools/dependency_store.py verify --group build/retry/group --recipe RECIPE
+```
+
+Use `third_party/sdk/windows-base.json` for the core profile. Confirm the printed
+recipe matches the receipt and the selected checkout's recipe, and compare the
+verification output's three file digests with the receipt. Find the receipt inside
+the downloaded proof artifact; its relative directory depends on which evidence
+files were present. A mismatch requires investigation rather than relabelling the
+group. A workflow artifact from another repository or source commit is not trusted
+merely because its filenames and self-contained checksums match.
+
+On a matching Windows host, select the pinned external compiler in PowerShell,
+then install the dependencies into a new location and run a fresh consumer:
+
+```powershell
+./tools/ci_windows.ps1 -Output build/retry/windows-toolchain.json
+$selected = Get-Content build/retry/windows-toolchain.json -Raw | ConvertFrom-Json
+python tools/sdk_windows.py install --group build/retry/group --recipe RECIPE --output build/retry/dependencies --linker-version $selected.LinkerVersion
+python tools/build.py test release --windows-dependencies build/retry/dependencies --dependency-group build/retry/group --build-dir build/retry/core-build --portable --full --jobs 2
+```
+
+The core check does not qualify GUI capabilities. To rerun the existing complete
+GUI consumer, supply the separately retained GUI input group and pinned external
+host graphics archive. In the same selected compiler environment:
+
+```text
+python -c "import sys; from pathlib import Path; sys.path.insert(0, 'tools'); import ci_plan; ci_plan.prepared_check('windows-x86_64', 'RECIPE', Path('build/retry/group'), Path('build/retry/gui-check'), 2, gui_group=Path('RETAINED_GUI_GROUP'), graphics_archive=Path('RETAINED_GRAPHICS_ARCHIVE'))"
+```
+
+That command verifies and relocates the SDK, builds in one tree, probes actual
+host graphics, runs the complete GUI checks and removes its temporary driver
+files before reporting success. It does not download missing inputs. GUI inputs
+and host graphics remain subject to their separate retention and redistribution
+rules.
+
+For a matching Linux host, verify the group as above and use the existing SDK
+consumer commands:
+
+```text
+python tools/sdk.py install --group build/retry/group --recipe RECIPE --output build/retry/sdk
+python tools/sdk.py verify build/retry/sdk --release
+python tools/build.py test release --sdk build/retry/sdk --build-dir build/retry/native-build --portable --full --jobs 2
+```
+
+Choose a new output directory for every attempt and preserve failure evidence.
+Native GUI and browser requirements still need their relevant full consumers.
+Hosted `source=auto` and `source=base` continue to use qualified base storage;
+failed-run artifact reuse is a manual local operation, not a hosted fallback.
+A retained group or local retry does not itself authorize base publication.
