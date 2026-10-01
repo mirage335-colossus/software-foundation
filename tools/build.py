@@ -64,9 +64,9 @@ def verify_windows_linker(minimum):
     if tools not in sys.path:
         sys.path.insert(0, tools)
     from sdk_windows import linker_version
-    output = subprocess.check_output(["link.exe", "/?"], stderr=subprocess.STDOUT, text=True)
-    actual = re.search(r"Version\s+(\d+(?:\.\d+)+)", output)
-    if not actual or linker_version(actual[1]) < linker_version(minimum):
+    from windows_toolchain import inspect_selected_linker
+    actual = inspect_selected_linker()['version']
+    if linker_version(actual) < linker_version(minimum):
         raise ValueError("actual consuming linker is older than the dependency producer")
 
 

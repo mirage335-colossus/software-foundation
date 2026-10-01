@@ -553,7 +553,11 @@ class WindowsGraphicsCiTests(unittest.TestCase):
             try: yield current
             finally: events.append('cleanup'); current.receipt['cleanup'] = 'removed'
         graphics.qualified_stage.side_effect = stage
-        def selected(name): return sdk if name == 'sdk_windows' else graphics if name == 'windows_graphics' else original(name)
+        def selected(name):
+            if name == 'windows_toolchain':
+                import windows_toolchain
+                return windows_toolchain
+            return sdk if name == 'sdk_windows' else graphics if name == 'windows_graphics' else original(name)
         def command(argv, **kwargs):
             commands.append(argv)
             if argv[0] == 'cmake': events.append('prerequisites')
@@ -566,10 +570,11 @@ class WindowsGraphicsCiTests(unittest.TestCase):
             captures = output / 'build/gui/visual-evidence/run-one'; captures.mkdir(parents=True)
             for name in ('qualification.json', 'capture.png', 'capture.ppm'): (captures / name).write_bytes(b'fixture')
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
-             patch.object(ci.subprocess, 'check_output', return_value='Version 14.44.35207'), \
+             patch('windows_toolchain.inspect_selected_linker', return_value={'version':'14.44.35207.0'}), \
              patch.object(ci.subprocess, 'run', side_effect=command), patch.object(ci, 'graphics_test', side_effect=tested):
             result = ci.prepared_check('windows-x86_64', fixture.fixture.recipe, root / 'group', output,
                                       gui_group=root / 'group', graphics_archive=root / 'graphics.7z')
+        sdk.install.assert_called_once_with(root / 'group', fixture.fixture.recipe, output / 'dependencies', '14.44.35207.0')
         self.assertEqual(events, ['build', 'prerequisites', 'probe', 'test', 'cleanup'])
         self.assertEqual(json.loads((output / 'graphics.json').read_text())['cleanup'], 'removed')
         self.assertIn('graphics.json', result['graphics_evidence'])
@@ -579,7 +584,7 @@ class WindowsGraphicsCiTests(unittest.TestCase):
         graphics.fetch.assert_not_called(); graphics.fetch_retained.assert_not_called()
         events.clear(); commands.clear(); output = root / 'failed-graphics-check'
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
-             patch.object(ci.subprocess, 'check_output', return_value='Version 14.44.35207'), \
+             patch('windows_toolchain.inspect_selected_linker', return_value={'version':'14.44.35207.0'}), \
              patch.object(ci.subprocess, 'run', side_effect=command), \
              patch.object(ci, 'graphics_test', side_effect=RuntimeError('GUI assertion failed')):
             with self.assertRaisesRegex(RuntimeError, 'GUI assertion failed'):
@@ -592,7 +597,7 @@ class WindowsGraphicsCiTests(unittest.TestCase):
         failure = RuntimeError('probe setup failed'); failure.graphics_receipt = {'cleanup': 'retained-uncertain'}
         graphics.qualified_stage.side_effect = failure
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
-             patch.object(ci.subprocess, 'check_output', return_value='Version 14.44.35207'), \
+             patch('windows_toolchain.inspect_selected_linker', return_value={'version':'14.44.35207.0'}), \
              patch.object(ci.subprocess, 'run', side_effect=command):
             with self.assertRaisesRegex(RuntimeError, 'probe setup failed'):
                 ci.prepared_check('windows-x86_64', fixture.fixture.recipe, root / 'group', output,
@@ -702,6 +707,9 @@ class WindowsGraphicsPackageTests(unittest.TestCase):
                 capture = build / 'gui/visual-evidence/fixture'; capture.mkdir(parents=True)
                 for name in ('qualification.json', 'capture.png', 'capture.ppm'): (capture / name).write_bytes(b'fixture')
         def selected(name):
+            if name == 'windows_toolchain':
+                import windows_toolchain
+                return windows_toolchain
             return {'sdk_windows': self.sdk, 'windows_graphics': self.graphics, 'artifact': self.artifacts}.get(name) or self.real_module(name)
         def launched(argv, **options):
             self.commands.append(argv)
@@ -723,13 +731,22 @@ class WindowsGraphicsPackageTests(unittest.TestCase):
         self.graphics.qualified_stage.side_effect = stage
         self.graphics.run_owned.side_effect = run_test
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
-             patch.object(ci.subprocess, 'check_output', return_value='Version 14.44.35207'), \
+             patch('windows_toolchain.inspect_selected_linker', return_value={'version':'14.44.35207.0'},
+                   side_effect=getattr(self, 'probe_error', None)), \
              patch.object(ci.subprocess, 'run', side_effect=launched):
             return ci.prepared_package(target, self.recipe, self.group, source or self.gui_source,
                 self.output, 2, graphics_archive=self.archive if graphics else None)
 
+    def test_unverified_windows_linker_stops_before_dependency_install_or_build(self):
+        self.probe_error = ValueError('selected linker identity invalid')
+        with self.assertRaisesRegex(ValueError, 'linker identity invalid'): self.produce()
+        self.sdk.install.assert_not_called()
+        self.assertEqual(self.commands, [])
+        self.graphics.qualified_stage.assert_not_called()
+
     def test_package_follows_complete_test_and_host_cleanup_and_binds_evidence(self):
         result = self.produce()
+        self.sdk.install.assert_called_once_with(self.group, self.recipe, self.output / 'work/dependencies', '14.44.35207.0')
         self.assertEqual(self.events, ['build', 'prerequisites', 'probe', 'test', 'cleanup', 'package'])
         self.graphics.verify_archive.assert_called_once_with(self.archive)
         self.graphics.fetch.assert_not_called(); self.graphics.fetch_retained.assert_not_called()

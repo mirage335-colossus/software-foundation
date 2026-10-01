@@ -12,6 +12,25 @@ spec.loader.exec_module(check)
 
 
 class ReleaseCheckTests(unittest.TestCase):
+    def test_windows_source_consumes_verified_file_version_and_rejects_bad_probe(self):
+        import sdk_windows
+        import windows_toolchain
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); entry = {'target':'windows-x86_64','sdk_recipe':'a'*64,'backends':[]}
+            manifest = {'source':{'archive':'source.tar.gz'}}
+            with patch.object(check,'native_target'), patch.object(check,'verify_source_archive',return_value='snapshot'), \
+                 patch.object(check,'extract'), patch.object(check,'source_tree',return_value='snapshot'), \
+                 patch.object(windows_toolchain,'inspect_selected_linker',return_value={'version':'14.44.35207.0'}) as probe, \
+                 patch.object(sdk_windows,'install',side_effect=RuntimeError('stop after verified version')) as install:
+                with self.assertRaisesRegex(RuntimeError,'stop after verified version'):
+                    check.run_source(root,manifest,entry,root/'work',root/'evidence',2)
+                install.assert_called_once_with(root/'dependencies'/entry['sdk_recipe'],entry['sdk_recipe'],
+                    root/'work/windows-dependencies','14.44.35207.0')
+                install.reset_mock();probe.side_effect=ValueError('selected linker identity failed')
+                with self.assertRaisesRegex(ValueError,'identity failed'):
+                    check.run_source(root,manifest,entry,root/'work',root/'evidence',2)
+                install.assert_not_called()
+
     def test_windows_source_stages_only_after_build_and_saves_final_cleanup(self):
         from contextlib import contextmanager
         from types import SimpleNamespace

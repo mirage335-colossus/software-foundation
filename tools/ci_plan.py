@@ -162,11 +162,8 @@ def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_
     command = [sys.executable, str(root / 'tools/build.py'), 'test', 'release', '--full',
                '--portable', '--build-dir', str(build), '--jobs', str(jobs), '--junit', str(output / 'source.junit.xml')]
     if target == 'windows-x86_64':
-        banner = subprocess.check_output(['link.exe', '/?'], text=True, stderr=subprocess.STDOUT)
-        found = re.search(r'Version\s+(\d+(?:\.\d+)+)', banner)
-        if not found:
-            raise ValueError('cannot inspect selected linker')
-        sdk_metadata = module('sdk_windows').install(group, recipe, work / 'dependencies', found[1])
+        version = module('windows_toolchain').inspect_selected_linker()['version']
+        sdk_metadata = module('sdk_windows').install(group, recipe, work / 'dependencies', version)
         command += ['--dependency-group', str(group), '--windows-dependencies', str(work / 'dependencies')]
     else:
         sdk_metadata = module('sdk').install(group, recipe, work / 'sdk', production=True)
@@ -551,10 +548,8 @@ def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphi
     command = [sys.executable, str(ROOT / 'tools/build.py'), 'test', 'release', '--portable',
                '--jobs', str(jobs), '--build-dir', str(output / 'build'), '--junit', str(output / 'source.junit.xml')]
     if target == 'windows-x86_64':
-        banner = subprocess.check_output(['link.exe', '/?'], text=True, stderr=subprocess.STDOUT)
-        found = re.search(r'Version\s+(\d+(?:\.\d+)+)', banner)
-        if not found: raise ValueError('cannot inspect selected linker')
-        metadata = module('sdk_windows').install(group, recipe, output / 'dependencies', found[1])
+        version = module('windows_toolchain').inspect_selected_linker()['version']
+        metadata = module('sdk_windows').install(group, recipe, output / 'dependencies', version)
         command += ['--dependency-group', str(group), '--windows-dependencies', str(output / 'dependencies')]
     else:
         metadata = module('sdk').install(group, recipe, output / 'sdk', production=True)

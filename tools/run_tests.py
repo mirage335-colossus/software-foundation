@@ -25,6 +25,8 @@ def flatten(suite):
 def inapplicable(case, system):
     """Only platform facts exclude cases; missing tools/permissions are failures."""
     name = case.id()
+    if system != 'Windows' and name == 'test_build.BuildTests.test_native_windows_selected_linker_file_identity':
+        return 'Native Win32 linker file identity inspection belongs to Windows runners.'
     if system != 'Linux' and name.startswith('test_sdk.NativeLinuxToolchainTests.'):
         return 'Native Linux retained C/C++ compiler fixture belongs to Linux runners.'
     if system != 'Linux' and name == 'test_release_check.ReleaseCheckTests.test_apt_timeout_stops_descendant_before_cleanup':

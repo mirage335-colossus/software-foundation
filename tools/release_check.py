@@ -233,12 +233,9 @@ def run_source(candidate, manifest, entry, work, evidence, jobs, recovery=False,
         import sdk_windows
         # Query the selected actual linker; environment setup must already have
         # used the repository's Windows selector. No compiler media is fetched.
-        output = subprocess.check_output(["link.exe", "/?"], stderr=subprocess.STDOUT, text=True)
-        import re
-        version = re.search(r"Version\s+(\d+(?:\.\d+)+)", output)
-        if not version:
-            raise ValueError("cannot establish the actual consuming linker version")
-        sdk_windows.install(group, entry["sdk_recipe"], work / "windows-dependencies", version[1])
+        from windows_toolchain import inspect_selected_linker
+        version = inspect_selected_linker()['version']
+        sdk_windows.install(group, entry["sdk_recipe"], work / "windows-dependencies", version)
         command += ["--dependency-group", str(group), "--windows-dependencies", str(work / "windows-dependencies")]
     for recipe in entry.get("dependency_recipes", [entry["sdk_recipe"]]):
         if recipe != entry["sdk_recipe"]:
