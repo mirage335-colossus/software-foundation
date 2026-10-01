@@ -51,8 +51,7 @@ class FakeGitHub:
             if name in self.refs: raise t.delivery.DeliveryError('already exists')
             self.refs[name] = body['sha']; return {}
         if path == '/releases' and method == 'POST':
-            if any(row['tag_name'] == body['tag_name'] for row in self.releases):
-                raise t.delivery.DeliveryError('release already exists')
+            # The real API permits duplicate draft tags; never fake uniqueness.
             self.releases.append(dict(body, id=9, assets=[])); return copy.deepcopy(self.releases[-1])
         raise AssertionError((endpoint, method, body))
 
@@ -250,12 +249,32 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(first['release_id'], interleaved[0]['release_id'])
         self.assertNotEqual(first['manifest']['id'], interleaved[0]['manifest']['id'])
         self.assertEqual(2, len([c for c in self.remote.calls if c == ('POST', 'repos/example/project/git/refs')]))
-        self.assertEqual(2, len([c for c in self.remote.calls if c == ('POST', 'repos/example/project/releases')]))
+        self.assertEqual(1, len([c for c in self.remote.calls if c == ('POST', 'repos/example/project/releases')]))
         for job in self.remote.jobs: job.update(status='completed', conclusion='success')
         one = self.fetch(); two = self.fetch(name='proof', job_id=31, output=self.root / 'proof')
         self.assertEqual(30, one['producer']['id']); self.assertEqual(31, two['producer']['id'])
         self.assertEqual(['tool'], list(two['manifest']['files']))
         self.assertEqual((self.root / 'restored/tool').read_bytes(), (self.root / 'proof/tool').read_bytes())
+
+    def test_preexisting_uninitialized_tag_never_grants_draft_creation(self):
+        self.remote.refs['ci-12-attempt-2'] = self.context['source_commit']
+        with patch.object(t.time, 'sleep'), self.assertRaisesRegex(ValueError, 'not visible'):
+            self.publish()
+        self.assertFalse(self.remote.releases)
+        self.assertFalse(any(c[0] == 'POST' for c in self.remote.calls))
+
+    def test_uncertain_ref_creation_response_never_grants_draft_creation(self):
+        original = self.remote.json
+        def uncertain(endpoint, **kwargs):
+            result = original(endpoint, **kwargs)
+            if endpoint.endswith('/git/refs') and kwargs.get('method') == 'POST':
+                raise t.delivery.DeliveryError('response lost after ref creation', True)
+            return result
+        with patch.object(self.remote, 'json', side_effect=uncertain), patch.object(t.time, 'sleep'), \
+                self.assertRaisesRegex(ValueError, 'not visible'):
+            self.publish()
+        self.assertEqual(1, len(self.remote.refs)); self.assertFalse(self.remote.releases)
+        self.assertFalse(any(c == ('POST', 'repos/example/project/releases') for c in self.remote.calls))
 
     def test_manifest_context_types_and_metadata_bounds_are_strict(self):
         self.publish(); self.remote.complete(); row, base = self.manifest()

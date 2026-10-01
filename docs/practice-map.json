@@ -632,6 +632,20 @@
       "checks": [
         "tests/test_screenshots.py"
       ]
+    },
+    {
+      "id": "CI-LEGACY-1",
+      "requirement": "Preserve explicitly selected original archive bytes and provenance before independently verified scoped cleanup.",
+      "documents": [
+        "docs/legacy-artifacts.md"
+      ],
+      "implementation": [
+        "tools/legacy_artifacts.py",
+        ".github/workflows/legacy-artifacts.yml"
+      ],
+      "checks": [
+        "tests/test_legacy_artifacts.py"
+      ]
     }
   ]
 }

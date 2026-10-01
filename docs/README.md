@@ -8,7 +8,7 @@ what was observed. A proposed platform or procedure is not execution evidence.
 | --- | --- |
 | Scope and specification | [Engineering contract](engineering-contract.md), [requirements](requirements.md), [practice map](practice-map.json), [architecture and directory map](architecture.md) |
 | Build and SDK | [Building](building.md), [SDK](sdk.md), [portability](portability.md), [COMPILE](../COMPILE) |
-| Verification speed and coverage | [Testing](testing.md), [CI](ci.md), [validation](validation.md) |
+| Verification speed and coverage | [Testing](testing.md), [CI](ci.md), [legacy archive preservation](legacy-artifacts.md), [validation](validation.md) |
 | Dependency maintenance | [Dependency requirements](dependencies.md), [inventory](../third_party/README.md) |
 | Installed manuals | [Manual sources and preview](man/README.md) |
 | Interfaces | [GUI contract and integration](gui-boundary.md), [GUI audit](gui-audit.md), [Windows graphics prerequisite](windows-graphics.md), [core source](../include/foundation/store.hpp) |

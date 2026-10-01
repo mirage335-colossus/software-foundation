@@ -56,6 +56,8 @@ The manual lifecycle is executable, not only described:
   base only after required consumers succeed and execution is selected.
 - `sdk-import.yml`: preserve exact legacy SDK/evidence bytes in the current draft
   transport and emit a version-2 replay request; no rebuilding or deletion.
+- [`legacy-artifacts.yml`](workflows/legacy-artifacts.yml): preserve explicitly
+  pinned old opaque ZIPs before separately reviewed cleanup; no extraction or deletion.
 - `sdk-application.yml`: consume exact base recipes, package each required target,
   retain identical SDK copies and optionally publish an ordinary candidate.
 - `certify.yml` and `promote.yml`: qualify exact remote bytes, attach complete

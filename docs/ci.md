@@ -107,8 +107,12 @@ producer job, manifest asset ID/digest and all bytes before publishing a new loc
 output directory. The consumer rereads remote identities to detect replacement.
 GitHub draft listings require push access; qualify the actual consumer token,
 including fetch-only jobs, and grant access only to trusted manual workflows.
-Independent bundles share a draft but own disjoint asset names. Interrupted
-uploads reconcile identical bytes; inconsistent partial state requires inspection,
+Independent bundles share a draft but own disjoint asset names. Only the publisher
+that receives confirmed successful atomic tag creation may initialize the draft;
+GitHub permits multiple drafts for one tag. Other publishers wait through bounded
+reads. A preexisting tag without a visible draft or an uncertain creation response
+requires inspection or a new run attempt, never another draft-creation request.
+Interrupted uploads reconcile identical bytes; inconsistent partial state requires inspection,
 not deletion or replacement. An explicitly retained failed SDK producer can supply
 verified bytes to a fresh consumer; it never grants qualification.
 
@@ -118,6 +122,10 @@ workflow identity, and callers keep the returned manifest identity when replayin
 another run. A rerun's new attempt is a separate store; it cannot silently borrow
 an older attempt's successful job. See [SDK retention](sdk.md#retain-complete-sdk-bytes-after-a-consumer-failure)
 for explicit cross-run selection and legacy migration.
+
+For existing repositories, [explicit legacy preservation](legacy-artifacts.md)
+retains selected exact opaque archives and their provenance before separately
+reviewed cleanup. It never deletes originals or grants qualification.
 
 Release transport avoids Actions artifact quota; it still consumes transfer,
 runner disk and service resources. Budget bundle counts, bytes and retention.
