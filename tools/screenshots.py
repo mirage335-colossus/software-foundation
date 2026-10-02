@@ -8,6 +8,9 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
+import secrets
+import select
 import shutil
 import struct
 import subprocess
@@ -27,6 +30,7 @@ BACKENDS = ('fltk', 'rev', 'sdl', 'terminal', 'framebuffer', 'hosted-web', 'wasm
 TARGETS = ('fltk', 'rev', 'sdl', 'terminal', 'framebuffer', 'web')
 PUBLIC = {*(name + '.png' for name in BACKENDS), 'BUILD.txt', 'screenshots.json', 'SHA256SUMS'}
 MAX_IMAGE = 16 * 1024 * 1024
+MAX_DISPLAY_LOG = 4 * 1024 * 1024
 
 
 def command(argv, *, timeout=30, **kwargs):
@@ -67,8 +71,10 @@ def process(argv, log_path, *, environment=None):
         try:
             yield child
         finally:
-            child.terminate()
-            child.close()
+            try:
+                child.terminate()
+            finally:
+                child.close()
 
 
 def windows():
@@ -305,9 +311,83 @@ def input_selection(repository, native_recipe, wasm_recipe, source='base', retai
     return recipes
 
 
-def prepare_inputs(repository, native_recipe, wasm_recipe, directory, source='base', retained_inputs=None):
-    """SDKs are existing immutable base inputs; only GUI source is explicitly acquired."""
+def gui_input_selection(repository, value):
+    """Bind an existing group and, for private storage, its exact successful producer."""
+    delivery.location(repository)
+    if (not isinstance(value, dict) or value.get('source') not in ('base', 'retained') or
+            not isinstance(value.get('manifest_sha256'), str) or
+            not delivery.SHA.fullmatch(value['manifest_sha256'])):
+        raise ValueError('exact existing GUI input selector required')
+    if value['source'] == 'base':
+        if set(value) != {'source', 'manifest_sha256'}:
+            raise ValueError('base GUI selector has unexpected fields')
+        return value
+    if set(value) != {'source', 'pointer', 'manifest_sha256'} or not isinstance(value['pointer'], dict):
+        raise ValueError('retained GUI selector requires an exact transport pointer')
+    p = value['pointer']; m = p.get('manifest')
+    if (set(p) != {'schema_version', 'repository', 'run_id', 'attempt', 'source_commit', 'workflow',
+                   'name', 'job_id', 'release_id', 'tag', 'manifest'} or
+            type(p['schema_version']) is not int or p['schema_version'] != 1 or
+            p['repository'] != repository or p['workflow'] != 'gui-inputs.yml' or
+            any(type(p[k]) is not int or not 0 < p[k] < 2**63 for k in ('run_id', 'attempt', 'job_id', 'release_id')) or
+            not isinstance(p['source_commit'], str) or not delivery.OID.fullmatch(p['source_commit']) or
+            p['name'] != 'gui-inputs-' + str(p['attempt']) or
+            p['tag'] != f"ci-{p['run_id']}-attempt-{p['attempt']}" or
+            not isinstance(m, dict) or set(m) != {'id', 'name', 'size', 'sha256'} or
+            type(m['id']) is not int or not 0 < m['id'] < 2**63 or
+            type(m['size']) is not int or not 0 < m['size'] <= ci.module('ci_transport').MAX_MANIFEST or
+            m['name'] != 'bundle-' + p['name'] + '.json' or
+            not isinstance(m['sha256'], str) or not delivery.SHA.fullmatch(m['sha256'])):
+        raise ValueError('retained GUI producer pointer differs from its exact contract')
+    return value
+
+
+def fetch_gui_input(repository, selector, output):
+    selector = gui_input_selection(repository, selector)
+    output = Path(output)
+    if output.exists() or output.is_symlink():
+        raise ValueError('GUI input destination must be new')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.gallery-gui-', dir=output.parent) as temporary:
+        stage = Path(temporary); group = stage / 'group'
+        if selector['source'] == 'base':
+            receipt = ci.fetch_gui_group(repository, selector['manifest_sha256'], group)
+        else:
+            p = selector['pointer']; payload = stage / 'payload'
+            receipt = ci.module('ci_transport').fetch_bundle(repository, p['run_id'], p['attempt'],
+                p['source_commit'], p['workflow'], p['name'], payload, job_id=p['job_id'],
+                manifest_id=p['manifest']['id'], manifest_sha256=p['manifest']['sha256'])
+            if receipt['pointer'] != p:
+                raise ValueError('fetched GUI pointer differs from the complete selected identity')
+            if {entry.name for entry in payload.iterdir()} != {'gui-group', 'gui-publication-plan.json'}:
+                raise ValueError('retained GUI bundle must contain only its complete group and plan')
+            plan_path = archive.checked_file(payload, 'gui-publication-plan.json')
+            if plan_path.stat().st_size > 64 * 1024:
+                raise ValueError('retained GUI plan exceeds supported limit')
+            plan = delivery.coverage.load(plan_path)
+            expected = {key: item for key, item in plan.items() if key != 'plan_sha256'}
+            if (plan.get('plan_sha256') != delivery.coverage.digest(expected) or
+                    plan.get('operation') != 'publish-gui-inputs' or plan.get('repository') != repository or
+                    plan.get('source_commit') != p['source_commit'] or plan.get('execute') is not False or
+                    plan.get('group_sha256') != selector['manifest_sha256']):
+                raise ValueError('retained GUI plan does not bind the selected group and producer')
+            group = payload / 'gui-group'
+        manifest = ci.gui_group_module().verify(group)
+        if archive.digest(group / 'manifest.json') != selector['manifest_sha256']:
+            raise ValueError('GUI manifest differs from the selected group identity')
+        if selector['source'] == 'retained':
+            names = ci.gui_group_names(selector['manifest_sha256'])
+            if (plan.get('files') != {remote: archive.digest(group / local) for local, remote in names.items()} or
+                    plan.get('redistributable') is not manifest['redistributable']):
+                raise ValueError('retained GUI plan file inventory or terms differs')
+        group.rename(output)
+    return {'selector': selector, 'receipt': receipt, 'publication_approved': False}
+
+
+def prepare_inputs(repository, native_recipe, wasm_recipe, directory, source='base', retained_inputs=None, *, gui_input):
+    """Consume existing verified SDK and GUI groups; ordinary capture never fetches source upstream."""
     recipes = input_selection(repository, native_recipe, wasm_recipe, source, retained_inputs)
+    gui_input_selection(repository, gui_input)
     directory = Path(directory).absolute()
     if directory.exists() or directory.is_symlink():
         raise ValueError('screenshot input directory must be new')
@@ -321,13 +401,8 @@ def prepare_inputs(repository, native_recipe, wasm_recipe, directory, source='ba
             result = ci.retained_sdk(repository, retained_inputs[name], target, 'all-gui', recipes[name], directory / name)
             origins[name] = {key: result[key] for key in ('origin', 'recipe', 'qualification', 'publication_approved', 'request')}
     delivery.coverage.write_new(directory / 'origins.json', origins)
-    lock = delivery.coverage.load(ROOT / 'third_party/gui-boundary.lock.json')
-    ci.exact_commit(lock['revision'])
-    source = directory / 'gui-source'
-    command(['git', 'clone', '--config', 'core.autocrlf=false', '--config', 'core.eol=lf',
-             '--no-checkout', lock['upstream'], source], timeout=300)
-    command(['git', '-C', source, 'checkout', '--detach', lock['revision']], timeout=60)
-    ci.gui_group_module().export(source, directory / 'gui')
+    gui_origin = fetch_gui_input(repository, gui_input, directory / 'gui')
+    delivery.coverage.write_new(directory / 'gui-origin.json', gui_origin)
 
 
 def hosted_command(native_recipe, wasm_recipe, jobs, *, uid=None, gid=None):
@@ -338,9 +413,7 @@ def hosted_command(native_recipe, wasm_recipe, jobs, *, uid=None, gid=None):
     if (type(uid) is not int or type(gid) is not int or not 0 < uid < 2**31 or
             not 0 < gid < 2**31 or type(jobs) is not int or not 1 <= jobs <= 8):
         raise ValueError('non-root host account and bounded concurrency required')
-    return ['xvfb-run', '-a', '-s', '-screen 0 1280x900x24 -dpi 96', 'env',
-        'LIBGL_ALWAYS_SOFTWARE=1', 'SDL_VIDEODRIVER=x11', 'REV_SCALE=1', 'LC_ALL=C.UTF-8',
-        sys.executable, '-B', str(ROOT / 'tools/screenshots.py'), 'collect',
+    return [sys.executable, '-B', str(ROOT / 'tools/screenshots.py'), 'display-collect',
         '--native-group', 'build/screenshots-inputs/native', '--native-recipe', native_recipe,
         '--wasm-group', 'build/screenshots-inputs/wasm', '--wasm-recipe', wasm_recipe,
         '--gui-group', 'build/screenshots-inputs/gui', '--origins', 'build/screenshots-inputs/origins.json',
@@ -354,6 +427,124 @@ def capture_environment():
              'GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')
     return {**{name: os.environ[name] for name in names if name in os.environ},
             'PYTHONUTF8': '1', 'PYTHONDONTWRITEBYTECODE': '1'}
+
+
+def display_server(argv):
+    # This internal Linux child execs in place: the parent's Popen identity and
+    # readiness descriptor remain valid, and even a noisy server has bounded logs.
+    import resource
+    resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_DISPLAY_LOG, MAX_DISPLAY_LOG))
+    os.execvp('Xvfb', ['Xvfb', *argv])
+
+
+def display_number(descriptor, child, timeout=20):
+    """Read the server-selected display only after its bounded readiness notification."""
+    deadline = time.monotonic() + timeout; data = b''
+    while time.monotonic() < deadline:
+        if child.poll() is not None:
+            raise RuntimeError('private display exited before readiness')
+        if not select.select([descriptor], [], [], min(.1, max(0, deadline - time.monotonic())))[0]:
+            continue
+        chunk = os.read(descriptor, 32)
+        if not chunk:
+            raise RuntimeError('private display closed its readiness pipe')
+        data += chunk
+        if len(data) > 6 or b'\n' in data:
+            if not re.fullmatch(rb'(0|[1-9][0-9]{0,4})\n', data) or int(data) > 65535:
+                raise RuntimeError('private display returned invalid readiness data')
+            return ':' + data[:-1].decode('ascii')
+    raise RuntimeError('private display readiness timed out')
+
+
+def join_display(child, timeout=10):
+    """Join this exact server before the enclosing supervised helper exits."""
+    if child.poll() is None:
+        child.terminate()
+    try:
+        child.wait(timeout=timeout)
+        return 'joined'
+    except subprocess.TimeoutExpired:
+        child.kill()
+        child.wait(timeout=5)
+        return 'killed-and-joined'
+
+
+@contextmanager
+def private_display(directory, *, startup_timeout=20):
+    directory = Path(directory).absolute(); directory.mkdir(parents=True, mode=0o700, exist_ok=False)
+    environment = capture_environment()
+    environment.update(LIBGL_ALWAYS_SOFTWARE='1', SDL_VIDEODRIVER='x11', REV_SCALE='1', LC_ALL='C.UTF-8')
+    receipt = {'schema_version': 1, 'status': 'failed', 'screen': [1280, 900, 24], 'dpi': 96,
+               'maximum_log_bytes': MAX_DISPLAY_LOG,
+               'cleanup': 'not-started'}
+    child = None; reader = writer = None; original = None
+    authority = directory / 'Xauthority'
+    try:
+        for name in ('Xvfb', 'xauth', 'xdpyinfo'):
+            if not shutil.which(name): raise ValueError('missing private display prerequisite: ' + name)
+        with authority.open('xb'):
+            authority.chmod(0o600)
+        cookie = secrets.token_hex(16)
+        def authorize(display):
+            # The server loads the cookie before its display number is known.
+            # Add the actual client address after -displayfd chooses the number.
+            try:
+                command(['xauth', '-f', authority, 'add', display, 'MIT-MAGIC-COOKIE-1', cookie],
+                        env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            except subprocess.SubprocessError:
+                raise RuntimeError('private display authorization setup failed') from None
+        authorize(':0')
+        reader, writer = os.pipe()
+        with (directory / 'xvfb.log').open('xb') as log:
+            try:
+                child = subprocess.Popen([sys.executable, '-B', str(Path(__file__).resolve()), 'display-server',
+                    '-displayfd', str(writer), '-auth', str(authority),
+                    '-nolisten', 'tcp', '-screen', '0', '1280x900x24', '-dpi', '96'],
+                    stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                    pass_fds=(writer,), env=environment, cwd=directory)
+                os.close(writer); writer = None
+                receipt['pid'] = child.pid; receipt['cleanup'] = 'pending'
+                display = display_number(reader, child, startup_timeout)
+                authorize(display); environment.update(DISPLAY=display, XAUTHORITY=str(authority))
+                result = command(['xdpyinfo'], env=environment, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True, timeout=10).stdout
+                if (not re.search(r'dimensions:\s+1280x900 pixels', result) or
+                        not re.search(r'resolution:\s+96x96 dots per inch', result)):
+                    raise RuntimeError('private display geometry or resolution differs')
+                receipt['display'] = display; receipt['ready'] = True
+                if child.poll() is not None: raise RuntimeError('private display exited before capture')
+                yield environment
+                if child.poll() is not None: raise RuntimeError('private display exited during capture')
+                receipt['status'] = 'passed'
+            except BaseException as error:
+                original = error; receipt['error'] = str(error)
+                raise
+            finally:
+                if child is not None:
+                    try:
+                        receipt['cleanup'] = join_display(child)
+                        if (directory / 'xvfb.log').stat().st_size >= MAX_DISPLAY_LOG:
+                            raise RuntimeError('private display log reached its byte limit')
+                    except BaseException as error:
+                        receipt.update(status='failed', cleanup_error=str(error))
+                        if receipt['cleanup'] == 'pending': receipt['cleanup'] = 'uncertain'
+                        if original is not None:
+                            original.display_cleanup_error = str(error)
+                        else:
+                            raise
+    finally:
+        for descriptor in (reader, writer):
+            if descriptor is not None: os.close(descriptor)
+        if receipt['cleanup'] in ('joined', 'killed-and-joined', 'not-started') and authority.exists():
+            authority.unlink()
+        delivery.coverage.write_new(directory / 'display.json', receipt)
+
+
+def display_collect(argv, directory):
+    import windows_graphics
+    with private_display(directory) as environment:
+        windows_graphics.run_owned(argv, ROOT, Path(directory) / 'collector.log',
+                                   environment=environment, timeout=5300)
 
 
 def run_hosted(argv):
@@ -487,37 +678,48 @@ def publish(repository, tag, directory, source_commit, *, execute=False, transpo
 
 
 def main(argv=None):
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if raw_argv and raw_argv[0] == 'display-server':
+        return display_server(raw_argv[1:])
     parser = argparse.ArgumentParser(description=__doc__); sub = parser.add_subparsers(dest='operation', required=True)
     p = sub.add_parser('surfaces'); p.add_argument('--native', type=Path, required=True); p.add_argument('--wasm', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
-    p = sub.add_parser('collect')
-    for name in ('native-group', 'wasm-group', 'gui-group', 'work', 'output'):
-        p.add_argument('--' + name, type=Path, required=True)
-    for name in ('native-recipe', 'wasm-recipe'): p.add_argument('--' + name, required=True)
-    p.add_argument('--jobs', type=int, default=2)
-    p.add_argument('--origins', type=Path)
+    for operation in ('collect', 'display-collect'):
+        p = sub.add_parser(operation)
+        for name in ('native-group', 'wasm-group', 'gui-group', 'work', 'output'):
+            p.add_argument('--' + name, type=Path, required=True)
+        for name in ('native-recipe', 'wasm-recipe'): p.add_argument('--' + name, required=True)
+        p.add_argument('--jobs', type=int, default=2)
+        p.add_argument('--origins', type=Path)
     p = sub.add_parser('verify'); p.add_argument('directory', type=Path)
     p = sub.add_parser('hosted')
     p.add_argument('--repository', required=True); p.add_argument('--native-recipe', required=True)
     p.add_argument('--wasm-recipe', required=True); p.add_argument('--jobs', type=int, default=2)
     p.add_argument('--source', choices=('base', 'retained'), default='base')
+    p.add_argument('--gui-input', required=True, help='exact existing GUI group selector as JSON')
     p.add_argument('--retained-inputs', help='exact version-2 native and wasm requests as one JSON object')
     p = sub.add_parser('publish'); p.add_argument('directory', type=Path)
     p.add_argument('--repository', required=True); p.add_argument('--tag', required=True)
     p.add_argument('--source-commit', required=True); p.add_argument('--execute', action='store_true')
     p.add_argument('--receipt', type=Path, required=True)
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
     if args.operation == 'surfaces': return surfaces(args.native, args.wasm, args.output)
+    if args.operation == 'display-collect':
+        return display_collect([sys.executable, '-B', str(Path(__file__).resolve()), 'collect', *raw_argv[1:]],
+                               ROOT / 'build/screenshots-display')
     if args.operation == 'collect':
         return collect(args.native_group, args.native_recipe, args.wasm_group, args.wasm_recipe,
                        args.gui_group, args.work, args.output, args.jobs,
                        delivery.coverage.load(args.origins) if args.origins else None)
     if args.operation == 'verify': return verify_gallery(args.directory)
     if args.operation == 'hosted':
+        gui_input = gui_input_selection(args.repository, delivery.parse(args.gui_input))
+        retained = delivery.parse(args.retained_inputs) if args.retained_inputs else None
+        input_selection(args.repository, args.native_recipe, args.wasm_recipe, args.source, retained)
         argv = hosted_command(args.native_recipe, args.wasm_recipe, args.jobs)
         gallery_browser.preflight(ROOT / 'build/browser-preflight')
         prepare_inputs(args.repository, args.native_recipe, args.wasm_recipe, ROOT / 'build/screenshots-inputs',
-                       args.source, delivery.parse(args.retained_inputs) if args.retained_inputs else None)
+                       args.source, retained, gui_input=gui_input)
         run_hosted(argv)
         return verify_gallery(ROOT / 'build/gallery')
     result = publish(args.repository, args.tag, args.directory, args.source_commit, execute=args.execute)

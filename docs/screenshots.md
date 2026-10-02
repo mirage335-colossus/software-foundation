@@ -9,9 +9,10 @@ test-only application or copied image stands in for another backend.
 Select existing Linux x64 GUI and browser SDK recipe digests from the dependency
 base, a compile job count, and an optional new `screenshots-` tag. Missing SDKs
 fail without starting a compiler-base build. Preparing or updating SDKs is a
-separate explicit maintenance operation. The workflow acquires the reviewed GUI
-source revision and checks its complete retained input group locally; it does
-not publish that source or its application binaries.
+separate explicit maintenance operation. An explicit `gui_input` JSON selector is
+also required. Ordinary capture consumes an existing complete reviewed GUI group;
+it never clones upstream or builds a missing dependency group. It does not publish
+that source or its application binaries.
 
 The default `source=base` consumes only the exact public base. For recovery or
 qualification before base publication, select `source=retained` and provide
@@ -23,9 +24,27 @@ mode falls back to the other. Both selected origins are recorded in the gallery;
 retained bytes remain explicitly unqualified for SDK publication. Legacy Actions
 storage must first pass the explicit import workflow, never implicit retrieval.
 
+For GUI input from the public base, use
+`{"source":"base","manifest_sha256":"<exact group manifest digest>"}`.
+For a private retained group, use `{"source":"retained","pointer":{...},
+"manifest_sha256":"<exact group manifest digest>"}`. Copy the complete pointer
+from a successful [GUI input maintenance job](../.github/workflows/gui-inputs.yml):
+its exact repository, run, attempt, source, workflow, bundle name, job, release,
+tag and manifest asset identity must all match. The bundle must be
+`gui-inputs-<attempt>` from `gui-inputs.yml`, containing `gui-group/` and its
+`gui-publication-plan.json`. The consumer verifies every group byte and the current
+lock and integration patches before installing it. Failed producers, partial
+inputs, altered identities and different patches are rejected. Reusing private
+bytes grants no qualification or redistribution approval. Invalid selectors fail
+before browser setup, acquisition or compilation. The private diagnostics retain
+`build/screenshots-inputs/gui-origin.json`; the public gallery retains the exact
+GUI group manifest digest without publishing its source archives.
+
 The capture job uses the ordinary unprivileged Ubuntu runner account. It uses
 prepared Bookworm SDKs for compilation and explicit distribution packages for the
-display, software graphics, fonts and Selenium. Its installed Chromium or Chrome
+display, CMake, Ninja, software graphics, fonts and Selenium. The browser-target
+SDK restricts its host tool search to system directories, so a tool found only in
+a runner-specific tool cache does not satisfy this prerequisite. Its installed Chromium or Chrome
 and matching driver remain host prerequisites; no browser enters either SDK.
 An [early sandbox and render probe](gallery-browser.md) must pass before SDK
 acquisition or compilation. Capture keeps the browser sandbox enabled and changes
@@ -43,6 +62,18 @@ must report the same widget geometry. The collector makes no application edits
 and performs no resampling. Native font rendering may still differ.
 
 All long build/capture commands run under the shared process-tree owner.
+The hosted helper owns an explicit Xvfb process, with private cookie authentication,
+TCP listening disabled, server-selected display allocation and bounded readiness.
+It verifies the complete 1280 by 900 display at 96 DPI before launching collection.
+After collection succeeds or fails, it terminates and joins that exact server;
+a bounded termination timeout uses kill followed by another join. A server exit
+during collection fails the run. The outer owner still rejects surviving
+descendants; no display child is exempt from this check. A kernel file-size limit
+bounds `xvfb.log` to 4 MiB, and reaching that limit fails the display prerequisite.
+`build/screenshots-display/` retains `xvfb.log`, `collector.log` and `display.json`
+as private diagnostics. Only those logs and receipt are eligible for diagnostic
+retention; the private authentication file and browser profiles are excluded.
+The authentication file is removed only after the server is joined.
 Application children, terminal children and browser descendants must stop
 before successful collection. Failure preserves diagnostic outputs in the
 owned work directory and does not replace an older gallery. The public output
@@ -89,12 +120,13 @@ The [collector](../tools/screenshots.py) supports `collect` with exact existing
 `--gui-group` inputs, plus new `--work` and `--output` directories. Use Linux x64,
 a clean source checkout, the declared display/runtime environment and the same
 prerequisites as the workflow. `hosted` runs the complete unprivileged hosted-runtime
-path and explicitly fetches its existing SDK inputs. `publish` plans by default;
+path and explicitly fetches its existing SDK and required `--gui-input` selections. `publish` plans by default;
 only its `--execute` switch mutates a public release.
 
 Run the [offline failure suite](../tests/test_screenshots.py) through the normal
 tool-test runner. It covers complete inventories, changed images, nonblank
 capture, startup/display failures, window ambiguity, process cleanup, immutable
-publication, changed asset identity and partial-upload uncertainty. These mocks
+publication, changed asset identity, exact retained GUI selection, authenticated
+display setup, bounded readiness and join ordering, and partial-upload uncertainty. These mocks
 do not qualify actual browser, toolkit, display or GitHub permission behavior;
 the complete hosted screenshot job must pass on the intended source revision.

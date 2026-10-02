@@ -19,6 +19,10 @@ name: Publish initial-view screenshots
         description: For retained only; JSON object containing native and wasm version-2 requests
         type: string
         default: ''
+      gui_input:
+        description: Exact GUI input JSON selector from base or completed private input maintenance
+        type: string
+        required: true
       tag:
         description: New screenshots- prefixed tag; empty selects this run and attempt
         type: string
@@ -57,7 +61,7 @@ jobs:
     - name: Install distribution display tools and use the runner's installed browser
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends python3-selenium xvfb xauth xterm xdotool x11-utils imagemagick fonts-dejavu-core fonts-liberation libgl1 libopengl0 libgl1-mesa-dri libx11-6 libxext6 libxrender1 libxft2 libxrandr2 libxcursor1 libxinerama1 libxfixes3 libwayland-client0 libxkbcommon0 libegl1 libdbus-1-3 libibus-1.0-5
+        sudo apt-get install -y --no-install-recommends cmake ninja-build python3-selenium xvfb xauth xterm xdotool x11-utils imagemagick fonts-dejavu-core fonts-liberation libgl1 libopengl0 libgl1-mesa-dri libx11-6 libxext6 libxrender1 libxft2 libxrandr2 libxcursor1 libxinerama1 libxfixes3 libwayland-client0 libxkbcommon0 libegl1 libdbus-1-3 libibus-1.0-5
     - name: Build from existing SDKs and capture seven fresh actual surfaces
       shell: python
       env:
@@ -66,11 +70,13 @@ jobs:
         JOBS: ${{ inputs.jobs }}
         SDK_SOURCE: ${{ inputs.source }}
         RETAINED_INPUTS: ${{ inputs.retained_inputs }}
+        GUI_INPUT: ${{ inputs.gui_input }}
       run: |
         import os, subprocess, sys
         command=['/usr/bin/python3', '-B', 'tools/screenshots.py', 'hosted', '--repository',
           os.environ['GITHUB_REPOSITORY'], '--native-recipe', os.environ['NATIVE_RECIPE'],
-          '--wasm-recipe', os.environ['WASM_RECIPE'], '--jobs', os.environ['JOBS'], '--source', os.environ['SDK_SOURCE']]
+          '--wasm-recipe', os.environ['WASM_RECIPE'], '--jobs', os.environ['JOBS'], '--source', os.environ['SDK_SOURCE'],
+          '--gui-input', os.environ['GUI_INPUT']]
         if os.environ['RETAINED_INPUTS']: command += ['--retained-inputs', os.environ['RETAINED_INPUTS']]
         subprocess.run(command, check=True)
     - name: Verify and plan public gallery publication
@@ -97,11 +103,14 @@ jobs:
         BUNDLE_NAME: screenshots-diagnostics
         BUNDLE_PATHS: |
           build/screenshot-hosted.log
+          build/screenshots-inputs/gui-origin.json
           build/browser-preflight/*.json
           build/browser-preflight/*.png
           build/browser-preflight/*.log
           build/screenshots-work/*.log
           build/screenshots-work/captures/*.log
+          build/screenshots-display/*.log
+          build/screenshots-display/*.json
   publish:
     if: inputs.execute
     needs: capture

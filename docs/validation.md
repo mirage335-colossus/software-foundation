@@ -43,7 +43,11 @@ selects the sole initializer, with bounded read-only visibility reconciliation.
 
 Expanded candidate [36948123794](https://github.com/mirage335-colossus/software-foundation/actions/runs/36948123794)
 passed at `2bd67a29dd3a6c3d91fbae32757bad29c3860797`, including the
-signed-distribution suite and three native archive consumers.
+signed-distribution suite and three native archive consumers. All nineteen jobs
+passed: Linux x64 and ARM64 each recorded 784 passing Python cases, Windows x64
+recorded 529, and no incomplete or skipped case outcomes were accepted. Platform
+exclusions remain explicit. The distribution job passed 7 Debian, 17 Arch/Gentoo
+and 24 publication cases plus the actual signed Bookworm client transaction.
 
 All four exact legacy SDK imports passed at
 `2332d31e77e5b632e3f7d8a7b5031153e794e9dc`: browser
@@ -57,9 +61,23 @@ The full manifests and completed producer identities were independently checked.
 
 Opaque preservation [36943434563](https://github.com/mirage335-colossus/software-foundation/actions/runs/36943434563)
 retained 35 selected archives totaling 18,494,607,185 bytes in private draft bundles.
-Independent complete readback and original-storage cleanup are still pending.
-Actual screenshot and complete public lifecycle results remain separate outstanding
-scopes. No SDK recipe or retained group bytes changed in this update.
+Independent [readback 36949071982](https://github.com/mirage335-colossus/software-foundation/actions/runs/36949071982)
+passed for all 35 archives at `c2281bba00804bd7186f332098ff25576feded0a`.
+The complete report and every receipt were fetched and bound to manifest asset
+`604516921`, SHA-256 `94234661c4c45a96404f8115360cd5528d4df9d2216d833f4e6bcaef9a32feb4`.
+Original-storage cleanup remains a separate scoped operation. No SDK recipe or
+retained SDK group bytes changed in this update.
+
+GUI source maintenance [36949360683](https://github.com/mirage335-colossus/software-foundation/actions/runs/36949360683)
+retained the complete exact source group privately at
+`8e0bd09bebf2fc16b35dd94750c7293a35ced1d9`; its bytes were independently fetched
+and verified. The first host-browser gallery attempt passed its actual sandbox
+and rendering preflight, then stopped because the restricted Wasm build path lacked
+distro CMake. The repaired path installs ordinary host CMake/Ninja and explicitly
+joins its authenticated virtual display. Thirty-three focused gallery cases passed,
+with no skips, alongside actual local authenticated display, success/failure cleanup,
+4 MiB log-cap and surviving-descendant rejection checks. Hosted screenshot and
+complete public lifecycle results remain separate outstanding scopes.
 
 ## Observed mechanisms
 
