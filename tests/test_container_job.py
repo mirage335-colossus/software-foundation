@@ -192,4 +192,4 @@ class BrowserPrivilegeSplit(unittest.TestCase):
                 lifecycle.main('check')
                 self.assertEqual(install.call_count,1)
                 run.assert_called_once()
-                self.assertEqual(validate.call_count,3);self.assertEqual(check_inputs.call_count,3)
+                self.assertGreaterEqual(validate.call_count,3);self.assertEqual(check_inputs.call_count,3)

@@ -14,10 +14,11 @@ public:
     explicit Browser(std::string epoch) : adapter([this](const gui::Event& event) {
         if (application_) application_->handle(event);
     }), session(adapter, std::move(epoch), [this] { return application_->next_service(); },
-        [this](gui::ServiceResult result) { return application_->complete_service(std::move(result)); }) {
+        [this](gui::ServiceResult result) { return application_->complete_service(std::move(result)); },
+        [this] { application_->tick(); }) {
         application_ = std::make_unique<App>(adapter);
     }
-    ~Browser() { adapter.close(); }
+    ~Browser() { application_->shutdown(); adapter.close(); }
     App& application() { return *application_; }
     std::string initial() { application_->retry_presentation(); return session.initial(); }
     std::string receive(std::string_view message) {

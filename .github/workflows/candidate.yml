@@ -24,11 +24,14 @@ jobs:
         ARM: ${{ inputs.include_arm }}
         POOL: ${{ inputs.linux_pool }}
         FAST: ${{ vars.FOUNDATION_FAST_LINUX_RUNNER }}
+        FAST_ARM: ${{ vars.FOUNDATION_FAST_ARM_RUNNER }}
+        FAST_WINDOWS: ${{ vars.FOUNDATION_FAST_WINDOWS_RUNNER }}
       shell: python
       run: |
         import os, subprocess, sys
         command = [sys.executable, 'tools/ci_plan.py', 'plan', '--pool', os.environ['POOL'],
-                   '--configured', os.environ['FAST'], '--github-output', os.environ['GITHUB_OUTPUT']]
+                   '--configured', os.environ['FAST'], '--configured-arm', os.environ['FAST_ARM'],
+                   '--configured-windows', os.environ['FAST_WINDOWS'], '--github-output', os.environ['GITHUB_OUTPUT']]
         if os.environ['DEVFAST'] == 'true': command.append('--devfast')
         if os.environ['ARM'] != 'true': command.append('--no-arm')
         subprocess.run(command, check=True)
@@ -57,7 +60,10 @@ jobs:
       run: |
         import os, subprocess, sys
         subprocess.run([sys.executable, 'tools/ci_plan.py', 'host', os.environ['TARGET']], check=True)
-        subprocess.run([sys.executable, 'tools/build.py', 'test', 'release', '--label', os.environ['SCOPE']], check=True)
+        subprocess.run([sys.executable, 'tools/build.py', 'build', 'release'], check=True)
+        subprocess.run([sys.executable, 'tools/test_plan.py', 'candidate-run', '--build', 'build/release',
+                        '--scope', os.environ['SCOPE'], '--jobs', os.environ.get('CTEST_PARALLEL_LEVEL', '2'),
+                        '--output', 'build/release/candidate-' + os.environ['SCOPE'] + '.json'], check=True)
     - if: always()
       name: Retain verified source-${{ matrix.target }}-${{ matrix.scope }}-${{ github.run_attempt }}
       run: python .github/scripts/lifecycle.py bundle-store
@@ -67,6 +73,8 @@ jobs:
           build/release/Testing/Temporary/
           build/release/build-info.txt
           build/release/test-reports/
+          build/release/candidate-${{ matrix.scope }}.json
+          build/release/candidate-${{ matrix.scope }}.junit.xml
     permissions:
       contents: write
       actions: read
@@ -156,7 +164,7 @@ jobs:
       shell: python
       run: |
         import subprocess, sys
-        for suite in ('apt_repo', 'distro_channel', 'distribution_release'):
+        for suite in ('apt_repo', 'distro_channel', 'distribution_release', 'distro_client', 'distro_check'):
             subprocess.run([sys.executable, '-B', 'tools/run_tests.py', '--suite', suite,
                 '--output', 'build/distribution-tests/' + suite + '.json'], check=True)
     - name: Actual signed APT install, update, rejection and removal in disposable Debian
@@ -176,6 +184,9 @@ jobs:
       contents: write
       actions: read
   verdict:
+    permissions:
+      contents: write
+      actions: read
     if: always()
     needs:
     - plan
@@ -186,6 +197,21 @@ jobs:
     - distribution
     runs-on: ubuntu-24.04
     steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - if: needs.source.result == 'success'
+      name: Verify complete platform inventories and explicit exclusions
+      run: python .github/scripts/lifecycle.py candidate-aggregate
+      env:
+        CANDIDATE_TARGETS: ${{ needs.plan.outputs.packages }}
+        DEVFAST: ${{ inputs.devfast }}
+    - if: always() && needs.source.result == 'success'
+      name: Retain complete candidate inventory verdicts
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: candidate-coverage-${{ github.run_attempt }}
+        BUNDLE_PATHS: build/candidate-results/*/coverage.json
     - env:
         RESULTS: ${{ toJSON(needs) }}
         DEVFAST: ${{ inputs.devfast }}
@@ -207,7 +233,7 @@ jobs:
         type: boolean
         default: false
       linux_pool:
-        description: Faster needs an authorized FOUNDATION_FAST_LINUX_RUNNER variable
+        description: Faster uses explicitly authorized per-platform runner variables
         type: choice
         options:
         - standard
@@ -232,7 +258,7 @@ jobs:
         type: boolean
         default: false
       linux_pool:
-        description: Faster needs an authorized FOUNDATION_FAST_LINUX_RUNNER variable
+        description: Faster uses explicitly authorized per-platform runner variables
         type: string
         default: standard
       build_jobs:

@@ -43,6 +43,16 @@ its selected adapters.
 
 This integration closes these practical consumer gaps:
 
+- A slow-delivery fixture proves edits cannot coalesce across an action or another
+  control. The original renderer fails the same assertion; the reviewed patch
+  retains ordered commands in both browser transports.
+- A visible shared task demonstrates copied input, bounded progress, cancellation,
+  restart identity, late-result rejection and close. All hosts use the same
+  controller and declaration; no adapter contains task actions. Browser polling
+  has one outstanding operation and teardown cancels timers/dialogs/queued input.
+- Native supplier conformance now executes FLTK, Rev and clipboard assertions
+  against the same selected adapters linked into the application.
+
 - The architecture guard scans nested shared and host source trees and common
   C/C++ header/implementation suffixes. A real command-line regression places
   prohibited toolkit dependencies and application IDs in nested files, observes
@@ -95,7 +105,7 @@ maintained changes.
 | Services | Explicit request identity, exactly one accepted completion, cancel/error distinguished, late completion rejected after shutdown | Prompt is the common implemented service; file/location calls explicitly fail in these native hosts |
 | Clipboard | Adapter/host owns platform access, application never receives native handles | FLTK/Rev expose host clipboard writes; SDL handles editor clipboard keys; browser permissions can reject requests |
 | Rendering | Immutable frame ownership, revision/damage tracking, retry presentation without repeating core mutation | GPU drivers and physical high-DPI displays require native target qualification |
-| Async work | UI thread owns adapters; workers publish owned values through shared runtime; close cancels queues | Never retain toolkit objects in workers or apply stale callbacks to recreated controls |
+| Async work | Shared cooperative task owns its input, limits each turn, reports progress and supports cancel/restart/close; browser polling is bounded and replay-safe | Blocking work still needs a separate owned executor and joined shutdown; no toolkit objects in workers |
 | Session lifecycle | New browser epoch on recreation, ordered operations, duplicate command suppression, bounded transport | Hosted server is loopback-only and is not a multiuser deployment framework |
 
 Capabilities belong to the selected deployment profile, not toolkit-name branches
@@ -130,7 +140,7 @@ Debian 12 or any older release's binary baseline.
 | --- | --- |
 | Terminal | Real process on private PTY; input, normal close and interruption restore modes; shared extension/geometry suites |
 | Framebuffer | Real pixel renderer, pointer/keyboard input, shared extension, immutable frame and resize checks |
-| SDL | Real SDL queue, text/key input, added control, resize, software texture upload and close using dummy video |
+| SDL | Real SDL queue, text/key input, added control, resize, software texture upload and close using the declared X11 video driver |
 | Rev | Compiled 46 toolkit modules; real native callback paths and OpenGL capture under Xvfb; shared extension, services, close and serialized parity |
 | FLTK | Actual native editor/button/list callbacks under Xvfb; shared extension, serialized parity, capture, unavailable-service error and pending-service shutdown |
 | Hosted browser | Actual child and loopback sessions, identity/retry/security checks, child/worker cleanup; real Firefox/Chromium editing and prompt cancellation using copied assets |
@@ -149,7 +159,7 @@ fills and border positions, visible text for each control, horizontal/vertical
 text extent within eight pixels of the framebuffer reference, and bounded text
 coverage. Overall RGB channel error must remain below 4 on the 0–255 scale; this
 secondary check cannot replace the per-control assertions. Negative checks must
-reject an erased heading, changed disabled fill and shifted editor. The executed
+reject an erased heading, changed disabled fill and shifted editor. The updated shared task controls preserve these bounds. The executed
 profile passed with mean channel error below 1.01 across all compared captures.
 Native font rasterization remains different; normal-size controls have the same
 order, dimensions, spacing and shared palette.
@@ -169,15 +179,25 @@ The fixture clears actual native focus after resize delivery before comparison;
 a separate focus assertion checks that behavior. Physical display, high-DPI and
 assistive-device behavior still require their selected native profile.
 
-The current native profile passed all 28 enabled GUI CTests, including all six
+The updated native profile passed 35 GUI CTests, including all six
 native executable smoke checks, shared/parity/PTY/HTTP checks and the actual
-native visual comparison. The current shared view also compiled against an
-unchanged prepared browser SDK and passed the Wasm/Node check. Real
-Firefox/Chromium runs cover both hosted and Wasm modes. The retained-group fixtures cover complete-tree tampering,
+native visual comparison, the new bounded task and browser lifecycle checks,
+and supplier FLTK/Rev/clipboard conformance against the actual selected adapters.
+An additional non-unit-scale check reproduced an upstream fixture coordinate
+defect; the reviewed test-only mapping fix then passed both the application and
+supplier checks at scale 1.25. That supplier scenario is now registered explicitly
+as `foundation.gui.supplier.rev-scaled`. Expected pixels and comparison bounds
+were preserved.
+The updated shared view also compiled against an
+unchanged prepared browser SDK and passed the Wasm/Node check, including task
+start/cancel/restart/completion. Real Firefox/Chromium runs exercise the visible
+task and cover both hosted and Wasm modes. The retained-group fixtures cover complete-tree tampering,
 unsafe/duplicate entries, changed integration inputs, dirty source, deterministic
 export, mode handling, and atomic/idempotent restore with foreign output preserved.
-A real offline group was exported from the pinned dependency and consumed through
-the normal build wrapper; all 19 enabled GUI checks passed using restored sources.
+The updated complete source group exported and restored successfully at the new
+CC0 pin, with owner-specific distribution permission and complete retained notices.
+An earlier group was consumed through the normal build wrapper; all 19 enabled
+GUI checks passed using those restored sources.
 Eleven pinned upstream suites cover contract, bitmap, adapter, layout, runtime,
 presentation, extension, interaction, framebuffer, terminal and web behavior.
 The upstream DOM-renderer suite and local source/patch guards supplement them.
@@ -229,20 +249,25 @@ release claims require execution in the actual declared profile.
 
 ## Distribution gate
 
-The pinned dependency has no top-level license declaration. Its font, bundled
-library and toolkit notices are separate and do not establish permission for the
-whole GUI integration. The lock records `license: NOASSERTION` and
-`redistribution.approved: false`. CMake propagates
-`FOUNDATION_GUI_DISTRIBUTABLE=false`; packaging must reject GUI configurations.
+The pinned dependency dedicates project-owned work under CC0-1.0 and explicitly
+excludes third-party code and generated font data. The repository owner confirmed
+that the existing Rev agreement covers this repository's source releases and
+compiled application binaries. The lock retains that dated, owner-specific scope,
+the supplier provenance record and exact hashes of all required license notices.
+It records `license: CC0-1.0` and `redistribution.approved: true` for this scope.
+This does not grant a general Rev license for unrelated downstream projects.
+A project reusing this example must review its own supplier rights and permission
+scope; copying this approval is not that review.
 
-After upstream supplies reviewed terms, update the dependency pin/inventory and
-record every required license/notice under `redistribution.license_files`. Only
-reviewed metadata with a declared license, approval and verified license files
-activates installation. Native executables go under `bin`, browser assets/modules
-under `share/software-foundation/web`, and dependency notices under the installed
-documentation directory. Then verify the complete runtime library closure and
-license bundle on every target before issuing release artifacts. No configure
-switch waives this review.
+CMake derives `FOUNDATION_GUI_DISTRIBUTABLE` from the reviewed lock and verified
+notice files; no configure switch waives that review. Native application
+executables install under `bin`, browser assets/modules under
+`share/software-foundation/web`, and the complete dependency notices and permission
+record under the installed documentation directory. The build compiles this
+repository's application against reusable adapters; upstream demonstration
+executables are not application deliverables. Verify the runtime library closure,
+notice bundle and actual execution on every target before issuing release assets.
+Permission to distribute is distinct from native release qualification.
 
 ## Initial-view gallery
 

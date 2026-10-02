@@ -270,7 +270,8 @@ scope. The fixtures use disposable keys and never install or publish packages.
 - Native source production used actual Debian 12 Bookworm containers on hosted
   kernels. Browser SDK tools are retained upstream binaries; their native source
   rebuild is not supplied by that recipe. Source availability is documented separately.
-- GUI redistribution remains blocked by unresolved upstream top-level terms.
+- At that baseline, GUI redistribution was blocked by unresolved upstream terms;
+  the subsequently reviewed permission scope is recorded in [the GUI audit](gui-audit.md).
   Local compilation and tests do not approve binary redistribution.
 - Arch and Gentoo client installation/update/removal require disposable native
   package-manager environments; their signed-channel fixtures are distinct

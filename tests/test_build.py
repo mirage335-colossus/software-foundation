@@ -76,7 +76,9 @@ class BuildTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 builder.contained(Path(directory), "../elsewhere")
         self.assertGreaterEqual(builder.default_jobs(), 1)
-        self.assertLessEqual(builder.default_jobs(), 4)
+        from unittest.mock import patch
+        with patch("build_capacity.default_jobs", return_value=7):
+            self.assertEqual(builder.default_jobs(), 7)
         with self.assertRaises(Exception):
             builder.positive("0")
 

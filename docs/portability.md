@@ -57,6 +57,39 @@ known defects. Prefer maintained fixes within the chosen ABI family, pin their
 exact source, and requalify the result. Record the target runtime's maintenance
 and end-of-support plan. A glibc-based package does not promise musl compatibility.
 
+## Enforced SDK input boundary
+
+Direct CMake and the wrapper verify a selected SDK's complete retained inventory.
+For Linux SDKs, the configured C++ compiler and sysroot must physically match the
+manifest; enabling C additionally requires its declared retained C compiler.
+Package discovery alone is insufficient: a cached library or imported target
+can otherwise refer to a development host after a successful configure.
+
+The final CMake target graph checks imported library locations, include paths,
+link directories and target usage requirements. External library inputs must
+resolve inside the selected sysroot. Includes may additionally resolve inside
+the application source, its owned generated build tree or the explicitly
+selected GUI source. Checks use physical paths, so a link inside a permitted
+root cannot refer to a foreign host file. Generator expressions are evaluated
+for the selected configuration before compilation and installation. Frozen
+library digests and the SDK inventory are rechecked, detecting same-path byte
+changes and a link retargeted after configuration.
+
+Raw compiler/linker search overrides and target search options are rejected in
+an SDK build; express dependencies through verified target include/link
+properties instead. This keeps direct CMake, wrapper builds and installation
+under the same boundary. It does not prevent a separately written custom command
+from reading arbitrary host files: custom generators still need explicit,
+reviewed build-host input contracts. Build tools run on the host, while headers
+and libraries consumed as target inputs follow the sysroot policy.
+
+Installed static archives and copied runtime libraries also carry their checked
+notice closure, described in [building](building.md#installed-dependency-notices).
+An SDK legal-info inventory and complete referenced license text travel with the
+application package; unavailable terms fail package assembly rather than relying
+on a later network lookup. These checks preserve the declared compatibility
+baseline and do not relax redistribution gates.
+
 ## C++ and Windows runtimes
 
 Choose static or shared compiler-runtime linkage deliberately. Static C++

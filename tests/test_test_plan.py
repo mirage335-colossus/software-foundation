@@ -30,6 +30,13 @@ class CoverageTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 plan.junit_results(path, ["a", "b", "c"])
 
+    def test_location_normalization_precedes_windows_json_escaping(self):
+        from unittest.mock import patch
+        value={'path':r'C:\work\source\main.cpp','command':['C:/work/source/test.py',r'C:\external\compiler.exe']}
+        with patch.object(plan,'ROOT',r'C:\work\source'):
+            normalized=plan.normalize_locations(value,Path.cwd()/'build')
+        self.assertEqual(normalized,{'path':r'<SOURCE>\main.cpp','command':['<SOURCE>/test.py',r'C:\external\compiler.exe']})
+
     def test_tampered_and_empty_inventory_rejected(self):
         with self.assertRaises(ValueError):
             plan.make_plan([], 1, "source")
@@ -158,6 +165,22 @@ class InputIdentityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'configuration'):
                 plan.require_current(self.build, frozen)
 
+    def test_native_dependency_prefix_is_reverified_in_direct_and_wrapper_trees(self):
+        from unittest.mock import patch
+        root = self.root / 'inputs'; root.mkdir(); prefix = root / 'usr'; prefix.mkdir()
+        self.cache['FOUNDATION_DEPENDENCY_PREFIX'] = str(root); self.write_cache()
+        first = {'sha256':'a'*64, 'prefix':str(prefix.resolve())}
+        with patch('prepare_dependencies.verify', return_value=first) as verify:
+            frozen = self.freeze(); verify.assert_called()
+            self.wrapper(dependency_prefix={'root':str(root.resolve()), **first})
+            wrapped = self.freeze()
+            with patch('prepare_dependencies.verify', return_value={**first, 'sha256':'b'*64}):
+                with self.assertRaisesRegex(ValueError,'dependency prefix'): self.freeze()
+            self.assertNotEqual(frozen['configuration'], wrapped['configuration'])
+        (self.build / 'wrapper-identity.json').unlink(); (self.build / 'configured-identity.json').unlink()
+        self.cache['FOUNDATION_SDK_ROOT'] = str(root); self.write_cache()
+        with self.assertRaisesRegex(ValueError,'cannot mix'): self.freeze()
+
     def test_primary_recipe_without_retained_inputs_is_rejected(self):
         self.cache['FOUNDATION_DEPENDENCY_RECIPE'] = 'b' * 64; self.write_cache()
         with self.assertRaisesRegex(ValueError, 'complete verified'):
@@ -221,3 +244,35 @@ class NativeExecutionTests(unittest.TestCase):
                     with patch.object(sys,'argv',['test_plan.py',*argv]): self.assertEqual(plan.main(),0)
             self.assertEqual(json.loads(merged.read_text())['status'],'passed')
             self.assertEqual(json.loads(merged.read_text())['tests'],1)
+
+
+class CandidateInventoryTests(unittest.TestCase):
+    def test_actual_unlabelled_test_runs_and_every_scope_is_required(self):
+        import json,subprocess,sys,copy
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);source=root/'source';source.mkdir();build=root/'build'
+            script=source/'fixture.py'
+            script.write_text("import json,sys\nfrom pathlib import Path\np=Path(sys.argv[1]);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps({'schema_version':1,'system':'fixture','status':'passed','inventory':['one'],'excluded':{},'results':{'one':{'status':'passed'}}}))\n")
+            cmake='cmake_minimum_required(VERSION 3.24)\nproject(CandidateProbe LANGUAGES CXX)\nenable_testing()\nadd_custom_target(foundation-tests)\n'
+            cmake+='add_test(NAME newly_unlabelled COMMAND "${CMAKE_COMMAND}" -E touch "${CMAKE_BINARY_DIR}/unlabelled-ran")\n'
+            cmake+='add_test(NAME tools.fixture COMMAND "'+sys.executable.replace('\\','/')+'" "${CMAKE_SOURCE_DIR}/fixture.py" "${CMAKE_BINARY_DIR}/test-reports/fixture.json")\nset_tests_properties(tools.fixture PROPERTIES LABELS tools)\n'
+            cmake+='add_test(NAME integration.fixture COMMAND "${CMAKE_COMMAND}" -E true)\nset_tests_properties(integration.fixture PROPERTIES LABELS integration)\n'
+            cmake+='file(WRITE "${CMAKE_BINARY_DIR}/build-info.txt" "fixture")\n'
+            (source/'CMakeLists.txt').write_text(cmake)
+            subprocess.run(['cmake','-S',str(source),'-B',str(build),'-G','Ninja','-DCMAKE_BUILD_TYPE=Release'],check=True,capture_output=True)
+            (build/'test-platform.json').write_text(json.dumps({'schema_version':1,'excluded_suites':{'tools.unavailable':'explicit fixture platform exclusion'}}))
+            paths=[]
+            with patch.object(plan,'ROOT',source):
+                frozen=plan.candidate_plan(build)
+                self.assertEqual(frozen['scopes']['core'],['newly_unlabelled'])
+                for scope in plan.CANDIDATE_SCOPES:
+                    output=root/(scope+'.json');plan.candidate_run(build,scope,output);paths.append(output)
+                self.assertTrue((build/'unlabelled-ran').is_file())
+                merged=plan.candidate_merge(paths)
+                self.assertEqual(merged['mode'],'candidate');self.assertEqual(merged['plan']['platform_exclusions'],frozen['platform_exclusions'])
+                for changed in (paths[:2],paths+paths[:1]):
+                    with self.assertRaises(ValueError):plan.candidate_merge(changed)
+                self.assertEqual(plan.candidate_merge(paths[:1],diagnostic=True)['omitted_scopes'],['integration','tools'])
+                row=json.loads(paths[1].read_text());row['tool_reports']['tools.fixture']['results']['one']['status']='incomplete';paths[1].write_text(json.dumps(row))
+                with self.assertRaisesRegex(ValueError,'inner'):plan.candidate_merge(paths)

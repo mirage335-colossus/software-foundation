@@ -68,13 +68,71 @@ class CiPlanTests(unittest.TestCase):
 
     def test_gui_publication_preflight_preserves_unresolved_supplier_terms(self):
         recipes = {key: 'a' * 64 for key in (*ci.STANDARD, 'browser-wasm32')}
-        with self.assertRaisesRegex(ValueError, 'licensing'):
-            ci.release_matrix(recipes, 'all-gui')
+        policy=ci.module('coverage').load(ci.ROOT/'docs/release-policy.json')
+        modules={name:ci.module(name) for name in ('coverage','certify_release')}
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'third_party').mkdir()
+            (root/'third_party/gui-boundary.lock.json').write_text('{"redistribution":{"approved":false}}')
+            with patch.object(ci,'ROOT',root),patch.object(ci,'module',side_effect=modules.__getitem__),self.assertRaisesRegex(ValueError,'licensing'):
+                ci.release_matrix(recipes,'all-gui',policy)
 
     def test_complete_commit_required(self):
         self.assertEqual(ci.exact_commit('b' * 40), 'b' * 40)
         for text in ('main', 'HEAD', 'abc123', 'a' * 41, 'B' * 40):
             with self.assertRaises(ValueError): ci.exact_commit(text)
+
+
+    def test_authorized_faster_arm_and_windows_are_independent(self):
+        selected=ci.plan(pool='faster',configured_arm='foundation-arm-large',configured_windows='foundation-windows-large')
+        values={row['target']:row['runner'] for row in selected['packages']['include']}
+        self.assertEqual(values['linux-x86_64'],'ubuntu-24.04')
+        self.assertEqual(values['linux-aarch64'],'foundation-arm-large')
+        self.assertEqual(values['windows-x86_64'],'foundation-windows-large')
+        for invalid in ('self-hosted','foundation-linux-large','unsafe label'):
+            with self.assertRaises(ValueError):ci.plan(pool='faster',configured_windows=invalid)
+
+    def test_validator_never_downloads_an_implicit_supplier(self):
+        with tempfile.TemporaryDirectory() as temporary, patch('shutil.which',return_value=None), patch('urllib.request.build_opener') as request:
+            with self.assertRaisesRegex(ValueError,'HTTPS'):
+                ci.workflow_lint(Path(temporary)/'lint')
+            request.assert_not_called()
+        from subprocess import CompletedProcess
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);tool=root/'actionlint';tool.write_bytes(b'fixture')
+            with patch.object(ci.subprocess,'run',return_value=CompletedProcess([],0,'1.7.12\n')) as run, patch('urllib.request.build_opener') as request:
+                result=ci.workflow_lint(root/'lint',executable=str(tool))
+                self.assertEqual(result['origin'],'installed');self.assertTrue(result['workflows']);request.assert_not_called()
+                self.assertIn('-shellcheck=',run.call_args.args[0])
+
+
+    def test_retained_validator_rejects_bad_identity_and_insecure_redirect(self):
+        import io,urllib.request
+        with tempfile.TemporaryDirectory() as temporary, patch('shutil.which',return_value=None):
+            output=Path(temporary)/'lint'
+            with patch('urllib.request.build_opener') as opener:
+                opener.return_value.open.return_value.__enter__.return_value=io.BytesIO(b'wrong archive')
+                with self.assertRaisesRegex(ValueError,'pinned identity'):
+                    ci.workflow_lint(output,retained_url='https://example.invalid/retained.tar.gz')
+                self.assertFalse(output.exists())
+            def redirect(handler):
+                request=urllib.request.Request('https://example.invalid/archive')
+                handler.redirect_request(request,None,302,'moved',{},'http://example.invalid/archive')
+            with patch('urllib.request.build_opener',side_effect=redirect):
+                with self.assertRaisesRegex(ValueError,'transfer failed'):
+                    ci.workflow_lint(output,retained_url='https://example.invalid/archive')
+                self.assertFalse(output.exists())
+
+    def test_validator_changed_inputs_cannot_emit_success(self):
+        from subprocess import CompletedProcess
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);tool=root/'actionlint';tool.write_bytes(b'fixture')
+            def run(argv,**unused):
+                if '-version' not in argv: tool.write_bytes(b'changed')
+                return CompletedProcess(argv,0,'1.7.12\n')
+            with patch.object(ci.subprocess,'run',side_effect=run):
+                with self.assertRaisesRegex(ValueError,'changed during'):
+                    ci.workflow_lint(root/'lint',executable=str(tool))
+            self.assertFalse((root/'lint/qualification.json').exists())
 
 
 class BrowserPrerequisiteTests(unittest.TestCase):
@@ -93,6 +151,7 @@ class BrowserPrerequisiteTests(unittest.TestCase):
             selected = self.selection(target)
             self.assertEqual((selected['image'], selected['architecture'], selected['packages']), ('ubuntu:24.04', arch, ['firefox']))
             self.assertEqual(selected['executable'], '/usr/bin/firefox')
+            self.assertEqual(selected['repository'], 'host-preinstalled')
         self.assertEqual(self.selection(environment='debian-12')['packages'], ['firefox-esr'])
         chromium = ci.browser_prerequisite('browser-wasm32', 'chromium', 'wasm')
         self.assertEqual((chromium['image'], chromium['packages']), ('debian:bookworm', ['chromium', 'chromium-driver']))
@@ -127,92 +186,37 @@ class BrowserPrerequisiteTests(unittest.TestCase):
             launch.return_value.stdout = 'arm64\n'
             with self.assertRaisesRegex(ValueError, 'package architecture'): ci.browser_setup_preflight(self.selection())
 
-    def test_key_requires_exact_single_primary_fingerprint(self):
-        listing = 'pub:::::::::\nfpr:::::::::' + ci.MOZILLA_FINGERPRINT + ':\nsub:::::::::\nfpr:::::::::' + 'A' * 40 + ':\n'
-        self.assertEqual(ci.mozilla_key_fingerprint(listing), ci.MOZILLA_FINGERPRINT)
-        for invalid in ('', listing + 'pub:::::::::\n', listing.replace(ci.MOZILLA_FINGERPRINT, 'A' * 40), listing + listing,
-                        'sub:::::::::\nfpr:::::::::' + ci.MOZILLA_FINGERPRINT + ':\n'):
-            with self.assertRaisesRegex(ValueError, 'fingerprint'): ci.mozilla_key_fingerprint(invalid)
+    def test_host_browser_never_installs_or_rewrites_sources(self):
+        record = dict(package='firefox', version='Mozilla Firefox 153.4.0', architecture='amd64',
+                      policy='native host', executable='/usr/lib/firefox/firefox', files={'/usr/lib/firefox/firefox':'a'*64})
+        with tempfile.TemporaryDirectory() as temporary, patch.object(ci, 'inspect_host_firefox', return_value=record) as inspect, \
+                patch.object(ci, 'browser_setup_preflight', side_effect=AssertionError('container mutation')), \
+                patch.object(ci.subprocess, 'run', side_effect=AssertionError('unexpected installation')):
+            output=Path(temporary)/'receipt'
+            receipt=ci.install_browser_prerequisite('linux-x86_64','ubuntu-24.04','hosted-web',output)
+            self.assertEqual(receipt['installed'],[record]); self.assertIsNone(receipt['signing_key_fingerprint'])
+            inspect.assert_called_once_with(self.selection()); self.assertTrue(output.is_dir())
+            inspect.side_effect=ValueError('missing browser')
+            with self.assertRaisesRegex(ValueError,'missing browser'):
+                ci.install_browser_prerequisite('linux-x86_64','ubuntu-24.04','hosted-web',Path(temporary)/'missing')
+            self.assertFalse((Path(temporary)/'missing').exists())
 
-    def test_candidate_must_be_exact_official_origin_and_architecture(self):
-        policy = 'firefox:\n  Installed: (none)\n  Candidate: 157.0~build1\n'
-        official = ' firefox | 157.0~build1 | https://packages.mozilla.org/apt mozilla/main amd64 Packages\n'
-        self.assertEqual(ci.mozilla_candidate(policy, official, 'amd64'), '157.0~build1')
-        for raw in (official.replace('packages.mozilla.org', 'example.invalid'), official.replace('amd64', 'arm64'),
-                    official + official.replace('packages.mozilla.org', 'example.invalid'), ''):
-            with self.assertRaisesRegex(ValueError, 'origin'): ci.mozilla_candidate(policy, raw, 'amd64')
-        with self.assertRaises(ValueError): ci.mozilla_candidate(policy.replace('157.0~build1', '(none)'), official, 'amd64')
-
-    def test_install_command_preserves_trust_scope_and_records_actual_packages(self):
-        import io
-        from contextlib import ExitStack
+    def test_host_browser_requires_real_native_bytes_version_and_architecture(self):
         from subprocess import CompletedProcess
-        with tempfile.TemporaryDirectory() as temporary, ExitStack() as stack:
-            commands, files = [], {}
-            original_open, original_mkdir = Path.open, Path.mkdir
-            def opened(path, mode='r', *args, **kwargs):
-                key = path.as_posix()
-                if key.startswith('/etc/apt/'):
-                    self.assertEqual(mode, 'x'); files[key] = io.StringIO()
-                    class Retained(io.StringIO):
-                        def close(self): files[key] = self.getvalue(); super().close()
-                    return Retained()
-                self.assertTrue(path.resolve().is_relative_to(Path(temporary).resolve()))
-                return original_open(path, mode, *args, **kwargs)
-            def mkdir(path, *args, **kwargs):
-                if path.as_posix().startswith('/etc/apt/'): return None
-                self.assertTrue(path.resolve().is_relative_to(Path(temporary).resolve()))
-                return original_mkdir(path, *args, **kwargs)
-            def launched(argv, **kwargs):
-                commands.append(argv)
-                if argv[0] == 'curl': stdout = 'PUBLIC KEY'
-                elif argv[0] == 'gpg': stdout = 'pub:::::::::\nfpr:::::::::' + ci.MOZILLA_FINGERPRINT + ':\n'
-                elif argv[:2] == ['apt-cache', 'policy']: stdout = 'firefox:\n  Candidate: 157.0~build1\n'
-                elif argv[:2] == ['apt-cache', 'madison']: stdout = 'firefox | 157.0~build1 | https://packages.mozilla.org/apt mozilla/main amd64 Packages\n'
-                elif argv[0] == 'dpkg-query': stdout = 'firefox\t157.0~build1\tamd64\tinstalled\n'
-                elif argv[0] == '/usr/bin/firefox': stdout = 'Mozilla Firefox 157.0'
-                else: stdout = ''
-                return CompletedProcess(argv, 0, stdout)
-            # Both path spellings must remain intercepted before mocking the host guard.
-            for path_type in (PurePosixPath, PureWindowsPath):
-                mkdir(path_type('/etc/apt/keyrings'), parents=True, exist_ok=True)
-                with opened(path_type('/etc/apt/fixture-guard'), 'x') as stream:
-                    stream.write('intercepted')
-                self.assertEqual(files.pop('/etc/apt/fixture-guard'), 'intercepted')
-            guard = stack.enter_context(patch.object(ci, 'browser_setup_preflight'))
-            stack.enter_context(patch.object(ci.subprocess, 'run', side_effect=launched))
-            stack.enter_context(patch.object(Path, 'open', opened)); stack.enter_context(patch.object(Path, 'mkdir', mkdir))
-            stack.enter_context(patch.object(Path, 'chmod'))
-            result = ci.install_browser_prerequisite('linux-x86_64', 'ubuntu-24.04', 'hosted-web', Path(temporary) / 'receipt')
-            guard.assert_called_once_with(self.selection())
-            self.assertIn(['apt-get', 'install', '-y', '--no-install-recommends', 'firefox=157.0~build1'], commands)
-            self.assertIn('[signed-by=' + str(Path('/etc/apt/keyrings/foundation-mozilla.asc')) + ']',
-                          files['/etc/apt/sources.list.d/foundation-mozilla.list'])
-            self.assertIn('Pin: origin packages.mozilla.org', files['/etc/apt/preferences.d/foundation-mozilla'])
-            self.assertIn('Pin: release o=Ubuntu\nPin-Priority: -1', files['/etc/apt/preferences.d/foundation-mozilla'])
-            self.assertEqual(result['installed'][0]['architecture'], 'amd64')
-            self.assertEqual(result['signing_key_fingerprint'], ci.MOZILLA_FINGERPRINT)
-            self.assertEqual(result['browser_version'], 'Mozilla Firefox 157.0')
-            commands.clear(); files.clear()
-            guard.side_effect = ValueError('not disposable')
-            with self.assertRaisesRegex(ValueError, 'not disposable'):
-                ci.install_browser_prerequisite('linux-x86_64', 'ubuntu-24.04', 'hosted-web', Path(temporary) / 'refused')
-            self.assertEqual(commands, []); self.assertEqual(files, {})
-            self.assertFalse((Path(temporary) / 'refused').exists())
-
-    def test_bad_signing_key_prevents_apt_configuration_and_installation(self):
-        from subprocess import CompletedProcess
-        commands = []
-        def launched(argv, **kwargs):
-            commands.append(argv)
-            self.assertEqual(kwargs['env']['LC_ALL'], 'C')
-            return CompletedProcess(argv, 0, 'pub:::::::::\nfpr:::::::::' + 'A' * 40 + ':\n')
-        with tempfile.TemporaryDirectory() as temporary, patch.object(ci, 'browser_setup_preflight'), \
-             patch.object(ci.subprocess, 'run', side_effect=launched), \
-             patch.object(Path, 'open', side_effect=AssertionError('unexpected configuration write')):
-            with self.assertRaisesRegex(ValueError, 'fingerprint'):
-                ci.install_browser_prerequisite('linux-x86_64', 'ubuntu-24.04', 'hosted-web', Path(temporary) / 'refused')
-        self.assertEqual([argv[0] for argv in commands], ['curl', 'gpg'])
+        with tempfile.TemporaryDirectory() as temporary:
+            binary=Path(temporary)/'firefox'; raw=bytearray(64); raw[:6]=b'\x7fELF\x02\x01';raw[18:20]=(62).to_bytes(2,'little');binary.write_bytes(raw)
+            selection=dict(self.selection(),executable=str(binary))
+            with patch.object(ci.platform,'system',return_value='Linux'), \
+                    patch.object(ci.platform,'freedesktop_os_release',create=True,return_value={'ID':'ubuntu','VERSION_ID':'24.04'}), \
+                    patch.object(ci,'assert_host'), patch.object(ci.subprocess,'run',return_value=CompletedProcess([],0,'Mozilla Firefox 153.4.0\n')) as run:
+                result=ci.inspect_host_firefox(selection)
+                self.assertEqual(result['executable'],str(binary.resolve()))
+                self.assertEqual(result['files'],{str(binary.resolve()):ci.module('coverage').sha(binary)})
+                raw[18:20]=(183).to_bytes(2,'little');binary.write_bytes(raw);run.reset_mock()
+                with self.assertRaisesRegex(ValueError,'architecture'):ci.inspect_host_firefox(selection)
+                run.assert_not_called()
+                binary.write_bytes(b'#!/bin/sh\nunknown wrapper\n')
+                with self.assertRaisesRegex(ValueError,'wrapper'):ci.inspect_host_firefox(selection)
 
     def test_lifecycle_receipt_preserves_new_evidence_directory(self):
         helper_spec = importlib.util.spec_from_file_location('ci_lifecycle_fixture', ci.ROOT / '.github/scripts/lifecycle.py')
@@ -233,7 +237,7 @@ class BrowserPrerequisiteTests(unittest.TestCase):
                 return {'status': 'passed'}
             with patch.object(helper, 'ROOT', root), patch.object(helper.os, 'chdir'), \
                  patch.object(helper.evidence, 'load', return_value=frozen), patch.object(helper.evidence, 'validate'), \
-                 patch.object(helper.evidence, 'check_inputs'), patch.object(helper.evidence, 'run_case', side_effect=run_case), \
+                 patch.object(helper.evidence, 'check_inputs'), patch.object(helper.evidence, 'run_execution', side_effect=run_case), \
                  patch.object(helper.ci.platform, 'system', return_value='Linux'), \
                  patch.object(helper.ci, 'install_browser_prerequisite', side_effect=install), \
                  patch.dict(helper.os.environ, {'CHECK': 'ubuntu-check', 'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2'}):
@@ -352,6 +356,7 @@ class CandidateFetchTests(unittest.TestCase):
             matrix = ci.qualification_plan(self.fixture.directory, 'fixture', output, policy)
         frozen = json.loads(output.read_text())
         self.assertEqual(matrix['include'][0]['image'], 'ubuntu:24.04')
+        self.assertEqual(next(x for x in matrix['include'] if x['scope']=='archive')['image'], '')
         archive = next(item for item in frozen['checks'] if item['scope'] == 'archive')
         self.assertIn('/usr/bin/firefox', archive['argv'])
         self.assertIn('--browser-prerequisite-plan', archive['argv'])
@@ -361,6 +366,24 @@ class CandidateFetchTests(unittest.TestCase):
         for case in frozen['checks']:
             self.assertEqual('--browser-prerequisite' in case['argv'], case['scope'] == 'archive')
 
+
+    def test_all_gui_groups_preserve_106_requirements_with_66_executions(self):
+        from unittest.mock import Mock
+        original=ci.module;manifest=original('release').verify_release(self.fixture.directory)
+        policy=json.loads((ci.ROOT/'docs/release-policy.json').read_text())
+        manifest['artifacts']=[dict(manifest['artifacts'][0],target=target,backends=backends) for target,backends in policy['profiles']['all-gui']['targets'].items()]
+        release=Mock(verify_release=Mock(return_value=manifest))
+        with patch.object(ci,'module',side_effect=lambda name:release if name=='release' else original(name)):
+            output=self.root/'all-gui-plan.json';matrix=ci.qualification_plan(self.fixture.directory,'all-gui',output,policy)
+        frozen=json.loads(output.read_text());self.assertEqual(len(frozen['checks']),106);self.assertEqual(len(matrix['include']),66)
+        grouped=[x for x in frozen['checks'] if 'execution' in x]
+        self.assertEqual(len(grouped),48)
+        self.assertTrue(all(x['scope'] in ('source','recovery','abi') for x in grouped))
+        self.assertEqual(len({x['execution'] for x in grouped}),8)
+        for leader in original('coverage').executions(frozen):
+            if 'execution' in leader:
+                rows=original('coverage').execution_members(frozen,leader)
+                self.assertEqual({x['backend'] for x in rows},set(policy['profiles']['all-gui']['targets'][leader['target']]))
 
     def test_windows_gui_plan_freezes_graphics_inputs_and_passes_explicit_archive(self):
         from unittest.mock import Mock

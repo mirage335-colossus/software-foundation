@@ -21,7 +21,10 @@ inline constexpr std::array view_definition{
     ViewDefinition{"entries.editor", gui::Kind::text, 32, "", "New entry", "Type an entry"},
     ViewDefinition{"entries.add", gui::Kind::button, 32, "", "Add entry", ""},
     ViewDefinition{"entries.options", gui::Kind::menu, 32, "", "Actions", ""},
-    ViewDefinition{"entries.list", gui::Kind::list, 128, "", "Entries", "No entries"},
+    ViewDefinition{"entries.task.start", gui::Kind::button, 32, "", "Count text", ""},
+    ViewDefinition{"entries.task.cancel", gui::Kind::button, 32, "", "Cancel task", ""},
+    ViewDefinition{"entries.task.status", gui::Kind::label, 32, "Task ready", "", ""},
+    ViewDefinition{"entries.list", gui::Kind::list, 72, "", "Entries", "No entries"},
     ViewDefinition{"entries.count", gui::Kind::label, 32, "", "", ""},
     ViewDefinition{"entries.status", gui::Kind::label, 32, "", "", "", false, gui::TextWrap::word},
     ViewDefinition{"entries.remove", gui::Kind::button, 32, "", "Remove selected", "", false, gui::TextWrap::none, true}

@@ -110,7 +110,7 @@ def validate(plan):
     seen = set()
     for item in plan["checks"]:
         fields(item, {"id", "scope", "target", "environment", "backend", "required", "argv",
-                      "timeout_seconds", "warning_seconds", "expected_tests"}, {"junit", "qualification"})
+                      "timeout_seconds", "warning_seconds", "expected_tests"}, {"junit", "qualification", "execution"})
         for key in ("id", "scope", "target", "environment", "backend"):
             if not isinstance(item[key], str) or not NAME.fullmatch(item[key]):
                 raise ValueError("invalid check identity")
@@ -138,9 +138,54 @@ def validate(plan):
             relative(item["junit"])
         if "qualification" in item:
             relative(item["qualification"])
+    validate_executions(plan)
     if plan["id"] != digest({k: v for k, v in plan.items() if k != "id"}):
         raise ValueError("coverage plan digest differs")
     return plan
+
+
+
+def execution_members(plan, item):
+    return [row for row in plan["checks"] if row.get("execution", row["id"]) == item.get("execution", item["id"])]
+
+
+def validate_executions(plan):
+    for item in plan["checks"]:
+        if "execution" not in item:
+            continue
+        members = execution_members(plan, item)
+        if (not isinstance(item["execution"], str) or item["execution"] != members[0]["id"] or
+                len(members) < 2 or item["scope"] not in ("source", "recovery", "abi") or
+                not item["target"].startswith(("linux-", "windows-")) or
+                item["scope"] == "abi" and not item["target"].startswith("linux-")):
+            raise ValueError("unsupported grouped execution")
+        common = ("execution", "target", "environment", "scope", "argv", "timeout_seconds", "warning_seconds", "expected_tests")
+        if (any(any(row.get(key) != item.get(key) for key in common) for row in members) or
+                len({row["backend"] for row in members}) != len(members) or
+                len({row.get("qualification") for row in members}) != len(members) or
+                any(row.get("qualification") != row["id"] + ".qualification.json" for row in members)):
+            raise ValueError("group changes execution inputs or loses logical backend coverage")
+
+
+def executions(plan):
+    validate(plan)
+    return [item for item in plan["checks"] if item.get("execution", item["id"]) == item["id"]]
+
+
+def result_path(plan, check_id, evidence_root):
+    matches = [item for item in plan["checks"] if item["id"] == check_id]
+    if len(matches) != 1:
+        raise ValueError("unknown logical check")
+    item = matches[0]
+    return Path(evidence_root) / item.get("execution", check_id) / (check_id + ".result.json" if "execution" in item else "result.json")
+
+
+def execution_identity(plan, item, run_id, attempt, host):
+    members = execution_members(plan, item)
+    return dict(schema_version=1, plan=plan["id"], subject=plan["subject"],
+                execution=item["execution"], checks=[x["id"] for x in members],
+                backends=sorted(x["backend"] for x in members), target=item["target"],
+                environment=item["environment"], scope=item["scope"], run_id=run_id, attempt=attempt, host=host)
 
 
 def freeze(spec):
@@ -216,6 +261,15 @@ def qualification(root, item, plan, host):
             if name not in receipt["evidence"]:
                 raise ValueError("tool outcomes absent from retained evidence")
             tool_report(load(local(root, name)))
+    if "execution" in item:
+        actual = receipt["details"].get("execution")
+        if not isinstance(actual, dict):
+            raise ValueError("grouped qualification lacks complete execution identity")
+        expected = execution_identity(plan, item, actual.get("run_id"), actual.get("attempt"), host)
+        if actual != expected or not NAME.fullmatch(str(actual["run_id"])) or type(actual["attempt"]) is not int or actual["attempt"] < 1:
+            raise ValueError("grouped qualification differs from frozen execution")
+        if "execution.json" not in receipt["evidence"] or load(local(root, "execution.json")) != actual:
+            raise ValueError("grouped qualification lacks bound shared evidence")
     return receipt
 
 
@@ -231,7 +285,7 @@ def tool_report(value):
     return value
 
 
-def run_case(plan, check_id, root, output, run_id, attempt):
+def run_case(plan, check_id, root, output, run_id, attempt, *, _physical=False):
     validate(plan)
     if not NAME.fullmatch(run_id) or type(attempt) is not int or attempt < 1:
         raise ValueError("invalid run identity")
@@ -239,12 +293,15 @@ def run_case(plan, check_id, root, output, run_id, attempt):
     if len(matches) != 1:
         raise ValueError("check not in frozen inventory")
     item = matches[0]
+    if "execution" in item and not _physical:
+        raise ValueError("grouped check requires the physical execution entry point")
     root = root.resolve(strict=True)
     check_inputs(plan, root)
     output.mkdir(parents=True, exist_ok=False)
     output = output.resolve()
     argv = [x.replace("{python}", sys.executable).replace("{root}", str(root))
-             .replace("{evidence}", str(output)) for x in item["argv"]]
+             .replace("{evidence}", str(output)).replace("{plan_id}", plan["id"])
+             .replace("{run_id}", run_id).replace("{attempt}", str(attempt)) for x in item["argv"]]
     started = time.monotonic()
     result = {"schema_version": 1, "plan": plan["id"], "subject": plan["subject"], "check": check_id,
               "run_id": run_id, "attempt": attempt, "status": "not_run", "exit_code": None,
@@ -304,11 +361,42 @@ def run_case(plan, check_id, root, output, run_id, attempt):
     return result
 
 
+
+def run_execution(plan, check_id, root, output, run_id, attempt):
+    """Execute once, then publish every exact logical projection after writer closure."""
+    validate(plan)
+    leaders = [x for x in executions(plan) if x["id"] == check_id]
+    if len(leaders) != 1:
+        raise ValueError("only a frozen physical execution leader can launch")
+    leader = leaders[0]
+    if "execution" not in leader:
+        return run_case(plan, check_id, root, output, run_id, attempt)
+    result = run_case(plan, check_id, root, output, run_id, attempt, _physical=True)
+    import copy
+    for item in execution_members(plan, leader):
+        projected = copy.deepcopy(result)
+        projected["check"] = item["id"]
+        if result["status"] == "passed":
+            original = load(local(output, leader["qualification"]))
+            receipt = copy.deepcopy(original)
+            receipt["backend"] = item["backend"]
+            if item != leader:
+                write_new(local(output, item["qualification"]), receipt)
+            qualification(output, item, plan, result["host"])
+            projected["evidence"].pop(leader["qualification"], None)
+            projected["evidence"][item["qualification"]] = sha(local(output, item["qualification"]))
+        elif item != leader:
+            projected["evidence"].pop(leader["qualification"], None)
+        write_new(Path(output) / (item["id"] + ".result.json"), projected)
+    return result
+
+
 def merge(plan, paths):
     validate(plan)
     expected = {x["id"]: x for x in plan["checks"]}
     reports = {}
     run_ids = set()
+    attempts = set()
     for path in paths:
         value = load(path)
         name = value["check"]
@@ -340,9 +428,25 @@ def merge(plan, paths):
             if check["expected_tests"]:
                 junit(local(Path(path).parent, check["junit"]), check["expected_tests"])
         run_ids.add(value["run_id"])
+        attempts.add(value["attempt"])
         reports[name] = value
-    if set(reports) != set(expected) or len(run_ids) != 1:
-        raise ValueError("missing results or mixed runs; omissions need explicit result records")
+    if set(reports) != set(expected) or len(run_ids) != 1 or len(attempts) != 1:
+        raise ValueError("missing results or mixed runs/attempts; omissions need explicit result records")
+    for leader in executions(plan):
+        if "execution" not in leader:
+            continue
+        rows = [reports[x["id"]] for x in execution_members(plan, leader)]
+        keys = ("run_id", "attempt", "status", "exit_code", "created_at", "argv", "host", "seconds", "warnings", "error")
+        if any(any(row[key] != rows[0][key] for key in keys) for row in rows):
+            raise ValueError("logical projections refer to different physical executions")
+        if rows[0]["status"] == "passed":
+            paths_by_id = {load(path)["check"]: Path(path) for path in paths}
+            receipts = [qualification(paths_by_id[x["id"]].parent, x, plan, rows[0]["host"]) for x in execution_members(plan, leader)]
+            if any(row["details"] != receipts[0]["details"] or row["evidence"] != receipts[0]["evidence"] for row in receipts):
+                raise ValueError("grouped backend projections have different evidence")
+            identity = receipts[0]["details"]["execution"]
+            if (identity["run_id"], identity["attempt"]) != (rows[0]["run_id"], rows[0]["attempt"]):
+                raise ValueError("execution evidence belongs to another run or attempt")
     required_ok = all(reports[name]["status"] == "passed" for name, x in expected.items() if x["required"])
     return {"schema_version": 1, "plan": plan["id"], "subject": plan["subject"], "mode": plan["mode"],
             "status": "passed" if required_ok else "failed", "run_id": next(iter(run_ids)),
@@ -372,7 +476,7 @@ def main():
         return 0
     plan = validate(load(a.plan))
     if a.command == "run":
-        result = run_case(plan, a.check, a.root, a.output, a.run_id, a.attempt)
+        result = run_execution(plan, a.check, a.root, a.output, a.run_id, a.attempt)
     else:
         result = merge(plan, a.reports)
         write_new(a.output, result)

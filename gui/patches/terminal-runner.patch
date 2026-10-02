@@ -35,7 +35,14 @@
          service_pump=[&] {
              if(!adapter.closed()&&!adapter.prompt())if(auto request=example.next_service())
                  adapter.service(std::move(*request),[&](gui::ServiceResult result) {example.complete_service(std::move(result));});
-@@ -252,4 +253,6 @@
+@@ -246,10 +247,12 @@
+             if(host.stopped()) {adapter.key(gui::Key::quit);break;}
+             const auto current=host.size();
+             if(current!=dimensions) {adapter.terminal_size(current.first,current.second);dimensions=current;}
+-            example.retry_presentation();
++            example.tick();
+             service_pump();
+             host.draw(adapter.ansi_rows());
              host.poll(adapter);
          }
      } catch(const std::exception& error) {std::cerr<<"Terminal example: "<<error.what()<<'\n';return 1;}

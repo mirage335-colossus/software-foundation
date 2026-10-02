@@ -176,7 +176,7 @@ def main():
     if args.browser=='chromium' and not args.browser_executable:parser.error('Chromium requires --browser-executable')
     args.output.mkdir(parents=True,exist_ok=False)
     inputs=[Path(__file__).resolve(),args.server,
-            *(args.server.parent/name for name in ('host.py','renderer.mjs','boot.mjs','style.css','index.html'))]
+            *(args.server.parent/name for name in ('host.py','renderer.mjs','boot.mjs','browser_lifecycle.mjs','style.css','index.html'))]
     if 'hosted' in modes:inputs.append(args.executable)
     if 'wasm' in modes:inputs.extend(args.wasm_dir/name for name in ('gui_web_wasm.js','gui_web_wasm.wasm'))
     identify=lambda:{str(path.resolve()):hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}
@@ -204,6 +204,8 @@ def main():
                     browser.wait('return Boolean(document.querySelector("[role=option][aria-label=\\"Browser entry\\"]"));')
                     if browser.script('return document.querySelector("input.editor").value;')!='':
                         raise RuntimeError('Submitted editor was not cleared')
+                    browser.script('Array.from(document.querySelectorAll("button")).find(x=>x.textContent==="Count text").click();')
+                    browser.wait('return Array.from(document.querySelectorAll(".widget")).some(x=>x.textContent==="Counted 12 non-space bytes");')
                     layouts.append(browser.script('return Array.from(document.querySelectorAll(".widget")).map(e=>({key:e.dataset.key,box:[e.offsetLeft,e.offsetTop,e.offsetWidth,e.offsetHeight]}));'))
                     result=browser.command('WebDriver:TakeScreenshot',{'id':None,'full':False,'scroll':False})
                     (args.output/(mode+'.png')).write_bytes(base64.b64decode(result['value'],validate=True))
@@ -220,7 +222,7 @@ def main():
     if thread.is_alive():raise RuntimeError('Browser host thread did not stop')
     if identify()!=expected_inputs:raise RuntimeError('Browser qualification inputs changed while running')
     receipt={'schema_version':1,'status':'passed','engine':args.browser,'browser_version':browser_version,
-             'mode':args.mode,'checks':['editing','accessible-names','shared-geometry','prompt-cancel','capture','cleanup'],
+             'mode':args.mode,'checks':['editing','accessible-names','shared-geometry','prompt-cancel','bounded-task','capture','cleanup'],
              'inputs':expected_inputs,
              'browser_arguments':args.browser_argument}
     temporary=args.output/'qualification.tmp'

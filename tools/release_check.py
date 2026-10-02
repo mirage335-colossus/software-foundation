@@ -88,17 +88,22 @@ def browser_prerequisite_snapshot(options, target, backend, scope, subject):
     executable = options.get("firefox") if engine == "firefox" else options.get("browser_executable")
     if engine != expected["engine"] or executable != expected["executable"]:
         raise ValueError("browser prerequisite differs from the executed browser command")
-    fingerprint = ci_plan.MOZILLA_FINGERPRINT if expected["distribution"] == "ubuntu" else None
+    fingerprint = None
     if data["signing_key_fingerprint"] != fingerprint:
         raise ValueError("browser prerequisite signing identity differs")
     installed = data["installed"]
     if not isinstance(installed, list) or len(installed) != len(expected["packages"]):
         raise ValueError("incomplete browser package prerequisite inventory")
     for package, record in zip(expected["packages"], installed):
-        c.fields(record, {"package", "version", "architecture", "policy"})
+        c.fields(record, {"package", "version", "architecture", "policy"}, {"executable", "files"})
         if (record["package"] != package or record["architecture"] != expected["architecture"] or
                 not all(isinstance(record[key], str) and record[key].strip() for key in ("version", "policy"))):
             raise ValueError("browser prerequisite package identity differs")
+    if expected['repository'] == 'host-preinstalled':
+        observed = ci_plan.inspect_host_firefox(expected)
+        if installed != [observed] or data['browser_version'] != observed['version']:
+            raise ValueError('installed host browser changed since prerequisite inspection')
+        options['firefox'] = observed['executable']
     if not isinstance(data["browser_version"], str) or not data["browser_version"].strip():
         raise ValueError("browser prerequisite version is absent")
     return {"path": path, "raw": raw, "data": data, "plan_path": plan_path, "plan_raw": plan_raw}
@@ -122,6 +127,10 @@ def bind_browser_prerequisite(state, details, evidence):
     if (state["path"].is_symlink() or state["path"].read_bytes() != state["raw"] or
             state["plan_path"].is_symlink() or state["plan_path"].read_bytes() != state["plan_raw"]):
         raise ValueError("browser prerequisite or frozen plan changed during qualification")
+    if expected['selection']['repository'] == 'host-preinstalled':
+        for name, value in expected['installed'][0]['files'].items():
+            if digest(Path(name)) != value:
+                raise ValueError('host browser executable changed during qualification')
     destination = evidence / "browser/prerequisite.json"
     with destination.open("xb") as stream:
         stream.write(state["raw"])
@@ -546,13 +555,22 @@ def qualification_work(evidence):
             shutil.rmtree(work)
 
 
-def check(candidate, target, backend, scope, evidence, jobs=2, browser_options=None):
+def check(candidate, target, backend, scope, evidence, jobs=2, browser_options=None, *, execution=None, receipt_name="qualification.json"):
     if scope not in ("source", "archive", "recovery", "abi", "apt") or jobs < 1:
         raise ValueError("unsupported qualification operation")
     candidate = candidate.resolve(strict=True)
     manifest = release.verify_release(candidate)
     before = digest(candidate / "release.json")
     entry = select(manifest, target, backend)
+    if execution is not None:
+        c.fields(execution, {"schema_version", "plan", "subject", "execution", "checks", "backends", "target", "environment", "scope", "run_id", "attempt", "host"})
+        if (scope not in ("source", "recovery", "abi") or target == "browser-wasm32" or
+                execution["target"] != target or execution["scope"] != scope or
+                execution["backends"] != sorted(entry["backends"] or ["core"]) or
+                backend not in execution["backends"] or execution["host"] != c.host_identity() or
+                execution["subject"]["source_sha256"] != manifest["source"]["sha256"] or
+                execution["subject"]["inventory_sha256"] != before):
+            raise ValueError("grouped execution must cover the exact complete native artifact")
     if target != "browser-wasm32":
         native_target(target)
     elif backend != "wasm" or scope in ("abi", "apt"):
@@ -566,7 +584,7 @@ def check(candidate, target, backend, scope, evidence, jobs=2, browser_options=N
     prerequisite = browser_prerequisite_snapshot(browser_options or {}, target, backend, scope,
         {"source_sha256": manifest["source"]["sha256"], "inventory_sha256": before})
     evidence.mkdir(parents=True, exist_ok=True)
-    receipt = evidence / "qualification.json"
+    receipt = c.local(evidence, receipt_name)
     if receipt.exists():
         raise ValueError("qualification receipt must be a new attempt")
     with qualification_work(evidence) as work:
@@ -634,6 +652,10 @@ def check(candidate, target, backend, scope, evidence, jobs=2, browser_options=N
         retained += [p.relative_to(evidence).as_posix() for p in (evidence / "windows-graphics").rglob("*") if p.is_file()]
     retained += list(details.get("native_visual", {}))
     result["evidence"] = {name: digest(evidence / name) for name in retained}
+    if execution is not None:
+        c.write_new(evidence / "execution.json", execution)
+        result["details"]["execution"] = execution
+        result["evidence"]["execution.json"] = digest(evidence / "execution.json")
     c.write_new(receipt, result)
     return result
 
@@ -646,6 +668,11 @@ def main():
     p.add_argument("--backend", required=True)
     p.add_argument("--evidence", type=Path, required=True)
     p.add_argument("--jobs", type=int, default=2)
+    p.add_argument("--execution-plan", type=Path)
+    p.add_argument("--execution-id")
+    p.add_argument("--run-id")
+    p.add_argument("--attempt", type=int)
+    p.add_argument("--receipt", default="qualification.json")
     p.add_argument("--browser", choices=("firefox", "chromium"), default="firefox")
     p.add_argument("--firefox", default="firefox")
     p.add_argument("--browser-executable")
@@ -654,8 +681,20 @@ def main():
     p.add_argument("--browser-prerequisite-plan", type=Path)
     p.add_argument("--windows-graphics-archive", type=Path)
     a = p.parse_args()
+    execution = None
+    if any((a.execution_plan, a.execution_id, a.run_id, a.attempt)):
+        if not all((a.execution_plan, a.execution_id, a.run_id, a.attempt)):
+            raise ValueError("complete execution plan and run identity required")
+        plan = c.validate(c.load(a.execution_plan))
+        members = [x for x in c.executions(plan) if x["id"] == a.execution_id]
+        if len(members) != 1 or "execution" not in members[0]:
+            raise ValueError("unknown physical execution")
+        leader = members[0]
+        if (leader["target"], leader["backend"], leader["scope"], leader["qualification"]) != (a.target, a.backend, a.scope, a.receipt):
+            raise ValueError("execution command differs from frozen leader")
+        execution = c.execution_identity(plan, leader, a.run_id, a.attempt, c.host_identity())
     check(a.release, a.target, a.backend, a.scope, a.evidence, a.jobs,
-          {key: getattr(a, key) for key in ("browser", "firefox", "browser_executable", "driver", "browser_prerequisite", "browser_prerequisite_plan", "windows_graphics_archive")})
+          {key: getattr(a, key) for key in ("browser", "firefox", "browser_executable", "driver", "browser_prerequisite", "browser_prerequisite_plan", "windows_graphics_archive")}, execution=execution, receipt_name=a.receipt)
 
 
 if __name__ == "__main__":

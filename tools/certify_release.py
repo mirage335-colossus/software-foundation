@@ -82,6 +82,11 @@ def certify(directory, manifest, plan, reports, policy, profile, experiment=Fals
         raise ValueError("required qualification scope missing from plan")
     if not set(manifest["required_scopes"]) <= {r[3] for r in expected}:
         raise ValueError("release requirements absent from qualification policy")
+    for leader in coverage.executions(plan):
+        if "execution" in leader:
+            covered = {x["backend"] for x in coverage.execution_members(plan, leader)}
+            if covered != actual_targets[leader["target"]]:
+                raise ValueError("grouped execution must cover every delivered backend")
     result = coverage.merge(plan, reports)
     report_paths = {coverage.load(path)["check"]: path for path in reports}
     for check in plan["checks"]:

@@ -195,7 +195,7 @@ def validate_spec(spec):
     fields = {'schema_version', 'version', 'package_release', 'architecture', 'backend',
               'archive_url', 'archive_sha256', 'license_files', 'redistribution_approved',
               'application_source', 'packaging_tool', 'sdk', 'dependencies', 'runtime_dependencies'}
-    if not isinstance(spec, dict) or set(spec) != fields or type(spec['schema_version']) is not int or spec['schema_version'] not in (1, 2):
+    if not isinstance(spec, dict) or set(spec) != fields or type(spec['schema_version']) is not int or spec['schema_version'] not in (1, 2, 3):
         raise ValueError('invalid complete package specification')
     version_key(spec)
     if spec['architecture'] not in ARCHES or spec['backend'] not in BACKENDS or spec['redistribution_approved'] is not True:
@@ -302,7 +302,7 @@ def recipe_files(spec, root_name, payload, archive_name):
     name = 'software-foundation-' + backend + '-bin'
     private = 'opt/software-foundation/' + backend
     selection = None
-    if spec['schema_version'] == 2:
+    if spec['schema_version'] >= 2:
         payload, selection = select_payload(spec, root_name, payload)
     allowed = {'foundation-cli'}
     if backend != 'core':
@@ -396,6 +396,8 @@ def recipe_files(spec, root_name, payload, archive_name):
     ebuild += ''.join(f'  dobin "${{FILESDIR}}/{path}"\n' for path in launchers)
     ebuild += ''.join(f'  insinto /{Path(destination).parent.as_posix()}\n  newins "${{S}}/{source}" {Path(destination).name}\n'
                       for source, destination in manuals.items())
+    if spec['schema_version'] >= 3:
+        ebuild += '  docompress -x /opt/software-foundation /usr/share/man\n'
     ebuild += '}\n'
     output[gentoo_prefix + ebuild_name] = (ebuild.encode(), 0o644)
     gentoo_aux = dict(launchers)
@@ -430,7 +432,7 @@ def expected_package(files):
         path = Path(temporary) / name
         path.write_bytes(data)
         root_name, payload = archive_payload(path, manifest)
-    if spec['schema_version'] == 2 and any('bin/' + name in payload for name in GUI_EXECUTABLES):
+    if spec['schema_version'] >= 2 and any('bin/' + name in payload for name in GUI_EXECUTABLES):
         # Retained archives and shared files still contain GUI material for core projections.
         require_gui_terms()
     augmented = dict(spec, archive_size=len(data), archive_sha512=hashlib.sha512(data).hexdigest())

@@ -41,9 +41,13 @@ the consumer's runtime. Keep the matching prepared SDK for SDK-produced packages
 this helper does not turn a different compiler or target into a compatible one.
 
 The accompanying `LICENSE` applies to this package's own code.
-`third_party/dependencies.json` records dependency status. Optional GUI adapters
-are not included. The matching source repository provides the full development
-specification, tests and reproducible build instructions.
+`third_party/dependencies.json` records dependency status. Core packages contain
+only the CLI and developer library. GUI packages additionally contain the selected
+`foundation-gui-*` applications, shared resources and their notices; the release
+inventory is authoritative for that selection. Each executable uses the same
+application widget definitions and behavior. `share/doc/Foundation/dependency-notices`
+retains the linked dependencies' notices and exact provenance. The matching source
+repository provides the full development specification and reproducible build instructions.
 
 A complete release also retains the exact prepared dependency groups that produced
 its binaries. They are development/recovery assets, not application installation

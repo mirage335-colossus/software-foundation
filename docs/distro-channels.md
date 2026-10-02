@@ -26,9 +26,10 @@ The producer supports Linux `x86_64` and `aarch64`, mapped to Gentoo `amd64` and
 `terminal`, `framebuffer`, `fltk`, `rev`, `sdl` and `hosted-web`. Browser/Wasm assets
 belong to the web delivery contract rather than a Linux executable package.
 Generation support does not qualify any processor, operating system or native
-package manager. GUI package generation remains blocked by the unresolved
+package manager. GUI package generation requires the reviewed
 [dependency terms](../third_party/gui-boundary.lock.json); the coexistence fixture
-exercises templates without approving redistribution.
+exercises templates without granting additional redistribution rights. The current
+recorded permission applies to this repository's source and compiled binaries.
 
 Every specification contains exactly these fields:
 
@@ -294,3 +295,13 @@ variant coexistence, remove/reinstall, retained file hashes and bounded checks o
 each installed executable. Test custom runtime dependency lists in those native
 environments. Windows activation is rejected; other POSIX filesystems, network
 filesystems and crash/power-loss behavior require their own qualification.
+
+## Authenticated automatic client refresh
+
+See [native acceptance and normal updates](distribution-release.md#native-acceptance-and-normal-updates)
+for the complete public fetch client, Portage sync adapter, APT/pacman configuration,
+qualified-channel tracking and actual native client workflow. New distribution
+releases generate version-3 recipes: the combined-backend contract of version 2
+plus explicit preservation of Gentoo installed bytes. Old schemas retain their
+original exact templates. Local assembly and native client execution remain distinct
+evidence scopes.

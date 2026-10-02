@@ -17,7 +17,8 @@ Each target gets a distinct immutable tag:
 `distro-VERSION-ARCH-rPACKAGE_RELEASE-sSEQUENCE`. APT files and Arch databases,
 packages and signatures live directly at that release's download root. The full
 signed native channel, Arch recipes and Gentoo overlay also live in
-`channels.tar.gz`. The release remains a prerelease and is never selected as Latest.
+`channels.tar.gz`. The release starts as a prerelease and is never selected as Latest. Native client
+acceptance can subsequently mark it qualified without changing any asset.
 
 All original delivery files are copied to assets named
 `sha256-DIGEST-ORIGINAL_FILENAME`. This retains the original source archive, every
@@ -149,6 +150,131 @@ Local fixtures use actual ELF executables, Debian packages and disposable signin
 keys, plus a mocked GitHub service. They cover signature and inventory tampering,
 source/certificate closure, publication planning, private partial failure,
 idempotent recovery and complete downloaded verification. This does not establish
-native pacman or Portage install/update qualification; add the exact acceptance
-checks described in [distribution](distribution.md) before advertising those
-platforms. Public service behavior also requires an explicit hosted qualification.
+native pacman or Portage install/update qualification. The native workflow below
+provides those checks; report its actual result for the exact release before
+advertising support. Public service behavior requires hosted execution.
+
+## Native acceptance and normal updates
+
+The [native client workflow](../.github/workflows/distro-check.yml) fetches the exact
+published assets and reproduces their signature, package, source, SDK and application
+certificate checks before installation. Debian Bookworm, Debian Trixie and Ubuntu
+24.04 run natively on x86-64 and ARM64. Official Arch Linux and the current Gentoo
+example image run on x86-64. Generating an ARM64 Arch/Gentoo recipe does not establish
+native client support on those systems. Every backend in the selected archive must
+install, retain its exact private files, launchers and manuals, pass its self-check,
+accept a repeated repository refresh, and uninstall. An optional older `previous`
+selection adds a real package-version upgrade using two published immutable releases.
+Every previously present backend must have a strictly newer application version or
+`package_release`; a sequence increase alone cannot qualify as a package upgrade.
+Omitting it reports `upgrade_from: null`; repeated installation is not a version-upgrade claim.
+
+For this publication workflow, renewing expiring metadata requires increasing both
+`sequence` and `package_release`, even when the application archive is unchanged.
+Each immutable distribution tag changes retained source/SDK URLs embedded in native
+package provenance. Those changed package bytes must receive a new package release.
+The lower-level channel updater can renew metadata alone only when the complete
+package specifications, including their retained URLs, remain identical.
+
+`distribution.yml` calls these checks after initially publishing the signed channel
+as a prerelease. Only its protected acceptance job may mark that same unchanged
+channel eligible for automatic tracking. This changes the channel's qualification
+metadata, never its files, source tag or the application's Latest selection. Failed
+checks leave a reviewable prerelease. Evidence uses the private draft-release transport,
+with exact run/attempt/job/source binding and no Actions artifact storage. The public
+qualification marker binds the required native result digests. It supplements the
+signed payload and independent key trust; it is not a new signing authority.
+
+For manual qualification, dispatch `distro-check.yml` with `channel` set to:
+
+```json
+{"tag":"distro-1.2.3-x86_64-r1-s1","manifest_sha256":"EXACT_DISTRIBUTION_JSON_SHA256","target":"linux-x86_64"}
+```
+
+Use `accept=false` for observation, or `accept=true` after reviewing the publication
+operation. The latter uses the protected publisher environment. A retry must match
+the recorded exact identity; different accepted evidence needs an explicit reviewed
+lifecycle transition, not replacement in place.
+
+[`distro_client.py`](../tools/distro_client.py) provides normal client refresh through
+Python, GnuPG and standard HTTPS. Public retrieval requires no GitHub account or
+third-party Git hosting service beyond the project's own retained release. Install
+an operator-trusted copy of the source tool tree and its `docs/release-policy.json`
+at a persistent path, preserving the relative `tools`, `docs` and `third_party` paths.
+Do not download and execute a changing remote helper during refresh.
+
+Create a root-owned configuration outside the tool tree:
+
+```json
+{
+  "schema_version": 1,
+  "repository": "OWNER/REPOSITORY",
+  "target": "linux-x86_64",
+  "trusted_fingerprint": "FULL_INDEPENDENTLY_TRUSTED_PRIMARY_FINGERPRINT",
+  "policy_sha256": "EXACT_REVIEWED_POLICY_SHA256",
+  "selection": {"tag":"distro-1.2.3-x86_64-r1-s1","manifest_sha256":"EXACT_DISTRIBUTION_JSON_SHA256"},
+  "location": "/var/lib/software-foundation-channel"
+}
+```
+
+`selection: {"track":"qualified"}` explicitly opts into subsequent qualified
+channels for the same target. Discovery is only a candidate lookup: all assets,
+signatures, certificate evidence, target and policy are verified before activation.
+The first trusted selection still requires independent freshness review. Once a
+channel is accepted, sequence rollback, package removal, version downgrade and
+same-version byte replacement are rejected. Trust-key or policy updates require an
+operator-reviewed configuration change. Expired metadata fails; refresh signing
+metadata with a new sequence and immutable tag before its expiry.
+
+```sh
+sudo python3 -B /opt/foundation-tools/tools/distro_client.py refresh --config /etc/foundation-channel.json
+python3 -B /opt/foundation-tools/tools/distro_client.py config --config /etc/foundation-channel.json --kind apt
+python3 -B /opt/foundation-tools/tools/distro_client.py config --config /etc/foundation-channel.json --kind arch
+```
+
+Install the printed APT stanza in a dedicated `.sources` file, or the Arch stanza
+in a dedicated file included by `pacman.conf`. Import and locally trust the same
+independently verified key with `pacman-key` before installation. Both frontends use
+the locally retained signed repository through a single managed `current` pointer.
+Run the refresh command before `apt-get update` or `pacman -Syu`, or schedule that
+same explicit command using the host's service manager. A failed refresh preserves
+the previous pointer; do not proceed to an intended upgrade as though it succeeded.
+Ordinary package updates can continue using an unexpired retained generation when
+network access is unavailable. This service is opt-in; application installation
+never adds a timer or modifies package-manager configuration on its own.
+
+For Gentoo, the installed source tree must remain at its trusted path:
+
+```sh
+sudo python3 -B /opt/foundation-tools/tools/distro_client.py install-portage --config /etc/foundation-channel.json
+sudo emaint sync -r software-foundation-bin
+```
+
+The adapter invokes the same authenticated refresh and activates the complete
+binary overlay. Ebuilds wrap retained application bytes with empty compilation
+phases; resolve host prerequisites through a configured binary package repository.
+Version-3 recipes exclude the private application and manual directories from
+Portage's compression transformations so installed-byte checks remain meaningful.
+Version-1/2 template verification remains unchanged. Keep Portage's generated caches
+outside the authenticated channel tree; modifications to a retained generation
+fail the next refresh instead of silently becoming trusted input.
+
+The refresh lock serializes cooperating callers. New complete generations are
+verified before the atomic pointer replacement; old generations are kept for
+inspection. A directory-sync failure after replacement is reported as uncertain:
+inspect `current` and the retained manifests before retrying. The helper is not a
+security boundary against another root process, and it does not garbage-collect
+old SDK/source archives. Explicitly budget local disk space and retire only
+unreferenced generations after stopping client writers.
+
+### Repository trust configuration
+
+The current repository distribution signing fingerprint is
+`EF876322B5CE4782062CB3E991649063150BC781`. The private signing key is supplied only
+through the `release-publisher` environment secret `DISTRIBUTION_SIGNING_KEY`; the
+matching public fingerprint is configured as `DISTRIBUTION_SIGNING_FINGERPRINT`.
+This environment accepts the `main` branch. A project copied from this example
+must generate its own key, configure its own independent trust value, and keep
+a private recovery backup outside source control and release assets. Never copy
+this fingerprint as authority for a different project's packages. Public releases
+carry the corresponding verification key alongside signed metadata.

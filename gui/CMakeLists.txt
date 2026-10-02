@@ -1,3 +1,4 @@
+foundation_register_build_directory()
 # Explicit, preserved source input. Configuration never fetches dependencies.
 set(FOUNDATION_GUI_SOURCE "" CACHE PATH "Verified gui-boundary source checkout or archive")
 set(FOUNDATION_GUI_INPUT_GROUP "" CACHE PATH "Retained complete GUI input group")
@@ -65,6 +66,7 @@ if(NOT EMSCRIPTEN)
 endif()
 add_library(foundation_gui_boundary INTERFACE)
 add_library(gui_boundary ALIAS foundation_gui_boundary)
+target_include_directories(foundation_gui_boundary INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/include")
 target_include_directories(foundation_gui_boundary SYSTEM INTERFACE "${FOUNDATION_GUI_SOURCE}/include")
 target_compile_features(foundation_gui_boundary INTERFACE cxx_std_20)
 if(WIN32)
@@ -96,7 +98,7 @@ function(gui_warnings target)
 endfunction()
 add_custom_target(foundation-gui-hosts)
 function(foundation_gui_executable target source)
-    add_executable(${target} ${source})
+    add_executable(${target} "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
     target_link_libraries(${target} PRIVATE foundation_gui_application)
     target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
     foundation_options(${target})
@@ -139,13 +141,23 @@ if(BUILD_TESTING)
 endif()
 find_program(FOUNDATION_NODE_EXECUTABLE NAMES node nodejs)
 # Keep the browser asset names stable; both transport modes use the same renderer.
-file(COPY "${FOUNDATION_GUI_SOURCE}/backends/web/renderer.mjs"
-    "${FOUNDATION_GUI_SOURCE}/backends/web/boot.mjs"
-    "${FOUNDATION_GUI_SOURCE}/backends/web/style.css"
-    "${FOUNDATION_GUI_SOURCE}/backends/web/index.html"
-    "${FOUNDATION_GUI_SOURCE}/backends/web/host.py" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/web")
+foundation_gui_patch(include/gui/web.hpp web-tick.patch include/gui/web.hpp)
+foundation_gui_patch(backends/web/renderer.mjs web-ordering.patch web/renderer.mjs)
+foundation_gui_patch(backends/web/boot.mjs web-lifecycle.patch web/boot.mjs)
+foundation_gui_patch(backends/web/host.py web-assets.patch web/host.py)
+configure_file(host/browser_lifecycle.mjs "${CMAKE_CURRENT_BINARY_DIR}/web/browser_lifecycle.mjs" COPYONLY)
+file(COPY "${FOUNDATION_GUI_SOURCE}/backends/web/style.css"
+    "${FOUNDATION_GUI_SOURCE}/backends/web/index.html" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/web")
 configure_file(hosts/web_host.py "${CMAKE_CURRENT_BINARY_DIR}/web/serve.py" COPYONLY)
 if(FOUNDATION_GUI_DISTRIBUTABLE)
+    foreach(notice third_party/rev-deps/glew-LICENSE.txt third_party/rev-deps/freetype-LICENSE.TXT
+        third_party/rev-deps/freetype-FTL.TXT third_party/rev-deps/freetype-GPLv2.TXT
+        third_party/rev/resources/DejaVu-LICENSE third_party/rev/resources/DejaVu-AUTHORS
+        third_party/rev/resources/DejaVu-SOURCES.json third_party/rev/external/glm/LICENSE
+        third_party/rev/external/nanosvg/LICENSE third_party/rev/UPSTREAM.json
+        third_party/rev/README.md third_party/rev/PATCHES.md third_party/rev-deps/UPSTREAM.json)
+        foundation_notice_file("${FOUNDATION_GUI_SOURCE}/${notice}")
+    endforeach()
     install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/web/"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/software-foundation/web")
     install(FILES "${lock_path}" DESTINATION "${CMAKE_INSTALL_DOCDIR}/gui-boundary")
@@ -163,7 +175,7 @@ if(EMSCRIPTEN)
     target_compile_options(foundation-gui-web-wasm PRIVATE -fexceptions)
     target_link_options(foundation-gui-web-wasm PRIVATE --no-entry -fexceptions
         -sMODULARIZE=1 -sEXPORT_ES6=1 -sALLOW_MEMORY_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=['_gui_web_create','_gui_web_receive']"
+        "-sEXPORTED_FUNCTIONS=['_gui_web_create','_gui_web_receive','_gui_web_destroy']"
         "-sEXPORTED_RUNTIME_METHODS=['ccall']" -sENVIRONMENT=web,node)
     target_link_options(foundation-gui-web-wasm PRIVATE
         "-sINCOMING_MODULE_JS_API=['wasmBinary','locateFile','print','printErr','onRuntimeInitialized']")
@@ -265,6 +277,8 @@ if(BUILD_TESTING)
     endforeach()
     foundation_gui_executable(foundation_gui_test tests/application_test.cpp)
     foundation_gui_check(shared-feature foundation_gui_test focused)
+    foundation_gui_executable(foundation_gui_task_test tests/task_test.cpp)
+    foundation_gui_check(task-lifecycle foundation_gui_task_test focused)
     foundation_gui_executable(foundation_gui_parity_test tests/parity_test.cpp)
     foundation_gui_check(parity foundation_gui_parity_test focused)
     add_test(NAME foundation.gui.transport COMMAND ${Python3_EXECUTABLE} -B
@@ -291,9 +305,14 @@ if(BUILD_TESTING)
         foundation_gui_check("upstream.${test_name}" ${test_target} regression)
     endforeach()
     if(FOUNDATION_NODE_EXECUTABLE)
+        foundation_gui_patch(tests/web_renderer_test.mjs web-ordering-test.patch tests/web_renderer_test.mjs)
         add_test(NAME foundation.gui.renderer COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
-            "${FOUNDATION_GUI_SOURCE}/tests/web_renderer_test.mjs")
+            "${CMAKE_CURRENT_BINARY_DIR}/tests/web_renderer_test.mjs")
         set_tests_properties(foundation.gui.renderer PROPERTIES LABELS "gui;regression" TIMEOUT 60)
+        add_test(NAME foundation.gui.browser-lifecycle COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_lifecycle_test.mjs"
+            "${CMAKE_CURRENT_BINARY_DIR}/web/browser_lifecycle.mjs")
+        set_tests_properties(foundation.gui.browser-lifecycle PROPERTIES LABELS "gui;focused" TIMEOUT 30)
     endif()
     if(FOUNDATION_GUI_HOST_TESTS)
         if(UNIX)
@@ -320,8 +339,46 @@ if(BUILD_TESTING)
                 endif()
                 foundation_gui_check("${backend}-host" foundation_gui_${backend}_test host)
                 set_tests_properties("foundation.gui.${backend}-host" PROPERTIES RESOURCE_LOCK foundation_native_display)
+                # Qualify the selected adapter, including local appearance changes,
+                # against the retained generic supplier scenarios as well as our app.
+                set(supplier_target "foundation_gui_supplier_${backend}")
+                if(backend STREQUAL "rev")
+                    foundation_gui_patch(tests/rev_test.cpp rev-conformance-scale.patch tests/supplier_rev_test.cpp)
+                    set(supplier_source "${CMAKE_CURRENT_BINARY_DIR}/tests/supplier_rev_test.cpp")
+                else()
+                    set(supplier_source "${FOUNDATION_GUI_SOURCE}/tests/${backend}_test.cpp")
+                endif()
+                add_executable(${supplier_target} "${supplier_source}")
+                target_include_directories(${supplier_target} PRIVATE "${FOUNDATION_GUI_SOURCE}/examples")
+                target_link_libraries(${supplier_target} PRIVATE foundation_gui_boundary)
+                if(backend STREQUAL "rev")
+                    target_link_libraries(${supplier_target} PRIVATE gui_rev_adapter)
+                else()
+                    target_link_libraries(${supplier_target} PRIVATE foundation_gui_fltk)
+                endif()
+                foundation_options(${supplier_target})
+                foundation_gui_check("supplier.${backend}" ${supplier_target} "host;regression")
+                set_tests_properties("foundation.gui.supplier.${backend}" PROPERTIES RESOURCE_LOCK foundation_native_display)
+                if(backend STREQUAL "rev")
+                    add_test(NAME foundation.gui.supplier.rev-scaled COMMAND ${supplier_target})
+                    set_tests_properties(foundation.gui.supplier.rev-scaled PROPERTIES
+                        LABELS "gui;host;regression" TIMEOUT 90
+                        ENVIRONMENT "REV_SCALE=1.25" RESOURCE_LOCK foundation_native_display)
+                endif()
             endif()
         endforeach()
+        if(FOUNDATION_GUI_REV)
+            add_executable(foundation_gui_supplier_clipboard "${FOUNDATION_GUI_SOURCE}/tests/rev_clipboard_test.cpp")
+            target_link_libraries(foundation_gui_supplier_clipboard PRIVATE foundation_gui_boundary gui_rev_adapter)
+            foundation_options(foundation_gui_supplier_clipboard)
+            if(MSVC)
+                target_compile_options(foundation_gui_supplier_clipboard PRIVATE /UNDEBUG)
+            else()
+                target_compile_options(foundation_gui_supplier_clipboard PRIVATE -UNDEBUG)
+            endif()
+            foundation_gui_check(supplier.rev-clipboard foundation_gui_supplier_clipboard "host;regression")
+            set_tests_properties(foundation.gui.supplier.rev-clipboard PROPERTIES RESOURCE_LOCK foundation_native_display)
+        endif()
         if(FOUNDATION_GUI_FLTK AND FOUNDATION_GUI_REV)
             add_test(NAME foundation.gui.visual COMMAND "${Python3_EXECUTABLE}" -B
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/visual_test.py"

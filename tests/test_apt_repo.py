@@ -106,7 +106,10 @@ class AptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             archive, manifest = self.archive(root, ['foundation-cli', 'foundation-gui-terminal'])
-            with self.assertRaisesRegex(ValueError, 'redistribution'):
+            load=apt.c.load
+            def unresolved(path):
+                return {'redistribution':{'approved':False}} if Path(path).name=='gui-boundary.lock.json' else load(path)
+            with patch.object(apt.c,'load',side_effect=unresolved),self.assertRaisesRegex(ValueError,'redistribution'):
                 apt.package(archive, manifest, '1.0.0', 'amd64', 'core', root / 'rejected')
             self.assertFalse((root / 'rejected').exists())
 

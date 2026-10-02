@@ -30,20 +30,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate workflows with a verified official tool
-        shell: python
-        run: |
-          import hashlib, io, os, subprocess, tarfile, urllib.request
-          from pathlib import Path
-          url = 'https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz'
-          with urllib.request.urlopen(url, timeout=60) as response:
-              data = response.read(32 * 1024 * 1024 + 1)
-          if hashlib.sha256(data).hexdigest() != '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8':
-              raise SystemExit('Workflow validator archive differs from reviewed digest')
-          with tarfile.open(fileobj=io.BytesIO(data)) as archive:
-              member = archive.getmember('actionlint')
-              if not member.isfile(): raise SystemExit('Expected ordinary validator executable')
-              tool = Path(os.environ['RUNNER_TEMP']) / 'foundation-actionlint'
-              with tool.open('xb') as stream: stream.write(archive.extractfile(member).read())
-              tool.chmod(0o755)
-          subprocess.run([str(tool), '-shellcheck=', '-pyflakes=', *map(str, Path('.github/workflows').glob('*.yml'))], check=True)
+      - name: Validate workflows with installed or exact retained validator
+        run: python3 tools/ci_plan.py workflow-lint --retained-url "$RETAINED_URL" --executable "$VALIDATOR" --output build/workflow-lint
+        env:
+          RETAINED_URL: ${{ vars.FOUNDATION_ACTIONLINT_URL }}
+          VALIDATOR: ${{ vars.FOUNDATION_ACTIONLINT_EXECUTABLE }}
+
+  shared-gui:
+    name: Shared GUI contracts and generic hosts
+    if: vars.FOUNDATION_GUI_GROUP != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Restore exact repository-retained GUI inputs
+        run: python3 .github/scripts/lifecycle.py gui-input
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GUI_INPUT: '{"source":"base","manifest_sha256":"${{ vars.FOUNDATION_GUI_GROUP }}"}'
+      - name: Compile shared application once and check generic hosts
+        run: python3 -B tools/build.py test dev --gui-input-group build/gui-group --gui-backends terminal,framebuffer,hosted-web --host-tests --label gui --build-jobs 2 --test-jobs 2

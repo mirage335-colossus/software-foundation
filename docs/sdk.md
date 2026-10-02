@@ -740,3 +740,16 @@ the triplet matches byte for byte and the replay is usable. Then review exact
 superseded artifact IDs and dependencies before an authorized cleanup. Never
 remove unrelated artifacts or the sole surviving qualification evidence. The
 importer does not delete remote data or create new Actions artifacts.
+
+## Replay without supplier acquisition
+
+SDK maintenance with an all-GUI profile and native GUI qualification require an
+explicit `gui_input` selector, in the same base/retained format used by the
+[screenshot workflow](screenshots.md). The workflow restores and verifies that
+complete group before entering the SDK consumer container. Replaying a retained
+SDK never clones the GUI supplier. Obtain a new group only through the explicit
+GUI-input maintenance workflow. Missing, changed or incomplete retained inputs
+fail without a supplier fallback. Windows replay also requires an explicitly
+retained graphics archive URL; only `source=rebuild` may acquire the pinned
+upstream graphics prerequisite when no retained URL is selected. Browser engines
+remain host prerequisites and are never added to the compiler SDK.

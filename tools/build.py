@@ -20,12 +20,14 @@ def positive(value):
 
 
 def default_jobs():
-    """Conservative cap; explicit --jobs wins for measured workloads."""
-    try:
-        cores = len(os.sched_getaffinity(0))
-    except AttributeError:
-        cores = os.cpu_count() or 1
-    return max(1, min(cores, 4))
+    from build_capacity import default_jobs as capacity
+    return capacity()
+
+
+def job_limits(args):
+    build = args.build_jobs or args.jobs or positive(os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL") or str(default_jobs()))
+    tests = args.test_jobs or args.jobs or positive(os.environ.get("CTEST_PARALLEL_LEVEL") or "2")
+    return build, tests
 
 
 def contained(root, relative):
@@ -107,6 +109,9 @@ def main(argv=None):
     parser.add_argument("action", nargs="?", choices=("build", "test", "package"), default="build")
     parser.add_argument("preset", nargs="?", choices=("dev", "release", "asan"), default=None)
     parser.add_argument("--jobs", type=positive)
+    parser.add_argument("--build-jobs", type=positive, help="independent compilation concurrency")
+    parser.add_argument("--test-jobs", type=positive, help="independent test concurrency")
+    parser.add_argument("--dependency-prefix", type=Path, help="verified native development prefix")
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--label", choices=("fast", "core", "tools", "integration", "gui"))
     selection.add_argument("--full", action="store_true", help="run all enabled tests (default)")
@@ -139,8 +144,7 @@ def main(argv=None):
         parser.error("host checks require GUI inputs")
     if "wasm" in backends and (backends != ["wasm"] or not args.sdk or args.host_tests):
         parser.error("Wasm requires one backend and a prepared SDK; native host tests are separate")
-    jobs = args.jobs or positive(os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL") or str(default_jobs()))
-    test_jobs = args.jobs or positive(os.environ.get("CTEST_PARALLEL_LEVEL") or str(jobs))
+    jobs, test_jobs = job_limits(args)
     suffix = ("-sdk" if args.sdk else "") + ("-gui" if has_gui else "")
     build = args.build_dir.resolve() if args.build_dir else ROOT / "build" / (preset + suffix + ("-portable" if args.portable else ""))
     gui_group_identity = None
@@ -169,6 +173,13 @@ def main(argv=None):
                  ("CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS", "CMAKE_GENERATOR")}}
     if gui_group_identity:
         identity["gui_input_group"] = gui_group_identity
+    if args.dependency_prefix:
+        if args.sdk or args.windows_dependencies:
+            parser.error("native development prefix cannot be combined with a prepared SDK")
+        from prepare_dependencies import verify
+        prefix_root = args.dependency_prefix.resolve(strict=True)
+        identity["dependency_prefix"] = {"root": str(prefix_root), **verify(prefix_root)}
+        configure += ["-DFOUNDATION_DEPENDENCY_PREFIX=" + str(prefix_root)]
     programs = host_programs()
     child_environment = os.environ.copy()
     if args.sdk:
@@ -243,7 +254,7 @@ def main(argv=None):
         identity["windows_dependencies"] = {"root": str(dependencies), "sha256": hashlib.sha256((dependencies / "sdk.json").read_bytes()).hexdigest()}
         installed = dependencies / "prefix/installed/x64-windows-static"
         prefix = installed if installed.is_dir() else dependencies / "prefix"
-        configure += ["-DCMAKE_PREFIX_PATH=" + str(prefix)]
+        configure += ["-DCMAKE_PREFIX_PATH=" + str(prefix), "-DFOUNDATION_WINDOWS_DEPENDENCIES=" + str(dependencies)]
         vcpkg = dependencies / "prefix/scripts/buildsystems/vcpkg.cmake"
         if vcpkg.is_file():
             configure += ["-DCMAKE_TOOLCHAIN_FILE=" + str(vcpkg), "-DVCPKG_TARGET_TRIPLET=x64-windows-static",
@@ -304,6 +315,8 @@ def main(argv=None):
         verify_inventory(dependencies, metadata["files"], exclude=("sdk.json",))
         if hashlib.sha256((dependencies / "sdk.json").read_bytes()).hexdigest() != identity["windows_dependencies"]["sha256"]:
             raise ValueError("Windows dependency identity changed during execution")
+    if args.dependency_prefix and verify(prefix_root) != {key: value for key, value in identity["dependency_prefix"].items() if key != "root"}:
+        raise ValueError("native development prefix changed during execution")
     return 0
 
 

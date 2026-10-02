@@ -50,6 +50,23 @@ class SdkRetentionTests(unittest.TestCase):
         patch.dict(lifecycle.os.environ, self.environment).start()
         self.publisher = patch.object(lifecycle.delivery, 'publish_base', side_effect=AssertionError('unexpected publication')).start()
 
+    def test_private_graphics_input_is_repository_scoped_and_hash_bound(self):
+        import windows_graphics
+        from unittest.mock import Mock
+        row=dict(id=77,name='retained.7z',state='uploaded',size=3,digest='sha256:'+'b'*64)
+        remote=Mock();remote.transport.json.return_value=row
+        expected=dict(name='retained.7z',size=3,sha256='b'*64)
+        archive=self.root/'graphics.7z'
+        with patch.object(lifecycle.delivery,'Remote',return_value=remote),patch.object(windows_graphics,'lock',return_value={'archive':expected}),patch.object(windows_graphics,'verify_archive',return_value={}),patch.object(windows_graphics,'fetch_retained',side_effect=AssertionError('unexpected fallback')):
+            receipt=lifecycle.retained_graphics('https://api.github.com/repos/example/foundation/releases/assets/77',archive)
+            self.assertEqual(receipt['asset_id'],77);remote.download.assert_called_once_with(row,archive,'b'*64)
+            with self.assertRaisesRegex(ValueError,'this repository'):
+                lifecycle.retained_graphics('https://api.github.com/repos/foreign/foundation/releases/assets/77',archive)
+            row['digest']='sha256:'+'c'*64
+            with self.assertRaisesRegex(ValueError,'locked archive'):
+                lifecycle.retained_graphics('https://api.github.com/repos/example/foundation/releases/assets/77',archive)
+            self.assertEqual(remote.download.call_count,1)
+
     def receipt(self): return json.loads((self.root / 'build/sdk-retention.json').read_text())
 
     def test_failed_consumer_keeps_failure_and_complete_group_can_be_retained(self):
@@ -382,10 +399,12 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
         entry = lifecycle.main
         with patch.dict(lifecycle.os.environ,{'SDK_PROFILE':'all-gui'}), \
              patch.object(lifecycle.ci,'assert_host'), patch.object(lifecycle,'main') as gui_input, \
+             patch.object(lifecycle.ci,'gui_group_module') as group_module, \
              patch.object(lifecycle.ci,'prepared_check', return_value={'status':'passed'}) as check, \
              patch.object(lifecycle.subprocess,'run',side_effect=AssertionError('cold producer must not run')):
             entry('sdk-produce')
-        gui_input.assert_called_once_with('gui-maintain'); self.assertEqual(check.call_count,2)
+        gui_input.assert_not_called(); group_module.return_value.verify.assert_called_once_with(self.root/'build/gui-group')
+        self.assertEqual(check.call_count,2)
         self.assertEqual(check.call_args.args[5],self.root/'build/gui-group')
         self.assertEqual(check.call_args.kwargs['graphics_archive'],self.root/'build/host-graphics/mesa-windows.7z')
         self.publisher.assert_called_once(); (self.root/'build/sdk-publication-plan.json').unlink()
@@ -394,9 +413,26 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
         self.publisher.reset_mock()
         with patch.dict(lifecycle.os.environ,{'SDK_PROFILE':'all-gui'}), \
              patch.object(lifecycle.ci,'assert_host'), patch.object(lifecycle,'main'), \
+             patch.object(lifecycle.ci,'gui_group_module'), \
              patch.object(lifecycle.ci,'prepared_check',side_effect=[None,RuntimeError('GUI failed')]):
             with self.assertRaisesRegex(RuntimeError,'GUI failed'): entry('sdk-produce')
         self.publisher.assert_not_called(); self.assertFalse((self.root/'build/sdk-publication-plan.json').exists())
+
+    def test_gui_replay_uses_complete_selected_group_and_never_falls_back_to_acquisition(self):
+        import screenshots
+        selector={'source':'base','manifest_sha256':'a'*64}
+        with patch.dict(lifecycle.os.environ,{'GUI_INPUT':json.dumps(selector)}), \
+             patch.object(screenshots,'fetch_gui_input',return_value={'selector':selector}) as fetch, \
+             patch.object(lifecycle.subprocess,'run',side_effect=AssertionError('supplier acquisition forbidden')):
+            lifecycle.main('gui-input')
+        fetch.assert_called_once_with(self.environment['GITHUB_REPOSITORY'],selector,self.root/'build/gui-group')
+        self.assertEqual(selector,json.loads((self.root/'build/gui-origin.json').read_text())['selector'])
+        (self.root/'build/gui-origin.json').unlink()
+        with patch.dict(lifecycle.os.environ,{'GUI_INPUT':json.dumps(selector)}), \
+             patch.object(screenshots,'fetch_gui_input',side_effect=ValueError('retained input differs')), \
+             patch.object(lifecycle.subprocess,'run',side_effect=AssertionError('supplier fallback forbidden')):
+            with self.assertRaisesRegex(ValueError,'retained input differs'):lifecycle.main('gui-input')
+        self.assertFalse((self.root/'build/gui-origin.json').exists())
 
     def test_linux_planning_does_not_substitute_for_native_recipe_check(self):
         self.prepare(); self.request=self.bundle_request()
@@ -601,9 +637,11 @@ class SdkProducerIsolationTests(unittest.TestCase):
             return {'status':'passed','group_files':self.files}
         self.publisher.side_effect=None; self.publisher.return_value={'operation':'plan'}
         with patch.dict(lifecycle.os.environ,{'SDK_PROFILE':'all-gui'}), patch.object(lifecycle.ci,'assert_host'), \
-             patch.object(lifecycle,'main') as gui, patch.object(lifecycle.ci,'prepared_check',side_effect=consumer):
+             patch.object(lifecycle,'main') as gui, patch.object(lifecycle.ci,'gui_group_module') as group, \
+             patch.object(lifecycle.ci,'prepared_check',side_effect=consumer):
             entry('sdk-produce')
-        self.assertEqual(calls,['sdk-consumer','sdk-gui-consumer']); gui.assert_called_once_with('gui-maintain')
+        self.assertEqual(calls,['sdk-consumer','sdk-gui-consumer']); gui.assert_not_called()
+        group.return_value.verify.assert_called_once_with(self.root/'build/gui-group')
         self.assertTrue(original.is_dir())
         self.assertEqual(self.isolation()['checkpoints'],
             ['before-install-and-core','after-core','before-gui-install','after-all-consumers'])

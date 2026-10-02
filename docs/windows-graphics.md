@@ -130,3 +130,20 @@ Primary references: [Mesa llvmpipe](https://docs.mesa3d.org/drivers/llvmpipe.htm
 [Mesa licensing](https://docs.mesa3d.org/license.html),
 [supplier release](https://github.com/pal1000/mesa-dist-win/releases/tag/26.2.3),
 and [Microsoft OpenGL overview](https://learn.microsoft.com/en-us/windows/win32/opengl/opengl).
+
+### Private repository retention for hosted replay
+
+The shared hosted `graphics-input` step also accepts an exact own-repository
+GitHub asset API URL,
+`https://api.github.com/repos/OWNER/REPOSITORY/releases/assets/ASSET_ID`.
+It authenticates through the runner's existing GitHub transport, restricts the
+asset to that repository, and checks its name, size, digest and downloaded bytes
+against the graphics lock. Supply this URL through `graphics_archive_url` for
+SDK replay, native GUI checks, application builds and certification. Tokens never
+appear in the URL or receipt. A failed transfer stops; no supplier fallback runs.
+
+An operator may retain the exact archive in a private draft release for these
+checks. Keep its provenance and immutable asset identity, leave the draft private,
+and never select it as Latest or put its DLLs in the SDK/application package.
+This private retention does not change the unresolved public redistribution
+status. Large retained inputs use release storage, not Actions artifact storage.

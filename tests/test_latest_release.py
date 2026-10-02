@@ -68,8 +68,14 @@ L.main()
         self.assertEqual(L.preflight(dict(request(), tag=''), remote=False)['tag'], 'release-123-attempt-1')
 
     def test_unresolved_gui_redistribution_fails_before_remote_work(self):
-        with self.assertRaisesRegex(ValueError, 'licens'):
-            L.preflight(dict(request(), profile='all-gui', recipes={**request()['recipes'], 'browser-wasm32': 'b' * 64}), remote=False)
+        policy=(L.ci.ROOT/'docs/release-policy.json').read_bytes()
+        modules={name:L.ci.module(name) for name in ('coverage','certify_release')}
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'third_party').mkdir();(root/'docs').mkdir()
+            (root/'docs/release-policy.json').write_bytes(policy)
+            (root/'third_party/gui-boundary.lock.json').write_text('{"redistribution":{"approved":false}}')
+            with mock.patch.object(L.ci,'ROOT',root),mock.patch.object(L.ci,'module',side_effect=modules.__getitem__),self.assertRaisesRegex(ValueError,'licens'):
+                L.preflight(dict(request(),profile='all-gui',recipes={**request()['recipes'],'browser-wasm32':'b'*64}),remote=False)
 
     def test_preflight_missing_base_has_no_cold_build_or_mutation(self):
         remote = fixtures.FakeGitHub()

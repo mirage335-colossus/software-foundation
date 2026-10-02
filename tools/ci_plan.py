@@ -14,15 +14,17 @@ STANDARD = {"linux-x86_64": "ubuntu-24.04", "linux-aarch64": "ubuntu-24.04-arm",
             "windows-x86_64": "windows-2022"}
 
 
-def plan(devfast=False, include_arm=True, pool="standard", configured=""):
+def plan(devfast=False, include_arm=True, pool="standard", configured="", configured_arm="", configured_windows=""):
     if pool not in ("standard", "faster"):
         raise ValueError("unknown runner pool")
-    if pool == "faster" and not re.fullmatch(r"foundation-linux-[a-z0-9-]+", configured):
+    chosen = {"linux-x86_64": configured, "linux-aarch64": configured_arm, "windows-x86_64": configured_windows}
+    prefixes = {"linux-x86_64": "linux", "linux-aarch64": "arm", "windows-x86_64": "windows"}
+    if pool == "faster" and (not any(chosen.values()) or any(value and not re.fullmatch("foundation-" + prefixes[target] + "-[a-z0-9-]+", value) for target,value in chosen.items())):
         raise ValueError("explicit authorized larger-runner label required")
     targets = [x for x in STANDARD if include_arm or x != "linux-aarch64"]
     packages, checks = [], []
     for target in targets:
-        runner = configured if target == "linux-x86_64" and pool == "faster" else STANDARD[target]
+        runner = chosen[target] if pool == "faster" and chosen[target] else STANDARD[target]
         packages.append({"target": target, "runner": runner})
         for scope in (["core"] if devfast else ["core", "tools", "integration"]):
             checks.append({"target": target, "runner": runner, "scope": scope})
@@ -62,6 +64,8 @@ def main():
     p.add_argument("--no-arm", action="store_true")
     p.add_argument("--pool", choices=("standard", "faster"), default="standard")
     p.add_argument("--configured", default="")
+    p.add_argument("--configured-arm", default="")
+    p.add_argument("--configured-windows", default="")
     p.add_argument("--github-output", type=Path)
     p = sub.add_parser("host")
     p.add_argument("target", choices=tuple(STANDARD))
@@ -71,14 +75,20 @@ def main():
     p = sub.add_parser("check-archives")
     p.add_argument("directory", type=Path)
     p.add_argument("--runtime-only", action="store_true")
+    p = sub.add_parser("workflow-lint")
+    p.add_argument("--retained-url", default="")
+    p.add_argument("--executable", default="")
+    p.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "plan":
-        result = plan(args.devfast, not args.no_arm, args.pool, args.configured)
+        result = plan(args.devfast, not args.no_arm, args.pool, args.configured, args.configured_arm, args.configured_windows)
         if args.github_output:
             with args.github_output.open("a", encoding="utf-8") as out:
                 for key, value in result.items():
                     out.write(key + "=" + json.dumps(value, separators=(",", ":")) + "\n")
         print(json.dumps(result, indent=2))
+    elif args.command == "workflow-lint":
+        workflow_lint(args.output, retained_url=args.retained_url, executable=args.executable)
     elif args.command == "host":
         print(json.dumps(assert_host(args.target)))
     elif args.command == "package":
@@ -99,6 +109,65 @@ def main():
 
 
 # Lifecycle operations use the same validators as local release preparation.
+
+ACTIONLINT_SHA256 = '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8'
+
+
+def workflow_lint(output, *, retained_url='', executable=''):
+    """Require an installed validator or explicitly retained exact archive; no upstream fallback."""
+    import io
+    import shutil
+    import tarfile
+    import urllib.parse
+    import urllib.request
+    c = module('coverage')
+    output = Path(output)
+    tool = executable or shutil.which('actionlint')
+    origin = 'installed'
+    if not tool:
+        def checked_url(url):
+            parsed = urllib.parse.urlsplit(url)
+            if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+                raise ValueError('retained validator requires credential-free HTTPS')
+            return url
+        checked_url(retained_url)
+        class SecureRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, request, fp, code, msg, headers, newurl):
+                checked_url(newurl)
+                return super().redirect_request(request, fp, code, msg, headers, newurl)
+        try:
+            with urllib.request.build_opener(SecureRedirect()).open(retained_url, timeout=60) as response:
+                data = response.read(32*1024*1024+1)
+        except Exception as error:
+            raise ValueError('retained validator transfer failed; inspect configured prerequisite') from error
+        if len(data)>32*1024*1024 or __import__('hashlib').sha256(data).hexdigest()!=ACTIONLINT_SHA256:
+            raise ValueError('retained validator archive differs from pinned identity')
+        output.mkdir(parents=True,exist_ok=False)
+        tool=output/'actionlint'
+        with tarfile.open(fileobj=io.BytesIO(data)) as archive:
+            members=[member for member in archive.getmembers() if member.name=='actionlint']
+            if len(members)!=1 or not members[0].isfile() or members[0].size>32*1024*1024:
+                raise ValueError('retained validator archive has invalid executable')
+            with tool.open('xb') as stream: stream.write(archive.extractfile(members[0]).read())
+        tool.chmod(0o755);origin='retained-exact-archive'
+    else:
+        tool=Path(tool).resolve(strict=True)
+        output.mkdir(parents=True,exist_ok=False)
+    version=subprocess.run([str(tool),'-version'],check=True,capture_output=True,text=True).stdout.splitlines()
+    if not version or version[0].strip()!='1.7.12':
+        raise ValueError('installed validator version differs from qualified prerequisite')
+    files=sorted((ROOT/'.github/workflows').glob('*.yml'))
+    if not files: raise ValueError('no workflow files')
+    before = {'tool':c.sha(tool), 'workflows':{p.name:c.sha(p) for p in files}}
+    subprocess.run([str(tool),'-shellcheck=','-pyflakes=',*map(str,files)],check=True)
+    if before != {'tool':c.sha(tool), 'workflows':{p.name:c.sha(p) for p in files}}:
+        raise ValueError('validator or workflow inputs changed during validation')
+    result=dict(schema_version=1,status='passed',version=version[0],origin=origin,
+                executable_sha256=c.sha(tool),workflows={p.name:c.sha(p) for p in files})
+    c.write_new(output/'qualification.json',result)
+    return result
+
+
 def module(name):
     import importlib.util
     if str(ROOT / 'tools') not in sys.path: sys.path.insert(0, str(ROOT / 'tools'))
@@ -271,9 +340,6 @@ def fetch_candidate(repository, tag, inventory, output, transport=None):
 
 
 
-MOZILLA_APT = 'https://packages.mozilla.org/apt'
-MOZILLA_FINGERPRINT = '35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3'
-
 
 def needs_browser_prerequisite(backend, scope):
     return backend == 'hosted-web' and scope == 'archive' or backend == 'wasm' and scope in ('source', 'recovery', 'archive')
@@ -296,7 +362,7 @@ def browser_prerequisite(target, environment, backend):
     packages = ['firefox'] if distro == 'ubuntu' else ['firefox-esr'] if engine == 'firefox' else ['chromium', 'chromium-driver']
     return dict(distribution=distro, version=version, image=image, architecture=architecture,
                 engine=engine, packages=packages, executable='/usr/bin/' + packages[0],
-                repository=MOZILLA_APT if distro == 'ubuntu' else 'distribution')
+                repository='host-preinstalled' if distro == 'ubuntu' else 'distribution')
 
 
 def browser_setup_preflight(selection):
@@ -316,75 +382,69 @@ def browser_setup_preflight(selection):
         raise ValueError('actual package architecture differs from selected environment')
 
 
-def mozilla_key_fingerprint(listing):
-    primary, pending, public_keys = [], False, 0
-    for line in listing.splitlines():
-        fields = line.split(':')
-        if fields[0] in ('pub', 'sub'):
-            pending = fields[0] == 'pub'
-            public_keys += int(pending)
-        elif fields[0] == 'fpr' and pending:
-            primary.append(fields[9] if len(fields) > 9 else '')
-            pending = False
-    if public_keys != 1 or pending or primary != [MOZILLA_FINGERPRINT]:
-        raise ValueError('Mozilla repository primary signing key fingerprint differs')
-    return primary[0]
-
-
-def mozilla_candidate(policy, madison, architecture):
-    candidates = re.findall(r'^\s*Candidate: (\S+)\s*$', policy, re.MULTILINE)
-    if len(candidates) != 1 or not re.fullmatch(r'[0-9][A-Za-z0-9.+:~_-]*', candidates[0]):
-        raise ValueError('missing unambiguous Firefox package candidate')
-    version = candidates[0]
-    origins = [parts[2].split() for line in madison.splitlines()
-               if len(parts := [x.strip() for x in line.split('|')]) == 3 and
-               parts[0] == 'firefox' and parts[1] == version]
-    if not origins or any(row != [MOZILLA_APT, 'mozilla/main', architecture, 'Packages'] for row in origins):
-        raise ValueError('Firefox candidate does not come exclusively from the official Mozilla origin')
-    return version
+def inspect_host_firefox(selection):
+    """Inspect an existing native host browser; never install or edit package sources."""
+    if selection['repository'] != 'host-preinstalled' or platform.system() != 'Linux':
+        raise ValueError('native hosted browser requires the selected Linux environment')
+    actual = platform.freedesktop_os_release()
+    if (actual.get('ID'), actual.get('VERSION_ID')) != (selection['distribution'], selection['version']):
+        raise ValueError('host browser distribution differs')
+    assert_host('linux-x86_64' if selection['architecture'] == 'amd64' else 'linux-aarch64')
+    def version(path):
+        result = subprocess.run([str(path), '--version'], check=True, capture_output=True, text=True,
+                                timeout=30, env=dict(os.environ, LC_ALL='C', LANG='C'))
+        if not re.fullmatch(r'Mozilla Firefox [0-9]+(?:\.[0-9]+){1,3}(?:esr)?', result.stdout.strip()):
+            raise ValueError('unrecognized installed Firefox version')
+        return result.stdout.strip()
+    command = Path(selection['executable']).resolve(strict=True)
+    with command.open('rb') as stream: header = stream.read(131072)
+    native = command
+    if not header.startswith(b'\x7fELF'):
+        # Recognized distribution wrappers only. Execute the inspected real binary
+        # for qualification so an unrelated same-version installation cannot satisfy it.
+        choices = []
+        if b'/usr/lib/firefox' in header: choices.append(Path('/usr/lib/firefox/firefox'))
+        if b'snap' in header: choices.append(Path('/snap/firefox/current/usr/lib/firefox/firefox'))
+        choices = [x.resolve(strict=True) for x in choices if x.is_file()]
+        if len(choices) != 1:
+            raise ValueError('installed Firefox wrapper has no unambiguous native executable')
+        native = choices[0]
+        with native.open('rb') as stream: header = stream.read(64)
+    machine = 62 if selection['architecture'] == 'amd64' else 183
+    if len(header) < 20 or header[:6] != b'\x7fELF\x02\x01' or int.from_bytes(header[18:20], 'little') != machine:
+        raise ValueError('installed Firefox executable architecture differs')
+    observed = version(native)
+    if version(command) != observed:
+        raise ValueError('Firefox wrapper and native executable versions differ')
+    c = module('coverage')
+    files = {str(path): c.sha(path) for path in {command,native}}
+    return dict(package='firefox', version=observed, architecture=selection['architecture'],
+                policy='preinstalled native host prerequisite; no package configuration changed',
+                executable=str(native), files=files)
 
 
 def install_browser_prerequisite(target, environment, backend, output):
     """Mutate only an explicitly disposable supported container, retaining facts."""
-    import tempfile
     selection = browser_prerequisite(target, environment, backend)
+    if selection['repository'] == 'host-preinstalled':
+        record = inspect_host_firefox(selection)
+        Path(output).mkdir(parents=True, exist_ok=False)
+        return dict(schema_version=1, selection=selection, signing_key_fingerprint=None,
+                    installed=[record], browser_version=record['version'])
     browser_setup_preflight(selection)
     output = Path(output); output.mkdir(parents=True, exist_ok=False)
-    def capture(argv, **kwargs):
+    def capture(argv):
         return subprocess.run(argv, check=True, capture_output=True, text=True,
-                              env=dict(os.environ, LC_ALL='C', LANG='C'), **kwargs).stdout.strip()
-    fingerprint = None; selected_version = None
-    if selection['distribution'] == 'ubuntu':
-        key = capture(['curl', '--fail', '--silent', '--show-error', '--proto', '=https', '--tlsv1.2',
-                       '--connect-timeout', '15', '--max-time', '60', MOZILLA_APT + '/repo-signing-key.gpg'])
-        with tempfile.TemporaryDirectory(dir=output) as temporary:
-            fingerprint = mozilla_key_fingerprint(capture(['gpg', '--no-options', '--homedir', temporary,
-                '--batch', '--with-colons', '--show-keys'], input=key))
-        key_path = Path('/etc/apt/keyrings/foundation-mozilla.asc')
-        key_path.parent.mkdir(parents=True, exist_ok=True)
-        files = {key_path: key + '\n',
-                 Path('/etc/apt/sources.list.d/foundation-mozilla.list'):
-                 'deb [signed-by=' + str(key_path) + '] ' + MOZILLA_APT + ' mozilla main\n',
-                 Path('/etc/apt/preferences.d/foundation-mozilla'):
-                 'Package: firefox\nPin: origin packages.mozilla.org\nPin-Priority: 1001\n\n'
-                 'Package: firefox\nPin: release o=Ubuntu\nPin-Priority: -1\n'}
-        for path, content in files.items():
-            with path.open('x', encoding='utf-8') as stream: stream.write(content)
-            path.chmod(0o644)
-        subprocess.run(['apt-get', 'update'], check=True)
-        policy = capture(['apt-cache', 'policy', 'firefox'])
-        selected_version = mozilla_candidate(policy, capture(['apt-cache', 'madison', 'firefox']), selection['architecture'])
-    packages = ['firefox=' + selected_version] if selected_version else selection['packages']
-    subprocess.run(['apt-get', 'install', '-y', '--no-install-recommends', *packages], check=True)
+                              env=dict(os.environ, LC_ALL='C', LANG='C')).stdout.strip()
+    subprocess.run(['apt-get', 'install', '-y', '--no-install-recommends', *selection['packages']], check=True)
     installed = []
     for package in selection['packages']:
         fields = capture(['dpkg-query', '-W', '-f=${Package}\t${Version}\t${Architecture}\t${db:Status-Status}\n', package]).split('\t')
-        if (len(fields) != 4 or fields[0] != package or fields[2] != selection['architecture'] or
-                fields[3] != 'installed' or selected_version and fields[1] != selected_version):
+        if len(fields) != 4 or fields[0] != package or fields[2] != selection['architecture'] or fields[3] != 'installed':
             raise ValueError('installed browser package differs from selected prerequisite')
         installed.append(dict(package=fields[0], version=fields[1], architecture=fields[2],
                               policy=capture(['apt-cache', 'policy', package])))
-    return dict(schema_version=1, selection=selection, signing_key_fingerprint=fingerprint,
+    return dict(schema_version=1, selection=selection, signing_key_fingerprint=None,
                 installed=installed, browser_version=capture([selection['executable'], '--version']))
 
 
@@ -392,7 +452,7 @@ def needs_windows_graphics(target, backends, backend, scope):
     return target == 'windows-x86_64' and 'rev' in backends and (scope in ('source', 'recovery') or backend == 'rev' and scope == 'archive')
 
 
-def qualification_plan(candidate, profile, output, policy=None):
+def qualification_plan(candidate, profile, output, policy=None, *, runners=None):
     c = module('coverage')
     policy = policy or c.load(ROOT / 'docs/release-policy.json')
     selected, _ = module('certify_release').requirements(policy, profile)
@@ -401,6 +461,9 @@ def qualification_plan(candidate, profile, output, policy=None):
     if len(actual) != len(manifest['artifacts']) or actual != selected['targets']:
         raise ValueError('candidate does not match complete support profile')
     checks, matrix = [], []
+    runners = runners or STANDARD
+    if set(runners) != set(STANDARD) or any(not isinstance(value,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]*',value) for value in runners.values()):
+        raise ValueError('explicit complete runner selection required')
     images = {'debian-12': 'debian:bookworm', 'debian-13': 'debian:trixie', 'ubuntu-24.04': 'ubuntu:24.04'}
     for item in selected['checks']:
         target, backend, environment, scope = (item[x] for x in ('target', 'backend', 'environment', 'scope'))
@@ -418,13 +481,29 @@ def qualification_plan(candidate, profile, output, policy=None):
         graphics = needs_windows_graphics(target, selected['targets'][target], backend, scope)
         if graphics:
             argv += ['--windows-graphics-archive', '{root}/build/host-graphics/mesa-windows.7z']
-        if target == 'windows-x86_64' and backend == 'hosted-web':
+        if target == 'windows-x86_64' and backend == 'hosted-web' and scope == 'archive':
             argv += ['--firefox', 'C:/Program Files/Mozilla Firefox/firefox.exe']
         checks.append(dict(item, id=check_id, required=True, argv=argv, timeout_seconds=5400,
                            warning_seconds=4500, expected_tests=[], qualification='qualification.json'))
-        matrix.append({'id': check_id, 'target': target, 'runner': STANDARD.get(target, 'ubuntu-24.04'),
-                       'image': images.get(environment, 'debian:bookworm' if environment in ('firefox', 'chromium') else ''),
+        matrix.append({'id': check_id, 'target': target, 'runner': runners.get(target, runners['linux-x86_64']),
+                       'image': '' if environment == 'ubuntu-24.04' and backend == 'hosted-web' and scope == 'archive' else images.get(environment, 'debian:bookworm' if environment in ('firefox', 'chromium') else ''),
                        'environment': environment, 'scope': scope, 'backend': backend, 'graphics': graphics})
+    # Logical requirements remain intact; group only identical whole-artifact work.
+    groups = {}
+    for item in checks:
+        if item['scope'] in ('source', 'recovery', 'abi') and item['target'] != 'browser-wasm32':
+            groups.setdefault(tuple(item[x] for x in ('target', 'environment', 'scope')), []).append(item)
+    for rows in groups.values():
+        if len(rows) < 2:
+            continue
+        leader = rows[0]
+        command = leader['argv'] + ['--execution-plan', '{root}/build/check-plan.json',
+            '--execution-id', leader['id'], '--run-id', '{run_id}', '--attempt', '{attempt}',
+            '--receipt', leader['id'] + '.qualification.json']
+        for item in rows:
+            item.update(execution=leader['id'], argv=command.copy(), qualification=item['id'] + '.qualification.json')
+    logical = {x['id']: x for x in checks}
+    matrix = [row for row in matrix if logical[row['id']].get('execution', row['id']) == row['id']]
     inputs = {str(p.relative_to(ROOT)).replace('\\', '/'): c.sha(p) for p in (ROOT / 'tools').glob('*.py')}
     for name in ('docs/release-policy.json', '.github/scripts/lifecycle.py', '.github/workflows/certify.yml'):
         inputs[name] = c.sha(ROOT / name)

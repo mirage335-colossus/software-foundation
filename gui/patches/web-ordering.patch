@@ -1,0 +1,73 @@
+--- renderer.mjs
++++ renderer.mjs
+@@ -20,7 +20,7 @@
+   constructor(exchange, apply, status = () => {}) {
+     this.exchange = exchange; this.apply = apply; this.status = status;
+     this.queue = []; this.running = false; this.failed = false;
+-    this.epoch = null; this.ack = 0n; this.state = null; this.inflight = null;
++    this.epoch = null; this.ack = 0n; this.state = null; this.inflight = null; this.closed = false;
+   }
+   accept(state) {
+     if (this.epoch !== null && state.epoch !== this.epoch) throw Error("Session changed; reload to start a new session.");
+@@ -33,8 +33,11 @@
+   }
+   send(operation, coalesce = null) {
+     return new Promise((resolve, reject) => {
++      if (this.closed) { reject(Error("Session closed")); return; }
+       if (coalesce) {
+-        const previous = this.queue.find(task => task.coalesce === coalesce);
++        // An intervening action or another control is an ordering barrier.
++        const last = this.queue.at(-1);
++        const previous = last?.coalesce === coalesce ? last : null;
+         if (previous) {
+           if(previous.completions.length>=128){
+             const error=Error("Input queue is full; wait for the backend.");this.status(error.message);reject(error);return;
+@@ -50,7 +53,7 @@
+     });
+   }
+   async pump() {
+-    if (this.running || this.failed || !this.state) return;
++    if (this.closed || this.running || this.failed || !this.state) return;
+     this.running = true;
+     try {
+       while (this.inflight || this.queue.length) {
+@@ -61,15 +64,23 @@
+         }
+         const {task, envelope} = this.inflight;
+         const state = await this.exchange(envelope);
++        if (this.closed) return;
+         if (state.epoch !== this.epoch || BigInt(state.ack) < BigInt(envelope.seq)) throw Error(state.error || "Operation was not acknowledged.");
+         this.accept(state); this.inflight = null;
+         for (const completion of task.completions) completion.resolve(state);
+       }
+     } catch (error) {
++      if(this.closed)return;
+       this.failed = true; this.status(`Connection paused: ${error.message}. Retry preserves operation identity.`, true);
+     } finally { this.running = false; }
+   }
+-  retry() { this.failed = false; this.status(""); this.pump(); }
++  close() {
++    if(this.closed)return;this.closed=true;
++    const tasks=[...this.queue];if(this.inflight)tasks.push(this.inflight.task);
++    this.queue=[];this.inflight=null;
++    for(const task of tasks)for(const completion of task.completions)completion.reject(Error("Session closed"));
++  }
++  retry() { if(this.closed)return;this.failed = false; this.status(""); this.pump(); }
+ }
+ 
+ export class Renderer {
+@@ -404,10 +415,14 @@
+     let settled=false;
+     const finish=(status,value="",failure="")=>{
+       if(settled)return;settled=true;
++      host.signal?.removeEventListener("abort",abort);
+       if(dialog.open)dialog.close();dialog.remove();
+       if(previous?.isConnected)previous.focus({preventScroll:true});
+       resolve({...base,status,value,error:failure});
+     };
++    const abort=()=>finish("cancelled");
++    host.signal?.addEventListener("abort",abort,{once:true});
++    if(host.signal?.aborted){abort();return;}
+     const submit=()=>{
+       const value=input.value;
+       if(BigInt(encoder.encode(value).length)>BigInt(service.byteLimit)){error.textContent=`Text exceeds the ${service.byteLimit}-byte limit.`;input.focus();return;}

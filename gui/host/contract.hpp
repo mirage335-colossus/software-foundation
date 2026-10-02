@@ -11,6 +11,8 @@ template<class T> concept Application = requires(T& app, gui::Event event, gui::
                                                 std::function<void()> present) {
     T{std::declval<gui::Adapter&>()};
     { app.handle(event) } -> std::same_as<void>;
+    { app.tick() } -> std::same_as<void>;
+    { app.shutdown() } -> std::same_as<void>;
     { app.retry_presentation() } -> std::same_as<void>;
     { app.next_service() } -> std::same_as<std::optional<gui::ServiceRequest>>;
     { app.complete_service(result) } -> std::same_as<bool>;
@@ -25,7 +27,7 @@ public:
     Session() : adapter([this](const gui::Event& event) {
         if (current_) { current_->handle(event); services(); }
     }), application(adapter) { current_ = &application; }
-    ~Session() { adapter.close(); current_ = nullptr; }
+    ~Session() { application.shutdown(); adapter.close(); current_ = nullptr; }
     void services() {
         const bool active = [&] {
             if constexpr (requires { adapter.service_active(); }) return adapter.service_active();
@@ -37,7 +39,7 @@ public:
             });
     }
     void tick() {
-        application.retry_presentation();
+        application.tick();
         if constexpr (requires { adapter.sync(); }) adapter.sync();
         services();
     }

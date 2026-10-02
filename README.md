@@ -43,7 +43,7 @@ after installation. [COMPILE](COMPILE) is the short command reference;
 | Application | Library, CLI, validation, owned data, stable IDs | Bounded in-memory record contract with explicit failure guarantees |
 | Build | One CMake graph, presets, wrapper, focused prerequisite targets | One build tree per configuration and toolchain |
 | Tests | Contract checks, tool regressions, installed consumer, disjoint shards | Full means all tests enabled in that configuration |
-| GUI | All seven hosts consume one application widget-definition table; native appearance, browser and Wasm fixtures | [GUI audit](docs/gui-audit.md) records actual coverage and the unresolved redistribution gate |
+| GUI | All seven hosts consume one application widget-definition table; native appearance, browser and Wasm fixtures | [GUI audit](docs/gui-audit.md) records actual coverage and the scoped supplier permissions |
 | SDK | Source producer, strict prepared-input archives, source replay, relocation, host/target checks, Windows and browser recipes | Cold native SDK production requires the declared Bookworm builder |
 | Packages | Native TGZ/ZIP, full member inventory, runtime closure/ABI audits, relocation and external consumer | A native build alone cannot establish an older runtime floor |
 | CI | Disjoint scopes, reusable lifecycle workflows, explicit faster pools, draft release transport with no Actions artifact uploads | Exact hosted executions and remaining limits appear in [validation](docs/validation.md) |
@@ -83,4 +83,6 @@ navigation. It is checked for missing references, and does not substitute for th
 
 The code and documentation authored in this repository use the [MIT license](LICENSE).
 External dependencies retain their own terms; the [inventory](third_party/README.md)
-records the optional GUI dependency's unresolved top-level license statement.
+records the GUI dependency's CC0 dedication and separate supplier terms. The
+recorded Rev permission covers this repository; downstream projects must establish
+their own applicable supplier permissions.

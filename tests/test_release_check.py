@@ -139,6 +139,25 @@ class ReleaseCheckTests(unittest.TestCase):
                 # This fixture has no child or other writer; its owned output is reconciled.
                 check.shutil.rmtree(retained)
 
+    def test_grouped_audit_binds_complete_artifact_and_rejects_subset(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);manifest,unused=self.fixture(root)
+            entry=manifest['artifacts'][0];entry.update(target='linux-x86_64',backends=['fltk','sdl'])
+            identity=dict(schema_version=1,plan='d'*64,subject=dict(source_sha256=manifest['source']['sha256'],
+                inventory_sha256=check.digest(root/'release.json'),configuration_sha256='c'*64),
+                execution='abi-fltk',checks=['abi-fltk','abi-sdl'],backends=['fltk','sdl'],target='linux-x86_64',
+                environment='fixture',scope='abi',run_id='run',attempt=1,host=check.c.host_identity())
+            with patch.object(check.release,'verify_release',return_value=manifest),patch.object(check,'native_target'), \
+                 patch.object(check.artifact,'inspect_archive'),patch.object(check,'audit',return_value={'audited':'all'}) as audit:
+                wrong=copy.deepcopy(identity);wrong['backends']=['fltk']
+                with self.assertRaisesRegex(ValueError,'complete native artifact'):
+                    check.check(root,'linux-x86_64','fltk','abi',root/'rejected',execution=wrong)
+                audit.assert_not_called();self.assertFalse((root/'rejected').exists())
+                result=check.check(root,'linux-x86_64','fltk','abi',root/'evidence',execution=identity,receipt_name='abi-fltk.qualification.json')
+                self.assertEqual(result['details']['execution'],identity)
+                self.assertEqual(result['evidence']['execution.json'],check.digest(root/'evidence/execution.json'))
+                audit.assert_called_once()
+
     def browser_fixture(self, root):
         import ci_plan
         import json
@@ -146,18 +165,18 @@ class ReleaseCheckTests(unittest.TestCase):
         plan = check.c.freeze(dict(schema_version=1, mode='release',
             subject=dict(subject, configuration_sha256='c' * 64), inputs={}, checks=[dict(
                 id='browser-archive', target='linux-x86_64', backend='hosted-web', scope='archive',
-                environment='ubuntu-24.04', required=True, argv=['fixture'], timeout_seconds=5,
+                environment='debian-12', required=True, argv=['fixture'], timeout_seconds=5,
                 warning_seconds=4, expected_tests=[])]))
-        selection = ci_plan.browser_prerequisite('linux-x86_64', 'ubuntu-24.04', 'hosted-web')
+        selection = ci_plan.browser_prerequisite('linux-x86_64', 'debian-12', 'hosted-web')
         receipt = dict(schema_version=1, selection=selection,
-            signing_key_fingerprint=ci_plan.MOZILLA_FINGERPRINT,
-            installed=[dict(package='firefox', version='153.4.0+build1', architecture='amd64', policy='official origin fixture')],
+            signing_key_fingerprint=None,
+            installed=[dict(package='firefox-esr', version='153.4.0+build1', architecture='amd64', policy='official origin fixture')],
             browser_version='Mozilla Firefox 153.4.0esr', plan=plan['id'], check='browser-archive', run_id='123', attempt=2)
         plan_path = root / 'plan.json'; plan_path.write_text(json.dumps(plan))
         receipt_path = root / 'browser.json'; receipt_path.write_text(json.dumps(receipt))
         options = dict(browser_prerequisite=receipt_path, browser_prerequisite_plan=plan_path,
-                       browser='firefox', firefox='/usr/bin/firefox')
-        host = dict(system='Linux', machine='x86_64', distribution='ubuntu-24.04')
+                       browser='firefox', firefox='/usr/bin/firefox-esr')
+        host = dict(system='Linux', machine='x86_64', distribution='debian-12')
         environment = dict(CHECK='browser-archive', GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='2')
         return subject, receipt, options, host, environment
 
@@ -173,6 +192,30 @@ class ReleaseCheckTests(unittest.TestCase):
             self.assertEqual((evidence / 'browser/prerequisite.json').read_bytes(), options['browser_prerequisite'].read_bytes())
             self.assertEqual(details['browser_prerequisite']['sha256'], check.digest(evidence / 'browser/prerequisite.json'))
             self.assertEqual(details['browser_prerequisite']['plan'], receipt['plan'])
+
+    def test_host_browser_receipt_selects_exact_native_bytes_and_rechecks_after_assertions(self):
+        import ci_plan,json
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);subject,receipt,options,host,environment=self.browser_fixture(root)
+            spec=check.c.load(options['browser_prerequisite_plan']);del spec['id']
+            spec['checks'][0]['environment']='ubuntu-24.04';frozen=check.c.freeze(spec)
+            options['browser_prerequisite_plan'].write_text(json.dumps(frozen));receipt['plan']=frozen['id']
+            receipt['selection']=ci_plan.browser_prerequisite('linux-x86_64','ubuntu-24.04','hosted-web')
+            native=root/'firefox-native';native.write_bytes(b'inspected executable')
+            observed=dict(package='firefox',version=receipt['browser_version'],architecture='amd64',policy='preinstalled host prerequisite',
+                          executable=str(native),files={str(native):check.digest(native)})
+            receipt['installed']=[observed];options['browser_prerequisite'].write_text(json.dumps(receipt))
+            options['firefox']='/usr/bin/firefox';host['distribution']='ubuntu-24.04'
+            with patch.object(check.c,'host_identity',return_value=host),patch.dict(check.os.environ,environment), \
+                 patch.object(ci_plan,'inspect_host_firefox',return_value=observed):
+                state=check.browser_prerequisite_snapshot(options,'linux-x86_64','hosted-web','archive',subject)
+            self.assertEqual(options['firefox'],str(native))
+            details=dict(browser=dict(status='passed',engine='firefox',browser_version='153.4.0'))
+            evidence=root/'evidence';(evidence/'browser').mkdir(parents=True)
+            native.write_bytes(b'changed after browser assertions')
+            with self.assertRaisesRegex(ValueError,'executable changed'):
+                check.bind_browser_prerequisite(state,details,evidence)
+            self.assertFalse((evidence/'browser/prerequisite.json').exists())
 
     def test_browser_prerequisite_rejects_wrong_scope_attempt_host_and_package(self):
         import json
@@ -197,7 +240,7 @@ class ReleaseCheckTests(unittest.TestCase):
                         check.browser_prerequisite_snapshot(options, 'linux-x86_64', backend, scope, subject)
                 with self.assertRaises(ValueError):
                     check.browser_prerequisite_snapshot(dict(options, firefox='unrelated'), 'linux-x86_64', 'hosted-web', 'archive', subject)
-                host['distribution'] = 'debian-12'
+                host['distribution'] = 'ubuntu-24.04'
                 with self.assertRaises(ValueError):
                     check.browser_prerequisite_snapshot(options, 'linux-x86_64', 'hosted-web', 'archive', subject)
 

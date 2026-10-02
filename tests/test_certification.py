@@ -100,6 +100,26 @@ if data['scope'] in ('source', 'recovery'):
             with self.assertRaisesRegex(ValueError, "bound qualification"):
                 certify.certify(root, manifest, c.freeze(altered), reports, policy, "fixture")
 
+    def test_group_must_cover_every_delivered_backend_before_evidence_merge(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);target='linux-x86_64';backends=['fltk','sdl','rev']
+            manifest={'source':{'sha256':'a'*64},'artifacts':[{'target':target,'backends':backends}],
+                      'required_scopes':['source','archive','recovery']}
+            c.write_new(root/'release.json',manifest)
+            rows=[dict(target=target,backend=b,environment='fixture',scope=scope)
+                  for scope in ('source','archive','recovery') for b in backends]
+            policy={'schema_version':1,'profiles':{'fixture':{'description':'complete group fixture',
+                    'targets':{target:backends},'checks':rows}}}
+            checks=[dict(row,id=row['scope']+'-'+row['backend'],required=True,argv=['fixture'],
+                         timeout_seconds=5,warning_seconds=4,expected_tests=[],qualification='qualification.json') for row in rows]
+            for row in checks[:2]:
+                row.update(execution='source-fltk',qualification=row['id']+'.qualification.json')
+            frozen=c.freeze(dict(schema_version=1,mode='release',inputs={},checks=checks,
+                subject=dict(source_sha256='a'*64,inventory_sha256=c.sha(root/'release.json'),
+                             configuration_sha256=c.digest({'policy':policy,'profile':'fixture'}))))
+            with self.assertRaisesRegex(ValueError,'every delivered backend'):
+                certify.certify(root,manifest,frozen,[],policy,'fixture')
+
     def test_shipped_policies_have_source_archive_and_recovery_per_backend(self):
         policy = c.load(Path(__file__).resolve().parents[1] / "docs/release-policy.json")
         for name in policy["profiles"]:

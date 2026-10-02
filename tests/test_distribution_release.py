@@ -237,6 +237,40 @@ class SignedDistributionTests(unittest.TestCase):
         d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
         self.assertEqual(uploads, len([x for x in self.remote.calls if x[0] == 'upload']))
 
+    def test_native_acceptance_checks_payload_then_preserves_qualified_retry(self):
+        import distro_check
+        d.publish(self.prepared,self.policy,self.trusted,execute=True,transport=self.remote)
+        channel=self.remote.releases[-1]
+        selected=dict(tag=d.tag_for(self.req),manifest_sha256=d.archive.digest(self.prepared/'distribution.json'),target=self.req['target'])
+        env=dict(GITHUB_REPOSITORY='example/project',GITHUB_SHA=self.req['packager_commit'],GITHUB_RUN_ID='901',GITHUB_RUN_ATTEMPT='1',TRUSTED_FINGERPRINT=self.trusted)
+        channels=distro_check.extract_channels(self.prepared,self.work/'expected')
+        records=[]
+        for row in distro_check.matrix(selected['target'])['include']:
+            expected=distro_check.expected_payload(channels,self.frozen,'core',row['kind'])
+            records.append(dict(schema_version=1,status='passed',id=row['id'],kind=row['kind'],image=row['image'],image_id='sha256:'+'a'*64,
+                target=selected['target'],tag=selected['tag'],manifest_sha256=selected['manifest_sha256'],
+                checks=['signature','published-download','install','repeated-update','exact-payload','self-check','remove'],
+                source_commit=env['GITHUB_SHA'],run_id='901',attempt='1',commands=[['fixture-only']],
+                backends=[dict(backend='core',files=len(expected),payload_sha256=d.distro.digest(d.distro.encoded(expected)))]))
+        checkout=self.work/'client';(checkout/'docs').mkdir(parents=True);shutil.copyfile(self.policy,checkout/'docs/release-policy.json')
+        original=d.delivery.Remote
+        with patch.object(d,'ROOT',checkout),patch.object(d.delivery,'Remote',side_effect=lambda repository,transport=None:original(repository,self.remote)):
+            bad=copy.deepcopy(records);bad[0]['backends'][0]['payload_sha256']='b'*64
+            with self.assertRaisesRegex(ValueError,'exact signed channel'):
+                distro_check.accept(selected,bad,env,self.work/'bad-evidence')
+            self.assertTrue(channel['prerelease'])
+            distro_check.accept(selected,records,env,self.work/'accepted')
+            self.assertFalse(channel['prerelease'])
+            saved=copy.deepcopy(channel)
+            distro_check.accept(selected,records,env,self.work/'accepted-retry')
+            self.assertEqual(saved,channel)
+        d.publish(self.prepared,self.policy,self.trusted,execute=True,transport=self.remote)
+        self.assertEqual(saved,channel)
+        marker=json.loads(channel['body']);marker['native_qualification']['target']='linux-aarch64' if self.req['target']=='linux-x86_64' else 'linux-x86_64'
+        channel['body']=json.dumps(marker)
+        with self.assertRaises(ValueError):
+            d.fetch('example/project',selected['tag'],selected['manifest_sha256'],self.work/'wrong-target',self.policy,self.trusted,transport=self.remote)
+
     def test_partial_upload_failure_retains_draft_and_exact_retry_reconciles(self):
         self.remote.fail_upload = 'Packages'
         with self.assertRaises(d.delivery.DeliveryError): d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)

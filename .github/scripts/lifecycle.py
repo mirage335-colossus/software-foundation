@@ -18,6 +18,37 @@ import dependency_store
 import coverage as evidence
 
 
+def retained_graphics(url, archive):
+    """Read an exact private own-repository asset or an explicit HTTPS mirror."""
+    from urllib.parse import urlsplit
+    import windows_graphics
+    parsed = urlsplit(url)
+    if parsed.hostname != 'api.github.com':
+        return windows_graphics.fetch_retained(url, archive)
+    repository = delivery.location(value('GITHUB_REPOSITORY'))
+    prefix = '/repos/'+repository+'/releases/assets/'
+    if (parsed.scheme != 'https' or parsed.netloc != 'api.github.com' or parsed.query or parsed.fragment or
+            not parsed.path.startswith(prefix) or not parsed.path[len(prefix):].isdigit() or
+            int(parsed.path[len(prefix):]) < 1):
+        raise ValueError('private graphics asset must belong to this repository')
+    remote = delivery.Remote(repository)
+    row = remote.transport.json(parsed.path.lstrip('/'))
+    expected = windows_graphics.lock()['archive']
+    if (row.get('id') != int(parsed.path[len(prefix):]) or row.get('name') != expected['name'] or
+            row.get('state') != 'uploaded' or row.get('size') != expected['size'] or
+            row.get('digest') != 'sha256:'+expected['sha256']):
+        raise ValueError('private graphics asset differs from locked archive')
+    if archive.exists() or archive.is_symlink():
+        receipt = windows_graphics.verify_archive(archive)
+    else:
+        # A failed transfer remains an invalid input, never a supplier fallback.
+        remote.download(row, archive, expected['sha256'])
+        receipt = windows_graphics.verify_archive(archive)
+    receipt['acquisition'] = 'private-repository-retention'
+    receipt['asset_id'] = row['id']
+    return receipt
+
+
 def value(name):
     text = os.environ.get(name, '')
     if not text: raise ValueError('missing workflow input: ' + name)
@@ -264,9 +295,30 @@ def main(command):
         for target in evidence.load(Path('build/source/recipes.json')):
             fetch_bundle('application-'+target+'-'+value('GITHUB_RUN_ATTEMPT'),'build/packages/'+target)
     elif command == 'fetch-evidence-bundles':
-        for item in evidence.load(Path('build/check-plan.json'))['checks']:
+        for item in evidence.executions(evidence.load(Path('build/check-plan.json'))):
             fetch_bundle('evidence-'+item['id']+'-'+value('GITHUB_RUN_ATTEMPT'),
                          'build/evidence/'+item['id'],allow_failed=True)
+    elif command == 'candidate-aggregate':
+        import test_plan
+        selected = delivery.parse(value('CANDIDATE_TARGETS'))
+        if not isinstance(selected, dict) or set(selected) != {'include'} or not isinstance(selected['include'], list):
+            raise ValueError('complete candidate target matrix required')
+        rows = selected['include']
+        if any(not isinstance(row, dict) or set(row) != {'target', 'runner'} or row['target'] not in ci.STANDARD for row in rows):
+            raise ValueError('unknown candidate target')
+        targets = [row['target'] for row in rows]
+        if not targets or len(set(targets)) != len(targets):
+            raise ValueError('missing or duplicate candidate targets')
+        diagnostic = boolean('DEVFAST')
+        scopes = ['core'] if diagnostic else ['core', 'tools', 'integration']
+        for target in targets:
+            reports = []
+            for scope in scopes:
+                destination = Path('build/candidate-results') / target / scope
+                fetch_bundle('source-' + target + '-' + scope + '-' + value('GITHUB_RUN_ATTEMPT'), destination)
+                reports.append(destination / ('candidate-' + scope + '.json'))
+            write(Path('build/candidate-results') / target / 'coverage.json',
+                  test_plan.candidate_merge(reports, diagnostic=diagnostic))
     elif command == 'sdk-import-legacy':
         raw=value('LEGACY_INPUT')
         if len(raw.encode('utf-8'))>16384: raise ValueError('legacy import request exceeds supported size')
@@ -304,6 +356,9 @@ def main(command):
         if value('SDK_SOURCE') == 'retained' and value('TARGET') == 'all':
             raise ValueError('retained SDK reuse selects one exact target per dispatch')
         retained_request(value('TARGET'), value('SDK_PROFILE'))
+        if value('SDK_PROFILE') == 'all-gui':
+            import screenshots
+            screenshots.gui_input_selection(value('GITHUB_REPOSITORY'), delivery.parse(value('GUI_INPUT')))
         targets = [*ci.STANDARD, 'browser-wasm32']
         if value('TARGET') != 'all': targets = [value('TARGET')]
         if any(t not in (*ci.STANDARD, 'browser-wasm32') for t in targets): raise ValueError('unknown SDK target')
@@ -324,7 +379,7 @@ def main(command):
         archive = ROOT / 'build/host-graphics/mesa-windows.7z'
         archive.parent.mkdir(parents=True, exist_ok=True)
         receipt = (windows_graphics.fetch(archive, network=True) if command == 'graphics-maintain' else
-                   windows_graphics.fetch_retained(value('GRAPHICS_ARCHIVE_URL'), archive))
+                   retained_graphics(value('GRAPHICS_ARCHIVE_URL'), archive))
         write('build/host-graphics/acquisition.json', receipt)
     elif command == 'sdk-produce':
         target = value('TARGET'); recipe = sdk_recipe(target, value('SDK_PROFILE'));  jobs = int(value('JOBS'))
@@ -365,7 +420,7 @@ def main(command):
                                                        jobs, defer_qualification=True)))
             isolated('after-core')
             if value('SDK_PROFILE') == 'all-gui':
-                main('gui-maintain')
+                ci.gui_group_module().verify(ROOT / 'build/gui-group')
                 isolated('before-gui-install')
                 consumer = ROOT / 'build/sdk-gui-consumer'
                 pending.append((consumer, ci.prepared_check(target, recipe_id, Path('build/sdk-group'), consumer,
@@ -400,6 +455,14 @@ def main(command):
         entry = dict(archive=archive.name, manifest=manifest.name, sha256=evidence.sha(archive), target='linux-x86_64')
         result = release_check.run_apt(packages, entry, 'core', ROOT / 'build/apt-smoke/work', ROOT / 'build/apt-evidence')
         write('build/apt-evidence/result.json', result)
+    elif command == 'gui-input':
+        import screenshots
+        raw = value('GUI_INPUT')
+        if len(raw.encode('utf-8')) > 16384:
+            raise ValueError('GUI input selector exceeds supported size')
+        result = screenshots.fetch_gui_input(value('GITHUB_REPOSITORY'),
+            delivery.parse(raw), ROOT / 'build/gui-group')
+        write(ROOT / 'build/gui-origin.json', result)
     elif command == 'gui-maintain':
         lock = evidence.load(ROOT / 'third_party/gui-boundary.lock.json')
         source = ROOT / 'build/gui-upstream'
@@ -480,13 +543,13 @@ def main(command):
         if command == 'check':
             # The invoked release check independently binds this receipt to the
             # frozen plan, actual host, package/browser bytes and evidence.
-            result = evidence.run_case(plan, value('CHECK'), ROOT, ROOT / 'build/evidence' / value('CHECK'),
+            result = evidence.run_execution(plan, value('CHECK'), ROOT, ROOT / 'build/evidence' / value('CHECK'),
                                        value('GITHUB_RUN_ID'), int(value('GITHUB_RUN_ATTEMPT')))
             if result['status'] != 'passed': raise ValueError('required qualification did not pass')
     elif command in ('certificate', 'attach-certificate'):
         identity = evidence.load(Path('build/delivery.json'))
         plan = evidence.load(Path('build/check-plan.json'))
-        reports = [Path('build/evidence') / x['id'] / 'result.json' for x in plan['checks']]
+        reports = [evidence.result_path(plan, x['id'], Path('build/evidence')) for x in plan['checks']]
         policy = ROOT / 'docs/release-policy.json'; directory = ROOT / 'build/candidate'
         if command == 'certificate':
             import certify_release

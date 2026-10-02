@@ -1,0 +1,12 @@
+--- host.py
++++ host.py
+@@ -137,7 +137,8 @@
+                  "/index.html": ("index.html", "text/html; charset=utf-8"),
+                  "/renderer.mjs": ("renderer.mjs", "text/javascript; charset=utf-8"),
+                  "/style.css": ("style.css", "text/css; charset=utf-8"),
+-                 "/boot.mjs": ("boot.mjs", "text/javascript; charset=utf-8")}
++                 "/boot.mjs": ("boot.mjs", "text/javascript; charset=utf-8"),
++                 "/browser_lifecycle.mjs": ("browser_lifecycle.mjs", "text/javascript; charset=utf-8")}
+         if path in known:
+             name, kind = known[path]
+             return self.reply(200, (ASSETS / name).read_bytes(), kind)

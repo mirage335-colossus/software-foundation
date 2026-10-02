@@ -11,7 +11,7 @@
       "identity_record": "third_party/gui-boundary.lock.json",
       "revision_policy": "Select the exact reviewed revision documented by the integration; never use a moving branch implicitly.",
       "maintenance_document": "docs/gui-boundary.md",
-      "license_status": "NOASSERTION: the pinned source has no top-level package license; binary redistribution is blocked pending review",
+      "license_status": "CC0 for project-owned code; separately retained supplier notices and owner-specific Rev source/binary permission. See the locked redistribution scope; downstream users must establish their own supplier permissions.",
       "distributed_by_default": false
     }
   ],
@@ -23,7 +23,7 @@
       "producer": "tools/distro_sdk.py",
       "kind": "source-build",
       "baseline": "Debian 12 Bookworm / glibc 2.36",
-      "qualification": "See docs/validation.md; cold compiler build pending"
+      "qualification": "Separate core-only recipe is not qualified by the all-gui recipe results; see docs/validation.md."
     },
     {
       "name": "native-source-sdk-aarch64",
@@ -31,7 +31,7 @@
       "producer": "tools/distro_sdk.py",
       "kind": "source-build",
       "baseline": "Debian 12 Bookworm / glibc 2.36",
-      "qualification": "See docs/validation.md; cold compiler build pending"
+      "qualification": "Separate core-only recipe is not qualified by the all-gui recipe results; see docs/validation.md."
     },
     {
       "name": "webassembly-build-sdk",
@@ -49,7 +49,7 @@
       "producer": "tools/sdk_windows.py",
       "kind": "windows-dependencies",
       "host_tools": "Separately installed v143 and pinned Windows SDK; offline installer layout retained separately",
-      "qualification": "Native Windows execution pending"
+      "qualification": "Separate core-only recipe is not qualified by the all-gui recipe results; see docs/validation.md."
     },
     {
       "name": "native-gui-sdk-x86_64",
@@ -57,7 +57,7 @@
       "producer": "tools/distro_sdk.py",
       "kind": "source-build",
       "baseline": "Debian 12 Bookworm / glibc 2.36",
-      "qualification": "See docs/validation.md; cold compiler build pending",
+      "qualification": "Passed cold production and relocated consumers for recipe bdd39974a891e6161d667bbaa0ff2c1894fe9f188ed76d47d1ad6c896972c9f8; see docs/validation.md for exact revisions/runs. Later application changes require their own evidence.",
       "profile": "FLTK, SDL2, X11 and OpenGL development inputs; full sources retained"
     },
     {
@@ -66,7 +66,7 @@
       "producer": "tools/distro_sdk.py",
       "kind": "source-build",
       "baseline": "Debian 12 Bookworm / glibc 2.36",
-      "qualification": "See docs/validation.md; cold compiler build pending",
+      "qualification": "Passed cold production and relocated native ARM64 consumers for recipe 88c7d871f5cf6210cb4dac6874e666a275dd5f359d42439369a7206b39dbe109; see docs/validation.md for exact revisions/runs.",
       "profile": "FLTK, SDL2, X11 and OpenGL development inputs; full sources retained"
     },
     {
@@ -75,7 +75,7 @@
       "producer": "tools/sdk_windows.py",
       "kind": "windows-dependencies",
       "host_tools": "Separately installed v143 and pinned Windows SDK; offline installer layout retained separately",
-      "qualification": "Native Windows execution pending",
+      "qualification": "Passed native Windows production and relocated consumers for recipe cd16aeb6bd2dff13115d456ffbea2d166db37427106a5e03961926f840f10feb; see docs/validation.md. Compiler and Windows SDK remain host prerequisites.",
       "profile": "FLTK and SDL2 static libraries; GUI source group retains GLEW and FreeType"
     }
   ]

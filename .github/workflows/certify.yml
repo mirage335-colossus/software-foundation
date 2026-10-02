@@ -128,11 +128,18 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'check'], check=True)
       if: runner.os == 'Windows'
+    - name: Inspect installed native browser and run exact Ubuntu runtime assertions
+      if: runner.os == 'Linux' && matrix.image == ''
+      shell: python
+      run: |
+        import subprocess, sys
+        for command in ('check-prerequisites', 'check'):
+            subprocess.run([sys.executable, '.github/scripts/lifecycle.py', command], check=True)
     - shell: python
       run: |
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/container_job.py', 'check'], check=True)
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && matrix.image != ''
     - if: always()
       name: Retain verified evidence-${{ matrix.id }}-${{ github.run_attempt }}
       run: python .github/scripts/lifecycle.py bundle-store

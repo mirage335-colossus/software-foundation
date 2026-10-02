@@ -18,6 +18,10 @@ name: Explicit native GUI qualification
         description: Operator-retained HTTPS host graphics archive; required for Windows
         type: string
         default: ''
+      gui_input:
+        description: Exact existing base or retained GUI selector JSON; acquisition is a separate maintenance workflow
+        type: string
+        required: true
       jobs:
         description: Compilation concurrency
         type: choice
@@ -35,6 +39,7 @@ env:
   PYTHONDONTWRITEBYTECODE: '1'
   TARGET: ${{ inputs.target }}
   RECIPE: ${{ inputs.recipe }}
+  GUI_INPUT: ${{ inputs.gui_input }}
   JOBS: ${{ inputs.jobs }}
   GRAPHICS_ARCHIVE_URL: ${{ inputs.graphics_archive_url }}
 jobs:
@@ -50,8 +55,8 @@ jobs:
       if: runner.os == 'Windows'
       run: python .github/scripts/lifecycle.py graphics-input
     - run: python .github/scripts/lifecycle.py fetch-sdk
-    - name: Acquire exact pinned GUI inputs for this explicit qualification only
-      run: python .github/scripts/lifecycle.py gui-maintain
+    - name: Restore and verify the exact retained GUI group
+      run: python .github/scripts/lifecycle.py gui-input
     - if: runner.os == 'Windows'
       shell: pwsh
       run: ./tools/ci_windows.ps1 -Output 'build/windows-toolchain.json'
@@ -81,7 +86,7 @@ jobs:
           build/native-gui/build/gui/visual-evidence/**/*.ppm
           build/native-gui/build/gui/visual-evidence/**/*.log
           build/host-graphics/acquisition.json
-          build/gui-publication-plan.json
+          build/gui-origin.json
     permissions:
       contents: write
       actions: read

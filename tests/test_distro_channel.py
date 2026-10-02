@@ -19,6 +19,15 @@ d = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(d)
 
 
+def unresolved_lock(path, *args, **kwargs):
+    if Path(path).name=='gui-boundary.lock.json':
+        return b'{"license":"NOASSERTION","redistribution":{"approved":false}}',0o644
+    return ORIGINAL_ORDINARY(path,*args,**kwargs)
+
+
+ORIGINAL_ORDINARY=d.ordinary
+
+
 def source_group(root, version='1.0.0', release=1, backends=(), backend='core', schema=1):
     root.mkdir()
     archive = root / 'application.tar.gz'
@@ -161,7 +170,7 @@ src_install
             root = Path(temporary)
             with self.assertRaisesRegex(ValueError, 'public executable'):
                 source_group(root / 'old', backends=['fltk'])
-            with self.assertRaisesRegex(ValueError, 'GUI dependency'):
+            with patch.object(d,'ordinary',side_effect=unresolved_lock),self.assertRaisesRegex(ValueError,'GUI dependency'):
                 source_group(root / 'new', backends=['fltk'], schema=2)
             self.assertFalse((root / 'new/group').exists())
 
@@ -208,7 +217,7 @@ src_install
                            {'hidden_hook': 'install'}, {'license_files': ['../LICENSE']}):
                 with self.subTest(change=change), self.assertRaises((ValueError, TypeError)):
                     d.validate_spec(dict(original, **change))
-            with self.assertRaisesRegex(ValueError, 'GUI'):
+            with patch.object(d,'ordinary',side_effect=unresolved_lock),self.assertRaisesRegex(ValueError,'GUI'):
                 d.validate_spec(dict(original, backend='fltk'))
 
     def test_archive_traversal_links_duplicates_and_case_conflicts(self):

@@ -46,6 +46,41 @@ graph builds all selected native hosts and their tests; Emscripten uses a separa
 toolchain build directory because its output is a different target platform.
 Source changes and tests still use the same library and CMake definitions.
 
+## Shared bounded task and shutdown
+
+The visible **Count text**, **Cancel task** and progress label are declared in the
+same view table as the other controls. `Application` copies authoritative records
+into [TextTask](../gui/shared/task.hpp), then applies owned progress values on the
+UI thread. Each host turn processes at most 256 input bytes. Editing and clearing
+live records remain responsive and cannot change the task's captured input.
+A new task has a new generation; cancellation, restart and close reject late or
+repeated completion. Closing discards input, queued services and pending work.
+
+This example uses cooperative bounded work, with no background thread or blocking
+call. The bound is appropriate for this fixed in-memory operation. A blocking or
+unbounded operation requires an owned executor, bounded message queue, cancellation
+and joined shutdown; retaining UI objects in such a worker is forbidden. Do not
+present cooperative stepping as protection against a blocking external service.
+
+The common native `Session` advances work through `Application::tick`; terminal
+and SDL typed runners obey the same contract. Hosted and Wasm browsers use one
+polling module, with at most one outstanding poll and no queued poll accumulation
+on a failed connection. Only an authenticated, new, ordered poll advances work;
+retrying the same operation does not repeat it. Navigation stops timers and the
+resize observer, cancels a pending dialog, rejects queued input and releases the
+session. Browser edits coalesce only when adjacent and compatible. An intervening
+action or different control preserves the prior edit as an ordering barrier.
+
+The [task fixture](../gui/tests/task_test.cpp) tests budgeted progress, copied
+input, edits during work, cancel/restart, stale completion, malformed progress,
+close and duplicate browser polling. Installed host checks run the same shared
+start/cancel/restart/completion scenario. The actual browser fixture checks the
+visible task through both transports; renderer fixtures force slow delivery and
+check action order and prompt withdrawal. Native supplier FLTK, Rev and clipboard
+conformance checks run against the selected adapters when host testing is enabled.
+The Rev supplier fixture also runs at scale 1.25 and maps its bitmap sample points
+from logical coordinates to actual physical pixels; expected colors do not change.
+
 ## Complete offline GUI input group
 
 [The source-group tool](../gui/source_group.py) exports every tracked file from the
@@ -94,9 +129,10 @@ For explicit restoration, use
 Its JSON receipt records the `source` directory, group manifest SHA-256, revision
 and redistribution status. Source exports retain this input as the GUI supplement;
 prepared consumers use that retained input. Local retention and build remain
-available while terms are unresolved. `verify --redistribution` fails until the
-reviewed dependency terms permit redistribution; ordinary export does not grant
-permission to publish the group.
+available independently of distribution permission. `verify --redistribution`
+requires the reviewed dependency approval and complete notice inventory. The
+current owner-specific approval is described in the [distribution gate](gui-audit.md#distribution-gate);
+ordinary export does not grant a general downstream supplier license.
 
 ## Build and run
 
@@ -105,7 +141,7 @@ source, libraries, toolchains, fonts or browser modules.
 
 ```sh
 git clone -c core.autocrlf=false https://github.com/mirage335-colossus/gui-boundary.git /path/to/gui-boundary
-git -C /path/to/gui-boundary checkout --detach bff416308f87dd0c1a7cc5b55476d757c971e879
+git -C /path/to/gui-boundary checkout --detach 7a704f73e563a167ea335dd23ccd9f383ebec274
 cmake -S . -B build/gui -G Ninja -DCMAKE_BUILD_TYPE=Debug \
   -DFOUNDATION_BUILD_GUI=ON -DFOUNDATION_GUI_SOURCE=/path/to/gui-boundary
 cmake --build build/gui --target foundation-gui-tests --parallel 2

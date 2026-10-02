@@ -46,5 +46,31 @@ For an upgrade, review upstream changes, refresh the pin and hashes, regenerate
 and inspect each diff, and run every selected host/conformance check. Never
 refresh hashes just to bypass a mismatch. Upstreaming typed runners, portable
 pipe transport and shared appearance roles would remove these local adaptations. Their provenance
-is the locked gui-boundary revision; its unresolved license also applies to
-changes derived from its code. Do not redistribute GUI binaries until resolved.
+is the locked gui-boundary revision; project-owned sources now use CC0-1.0, while retained suppliers keep their
+separate terms. The lock records the repository owner’s confirmed distribution scope and
+retains supplier notices; it grants no general downstream supplier permission.
+
+- `web-ordering.patch` coalesces only the last pending compatible operation.
+  Actions and edits to another control retain their order under slow delivery.
+  Client close rejects pending input and prevents late replies repainting a dead
+  view; an abortable prompt removes its dialog during session teardown.
+  `web-ordering-test.patch` points retained assertions at the patched renderer
+  and adds a delayed-delivery action-barrier regression. Both browser transports
+  consume this same generated module.
+
+- `web-tick.patch` adds an optional owner-thread tick to the reusable web session.
+  Only an authenticated, new ordered poll calls it; retries cannot repeat work.
+- `web-lifecycle.patch` connects the bounded polling module to both browser
+  transports, disconnects resize observation and cancels outstanding prompts on
+  navigation. Wasm releases its application; the hosted transport releases its
+  process. Restored pages create a fresh session.
+- `web-assets.patch` adds exactly the retained lifecycle module to the server's
+  static allowlist. Host/Origin, token and path checks remain unchanged.
+
+The terminal runner calls the same application tick as the other hosts. No task
+identity or progress calculation appears in any runner, adapter or browser asset.
+
+- `rev-conformance-scale.patch` maps three supplier bitmap sample points through
+  the fixture's existing logical-to-physical transform. The unmodified check
+  fails at scale 1.25 despite correct rendering; color and clipping assertions
+  are unchanged. Both ordinary and scaled native runs remain required.

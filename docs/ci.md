@@ -30,6 +30,30 @@ candidate gates and wait for their actual outcomes. A queued, cancelled, skipped
 or incomplete job is not successful validation. A manually skipped automatic
 run leaves a documented outstanding gate until equivalent evidence exists.
 
+## Complete candidate inventories
+
+Each candidate source job freezes the complete configured CTest inventory and its
+source, compiler, retained-input and configuration identities. The `tools` and
+`integration` labels assign those disjoint scopes; every other registered test,
+including an unlabelled new test, belongs to `core`. An empty or overlapping scope
+fails planning. All three frozen plans must agree before aggregation can pass.
+A `devfast` run executes only core and records the omitted scopes as diagnostic.
+
+The candidate retains exact JUnit outcomes plus each Python suite's individual
+case receipt. Aggregation rejects missing scopes, changed plans, missing or
+skipped tests, altered JUnit, and incomplete inner-case inventories. The generated
+`test-platform.json` records suites unsupported on that actual platform, while
+inner receipts identify case-level exclusions. An optional suite that was never
+enabled is not a platform exclusion or claimed coverage.
+
+Push and PR feedback uses the `fast` label, including the core application,
+documentation, build scheduling and dependency-free GUI boundary, source-group
+and visual-comparison fixtures. These fixtures run without fetching a GUI supplier
+or SDK. They catch helper and abstraction contract regressions; they do not replace
+actual toolkit, display, browser or installed-package qualification. The ordinary
+candidate still builds the core application; dispatched GUI qualification executes
+the selected real backends with complete prepared inputs.
+
 ## Workflow structure
 
 Use reusable workflows for repeated platform setup and a small explicit matrix
@@ -72,6 +96,14 @@ Do not invent universal names for larger runners or silently route untrusted
 jobs to privileged self-hosted infrastructure. Availability, access, quotas,
 and billing belong to the repository's runner configuration. See GitHub's
 [larger runner documentation](https://docs.github.com/en/actions/how-tos/manage-runners/larger-runners).
+
+The manual candidate's `linux_pool=faster` input applies the configured per-target
+allowlist: `FOUNDATION_FAST_LINUX_RUNNER`, `FOUNDATION_FAST_ARM_RUNNER` and
+`FOUNDATION_FAST_WINDOWS_RUNNER`. Accepted labels start with `foundation-linux-`,
+`foundation-arm-` and `foundation-windows-` respectively. Unconfigured targets keep
+the standard runner; requesting faster mode with no configured target fails.
+These variables are operator configuration, not executable event input. Actual
+host checks still reject a wrong operating system or architecture.
 
 Before adding a larger runner, measure queue delay, setup, cold compilation,
 incremental compilation, tests, artifact transfer, peak memory, total runner
@@ -175,21 +207,29 @@ requirements to make a job pass.
 
 ## Grouped qualification work
 
-The current all-GUI policy retains every required backend row. Its native source
-and recovery commands each build/test the complete delivered backend inventory;
-ABI checks audit the complete native archive. These rows presently repeat some
-identical work. Do not delete mandatory rows or relabel one backend's receipt as
-another backend to reduce that cost.
+The all-GUI policy retains **106 logical checks**, executed as **66 physical
+operations**. A native source check builds and tests the complete delivered
+backend inventory once per target/environment; recovery independently rebuilds
+that same inventory from retained inputs. Each Linux ABI operation audits its
+complete archive once. Native archive execution and package-manager checks remain
+separate for each backend. Browser source and recovery operations remain distinct
+for each required engine.
 
-A future grouped executor may share one immutable execution only when source,
-release inventory, dependency bytes, build configuration, actual execution
-platform, scope and required backend inventory are identical. It must record the
-complete covered backend set and actual test inventory, preserve any required
-per-backend assertions, and bind every projected backend result to that same
-execution and its real run/attempt. Certification and merge validation must reject
-missing backend coverage, changed inputs, different environments and reuse across
-source/recovery scopes. Add those evidence-schema checks and negative fixtures
-before consolidating policy rows; current required coverage remains unchanged.
+A frozen `execution` group may share only identical source, release inventory,
+dependency bytes, command, configuration, target, actual environment and scope.
+Its receipt records the complete covered backend set, logical check IDs, actual
+host, run and attempt, and all executed tests. After child writers stop, the
+executor creates a separate logical result and qualification receipt for every
+member, all bound to the same retained `execution.json`, logs and assertion bytes.
+Every file remains in the physical leader's evidence directory and one complete
+transport bundle; the certificate resolves each logical result there.
+
+Aggregation rejects missing or differing backend coverage, inconsistent projected
+receipts, another run/attempt, altered evidence, and reuse across source/recovery
+scopes. The certifier additionally requires a group's backend set to equal the
+entire delivered target inventory. A failed operation projects failure to every
+member. This reduces repeated work without turning one backend-only execution
+into claimed coverage for another backend.
 
 ## Windows graphics execution input
 
@@ -221,14 +261,116 @@ supplier inputs, source and notices and review redistribution terms before
 operating an archive mirror. Qualification demonstrates the tested software
 rendering environment; physical display and device checks remain separate.
 
+## Retained workflow validator
+
+The automatic workflow syntax job requires actionlint 1.7.12. It first uses an
+explicit `FOUNDATION_ACTIONLINT_EXECUTABLE` or installed `actionlint`. Otherwise
+`FOUNDATION_ACTIONLINT_URL` must identify an operator-retained HTTPS copy of the
+exact reviewed Linux x64 archive; its digest is fixed in
+[`ci_plan.py`](../tools/ci_plan.py). Redirects must stay HTTPS, credentials in URLs
+are rejected, transfer size is bounded, and the executable is extracted only
+after digest verification. Missing configuration fails the mandatory check; there
+is no implicit upstream download or skip.
+
+Bootstrap the retained input through explicit maintenance: verify the pinned
+archive, retain corresponding source, license and notices in durable release
+storage, then configure its immutable URL. A GitHub hosted runner image's installed
+tool is also acceptable when its version is verified. The lint receipt records
+executable and workflow digests, and changes during execution invalidate it.
+Lint and inexpensive source feedback use no release write credentials or Actions
+artifact storage.
+
+### Explicit validator mirror bootstrap
+
+This is an operator maintenance procedure, never part of a PR or routine check.
+Use a new owned directory and a new release tag. Set `REPOSITORY` to the destination
+`owner/repository`, `PACKAGING_COMMIT` to its exact reviewed commit, and
+`SUPPLIER_COMMIT` / `SOURCE_SHA256` to the independently reviewed actionlint 1.7.12
+source revision and archive digest. Inspect the retained license and notices before
+publication. Keep the source archive opaque rather than extracting an unchecked
+tree. The binary archive's fixed digest is checked independently below.
+
+```sh
+set -eu
+: "${REPOSITORY:?}" "${PACKAGING_COMMIT:?}" "${SUPPLIER_COMMIT:?}" "${SOURCE_SHA256:?}"
+export REPOSITORY PACKAGING_COMMIT SUPPLIER_COMMIT SOURCE_SHA256
+mkdir build/ci-tool-bootstrap
+cd build/ci-tool-bootstrap
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+  --output actionlint_1.7.12_linux_amd64.tar.gz
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  "https://github.com/rhysd/actionlint/archive/$SUPPLIER_COMMIT.tar.gz" \
+  --output actionlint-source.tar.gz
+python3 - <<'PYCODE'
+import hashlib, json, os, pathlib, tarfile
+p = pathlib.Path('.')
+binary = p / 'actionlint_1.7.12_linux_amd64.tar.gz'
+source = p / 'actionlint-source.tar.gz'
+expected = {'actionlint_1.7.12_linux_amd64.tar.gz':
+    '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8',
+    'actionlint-source.tar.gz': os.environ['SOURCE_SHA256']}
+for name, digest in expected.items():
+    if hashlib.sha256((p / name).read_bytes()).hexdigest() != digest:
+        raise SystemExit('input digest differs: ' + name)
+with tarfile.open(source) as archive:
+    root = 'actionlint-' + os.environ['SUPPLIER_COMMIT']
+    files = [x for x in archive if x.name in (root+'/LICENSE', root+'/LICENSE.txt')]
+    if len(files) != 1 or not files[0].isfile() or files[0].size > 131072:
+        raise SystemExit('review one bounded ordinary supplier license')
+    (p / 'LICENSE.actionlint').write_bytes(archive.extractfile(files[0]).read())
+(p / 'provenance.json').write_text(json.dumps({'version':'1.7.12',
+    'supplier_commit':os.environ['SUPPLIER_COMMIT'], 'inputs':expected},indent=2)+'\n')
+paths = [binary, source, p / 'LICENSE.actionlint', p / 'provenance.json']
+(p / 'SHA256SUMS').write_text(''.join(hashlib.sha256(x.read_bytes()).hexdigest()+
+    '  '+x.name+'\n' for x in paths))
+PYCODE
+```
+
+Review that input inventory and license before executing the following publication
+steps. This is a separate non-Latest tools release; application candidates and SDK
+bases remain unchanged. Atomic tag creation must succeed for this attempt before
+creating a draft. An existing tag, failed response or interrupted attempt requires
+inspection and reconciliation; do not rerun draft creation, overwrite assets or
+delete prior inputs to force success.
+
+```sh
+TOOL_TAG=ci-tools-actionlint-1.7.12
+export TOOL_TAG
+# Only confirmed success from this request authorizes the next create command.
+gh api --method POST "repos/$REPOSITORY/git/refs" \
+  -f "ref=refs/tags/$TOOL_TAG" -f "sha=$PACKAGING_COMMIT"
+gh release create "$TOOL_TAG" --repo "$REPOSITORY" --verify-tag \
+  --draft --prerelease --latest=false --title 'CI tools: actionlint 1.7.12' \
+  --notes 'Reviewed immutable validator binary, source, license and provenance.'
+gh release upload "$TOOL_TAG" --repo "$REPOSITORY" \
+  actionlint_1.7.12_linux_amd64.tar.gz actionlint-source.tar.gz \
+  LICENSE.actionlint provenance.json SHA256SUMS
+mkdir readback
+gh release download "$TOOL_TAG" --repo "$REPOSITORY" --dir readback
+cmp SHA256SUMS readback/SHA256SUMS
+(cd readback && sha256sum --check SHA256SUMS)
+# Confirm the draft inventory contains exactly the five reviewed asset names,
+# its tag still names PACKAGING_COMMIT, and every read-back check passed.
+gh release edit "$TOOL_TAG" --repo "$REPOSITORY" --draft=false --prerelease --latest=false
+gh variable set FOUNDATION_ACTIONLINT_URL --repo "$REPOSITORY" \
+  --body "https://github.com/$REPOSITORY/releases/download/$TOOL_TAG/actionlint_1.7.12_linux_amd64.tar.gz"
+```
+
+The final routine check verifies the fixed archive digest again before using it.
+Do not mirror a different binary under that name or update this tag in place; a
+validator upgrade changes the reviewed source, notices, digest and version gate
+as one change, followed by an independently named retained release.
+
 ## Evidence and maintenance
 
 Every job should retain exact source revision, toolchain/dependency identities,
 selected test inventory, command, exit status, machine-readable outcomes, and
 timings. Include run ID and attempt. Aggregation follows
 [the completeness rules](testing.md#inventory-driven-parallel-work).
-If a rerun legitimately reuses earlier successful jobs, record their actual
-originating attempts instead of relabeling them as newly executed.
+This release aggregator requires a single complete run and attempt. A rerun cannot
+borrow earlier successful checks or relabel them as newly executed; retained SDK
+input replay is a separate operation that preserves its actual originating attempt.
 
 Test workflow helpers locally with small fixtures for invalid inputs, empty
 selections, missing result files, duplicate inventory entries, and interrupted
@@ -286,27 +428,30 @@ must be present in each prepared target sysroot/export. Host libraries cannot
 satisfy a missing target dependency. Browsers used for qualification come from the
 execution environment, not from the compiler SDK.
 
-Linux certification executes each declared baseline in a disposable container on
-its native runner architecture. APT checks additionally require the explicit
-disposable-runtime marker; never invoke that scope on a development host. Container
-success establishes that user-space environment on the hosted kernel, not every
-physical system. Browser setup validates the actual distribution, package and CPU
-architecture, root Docker marker and explicit disposable-runtime flag before
-changing package configuration. Debian browser checks use its distribution packages.
-Ubuntu 24.04 hosted-web archive checks install Firefox from [Mozilla's official APT repository](https://support.mozilla.org/en-US/kb/install-firefox-linux):
-the complete primary signing-key fingerprint must match the reviewed constant,
-`Signed-By` scopes that key, and package-origin preferences exclude Ubuntu's Snap
-transition. The chosen version must come from Mozilla's HTTPS origin before its
-explicit version is installed; the harness uses `/usr/bin/firefox`. Both native
-architectures keep their real Ubuntu runtime and browser assertions. Browsers are
-external execution prerequisites and never enter the compiler SDK.
+Linux certification executes declared package and source baselines in disposable
+containers on matching native architecture. APT checks additionally require the
+explicit disposable-runtime marker; never invoke that scope on a development
+host. Container success establishes that user-space environment on the hosted
+kernel, not every physical system.
+
+Debian browser checks install its ordinary distribution packages only after
+checking the actual distribution, architecture, root Docker marker and explicit
+disposable-runtime flag. Ubuntu 24.04 hosted-web archive checks instead run on the
+actual Ubuntu runner and inspect its existing `/usr/bin/firefox`. The helper
+resolves the selected launcher to a supported native ELF executable, verifies its
+architecture and matching launcher/native version, and records both file digests.
+It neither adds a package repository nor installs a replacement browser. A missing,
+ambiguous or unsupported prerequisite fails that lane. Both architectures retain
+real Ubuntu browser assertions. Browsers remain external execution prerequisites
+and never enter the compiler SDK.
 
 A separate `browser-prerequisite-<check>-<attempt>` draft bundle records the plan/check,
-run/attempt, actual package versions and architecture, package policy and browser
-version. Setup initially retains this receipt outside the qualification output directory,
+run/attempt, actual package or inspected executable identity, architecture, origin
+and browser version. Setup initially retains this receipt outside the qualification output directory,
 which the checked runner must create afresh. After actual browser assertions, the
 qualification helper validates and copies the receipt into its browser evidence
-and binds its digest to the report. Browser setup applies only to hosted-web
+and binds its digest to the report. For an inspected host browser, executable
+digests are rechecked after the actual browser assertions. Browser setup applies only to hosted-web
 archive checks and Wasm source/recovery/archive checks. Setup failure remains a failed job;
 a package receipt alone is not browser qualification. Actual interactive assertions
 and their bound reports remain required. Windows source and copied-archive checks use the recorded native
@@ -355,9 +500,9 @@ or rejects the conflict.
 
 The SDK maintenance GUI probe runs before base publication, so a first GUI-capable
 SDK can be qualified without a preexisting base. `native-gui.yml` repeats that
-qualification using an already retained group. Both acquire the supplier revision
-only as explicitly dispatched maintenance, run source checks locally, and leave
-unresolved source and binaries on the disposable runner. These results do not
+qualification using an already retained group. Both consume an exact existing GUI
+group without supplier acquisition. Only `gui-inputs.yml` performs explicit source
+maintenance. These results do not
 certify redistribution or a complete release. Windows GUI qualification requires its actual native job and all internal tests
 to pass on the exact revision; observed executions are recorded in [validation](validation.md). The ordinary candidate workflow verifies the core application only.
 
@@ -365,3 +510,17 @@ Cold Linux producers use an owning unprivileged account; never bypass supplier
 root-user rejection. Root package-manager checks run only in explicitly disposable
 containers. Any container Git trust exception names only its mounted checkout and
 is written only to the container account, never the developer or runner host.
+
+### Fast shared GUI execution
+
+After publishing the reviewed GUI group into `base`, set repository variable
+`FOUNDATION_GUI_GROUP` to its exact manifest digest. The `shared-gui` feedback job
+then restores that group from this repository and compiles the shared application
+once for terminal, framebuffer and hosted-web checks. It exercises real shared
+feature/task behavior, renderer contracts, PTY and loopback paths without a target
+SDK or native toolkit build. It never clones the GUI supplier. A missing variable
+leaves this optional job unscheduled and supplies no GUI execution evidence; the
+ordinary source guards still run. A configured but missing or changed group fails.
+Native toolkit, browser/Wasm, baseline OS and release certification remain required
+in their declared qualification workflows. Update the variable only after a
+reviewed complete GUI-input publication when patches or supplier bytes change.

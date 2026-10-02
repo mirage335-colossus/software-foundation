@@ -6,6 +6,10 @@ name: Signed immutable package channel
         description: Complete distribution request JSON; see docs/distribution-release.md
         type: string
         required: true
+      previous:
+        description: Optional prior exact channel JSON for native upgrade qualification
+        type: string
+        default: ''
       execute:
         description: Sign and publish the separately certified package channel
         type: boolean
@@ -51,6 +55,8 @@ jobs:
         with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as stream:
             stream.write('Planned independent non-Latest package channel:\n```json\n' + json.dumps(result, indent=2) + '\n```\n')
   publish:
+    outputs:
+      channel: ${{ steps.publish.outputs.channel }}
     if: ${{ inputs.execute }}
     needs: plan
     runs-on: ubuntu-24.04
@@ -66,6 +72,7 @@ jobs:
     - name: Install ordinary package and signing tools
       run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dpkg-dev gnupg gpgv binutils
     - name: Verify existing certificate, sign, read back and publish independent channel
+      id: publish
       shell: python
       env:
         REQUEST: ${{ inputs.request }}
@@ -100,6 +107,9 @@ jobs:
                 '--signing-key', str(key)], check=True, stdout=subprocess.DEVNULL)
         result = channel.publish(output, Path('docs/release-policy.json'), request['trusted_fingerprint'], execute=True)
         channel.archive.write_json(output.parent / 'distribution-publication.json', result)
+        selected = dict(tag=result['tag'], manifest_sha256=result['manifest_sha256'], target=request['target'])
+        with Path(os.environ['GITHUB_OUTPUT']).open('a') as stream:
+            stream.write('channel=' + json.dumps(selected) + '\n')
         with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as stream:
             stream.write('Verified signed non-Latest package channel:\n```json\n' + json.dumps(result, indent=2) + '\n```\n')
     - name: Retain prepared public assets or failure state privately
@@ -111,3 +121,15 @@ jobs:
           build/distribution/
           build/distribution-request.json
           build/distribution-publication.json
+
+  qualify:
+    if: ${{ inputs.execute }}
+    needs: publish
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/distro-check.yml
+    with:
+      channel: ${{ needs.publish.outputs.channel }}
+      previous: ${{ inputs.previous }}
+      accept: true

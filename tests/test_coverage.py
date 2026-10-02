@@ -45,6 +45,17 @@ class CoverageTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     coverage.merge(frozen, paths)
 
+    def test_different_attempts_cannot_supply_one_complete_inventory(self):
+        spec={k:v for k,v in plan().items() if k!='id'}
+        spec['checks'].append(dict(spec['checks'][0],id='second'))
+        frozen=coverage.freeze(spec)
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            for index,row in enumerate(frozen['checks']):
+                coverage.run_case(frozen,row['id'],root,root/row['id'],'run',index+1)
+            with self.assertRaisesRegex(ValueError,'mixed runs/attempts'):
+                coverage.merge(frozen,[root/row['id']/'result.json' for row in frozen['checks']])
+
     def test_timeout_is_incomplete_and_retains_failed_attempt(self):
         frozen = plan(["{python}", "-c", "import time;time.sleep(60)"])
         del frozen["id"]
@@ -117,6 +128,65 @@ class CoverageTests(unittest.TestCase):
             path.write_text('{"x":1,"x":2}')
             with self.assertRaises(ValueError):
                 coverage.load(path)
+
+
+
+
+class GroupedExecutionTests(unittest.TestCase):
+    def fixture(self, root):
+        rows=[]
+        for backend in ('fltk','sdl'):
+            rows.append(dict(id='abi-'+backend,execution='abi-fltk',scope='abi',target='linux-x86_64',
+                environment='fixture',backend=backend,required=True,argv=['{python}','{root}/once.py','{evidence}'],
+                timeout_seconds=5,warning_seconds=4,expected_tests=[],qualification='abi-'+backend+'.qualification.json'))
+        frozen=coverage.freeze(dict(schema_version=1,mode='release',subject=dict(source_sha256='a'*64,
+            inventory_sha256='b'*64,configuration_sha256='c'*64),inputs={},checks=rows))
+        identity=coverage.execution_identity(frozen,rows[0],'run',1,coverage.host_identity())
+        receipt=dict(schema_version=1,status='passed',source_sha256='a'*64,inventory_sha256='b'*64,
+            target='linux-x86_64',backend='fltk',scope='abi',host=coverage.host_identity(),
+            details={'execution':identity},assertions=['complete-artifact'],evidence={})
+        code="import json,sys,hashlib\nfrom pathlib import Path\nout=Path(sys.argv[1])\n"
+        code+="with Path('invocations').open('a') as stream: stream.write('one\\n')\n"
+        code+='identity='+repr(identity)+'\nreceipt='+repr(receipt)+'\n'
+        code+="p=out/'execution.json';p.write_text(json.dumps(identity));receipt['evidence']={'execution.json':hashlib.sha256(p.read_bytes()).hexdigest()};(out/'abi-fltk.qualification.json').write_text(json.dumps(receipt))\n"
+        (root/'once.py').write_text(code)
+        return frozen
+
+    def test_one_real_child_produces_every_bound_logical_result(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);frozen=self.fixture(root);out=root/'abi-fltk'
+            result=coverage.run_execution(frozen,'abi-fltk',root,out,'run',1)
+            self.assertEqual(result['status'],'passed',result)
+            self.assertEqual((root/'invocations').read_text(),'one\n')
+            paths=[coverage.result_path(frozen,row['id'],root) for row in frozen['checks']]
+            merged=coverage.merge(frozen,paths)
+            self.assertEqual(set(merged['checks']),{'abi-fltk','abi-sdl'})
+            with self.assertRaises(ValueError):coverage.merge(frozen,paths[:1])
+            with self.assertRaisesRegex(ValueError,'leader'):coverage.run_execution(frozen,'abi-sdl',root,root/'bad','run',1)
+            with self.assertRaisesRegex(ValueError,'physical'):coverage.run_case(frozen,'abi-fltk',root,root/'bad','run',1)
+            second=json.loads(paths[1].read_text());second['attempt']=2;paths[1].write_text(json.dumps(second))
+            with self.assertRaisesRegex(ValueError,'mixed runs/attempts'):coverage.merge(frozen,paths)
+            second['attempt']=1;second['seconds']+=1;paths[1].write_text(json.dumps(second))
+            with self.assertRaisesRegex(ValueError,'different physical'):coverage.merge(frozen,paths)
+
+    def test_group_changes_and_partial_backend_receipts_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);frozen=self.fixture(root)
+            for key,value in [('scope','recovery'),('environment','other'),('argv',['different'])]:
+                wrong=copy.deepcopy(frozen);wrong.pop('id');wrong['checks'][1][key]=value
+                with self.assertRaises(ValueError):coverage.freeze(wrong)
+            coverage.run_execution(frozen,'abi-fltk',root,root/'abi-fltk','run',1)
+            path=root/'abi-fltk/abi-sdl.qualification.json';value=json.loads(path.read_text());value['details']['execution']['backends']=['sdl'];path.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ValueError,'frozen execution'):
+                coverage.qualification(path.parent,frozen['checks'][1],frozen,coverage.host_identity())
+
+    def test_failed_execution_never_projects_a_pass(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);frozen=self.fixture(root);(root/'once.py').write_text('raise SystemExit(2)\n')
+            coverage.run_execution(frozen,'abi-fltk',root,root/'abi-fltk','run',1)
+            paths=[coverage.result_path(frozen,row['id'],root) for row in frozen['checks']]
+            self.assertEqual(coverage.merge(frozen,paths)['status'],'failed')
+            self.assertTrue(all(json.loads(path.read_text())['status']=='failed' for path in paths))
 
 
 if __name__ == "__main__":

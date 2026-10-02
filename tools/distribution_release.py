@@ -49,7 +49,7 @@ def request(value):
     apt.full_fingerprint(value['trusted_fingerprint'])
     # Validate caller-controlled recipe lists using the existing complete contract.
     placeholder = {'url': 'https://example.invalid/' + '0' * 64, 'sha256': '0' * 64}
-    distro.validate_spec(dict(schema_version=2, version=value['version'], package_release=value['package_release'],
+    distro.validate_spec(dict(schema_version=3, version=value['version'], package_release=value['package_release'],
         architecture=TARGETS[value['target']][0], backend='core', archive_url=placeholder['url'], archive_sha256='0' * 64,
         license_files=value['license_files'], redistribution_approved=True, application_source=placeholder,
         packaging_tool=placeholder, sdk=placeholder, dependencies=[], runtime_dependencies=value['runtime_dependencies']))
@@ -244,7 +244,7 @@ def prepare(value, candidate, identity, policy, packaging_source, output, key, *
                                    'sha256': archive.digest(stage / retained[logical])}
             dependencies = ['application/' + path for path in identity['files'] if path.startswith('dependencies/')]
             primary = next(path for path in dependencies if path.startswith('application/dependencies/' + item['sdk_recipe'] + '/') and path.endswith('-binary.tar.gz'))
-            spec = dict(schema_version=2, version=value['version'], package_release=value['package_release'],
+            spec = dict(schema_version=3, version=value['version'], package_release=value['package_release'],
                 architecture=TARGETS[value['target']][0], backend=backend,
                 archive_url=ref('application/' + item['archive'])['url'], archive_sha256=item['sha256'],
                 license_files=value['license_files'], redistribution_approved=True,
@@ -388,13 +388,35 @@ def verify(directory, policy, trusted):
     return value
 
 
+def native_marker(value, target=None):
+    """Validate the exact public lifecycle marker; signed payload verification is separate."""
+    fields = {'schema_version', 'target', 'source_commit', 'run_id', 'attempt', 'checks'}
+    if (not isinstance(value, dict) or set(value) != fields or type(value['schema_version']) is not int or value['schema_version'] != 1 or
+            value['target'] not in TARGETS or target not in (None, value['target']) or
+            not isinstance(value['source_commit'], str) or not delivery.OID.fullmatch(value['source_commit']) or
+            not delivery.positive(value['run_id']) or not delivery.positive(value['attempt'])):
+        raise ValueError('complete native qualification marker required')
+    expected = {'apt-bookworm', 'apt-trixie', 'apt-ubuntu'}
+    if value['target'] == 'linux-x86_64': expected |= {'arch', 'gentoo'}
+    if (not isinstance(value['checks'], dict) or set(value['checks']) != expected or
+            any(not isinstance(item, str) or not delivery.SHA.fullmatch(item) for item in value['checks'].values())):
+        raise ValueError('native qualification marker omits a required frontend')
+    return value
+
+
 def fetch(repository, tag, manifest_sha256, output, policy, trusted, *, transport=None):
     delivery.location(repository, tag)
     if not delivery.SHA.fullmatch(manifest_sha256): raise ValueError('exact distribution manifest digest required')
     output = Path(output).absolute()
     if output.exists() or output.is_symlink(): raise ValueError('new fetched distribution output required')
     remote = delivery.Remote(repository, transport); info = remote.find(tag); rows = remote.assets(info)
-    if info['draft'] or not info['prerelease']: raise ValueError('public non-Latest package channel required')
+    if info['draft']: raise ValueError('public non-Latest package channel required')
+    if not info['prerelease']:
+        body = delivery.parse(info.get('body', ''))
+        if (body.get('kind') != 'signed-distribution' or body.get('manifest_sha256') != manifest_sha256 or
+                not isinstance(body.get('native_qualification'), dict)):
+            raise ValueError('accepted channel requires its native qualification marker')
+        native_marker(body['native_qualification'])
     if len(rows) > 1000 or any(row['size'] > MAX_ASSET for row in rows.values()):
         raise ValueError('remote distribution exceeds bounded asset limits')
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -411,6 +433,7 @@ def fetch(repository, tag, manifest_sha256, output, policy, trusted, *, transpor
             remote.download(rows[name], stage / name, expected_hash)
         value = verify(stage, policy, trusted)
         if value['request']['repository'] != repository or value['tag'] != tag: raise ValueError('remote distribution identity differs')
+        if not info['prerelease']: native_marker(body['native_qualification'], value['request']['target'])
         remote.unchanged(tag, info, rows, value['request']['packager_commit']); remote.not_latest(info)
         stage.rename(output)
     return value
@@ -463,7 +486,13 @@ def publish(directory, policy, trusted, *, execute=False, transport=None):
             body = json.dumps({'kind': 'signed-distribution', 'manifest_sha256': result['manifest_sha256']}, sort_keys=True)
             if existing is None:
                 existing = initialize_channel(remote, tag, req['packager_commit'], body)
-            if existing['name'] != tag or not existing['prerelease'] or existing.get('body') != body or remote.reference(tag) != req['packager_commit']:
+            if not existing['draft'] and not existing['prerelease']:
+                accepted = delivery.parse(existing.get('body', ''))
+                native_marker(accepted.get('native_qualification'), req['target'])
+                if set(accepted) != {'kind', 'manifest_sha256', 'native_qualification'} or accepted['kind'] != 'signed-distribution' or accepted['manifest_sha256'] != result['manifest_sha256']:
+                    raise ValueError('accepted immutable channel identity differs')
+                body = existing['body']
+            if existing['name'] != tag or existing.get('body') != body or remote.reference(tag) != req['packager_commit']:
                 raise ValueError('immutable distribution release identity differs')
             expected = {p.name: asset_info(p) for p in directory.iterdir()}; rows = remote.assets(existing)
             if set(rows) - set(expected): raise ValueError('unexpected distribution release assets; preserve state')
@@ -485,7 +514,7 @@ def publish(directory, policy, trusted, *, execute=False, transport=None):
             if existing['draft']:
                 remote.change('/releases/' + str(existing['id']), method='PATCH', body={'draft': False, 'prerelease': True, 'make_latest': 'false'})
             final = remote.find(tag)
-            if (final['id'] != existing['id'] or final['draft'] or not final['prerelease'] or remote.assets(final) != rows or
+            if (final['id'] != existing['id'] or final['draft'] or final['prerelease'] != existing['prerelease'] or remote.assets(final) != rows or
                     remote.reference(tag) != req['packager_commit'] or final.get('body') != body):
                 raise ValueError('published channel state differs')
             remote.not_latest(final)

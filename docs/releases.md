@@ -30,10 +30,12 @@ accepts only ordinary files/directories and bounded archive sizes. Separate
 pass for a release that claims them. A package smoke result is not a substitute
 for those independent checks.
 
-Optional GUI source integration currently has unresolved upstream package
-licensing. GUI executables are available for local evaluation. Installation/package guards
-reject GUI distribution until the license requirement is resolved. Resolve the documented
-license prerequisite before implementing a complete GUI release matrix.
+GUI installation and packaging require the reviewed redistribution record and its
+complete notice inventory. The current owner-specific permission covers this
+repository's GUI source and compiled binaries, including Rev; the project's CC0
+dedication does not replace supplier terms. A new project must establish its own
+applicable permissions before enabling public GUI delivery. See the
+[GUI permission scope](gui-boundary.md).
 
 ## Target and asset inventory
 

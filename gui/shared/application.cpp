@@ -61,7 +61,7 @@ void Application::handle(gui::Event event) {
     if (adapter_.closed()) return;
     // Closing must remain possible even if measurement or painting fails.
     if (std::holds_alternative<gui::CloseEvent>(event)) {
-        services_.shutdown();
+        shutdown();
         presentation_pending_ = false;
         adapter_.close();
         return;
@@ -83,7 +83,15 @@ void Application::handle(gui::Event event) {
                 status_error_ = false;
             } else if constexpr (std::is_same_v<T, gui::Activate>) {
                 if (widget->target.id == "entries.add") append_entry();
-                else if (widget->target.id == "entries.remove") {
+                else if (widget->target.id == "entries.task.start") {
+                    std::vector<std::string> input;
+                    for (const auto& entry : entries_.snapshot()) input.push_back(entry.text);
+                    task_progress_ = task_.start(std::move(input));
+                    task_running_ = true;
+                    task_status_ = "Processed 0 / " + std::to_string(task_progress_.total) + " bytes";
+                } else if (widget->target.id == "entries.task.cancel") {
+                    task_.cancel(); task_running_ = false; task_status_ = "Task cancelled";
+                } else if (widget->target.id == "entries.remove") {
                     auto& list = get("entries.list").state;
                     for (const auto& record : entries_.snapshot())
                         if (list.selected == std::to_string(record.id)) entries_.erase(record.id);
@@ -164,6 +172,14 @@ void Application::qualify(const std::function<void()>& present) {
             "Qualification left inconsistent controls");
     handle(gui::ResizeEvent{{800, 640}, 1}); step();
     require(get("entries.editor").state.bounds.width > 0, "Qualification lost shared layout");
+    handle(gui::WidgetEvent{{"entries.task.start",1},gui::Activate{}});
+    require(task_running_, "Qualification did not start shared task");
+    handle(gui::WidgetEvent{{"entries.task.cancel",1},gui::Activate{}});
+    require(!task_running_, "Qualification did not cancel shared task");
+    activate("entries.task.start");
+    for (unsigned turns=0;task_running_&&turns<8;++turns) step();
+    require(!task_running_&&task_progress_.complete&&task_progress_.result==11,
+            "Qualification did not complete bounded shared work");
 }
 
 std::optional<gui::ServiceRequest> Application::next_service() {
@@ -176,6 +192,30 @@ bool Application::complete_service(gui::ServiceResult result) {
         get("entries.heading").state.text = std::move(result.value);
     else if (result.status == gui::ServiceStatus::error)
         get("entries.heading").state.text = std::move(result.error);
+    publish();
+    return true;
+}
+
+void Application::shutdown() noexcept {
+    task_.shutdown(); task_running_ = false; services_.shutdown();
+}
+
+void Application::tick() {
+    if (adapter_.closed()) { shutdown(); return; }
+    if (const auto update = task_.advance()) complete_task(*update);
+    retry_presentation();
+}
+
+bool Application::complete_task(const TaskUpdate& update) {
+    // Value-only completion identity survives cancellation and replacement.
+    if (adapter_.closed() || !task_running_ || update.generation != task_progress_.generation ||
+        update.total != task_progress_.total || update.processed < task_progress_.processed ||
+        update.processed > update.total || update.result > update.processed ||
+        update.result < task_progress_.result || update.complete != (update.processed == update.total)) return false;
+    task_progress_ = update;
+    task_running_ = !update.complete;
+    task_status_ = update.complete ? "Counted " + std::to_string(update.result) + " non-space bytes" :
+        "Processed " + std::to_string(update.processed) + " / " + std::to_string(update.total) + " bytes";
     publish();
     return true;
 }
@@ -205,7 +245,7 @@ void Application::publish() {
     panel.id = "entries.form";
     panel.kind = gui::LayoutKind::column;
     panel.padding = {8, 8, 8, 8};
-    panel.gap = 8;
+    panel.gap = 4;
     const auto child = [&](const std::string& id, double height) {
         gui::LayoutNode node;
         node.id = id;
@@ -237,6 +277,9 @@ void Application::publish() {
     lookup(next, "entries.add").state.enabled =
         !lookup(next, "entries.editor").state.text.empty() && list.records.size() < entry_limit_;
     if (remove_feature_) lookup(next, "entries.remove").state.enabled = list.selected.has_value();
+    lookup(next, "entries.task.start").state.enabled = !task_running_;
+    lookup(next, "entries.task.cancel").state.enabled = task_running_;
+    lookup(next, "entries.task.status").state.text = task_status_;
     ++next.revision;
     adapter_.present(next);
     view_ = std::move(next);

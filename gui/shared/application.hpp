@@ -1,6 +1,7 @@
 #pragma once
 
 #include "view_definition.hpp"
+#include "task.hpp"
 #include <gui/runtime.hpp>
 #include <foundation/store.hpp>
 #include <functional>
@@ -14,6 +15,12 @@ public:
     const gui::Snapshot& view() const noexcept { return view_; }
     void handle(gui::Event event);
     void retry_presentation();
+    void tick();
+    void shutdown() noexcept;
+    bool complete_task(const TaskUpdate& update);
+    const TaskUpdate& task_progress() const noexcept { return task_progress_; }
+    bool task_running() const noexcept { return task_running_; }
+    ~Application() { shutdown(); }
     bool presentation_pending() const noexcept { return presentation_pending_; }
     std::optional<gui::ServiceRequest> next_service();
     bool complete_service(gui::ServiceResult result);
@@ -35,6 +42,10 @@ private:
     bool remove_feature_ = false;
     std::string status_ = "Ready";
     bool status_error_ = false;
+    TextTask task_;
+    TaskUpdate task_progress_;
+    bool task_running_ = false;
+    std::string task_status_ = "Task ready";
 
     gui::Widget& add(const ViewDefinition& definition);
     static gui::Widget& lookup(gui::Snapshot& view, std::string_view id);

@@ -23,9 +23,16 @@ send({type:'service',id:state.service.id,status:'success',value:'Module heading'
 assert.equal(widget('entries.heading').text,'Module heading');
 send({type:'resize',width:800,height:640,scale:1.25});
 assert.equal(widget('entries.editor').bounds[2],752);
+send({type:'activate',key:widget('entries.task.start').key});
+assert.equal(widget('entries.task.cancel').enabled,true);
+send({type:'activate',key:widget('entries.task.cancel').key});
+assert.equal(widget('entries.task.status').text,'Task cancelled');
+send({type:'activate',key:widget('entries.task.start').key});send({type:'poll'});
+assert.equal(widget('entries.task.status').text,'Counted 13 non-space bytes');
 const epoch=state.epoch;send({type:'close'});assert.equal(state.snapshot.closed,true);
 state=JSON.parse(module.ccall('gui_web_create','string',['string'],['recreated-session']));
 assert.equal(widget('entries.list').records.length,0);
 const stale=JSON.parse(module.ccall('gui_web_receive','string',['string'],[JSON.stringify({epoch,seq:'1',operation:{type:'activate',key:add}})]));
 assert.equal(stale.ack,'0');assert.ok(stale.error);
+module.ccall('gui_web_destroy',null,[],[]);
 console.log('Compiled Wasm core validation, edits, services, geometry, close and recreation passed');

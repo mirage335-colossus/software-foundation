@@ -1,0 +1,45 @@
+--- web.hpp
++++ web.hpp
+@@ -1,7 +1,7 @@
+ #pragma once
+-#include "retained_adapter.hpp"
+-#include "presentation.hpp"
+-#include "runtime.hpp"
++#include <gui/retained_adapter.hpp>
++#include <gui/presentation.hpp>
++#include <gui/runtime.hpp>
+ #include <charconv>
+ #include <cstdlib>
+ #include <iomanip>
+@@ -226,10 +226,11 @@
+ // without re-running an action. A new process/session must have a new epoch.
+ class WebSession {
+ public:
++    using Tick=std::function<void()>;
+     using NextService=std::function<std::optional<ServiceRequest>()>;
+     using CompleteService=std::function<bool(ServiceResult)>;
+-    WebSession(WebAdapter& adapter,std::string epoch,NextService next={},CompleteService complete={})
+-        :adapter_(adapter),epoch_(std::move(epoch)),next_(std::move(next)),complete_(std::move(complete)){
++    WebSession(WebAdapter& adapter,std::string epoch,NextService next={},CompleteService complete={},Tick tick={})
++        :adapter_(adapter),epoch_(std::move(epoch)),next_(std::move(next)),complete_(std::move(complete)),tick_(std::move(tick)){
+         if(epoch_.empty()||!valid_utf8(epoch_))throw std::invalid_argument("Invalid session epoch");}
+     std::string initial(){return response();}
+     std::string receive(std::string_view message){
+@@ -244,7 +245,7 @@
+         }catch(const std::exception& error){return response(error.what());}
+     }
+ private:
+-    WebAdapter& adapter_;std::string epoch_;std::uint64_t ack_=0;NextService next_;CompleteService complete_;std::optional<ServiceRequest> service_;
++    WebAdapter& adapter_;std::string epoch_;std::uint64_t ack_=0;NextService next_;CompleteService complete_;Tick tick_;std::optional<ServiceRequest> service_;
+     std::optional<web_detail::Json> last_presentation_;
+     std::string response(std::string error={}){using namespace web_detail;
+         if(adapter_.closed())service_.reset();
+@@ -263,7 +264,7 @@
+             {"snapshot",*last_presentation_},{"service",std::move(service)}});
+     }
+     void dispatch(const web_detail::Json& op){using namespace web_detail;const auto& type=op.at("type").str();
+-        if(type=="poll")return;
++        if(type=="poll"){if(!adapter_.closed()&&tick_)tick_();return;}
+         if(adapter_.closed())return;
+         if(type=="measure"){if(adapter_.measured(op.at("values")))adapter_.policy().send(ResizeEvent{adapter_.snapshot().client_size,adapter_.snapshot().display_scale});return;}
+         if(type=="service"){if(!service_||integer(op.at("id"))!=service_->id)throw std::invalid_argument("Stale service reply");

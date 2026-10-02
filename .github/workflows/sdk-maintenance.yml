@@ -40,6 +40,14 @@ name: Explicit prepared SDK maintenance
         - rebuild
         - retained
         default: auto
+      gui_input:
+        description: Exact existing base or retained GUI selector JSON; required for all-gui
+        type: string
+        default: ''
+      graphics_archive_url:
+        description: Retained Windows graphics archive; required except explicit cold rebuild
+        type: string
+        default: ''
       retained_input:
         description: Exact version-2 JSON producer and draft-bundle manifest identities for retained input
         type: string
@@ -67,6 +75,7 @@ jobs:
         SDK_PROFILE: ${{ inputs.profile }}
         SDK_SOURCE: ${{ inputs.source }}
         SDK_RETAINED_INPUT: ${{ inputs.retained_input }}
+        GUI_INPUT: ${{ inputs.gui_input }}
   produce:
     needs: plan
     strategy:
@@ -80,15 +89,23 @@ jobs:
       SDK_PROFILE: ${{ inputs.profile }}
       SDK_SOURCE: ${{ inputs.source }}
       SDK_RETAINED_INPUT: ${{ inputs.retained_input }}
+      GUI_INPUT: ${{ inputs.gui_input }}
+      GRAPHICS_ARCHIVE_URL: ${{ inputs.graphics_archive_url }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
-    - name: Explicitly acquire the pinned disposable Windows graphics prerequisite
-      if: runner.os == 'Windows' && inputs.profile == 'all-gui'
+    - name: Explicit cold maintenance of the pinned disposable Windows graphics prerequisite
+      if: runner.os == 'Windows' && inputs.profile == 'all-gui' && inputs.source == 'rebuild' && inputs.graphics_archive_url == ''
       run: python .github/scripts/lifecycle.py graphics-maintain
+    - name: Verify the retained Windows graphics prerequisite
+      if: runner.os == 'Windows' && inputs.profile == 'all-gui' && (inputs.source != 'rebuild' || inputs.graphics_archive_url != '')
+      run: python .github/scripts/lifecycle.py graphics-input
     - name: Resolve exact retained group or positively observed absence
       run: python .github/scripts/lifecycle.py sdk-inputs
+    - name: Restore exact existing GUI inputs without supplier access
+      if: inputs.profile == 'all-gui'
+      run: python .github/scripts/lifecycle.py gui-input
     - if: runner.os == 'Windows'
       shell: pwsh
       run: ./tools/ci_windows.ps1 -Output 'build/windows-toolchain.json'
@@ -123,6 +140,7 @@ jobs:
       env:
         BUNDLE_NAME: sdk-proof-${{ matrix.target }}-${{ github.run_attempt }}
         BUNDLE_PATHS: |-
+          build/gui-origin.json
           build/sdk-origin.json
           build/sdk-isolation.json
           build/sdk-retention.json

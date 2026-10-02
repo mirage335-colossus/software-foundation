@@ -116,7 +116,10 @@ class GuiBoundaryTests(unittest.TestCase):
             self.assertFalse(Path(path).is_absolute())
             self.assertNotIn("..", Path(path).parts)
             self.assertRegex(digest, r"^[0-9a-f]{64}$")
-        self.assertEqual("NOASSERTION", lock["license"])
+        self.assertEqual("CC0-1.0", lock["license"])
+        self.assertIn("LICENSE", lock["redistribution"]["license_files"])
+        for notice in lock["redistribution"]["license_files"]:
+            self.assertIn(notice, lock["files"])
 
 
     def test_typed_host_contract_has_no_feature_dispatch(self):
