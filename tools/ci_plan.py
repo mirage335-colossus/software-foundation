@@ -277,8 +277,8 @@ def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_
              abi=target.startswith('linux-'), processor=target.split('-', 1)[1])
     if module('source_identity').source_tree(root) != manifest:
         raise ValueError('source changed during prepared application production')
-    entry = {'path': str(archive.resolve()), 'sha256': module('coverage').sha(archive),
-             'manifest_path': str(descriptor.resolve()), 'target': target, 'backends': backends,
+    entry = {'path': archive.name, 'sha256': module('coverage').sha(archive),
+             'manifest_path': descriptor.name, 'target': target, 'backends': backends,
              'sdk_recipe': recipe, 'dependency_recipes': [recipe]}
     if graphics_evidence is not None:
         module('coverage').write_new(output / 'graphics-qualification.json',
@@ -294,8 +294,11 @@ def assemble_release(source, packages, base, output, profile):
     entries = []
     for path in sorted(packages.glob('*/artifact.json')):
         value = c.load(path)
-        value['path'] = str((path.parent / Path(value['path']).name).resolve())
-        value['manifest_path'] = str((path.parent / Path(value['manifest_path']).name).resolve())
+        for field in ('path', 'manifest_path'):
+            # Transport descriptors contain names, never producer-host paths.
+            # Validate instead of sanitizing a foreign path into a trusted name.
+            name = module('github_release').valid_name(value[field])
+            value[field] = str(module('dependency_archive').checked_file(path.parent, name).resolve())
         entries.append(value)
     observed = {x['target']: x['backends'] or ['core'] for x in entries}
     if len(entries) != len(observed) or observed != selected['targets']:

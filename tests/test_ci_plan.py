@@ -135,6 +135,57 @@ class CiPlanTests(unittest.TestCase):
             self.assertFalse((root/'lint/qualification.json').exists())
 
 
+class PortableProducerAssemblyTests(unittest.TestCase):
+    def setUp(self):
+        import shutil,zipfile
+        from test_release import ReleaseTests
+        from unittest.mock import Mock
+        self.fixture=ReleaseTests();self.fixture.setUp();self.addCleanup(self.fixture.tearDown)
+        f=self.fixture;self.root=f.root;self.source=Path(f.spec['source']['path'])
+        # Inert archive contents exercise transfer/assembly, not target execution.
+        produced=self.root/'producer output';produced.mkdir()
+        archive=produced/'windows-x86_64.zip'
+        with zipfile.ZipFile(archive,'w') as bundle:
+            bundle.writestr('application/bin/foundation-cli.exe',b'inert Windows archive fixture')
+            info=(self.root/'application/build-info.txt').read_text().replace('target=linux-x86_64','target=windows-x86_64')
+            bundle.writestr('application/build-info.txt',info)
+        descriptor=archive.with_name(archive.name+'.json')
+        descriptor.write_text(json.dumps(ci.module('artifact').describe(archive)))
+        self.entry=dict(path=archive.name,manifest_path=descriptor.name,sha256=ci.module('coverage').sha(archive),
+                        target='windows-x86_64',backends=[],sdk_recipe=f.recipe,dependency_recipes=[f.recipe])
+        (produced/'artifact.json').write_text(json.dumps(self.entry))
+        self.packages=self.root/'receiver packages';self.packages.mkdir()
+        self.received=self.packages/'windows-x86_64';shutil.move(str(produced),self.received)
+        self.original=ci.module;policy=Mock()
+        policy.requirements.return_value=({'targets':{'windows-x86_64':['core']},'checks':[{'scope':'archive'}]},None)
+        self.modules=patch.object(ci,'module',side_effect=lambda name:policy if name=='certify_release' else self.original(name))
+        self.modules.start();self.addCleanup(self.modules.stop)
+
+    def test_moved_windows_bundle_assembles_with_portable_names(self):
+        output=self.root/'released'
+        result=ci.assemble_release(self.source,self.packages,self.fixture.base,output,'fixture')
+        self.assertEqual(result['artifacts'][0]['archive'],'windows-x86_64.zip')
+        self.assertEqual(result['artifacts'][0]['manifest'],'windows-x86_64.zip.json')
+        self.assertEqual((output/'windows-x86_64.zip').read_bytes(),(self.received/'windows-x86_64.zip').read_bytes())
+        self.assertEqual(result,ci.module('release').verify_release(output))
+        for path_type in (PurePosixPath,PureWindowsPath):
+            for field in ('path','manifest_path'):
+                self.assertEqual(path_type(self.entry[field]).parts,(self.entry[field],))
+
+    def test_foreign_absolute_and_nested_paths_fail_before_assembly(self):
+        bad_names=('/work/output/windows-x86_64.zip',r'D:\a\output\windows-x86_64.zip',
+                   r'\\server\share\windows-x86_64.zip',r'folder\windows-x86_64.zip',
+                   '../windows-x86_64.zip','nested/windows-x86_64.zip','NUL.zip')
+        output=self.root/'rejected'
+        for field in ('path','manifest_path'):
+            for name in bad_names:
+                altered=dict(self.entry);altered[field]=name
+                (self.received/'artifact.json').write_text(json.dumps(altered))
+                with self.subTest(field=field,name=name),self.assertRaises(ValueError):
+                    ci.assemble_release(self.source,self.packages,self.fixture.base,output,'fixture')
+                self.assertFalse((self.root/'assembly.json').exists());self.assertFalse(output.exists())
+
+
 class BrowserPrerequisiteTests(unittest.TestCase):
     def selection(self, target='linux-x86_64', environment='ubuntu-24.04'):
         return ci.browser_prerequisite(target, environment, 'hosted-web')
@@ -368,6 +419,8 @@ class CandidateFetchTests(unittest.TestCase):
         self.assertEqual([x[2] for x in commands], ['test', 'package'])
         self.assertIn('--full', commands[0]); self.assertNotIn('--full', commands[1])
         self.assertNotIn('--junit', commands[1])
+        self.assertEqual(entry['path'], 'linux-x86_64.tar.gz')
+        self.assertEqual(entry['manifest_path'], 'linux-x86_64.tar.gz.json')
         self.assertEqual(entry['sdk_recipe'], self.fixture.fixture.recipe)
         self.assertEqual(entry['dependency_recipes'], [self.fixture.fixture.recipe])
         self.assertTrue((produced / 'artifact.json').is_file())
@@ -820,6 +873,8 @@ class WindowsGraphicsPackageTests(unittest.TestCase):
 
     def test_package_follows_complete_test_and_host_cleanup_and_binds_evidence(self):
         result = self.produce()
+        self.assertEqual(result['path'], 'windows-x86_64.zip')
+        self.assertEqual(result['manifest_path'], 'windows-x86_64.zip.json')
         self.sdk.install.assert_called_once_with(self.group, self.recipe, self.output / 'work/dependencies', '14.44.35207.0')
         self.assertEqual(self.events, ['build', 'prerequisites', 'probe', 'test', 'cleanup', 'package'])
         self.graphics.verify_archive.assert_called_once_with(self.archive)

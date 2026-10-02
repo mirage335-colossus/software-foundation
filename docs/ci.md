@@ -534,3 +534,10 @@ Browser and driver executable hashes, architecture and matching major versions
 are checked before execution; all retained executable hashes are checked again
 after the browser assertions. Firefox distribution-runtime checks keep their
 declared environments. These browsers remain test prerequisites outside SDKs.
+
+Application producers exchange archive and descriptor filenames, not absolute
+paths from their runners. The assembler validates each name as one portable
+component and locates its ordinary file beside the restored producer descriptor.
+It rejects drive paths, UNC paths, traversal, nested paths and reserved names
+before writing an assembly specification. Consumer-local absolute paths may appear
+in that temporary specification; the final release manifest uses portable names.
