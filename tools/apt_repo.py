@@ -40,6 +40,14 @@ GUI_EXECUTABLES = {"foundation-gui-" + name for name in ("terminal", "framebuffe
 SELECTION_PATH = "share/doc/Foundation/debian-selection.json"
 
 
+def runtime_dependencies(backend):
+    if backend not in BACKENDS: raise ValueError('unsupported backend runtime policy')
+    dependencies = ['libc6 (>= 2.36)']
+    if backend == 'hosted-web': dependencies.append('python3')
+    if backend in ('rev', 'sdl'): dependencies.append('libglx-mesa0')
+    return ', '.join(dependencies)
+
+
 def encoded(value):
     return (json.dumps(value, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
 
@@ -268,7 +276,7 @@ def package(archive, manifest, version, arch, backend, output):
         ctl.mkdir(mode=0o755)
         text = (f"Package: {name}\nVersion: {version}\nArchitecture: {arch}\n"
                 "Maintainer: Software Foundation contributors <maintainers@example.invalid>\n"
-                "Section: utils\nPriority: optional\nDepends: libc6 (>= 2.36)\n"
+                f"Section: utils\nPriority: optional\nDepends: {runtime_dependencies(backend)}\n"
                 f"Description: Generic development reference ({backend})\n")
         (ctl / "control").write_text(text)
         (ctl / "control").chmod(0o644)
@@ -301,6 +309,8 @@ def verify_package(path, receipt):
     if (fields["Architecture"] != receipt["architecture"] or fields["Version"] != receipt["version"] or
             fields["Package"] != "software-foundation-" + receipt["backend"]):
         raise ValueError("package identity differs")
+    if fields.get('Depends') != runtime_dependencies(receipt['backend']):
+        raise ValueError('Debian runtime dependencies differ from backend policy')
     chosen = receipt["selection"]
     if set(chosen["retained_files"]) & set(chosen["excluded_executables"]):
         raise ValueError("overlapping backend selection inventory")

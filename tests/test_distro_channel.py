@@ -206,6 +206,19 @@ src_install
             with self.assertRaises(ValueError):
                 d.package(root / 'input/application.tar.gz', root / 'input/archive.json', root / 'input/spec.json', group)
 
+    def test_current_runtime_policy_rejects_missing_host_services_and_unsafe_use_atoms(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source_group(Path(temporary)/'input')
+            spec=json.loads((Path(temporary)/'input/spec.json').read_text())
+            spec.update(schema_version=3,backend='hosted-web')
+            with patch.object(d,'require_gui_terms'):
+                with self.assertRaisesRegex(ValueError,'runtime dependencies'):d.validate_spec(spec)
+                spec['runtime_dependencies']=d.runtime_policy('hosted-web');d.validate_spec(spec)
+                spec.update(backend='rev',runtime_dependencies=d.runtime_policy('rev'));d.validate_spec(spec)
+                for atom in ('media-libs/mesa[X,$(false)]','media-libs/mesa[X,opengl]\nother','media-libs/mesa[X, opengl]'):
+                    spec['runtime_dependencies']['gentoo']=['>=sys-libs/glibc-2.36',atom]
+                    with self.assertRaises(ValueError):d.validate_spec(spec)
+
     def test_specs_reject_moving_urls_unknown_fields_and_injection(self):
         with tempfile.TemporaryDirectory() as temporary:
             group = source_group(Path(temporary) / 'input')

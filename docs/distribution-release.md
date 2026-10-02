@@ -278,3 +278,15 @@ must generate its own key, configure its own independent trust value, and keep
 a private recovery backup outside source control and release assets. Never copy
 this fingerprint as authority for a different project's packages. Public releases
 carry the corresponding verification key alongside signed metadata.
+
+Native package metadata declares host services per backend: hosted web requires
+Python, while Rev and SDL require a Mesa GLX vendor implementation. The signed
+Arch/Gentoo request must include the union of the selected backend requirements;
+for the complete GUI profile this is `glibc>=2.36`, `python`, `mesa` on Arch, and
+`>=sys-libs/glibc-2.36`, `dev-lang/python`, `media-libs/mesa[X,opengl]` on Gentoo.
+Debian metadata selects `python3` and `libglx-mesa0` where needed alongside glibc.
+The native test bootstrap supplies verification/display infrastructure, but does
+not explicitly install the vendor driver. Python also runs the verification
+harness, so metadata checks establish its declared dependency and an installed
+HTTP session test exercises the actual hosted-web wrapper. Private runtime
+libraries remain bound to the original archive inventory.

@@ -202,6 +202,10 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
                 executable = 'foundation-cli'+('-'+backend if backend != 'core' else '')
                 run(executable, '--self-check')
                 if backend != 'core': run('xvfb-run', '-a', 'foundation-gui-'+('web' if backend == 'hosted-web' else backend), '--self-check')
+                if backend == 'hosted-web':
+                    run('python3', Path(__file__).resolve().parents[1]/'gui/tests/web_host_test.py',
+                        '/opt/software-foundation/hosted-web/share/software-foundation/web/serve.py',
+                        '/usr/bin/foundation-gui-web')
                 installed.append({'backend': backend, 'files': count, 'payload_sha256': release.distro.digest(release.distro.encoded(expected))})
         names = ['software-foundation-'+backend+('' if kind == 'apt' else '-bin') for backend in manifest['backends']]
         if kind == 'apt': run('apt-get', 'purge', '-y', *names)
@@ -250,9 +254,9 @@ def container(root, check_id, environment):
         '--mount', f'type=bind,source={root},target=/source,readonly',
         '--mount', f'type=bind,source={output},target=/evidence', '-w', '/source']
     commands = {
-        'apt': 'apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 gnupg gpgv dpkg-dev binutils xvfb xauth libgl1 libopengl0 libgl1-mesa-dri',
-        'arch': 'pacman -Syu --noconfirm --needed python gnupg binutils xorg-server-xvfb xorg-xauth mesa libglvnd',
-        'gentoo': 'emerge --getbinpkgonly --usepkgonly --binpkg-respect-use=y --oneshot --with-bdeps=n app-crypt/gnupg x11-base/xorg-server x11-apps/xauth media-libs/mesa media-libs/libglvnd'
+        'apt': 'apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 gnupg gpgv dpkg-dev binutils xvfb xauth',
+        'arch': 'pacman -Syu --noconfirm --needed python gnupg binutils xorg-server-xvfb xorg-xauth',
+        'gentoo': 'emerge --getbinpkgonly --usepkgonly --binpkg-respect-use=y --oneshot --with-bdeps=n app-crypt/gnupg x11-base/xorg-server x11-apps/xauth'
     }
     snapshot = None
     try:

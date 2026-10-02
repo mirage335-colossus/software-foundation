@@ -191,6 +191,15 @@ def require_gui_terms():
         raise ValueError('GUI dependency redistribution terms remain unresolved')
 
 
+def runtime_policy(backend):
+    result = {'arch': ['glibc>=2.36'], 'gentoo': ['>=sys-libs/glibc-2.36']}
+    if backend == 'hosted-web':
+        result['arch'].append('python'); result['gentoo'].append('dev-lang/python')
+    if backend in ('rev', 'sdl'):
+        result['arch'].append('mesa'); result['gentoo'].append('media-libs/mesa[X,opengl]')
+    return result
+
+
 def validate_spec(spec):
     fields = {'schema_version', 'version', 'package_release', 'architecture', 'backend',
               'archive_url', 'archive_sha256', 'license_files', 'redistribution_approved',
@@ -214,11 +223,15 @@ def validate_spec(spec):
     dependencies = spec['runtime_dependencies']
     if not isinstance(dependencies, dict) or set(dependencies) != {'arch', 'gentoo'}:
         raise ValueError('explicit runtime dependency lists required')
-    for values in dependencies.values():
+    for kind, values in dependencies.items():
         if not isinstance(values, list) or not values or len(values) > 100 or len(set(values)) != len(values):
             raise ValueError('invalid runtime dependency list')
-        if any(not isinstance(v, str) or not re.fullmatch(r'[A-Za-z0-9+_.<>=:/-]{1,150}', v) for v in values):
+        atom = r'[A-Za-z0-9+_.<>=:/-]{1,150}'
+        if kind == 'gentoo': atom += r'(?:\[[A-Za-z0-9_+!?=-]+(?:,[A-Za-z0-9_+!?=-]+)*\])?'
+        if any(not isinstance(v, str) or len(v) > 200 or not re.fullmatch(atom, v) for v in values):
             raise ValueError('unsafe runtime dependency atom')
+        if spec['schema_version'] >= 3 and not set(runtime_policy(spec['backend'])[kind]) <= set(values):
+            raise ValueError('required backend runtime dependencies are absent')
     if spec['backend'] != 'core':
         require_gui_terms()
     return spec

@@ -194,6 +194,12 @@ class AptTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 apt.verify_repository(root / "two", trusted)
 
+    def test_backend_runtime_dependencies_are_explicit(self):
+        self.assertEqual('libc6 (>= 2.36)',apt.runtime_dependencies('core'))
+        self.assertIn('python3',apt.runtime_dependencies('hosted-web'))
+        for backend in ('rev','sdl'):self.assertIn('libglx-mesa0',apt.runtime_dependencies(backend))
+        with self.assertRaises(ValueError):apt.runtime_dependencies('unknown')
+
     def test_metadata_injection_and_incomplete_trust_rejected(self):
         for value in ("short", "a" * 41, "A\n" * 20):
             with self.assertRaises(ValueError):
