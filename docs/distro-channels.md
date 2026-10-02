@@ -35,16 +35,16 @@ Every specification contains exactly these fields:
 
 | Field | Required meaning |
 | --- | --- |
-| `schema_version` | Integer `1` for the original single-backend contract; integer `2` for explicit selection from a combined archive. |
+| `schema_version` | Integer `3` for new packages: combined-archive selection, enforced host services and complete retained notices. Versions `1` and `2` remain readable for existing channels. |
 | `version` | Three canonical numeric components, such as `1.2.3`. |
 | `package_release` | Integer `1` through `999999`; increase for a packaging-only change. |
 | `architecture`, `backend` | One of the explicit identities above. |
 | `archive_url`, `archive_sha256` | Exact HTTPS application archive location and lowercase digest. |
-| `license_files` | Nonempty list of retained notice paths inside the installation root. |
+| `license_files` | Complete retained notice paths, verified against the bundled GUI lock and dependency notice index. |
 | `redistribution_approved` | Explicit `true` after review of all shipped terms. |
 | `application_source`, `packaging_tool`, `sdk` | Each has exactly `url` and `sha256` for its retained archive. |
 | `dependencies` | List of additional retained archive references with the same two fields. |
-| `runtime_dependencies` | Explicit nonempty `arch` and `gentoo` dependency lists. |
+| `runtime_dependencies` | Explicit `arch` and `gentoo` lists including every required backend host service, font and driver. |
 
 URLs must include their expected digest in the URL path, have no credentials,
 query or fragment, and use HTTPS. This makes content identity visible and avoids
@@ -67,24 +67,27 @@ and notice paths with the release's reviewed values before delivery.
 python3 tools/artifact.py create build/inputs/application.tar.gz \
   --manifest build/inputs/application.tar.gz.json
 python3 - <<'PY'
-import hashlib, json
+import hashlib, json, sys
 from pathlib import Path
+sys.path.insert(0, 'tools')
+import distro_channel as channel
 root = Path('build/inputs')
 def reference(name):
     value = hashlib.sha256((root / name).read_bytes()).hexdigest()
     return {'url': f'https://example.invalid/sha256/{value}/{name}', 'sha256': value}
 archive = reference('application.tar.gz')
+_, payload = channel.archive_payload(root / 'application.tar.gz',
+    json.loads((root / 'application.tar.gz.json').read_text()))
 spec = {
-    'schema_version': 2, 'version': '0.1.0', 'package_release': 1,
+    'schema_version': 3, 'version': '0.1.0', 'package_release': 1,
     'architecture': 'x86_64', 'backend': 'core',
     'archive_url': archive['url'], 'archive_sha256': archive['sha256'],
-    'license_files': ['share/doc/Foundation/LICENSE'],
+    'license_files': channel.required_license_files(payload),
     'redistribution_approved': True,
     'application_source': reference('application-source.tar.gz'),
     'packaging_tool': reference('packaging-tool.tar.gz'),
     'sdk': reference('sdk-group.tar.gz'), 'dependencies': [],
-    'runtime_dependencies': {
-        'arch': ['glibc>=2.36'], 'gentoo': ['>=sys-libs/glibc-2.36']}}
+    'runtime_dependencies': channel.runtime_policy('core')}
 (root / 'spec.json').write_text(json.dumps(spec, indent=2) + '\n')
 PY
 python3 tools/distro_channel.py package \
@@ -102,13 +105,14 @@ required system library. They are not inferred from this example's tiny CLI.
 ## One build, several native packages
 
 A normal CMake package contains the CLI and every selected native GUI backend.
-Use specification version `2` to wrap that same qualified archive for each desired
-backend. Change only `backend` and the new output directory; retain the same
+Use specification version `3` to wrap that same qualified archive for each desired
+backend. Select its required runtime services and new output directory; retain the same
 `archive_url`, digest, inventory, application source, SDK and dependency references.
 Generate one group per backend, then pass all groups to `assemble`. No application
 or SDK rebuild, archive rewrite or manual deletion is needed. A single-backend
-archive is also valid under version `2`. Existing version-`1` specifications retain
-their original exact templates and still reject combined archives.
+archive is also valid under version `3`. Existing version-`1` and version-`2`
+specifications retain their original verification semantics; version `1` still
+rejects combined archives. Use version `3` for new publications.
 
 For an archive whose reviewed native selection includes `terminal` and `fltk`,
 the concrete producer sequence after terms approval is:
@@ -117,11 +121,16 @@ the concrete producer sequence after terms approval is:
 python3 - <<'PY'
 import json, subprocess, sys
 from pathlib import Path
+sys.path.insert(0, 'tools')
+import distro_channel as channel
 root = Path('build/inputs')
 base = json.loads((root / 'spec.json').read_text())
 for backend in ('core', 'terminal', 'fltk'):
     specification = root / ('spec-' + backend + '.json')
-    specification.write_text(json.dumps(dict(base, schema_version=2, backend=backend), indent=2) + '\n')
+    runtime = {manager: sorted(set(base['runtime_dependencies'][manager]) | set(required))
+               for manager, required in channel.runtime_policy(backend).items()}
+    current = dict(base, schema_version=3, backend=backend, runtime_dependencies=runtime)
+    specification.write_text(json.dumps(current, indent=2) + '\n')
     subprocess.run([sys.executable, 'tools/distro_channel.py', 'package',
                     '--archive', str(root / 'application.tar.gz'),
                     '--manifest', str(root / 'application.tar.gz.json'),
