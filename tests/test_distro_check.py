@@ -63,12 +63,21 @@ class NativeCheckTests(unittest.TestCase):
             if argv[:2]==['docker','start']:raise subprocess.TimeoutExpired(argv,1)
         def cleanup(name,token):calls.append(['cleanup',name,token])
         def run(argv,**kwargs):calls.append(list(argv))
+        from contextlib import contextmanager
+        @contextmanager
+        def display(directory):
+            calls.append(['display-start'])
+            try:yield {'DISPLAY':':17','XAUTHORITY':'/owned/authority'}
+            finally:calls.append(['display-joined'])
         with tempfile.TemporaryDirectory() as temp:
             env=dict(CHANNEL=json.dumps(self.selected),CHECK_IMAGE='debian:bookworm',CHECK_KIND='apt')
-            with patch.object(check.subprocess,'run',side_effect=run),patch.object(check.subprocess,'check_output',return_value=json.dumps([{'Id':identity}])),patch.object(check,'supervised',side_effect=execute),patch.object(check,'remove_owned_container',side_effect=cleanup):
+            with patch.object(check,'private_display',side_effect=display),patch.object(check.subprocess,'run',side_effect=run),patch.object(check.subprocess,'check_output',return_value=json.dumps([{'Id':identity}])),patch.object(check,'supervised',side_effect=execute),patch.object(check,'remove_owned_container',side_effect=cleanup):
                 with self.assertRaises(subprocess.TimeoutExpired):check.container(temp,'apt-bookworm',env)
         created=next(c for c in calls if c[:2]==['docker','create'])
         self.assertIn(identity,created);self.assertNotIn('debian:bookworm',created)
+        self.assertIn('DISPLAY=:17',created)
+        self.assertIn('type=bind,source=/owned/authority,target=/run/foundation-Xauthority,readonly',created)
+        self.assertEqual(['display-joined'],calls[-1])
         cleanup_indices=[i for i,c in enumerate(calls) if c[0]=='cleanup']
         self.assertEqual(2,len(cleanup_indices));self.assertLess(max(cleanup_indices),next(i for i,c in enumerate(calls) if c[:2]==['sudo','chown']))
         self.assertEqual(calls[cleanup_indices[0]][2],calls[cleanup_indices[1]][2])

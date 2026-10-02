@@ -18,7 +18,8 @@
     "gui/patches/web-tick.patch: authenticated ordered poll invokes bounded application work on the owning thread",
     "gui/patches/web-lifecycle.patch: bounded single outstanding poll and owned session/dialog/timer teardown",
     "gui/patches/web-assets.patch: allow only the additional retained lifecycle module in the local static asset map",
-    "gui/patches/rev-conformance-scale.patch: supplier bitmap assertions map logical sample points to actual capture pixels without changing expected colors"
+    "gui/patches/rev-conformance-scale.patch: supplier bitmap assertions map logical sample points to actual capture pixels without changing expected colors",
+    "gui/patches/rev-clipboard-ownership.patch: synchronize fixture selection ownership across native connections and require a malformed reply without weakening rejection assertions"
   ],
   "files": {
     "LICENSE": "1b3b788174fca1e8879d5d714528f22732f03925621b4e3484ee88ae6b4ef5f0",

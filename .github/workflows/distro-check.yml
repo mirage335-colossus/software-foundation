@@ -86,6 +86,10 @@ jobs:
                 Path('build/channels')/name, Path('docs/release-policy.json'), os.environ['TRUSTED_FINGERPRINT'])
             if value['request']['target'] != item['target']:
                 raise ValueError('fetched target differs')
+    - name: Install the job-owned external display service from the runner distribution
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends xvfb xauth x11-utils
     - name: Run native package frontend in an isolated disposable system
       shell: python
       env:

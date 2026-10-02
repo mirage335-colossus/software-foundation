@@ -282,11 +282,24 @@ carry the corresponding verification key alongside signed metadata.
 Native package metadata declares host services per backend: hosted web requires
 Python, while Rev and SDL require a Mesa GLX vendor implementation. The signed
 Arch/Gentoo request must include the union of the selected backend requirements;
-for the complete GUI profile this is `glibc>=2.36`, `python`, `mesa` on Arch, and
-`>=sys-libs/glibc-2.36`, `dev-lang/python`, `media-libs/mesa[X,opengl]` on Gentoo.
-Debian metadata selects `python3` and `libglx-mesa0` where needed alongside glibc.
+for the complete GUI profile this is `glibc>=2.36`, `python`, `mesa`, `fontconfig`,
+`ttf-dejavu` on Arch, and `>=sys-libs/glibc-2.36`, `dev-lang/python`,
+`media-libs/mesa[X,opengl]`, `media-libs/fontconfig`, `media-fonts/dejavu` on Gentoo.
+Debian metadata selects `python3`, `libglx-mesa0`, `fontconfig-config` and
+`fonts-dejavu-core` where needed alongside glibc. Font configuration and font data
+are runtime resources: bundling the client library alone does not provide them.
 The native test bootstrap supplies verification/display infrastructure, but does
 not explicitly install the vendor driver. Python also runs the verification
 harness, so metadata checks establish its declared dependency and an installed
 HTTP session test exercises the actual hosted-web wrapper. Private runtime
 libraries remain bound to the original archive inventory.
+
+Native container checks use an authenticated, job-owned Xvfb server supplied by the
+runner's distribution. Only its own Unix socket and read-only authorization file
+enter the container; no desktop session or host-wide authorization bypass is used.
+Container names and labels bind cleanup ownership, containers stop before the
+display server is joined, and display lifecycle evidence accompanies the native
+receipt. This makes the display service explicit while keeping package-manager
+and client-library verification native to each tested distribution. Gentoo
+prerequisites remain binary-only even when optional display-wrapper packages are
+absent from its current binary repository.

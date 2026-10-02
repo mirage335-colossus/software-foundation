@@ -201,7 +201,7 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
                 count = verify_installed('/', expected, backend)
                 executable = 'foundation-cli'+('-'+backend if backend != 'core' else '')
                 run(executable, '--self-check')
-                if backend != 'core': run('xvfb-run', '-a', 'foundation-gui-'+('web' if backend == 'hosted-web' else backend), '--self-check')
+                if backend != 'core': run('foundation-gui-'+('web' if backend == 'hosted-web' else backend), '--self-check')
                 if backend == 'hosted-web':
                     run('python3', Path(__file__).resolve().parents[1]/'gui/tests/web_host_test.py',
                         '/opt/software-foundation/hosted-web/share/software-foundation/web/serve.py',
@@ -237,7 +237,21 @@ def selection(raw):
     return value
 
 
+def private_display(directory):
+    from screenshots import private_display as owned
+    return owned(directory)
+
+
 def container(root, check_id, environment):
+    root = Path(root).resolve(strict=True)
+    output = root/'build/distro-evidence'; output.mkdir(parents=True, exist_ok=False)
+    # Display service is independently owned by this job, not installed from a
+    # tested distribution's optional source-only display-wrapper packages.
+    with private_display(output/'display') as display:
+        return container_with_display(root, check_id, environment, display)
+
+
+def container_with_display(root, check_id, environment, display):
     root = Path(root).resolve(strict=True); selected = selection(environment['CHANNEL'])
     rows = [row for row in matrix(selected['target'])['include'] if row['id'] == check_id]
     if len(rows) != 1: raise ValueError('native check is not in selected matrix')
@@ -245,18 +259,27 @@ def container(root, check_id, environment):
     if environment.get('CHECK_IMAGE') != row['image'] or environment.get('CHECK_KIND') != row['kind']:
         raise ValueError('native execution image or kind differs from plan')
     if ':' in str(root): raise ValueError('unsupported container source path')
-    output = root/'build/distro-evidence'; output.mkdir(parents=True, exist_ok=False)
+    output = root/'build/distro-evidence'
     token = uuid.uuid4().hex
     name = 'foundation-native-'+token; snapshot_name = name+'-snapshot'
-    args = ['docker', 'create', '--name', name, '--label', 'foundation.native-check='+token, '--init', '-e', 'FOUNDATION_DISPOSABLE_CHECK=1',
+    number = display['DISPLAY'].removeprefix(':')
+    if not number.isdecimal(): raise ValueError('private local display number required')
+    socket = '/tmp/.X11-unix/X'+number
+    args = ['docker', 'create', '--name', name, '--label', 'foundation.native-check='+token, '--init',
+        '--hostname', platform.node(), '-e', 'DISPLAY='+display['DISPLAY'],
+        '-e', 'XAUTHORITY=/run/foundation-Xauthority', '-e', 'LIBGL_ALWAYS_SOFTWARE=1',
+        '-e', 'SDL_VIDEODRIVER=x11', '-e', 'REV_SCALE=1',
+        '--mount', f'type=bind,source={socket},target={socket},readonly',
+        '--mount', 'type=bind,source='+display['XAUTHORITY']+',target=/run/foundation-Xauthority,readonly',
+        '-e', 'FOUNDATION_DISPOSABLE_CHECK=1',
         '-e', 'PYTHONDONTWRITEBYTECODE=1', '-e', 'PYTHONUTF8=1', '-e', 'TRUSTED_FINGERPRINT',
         '-e', 'GITHUB_SHA', '-e', 'GITHUB_RUN_ID', '-e', 'GITHUB_RUN_ATTEMPT', '-e', 'CHECK_ID', '-e', 'CHECK_IMAGE',
         '--mount', f'type=bind,source={root},target=/source,readonly',
         '--mount', f'type=bind,source={output},target=/evidence', '-w', '/source']
     commands = {
-        'apt': 'apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 gnupg gpgv dpkg-dev binutils xvfb xauth',
-        'arch': 'pacman -Syu --noconfirm --needed python gnupg binutils xorg-server-xvfb xorg-xauth',
-        'gentoo': 'emerge --getbinpkgonly --usepkgonly --binpkg-respect-use=y --oneshot --with-bdeps=n app-crypt/gnupg x11-base/xorg-server x11-apps/xauth'
+        'apt': 'apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 gnupg gpgv dpkg-dev binutils',
+        'arch': 'pacman -Syu --noconfirm --needed python gnupg binutils',
+        'gentoo': 'emerge --getbinpkgonly --usepkgonly --binpkg-respect-use=y --oneshot --with-bdeps=n app-crypt/gnupg'
     }
     snapshot = None
     try:

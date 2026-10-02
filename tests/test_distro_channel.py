@@ -214,6 +214,12 @@ src_install
             with patch.object(d,'require_gui_terms'):
                 with self.assertRaisesRegex(ValueError,'runtime dependencies'):d.validate_spec(spec)
                 spec['runtime_dependencies']=d.runtime_policy('hosted-web');d.validate_spec(spec)
+                spec.update(backend='fltk',runtime_dependencies=d.runtime_policy('fltk'));d.validate_spec(spec)
+                for manager,package in (('arch','fontconfig'),('arch','ttf-dejavu'),
+                                        ('gentoo','media-libs/fontconfig'),('gentoo','media-fonts/dejavu')):
+                    spec['runtime_dependencies']=d.runtime_policy('fltk')
+                    spec['runtime_dependencies'][manager].remove(package)
+                    with self.assertRaisesRegex(ValueError,'runtime dependencies'):d.validate_spec(spec)
                 spec.update(backend='rev',runtime_dependencies=d.runtime_policy('rev'));d.validate_spec(spec)
                 for atom in ('media-libs/mesa[X,$(false)]','media-libs/mesa[X,opengl]\nother','media-libs/mesa[X, opengl]'):
                     spec['runtime_dependencies']['gentoo']=['>=sys-libs/glibc-2.36',atom]

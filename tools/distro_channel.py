@@ -195,6 +195,9 @@ def runtime_policy(backend):
     result = {'arch': ['glibc>=2.36'], 'gentoo': ['>=sys-libs/glibc-2.36']}
     if backend == 'hosted-web':
         result['arch'].append('python'); result['gentoo'].append('dev-lang/python')
+    if backend == 'fltk':
+        result['arch'].extend(['fontconfig', 'ttf-dejavu'])
+        result['gentoo'].extend(['media-libs/fontconfig', 'media-fonts/dejavu'])
     if backend in ('rev', 'sdl'):
         result['arch'].append('mesa'); result['gentoo'].append('media-libs/mesa[X,opengl]')
     return result

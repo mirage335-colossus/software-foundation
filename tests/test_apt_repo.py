@@ -197,6 +197,8 @@ class AptTests(unittest.TestCase):
     def test_backend_runtime_dependencies_are_explicit(self):
         self.assertEqual('libc6 (>= 2.36)',apt.runtime_dependencies('core'))
         self.assertIn('python3',apt.runtime_dependencies('hosted-web'))
+        for package in ('fontconfig-config','fonts-dejavu-core'):
+            self.assertIn(package,apt.runtime_dependencies('fltk'))
         for backend in ('rev','sdl'):self.assertIn('libglx-mesa0',apt.runtime_dependencies(backend))
         with self.assertRaises(ValueError):apt.runtime_dependencies('unknown')
 

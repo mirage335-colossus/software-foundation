@@ -44,6 +44,7 @@ def runtime_dependencies(backend):
     if backend not in BACKENDS: raise ValueError('unsupported backend runtime policy')
     dependencies = ['libc6 (>= 2.36)']
     if backend == 'hosted-web': dependencies.append('python3')
+    if backend == 'fltk': dependencies.extend(['fontconfig-config', 'fonts-dejavu-core'])
     if backend in ('rev', 'sdl'): dependencies.append('libglx-mesa0')
     return ', '.join(dependencies)
 
