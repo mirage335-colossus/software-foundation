@@ -100,6 +100,20 @@ with wait state 258 after `cl.exe` exited. This identifies a compiler helper
 lifetime issue; it is not a passing compiler or release qualification. The failed
 bundle was independently fetched and all twelve consumed source hashes checked.
 
+At `356e0cb29d8762ae6deddceb537bee9451945cad`, the corrected production
+compiler path passed [one native diagnostic](https://github.com/mirage335-colossus/software-foundation/actions/runs/37044777895),
+then twenty complete repetitions each on
+[Python 3.12.10](https://github.com/mirage335-colossus/software-foundation/actions/runs/37045035782)
+and [Python 3.14.7](https://github.com/mirage335-colossus/software-foundation/actions/runs/37045040414).
+Each repeated run passed all forty cases without exclusions or internal skips.
+Every compiler case actually terminated and joined the exact selected VCTIP helper
+and verified x64 PE output; every Firefox 156.0.1 case completed automation and
+immediate profile removal. Both bundles were independently fetched, with all
+twelve consumed source hashes and complete case inventories checked. Their Windows
+runner image was `20260927.320.1`. The compiler-specific helper policy preserves
+strict completion for other commands; these diagnostics do not replace full
+release qualification.
+
 ## Delivery workflow expansion
 
 The current update replaces Actions artifact transport with per-run private draft
