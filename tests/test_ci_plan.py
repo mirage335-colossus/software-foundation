@@ -224,7 +224,7 @@ class BrowserPrerequisiteTests(unittest.TestCase):
         from subprocess import CompletedProcess
         selected = ci.browser_prerequisite('browser-wasm32', 'chromium', 'wasm')
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary); browser = root/'chrome'; driver = root/'chromedriver'
+            root = Path(temporary).resolve(); browser = root/'chrome'; driver = root/'chromedriver'
             raw = bytearray(64); raw[:6] = b'\x7fELF\x02\x01'; raw[18:20] = (62).to_bytes(2,'little')
             browser.write_bytes(raw); driver.write_bytes(raw)
             selection = dict(selected, executable=str(browser), driver=str(driver))
