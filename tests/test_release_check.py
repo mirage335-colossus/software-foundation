@@ -217,6 +217,36 @@ class ReleaseCheckTests(unittest.TestCase):
                 check.bind_browser_prerequisite(state,details,evidence)
             self.assertFalse((evidence/'browser/prerequisite.json').exists())
 
+    def test_host_chromium_receipt_rechecks_selected_driver_bytes(self):
+        import ci_plan,json
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);subject,receipt,options,host,environment=self.browser_fixture(root)
+            spec=check.c.load(options['browser_prerequisite_plan']);del spec['id']
+            spec['checks'][0].update(target='browser-wasm32',backend='wasm',environment='chromium')
+            frozen=check.c.freeze(spec);options['browser_prerequisite_plan'].write_text(json.dumps(frozen))
+            receipt.update(plan=frozen['id'],selection=ci_plan.browser_prerequisite('browser-wasm32','chromium','wasm'),
+                           browser_version='Google Chrome 154.0.1.2')
+            observed=[]
+            for package,version in (('google-chrome',receipt['browser_version']),('chromedriver','ChromeDriver 154.0.1.2')):
+                binary=root/package;binary.write_bytes(package.encode())
+                observed.append(dict(package=package,version=version,architecture='amd64',policy='host',
+                    executable=str(binary),files={str(binary):check.digest(binary)}))
+            receipt['installed']=observed;options['browser_prerequisite'].write_text(json.dumps(receipt))
+            options.update(browser='chromium',browser_executable='/usr/bin/google-chrome',driver='/usr/bin/chromedriver')
+            host['distribution']='ubuntu-24.04'
+            with patch.object(check.c,'host_identity',return_value=host),patch.dict(check.os.environ,environment), \
+                    patch.object(ci_plan,'inspect_host_chromium',return_value=observed):
+                with self.assertRaisesRegex(ValueError,'selected driver'):
+                    check.browser_prerequisite_snapshot(dict(options,driver='/unrelated/driver'),'browser-wasm32','wasm','archive',subject)
+                state=check.browser_prerequisite_snapshot(options,'browser-wasm32','wasm','archive',subject)
+            self.assertEqual(options['driver'],str(root/'chromedriver'))
+            self.assertEqual(options['browser_executable'],str(root/'google-chrome'))
+            evidence=root/'evidence';(evidence/'browser').mkdir(parents=True)
+            (root/'chromedriver').write_bytes(b'changed driver')
+            with self.assertRaisesRegex(ValueError,'executable changed'):
+                check.bind_browser_prerequisite(state,dict(browser=dict(status='passed',engine='chromium',browser_version='154.0.1.2')),evidence)
+            self.assertFalse((evidence/'browser/prerequisite.json').exists())
+
     def test_browser_prerequisite_rejects_wrong_scope_attempt_host_and_package(self):
         import json
         with tempfile.TemporaryDirectory() as temporary:

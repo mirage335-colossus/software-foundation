@@ -352,7 +352,14 @@ def browser_prerequisite(target, environment, backend):
     systems = {'debian-12': ('debian', '12', 'debian:bookworm'),
                'debian-13': ('debian', '13', 'debian:trixie'),
                'ubuntu-24.04': ('ubuntu', '24.04', 'ubuntu:24.04')}
-    if target == 'browser-wasm32' and backend == 'wasm' and environment in ('firefox', 'chromium'):
+    if target == 'browser-wasm32' and backend == 'wasm' and environment == 'chromium':
+        # Use the maintained host installation and its namespace/AppArmor policy.
+        # The browser remains an external prerequisite, never an SDK payload.
+        return dict(distribution='ubuntu', version='24.04', image='', architecture='amd64',
+                    engine='chromium', packages=['google-chrome', 'chromedriver'],
+                    executable='/usr/bin/google-chrome', driver='/usr/bin/chromedriver',
+                    repository='host-preinstalled')
+    if target == 'browser-wasm32' and backend == 'wasm' and environment == 'firefox':
         distro, version, image = systems['debian-12']; architecture = 'amd64'; engine = environment
     elif target in ('linux-x86_64', 'linux-aarch64') and backend == 'hosted-web' and environment in systems:
         distro, version, image = systems[environment]
@@ -423,14 +430,59 @@ def inspect_host_firefox(selection):
                 executable=str(native), files=files)
 
 
+def inspect_host_chromium(selection):
+    """Bind the installed Chromium-family browser and matching local driver."""
+    if (selection['repository'] != 'host-preinstalled' or selection['engine'] != 'chromium' or
+            platform.system() != 'Linux'):
+        raise ValueError('native Chromium requires the selected Linux host')
+    if not hasattr(os, 'geteuid') or os.geteuid() == 0:
+        raise ValueError('native Chromium qualification requires an unprivileged host account')
+    actual = platform.freedesktop_os_release()
+    if (actual.get('ID'), actual.get('VERSION_ID')) != (selection['distribution'], selection['version']):
+        raise ValueError('host browser distribution differs')
+    assert_host('linux-x86_64')
+    records = []
+    versions = []
+    for package, selected in zip(selection['packages'], (selection['executable'], selection['driver'])):
+        command = Path(selected).resolve(strict=True)
+        with command.open('rb') as stream: header = stream.read(131072)
+        native = command
+        if package == 'google-chrome' and not header.startswith(b'\x7fELF'):
+            if b'"$HERE/chrome"' not in header or not (command.parent / 'chrome').is_file():
+                raise ValueError('installed Chrome wrapper has no recognized native executable')
+            native = (command.parent / 'chrome').resolve(strict=True)
+            with native.open('rb') as stream: header = stream.read(64)
+        if len(header) < 20 or header[:6] != b'\x7fELF\x02\x01' or int.from_bytes(header[18:20], 'little') != 62:
+            raise ValueError('installed Chromium prerequisite architecture differs')
+        def version(path):
+            result = subprocess.run([str(path), '--version'], check=True, capture_output=True,
+                                    text=True, timeout=30, env=dict(os.environ, LC_ALL='C', LANG='C'))
+            value = result.stdout.strip()
+            expression = (r'(?:Google Chrome(?: for Testing)?|Chromium) ([0-9]+(?:\.[0-9]+){3})' if package == 'google-chrome'
+                          else r'ChromeDriver ([0-9]+(?:\.[0-9]+){3})(?: \([^\r\n]*\))?')
+            match = re.fullmatch(expression, value)
+            if not match: raise ValueError('unrecognized installed Chromium prerequisite version')
+            return value, match[1]
+        observed, number = version(native)
+        if command != native and version(command)[0] != observed:
+            raise ValueError('Chrome wrapper and native executable versions differ')
+        versions.append(number)
+        records.append(dict(package=package, version=observed, architecture=selection['architecture'],
+            policy='preinstalled native host prerequisite; no package configuration changed',
+            executable=str(native), files={str(path): module('coverage').sha(path) for path in {command,native}}))
+    if versions[0].split('.')[0] != versions[1].split('.')[0]:
+        raise ValueError('installed Chromium browser and driver major versions differ')
+    return records
+
+
 def install_browser_prerequisite(target, environment, backend, output):
     """Mutate only an explicitly disposable supported container, retaining facts."""
     selection = browser_prerequisite(target, environment, backend)
     if selection['repository'] == 'host-preinstalled':
-        record = inspect_host_firefox(selection)
+        records = inspect_host_chromium(selection) if selection['engine'] == 'chromium' else [inspect_host_firefox(selection)]
         Path(output).mkdir(parents=True, exist_ok=False)
         return dict(schema_version=1, selection=selection, signing_key_fingerprint=None,
-                    installed=[record], browser_version=record['version'])
+                    installed=records, browser_version=records[0]['version'])
     browser_setup_preflight(selection)
     output = Path(output); output.mkdir(parents=True, exist_ok=False)
     def capture(argv):
@@ -477,7 +529,7 @@ def qualification_plan(candidate, profile, output, policy=None, *, runners=None)
             if browser['engine'] == 'firefox': argv += ['--firefox', browser['executable']]
         if environment in ('chromium', 'firefox'):
             argv += ['--browser', environment]
-            if environment == 'chromium': argv += ['--browser-executable', '/usr/bin/chromium', '--driver', '/usr/bin/chromedriver']
+            if environment == 'chromium': argv += ['--browser-executable', browser['executable'], '--driver', browser['driver']]
         graphics = needs_windows_graphics(target, selected['targets'][target], backend, scope)
         if graphics:
             argv += ['--windows-graphics-archive', '{root}/build/host-graphics/mesa-windows.7z']
@@ -486,7 +538,8 @@ def qualification_plan(candidate, profile, output, policy=None, *, runners=None)
         checks.append(dict(item, id=check_id, required=True, argv=argv, timeout_seconds=5400,
                            warning_seconds=4500, expected_tests=[], qualification='qualification.json'))
         matrix.append({'id': check_id, 'target': target, 'runner': runners.get(target, runners['linux-x86_64']),
-                       'image': '' if environment == 'ubuntu-24.04' and backend == 'hosted-web' and scope == 'archive' else images.get(environment, 'debian:bookworm' if environment in ('firefox', 'chromium') else ''),
+                       'image': '' if (environment == 'ubuntu-24.04' and backend == 'hosted-web' and scope == 'archive' or
+                                       target == 'browser-wasm32' and backend == 'wasm' and environment == 'chromium') else images.get(environment, 'debian:bookworm' if environment in ('firefox', 'chromium') else ''),
                        'environment': environment, 'scope': scope, 'backend': backend, 'graphics': graphics})
     # Logical requirements remain intact; group only identical whole-artifact work.
     groups = {}

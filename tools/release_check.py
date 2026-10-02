@@ -100,10 +100,16 @@ def browser_prerequisite_snapshot(options, target, backend, scope, subject):
                 not all(isinstance(record[key], str) and record[key].strip() for key in ("version", "policy"))):
             raise ValueError("browser prerequisite package identity differs")
     if expected['repository'] == 'host-preinstalled':
-        observed = ci_plan.inspect_host_firefox(expected)
-        if installed != [observed] or data['browser_version'] != observed['version']:
+        observed = (ci_plan.inspect_host_chromium(expected) if engine == 'chromium'
+                    else [ci_plan.inspect_host_firefox(expected)])
+        if installed != observed or data['browser_version'] != observed[0]['version']:
             raise ValueError('installed host browser changed since prerequisite inspection')
-        options['firefox'] = observed['executable']
+        if engine == 'chromium':
+            if options.get('driver') != expected['driver']:
+                raise ValueError('browser prerequisite differs from the selected driver')
+            options['browser_executable'], options['driver'] = (item['executable'] for item in observed)
+        else:
+            options['firefox'] = observed[0]['executable']
     if not isinstance(data["browser_version"], str) or not data["browser_version"].strip():
         raise ValueError("browser prerequisite version is absent")
     return {"path": path, "raw": raw, "data": data, "plan_path": plan_path, "plan_raw": plan_raw}
@@ -128,9 +134,10 @@ def bind_browser_prerequisite(state, details, evidence):
             state["plan_path"].is_symlink() or state["plan_path"].read_bytes() != state["plan_raw"]):
         raise ValueError("browser prerequisite or frozen plan changed during qualification")
     if expected['selection']['repository'] == 'host-preinstalled':
-        for name, value in expected['installed'][0]['files'].items():
-            if digest(Path(name)) != value:
-                raise ValueError('host browser executable changed during qualification')
+        for record in expected['installed']:
+            for name, value in record['files'].items():
+                if digest(Path(name)) != value:
+                    raise ValueError('host browser executable changed during qualification')
     destination = evidence / "browser/prerequisite.json"
     with destination.open("xb") as stream:
         stream.write(state["raw"])

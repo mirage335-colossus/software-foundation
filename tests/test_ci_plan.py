@@ -154,7 +154,9 @@ class BrowserPrerequisiteTests(unittest.TestCase):
             self.assertEqual(selected['repository'], 'host-preinstalled')
         self.assertEqual(self.selection(environment='debian-12')['packages'], ['firefox-esr'])
         chromium = ci.browser_prerequisite('browser-wasm32', 'chromium', 'wasm')
-        self.assertEqual((chromium['image'], chromium['packages']), ('debian:bookworm', ['chromium', 'chromium-driver']))
+        self.assertEqual((chromium['image'], chromium['packages']), ('', ['google-chrome', 'chromedriver']))
+        self.assertEqual(chromium['repository'], 'host-preinstalled')
+        self.assertEqual(chromium['executable'], '/usr/bin/google-chrome')
         for target, environment, backend in (('windows-x86_64', 'ubuntu-24.04', 'hosted-web'),
                 ('browser-wasm32', 'ubuntu-24.04', 'wasm'), ('linux-x86_64', 'ubuntu-24.04', 'core')):
             with self.assertRaises(ValueError): ci.browser_prerequisite(target, environment, backend)
@@ -217,6 +219,51 @@ class BrowserPrerequisiteTests(unittest.TestCase):
                 run.assert_not_called()
                 binary.write_bytes(b'#!/bin/sh\nunknown wrapper\n')
                 with self.assertRaisesRegex(ValueError,'wrapper'):ci.inspect_host_firefox(selection)
+
+    def test_host_chromium_binds_browser_driver_and_rejects_incompatible_inputs(self):
+        from subprocess import CompletedProcess
+        selected = ci.browser_prerequisite('browser-wasm32', 'chromium', 'wasm')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); browser = root/'chrome'; driver = root/'chromedriver'
+            raw = bytearray(64); raw[:6] = b'\x7fELF\x02\x01'; raw[18:20] = (62).to_bytes(2,'little')
+            browser.write_bytes(raw); driver.write_bytes(raw)
+            selection = dict(selected, executable=str(browser), driver=str(driver))
+            versions = {str(browser): 'Google Chrome 154.0.8037.57', str(driver): 'ChromeDriver 154.0.8037.57 (fixture)'}
+            def launch(argv, **kwargs): return CompletedProcess(argv,0,versions[argv[0]])
+            with patch.object(ci.platform,'system',return_value='Linux'), \
+                    patch.object(ci.platform,'freedesktop_os_release',create=True,return_value={'ID':'ubuntu','VERSION_ID':'24.04'}), \
+                    patch.object(ci.os,'geteuid',create=True,return_value=1000) as uid, \
+                    patch.object(ci,'assert_host'), patch.object(ci.subprocess,'run',side_effect=launch):
+                records = ci.inspect_host_chromium(selection)
+                self.assertEqual([r['executable'] for r in records], [str(browser),str(driver)])
+                self.assertEqual(records[1]['files'], {str(driver): ci.module('coverage').sha(driver)})
+                versions[str(driver)] = 'ChromeDriver 153.0.8037.57 (fixture)'
+                with self.assertRaisesRegex(ValueError,'major versions differ'): ci.inspect_host_chromium(selection)
+                versions[str(driver)] = 'ChromeDriver 154.0.8037.57 (fixture)'
+                raw[18:20] = (183).to_bytes(2,'little'); driver.write_bytes(raw)
+                with self.assertRaisesRegex(ValueError,'architecture'): ci.inspect_host_chromium(selection)
+                driver.write_bytes(b'#!/bin/sh\nunknown wrapper\n')
+                with self.assertRaisesRegex(ValueError,'architecture'): ci.inspect_host_chromium(selection)
+                raw[18:20] = (62).to_bytes(2,'little'); driver.write_bytes(raw)
+                wrapper=root/'google-chrome';wrapper.write_bytes(b'#!/bin/sh\nexec \"$HERE/chrome\" \"$@\"\n')
+                selection['executable']=str(wrapper);versions[str(wrapper)]=versions[str(browser)]
+                records=ci.inspect_host_chromium(selection)
+                self.assertEqual(set(records[0]['files']),{str(wrapper),str(browser)})
+                versions[str(wrapper)]='Google Chrome 154.0.8037.58'
+                with self.assertRaisesRegex(ValueError,'wrapper and native'):ci.inspect_host_chromium(selection)
+                versions[str(wrapper)]=versions[str(browser)];uid.return_value=0
+                with self.assertRaisesRegex(ValueError,'unprivileged'):ci.inspect_host_chromium(selection)
+
+    def test_host_chromium_setup_only_inspects_existing_inputs(self):
+        records = [dict(package=p,version='Google Chrome 154.0.1.2' if p=='google-chrome' else 'ChromeDriver 154.0.1.2',
+                        architecture='amd64',policy='host',executable='/fixture/'+p,files={'/fixture/'+p:'a'*64})
+                   for p in ('google-chrome','chromedriver')]
+        with tempfile.TemporaryDirectory() as temporary, patch.object(ci,'inspect_host_chromium',return_value=records), \
+                patch.object(ci,'browser_setup_preflight',side_effect=AssertionError('no package mutation')), \
+                patch.object(ci.subprocess,'run',side_effect=AssertionError('no installation')):
+            receipt=ci.install_browser_prerequisite('browser-wasm32','chromium','wasm',Path(temporary)/'receipt')
+            self.assertEqual(receipt['installed'],records)
+            self.assertEqual(receipt['browser_version'],records[0]['version'])
 
     def test_lifecycle_receipt_preserves_new_evidence_directory(self):
         helper_spec = importlib.util.spec_from_file_location('ci_lifecycle_fixture', ci.ROOT / '.github/scripts/lifecycle.py')
@@ -376,6 +423,10 @@ class CandidateFetchTests(unittest.TestCase):
         with patch.object(ci,'module',side_effect=lambda name:release if name=='release' else original(name)):
             output=self.root/'all-gui-plan.json';matrix=ci.qualification_plan(self.fixture.directory,'all-gui',output,policy)
         frozen=json.loads(output.read_text());self.assertEqual(len(frozen['checks']),106);self.assertEqual(len(matrix['include']),66)
+        chromium = next(row for row in matrix['include'] if row['id']=='browser-wasm32-wasm-chromium-archive')
+        self.assertEqual(chromium['image'], '')
+        command = next(row['argv'] for row in frozen['checks'] if row['id']==chromium['id'])
+        self.assertIn('/usr/bin/google-chrome', command); self.assertIn('/usr/bin/chromedriver', command)
         grouped=[x for x in frozen['checks'] if 'execution' in x]
         self.assertEqual(len(grouped),48)
         self.assertTrue(all(x['scope'] in ('source','recovery','abi') for x in grouped))

@@ -524,3 +524,13 @@ ordinary source guards still run. A configured but missing or changed group fail
 Native toolkit, browser/Wasm, baseline OS and release certification remain required
 in their declared qualification workflows. Update the variable only after a
 reviewed complete GUI-input publication when patches or supplier bytes change.
+
+The Wasm Chromium-engine archive check runs on the ordinary Ubuntu 24.04 hosted
+runner using its maintained Google Chrome installation and matching local
+ChromeDriver. It records that actual browser identity; it does not claim to test
+a Debian Chromium package. The host's browser namespace/AppArmor policy remains
+active, and no sandbox-disabling argument or container security override is used.
+Browser and driver executable hashes, architecture and matching major versions
+are checked before execution; all retained executable hashes are checked again
+after the browser assertions. Firefox distribution-runtime checks keep their
+declared environments. These browsers remain test prerequisites outside SDKs.
