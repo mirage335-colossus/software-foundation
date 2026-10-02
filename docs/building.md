@@ -126,6 +126,12 @@ intact when writer cleanup is uncertain; inspect them before later cleanup.
 This requires no global process-name kill, registry change, idle delay, compiler
 installation modification or removal of debug information.
 
+For a retained static Windows SDK, the wrapper also disables manifest installation
+and app-local deployment in the supplied integration script, and disables its
+metrics in the child environment. See the [Windows SDK consumer contract](sdk.md#windows-dependency-base-and-separately-installed-host-tools).
+Package-manager post-build hooks are not compiler helpers and receive no cleanup
+exception. Requalify consumer configuration when changing a retained SDK.
+
 ## Faster iteration without changing behavior
 
 Use incremental builds and the smallest affected target or test label while

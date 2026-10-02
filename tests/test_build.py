@@ -22,6 +22,80 @@ class BuildTests(unittest.TestCase):
                 builder.run(command, env={'PATH': 'selected-toolkit'})
             run.assert_called_once_with(command, cwd=builder.ROOT, env={'PATH': 'selected-toolkit'})
 
+    def test_static_windows_export_disables_package_manager_hooks_only_for_its_children(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import dependency_archive
+        import dependency_store
+        import sdk_manifest
+        import source_identity
+        recipe = 'a' * 64
+        hooks = {'-DVCPKG_MANIFEST_MODE=OFF', '-DVCPKG_APPLOCAL_DEPS=OFF',
+                 '-DX_VCPKG_APPLOCAL_DEPS_INSTALL=OFF'}
+        for action in ('build', 'test', 'package'):
+            for retained in (False, True):
+                with self.subTest(action=action, retained=retained), tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary).resolve(strict=True)
+                    dependencies = root / 'dependencies'
+                    vcpkg = dependencies / 'prefix/scripts/buildsystems/vcpkg.cmake'
+                    vcpkg.parent.mkdir(parents=True)
+                    vcpkg.write_text('# inert retained integration fixture\n')
+                    (dependencies / 'prefix/installed/x64-windows-static').mkdir(parents=True)
+                    metadata = {'kind': 'windows-dependencies', 'recipe_id': recipe,
+                                'target': {'system': 'Windows', 'processor': 'x86_64'},
+                                'provenance': {'toolset': 'v143', 'crt_linkage': 'static',
+                                               'library_linkage': 'static', 'lto': False},
+                                'external_toolchain': {'minimum_linker': '14.44.35207'},
+                                'files': {'prefix/scripts/buildsystems/vcpkg.cmake':
+                                          hashlib.sha256(vcpkg.read_bytes()).hexdigest()}}
+                    (dependencies / 'sdk.json').write_text(json.dumps(metadata))
+                    group = root / 'group'; group.mkdir()
+                    (group / ('sdk-' + recipe + '-SHA256SUMS')).write_text('fixture')
+                    environment = {'PATH': 'selected-toolkit', 'VCPKG_DISABLE_METRICS': '0',
+                                   'vcpkg_disable_metrics': 'inherited-alias', 'UNCHANGED': 'value'}
+                    baseline = dict(environment)
+                    args = [action, 'release', '--jobs', '2', '--portable']
+                    if retained:
+                        args += ['--windows-dependencies', str(dependencies), '--dependency-group', str(group)]
+                    with patch.object(builder, 'ROOT', root), \
+                            patch.object(builder, 'os', SimpleNamespace(name='nt', environ=environment)), \
+                            patch.object(builder, 'run') as run, \
+                            patch.object(builder, 'cache_identity', return_value={}), \
+                            patch.object(builder, 'verify_windows_linker'), \
+                            patch.object(dependency_store, 'verify_group', return_value={}), \
+                            patch.object(dependency_archive, 'inspect_manifest_archive', return_value=(metadata, None)), \
+                            patch.object(sdk_manifest, 'verify_sdk'), \
+                            patch.object(source_identity, 'source_tree', return_value={}):
+                        self.assertEqual(builder.main(args), 0)
+                    self.assertEqual(environment, baseline)
+                    configure = run.call_args_list[0].args[0]
+                    self.assertEqual(hooks.intersection(configure), hooks if retained else set())
+                    self.assertFalse(any(arg.startswith('-DVCPKG_FEATURE_FLAGS=') for arg in configure))
+                    for call in run.call_args_list:
+                        child = call.kwargs['env']
+                        self.assertIsNot(child, environment)
+                        expected = dict(baseline)
+                        if retained:
+                            expected.pop('vcpkg_disable_metrics')
+                            expected['VCPKG_DISABLE_METRICS'] = '1'
+                        self.assertEqual(child, expected)
+                    # Neither library/CRT relaxation nor altered export metadata
+                    # may reach configuration under this consumer policy.
+                    if retained:
+                        for key, value in (('crt_linkage', 'dynamic'), ('library_linkage', 'dynamic'), ('lto', True)):
+                            changed = json.loads(json.dumps(metadata))
+                            changed['provenance'][key] = value
+                            (dependencies / 'sdk.json').write_text(json.dumps(changed))
+                            with patch.object(builder, 'ROOT', root), \
+                                    patch.object(builder, 'os', SimpleNamespace(name='nt', environ=environment)), \
+                                    patch.object(builder, 'run') as rejected, \
+                                    patch.object(dependency_store, 'verify_group', return_value={}), \
+                                    patch.object(dependency_archive, 'inspect_manifest_archive', return_value=(changed, None)), \
+                                    patch.object(sdk_manifest, 'verify_sdk'):
+                                with self.assertRaisesRegex(ValueError, 'incompatible Windows dependency ABI'):
+                                    builder.main(args)
+                            rejected.assert_not_called()
+
     def test_windows_linker_file_versions_use_same_order(self):
         from unittest.mock import patch
         for actual, minimum, success in (

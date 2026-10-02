@@ -87,6 +87,19 @@ expanded path. The fixture now canonicalizes its own root before testing exact
 selected-toolkit identity; production validation and the independently qualified
 native compiler-service behavior are unchanged.
 
+Run [37064137298](https://github.com/mirage335-colossus/software-foundation/actions/runs/37064137298)
+passed the full source gates. The Windows tools inventory was independently
+verified: 709 executed cases passed across 32 suites, with 60 declared platform
+exclusions; all 33 CTest entries passed. Its three non-Windows producers passed.
+The Windows producer compiled its targets but rejected a surviving versioned
+package-manager executable. Inspection of the exact retained integration script
+found its default post-build `z-applocal` hook. The observed temporary executable
+path also matches the supplier's background metrics implementation; the child
+command line and any completed network request were not captured. This is a
+failed producer, with no candidate assembled or promoted. Static SDK consumers
+now explicitly disable the unnecessary deployment hooks and metrics, subject to
+new native verification.
+
 ## Native process cleanup evidence
 
 The strengthened Windows process test observes the exact descendant handle,

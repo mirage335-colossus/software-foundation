@@ -259,8 +259,15 @@ def main(argv=None):
         configure += ["-DCMAKE_PREFIX_PATH=" + str(prefix), "-DFOUNDATION_WINDOWS_DEPENDENCIES=" + str(dependencies)]
         vcpkg = dependencies / "prefix/scripts/buildsystems/vcpkg.cmake"
         if vcpkg.is_file():
+            # The verified export uses static libraries and CRT. Its package
+            # manager is unnecessary for DLL copying or dependency installation.
             configure += ["-DCMAKE_TOOLCHAIN_FILE=" + str(vcpkg), "-DVCPKG_TARGET_TRIPLET=x64-windows-static",
-                          "-DVCPKG_MANIFEST_MODE=OFF", "-DVCPKG_FEATURE_FLAGS=-manifests"]
+                          "-DVCPKG_MANIFEST_MODE=OFF", "-DVCPKG_APPLOCAL_DEPS=OFF",
+                          "-DX_VCPKG_APPLOCAL_DEPS_INSTALL=OFF"]
+            for key in list(child_environment):
+                if key.upper() == "VCPKG_DISABLE_METRICS":
+                    del child_environment[key]
+            child_environment["VCPKG_DISABLE_METRICS"] = "1"
     configure += ["-DFOUNDATION_DEPENDENCY_RECIPE=" + (dependency_ids[0] if dependency_ids else "native-unprepared"),
                   "-DFOUNDATION_DEPENDENCY_RECIPES=" + ";".join(sorted(dependency_ids))]
     if args.gui_source:

@@ -450,6 +450,22 @@ restore with `sdk.py restore-sources` and run its retained `sdk_windows.py build
 using `--recipe-file restored/recipe/windows-base.json --cache restored/cache`.
 Microsoft host tools still come from the separately retained installer layout.
 
+Ordinary application consumers use the verified static export with manifest
+installation and both build-time and install-time app-local deployment disabled.
+Static libraries and a static CRT need no package-manager DLL-copy hook; runtime
+packaging independently checks the delivered dependency closure. Disabling
+manifest mode alone does not disable a retained integration script's post-build
+commands. The supplier documents [app-local deployment separately from manifest installation](https://learn.microsoft.com/en-us/vcpkg/users/buildsystems/cmake-integration#vcpkg_applocal_deps).
+Keep this distinction in the SDK consumer contract, and inspect the actual retained
+scripts when upgrading a base.
+
+The consumer also [disables package-manager metrics](https://learn.microsoft.com/en-us/vcpkg/users/config-environment#vcpkg_disable_metrics)
+in its child environment, matching the explicit SDK-maintenance environment. This is not a network sandbox
+or evidence of offline closure. The retained inputs, disabled installation and
+deployment hooks, unchanged-SDK checks and native consumer qualification establish
+the relevant build contract. Unknown surviving child processes remain failures;
+never enlarge the compiler-helper policy to conceal a package-manager subprocess.
+
 A successful `--only-downloads` operation alone does not establish source closure:
 some port recipes fetch additional inputs later. The fresh offline build must
 pass before publication. A missing late input requires explicit maintenance of
