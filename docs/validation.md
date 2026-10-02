@@ -55,8 +55,15 @@ publication request. The exact release was reconciled and changed to prerelease;
 its source tag and all 23 assets were preserved and the Latest endpoint was
 independently confirmed absent. Candidate publication now requires prerelease
 status until certified promotion. This failed run is not qualification evidence
-for certification or Latest. Those scopes and native signed channels remain
-pending until their exact final receipts and client outcomes are recorded.
+for certification or Latest. The later all-GUI candidate
+[37025224490](https://github.com/mirage335-colossus/software-foundation/actions/runs/37025224490)
+passed source gates, all four producers, assembly and public candidate readback.
+Seven of eleven certification batches passed; four correctly failed on the source
+fixture and Windows lifetime defects described below. Its failed certificate was
+attached immutably, promotion was skipped and the final verdict failed. These
+results are preserved, not counted as successful release qualification. Latest
+and native signed channels remain pending until exact successful final receipts
+and client outcomes are recorded.
 
 ## Native process cleanup evidence
 
@@ -76,6 +83,22 @@ failed or internally skipped executed cases. Both complete inventories were
 independently fetched and verified against the exact source hashes, interpreter
 binary and version. These focused diagnostics establish the observed cleanup
 behavior; they do not replace the complete release gates.
+
+A later full candidate exposed two separate paths: delivered source tests assumed
+a Git checkout, and a browser wrapper deleted its profile before all descendants
+finished. The source fixture now creates its own temporary Git repository; the
+production Git check remains intact. A discriminating source-archive check outside
+all Git ancestors failed before the correction and passed afterward. Browser and
+driver wrappers now own and join their inner process trees before copying logs or
+removing profiles, with uncertain cleanup preserved as failure.
+
+The focused [native Windows host diagnostic](https://github.com/mirage335-colossus/software-foundation/actions/runs/37041245500)
+at `59ec5f6390d0fd8a8fe72172c153173b06597552` passed Firefox 156.0.1
+automation and immediate profile removal. The compiler case failed and retained
+the exact verified Job member: MSVC 14.44.35207 `vctip.exe`, observed executable
+with wait state 258 after `cl.exe` exited. This identifies a compiler helper
+lifetime issue; it is not a passing compiler or release qualification. The failed
+bundle was independently fetched and all twelve consumed source hashes checked.
 
 ## Delivery workflow expansion
 

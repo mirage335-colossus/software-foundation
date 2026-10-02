@@ -254,7 +254,74 @@ def child_environment(environment=None):
     return result
 
 
-def _command(argv, *, directory, environment, limit, timeout, record=None):
+class _MsvcTelemetry:
+    """The selected MSVC toolkit's optional VCTIP, never a basename allowlist.
+
+    Microsoft documents this as a non-output telemetry child of cl.exe:
+    https://github.com/microsoft/BuildXL/blob/main/Public/Sdk/Experimental/Msvc/VisualCpp/visualCpp.dsc
+    Keep it contained and join it; do not grant it breakaway or a grace period.
+    """
+    def __init__(self, compiler, helper):
+        self.compiler = Path(compiler).resolve(strict=True)
+        self.helper = Path(helper).resolve(strict=True)
+        if self.helper != self.compiler.with_name('vctip.exe'):
+            raise GraphicsError('MSVC telemetry helper differs from the exact selected toolkit')
+        self.identities = {path: self._identity(path) for path in (self.compiler, self.helper)}
+        self.stopped_pids = []
+        self.completed = False
+
+    @staticmethod
+    def _identity(path):
+        before = _identity(path)
+        value = {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+        if _identity(path) != before:
+            raise GraphicsError('MSVC toolkit input changed while being identified')
+        return before, value
+
+    def unchanged(self):
+        if any(self._identity(path) != expected for path, expected in self.identities.items()):
+            raise GraphicsError('MSVC compiler or telemetry helper changed during compilation')
+
+    def validate(self, pid, image):
+        self.unchanged()
+        if Path(image).resolve(strict=True) != self.helper:
+            raise process_tree.ProcessTreeError('live compiler descendant is not the exact selected VCTIP: ' +
+                                               json.dumps({'pid': pid, 'image': image}))
+        # The supervisor pinned and verified this identity, and queried its image
+        # through that handle. The prelaunch file identity and bytes still match.
+        self.stopped_pids.append(pid)
+        return True
+
+    def finish(self, owner):
+        self.unchanged()
+        owner.terminate(validate_live=self.validate)
+        self.unchanged()
+        owner.finish()
+        self.completed = True
+
+    def receipt(self):
+        if not self.completed:
+            raise GraphicsError('MSVC helper completion has not been established')
+        return {'policy': 'exact-msvc-vctip',
+                'outcome': 'verified-helper-terminated-and-joined' if self.stopped_pids else 'no-surviving-helper',
+                'compiler': self.identities[self.compiler][1], 'helper': self.identities[self.helper][1],
+                'stopped_pids': list(self.stopped_pids)}
+
+
+def _msvc_telemetry(compiler):
+    if os.name != 'nt':
+        return None
+    selected = Path(compiler).resolve(strict=True)
+    helper = selected.with_name('vctip.exe')
+    # A toolkit without this optional helper needs ordinary strict completion.
+    try:
+        helper.lstat()
+    except FileNotFoundError:
+        return None
+    return _MsvcTelemetry(selected, helper)
+
+
+def _command(argv, *, directory, environment, limit, timeout, record=None, compiler_helper=None):
     if record is not None:
         record = _directory(Path(record).parent) / Path(record).name
         if any(path.name.casefold() == record.name.casefold() for path in record.parent.iterdir()):
@@ -268,7 +335,10 @@ def _command(argv, *, directory, environment, limit, timeout, record=None):
                     owner.terminate()
                     raise GraphicsError('host input command exceeded its output or time bound')
                 time.sleep(0.01)
-            owner.finish()
+            if compiler_helper is not None and owner.process.returncode == 0:
+                compiler_helper.finish(owner)
+            else:
+                owner.finish()
             if os.fstat(output.fileno()).st_size > limit:
                 raise GraphicsError('host input command failed or exceeded its output bound')
             output.seek(0)
@@ -477,7 +547,7 @@ def run_probe(executable, *, environment, expected_directory):
             'driver_files': {name: metadata['files'][name]['sha256'] for name in SELECTED}}
 
 
-def compile_probe(probe_directory, compile_log, *, environment=None, protected_roots=()):
+def compile_probe(probe_directory, compile_log, *, environment=None, protected_roots=(), strict_completion=False):
     """Compile the exact host probe with selected MSVC, without acquiring a driver.
 
     A fresh owned directory and log are required; supervisor completion, source
@@ -496,15 +566,21 @@ def compile_probe(probe_directory, compile_log, *, environment=None, protected_r
     compiler = shutil.which('cl.exe', path=environment.get('PATH', environment.get('Path', '')))
     if compiler is None:
         raise GraphicsError('selected MSVC cl.exe is unavailable in the supplied environment')
+    if type(strict_completion) is not bool:
+        raise GraphicsError('strict compiler completion must be an explicit boolean')
+    compiler_helper = None if strict_completion else _msvc_telemetry(compiler)
     source = Path(__file__).with_name('windows_gl_probe.cpp')
     before = source.read_bytes()
     _command([compiler, '/nologo', '/std:c++20', '/EHsc', str(source), '/Fo:' + str(object_file),
               '/Fe:' + str(executable), '/link', '/INCREMENTAL:NO', 'opengl32.lib', 'gdi32.lib', 'user32.lib'],
-             directory=directory, environment=environment, limit=1024 * 1024, timeout=300, record=compile_log)
+             directory=directory, environment=environment, limit=1024 * 1024, timeout=300, record=compile_log,
+             compiler_helper=compiler_helper)
     if source.read_bytes() != before:
         raise GraphicsError('native probe source changed during compilation')
     _identity(executable)
-    return executable, {'source_sha256': hashlib.sha256(before).hexdigest(),
+    completion = (compiler_helper.receipt() if compiler_helper is not None else
+                  {'policy': 'strict', 'outcome': 'no-surviving-descendants', 'stopped_pids': []})
+    return executable, {'completion': completion, 'source_sha256': hashlib.sha256(before).hexdigest(),
                         'executable_sha256': hashlib.sha256(executable.read_bytes()).hexdigest(),
                         'log_sha256': hashlib.sha256(compile_log.read_bytes()).hexdigest(),
                         'compiler': str(Path(compiler).absolute())}

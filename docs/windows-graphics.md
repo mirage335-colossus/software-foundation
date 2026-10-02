@@ -71,6 +71,25 @@ stages them beside both the probe and test executables. The fresh probe executab
 object and bounded compiler log are retained as evidence. Compiler selection
 comes from the supplied child environment. No compiler installation is implicit.
 
+MSVC may leave its optional `vctip.exe` telemetry child running after a successful
+compile. [Microsoft’s build tooling documents this non-output helper](https://github.com/microsoft/BuildXL/blob/main/Public/Sdk/Experimental/Msvc/VisualCpp/visualCpp.dsc).
+The compiler path binds only the helper beside the selected compiler, including
+its physical file identity and SHA-256 before launch. Every live pinned Job member
+must match that exact helper before termination is accepted. The supervisor then
+terminates and joins all members under one deadline and checks that no assignment
+was missed. A different image, changed file, inaccessible identity, unexpected
+child or uncertain join remains a failure. The compile receipt distinguishes no
+surviving helper from a verified terminated-and-joined helper, with its identity
+and observed PIDs.
+
+This policy applies only to successful native probe compilation. Ordinary commands
+retain strict descendant completion; a nonzero compiler result still fails. It
+requires no registry changes, administrative setup, process breakaway, network
+access or modification of the installed toolkit. A toolkit without that optional
+helper follows ordinary strict completion. The [focused Windows diagnostic](testing.md#focused-host-diagnostics)
+uses this same production path and can select `FOUNDATION_MSVC_STRICT_COMPLETION=1`
+to reproduce strict completion behavior while investigating a host.
+
 The probe must report actual loaded paths for both pinned DLLs, llvmpipe, both
 required WGL entry points, and the required OpenGL capability. A nonzero exit,
 missing field, wrong path, altered driver, timeout or excessive output fails.

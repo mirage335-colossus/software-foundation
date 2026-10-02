@@ -36,6 +36,7 @@ class WindowsGraphicsTests(unittest.TestCase):
         self.save_lock()
         self.addCleanup(patch.stopall)
         patch.object(graphics, 'LOCK_PATH', self.lock).start()
+        patch.object(graphics, '_msvc_telemetry', return_value=None).start()
         self.app = self.root / 'application'
         self.app.mkdir()
 
@@ -382,6 +383,34 @@ class WindowsGraphicsTests(unittest.TestCase):
                 graphics.compile_probe(directory, log, environment={})
             run.assert_called_once()
 
+    def test_explicit_strict_compile_does_not_enable_helper_policy(self):
+        directory = self.root / 'probe'; directory.mkdir()
+        def command(argv, **kwargs):
+            self.assertIsNone(kwargs['compiler_helper'])
+            (directory / 'windows-gl-probe.exe').write_bytes(b'compiled fixture')
+            Path(kwargs['record']).write_bytes(b'log')
+        with patch.object(graphics.shutil, 'which', return_value='fixture-cl.exe'), \
+                patch.object(graphics, '_command', side_effect=command), \
+                patch.object(graphics, '_msvc_telemetry') as policy:
+            _, receipt = graphics.compile_probe(directory, self.root / 'compile.log', strict_completion=True)
+        policy.assert_not_called()
+        self.assertEqual(receipt['completion'], {'policy': 'strict', 'outcome': 'no-surviving-descendants', 'stopped_pids': []})
+
+    def test_command_helper_hook_is_only_used_after_successful_parent(self):
+        class Helper:
+            def __init__(self): self.calls = 0
+            def finish(self, owner):
+                self.calls += 1
+                owner.finish()
+        helper = Helper()
+        graphics._command([sys.executable, '-c', 'print("complete")'], directory=self.app,
+                          environment=dict(os.environ), limit=100, timeout=10, compiler_helper=helper)
+        self.assertEqual(helper.calls, 1)
+        with self.assertRaises(graphics.GraphicsError):
+            graphics._command([sys.executable, '-c', 'raise SystemExit(2)'], directory=self.app,
+                              environment=dict(os.environ), limit=100, timeout=10, compiler_helper=helper)
+        self.assertEqual(helper.calls, 1)
+
     def test_compile_probe_missing_compiler_and_protected_outputs_fail_before_launch(self):
         directory = self.root / 'probe'; directory.mkdir()
         with patch.object(graphics.shutil, 'which', return_value=None), patch.object(graphics, '_command') as run:
@@ -423,6 +452,68 @@ class WindowsGraphicsTests(unittest.TestCase):
                 with graphics.qualified_stage(self.cache, [self.app], probe_directory=directory,
                                               compile_log=log, environment={}):
                     self.fail('must not overwrite previous evidence')
+
+
+class MsvcTelemetryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        self.compiler = self.root / 'cl.exe'; self.compiler.write_bytes(b'compiler')
+        self.helper = self.root / 'vctip.exe'; self.helper.write_bytes(b'telemetry')
+
+    def policy(self):
+        return graphics._MsvcTelemetry(self.compiler, self.helper)
+
+    def test_exact_helper_receipt_requires_completed_join_and_reports_empty_inventory(self):
+        for pids in ([], [10, 20]):
+            with self.subTest(pids=pids):
+                policy = self.policy()
+                with self.assertRaisesRegex(graphics.GraphicsError, 'not been established'):
+                    policy.receipt()
+                from unittest.mock import Mock
+                owner = Mock()
+                def terminate(*, validate_live):
+                    owner.finish.assert_not_called()
+                    for pid in pids: self.assertTrue(validate_live(pid, str(self.helper)))
+                owner.terminate.side_effect = terminate
+                policy.finish(owner)
+                owner.finish.assert_called_once_with()
+                receipt = policy.receipt()
+                self.assertEqual(receipt['stopped_pids'], pids)
+                self.assertEqual(receipt['outcome'], 'verified-helper-terminated-and-joined' if pids else 'no-surviving-helper')
+                self.assertEqual(receipt['helper'], {'path': str(self.helper), 'sha256': digest(b'telemetry')})
+                self.assertEqual(receipt['compiler'], {'path': str(self.compiler), 'sha256': digest(b'compiler')})
+
+    def test_same_basename_and_same_bytes_in_another_directory_are_rejected(self):
+        other = self.root / 'foreign'; other.mkdir(); foreign = other / 'vctip.exe'
+        foreign.write_bytes(self.helper.read_bytes())
+        with self.assertRaisesRegex(graphics.GraphicsError, 'exact selected toolkit'):
+            graphics._MsvcTelemetry(self.compiler, foreign)
+        policy = self.policy()
+        with self.assertRaisesRegex(graphics.process_tree.ProcessTreeError, 'exact selected VCTIP'):
+            policy.validate(123, str(foreign))
+        self.assertEqual(policy.stopped_pids, [])
+
+    def test_changed_compiler_or_helper_never_grants_completion(self):
+        for filename in ('cl.exe', 'vctip.exe'):
+            with self.subTest(filename=filename):
+                policy = self.policy(); path = self.root / filename; original = path.read_bytes()
+                path.write_bytes(original + b'changed')
+                with self.assertRaisesRegex(graphics.GraphicsError, 'changed during compilation'):
+                    policy.validate(10, str(self.helper))
+                self.assertEqual(policy.stopped_pids, [])
+                path.write_bytes(original)
+
+    def test_unconfirmed_owner_join_cannot_produce_helper_receipt(self):
+        from unittest.mock import Mock
+        policy = self.policy(); owner = Mock()
+        owner.terminate.side_effect = graphics.process_tree.ProcessTreeError('join unconfirmed')
+        with self.assertRaisesRegex(graphics.process_tree.ProcessTreeError, 'join unconfirmed'):
+            policy.finish(owner)
+        owner.finish.assert_not_called()
+        with self.assertRaisesRegex(graphics.GraphicsError, 'not been established'):
+            policy.receipt()
 
 
 if __name__ == '__main__':

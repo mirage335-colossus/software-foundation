@@ -87,10 +87,14 @@ class WindowsHosts(unittest.TestCase):
         compiler = shutil.which('cl.exe')
         self.assertIsNotNone(compiler, 'selected installed MSVC cl.exe is required')
         identity = compiler_identity(compiler)
-        print(json.dumps(dict(identity, source_sha256=digest(ROOT / 'tools/windows_gl_probe.cpp'))), flush=True)
+        strict = os.environ.get('FOUNDATION_MSVC_STRICT_COMPLETION', '0')
+        if strict not in ('0', '1'):
+            raise ValueError('FOUNDATION_MSVC_STRICT_COMPLETION must be 0 or 1')
+        print(json.dumps(dict(identity, source_sha256=digest(ROOT / 'tools/windows_gl_probe.cpp'),
+                              strict_completion=strict == '1')), flush=True)
         with workspace(process_tree.ProcessTreeError) as directory:
             executable, receipt = windows_graphics.compile_probe(directory, directory / 'compile.log',
-                                                                 environment=dict(os.environ))
+                                                                 environment=dict(os.environ), strict_completion=strict == '1')
             output_identity = probe_identity(executable)
             self.assertEqual(receipt['source_sha256'], digest(ROOT / 'tools/windows_gl_probe.cpp'))
             self.assertEqual(identity, compiler_identity(compiler), 'compiler/linker changed during the native probe')

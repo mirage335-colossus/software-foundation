@@ -254,7 +254,11 @@ exits with a live Windows descendant, the failure retains the first verified
 member identity, process image or query error, wait state and bounded membership
 counts. Later process exit cannot erase that observation. Diagnose the observed
 helper before changing compiler options; an unrelated telemetry switch or a
-passing retry does not establish the cause.
+passing retry does not establish the cause. The native compiler has an explicit
+[exact-helper completion policy](windows-graphics.md#bounded-test-environment) for
+its identified optional telemetry child. This verifies every live member and
+terminates and joins it before reading output; it does not relax ordinary command
+completion or accept unclassified descendants.
 
 The workflow always attempts to retain `result.json` and each repetition's logs
 and inventory through the existing lifecycle `bundle-store`, using the run-scoped

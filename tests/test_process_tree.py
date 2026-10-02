@@ -379,6 +379,100 @@ class WindowsTerminationJoining(unittest.TestCase):
     def owner(self, job):
         return WindowsCompletionObservation().owner(job)
 
+    def test_helper_policy_checks_every_live_pinned_member_before_stop_and_join(self):
+        job = self.job(); owner = self.owner(job); accepted = []
+        def wait(handle, milliseconds):
+            if milliseconds == 0:
+                job.api.TerminateJobObject.assert_not_called()
+                return 0 if handle == 1101 else 258
+            job.api.TerminateJobObject.assert_called_once_with(700, 1)
+            return 0
+        job.api.WaitForSingleObject.side_effect = wait
+        def validate(pid, image):
+            self.assertEqual(job.api.OpenProcess.call_count, 2)
+            job.api.CloseHandle.assert_not_called()
+            job.api.TerminateJobObject.assert_not_called()
+            accepted.append((pid, image))
+            return True
+        owner.terminate(validate_live=validate)
+        self.assertEqual(accepted, [(102, r'C:\Tools\compiler-child.exe')])
+        self.assertTrue(owner.termination_joined)
+        self.assertEqual(owner.finish(), 0)
+        self.assertEqual(job.api.CloseHandle.call_args_list, [mock.call(1101), mock.call(1102)])
+
+    def test_mixed_helper_and_unknown_member_cannot_be_accepted_from_first_match(self):
+        job = self.job(); owner = self.owner(job); inspected = []
+        job.api.WaitForSingleObject.return_value = 258
+        def validate(pid, image):
+            inspected.append(pid)
+            return pid == 101
+        with self.assertRaisesRegex(TREE.ProcessTreeError, 'not an accepted'):
+            owner.terminate(validate_live=validate)
+        self.assertEqual(inspected, [101, 102])
+        self.assertFalse(owner.termination_joined)
+        job.api.TerminateJobObject.assert_called_once_with(700, 1)
+        self.assertEqual(job.api.CloseHandle.call_count, 2)
+        with self.assertRaisesRegex(TREE.ProcessTreeError, 'termination remains unconfirmed'):
+            owner.finish()
+
+    def test_all_live_observations_survive_natural_exit_during_earlier_policy_work(self):
+        job = self.job(); owner = self.owner(job); inspected = []
+        job.api.WaitForSingleObject.return_value = 258
+        def validate(pid, image):
+            self.assertEqual(job.api.WaitForSingleObject.call_args_list,
+                             [mock.call(1101, 0), mock.call(1102, 0)])
+            job.api.WaitForSingleObject.return_value = 0  # The later child exits now.
+            inspected.append(pid)
+            return pid == 101
+        with self.assertRaisesRegex(TREE.ProcessTreeError, 'not an accepted'):
+            owner.terminate(validate_live=validate)
+        self.assertEqual(inspected, [101, 102])
+        self.assertFalse(owner.termination_joined)
+        self.assertEqual(job.api.CloseHandle.call_count, 2)
+
+    def test_helper_policy_does_not_hide_new_assignments_or_overrun_its_deadline(self):
+        for late in (True, False):
+            with self.subTest(late=late):
+                job = self.job(pids=(101,)); owner = self.owner(job); clock = [10.]
+                job.api.WaitForSingleObject.return_value = 258
+                if late: job.process_ids.side_effect = [[101], [101, 102]]
+                def validate(pid, image):
+                    if not late: clock[0] = 16.
+                    return True
+                with mock.patch.object(TREE.time, 'monotonic', side_effect=lambda: clock[0]):
+                    with self.assertRaisesRegex(TREE.ProcessTreeError, 'assignments changed|deadline exhausted'):
+                        owner.terminate(validate_live=validate)
+                self.assertFalse(owner.termination_joined)
+                job.api.TerminateJobObject.assert_called_once_with(700, 1)
+                job.api.CloseHandle.assert_called_once_with(1101)
+
+    def test_helper_image_query_failure_and_callback_failure_are_fail_closed(self):
+        for failed_image in (True, False):
+            with self.subTest(failed_image=failed_image):
+                job = self.job(); owner = self.owner(job)
+                job.api.WaitForSingleObject.return_value = 258
+                if failed_image:
+                    job.api.QueryFullProcessImageNameW.side_effect = None
+                    job.api.QueryFullProcessImageNameW.return_value = False
+                validate = mock.Mock(side_effect=ValueError('identity changed'))
+                with self.assertRaises((TREE.ProcessTreeError, ValueError)):
+                    owner.terminate(validate_live=validate)
+                self.assertFalse(owner.termination_joined)
+                self.assertEqual(job.api.CloseHandle.call_count, 2)
+                job.api.TerminateJobObject.assert_called_once_with(700, 1)
+                if failed_image: validate.assert_not_called()
+
+    def test_helper_policy_requires_successful_unjoined_windows_parent(self):
+        for status in (None, 1):
+            with self.subTest(status=status):
+                job = self.job(); owner = self.owner(job); owner.process.poll.return_value = status
+                with self.assertRaisesRegex(TREE.ProcessTreeError, 'successful unjoined Windows'):
+                    owner.terminate(validate_live=lambda pid, image: True)
+                job.api.OpenProcess.assert_not_called(); job.api.TerminateJobObject.assert_not_called()
+        job = self.job(); owner = self.owner(job); owner.termination_joined = True
+        with self.assertRaisesRegex(TREE.ProcessTreeError, 'successful unjoined Windows'):
+            owner.terminate(validate_live=lambda pid, image: True)
+
     def test_zero_accounting_still_joins_pinned_child_before_return(self):
         job = self.job(); owner = self.owner(job); clock = [10.]
         def wait(handle, milliseconds):

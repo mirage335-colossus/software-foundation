@@ -446,7 +446,7 @@ class _WindowsJob:
         if not self.api.TerminateJobObject(self.handle, 1):
             self.fail('terminate job')
 
-    def terminate_and_wait(self, deadline):
+    def terminate_and_wait(self, deadline, *, validate_live=None):
         """Pin identities before termination; accounting alone is not a join.
 
         A cumulative assignment change can hide a new child that disappeared from
@@ -470,6 +470,31 @@ class _WindowsJob:
                     self.fail('confirm termination member identity')
                 if not member.value:
                     raise ProcessTreeError('termination member identity changed; retain output ownership')
+            if validate_live is not None:
+                # Pin the entire snapshot before classifying any live member.
+                # A caller-specific helper policy never uses the first-member
+                # diagnostic as proof about the remainder of the Job.
+                live = []
+                for pid, handle in observed.items():
+                    _remaining(deadline)
+                    state = self.api.WaitForSingleObject(handle, 0)
+                    if state == 0x102:
+                        live.append((pid, handle))
+                    elif state != 0:
+                        self.fail('inspect helper process completion')
+                # Preserve every live observation before any caller policy work;
+                # a later natural exit cannot exempt an already observed member.
+                for pid, handle in live:
+                    _remaining(deadline)
+                    image = ctypes.create_unicode_buffer(32768)
+                    size = self.w.DWORD(len(image))
+                    if not self.api.QueryFullProcessImageNameW(handle, 0, image, ctypes.byref(size)):
+                        self.fail('identify live helper image')
+                    if not 0 < size.value < len(image) or size.value != len(image.value):
+                        raise ProcessTreeError('invalid live helper image identity; retain output ownership')
+                    if validate_live(pid, image.value) is not True:
+                        raise ProcessTreeError('live member is not an accepted command helper; retain output ownership')
+                    _remaining(deadline)
             def reconcile():
                 _remaining(deadline)
                 members = self.process_ids()
@@ -533,12 +558,20 @@ class ProcessTree:
             return self.process.poll() is None
         return bool(self.job.active())
 
-    def terminate(self, timeout=5):
-        """Stop all supervised members and wait for their output-writing lifetimes."""
+    def terminate(self, timeout=5, *, validate_live=None):
+        """Stop and join every member; optional helper validation precedes stopping.
+
+        A caller-specific helper policy requires an already successful Windows
+        parent and validates every live pinned identity. It does not alter finish.
+        """
         if self.closed:
             return
         if self.termination_failure is not None:
             raise ProcessTreeError(self.termination_failure)
+        if validate_live is not None:
+            if (not callable(validate_live) or self.job is None or self.process.poll() != 0
+                    or self.termination_joined):
+                raise ProcessTreeError('helper completion requires a successful unjoined Windows command')
         if self.termination_joined:
             return
         deadline = time.monotonic() + timeout
@@ -546,7 +579,8 @@ class ProcessTree:
             if isinstance(self.process, _LinuxProcess):
                 self.process.terminate()
             elif self.job is not None:
-                total = self.job.terminate_and_wait(deadline)
+                total = (self.job.terminate_and_wait(deadline) if validate_live is None else
+                         self.job.terminate_and_wait(deadline, validate_live=validate_live))
             self.process.wait(timeout=_remaining(deadline))
             while self._live():
                 time.sleep(min(0.01, _remaining(deadline)))
