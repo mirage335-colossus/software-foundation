@@ -25,8 +25,8 @@ capable. A Linux `aarch64` archive is not a Windows ARM64 archive. Normalize nam
 once when generating filenames and translate to a package manager's vocabulary
 at the packaging boundary.
 
-This repository supplies example code and executed checks; it has not published
-a multi-platform release. The [current validation record](validation.md) identifies
+This repository supplies example code and executed checks; it has not yet qualified
+a multi-platform application release as Latest. The [current validation record](validation.md) identifies
 exact revisions, recipes and environments. All-GUI recipe results do not qualify
 different core-only recipes, every older operating system or a release publication.
 Use the [validation template](templates/validation.md) to record adopted targets.

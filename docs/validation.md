@@ -46,9 +46,17 @@ SDK and application payload. The gallery separately verified the browser's
 namespace and seccomp sandbox; that evidence does not imply that every other
 browser test performs the same sandbox-status probe.
 
-Application publication, full release certification and signed package-channel
-installation are separate qualifications. They remain pending in this record
-until their exact final receipts and native-client outcomes are recorded.
+Application delivery, full release certification and signed package-channel
+installation are separate qualifications. Run
+[36994657303](https://github.com/mirage335-colossus/software-foundation/actions/runs/36994657303)
+passed the complete source gates, four application producers and assembly, then
+stopped when its first normal candidate was observed as Latest despite the false
+publication request. The exact release was reconciled and changed to prerelease;
+its source tag and all 23 assets were preserved and the Latest endpoint was
+independently confirmed absent. Candidate publication now requires prerelease
+status until certified promotion. This failed run is not qualification evidence
+for certification or Latest. Those scopes and native signed channels remain
+pending until their exact final receipts and client outcomes are recorded.
 
 ## Delivery workflow expansion
 

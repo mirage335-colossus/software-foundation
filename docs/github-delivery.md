@@ -147,8 +147,16 @@ the Git reference before the draft; an existing release or orphan reference is
 never silently adopted. This reservation still needs the caller's repository-wide
 lock. After uploading, it lists every asset page separately, downloads each expected
 asset by its remote ID, reconstructs the original tree and runs the complete release
-verifier. Only then does it finalize the draft with `make_latest: false` and verify
-the resulting state and pointer.
+verifier. Only then does it finalize the draft with `prerelease: true` and
+`make_latest: false`, and verify the resulting state and pointer. This prerelease
+state applies to ordinary candidates too, until explicit certified promotion.
+GitHub can select the first normal release as Latest despite a false request;
+keeping the candidate a prerelease excludes that fallback. The
+[GitHub release API](https://docs.github.com/en/rest/releases/releases#create-a-release)
+states that prereleases cannot be Latest. Do not weaken the independent pointer
+check. After any uncertain outcome, inspect the exact release, tag and asset
+identities before retrying; preserve the bytes and correct only reviewed lifecycle
+metadata when necessary.
 
 Ordinary candidates require equal source and packaging commits. An intentional
 split requires `experiment: true`, receives the title `experiment`, remains a

@@ -123,8 +123,8 @@ L.main()
     def test_final_remote_review_reproduces_real_certificate_and_detects_latest_change(self):
         fixture = fixtures.DeliveryTests(); fixture.setUp(); self.addCleanup(fixture.doCleanups)
         fixture.publish(); cert = fixture.cert()
-        fixture.remote.latest = fixture.remote.releases[0]['id']
         L.delivery.attach_certificate(**cert, execute=True, transport=fixture.remote)
+        fixture.promotion(cert, execute=True)
         req = dict(request(), profile='fixture', run_id='qualification-run')
         value = results(); app = value['application']['outputs']; app['inventory_sha256'] = fixture.delivery['inventory_sha256']
         app['delivery_sha256'] = L.delivery.sha(L.delivery.archive.encoded(fixture.delivery))
@@ -138,6 +138,12 @@ L.main()
             checked = L.verify_latest(req, value, transport=fixture.remote)
             self.assertTrue(checked['qualified']); self.assertEqual(checked['assets'].keys(),
                 {a['name'] for a in fixture.remote.releases[0]['assets']})
+            fixture.remote.releases[0]['prerelease'] = True
+            with mock.patch.object(L.delivery, 'verify_certificate') as replay:
+                with self.assertRaisesRegex(ValueError, 'lifecycle'):
+                    L.verify_latest(req, value, transport=fixture.remote)
+            replay.assert_not_called()
+            fixture.remote.releases[0]['prerelease'] = False
             fixture.remote.releases.append(dict(id=99, tag_name='different', draft=False, prerelease=False, name='different', assets=[]))
             fixture.remote.latest = 99
             with self.assertRaisesRegex(ValueError, 'identity|Latest'):

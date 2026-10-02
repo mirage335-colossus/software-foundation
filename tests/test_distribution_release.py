@@ -176,6 +176,7 @@ class SignedDistributionTests(unittest.TestCase):
         shutil.rmtree(cls.f.directory); d.release.assemble(cls.f.fixture.spec_path, cls.f.fixture.base, cls.f.directory)
         cls.f.delivery = d.delivery.publish_candidate(**cls.f.args)['delivery']; cls.f.publish()
         cls.cert = cls.f.cert(); d.delivery.attach_certificate(**cls.cert, execute=True, transport=cls.f.remote)
+        cls.f.promotion(cls.cert, execute=True)
         home = cls.root / 'keyhome'; home.mkdir(mode=0o700)
         try:
             d.distro.run('gpg', '--batch', '--homedir', home, '--pinentry-mode', 'loopback', '--passphrase', '',
@@ -198,6 +199,16 @@ class SignedDistributionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=self.root); self.addCleanup(self.temp.cleanup)
         self.work = Path(self.temp.name); self.remote = copy.deepcopy(self.remote_state)
+
+    def test_unpromoted_application_is_rejected_before_certificate_replay(self):
+        self.remote.releases[0]['prerelease'] = True
+        before = len(self.remote.mutations)
+        with patch.object(d.delivery, 'verify_certificate') as replay:
+            with self.assertRaisesRegex(ValueError, 'lifecycle'):
+                d.certified(d.delivery.Remote('example/project', self.remote), self.f.directory,
+                            self.f.delivery, self.policy, self.req)
+        replay.assert_not_called()
+        self.assertEqual(before, len(self.remote.mutations))
 
     def test_real_signatures_packages_and_source_closure_verify(self):
         value = d.verify(self.prepared, self.policy, self.trusted)

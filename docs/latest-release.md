@@ -28,15 +28,18 @@ does not silently compile a new SDK; use explicit SDK maintenance first.
    SDKs. Require the supported producers and backend inventory. Assemble one
    complete release with application archives, source and exact SDK binary,
    source and checksum copies.
-4. When execution is requested, publish that ordinary candidate without making
-   it Latest. The existing publisher verifies draft uploads and the resulting
-   remote assets. Application and packaging revisions must match.
+4. When execution is requested, publish that ordinary candidate as a prerelease
+   until certification and promotion. This also prevents the first normal release
+   from becoming Latest through platform fallback. The publisher verifies draft
+   uploads, remote assets and the Latest pointer. Application and packaging
+   revisions must match.
 5. Download the exact published candidate and run every required policy check
    against its bytes and retained sources. Bind immutable reports to source,
    inventory, environment, backend, scope, run and attempt; append the complete
    certificate evidence without replacing older assets.
 6. Reproduce the qualifying ordinary certificate, reread remote asset identities,
-   promote in one release update, and verify the Latest pointer.
+   clear prerelease status and select Latest in one release update, then verify
+   the Latest pointer.
 7. An independent final job requires every mandatory stage to have succeeded.
    It downloads and verifies the complete release again, reproduces its retained
    certificate, and checks that Latest names this exact release, source and

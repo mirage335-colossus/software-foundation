@@ -96,7 +96,7 @@ def verify_latest(request, results, *, transport=None):
                 identity['packager_commit'] != request['source_commit'] or identity['experiment'] is not False or
                 delivery.sha(delivery.archive.encoded(identity)) != app['delivery_sha256']):
             raise ValueError('published source, packager or delivery differs from this workflow')
-        info, assets = delivery.verified_remote(api, identity, output / 'candidate')
+        info, assets = delivery.verified_remote(api, identity, output / 'candidate', prerelease=False)
         checked = delivery.verify_certificate(api, assets, identity, output / 'candidate',
             ROOT / 'docs/release-policy.json', request['profile'], cert['certification_run'],
             int(cert['certification_attempt']), cert['certificate_sha256'])

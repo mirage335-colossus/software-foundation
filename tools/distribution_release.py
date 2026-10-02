@@ -110,7 +110,7 @@ def certified(remote, candidate, identity, policy, value):
     if (identity['repository'] != value['repository'] or identity['tag'] != value['application_tag'] or
             identity['inventory_sha256'] != value['inventory_sha256'] or identity['experiment']):
         raise ValueError('application differs from exact ordinary certified input')
-    info, assets = delivery.verified_remote(remote, identity, candidate)
+    info, assets = delivery.verified_remote(remote, identity, candidate, prerelease=False)
     result = delivery.verify_certificate(remote, assets, identity, candidate, policy, value['profile'],
         value['certificate_run'], value['certificate_attempt'], value['certificate_sha256'])
     remote.unchanged(identity['tag'], info, assets, identity['tag_commit'])

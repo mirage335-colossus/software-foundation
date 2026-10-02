@@ -19,7 +19,8 @@ import test_release as release_fixtures
 
 
 class FakeGitHub:
-    def __init__(self):
+    def __init__(self, *, first_normal_latest=False):
+        self.first_normal_latest=first_normal_latest
         self.releases=[];self.refs={};self.data={};self.next_id=1;self.next_asset=100
         self.latest=None;self.calls=[];self.fail_upload=None;self.change_download=None
 
@@ -44,6 +45,10 @@ class FakeGitHub:
             self.refs[tag]=body['sha'];return {'object':{'type':'commit','sha':body['sha']}}
         if path=='/releases/latest':
             found=next((r for r in self.releases if r['id']==self.latest),None)
+            if found is None and self.latest is None and self.first_normal_latest:
+                # GitHub can return its first published ordinary release even
+                # when that release was created with make_latest=false.
+                found=next((r for r in self.releases if not r['draft'] and not r['prerelease']),None)
             if found:return copy.deepcopy(found)
             if missing:return None
             raise G.DeliveryError('Latest missing')
@@ -159,11 +164,51 @@ class DeliveryTests(unittest.TestCase):
     def test_candidate_publishes_only_after_complete_byte_verification(self):
         result=self.publish()
         self.assertTrue(result['execute']);self.assertFalse(self.remote.releases[0]['draft'])
+        self.assertTrue(self.remote.releases[0]['prerelease']);self.assertFalse(result['delivery']['experiment'])
         self.assertIsNone(self.remote.latest)
         uploads=[x for x in self.remote.calls if x[0]=='upload']
         self.assertEqual(len(uploads),len(self.delivery['files'])+1)
         last_patch=max(i for i,x in enumerate(self.remote.calls) if x[0]=='PATCH')
         self.assertTrue(any(x[0]=='download' for x in self.remote.calls[:last_patch]))
+
+    def test_first_ordinary_candidate_does_not_enter_latest_fallback(self):
+        self.remote.first_normal_latest=True
+        result=self.publish()
+        self.assertFalse(result['delivery']['experiment'])
+        self.assertTrue(self.remote.releases[0]['prerelease'])
+        self.assertIsNone(self.remote.json('repos/example/project/releases/latest',missing=True))
+        # Demonstrate that the fake reproduces the failed first-normal-release
+        # behavior despite the explicit make_latest=false publication field.
+        self.remote.releases[0]['prerelease']=False
+        self.assertEqual(self.remote.releases[0]['make_latest'],'false')
+        self.assertEqual(self.remote.json('repos/example/project/releases/latest')['id'],result['release_id'])
+
+    def test_candidate_latest_pointer_is_still_rejected(self):
+        original=self.remote.json
+        def select_candidate(endpoint,**kwargs):
+            result=original(endpoint,**kwargs)
+            if kwargs.get('method')=='PATCH' and kwargs.get('body',{}).get('draft') is False:
+                self.remote.latest=result['id']
+            return result
+        self.remote.json=select_candidate
+        with self.assertRaisesRegex(G.DeliveryError,'unexpectedly selected as Latest') as caught:
+            self.publish()
+        self.assertTrue(caught.exception.uncertain)
+        self.assertTrue(self.remote.releases[0]['prerelease'])
+
+    def test_remote_lifecycle_pin_distinguishes_pending_and_promoted_ordinary_release(self):
+        self.publish();remote=G.Remote('example/project',self.remote)
+        for pin in (1,0,'false'):
+            with self.subTest(pin=pin),self.assertRaisesRegex(ValueError,'prerelease pin'):
+                G.verified_remote(remote,self.delivery,self.directory,prerelease=pin)
+        G.verified_remote(remote,self.delivery,self.directory,prerelease=True)
+        with self.assertRaisesRegex(ValueError,'lifecycle'):
+            G.verified_remote(remote,self.delivery,self.directory,prerelease=False)
+        self.remote.releases[0]['prerelease']=False
+        G.verified_remote(remote,self.delivery,self.directory)
+        G.verified_remote(remote,self.delivery,self.directory,prerelease=False)
+        with self.assertRaisesRegex(ValueError,'lifecycle'):
+            G.verified_remote(remote,self.delivery,self.directory,prerelease=True)
 
     def test_existing_tag_draft_and_duplicate_tags_never_overwrite(self):
         self.publish();before=copy.deepcopy(self.remote.releases);count=len(self.remote.mutations)
@@ -254,13 +299,54 @@ class DeliveryTests(unittest.TestCase):
         self.assertEqual(len(self.remote.mutations),count)
 
     def test_complete_certificate_attachment_and_exact_promotion(self):
+        self.remote.first_normal_latest=True
         self.publish();cert=self.cert();before=copy.deepcopy(self.remote.releases[0]['assets'])
         attached=G.attach_certificate(**cert,execute=True,transport=self.remote)
         self.assertIsNone(self.remote.latest)
         self.assertEqual(self.remote.releases[0]['assets'][:len(before)],before)
+        self.assertTrue(self.remote.releases[0]['prerelease'])
+        self.assertIsNone(self.remote.json('repos/example/project/releases/latest',missing=True))
         result=self.promotion(cert,execute=True)
         self.assertTrue(result['latest']);self.assertEqual(self.remote.latest,result['release_id'])
+        self.assertFalse(self.remote.releases[0]['prerelease']);self.assertFalse(self.delivery['experiment'])
+        G.verified_remote(G.Remote('example/project',self.remote),self.delivery,self.directory,prerelease=False)
         self.assertEqual(set(attached['files']),{'certification-qualification-run-attempt-1.json','certification-qualification-run-attempt-1.tar.gz'})
+
+    def test_attachment_preserves_initial_lifecycle_for_pending_and_promoted_release(self):
+        self.publish();cert=self.cert();G.attach_certificate(**cert,execute=True,transport=self.remote)
+        self.promotion(cert,execute=True)
+        later=self.cert(2)
+        G.attach_certificate(**later,execute=True,transport=self.remote)
+        self.assertFalse(self.remote.releases[0]['prerelease'])
+        self.assertEqual(self.remote.latest,self.remote.releases[0]['id'])
+        count=len(self.remote.mutations)
+        self.promotion(later,execute=True)
+        self.assertEqual(len(self.remote.mutations),count+1)
+        self.assertFalse(self.remote.releases[0]['prerelease'])
+
+    def test_lifecycle_change_during_attachment_is_uncertain(self):
+        self.publish();cert=self.cert();original=self.remote.upload
+        def changed_lifecycle(tag,path):
+            original(tag,path)
+            if Path(path).name.startswith('certification-'):
+                self.remote.releases[0]['prerelease']=False
+        self.remote.upload=changed_lifecycle
+        with self.assertRaisesRegex(G.DeliveryError,'lifecycle') as caught:
+            G.attach_certificate(**cert,execute=True,transport=self.remote)
+        self.assertTrue(caught.exception.uncertain)
+
+    def test_lifecycle_change_after_certificate_review_blocks_promotion(self):
+        self.publish();cert=self.cert();G.attach_certificate(**cert,execute=True,transport=self.remote)
+        original=G.verify_certificate;count=len(self.remote.mutations)
+        def changed_lifecycle(*args,**kwargs):
+            result=original(*args,**kwargs)
+            self.remote.releases[0]['prerelease']=False
+            return result
+        with mock.patch.object(G,'verify_certificate',side_effect=changed_lifecycle):
+            with self.assertRaisesRegex(G.DeliveryError,'lifecycle') as caught:
+                self.promotion(cert,execute=True)
+        self.assertFalse(caught.exception.uncertain)
+        self.assertEqual(len(self.remote.mutations),count);self.assertIsNone(self.remote.latest)
 
     def test_failed_later_attempt_keeps_older_reports_and_binary_bytes(self):
         self.publish();cert=self.cert();G.attach_certificate(**cert,execute=True,transport=self.remote)
@@ -314,6 +400,14 @@ class DeliveryTests(unittest.TestCase):
         result=self.publish(packager_commit='b'*40,experiment=True)
         self.assertEqual(self.remote.releases[0]['name'],'experiment');self.assertTrue(self.remote.releases[0]['prerelease'])
         self.delivery=result['delivery'];cert=self.cert(experiment=True)
+        remote=G.Remote('example/project',self.remote)
+        with self.assertRaisesRegex(ValueError,'lifecycle'):
+            G.verified_remote(remote,self.delivery,self.directory,prerelease=False)
+        self.remote.releases[0]['prerelease']=False
+        for pin in (None,False):
+            with self.subTest(pin=pin),self.assertRaisesRegex(ValueError,'lifecycle'):
+                G.verified_remote(remote,self.delivery,self.directory,prerelease=pin)
+        self.remote.releases[0]['prerelease']=True
         with self.assertRaisesRegex(ValueError,'ordinary'):self.promotion(cert,execute=True)
         self.assertIsNone(self.remote.latest)
 
@@ -328,6 +422,17 @@ class DeliveryTests(unittest.TestCase):
         with self.assertRaises(G.DeliveryError) as caught:self.promotion(cert,execute=True)
         self.assertTrue(caught.exception.uncertain)
         self.assertEqual(len(self.remote.releases),1)
+
+    def test_promotion_must_finish_as_an_ordinary_release(self):
+        self.publish();cert=self.cert();G.attach_certificate(**cert,execute=True,transport=self.remote)
+        original=self.remote.json
+        def keep_prerelease(endpoint,**kwargs):
+            result=original(endpoint,**kwargs)
+            if kwargs.get('body',{}).get('make_latest')=='true':self.remote.releases[0]['prerelease']=True
+            return result
+        self.remote.json=keep_prerelease
+        with self.assertRaisesRegex(G.DeliveryError,'lifecycle') as caught:self.promotion(cert,execute=True)
+        self.assertTrue(caught.exception.uncertain)
 
     def test_changed_asset_after_promotion_reports_uncertainty(self):
         self.publish();cert=self.cert();G.attach_certificate(**cert,execute=True,transport=self.remote)

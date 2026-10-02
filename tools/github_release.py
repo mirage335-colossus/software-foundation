@@ -313,11 +313,17 @@ def evidence_pairs(names):
         raise DeliveryError('partial certificate attempt requires reconciliation')
 
 
-def verified_remote(remote, delivery, directory, *, draft=False):
+def verified_remote(remote, delivery, directory, *, draft=False, prerelease=None):
     validate_delivery(delivery, directory)
+    if prerelease is not None and type(prerelease) is not bool:
+        raise DeliveryError('prerelease pin must be a boolean or None')
     tag = delivery['tag']; info = remote.find(tag)
     title = 'experiment' if delivery['experiment'] else tag
-    if info['draft'] != draft or info['prerelease'] != delivery['experiment'] or info['name'] != title:
+    # Ordinary candidates are prereleases until certification permits promotion.
+    # Experiment identity remains immutable and can never become an ordinary release.
+    if (info['draft'] != draft or info['name'] != title
+            or (delivery['experiment'] and not info['prerelease'])
+            or (prerelease is not None and info['prerelease'] != prerelease)):
         raise DeliveryError('release lifecycle does not match frozen delivery')
     if remote.reference(tag) != delivery['tag_commit']:
         raise DeliveryError('tag commit differs from frozen delivery')
@@ -425,7 +431,7 @@ def publish_base(repository, recipe, group, source_commit, *, execute=False, tra
 def publish_candidate(repository, tag, directory, source_commit, packager_commit, publication_id,
                       experiment=False, *, execute=False, transport=None):
     delivery = candidate_identity(directory, repository, tag, source_commit, packager_commit, publication_id, experiment)
-    result = plan('publish-candidate', repository, delivery=delivery, lifecycle='draft upload, verify every byte, publish without Latest')
+    result = plan('publish-candidate', repository, delivery=delivery, lifecycle='draft upload, verify every byte, publish prerelease until certified promotion; never Latest')
     if not execute:return result
     remote = Remote(repository, transport)
     def act():
@@ -435,15 +441,15 @@ def publish_candidate(repository, tag, directory, source_commit, packager_commit
         remote.change('/git/refs', body={'ref':'refs/tags/'+tag,'sha':delivery['tag_commit']})
         info = remote.info(remote.change('/releases', body={'tag_name':tag,'target_commitish':delivery['tag_commit'],
             'name':'experiment' if experiment else tag,'body':'Certification pending. Immutable application assets.',
-            'draft':True,'prerelease':experiment,'make_latest':'false'}), tag)
+            'draft':True,'prerelease':True,'make_latest':'false'}), tag)
         remote.wait_find(tag, release_id=info['id'])
         for name in delivery['files']:remote.upload(tag, Path(directory) / name)
         with tempfile.TemporaryDirectory(prefix='delivery-metadata-') as temporary:
             path=Path(temporary)/'delivery.json';path.write_bytes(archive.encoded(delivery));remote.upload(tag,path)
-        current, assets = verified_remote(remote, delivery, directory, draft=True)
+        current, assets = verified_remote(remote, delivery, directory, draft=True, prerelease=True)
         if current['id'] != info['id']:raise DeliveryError('draft release identity changed')
-        remote.change(f'/releases/{info["id"]}', method='PATCH', body={'draft':False,'prerelease':experiment,'make_latest':'false'})
-        final, final_assets = verified_remote(remote, delivery, directory)
+        remote.change(f'/releases/{info["id"]}', method='PATCH', body={'draft':False,'prerelease':True,'make_latest':'false'})
+        final, final_assets = verified_remote(remote, delivery, directory, prerelease=True)
         if final['id'] != info['id'] or final_assets != assets:raise DeliveryError('publication identity changed')
         remote.not_latest(final)
         return dict(result, execute=True, release_id=final['id'])
@@ -514,7 +520,7 @@ def attach_certificate(repository, tag, directory, delivery, certificate, check_
             remote.visible();info,before=verified_remote(remote,delivery,directory)
             if set(files)&before.keys():raise DeliveryError('certificate attempt already exists; inspect it, never overwrite')
             remote.upload(tag,bundle);remote.upload(tag,report)
-            current,after=verified_remote(remote,delivery,directory)
+            current,after=verified_remote(remote,delivery,directory,prerelease=info['prerelease'])
             if current['id']!=info['id'] or set(after)!=set(before)|set(files) or any(after[n]!=v for n,v in before.items()):
                 raise DeliveryError('certificate attachment changed an existing asset')
             with tempfile.TemporaryDirectory(prefix='certificate-confirm-') as check:
@@ -591,11 +597,11 @@ def promote(repository,tag,directory,delivery,policy,profile,run_id,attempt,cert
         remote.visible();info,assets=verified_remote(remote,delivery,directory)
         evidence=verify_certificate(remote,assets,delivery,directory,policy,profile,run_id,attempt,certificate_sha256)
         # Reread all byte identities immediately before the final mutation.
-        current,again=verified_remote(remote,delivery,directory)
+        current,again=verified_remote(remote,delivery,directory,prerelease=info['prerelease'])
         if current['id']!=info['id'] or again!=assets:raise DeliveryError('remote delivery changed after certificate review')
         if archive.digest(policy)!=result['policy_sha256']:raise DeliveryError('promotion policy changed')
         remote.change(f'/releases/{info["id"]}',method='PATCH',body={'draft':False,'prerelease':False,'make_latest':'true'})
-        final,after=verified_remote(remote,delivery,directory)
+        final,after=verified_remote(remote,delivery,directory,prerelease=False)
         if final['id']!=info['id'] or after!=assets:raise DeliveryError('promoted assets changed')
         latest=remote.transport.json(remote.base+'/releases/latest')
         remote.info(latest,tag)
