@@ -265,11 +265,12 @@ Debian installation where supplied, retained-input offline recovery and selected
 regression checks. Record unavailable scopes as unavailable; never convert them
 into a green status. Optional omissions remain visible in the report.
 
-The native source producer is implemented but its full cold build and oldest-host
-matrix need execution evidence for the selected recipe. Windows fixture coverage
-checks archive/provenance/linker policy; it is not a Windows compiler run. Browser
-Node smoke is separate from actual browser-host behavior. Always consult the
-[validation record](validation.md) before advertising support.
+The [validation record](validation.md) identifies actual native source production,
+Windows compiler runs and fresh-consumer observations for exact retained recipes.
+Other recipes and the oldest-host matrix still require their own execution evidence.
+Windows archive/provenance/linker fixtures do not replace a Windows compiler run.
+Browser Node smoke remains separate from actual browser-host behavior. Consult
+the recorded environments and material limits before advertising support.
 
 ## Source and feature identity
 

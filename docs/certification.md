@@ -102,10 +102,14 @@ in the exact source archive. Pass `--browser firefox --firefox /path/to/firefox`
 The receipt retains engine/version, exact input hashes, interaction checks, geometry
 and captures. Missing browsers fail; no browser is downloaded by qualification.
 Desktop browsers remain host prerequisites, outside the compiler SDK. The explicit
-CI bootstrap chooses the distribution package or verified vendor repository for the
-actual operating system. It records package versions, repository policy and signing
-identity before the test; it does not substitute another distribution for the named
-check. Pass its receipt with `--browser-prerequisite` and the frozen plan with
+CI prerequisite plan selects either existing host tools or a distribution package
+and verified repository for the actual operating system. Native Ubuntu checks
+inspect the installed browser and, for Chromium, ChromeDriver; they bind the actual
+OS, architecture, versions and executable hashes without installing a browser.
+Distribution checks retain package versions, repository policy and signing identity.
+Both paths recheck the selected executable bytes after execution; neither
+substitutes another distribution for the named check. Pass its receipt with
+`--browser-prerequisite` and the frozen plan with
 `--browser-prerequisite-plan`. The adapter checks the source/inventory, target,
 backend, scope, plan, check, run and attempt, actual host and selected executable.
 It then compares the observed browser version and preserves the unchanged receipt

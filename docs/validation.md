@@ -10,7 +10,45 @@ Python 3.13.5. Native GUI qualification also used an isolated Clang 19 toolchain
 verified toolkit inputs and a virtual display. A remote repository is configured.
 Observed hosted results below identify exact revisions and scopes. Earlier
 failures produced focused regressions and repairs; unqualified scopes remain
-explicit. No public release was published by these checks.
+explicit. The current delivery record below distinguishes public publication from
+earlier private preparation and local fixtures.
+
+## Current public delivery evidence (2026-10-02)
+
+The four SDK base qualification and public publication runs completed successfully:
+[Linux x64](https://github.com/mirage335-colossus/software-foundation/actions/runs/36979799032),
+[Linux ARM64](https://github.com/mirage335-colossus/software-foundation/actions/runs/36979801780),
+[Windows x64](https://github.com/mirage335-colossus/software-foundation/actions/runs/36977319633)
+and [Wasm](https://github.com/mirage335-colossus/software-foundation/actions/runs/36977322721).
+Their publication receipts were independently fetched and checked. The consumer
+selectors identify these retained recipes exactly:
+
+| Target | SDK recipe SHA-256 |
+| --- | --- |
+| Linux x64 | `bdd39974a891e6161d667bbaa0ff2c1894fe9f188ed76d47d1ad6c896972c9f8` |
+| Linux ARM64 | `88c7d871f5cf6210cb4dac6874e666a275dd5f359d42439369a7206b39dbe109` |
+| Windows x64 | `cd16aeb6bd2dff13115d456ffbea2d166db37427106a5e03961926f840f10feb` |
+| Wasm | `783adcbd828ccd3dce72fefa575755d0d94f4eec528634bd4a9bdce7341356d5` |
+
+The [GUI source publication](https://github.com/mirage335-colossus/software-foundation/actions/runs/36979568787)
+also passed and was independently read back. Its group identity is
+`10d22dd104c3c3de38b979b5c5d9b6d3e9cea827d0dc748b87d97baee081c8b3`.
+New producer code can define a new recipe identity without invalidating an explicit
+consumer selection of verified retained bytes; never relabel an old archive.
+
+The [public screenshot run](https://github.com/mirage335-colossus/software-foundation/actions/runs/36977734580)
+passed and published [seven actual backend captures](https://github.com/mirage335-colossus/software-foundation/releases/tag/screenshots-36977734580-attempt-1).
+The publication receipt and images were independently downloaded and verified.
+Framebuffer, FLTK and Rev captures show the same geometry and palette, with small
+native-font rendering differences. The gallery also contains SDL, terminal,
+hosted web and Wasm captures. Browser tooling is a host prerequisite, outside the
+SDK and application payload. The gallery separately verified the browser's
+namespace and seccomp sandbox; that evidence does not imply that every other
+browser test performs the same sandbox-status probe.
+
+Application publication, full release certification and signed package-channel
+installation are separate qualifications. They remain pending in this record
+until their exact final receipts and native-client outcomes are recorded.
 
 ## Delivery workflow expansion
 
@@ -98,8 +136,8 @@ Gallery manifest asset `604563666` has SHA-256
 the separately verified private diagnostics bind the exact retained GUI selector
 and contain no private display authorization file. `execute=false` retained
 private evidence and a publication plan; it did not publish a public gallery.
-Complete public base/application/certification/promotion execution remains a
-separate scope requiring the documented eligible inputs and publication setup.
+At that revision, public base/application/certification/promotion execution was
+a separate, unexecuted scope. See the current delivery record for later evidence.
 
 Final candidate [36951980262](https://github.com/mirage335-colossus/software-foundation/actions/runs/36951980262)
 passed all nineteen jobs at `217ff90d01c25c419fc4e621515579f30668984e`.
@@ -276,8 +314,9 @@ scope. The fixtures use disposable keys and never install or publish packages.
 - Arch and Gentoo client installation/update/removal require disposable native
   package-manager environments; their signed-channel fixtures are distinct
   evidence. The executed Debian client result is limited to its recorded host.
-- Publication credentials and live package channels were not exercised. An
-  adopted repository must qualify its own permissions and external services.
+- SDK and gallery publication credentials were exercised as recorded above.
+  Live signed package channels need their own native-client evidence. An adopted
+  repository must qualify its own permissions and external services.
 - Shared-source coordination requires the stated filesystem primitives and
   cooperative writers. Uncooperative participants need enforced private access.
 - Real devices, assistive technology, every desktop/window-manager combination,

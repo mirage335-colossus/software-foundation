@@ -539,11 +539,12 @@ archived binary/source bytes unchanged.
 
 The executable tests cover corruption, incomplete inventories, host/target
 selection, fresh offline Windows command construction, retained-source replay,
-relocation and immutable installation. The two native Buildroot configurations
-are checked against their pinned source. Configuration success and mocked
-supplier execution do not establish a cold compiler or Windows library build.
-Record native Bookworm x86_64/ARM64 cold-build results, actual Windows producer
-results and oldest-host execution before claiming those facilities qualified.
+relocation and immutable installation. Native core and GUI Buildroot configurations
+have separate recipe identities and are checked against their pinned source.
+Actual Bookworm x86_64/ARM64 production, Windows producer and fresh-consumer
+observations are listed in the [validation record](validation.md). Only those exact
+recipes and observed environments are qualified. Configuration success and mocked
+supplier execution cannot replace a real build or oldest-host execution.
 The WebAssembly compiler/Node preparation is a separate qualification scope from
 the ordinary Chromium/Firefox validation-host matrix. Each release must identify
 which exact retained recipe groups and actual execution records it uses.

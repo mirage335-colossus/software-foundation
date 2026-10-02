@@ -232,7 +232,9 @@ libc floor or shared-library ABI boundaries. Private libraries need appropriate
 relative loader paths, and each final archive is checked after extraction.
 Portable Linux executables use `$ORIGIN/../lib/runtime` with linker option
 `--disable-new-dtags`, producing inherited `DT_RPATH`. That inherited path also
-finds indirect private dependencies without rewriting supplier libraries. An
+finds indirect private dependencies without modifying the retained SDK libraries.
+Wholly empty loader-path tags may be removed from staged copies as described
+above; the original supplier bytes remain retained and identified. An
 alternative layout may use `DT_RUNPATH` on every dependent object, but an
 executable's `DT_RUNPATH` alone cannot cover its libraries' children; see the
 [loader search rules](https://man7.org/linux/man-pages/man8/ld.so.8.html).
