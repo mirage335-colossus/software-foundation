@@ -32,9 +32,9 @@ for those independent checks.
 
 GUI installation and packaging require the reviewed redistribution record and its
 complete notice inventory. The current owner-specific permission covers this
-repository's GUI source and compiled binaries, including Rev; the project's CC0
-dedication does not replace supplier terms. A new project must establish its own
-applicable permissions before enabling public GUI delivery. See the
+repository's GUI source and compiled binaries, including Rev; the GUI dependency's
+project-owned CC0 dedication does not replace supplier terms. A new project must
+establish its own applicable permissions before enabling public GUI delivery. See the
 [GUI permission scope](gui-boundary.md).
 
 ## Target and asset inventory

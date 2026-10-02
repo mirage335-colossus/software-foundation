@@ -275,10 +275,12 @@ without POSIX-only pipe readiness operations.
 The lock checks every consumed header, asset, test and build recipe even for a
 source archive without Git metadata. Changed input triggers configure and fails
 verification. Refresh the pin, hashes and patches only after reviewing an upgrade
-and executing the affected host/conformance checks. Upstream has no declared
-top-level license at this revision: local development is wired, GUI binary packaging
-remains blocked until the owner supplies reviewed licensing terms. Separate font
-or toolkit notices do not resolve that missing declaration.
+and executing the affected host/conformance checks. The pinned project-owned code
+is dedicated under CC0-1.0; third-party code and generated font data retain their
+separate terms. The reviewed Rev permission covers this repository's source releases
+and compiled application binaries. The [distribution gate](gui-audit.md#distribution-gate)
+records the exact scope and required notices. Downstream projects must establish
+their own supplier permissions; this approval is not a general Rev license grant.
 
 ## Adding a feature
 
