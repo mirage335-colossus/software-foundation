@@ -193,7 +193,7 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
                     if len(files) != 1: raise ValueError('one exact binary ebuild required')
                     run('ebuild', files[0], 'package')
                     run('emerge', '--getbinpkgonly', '--usepkgonly', '--binpkg-respect-use=y', '--oneshot', '--with-bdeps=n', '='+ 'app-misc/'+files[0].stem)
-                    run('portageq', 'has_version', '/', 'app-misc/'+files[0].stem)
+                    run('portageq', 'has_version', '/', '=app-misc/'+files[0].stem)
                 run('emaint', 'sync', '-r', 'software-foundation-bin')
             installed = []
             for backend in backends:
