@@ -30,6 +30,13 @@ candidate gates and wait for their actual outcomes. A queued, cancelled, skipped
 or incomplete job is not successful validation. A manually skipped automatic
 run leaves a documented outstanding gate until equivalent evidence exists.
 
+For a host-specific Python contract failure, use the manual
+[Host contract diagnostics workflow](../.github/workflows/host-contracts.yml). It
+selects an already installed interpreter and repeats one complete suite without
+rebuilding SDKs or applications. Every failure remains visible; later successful
+repetitions cannot erase it. See [the diagnostic contract](testing.md#focused-host-diagnostics)
+for runtime selection, bounded supervision and retained evidence.
+
 ## Complete candidate inventories
 
 Each candidate source job freezes the complete configured CTest inventory and its

@@ -71,16 +71,51 @@ class NativeProcessTree(unittest.TestCase):
         self.assertNotIn(b'late', saved)
 
     def test_termination_stops_parent_and_child_without_releasing_early(self):
-        owner = self.launch("import subprocess,sys,time; subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)']);print('ready',flush=True);time.sleep(30)")
+        child = "import os,time;print('child-ready:'+str(os.getpid()),flush=True);time.sleep(30)"
+        owner = self.launch("import subprocess,sys,time;subprocess.Popen([sys.executable,'-c'," +
+                            repr(child) + "]);print('parent-ready',flush=True);time.sleep(30)")
+        log = self.root / 'console.log'
         deadline = time.monotonic() + 10
-        while b'ready' not in (self.root / 'console.log').read_bytes():
+        while True:
+            lines = log.read_bytes().splitlines()
+            children = [line.removeprefix(b'child-ready:') for line in lines if line.startswith(b'child-ready:')]
+            if b'parent-ready' in lines and len(children) == 1 and children[0].isdigit():
+                child_pid = int(children[0]); break
             if time.monotonic() >= deadline:
-                self.fail('command did not reach ready state')
+                self.fail('parent and output-owning child did not reach ready state')
             time.sleep(0.01)
-        owner.terminate()
-        self.assertIsNotNone(owner.poll())
-        self.assertFalse(owner._live())
+        handle = None
+        if owner.job is not None:
+            # Pin this child before termination; a post-exit PID lookup could
+            # observe a retired or reused identity instead of our output writer.
+            job = owner.job
+            handle = job.api.OpenProcess(0x101000, False, child_pid)
+            self.assertTrue(handle, 'cannot pin the ready child process')
+        try:
+            if handle is not None:
+                member = job.w.BOOL()
+                self.assertTrue(job.api.IsProcessInJob(handle, job.handle, ctypes.byref(member)))
+                self.assertTrue(member.value, 'ready child is not contained in the exact Job')
+            owner.terminate()
+            self.assertIsNotNone(owner.poll())
+            if handle is not None:
+                self.assertEqual(job.api.WaitForSingleObject(handle, 0), 0,
+                                 'terminate returned before the exact child process completed')
+            self.assertFalse(owner._live())
+        finally:
+            if handle is not None:
+                self.assertTrue(job.api.CloseHandle(handle), 'cannot close child observation handle')
         owner.close()
+        self.assertTrue(owner.closed)
+        self.stream.close()
+        # A completed tree and closed caller stream must release its output now.
+        # Never hide an actual surviving writer behind cleanup retries or sleeps.
+        released = self.root / 'released.log'
+        try:
+            log.rename(released)
+            released.unlink()
+        except OSError as error:
+            self.fail('output remains locked after parent/child completion, empty Job and closed caller stream: ' + str(error))
 
     def test_finish_before_exit_is_not_completion(self):
         owner = self.launch('import time;time.sleep(30)')

@@ -197,3 +197,33 @@ For multi-environment release work use [the frozen coverage and certification
 protocol](certification.md). Its immutable attempt directories and supervised
 process trees add source/asset/policy identity to the local CTest shard mechanism.
 Neither local helper authorizes concurrent writes to a common build directory.
+
+
+## Focused host diagnostics
+
+The manual [Host contract diagnostics workflow](../.github/workflows/host-contracts.yml)
+runs one complete `process_tree`, `windows_graphics`, `ci_plan`, `github_release`
+or `ci_transport` unit suite directly on a Windows x64, Linux x64 or Linux ARM64
+runner. Select `runner-default`, Python `3.12` or `3.14`, and 1, 5 or 20
+repetitions. Explicit versions resolve only the highest complete stable patch in
+`RUNNER_TOOL_CACHE`; an unavailable or mismatched native interpreter fails without
+downloading Python. The default uses the workflow shell's existing interpreter.
+
+[`host_contracts.py`](../tools/host_contracts.py) records the selected executable,
+its SHA256, reported Python version and architecture, runner image, source hashes
+and exact workflow revision. Every repetition retains the complete `run_tests.py`
+case inventory and console log. A failure stays failed even when later repetitions
+pass; missing inventories, internal skips, timeouts and incomplete repetitions
+cannot pass. Each suite has a 120-second execution limit and the complete run has
+a 50-minute limit. Cleanup must stop and join supervised writers before another
+repetition starts; uncertain cleanup stops the run and permits retention only of
+the failed summary, never potentially active child logs or inventories.
+
+The workflow always attempts to retain `result.json` and each repetition's logs
+and inventory through the existing lifecycle `bundle-store`, using the run-scoped
+`host-contracts-ATTEMPT` bundle. It needs repository contents write permission only
+for that retained evidence transport; the test step receives no token. Failed runs
+can be inspected with the [same exact bundle recovery](github-delivery.md) as other
+lifecycle evidence. No Actions artifact storage or prepared SDK build is required.
+These diagnostic receipts never satisfy source, package or release qualification;
+repeat the required complete gate after a diagnostic correction.
