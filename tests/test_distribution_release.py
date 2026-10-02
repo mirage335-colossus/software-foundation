@@ -111,6 +111,32 @@ class InitializationTests(unittest.TestCase):
 
 
 class RequestTests(unittest.TestCase):
+    def test_workflow_retains_complete_large_notice_inventory(self):
+        value = request()
+        value['license_files'] = ['share/doc/Foundation/dependencies/' + str(i) + '/COPYING.txt' for i in range(400)]
+        raw = json.dumps(value, separators=(',', ':'))
+        self.assertGreater(len(raw.encode('utf-8')), 16 * 1024)
+        self.assertEqual(value, d.workflow_request(raw))
+
+    def test_workflow_request_exact_byte_bound_precedes_parsing(self):
+        raw = json.dumps(request(), separators=(',', ':'))
+        bounded = raw + ' ' * (d.MAX_WORKFLOW_REQUEST_BYTES - len(raw.encode('utf-8')))
+        self.assertEqual(request(), d.workflow_request(bounded))
+        for excessive in (bounded + ' ', 'é' * (d.MAX_WORKFLOW_REQUEST_BYTES // 2 + 1), None):
+            with self.subTest(value_type=type(excessive)), patch.object(d.delivery, 'parse', side_effect=AssertionError('must reject before parse')):
+                with self.assertRaisesRegex(ValueError, 'input bound'):
+                    d.workflow_request(excessive)
+        utf8_boundary = 'é' * (d.MAX_WORKFLOW_REQUEST_BYTES // 2)
+        with patch.object(d.delivery, 'parse', return_value=request()) as parse:
+            self.assertEqual(request(), d.workflow_request(utf8_boundary))
+            parse.assert_called_once_with(utf8_boundary)
+
+    def test_workflow_request_preserves_json_and_semantic_validation(self):
+        raw = json.dumps(request())
+        for invalid in (raw[:-1] + ',"sequence":8}', '{}', json.dumps(dict(request(), sequence=True))):
+            with self.subTest(raw=invalid), self.assertRaises(ValueError):
+                d.workflow_request(invalid)
+
     def test_plan_has_no_remote_or_signing_side_effect(self):
         with patch.object(d.delivery, 'Remote', side_effect=AssertionError('no network')):
             result = d.plan(request())

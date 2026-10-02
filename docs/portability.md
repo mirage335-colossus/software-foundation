@@ -284,3 +284,12 @@ Native OpenGL dispatch needs a compatible host vendor driver; dynamic driver
 selection is declared in SDK host-service metadata and exercised on the actual
 validation host. Private library staging must not silently copy a builder's
 vendor driver into an otherwise portable release.
+
+GNU x86 instruction properties distinguish required instructions (`ISA needed`)
+from optional dispatched implementations (`ISA used`). The package audit rejects
+required x86-64-v2/v3/v4 instructions, while permitting optional implementations
+in a baseline-compatible library. Wide tool output may place both properties on
+one line; parsing must preserve that boundary. Changing audit implementation
+changes future SDK producer recipe identities, but existing immutable SDK groups
+can still be selected explicitly and rechecked by current consumer tools. Never
+relabel their archived bytes or replace their original provenance.

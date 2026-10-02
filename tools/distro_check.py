@@ -278,8 +278,8 @@ def container_with_display(root, check_id, environment, display):
         '--mount', f'type=bind,source={output},target=/evidence', '-w', '/source']
     commands = {
         'apt': 'apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 gnupg gpgv dpkg-dev binutils',
-        'arch': 'pacman -Syu --noconfirm --needed python gnupg binutils',
-        'gentoo': 'emerge --getbinpkgonly --usepkgonly --binpkg-respect-use=y --oneshot --with-bdeps=n app-crypt/gnupg'
+        'arch': 'pacman -Syu --noconfirm --needed python gnupg binutils dpkg',
+        'gentoo': 'emerge --getbinpkgonly --usepkgonly --binpkg-respect-use=y --oneshot --with-bdeps=n app-crypt/gnupg app-arch/dpkg'
     }
     snapshot = None
     try:

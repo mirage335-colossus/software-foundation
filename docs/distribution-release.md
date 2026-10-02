@@ -89,11 +89,16 @@ omitted terms or unindexed dependency notices fail before signing. This applies
 to core projections too, because their shared resources remain installed. Use
 `distro_channel.required_license_files(payload)` on the verified archive payload
 to construct the request; review additional project-specific terms when adopting
-this example.
+this example. The workflow accepts at most 32 KiB of UTF-8 request JSON and rejects
+larger inputs before parsing. Serialize compactly, retain the complete notice list,
+and measure the full dispatch input payload against GitHub's 65,535-character
+limit, including any previous-channel selector.
 
 Store the armored private signing key as the protected environment secret
 `DISTRIBUTION_SIGNING_KEY`, and its independently reviewed full primary fingerprint
-as `DISTRIBUTION_SIGNING_FINGERPRINT`. The workflow requires the request to match
+as `DISTRIBUTION_SIGNING_FINGERPRINT` in both the repository variables and the
+`release-publisher` environment variables. Planning/native qualification and
+protected publication must use the same independently trusted value. The workflow requires the request to match
 that fingerprint. Key bytes are removed from the process environment before child
 commands run, written only to a private temporary file outside the checkout, and
 deleted after local signing. Outputs and transport bundles contain only public
@@ -280,7 +285,8 @@ unreferenced generations after stopping client writers.
 The current repository distribution signing fingerprint is
 `EF876322B5CE4782062CB3E991649063150BC781`. The private signing key is supplied only
 through the `release-publisher` environment secret `DISTRIBUTION_SIGNING_KEY`; the
-matching public fingerprint is configured as `DISTRIBUTION_SIGNING_FINGERPRINT`.
+matching public fingerprint is configured as `DISTRIBUTION_SIGNING_FINGERPRINT`
+in both repository and protected-environment variables.
 This environment accepts the `main` branch. A project copied from this example
 must generate its own key, configure its own independent trust value, and keep
 a private recovery backup outside source control and release assets. Never copy
@@ -311,3 +317,9 @@ receipt. This makes the display service explicit while keeping package-manager
 and client-library verification native to each tested distribution. Gentoo
 prerequisites remain binary-only even when optional display-wrapper packages are
 absent from its current binary repository.
+
+All native qualification frontends verify the complete signed distribution,
+including its Debian packages. The disposable Arch and Gentoo environments
+therefore install their distribution-provided `dpkg` verifier alongside signing
+tools before running client checks. Gentoo obtains these prerequisites from its
+configured binary repository with source-build fallback disabled.

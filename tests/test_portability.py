@@ -16,6 +16,24 @@ import verify_abi
 import stage_runtime
 
 
+class InstructionPropertyTests(unittest.TestCase):
+    def test_optional_used_instructions_do_not_raise_required_baseline(self):
+        for notes in (
+            'x86 ISA needed: x86-64-baseline, x86 feature used: x86, x86 ISA used: x86-64-baseline, x86-64-v2, x86-64-v3',
+            'x86 ISA used: x86-64-v4, x86 ISA needed: x86-64-baseline',
+            'x86 ISA needed: x86-64-baseline\nx86 ISA used: x86-64-v3',
+            'x86 ISA used: x86-64-v2', ''):
+            with self.subTest(notes=notes):
+                self.assertFalse(verify_abi.requires_extended_x86_isa(notes))
+
+    def test_required_higher_instructions_always_raise_baseline(self):
+        for level in (2, 3, 4):
+            for suffix in ('', ', x86 ISA used: x86-64-baseline', '\nx86 ISA used: x86-64-baseline'):
+                with self.subTest(level=level, suffix=suffix):
+                    self.assertTrue(verify_abi.requires_extended_x86_isa(
+                        'x86 ISA needed: x86-64-baseline, x86-64-v' + str(level) + suffix))
+
+
 @unittest.skipUnless(platform.system() == 'Linux' and shutil.which('cc') and shutil.which('readelf'), 'native Linux ELF toolchain required')
 class PortabilityTests(unittest.TestCase):
     def setUp(self):
@@ -26,6 +44,27 @@ class PortabilityTests(unittest.TestCase):
         subprocess.run(['cc', str(self.root / 'main.c'), '-o', str(self.root / 'application')], check=True)
 
     def tearDown(self): self.temp.cleanup()
+
+    @unittest.skipUnless(platform.machine().lower() in ('x86_64', 'amd64'), 'x86 GNU property fixture')
+    def test_real_elf_needed_and_used_properties_remain_distinct(self):
+        for needed in (1, 2, 4, 8):
+            source = self.root / ('isa-' + str(needed) + '.S')
+            library = self.root / ('isa-' + str(needed) + '.so')
+            source.write_text('.section .note.gnu.property,"a",@note\n.p2align 3\n'
+                '.long 4,32,5\n.asciz "GNU"\n'
+                '.long 0xc0008002,4,' + str(needed) + ',0\n'
+                '.long 0xc0010002,4,15,0\n'
+                '.section .note.GNU-stack,"",@progbits\n')
+            subprocess.run(['cc', '-shared', '-nostdlib', str(source), '-o', str(library)], check=True)
+            notes = verify_abi.run('readelf', '--notes', library)
+            self.assertIn('x86 ISA used:', notes)
+            self.assertIn('x86-64-v4', notes)
+            if needed == 1:
+                self.assertIn('x86 ISA needed: x86-64-baseline', notes)
+                self.assertEqual('passed', verify_abi.audit(library)['status'])
+            else:
+                with self.assertRaisesRegex(ValueError, 'above the generic x86_64 baseline'):
+                    verify_abi.audit(library)
 
     def test_real_native_elf_inspection(self):
         report = verify_abi.audit(self.root / 'application', processor=self.processor)

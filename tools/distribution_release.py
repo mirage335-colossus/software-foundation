@@ -27,7 +27,15 @@ import source_identity
 ROOT = Path(__file__).resolve().parents[1]
 CONTROL = {'distribution.json', 'distribution.json.sig'}
 MAX_ASSET = 2 * 1024**3 - 1
+MAX_WORKFLOW_REQUEST_BYTES = 32 * 1024
 TARGETS = {'linux-x86_64': ('x86_64', 'amd64'), 'linux-aarch64': ('aarch64', 'arm64')}
+
+
+def workflow_request(raw):
+    # Leave room for the other dispatch inputs while retaining complete notices.
+    if not isinstance(raw, str) or len(raw.encode('utf-8')) > MAX_WORKFLOW_REQUEST_BYTES:
+        raise ValueError('request exceeds input bound')
+    return request(delivery.parse(raw))
 
 
 def request(value):

@@ -44,9 +44,7 @@ jobs:
         sys.path.insert(0, 'tools')
         import distribution_release as channel
         raw = os.environ['REQUEST']
-        if len(raw.encode()) > 16384:
-            raise ValueError('request exceeds input bound')
-        request = channel.delivery.parse(raw)
+        request = channel.workflow_request(raw)
         if request.get('repository') != os.environ['GITHUB_REPOSITORY'] or request.get('packager_commit') != os.environ['GITHUB_SHA']:
             raise ValueError('request must name this repository and exact packaging revision')
         result = channel.plan(request)
@@ -84,9 +82,7 @@ jobs:
         sys.path.insert(0, 'tools')
         import distribution_release as channel
         raw = os.environ['REQUEST']
-        if len(raw.encode()) > 16384:
-            raise ValueError('request exceeds input bound')
-        request = channel.request(channel.delivery.parse(raw))
+        request = channel.workflow_request(raw)
         if request['repository'] != os.environ['GITHUB_REPOSITORY'] or request['packager_commit'] != os.environ['GITHUB_SHA']:
             raise ValueError('request differs from selected checkout')
         if request['trusted_fingerprint'] != os.environ['TRUSTED_FINGERPRINT']:

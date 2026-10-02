@@ -202,6 +202,12 @@ def check_sdk_runtime(results, approved, declaration):
                 raise ValueError('SDK private requirement lacks its matched runtime provider')
 
 
+def requires_extended_x86_isa(notes):
+    # Wide readelf may place NEEDED and USED properties on the same line.
+    # USED describes optional dispatched code; only NEEDED raises the CPU floor.
+    return bool(re.search(r'\bx86 ISA needed:[^:\r\n]*\bx86-64-v[234]\b', notes))
+
+
 def audit(root, processor='x86_64', ceilings=None, readelf='readelf', host=False, runtime_resolution=True, sdk_sysroot=None):
     root = Path(root).resolve(strict=True)
     ceilings = BOOKWORM if ceilings is None else ceilings
@@ -221,7 +227,7 @@ def audit(root, processor='x86_64', ceilings=None, readelf='readelf', host=False
         name = path.relative_to(root).as_posix() if root.is_dir() else path.name
         entry = inspect(path, readelf, sdk_private=True) if name in approved else inspect(path, readelf)
         notes = run(readelf, '--notes', path)
-        if not host and re.search(r'x86 ISA needed:.*x86-64-v[234]', notes):
+        if not host and requires_extended_x86_isa(notes):
             raise ValueError('ELF requires instructions above the generic x86_64 baseline')
         if entry['machine'] != MACHINES[processor]:
             raise ValueError('wrong ELF architecture: ' + str(path))
