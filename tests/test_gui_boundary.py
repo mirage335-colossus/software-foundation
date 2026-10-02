@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import importlib.util
+import ctypes
 import json
 import os
 import re
@@ -9,6 +10,8 @@ import sys
 import subprocess
 import unittest
 import tempfile
+import time
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -544,6 +547,180 @@ endfunction()
         self.assertIn("queue.Queue(1)", source)
         self.assertIn("self.worker.join(timeout=2)", source)
         self.assertNotIn("select.select", source)
+
+
+class BrowserOwnerTests(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("owned_browser", ROOT / "gui/tests/browser_test.py")
+        self.browser = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.browser)
+
+    def instance(self, cls, log, owner):
+        instance = cls.__new__(cls)
+        instance.owner = owner; instance.log = log
+        instance.closed = False; instance.cleanup_error = None
+        instance.socket = None; instance.session = None
+        return instance
+
+    def test_both_launchers_own_startup_and_join_before_log_copy(self):
+        for chromium in (False, True):
+            with self.subTest(chromium=chromium), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary); events = []; streams = []
+                owner = mock.Mock(); owner.process.poll.return_value = 1
+                owner.terminate.side_effect = lambda: events.append('terminate')
+                owner.close.side_effect = lambda: events.append('join')
+                def launch(argv, cwd, stream, *, env):
+                    self.assertEqual(Path.cwd(), cwd)
+                    streams.append(stream); stream.write('startup evidence'); stream.flush()
+                    self.assertEqual('driver' if chromium else 'firefox', argv[0])
+                    self.assertEqual(None if chromium else '1', None if env is None else env['MOZ_HEADLESS'])
+                    return owner
+                real_copy = self.browser.shutil.copyfile
+                def copy(source, destination):
+                    self.assertEqual(['terminate', 'join'], events)
+                    self.assertTrue(streams[0].closed)
+                    return real_copy(source, destination)
+                with mock.patch.object(self.browser.process_tree, 'launch', side_effect=launch), \
+                     mock.patch.object(self.browser.socket, 'socket'), \
+                     mock.patch.object(self.browser.socket, 'create_connection', side_effect=OSError('offline')), \
+                     mock.patch.object(self.browser.ChromiumBrowser, 'request', side_effect=OSError('offline')), \
+                     mock.patch.object(self.browser.shutil, 'copyfile', side_effect=copy):
+                    with self.assertRaisesRegex(RuntimeError, 'exited during startup'):
+                        with self.browser.browser_workspace(output) as work:
+                            if chromium: self.browser.ChromiumBrowser('chrome', 'driver', work, [])
+                            else: self.browser.Browser('firefox', work)
+                self.assertEqual('startup evidence', (output / ('chromedriver.log' if chromium else 'firefox.log')).read_text())
+                self.assertFalse(list(output.glob('browser-*')))
+
+    def test_failed_launch_closes_log_and_uncertain_launch_preserves_workspace(self):
+        for uncertain in (False, True):
+            with self.subTest(uncertain=uncertain), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary); streams = []
+                error = (self.browser.process_tree.ProcessTreeError('writer cleanup is uncertain') if uncertain
+                         else OSError('executable missing'))
+                def launch(argv, cwd, stream, *, env):
+                    streams.append(stream); stream.write('launch evidence'); raise error
+                expected = self.browser.BrowserCleanupError if uncertain else OSError
+                with mock.patch.object(self.browser.process_tree, 'launch', side_effect=launch):
+                    with self.assertRaises(expected):
+                        with self.browser.browser_workspace(output) as work:
+                            instance = self.browser.Browser.__new__(self.browser.Browser)
+                            instance._launch(['missing'], work, 'firefox.log')
+                self.assertTrue(streams[0].closed)
+                self.assertEqual(uncertain, work.exists())
+                self.assertEqual(not uncertain, (output / 'firefox.log').exists())
+                if uncertain:
+                    self.assertEqual('launch evidence', (work / 'firefox.log').read_text())
+                    with self.assertRaises(self.browser.BrowserCleanupError): instance.close()
+                else: instance.close()  # Failed launch has no process or socket to close.
+
+    def test_failure_after_owner_creation_still_joins_before_cleanup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            owner=mock.Mock(spec=['terminate','close'])
+            with mock.patch.object(self.browser.process_tree,'launch',return_value=owner):
+                with self.assertRaises(AttributeError):
+                    with self.browser.browser_workspace(Path(temporary)) as work:
+                        instance=self.browser.Browser.__new__(self.browser.Browser)
+                        instance._launch(['unused'],work,'firefox.log')
+            owner.terminate.assert_called_once();owner.close.assert_called_once()
+            self.assertTrue(instance.log.closed);self.assertFalse(work.exists())
+
+    def test_failed_launch_with_unclosed_log_preserves_uncertain_workspace(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output=Path(temporary); stream=mock.Mock(); stream.close.side_effect=OSError('flush failed')
+            with mock.patch.object(self.browser.process_tree,'launch',side_effect=OSError('launch failed')), \
+                 mock.patch.object(Path,'open',return_value=stream):
+                with self.assertRaisesRegex(self.browser.BrowserCleanupError,'flush failed'):
+                    with self.browser.browser_workspace(output) as work:
+                        instance=self.browser.Browser.__new__(self.browser.Browser)
+                        instance._launch(['missing'],work,'firefox.log')
+            self.assertTrue(work.exists())
+            with self.assertRaises(self.browser.BrowserCleanupError):instance.close()
+            stream.close.assert_called_once()
+
+    def test_disconnect_failure_still_joins_and_successful_close_is_idempotent(self):
+        for cls in (self.browser.Browser, self.browser.ChromiumBrowser):
+            with self.subTest(cls=cls.__name__):
+                events = []; owner = mock.Mock(); log = mock.Mock()
+                owner.terminate.side_effect = lambda: events.append('terminate')
+                owner.close.side_effect = lambda: events.append('join')
+                log.close.side_effect = lambda: events.append('log')
+                instance = self.instance(cls, log, owner)
+                if cls is self.browser.Browser:
+                    instance.socket = mock.Mock(); instance.socket.close.side_effect = RuntimeError('disconnect failed')
+                else:
+                    instance.session = 'active'; instance.request = mock.Mock(side_effect=RuntimeError('disconnect failed'))
+                with self.assertRaisesRegex(RuntimeError, 'disconnect failed'): instance.close()
+                self.assertEqual(['terminate', 'join', 'log'], events)
+                instance.close()
+                self.assertEqual(['terminate', 'join', 'log'], events)
+
+    def test_uncertain_join_is_sticky_and_never_copies_or_deletes_logs(self):
+        for failing_action in ('terminate', 'close'):
+            with self.subTest(action=failing_action), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary); owner = mock.Mock()
+                getattr(owner, failing_action).side_effect = RuntimeError('unconfirmed writer')
+                with self.assertRaisesRegex(self.browser.BrowserCleanupError, 'unconfirmed writer'):
+                    with self.browser.browser_workspace(output) as work:
+                        log = (work / 'firefox.log').open('w'); log.write('not final')
+                        (work / 'profile.sqlite').write_text('owned')
+                        instance = self.instance(self.browser.Browser, log, owner)
+                        instance.close()
+                self.assertTrue(log.closed)
+                owner.terminate.assert_called_once(); owner.close.assert_called_once()
+                self.assertTrue((work / 'profile.sqlite').is_file())
+                self.assertEqual('not final', (work / 'firefox.log').read_text())
+                self.assertFalse((output / 'firefox.log').exists())
+                with self.assertRaises(self.browser.BrowserCleanupError): instance.close()
+                owner.terminate.assert_called_once(); owner.close.assert_called_once()
+
+    def test_close_joins_actual_descendant_profile_writer_before_workspace_cleanup(self):
+        # The browser/driver owns a child that keeps both its profile and inherited
+        # log open. A parent-only wait cannot satisfy the pinned Windows handle or
+        # Linux supervisor completion checks, even when its initial process exits.
+        for cls in (self.browser.Browser, self.browser.ChromiumBrowser):
+            with self.subTest(cls=cls.__name__), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary)
+                with self.browser.browser_workspace(output) as work:
+                    profile = work / 'profile.sqlite'
+                    child = ('import os,time;f=open(' + repr(str(profile)) + ',"wb");'
+                             'print("child-ready:"+str(os.getpid()),flush=True);time.sleep(60)')
+                    parent = ('import subprocess,sys,time;subprocess.Popen([sys.executable,"-B","-c",' +
+                              repr(child) + ']);print("parent-ready",flush=True);time.sleep(60)')
+                    instance = cls.__new__(cls); instance.socket = None; instance.session = None
+                    instance._launch([sys.executable, '-B', '-c', parent], work, 'firefox.log')
+                    owner = instance.owner; handle = None
+                    try:
+                        deadline = time.monotonic() + 10
+                        while True:
+                            lines = (work / 'firefox.log').read_bytes().splitlines()
+                            children = [line[len(b'child-ready:'):] for line in lines if line.startswith(b'child-ready:')]
+                            if b'parent-ready' in lines and len(children) == 1 and children[0].isdigit(): break
+                            if time.monotonic() >= deadline: self.fail('profile writer did not become ready')
+                            time.sleep(.01)
+                        if owner.job is not None:
+                            job = owner.job; handle = job.api.OpenProcess(0x101000, False, int(children[0]))
+                            self.assertTrue(handle, 'cannot pin descendant writer')
+                            member = job.w.BOOL()
+                            self.assertTrue(job.api.IsProcessInJob(handle, job.handle, ctypes.byref(member)))
+                            self.assertTrue(member.value)
+                        instance.close()
+                        if handle is not None:
+                            self.assertEqual(0, job.api.WaitForSingleObject(handle, 0), 'descendant writer is still running')
+                        else:
+                            self.assertFalse(owner._live(), 'descendant writer is still running')
+                        self.assertTrue(owner.closed); self.assertTrue(instance.log.closed)
+                        profile.rename(work / 'renamed.sqlite'); (work / 'renamed.sqlite').unlink()
+                        completed = (work / 'firefox.log').read_bytes()
+                        instance.close()
+                    finally:
+                        try: owner.terminate()
+                        finally:
+                            try: owner.close()
+                            finally:
+                                instance.log.close()
+                                if handle is not None: self.assertTrue(job.api.CloseHandle(handle))
+                self.assertEqual(completed, (output / 'firefox.log').read_bytes())
+                self.assertFalse(work.exists())
 
 
 if __name__ == "__main__":

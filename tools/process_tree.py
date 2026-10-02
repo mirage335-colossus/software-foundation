@@ -229,6 +229,7 @@ class _WindowsJob:
         from ctypes import wintypes as w
         self.api = ctypes.WinDLL('kernel32', use_last_error=True)
         self.handle = None
+        self.completion_observation = None
         self.w = w
         class BasicLimits(ctypes.Structure):
             _fields_ = [('process_time', ctypes.c_longlong), ('job_time', ctypes.c_longlong),
@@ -267,6 +268,7 @@ class _WindowsJob:
             'OpenProcess': ([w.DWORD, w.BOOL, w.DWORD], w.HANDLE),
             'IsProcessInJob': ([w.HANDLE, w.HANDLE, ctypes.POINTER(w.BOOL)], w.BOOL),
             'WaitForSingleObject': ([w.HANDLE, w.DWORD], w.DWORD),
+            'QueryFullProcessImageNameW': ([w.HANDLE, w.DWORD, w.LPWSTR, ctypes.POINTER(w.DWORD)], w.BOOL),
         }
         for name, (arguments, result) in signatures.items():
             function = getattr(self.api, name)
@@ -361,6 +363,33 @@ class _WindowsJob:
                 break
         raise ProcessTreeError('job process inventory remains incomplete; retain output ownership')
 
+    def observe_running_process(self, pid, handle, members, state):
+        """Retain the first rejected handle observation, never a later substitute.
+
+        These bounded diagnostics cannot grant completion. Query the image through
+        the already pinned, verified member handle; do not log argv or environment.
+        Accounting is explicitly a later observation, not an atomic snapshot.
+        """
+        if getattr(self, 'completion_observation', None) is not None:
+            return
+        observation = {'pid': pid, 'member_verified': True, 'wait_state': state,
+                       'snapshot_count': len(members), 'snapshot_pids': members[:32],
+                       'snapshot_truncated': len(members) > 32}
+        self.completion_observation = observation
+        image = ctypes.create_unicode_buffer(32768)
+        size = self.w.DWORD(len(image))
+        if self.api.QueryFullProcessImageNameW(handle, 0, image, ctypes.byref(size)):
+            observation['image'] = image.value[:4096]
+            observation['image_truncated'] = len(image.value) > 4096
+        else:
+            observation['image_query_error'] = ctypes.get_last_error()
+        try:
+            accounting = self.accounting()
+            observation['accounting_after_observation'] = {
+                key: int(getattr(accounting, key)) for key in ('active', 'total', 'terminated')}
+        except (OSError, ProcessTreeError):
+            observation['accounting_query_error'] = ctypes.get_last_error()
+
     def has_running_process(self):
         """Separate executable members from already-signaled process objects.
 
@@ -393,6 +422,7 @@ class _WindowsJob:
                         raise ProcessTreeError('job process identity changed; retain output ownership')
                     state = self.api.WaitForSingleObject(handle, 0)
                     if state == 0x102:  # WAIT_TIMEOUT: still executable now.
+                        self.observe_running_process(pid, handle, pending, state)
                         return True
                     if state != 0:  # Only WAIT_OBJECT_0 establishes termination.
                         self.fail('inspect job process completion')
@@ -546,8 +576,15 @@ class ProcessTree:
         deadline = time.monotonic() + 5
         while self._live():
             if self.job is None or self.job.has_running_process():
-                self.terminate()
-                raise ProcessTreeError('descendants outlived the command; output completion was not valid')
+                message = 'descendants outlived the command; output completion was not valid'
+                observation = getattr(self.job, 'completion_observation', None)
+                if isinstance(observation, dict):
+                    message += '; windows_completion=' + json.dumps(observation, sort_keys=True)
+                try:
+                    self.terminate()
+                except BaseException as error:
+                    raise ProcessTreeError(message + '; descendant cleanup failed: ' + str(error)) from error
+                raise ProcessTreeError(message)
             # All observed members have terminated. Wait only for accounting to
             # retire them, rechecking for any actual live member on every turn.
             if time.monotonic() >= deadline:

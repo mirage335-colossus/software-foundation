@@ -117,17 +117,32 @@ def publish(path, value):
         Path(temporary).unlink(missing_ok=True)
 
 
+# Opt-in host diagnostics are deliberately outside normal test_*.py discovery.
+DIAGNOSTICS = {'windows_hosts': ('tests/diagnostics/windows_hosts.py', 'Windows')}
+
+
+def suite_source(suite, system=None):
+    if not re.fullmatch(r'[a-z][a-z0-9_]*', suite):
+        raise ValueError('invalid registered suite')
+    if suite in DIAGNOSTICS:
+        relative, required = DIAGNOSTICS[suite]
+        if (system or platform.system()) != required:
+            raise ValueError(suite + ' requires its native Windows host')
+        name, path = 'diagnostic_' + suite, ROOT / relative
+    else:
+        name = 'test_' + suite
+        path = ROOT / 'tests' / (name + '.py')
+    if not path.is_file():
+        raise ValueError('missing registered suite')
+    return name, path
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--suite', required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    if not re.fullmatch(r'[a-z][a-z0-9_]*', args.suite):
-        raise ValueError('invalid registered suite')
-    name = 'test_' + args.suite
-    path = ROOT / 'tests' / (name + '.py')
-    if not path.is_file():
-        raise ValueError('missing registered suite')
+    name, path = suite_source(args.suite)
     args.output.unlink(missing_ok=True)
     # Test modules can import local fixtures and maintained tools explicitly.
     sys.path.insert(0, str(ROOT / 'tests'))

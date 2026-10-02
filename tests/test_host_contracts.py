@@ -225,6 +225,103 @@ class HostContracts(unittest.TestCase):
         self.assertEqual(result['status'], 'failed'); self.assertEqual(len(result['repetitions']), 1)
         self.assertIn('remaining repetitions incomplete', result['error'])
 
+    def test_windows_hosts_mapping_is_explicit_and_never_root_test_discovery(self):
+        name, path = HOST.run_tests.suite_source('windows_hosts', 'Windows')
+        self.assertEqual(name, 'diagnostic_windows_hosts')
+        self.assertEqual(path, ROOT / 'tests/diagnostics/windows_hosts.py')
+        self.assertNotIn(path, list((ROOT / 'tests').glob('test_*.py')))
+        for system in ('Linux', 'Darwin'):
+            with self.subTest(system=system), self.assertRaisesRegex(ValueError, 'native Windows'):
+                HOST.run_tests.suite_source('windows_hosts', system)
+        for target in ('linux-x86_64', 'linux-aarch64'):
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, 'native Windows'):
+                HOST.execute(target, 'windows_hosts', 'runner-default', 1, self.root / 'absent', {})
+        self.assertFalse((self.root / 'absent').exists())
+
+    def test_native_probe_binds_same_directory_linker_and_rejects_ambient_substitution(self):
+        spec = importlib.util.spec_from_file_location('diagnostic_fixture', ROOT / 'tests/diagnostics/windows_hosts.py')
+        probe = importlib.util.module_from_spec(spec); spec.loader.exec_module(probe)
+        compiler = self.root / 'cl.exe'; compiler.write_bytes(b'compiler')
+        linker = self.root / 'link.exe'; linker.write_bytes(b'linker')
+        foreign = self.root / 'other-link.exe'; foreign.write_bytes(b'foreign')
+        with mock.patch.object(probe.shutil, 'which', return_value=str(linker)):
+            identity = probe.compiler_identity(compiler)
+        self.assertEqual(identity['compiler'], {'path': str(compiler.resolve()), 'sha256': HOST.digest(compiler)})
+        self.assertEqual(identity['linker'], {'path': str(linker.resolve()), 'sha256': HOST.digest(linker)})
+        for path in (None, str(foreign)):
+            with self.subTest(path=path), mock.patch.object(probe.shutil, 'which', return_value=path):
+                with self.assertRaisesRegex(ValueError, 'ambiguous'):
+                    probe.compiler_identity(compiler)
+        linker.unlink()
+        with self.assertRaises(FileNotFoundError):
+            probe.compiler_identity(compiler)
+
+    def test_native_probe_output_requires_actual_x64_pe_headers(self):
+        spec = importlib.util.spec_from_file_location('diagnostic_fixture', ROOT / 'tests/diagnostics/windows_hosts.py')
+        probe = importlib.util.module_from_spec(spec); spec.loader.exec_module(probe)
+        path = self.root / 'probe.exe'
+        raw = bytearray(90); raw[:2] = b'MZ'; raw[60:64] = (64).to_bytes(4, 'little')
+        raw[64:68] = b'PE\0\0'; raw[68:70] = (0x8664).to_bytes(2, 'little')
+        raw[86:88] = (2).to_bytes(2, 'little'); raw[88:90] = (0x20b).to_bytes(2, 'little')
+        path.write_bytes(raw)
+        self.assertEqual(probe.probe_identity(path), {'path': str(path.resolve()), 'sha256': HOST.digest(path),
+                         'format': 'PE32+', 'machine': 'x86_64'})
+        for offset, replacement in ((64, b'wrong'), (68, b'\x4c\x01'), (88, b'\x0b\x01')):
+            changed = bytearray(raw); changed[offset:offset+len(replacement)] = replacement
+            path.write_bytes(changed)
+            with self.subTest(offset=offset), self.assertRaises(ValueError):
+                probe.probe_identity(path)
+
+    def test_native_probe_workspace_preserves_uncertain_writers_without_cleanup_retry(self):
+        spec = importlib.util.spec_from_file_location('diagnostic_fixture', ROOT / 'tests/diagnostics/windows_hosts.py')
+        probe = importlib.util.module_from_spec(spec); spec.loader.exec_module(probe)
+        uncertain = self.root / 'uncertain'; uncertain.mkdir()
+        with mock.patch.object(probe.tempfile, 'mkdtemp', return_value=str(uncertain)), \
+                mock.patch.object(probe.shutil, 'rmtree') as remove:
+            with self.assertRaisesRegex(probe.process_tree.ProcessTreeError, 'unconfirmed'):
+                with probe.workspace(probe.process_tree.ProcessTreeError):
+                    raise probe.process_tree.ProcessTreeError('unconfirmed')
+            remove.assert_not_called()
+        safe = self.root / 'safe'; safe.mkdir()
+        with mock.patch.object(probe.tempfile, 'mkdtemp', return_value=str(safe)):
+            with probe.workspace(probe.process_tree.ProcessTreeError):
+                (safe / 'profile').mkdir()
+        self.assertFalse(safe.exists())
+
+    def test_native_probe_retains_bounded_logs_only_after_confirmed_cleanup(self):
+        spec = importlib.util.spec_from_file_location('diagnostic_fixture', ROOT / 'tests/diagnostics/windows_hosts.py')
+        probe = importlib.util.module_from_spec(spec); spec.loader.exec_module(probe)
+        folder = self.root / 'probe'; folder.mkdir()
+        (folder / 'compile.log').write_bytes(b'x' * 20000)
+        with mock.patch.object(probe.tempfile, 'mkdtemp', return_value=str(folder)), \
+                mock.patch('builtins.print') as output:
+            with self.assertRaisesRegex(ValueError, 'compiler failed'):
+                with probe.workspace(probe.process_tree.ProcessTreeError):
+                    raise ValueError('compiler failed')
+        record = json.loads(output.call_args.args[0])
+        self.assertEqual(record['diagnostic_log'], 'compile.log')
+        self.assertEqual(record['text'], 'x' * 16384)
+        self.assertTrue(record['truncated']); self.assertFalse(folder.exists())
+        folder.mkdir(); (folder / 'firefox.log').write_bytes(b'potentially live log')
+        with mock.patch.object(probe.tempfile, 'mkdtemp', return_value=str(folder)), \
+                mock.patch('builtins.print') as output:
+            with self.assertRaises(probe.process_tree.ProcessTreeError):
+                with probe.workspace(probe.process_tree.ProcessTreeError):
+                    raise probe.process_tree.ProcessTreeError('unconfirmed')
+        self.assertEqual(len(output.call_args_list), 1)
+        self.assertFalse(json.loads(output.call_args.args[0])['writers_stopped'])
+        self.assertNotIn('potentially live log', str(output.call_args_list))
+        self.assertTrue(folder.exists())
+
+    def test_windows_hosts_input_inventory_binds_helpers_probe_browser_and_selection(self):
+        paths = HOST.source_files('windows_hosts', 'windows-x86_64')
+        self.assertEqual(len(paths), len(set(paths)))
+        self.assertEqual(set(paths), {'tools/host_contracts.py', 'tools/run_tests.py', 'tools/process_tree.py',
+            'tests/diagnostics/windows_hosts.py', 'tools/windows_graphics.py', 'tools/windows_gl_probe.cpp', 'tools/windows_toolchain.py',
+            'gui/tests/browser_test.py', 'tools/ci_windows.ps1', 'tools/select-windows-toolchain.ps1',
+            'third_party/sdk/windows-toolchain.json', '.github/workflows/host-contracts.yml'})
+        self.assertTrue(all((ROOT / path).is_file() for path in paths))
+
     def test_arbitrary_commands_counts_and_reused_output_are_rejected(self):
         for target, suite, interpreter, count in ((self.target, '../run', '3.12', 1),
                 (self.target, 'process_tree', '/tmp/python', 1), ('other', 'process_tree', '3.12', 1),

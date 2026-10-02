@@ -477,13 +477,11 @@ def run_probe(executable, *, environment, expected_directory):
             'driver_files': {name: metadata['files'][name]['sha256'] for name in SELECTED}}
 
 
-@contextmanager
-def _qualified_stage(archive_path, directories, *, probe_directory, compile_log,
-                     environment=None, protected_roots=(), extractor='7z'):
-    """Compile with the caller's selected MSVC, probe, then expose owned staging.
+def compile_probe(probe_directory, compile_log, *, environment=None, protected_roots=()):
+    """Compile the exact host probe with selected MSVC, without acquiring a driver.
 
-    Probe executable, object and bounded compiler log are retained as evidence;
-    the two host DLLs are temporary. This requires a fresh owned probe directory.
+    A fresh owned directory and log are required; supervisor completion, source
+    stability and output identity checks are shared with graphics qualification.
     """
     environment = child_environment(environment)
     directory = _directory(probe_directory)
@@ -506,12 +504,28 @@ def _qualified_stage(archive_path, directories, *, probe_directory, compile_log,
     if source.read_bytes() != before:
         raise GraphicsError('native probe source changed during compilation')
     _identity(executable)
+    return executable, {'source_sha256': hashlib.sha256(before).hexdigest(),
+                        'executable_sha256': hashlib.sha256(executable.read_bytes()).hexdigest(),
+                        'log_sha256': hashlib.sha256(compile_log.read_bytes()).hexdigest(),
+                        'compiler': str(Path(compiler).absolute())}
+
+
+@contextmanager
+def _qualified_stage(archive_path, directories, *, probe_directory, compile_log,
+                     environment=None, protected_roots=(), extractor='7z'):
+    """Compile with the caller's selected MSVC, probe, then expose owned staging.
+
+    Probe executable, object and bounded compiler log are retained as evidence;
+    the two host DLLs are temporary. This requires a fresh owned probe directory.
+    """
+    environment = child_environment(environment)
+    directory = _directory(probe_directory)
+    protected = [_protected_root(root) for root in protected_roots]
+    executable, compilation = compile_probe(directory, compile_log, environment=environment,
+                                             protected_roots=protected)
     with stage(archive_path, [directory, *directories], environment=environment,
                extractor=extractor, protected_roots=protected) as staged:
-        staged.receipt['compile'] = {'source_sha256': hashlib.sha256(before).hexdigest(),
-                                     'executable_sha256': hashlib.sha256(executable.read_bytes()).hexdigest(),
-                                     'log_sha256': hashlib.sha256(compile_log.read_bytes()).hexdigest(),
-                                     'compiler': str(Path(compiler).absolute())}
+        staged.receipt['compile'] = compilation
         staged.probe_receipt = run_probe(executable, environment=staged.environment, expected_directory=directory)
         staged.receipt['native_probe'] = staged.probe_receipt
         yield staged

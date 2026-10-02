@@ -14,8 +14,6 @@ import os
 from pathlib import Path
 import socket
 import shutil
-import signal
-import subprocess
 import tempfile
 import threading
 import time
@@ -23,14 +21,14 @@ import urllib.request
 import urllib.error
 
 
-def stop_process(process):
-    if process.poll() is None:
-        process.terminate()
-        try: process.wait(timeout=5)
-        except subprocess.TimeoutExpired: process.kill(); process.wait(timeout=5)
-    if os.name == 'posix':
-        try: os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError: pass
+# This script also runs from delivered source archives, without installation.
+PROCESS_TREE_PATH=Path(__file__).resolve().parents[2]/'tools/process_tree.py'
+_tree_spec=importlib.util.spec_from_file_location('browser_process_tree',PROCESS_TREE_PATH)
+process_tree=importlib.util.module_from_spec(_tree_spec);_tree_spec.loader.exec_module(process_tree)
+
+
+class BrowserCleanupError(RuntimeError):
+    """Writers may remain; the browser workspace must retain its ownership."""
 
 
 class Browser:
@@ -39,10 +37,9 @@ class Browser:
         with socket.socket() as reserve:
             reserve.bind(('127.0.0.1',0));port=reserve.getsockname()[1]
         (self.profile/'user.js').write_text(f'user_pref("marionette.port", {port});\nuser_pref("browser.shell.checkDefaultBrowser", false);\n')
-        self.log=(directory/'firefox.log').open('w')
-        self.process=subprocess.Popen([executable,'--headless','--no-remote','--marionette','--profile',str(self.profile)],
-            stdout=self.log,stderr=self.log,env=dict(os.environ,MOZ_HEADLESS='1'),start_new_session=os.name=='posix')
         self.socket=None;self.sequence=0
+        self._launch([executable,'--headless','--no-remote','--marionette','--profile',str(self.profile)],
+            directory,'firefox.log',env=dict(os.environ,MOZ_HEADLESS='1'))
         try:
             deadline=time.monotonic()+20
             while time.monotonic()<deadline:
@@ -54,7 +51,49 @@ class Browser:
             self.socket.settimeout(15);self.receive()
             self.capabilities=self.command('WebDriver:NewSession',{'capabilities':{}})['capabilities']
             self.command('WebDriver:SetWindowRect',{'width':800,'height':760})
-        except Exception:self.close();raise
+        except BaseException:self.close();raise
+
+    def _launch(self, argv, directory, log_name, *, env=None):
+        self.owner=None;self.closed=False;self.cleanup_error=None
+        self.log=(directory/log_name).open('w')
+        try:
+            self.owner=process_tree.launch(argv,Path.cwd(),self.log,env=env)
+            self.process=self.owner.process
+        except BaseException as error:
+            if self.owner is not None:
+                self._close(lambda:None)
+                raise
+            errors=[error] if isinstance(error,process_tree.ProcessTreeError) else []
+            try:self.log.close()
+            except BaseException as cleanup:errors.append(cleanup)
+            self.closed=True
+            # Failed launch or stream cleanup must never finalize uncertain logs.
+            if errors:
+                self.cleanup_error=BrowserCleanupError('Browser launch cleanup is uncertain: '+
+                    '; '.join(str(problem) for problem in errors))
+                raise self.cleanup_error from error
+            raise
+
+    def _close(self, disconnect):
+        if self.cleanup_error is not None:raise self.cleanup_error
+        if self.closed:return
+        try:
+            disconnect()
+        finally:
+            errors=[]
+            # The initial browser/driver exiting is not evidence that its child
+            # processes have released profiles and inherited log descriptors.
+            if self.owner is not None:
+                for action in (self.owner.terminate,self.owner.close):
+                    try:action()
+                    except BaseException as error:errors.append(error)
+            try:self.log.close()
+            except BaseException as error:errors.append(error)
+            self.closed=True
+            if errors:
+                self.cleanup_error=BrowserCleanupError('Browser writer cleanup is uncertain: '+
+                    '; '.join(str(error) for error in errors))
+                raise self.cleanup_error from errors[0]
 
     def receive(self):
         prefix=b''
@@ -89,9 +128,7 @@ class Browser:
         raise TimeoutError('Browser condition timed out: '+source)
 
     def close(self):
-        if self.socket:self.socket.close()
-        stop_process(self.process)
-        self.log.close()
+        self._close(lambda:self.socket.close() if self.socket is not None else None)
 
 
 class ChromiumBrowser(Browser):
@@ -100,9 +137,7 @@ class ChromiumBrowser(Browser):
         with socket.socket() as reserve:
             reserve.bind(('127.0.0.1',0));port=reserve.getsockname()[1]
         self.base='http://127.0.0.1:'+str(port);self.session=None
-        self.log=(directory/'chromedriver.log').open('w')
-        self.process=subprocess.Popen([driver,'--port='+str(port),'--allowed-ips=127.0.0.1'],
-            stdout=self.log,stderr=self.log,start_new_session=os.name=='posix')
+        self._launch([driver,'--port='+str(port),'--allowed-ips=127.0.0.1'],directory,'chromedriver.log')
         try:
             deadline=time.monotonic()+20
             while time.monotonic()<deadline:
@@ -119,7 +154,7 @@ class ChromiumBrowser(Browser):
             self.session=result['sessionId']
             self.capabilities=result['capabilities']
             self.request('POST',self.path('/window/rect'),{'width':800,'height':760})
-        except Exception:self.close();raise
+        except BaseException:self.close();raise
 
     def path(self,suffix):return '/session/'+self.session+suffix
 
@@ -144,20 +179,27 @@ class ChromiumBrowser(Browser):
         raise ValueError('Unsupported browser command')
 
     def close(self):
-        try:
-            if self.session:self.request('DELETE',self.path(''))
-        finally:stop_process(self.process);self.log.close()
+        self._close(lambda:self.request('DELETE',self.path('')) if self.session is not None else None)
 
 
 @contextlib.contextmanager
 def browser_workspace(output):
-    with tempfile.TemporaryDirectory(prefix='browser-', dir=output) as directory:
-        try:
-            yield Path(directory)
-        finally:
-            # Preserve startup failures as well as completed-run diagnostics.
-            for log in Path(directory).glob('*.log'):
-                shutil.copyfile(log, output / log.name)
+    # Do not use TemporaryDirectory's automatic finalizer: uncertain writers
+    # must keep their original profile and logs, including on exception unwinding.
+    directory=Path(tempfile.mkdtemp(prefix='browser-',dir=output)).resolve()
+    safe=True
+    try:
+        yield directory
+    except BrowserCleanupError:
+        safe=False
+        raise
+    finally:
+        if safe:
+            # Both successful runs and ordinary startup failures have joined
+            # their browser owner before these diagnostics become final evidence.
+            for log in directory.glob('*.log'):
+                shutil.copyfile(log,output/log.name)
+            shutil.rmtree(directory)
 
 
 def main():
@@ -175,7 +217,7 @@ def main():
     if 'wasm' in modes and not args.wasm_dir:parser.error('Wasm qualification requires --wasm-dir')
     if args.browser=='chromium' and not args.browser_executable:parser.error('Chromium requires --browser-executable')
     args.output.mkdir(parents=True,exist_ok=False)
-    inputs=[Path(__file__).resolve(),args.server,
+    inputs=[Path(__file__).resolve(),PROCESS_TREE_PATH,args.server,
             *(args.server.parent/name for name in ('host.py','renderer.mjs','boot.mjs','browser_lifecycle.mjs','style.css','index.html'))]
     if 'hosted' in modes:inputs.append(args.executable)
     if 'wasm' in modes:inputs.extend(args.wasm_dir/name for name in ('gui_web_wasm.js','gui_web_wasm.wasm'))

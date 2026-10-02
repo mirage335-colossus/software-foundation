@@ -214,8 +214,14 @@ Neither local helper authorizes concurrent writes to a common build directory.
 The manual [Host contract diagnostics workflow](../.github/workflows/host-contracts.yml)
 runs one complete `process_tree`, `windows_graphics`, `ci_plan`, `github_release`
 or `ci_transport` unit suite directly on a Windows x64, Linux x64 or Linux ARM64
-runner. Select `runner-default`, Python `3.12` or `3.14`, and 1, 5 or 20
-repetitions. Explicit versions resolve only the highest complete stable patch in
+runner. The opt-in `windows_hosts` suite requires Windows and exercises the actual
+installed MSVC compiler and Firefox. It compiles the same native probe with the
+same arguments and process owner as graphics qualification, then separately opens
+an automation session, checks a simple page and verifies immediate profile removal
+after browser shutdown. It acquires no SDK or graphics driver and does not execute
+the graphics probe. These cases live outside ordinary unit-test discovery and
+CMake coverage; ordinary unit tests must not require installed browsers or MSVC.
+Select `runner-default`, Python `3.12` or `3.14`, and 1, 5 or 20 repetitions. Explicit versions resolve only the highest complete stable patch in
 `RUNNER_TOOL_CACHE`; an unavailable or mismatched native interpreter fails without
 downloading Python. The default uses the workflow shell's existing interpreter.
 
@@ -229,13 +235,26 @@ a 50-minute limit. Cleanup must stop and join supervised writers before another
 repetition starts; uncertain cleanup stops the run and permits retention only of
 the failed summary, never potentially active child logs or inventories.
 
+Give each process tree the same lifetime as the resources it can write. An outer
+test-runner supervisor cannot protect an inner temporary profile that the test
+deletes before it exits. Browser and driver wrappers must stop and join their own
+descendants before closing logs, copying evidence or removing temporary files.
+If that join is uncertain, preserve the workspace and fail the check. Test the
+case where a child keeps writing after its primary process has exited; waiting for
+the primary alone does not establish cleanup.
+
 On Windows, the process supervisor pins descendant identities and waits for their
 handles to become signaled after Job Object termination, under the same bounded
 deadline as parent cleanup. An empty active-process count alone cannot establish
 that child output handles have closed. Membership changes, inaccessible identities
 and cleanup failures remain failures. The native regression observes the exact
 child handle and immediately renames and removes its output after cleanup; it does
-not hide uncertain shutdown behind a delay or deletion retry.
+not hide uncertain shutdown behind a delay or deletion retry. When a command
+exits with a live Windows descendant, the failure retains the first verified
+member identity, process image or query error, wait state and bounded membership
+counts. Later process exit cannot erase that observation. Diagnose the observed
+helper before changing compiler options; an unrelated telemetry switch or a
+passing retry does not establish the cause.
 
 The workflow always attempts to retain `result.json` and each repetition's logs
 and inventory through the existing lifecycle `bundle-store`, using the run-scoped

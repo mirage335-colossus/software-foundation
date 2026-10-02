@@ -355,6 +355,42 @@ class WindowsGraphicsTests(unittest.TestCase):
                                self.app, failure, environment=dict(os.environ), timeout=10, max_bytes=100)
         self.assertEqual(b'failed', failure.read_bytes().strip())
 
+    def test_compile_probe_without_driver_preserves_exact_command_and_receipt(self):
+        directory = self.root / 'probe'; directory.mkdir()
+        log = self.root / 'compile.log'
+        def command(argv, **kwargs):
+            self.assertEqual(argv, ['fixture-cl.exe', '/nologo', '/std:c++20', '/EHsc',
+                str(ROOT / 'tools/windows_gl_probe.cpp'), '/Fo:' + str(directory / 'windows-gl-probe.obj'),
+                '/Fe:' + str(directory / 'windows-gl-probe.exe'), '/link', '/INCREMENTAL:NO',
+                'opengl32.lib', 'gdi32.lib', 'user32.lib'])
+            self.assertEqual(kwargs['limit'], 1024 * 1024)
+            self.assertEqual(kwargs['timeout'], 300)
+            (directory / 'windows-gl-probe.exe').write_bytes(b'compiled fixture')
+            (directory / 'windows-gl-probe.obj').write_bytes(b'object')
+            Path(kwargs['record']).write_bytes(b'compile success')
+        with patch.object(graphics.shutil, 'which', return_value='fixture-cl.exe'), \
+             patch.object(graphics, '_command', side_effect=command) as run, \
+             patch.object(graphics, 'stage') as stage, patch.object(graphics, 'fetch') as fetch:
+            executable, receipt = graphics.compile_probe(directory, log, environment={'PATH': 'selected'})
+            self.assertEqual(executable, directory / 'windows-gl-probe.exe')
+            self.assertEqual(receipt['source_sha256'], digest((ROOT / 'tools/windows_gl_probe.cpp').read_bytes()))
+            self.assertEqual(receipt['executable_sha256'], digest(b'compiled fixture'))
+            self.assertEqual(receipt['log_sha256'], digest(b'compile success'))
+            self.assertEqual(receipt['compiler'], str(Path('fixture-cl.exe').absolute()))
+            stage.assert_not_called(); fetch.assert_not_called()
+            with self.assertRaisesRegex(graphics.GraphicsError, 'already exists'):
+                graphics.compile_probe(directory, log, environment={})
+            run.assert_called_once()
+
+    def test_compile_probe_missing_compiler_and_protected_outputs_fail_before_launch(self):
+        directory = self.root / 'probe'; directory.mkdir()
+        with patch.object(graphics.shutil, 'which', return_value=None), patch.object(graphics, '_command') as run:
+            with self.assertRaisesRegex(graphics.GraphicsError, 'MSVC cl.exe is unavailable'):
+                graphics.compile_probe(directory, self.root / 'compile.log', environment={})
+            with self.assertRaisesRegex(graphics.GraphicsError, 'protected'):
+                graphics.compile_probe(directory, self.root / 'compile.log', protected_roots=[self.root])
+            run.assert_not_called()
+
     def test_qualified_stage_compiles_selected_probe_and_checks_before_yield(self):
         directory = self.root / 'probe'
         directory.mkdir()

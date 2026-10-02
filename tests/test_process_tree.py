@@ -136,6 +136,8 @@ class WindowsCompletionObservation(unittest.TestCase):
     def job(self, pids=(101,), state=0, member=True):
         job = TREE._WindowsJob.__new__(TREE._WindowsJob)
         job.handle = 700
+        job.completion_observation = None
+        job.accounting = mock.Mock(return_value=SimpleNamespace(active=len(pids), total=len(pids), terminated=0))
         job.w = SimpleNamespace(BOOL=ctypes.c_int32, DWORD=ctypes.c_uint32)
         job.api = mock.Mock()
         job.process_ids = mock.Mock(return_value=list(pids))
@@ -147,6 +149,11 @@ class WindowsCompletionObservation(unittest.TestCase):
         job.api.IsProcessInJob.side_effect = membership
         job.api.WaitForSingleObject.return_value = state
         job.api.CloseHandle.return_value = True
+        def image_name(handle, flags, output, size):
+            output.value = r'C:\Tools\compiler-child.exe'
+            size._obj.value = len(output.value)
+            return True
+        job.api.QueryFullProcessImageNameW.side_effect = image_name
         job.fail = mock.Mock(side_effect=lambda operation: (_ for _ in ()).throw(TREE.ProcessTreeError(operation)))
         return job
 
@@ -181,6 +188,73 @@ class WindowsCompletionObservation(unittest.TestCase):
         sleep.assert_not_called()
         self.assertEqual(job.active.call_count, 1)
         job.api.CloseHandle.assert_called_once_with(1101)
+
+    def test_live_member_diagnostic_uses_exact_handle_and_keeps_first_observation(self):
+        job = self.job(state=0x102)
+        job.active = mock.Mock(return_value=1)
+        owner = self.owner(job)
+        def image_name(handle, flags, output, size):
+            self.assertEqual((handle, flags), (1101, 0))
+            job.api.CloseHandle.assert_not_called()
+            job.api.WaitForSingleObject.return_value = 0  # Exits while diagnostics run.
+            output.value = r'C:\Tools\compiler-child.exe'
+            size._obj.value = len(output.value)
+            return True
+        job.api.QueryFullProcessImageNameW.side_effect = image_name
+        with mock.patch.object(owner, 'terminate') as terminate, mock.patch.object(TREE.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(TREE.ProcessTreeError, 'windows_completion=') as caught:
+                owner.finish()
+        value = job.completion_observation
+        self.assertEqual(value['pid'], 101)
+        self.assertEqual(value['wait_state'], 258)
+        self.assertTrue(value['member_verified'])
+        self.assertEqual(value['image'], r'C:\Tools\compiler-child.exe')
+        self.assertEqual(value['accounting_after_observation'], {'active': 1, 'total': 1, 'terminated': 0})
+        self.assertIn('compiler-child.exe', str(caught.exception))
+        job.api.WaitForSingleObject.assert_called_once_with(1101, 0)
+        job.api.CloseHandle.assert_called_once_with(1101)
+        terminate.assert_called_once_with(); sleep.assert_not_called()
+        job.observe_running_process(999, 1999, [999], 258)
+        self.assertEqual(job.completion_observation, value)
+
+    def test_diagnostic_query_failures_keep_numeric_errors_and_still_reject(self):
+        job = self.job(state=0x102)
+        job.active = mock.Mock(return_value=1)
+        job.api.QueryFullProcessImageNameW.side_effect = None
+        job.api.QueryFullProcessImageNameW.return_value = False
+        job.accounting.side_effect = TREE.ProcessTreeError('private diagnostic text')
+        owner = self.owner(job)
+        with mock.patch.object(TREE.ctypes, 'get_last_error', return_value=5, create=True), \
+                mock.patch.object(owner, 'terminate') as terminate:
+            with self.assertRaises(TREE.ProcessTreeError) as caught:
+                owner.finish()
+        self.assertEqual(job.completion_observation['image_query_error'], 5)
+        self.assertEqual(job.completion_observation['accounting_query_error'], 5)
+        self.assertNotIn('private diagnostic text', str(caught.exception))
+        terminate.assert_called_once_with()
+        job.api.CloseHandle.assert_called_once_with(1101)
+
+    def test_diagnostic_output_is_bounded_and_preserved_when_cleanup_fails(self):
+        job = self.job(pids=tuple(range(100, 200)), state=0x102)
+        job.active = mock.Mock(return_value=100)
+        def image_name(handle, flags, output, size):
+            output.value = 'x' * 8000
+            return True
+        job.api.QueryFullProcessImageNameW.side_effect = image_name
+        owner = self.owner(job)
+        failure = TREE.ProcessTreeError('join remains uncertain')
+        with mock.patch.object(owner, 'terminate', side_effect=failure):
+            with self.assertRaises(TREE.ProcessTreeError) as caught:
+                owner.finish()
+        self.assertIs(caught.exception.__cause__, failure)
+        self.assertIn('windows_completion=', str(caught.exception))
+        self.assertIn('join remains uncertain', str(caught.exception))
+        self.assertEqual(len(job.completion_observation['image']), 4096)
+        self.assertTrue(job.completion_observation['image_truncated'])
+        self.assertEqual(job.completion_observation['snapshot_count'], 100)
+        self.assertEqual(len(job.completion_observation['snapshot_pids']), 32)
+        self.assertTrue(job.completion_observation['snapshot_truncated'])
+        job.api.CloseHandle.assert_called_once_with(1100)
 
     def test_nonretiring_accounting_is_bounded_and_keeps_owner_unclosed(self):
         job = self.job(pids=())

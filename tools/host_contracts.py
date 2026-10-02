@@ -17,7 +17,7 @@ import run_tests
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {'windows-x86_64': ('Windows', 'x64'), 'linux-x86_64': ('Linux', 'x64'),
            'linux-aarch64': ('Linux', 'arm64')}
-SUITES = ('process_tree', 'windows_graphics', 'ci_plan', 'github_release', 'ci_transport')
+SUITES = ('process_tree', 'windows_graphics', 'ci_plan', 'github_release', 'ci_transport', 'windows_hosts')
 INTERPRETERS = ('runner-default', '3.12', '3.14')
 REPETITIONS = (1, 5, 20)
 CASE_SECONDS = 120
@@ -131,9 +131,24 @@ def repetition(executable, suite, folder, timeout, environment):
     return result
 
 
+def source_files(suite, target):
+    """Name every maintained input consumed by the optional native host probes."""
+    _, case_file = run_tests.suite_source(suite, TARGETS[target][0])
+    paths = ['tools/host_contracts.py', 'tools/run_tests.py', 'tools/process_tree.py',
+             case_file.relative_to(ROOT).as_posix()]
+    if suite == 'windows_hosts':
+        paths += ['tools/windows_graphics.py', 'tools/windows_gl_probe.cpp', 'tools/windows_toolchain.py',
+                  'gui/tests/browser_test.py', 'tools/ci_windows.ps1',
+                  'tools/select-windows-toolchain.ps1', 'third_party/sdk/windows-toolchain.json',
+                  '.github/workflows/host-contracts.yml']
+    return paths
+
+
 def execute(target, suite, selection, count, output, environ=None):
     if target not in TARGETS or suite not in SUITES or selection not in INTERPRETERS or count not in REPETITIONS:
         raise ValueError('unsupported diagnostic selection')
+    if suite == 'windows_hosts' and target != 'windows-x86_64':
+        raise ValueError('windows_hosts requires its native Windows host')
     environ = dict(os.environ if environ is None else environ)
     # Windows normalizes environment keys; a plain snapshot loses that lookup behavior.
     windows = platform.system() == 'Windows'
@@ -151,8 +166,7 @@ def execute(target, suite, selection, count, output, environ=None):
     run_tests.publish(destination, report)
     started = time.monotonic()
     try:
-        report['source_files'] = {name: digest(ROOT / name) for name in
-            ('tools/host_contracts.py', 'tools/run_tests.py', 'tools/process_tree.py', 'tests/test_' + suite + '.py')}
+        report['source_files'] = {name: digest(ROOT / name) for name in source_files(suite, target)}
         executable = interpreter(selection, target, environ)
         report['runtime'] = inspect_runtime(executable, selection, target)
         (output / 'repetitions').mkdir()
