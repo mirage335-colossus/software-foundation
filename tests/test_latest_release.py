@@ -1,6 +1,7 @@
 """Fail-closed orchestration contracts and exact final remote pointer verification."""
 import copy
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -33,31 +34,50 @@ def results(execute=True):
 
 class LatestReleaseTests(unittest.TestCase):
     def test_cli_creates_fresh_receipt_parent_without_overwriting(self):
-        # Run the CLI entry point in a fresh child. Only preflight remote lookup
-        # is replaced; argument parsing, Git identity and publication are real.
+        # Supply a fixture request and preflight response in a fresh child;
+        # argument parsing, Git identity and file publication remain real.
         program = '''
-import json, subprocess, sys
+import json, sys
+from pathlib import Path
 sys.path.insert(0, sys.argv.pop(1))
 import latest_release as L
+L.ROOT = Path(sys.argv.pop(1))
 request = json.loads(sys.argv.pop(1))
-request['source_commit'] = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=L.ROOT,
-    check=True, capture_output=True, text=True).stdout.strip()
 L.environment_request = lambda: request
 L.preflight = lambda value: dict(value, status='prepared')
 L.main()
 '''
         with tempfile.TemporaryDirectory() as temporary:
+            # Source releases deliberately omit Git history. Keep this real Git
+            # fixture independent of the checkout containing the test itself.
+            repository = Path(temporary) / 'fixture-repository'
+            repository.mkdir()
+            def git(*args):
+                return subprocess.run(['git', *args], cwd=repository, check=True,
+                                      capture_output=True, text=True).stdout.strip()
+            git('init', '--quiet')
+            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                '-c', 'commit.gpgsign=false', 'commit', '--quiet', '--allow-empty', '-m', 'fixture')
+            value = dict(request(False), source_commit=git('rev-parse', 'HEAD'))
             output = Path(temporary) / 'absent' / 'build' / 'receipt.json'
-            command = [sys.executable, '-B', '-c', program, str(L.ROOT / 'tools'),
-                       json.dumps(request(False)), 'preflight', '--output', str(output)]
-            first = subprocess.run(command, cwd=temporary, capture_output=True, text=True)
+            command = [sys.executable, '-B', '-c', program, str(L.ROOT / 'tools'), str(repository),
+                       json.dumps(value), 'preflight', '--output', str(output)]
+            environment = dict(os.environ, GITHUB_OUTPUT=str(Path(temporary) / 'workflow-output'))
+            first = subprocess.run(command, cwd=temporary, capture_output=True, text=True, env=environment)
             self.assertEqual(first.returncode, 0, first.stderr)
             original = output.read_bytes()
             self.assertEqual(json.loads(original)['status'], 'prepared')
-            second = subprocess.run(command, cwd=temporary, capture_output=True, text=True)
+            second = subprocess.run(command, cwd=temporary, capture_output=True, text=True, env=environment)
             self.assertNotEqual(second.returncode, 0)
             self.assertIn('FileExistsError', second.stderr)
             self.assertEqual(output.read_bytes(), original)
+            mismatch = command.copy()
+            mismatch[6] = json.dumps(dict(value, source_commit='0' * 40))
+            mismatch[-1] = str(Path(temporary) / 'mismatch.json')
+            rejected = subprocess.run(mismatch, cwd=temporary, capture_output=True, text=True, env=environment)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn('checked-out source does not match workflow commit', rejected.stderr)
+            self.assertFalse(Path(mismatch[-1]).exists())
 
     def test_preflight_requires_complete_target_recipes_and_separate_tag(self):
         self.assertEqual(L.preflight(request(), remote=False)['tag'], 'v1')

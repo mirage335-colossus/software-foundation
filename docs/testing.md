@@ -56,6 +56,16 @@ well as output. Test assertions must remain active in optimized builds. Visual
 qualification rejects an interpreter started with assertions disabled; setting
 Python optimization flags must never turn a failed comparison into a pass.
 
+Tests shipped in a source archive must run without the original checkout or its
+Git metadata. A fixture that exercises Git identity must create and commit its own
+temporary repository; keep the production identity check real. Route CI output
+files and other inherited output channels into the fixture's owned directory.
+When repairing an archive-only failure, run the affected complete suite from a
+fresh extraction outside any parent checkout and without `.git` before repeating
+an expensive release workflow.
+Never add fabricated repository metadata to a delivered archive or exclude a
+required case to conceal the failure.
+
 Keep contract regressions when refactoring. Modify an assertion only when the
 intended public contract changes and the change is reviewed. Document numerical
 tolerances and environment assumptions where relevant. Do not loosen a
