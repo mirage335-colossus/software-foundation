@@ -45,17 +45,23 @@ class PortabilityTests(unittest.TestCase):
 
     def tearDown(self): self.temp.cleanup()
 
-    @unittest.skipUnless(platform.machine().lower() in ('x86_64', 'amd64'), 'x86 GNU property fixture')
     def test_real_elf_needed_and_used_properties_remain_distinct(self):
+        import struct
+        # Build an ELF64 format specimen, never executable host code. Native
+        # readelf can inspect its x86 properties on both Linux architectures.
+        names = b'\0.note.gnu.property\0.shstrtab\0'
         for needed in (1, 2, 4, 8):
-            source = self.root / ('isa-' + str(needed) + '.S')
             library = self.root / ('isa-' + str(needed) + '.so')
-            source.write_text('.section .note.gnu.property,"a",@note\n.p2align 3\n'
-                '.long 4,32,5\n.asciz "GNU"\n'
-                '.long 0xc0008002,4,' + str(needed) + ',0\n'
-                '.long 0xc0010002,4,15,0\n'
-                '.section .note.GNU-stack,"",@progbits\n')
-            subprocess.run(['cc', '-shared', '-nostdlib', str(source), '-o', str(library)], check=True)
+            note = struct.pack('<III4sIIIIIIII', 4, 32, 5, b'GNU\0',
+                               0xc0008002, 4, needed, 0, 0xc0010002, 4, 15, 0)
+            sections_offset = 64 + len(note)
+            names_offset = sections_offset + 3 * 64
+            header = struct.pack('<16sHHIQQQIHHHHHH', b'\x7fELF\x02\x01\x01' + b'\0' * 9,
+                                 3, 62, 1, 0, 0, sections_offset, 0, 64, 56, 0, 64, 3, 2)
+            note_section = struct.pack('<IIQQQQIIQQ', 1, 7, 2, 0, 64, len(note), 0, 0, 8, 0)
+            names_section = struct.pack('<IIQQQQIIQQ', names.index(b'.shstrtab'), 3, 0, 0,
+                                        names_offset, len(names), 0, 0, 1, 0)
+            library.write_bytes(header + note + b'\0' * 64 + note_section + names_section + names)
             notes = verify_abi.run('readelf', '--notes', library)
             self.assertIn('x86 ISA used:', notes)
             self.assertIn('x86-64-v4', notes)

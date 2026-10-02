@@ -323,3 +323,8 @@ including its Debian packages. The disposable Arch and Gentoo environments
 therefore install their distribution-provided `dpkg` verifier alongside signing
 tools before running client checks. Gentoo obtains these prerequisites from its
 configured binary repository with source-build fallback disabled.
+
+Minimal distribution images may suppress manual-page installation globally. The
+disposable native checks explicitly restore man-page extraction through the
+package manager configuration before installation; they still compare every
+public manual and private payload file with the authenticated package inventory.

@@ -152,6 +152,9 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
             channels = extract_channels(assets, work/('channels-'+str(index)))
             url = release.base_url(value['request']); backends = value['backends']
             if kind == 'apt':
+                # Minimal images may exclude manuals; qualification must inspect
+                # the complete installed package, including its public man pages.
+                Path('/etc/dpkg/dpkg.cfg.d/zz-foundation-manuals').write_text('path-include=/usr/share/man/*\n')
                 key = Path('/etc/apt/keyrings/software-foundation.gpg'); key.parent.mkdir(exist_ok=True)
                 shutil.copyfile(assets/'archive-keyring.gpg', key); key.chmod(0o644)
                 Path('/etc/apt/sources.list.d/software-foundation.sources').write_text(
