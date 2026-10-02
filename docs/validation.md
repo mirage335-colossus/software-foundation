@@ -31,13 +31,19 @@ Python cases passed, with two explicit native-Windows exclusions and no unexpect
 skips. This includes 36 transport, 31 delivery, 24 signed-distribution, 20 browser
 prerequisite and 13 opaque-preservation cases. Workflow syntax and documentation
 checks passed. The distribution cases include actual signed packages, exact Git
-source proofs, certificate replay and uncertain-creation recovery.
+source proofs, certificate replay and uncertain-creation recovery. The separately
+added retention verifier passed all thirteen cases through its registered CTest
+entry, with no exclusions or skips.
 
 Candidate [36943440689](https://github.com/mirage335-colossus/software-foundation/actions/runs/36943440689)
 passed all nineteen jobs at `fd646d616c129a6fede37e0ea7e7522d90565970`, including
 concurrent draft transport and fresh Linux x64, Linux ARM64 and Windows x64 archive
 consumers. GitHub permits duplicate draft tags: confirmed atomic tag creation now
 selects the sole initializer, with bounded read-only visibility reconciliation.
+
+Expanded candidate [36948123794](https://github.com/mirage335-colossus/software-foundation/actions/runs/36948123794)
+passed at `2bd67a29dd3a6c3d91fbae32757bad29c3860797`, including the
+signed-distribution suite and three native archive consumers.
 
 All four exact legacy SDK imports passed at
 `2332d31e77e5b632e3f7d8a7b5031153e794e9dc`: browser

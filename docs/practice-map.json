@@ -641,10 +641,13 @@
       ],
       "implementation": [
         "tools/legacy_artifacts.py",
-        ".github/workflows/legacy-artifacts.yml"
+        ".github/workflows/legacy-artifacts.yml",
+        "tools/verify_legacy_preservation.py",
+        ".github/workflows/verify-retention.yml"
       ],
       "checks": [
-        "tests/test_legacy_artifacts.py"
+        "tests/test_legacy_artifacts.py",
+        "tests/test_verify_legacy_preservation.py"
       ]
     },
     {

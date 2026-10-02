@@ -58,6 +58,8 @@ The manual lifecycle is executable, not only described:
   transport and emit a version-2 replay request; no rebuilding or deletion.
 - [`legacy-artifacts.yml`](workflows/legacy-artifacts.yml): preserve explicitly
   pinned old opaque ZIPs before separately reviewed cleanup; no extraction or deletion.
+- [`verify-retention.yml`](workflows/verify-retention.yml): independently read back every
+  selected retained opaque archive and preserve complete verification receipts.
 - `sdk-application.yml`: consume exact base recipes, package each required target,
   retain identical SDK copies and optionally publish an ordinary candidate.
 - `certify.yml` and `promote.yml`: qualify exact remote bytes, attach complete

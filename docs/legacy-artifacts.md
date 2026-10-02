@@ -54,3 +54,31 @@ This preserves old bytes and their provenance. Ordinary SDK consumers still requ
 the structured [SDK import](sdk.md) and normal consumer checks; opaque archives are
 never an automatic build input or fallback. Unresolved redistribution terms remain
 unresolved, and private retention does not authorize public distribution.
+
+## Independent hosted readback
+
+Run [`verify-retention.yml`](../.github/workflows/verify-retention.yml) after the
+preservation producer completes successfully. Supply its exact `legacy-preservation`
+pointer as `pointer` and the unchanged original selection as `artifacts`. The
+[verifier](../tools/verify_legacy_preservation.py) binds the completed producer,
+manifest asset identity and digest, every nested pointer and origin digest, and
+each complete opaque ZIP size and digest. It replays the retained original
+repository/run/artifact identity checks without extracting ZIP members. Declared
+member sizes are checked before transfer; archives are processed sequentially.
+Allow space for the largest archive plus its transport reconstruction and overhead.
+
+Each successful archive produces a fsynced local receipt and a private
+`retention-check-artifact-ID` bundle before its staging is removed. Failed byte
+verification or failed checkpoint publication preserves staging and earlier
+receipts. A fresh output directory is required; an incomplete attempt cannot
+silently resume or produce a completed report. The final `legacy-verification`
+bundle contains the exact selection, complete report, per-archive receipts and
+checkpoint pointers. This evidence establishes preservation integrity only.
+
+Fetch that completed final bundle with its exact returned manifest pointer and
+compare all requests with the intended original selection before cleanup. Recheck
+current original API metadata immediately before deleting each explicitly
+authorized ID; stop on an identity change or an uncertain deletion response.
+Keep the durable original-to-preserved mapping and a separate cleanup receipt.
+Neither helper offers an automatic deletion mode, and neither deletes a workflow
+run or unrelated artifacts. Independently verify the remaining storage inventory.

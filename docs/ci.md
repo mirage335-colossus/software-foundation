@@ -125,7 +125,9 @@ for explicit cross-run selection and legacy migration.
 
 For existing repositories, [explicit legacy preservation](legacy-artifacts.md)
 retains selected exact opaque archives and their provenance before separately
-reviewed cleanup. It never deletes originals or grants qualification.
+reviewed cleanup. Its separate `verify-retention.yml` consumer reads every retained
+byte back and checkpoints small receipts before releasing each archive from runner
+disk. Neither workflow deletes originals or grants qualification.
 
 Release transport avoids Actions artifact quota; it still consumes transfer,
 runner disk and service resources. Budget bundle counts, bytes and retention.
