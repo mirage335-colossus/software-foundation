@@ -510,6 +510,33 @@ class CandidateFetchTests(unittest.TestCase):
                 rows=original('coverage').execution_members(frozen,leader)
                 self.assertEqual({x['backend'] for x in rows},set(policy['profiles']['all-gui']['targets'][leader['target']]))
 
+    def test_every_supported_profile_batch_name_passes_real_transport_context(self):
+        from unittest.mock import Mock
+        original = ci.module; policy = json.loads((ci.ROOT / 'docs/release-policy.json').read_text())
+        source = original('release').verify_release(self.fixture.directory)
+        transport = original('ci_transport')
+        for profile in ('core', 'all-gui'):
+            with self.subTest(profile=profile):
+                manifest = copy.deepcopy(source)
+                manifest['artifacts'] = [dict(source['artifacts'][0], target=target, backends=backends)
+                    for target, backends in policy['profiles'][profile]['targets'].items()]
+                release = Mock(verify_release=Mock(return_value=manifest))
+                output = self.root / (profile + '-bundle-names.json')
+                with patch.object(ci, 'module', side_effect=lambda name: release if name == 'release' else original(name)):
+                    matrix = ci.qualification_plan(self.fixture.directory, profile, output, policy)
+                frozen = json.loads(output.read_text()); before = copy.deepcopy(frozen)
+                batches = ci.qualification_batches(frozen)['include']
+                self.assertEqual(frozen, before)
+                self.assertEqual(sorted(check for batch in batches for check in batch['checks']),
+                                 sorted(row['id'] for row in matrix['include']))
+                self.assertEqual(len({batch['id'] for batch in batches}), len(batches))
+                for batch in batches:
+                    for prefix in ('evidence-', 'browser-prerequisite-'):
+                        for attempt in (1, 2**63 - 1):
+                            name = prefix + batch['id'] + '-' + str(attempt)
+                            context = transport._context('example/project', 123, attempt, 'a'*40, 'certify.yml', name)
+                            self.assertEqual(context['name'], name)
+
     def test_windows_gui_plan_freezes_graphics_inputs_and_passes_explicit_archive(self):
         from unittest.mock import Mock
         target = 'windows-x86_64'
@@ -609,6 +636,24 @@ class QualificationBatchTests(unittest.TestCase):
         self.assertEqual([len(batch['checks']) for batch in batches], [16, 16, 1])
         self.assertEqual([check for batch in batches for check in batch['checks']], [item['id'] for item in plan['checks']])
         self.assertEqual(len({batch['id'] for batch in batches}), 3)
+
+    def test_normalized_truncated_batch_ids_preserve_checks_and_reject_digest_collision(self):
+        c = ci.module('coverage'); plan = self.plan(tuple('backend-' + str(index) for index in range(33)))
+        plan.pop('id')
+        for index, item in enumerate(plan['checks']):
+            item['id'] = ('Case.Shared.' if index % 2 == 0 else 'case-shared-') + 'x'*100 + '-' + str(index)
+        plan = c.freeze(plan); before = copy.deepcopy(plan)
+        batches = ci.qualification_batches(plan)['include']
+        self.assertEqual(plan, before)
+        self.assertEqual([check for batch in batches for check in batch['checks']], [item['id'] for item in plan['checks']])
+        self.assertEqual(len({batch['id'] for batch in batches}), 3)
+        self.assertTrue(all(len(batch['id']) <= 39 and batch['id'].startswith('batch-case-shared-') for batch in batches))
+        self.assertEqual(ci.qualification_batches(plan)['include'], batches)
+        original, loader = c.digest, ci.module
+        with patch.object(ci, 'module', side_effect=lambda name: c if name == 'coverage' else loader(name)), \
+                patch.object(c, 'digest', side_effect=lambda value: '0'*64 if 'runner' in value else original(value)):
+            with self.assertRaisesRegex(ValueError, 'colliding batch transport identity'):
+                ci.qualification_batches(plan)
 
     def test_evidence_aggregation_fetches_each_batch_once_into_shared_case_root(self):
         plan = self.plan(); batch = ci.qualification_batches(plan)['include'][0]

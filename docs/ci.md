@@ -227,7 +227,9 @@ for each required engine.
 The workflow places those unchanged operations into **11 CI batches**, selected
 by runner, container image, target and environment. Each batch downloads the exact
 input bundle once, then runs each original case with its own identity and evidence
-directory. Container cases still launch separate disposable systems, preserving
+directory. Transport batch names use a bounded, collision-checked identifier
+validated against the actual evidence-store contract; logical and execution IDs
+remain unchanged. Container cases still launch separate disposable systems, preserving
 package-manager isolation and per-case privilege rules. Native Ubuntu browser
 checks stay separate from Ubuntu container checks. Windows setup and the retained
 graphics download are shared only where required. A failed case does not suppress

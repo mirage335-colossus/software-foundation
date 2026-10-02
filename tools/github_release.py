@@ -149,6 +149,7 @@ class GitHub:
     COMMAND_TIMEOUT = 10 * 60
     MAX_ATTEMPTS = 8
     WRITE_HEADROOM = 128
+    TRANSIENT_STATUS = frozenset((500, 502, 503, 504))
 
     def __init__(self, repository):
         self.repository = location(repository)
@@ -173,10 +174,10 @@ class GitHub:
     def _wait(self, delay, diagnostic, deadline):
         delay += random.uniform(1, 5)
         if delay > self.wait_remaining:
-            raise DeliveryError('GitHub rate-limit wait budget exhausted (' + diagnostic + ')')
+            raise DeliveryError('GitHub read-retry wait budget exhausted (' + diagnostic + ')')
         if delay >= deadline - time.monotonic():
             raise DeliveryError('GitHub request deadline exhausted (' + diagnostic + ')')
-        print(f'GitHub rate limit ({diagnostic}); waiting {delay:.1f}s; '
+        print(f'GitHub read retry ({diagnostic}); waiting {delay:.1f}s; '
               f'wait budget remaining {self.wait_remaining - delay:.1f}s', file=sys.stderr, flush=True)
         remaining = delay
         while remaining > 0:
@@ -186,8 +187,8 @@ class GitHub:
             time.sleep(step)  # Interrupts/cancellation propagate; no detached sleeper.
             remaining -= step
 
-    def _rate_delay(self, failure, attempt):
-        if failure.status not in (403, 429):return None
+    def _retry_delay(self, failure, attempt):
+        if failure.status not in (403, 429) and failure.status not in self.TRANSIENT_STATUS:return None
         headers = failure.headers
         delays = []
         retry = headers.get('retry-after')
@@ -205,13 +206,15 @@ class GitHub:
         if delays:return max(delays)
         if failure.status == 429 or failure.rate_message:
             return min(60 * 2 ** (attempt - 1), 15 * 60)
+        if failure.status in self.TRANSIENT_STATUS:
+            return min(2 * 2 ** (attempt - 1), 60)
         return None
 
-    def _wait_after_limit(self, error, attempt, deadline):
-        delay = self._rate_delay(error, attempt)
+    def _wait_after_failure(self, error, attempt, deadline):
+        delay = self._retry_delay(error, attempt)
         if delay is None:raise error
         if attempt == self.MAX_ATTEMPTS:
-            raise DeliveryError('GitHub rate-limit attempt limit exhausted (' +
+            raise DeliveryError('GitHub read-retry attempt limit exhausted (' +
                                 rate_diagnostic(error.status, error.headers) + ')') from None
         self._wait(delay, rate_diagnostic(error.status, error.headers), deadline)
 
@@ -220,7 +223,7 @@ class GitHub:
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
             self._timeout(deadline)
             try:return operation(deadline)
-            except HTTPFailure as error:self._wait_after_limit(error, attempt, deadline)
+            except HTTPFailure as error:self._wait_after_failure(error, attempt, deadline)
 
     def _json_once(self, endpoint, method, body, missing, deadline):
         arguments = ['api', '--hostname', 'github.com', '--include', '--method', method, endpoint]
@@ -242,7 +245,7 @@ class GitHub:
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
             try:value = self._json_once('rate_limit', 'GET', None, False, deadline)
             except HTTPFailure as error:
-                self._wait_after_limit(error, attempt, deadline)
+                self._wait_after_failure(error, attempt, deadline)
                 continue
             resources = value.get('resources', {}) if isinstance(value, dict) else {}
             core = resources.get('core', {}) if isinstance(resources, dict) else {}
@@ -285,7 +288,9 @@ class GitHub:
                     if stream.tell() == len(raw):break
                     status, headers = response_head(stream)
                     if not 200 <= status < 300:raise HTTPFailure(status, headers, stream.read(4097))
-                    offset = stream.tell();tail = raw[offset:].decode('utf-8')
+                    # A later error body is opaque, even if it is not UTF-8.
+                    # Strictly re-encode only this successful JSON page below.
+                    offset = stream.tell();tail = raw[offset:].decode('utf-8', errors='surrogateescape')
                     leading = len(tail) - len(tail.lstrip())
                     page, end = decoder.raw_decode(tail, leading)
                     if not isinstance(page, list):raise DeliveryError('expected every page of a remote array')

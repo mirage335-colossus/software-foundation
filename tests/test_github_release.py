@@ -539,14 +539,78 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(call.call_count,8);self.assertEqual(self.elapsed,3607)
         self.assertEqual(self.diagnostics.getvalue().count('waiting'),7)
 
-    def test_permission_and_other_failures_never_become_rate_retries(self):
+    def test_confirmed_transient_json_reads_retry_with_short_backoff(self):
+        transport=G.GitHub('example/project')
+        failed=[self.response(status,b'private HTML error body',
+                             {'X-RateLimit-Limit':5000,'X-RateLimit-Remaining':4615},1)
+                for status in (500,502,503,504)]
+        with mock.patch.object(transport,'_run',side_effect=failed+[self.response(payload=b'{"ok":true}')]) as call:
+            self.assertEqual(transport.json('endpoint'),{'ok':True})
+        self.assertEqual(call.call_count,5);self.assertEqual(self.sleeps,[3,5,9,17])
+        self.assertEqual(transport.wait_remaining,transport.WAIT_BUDGET-34)
+        self.assertTrue(all(c.args[0][c.args[0].index('--method')+1]=='GET' for c in call.call_args_list))
+        self.assertIn('GitHub read retry (HTTP 500; limit=5000; remaining=4615)',self.diagnostics.getvalue())
+        self.assertNotIn('private',self.diagnostics.getvalue());self.assertNotIn('rate limit',self.diagnostics.getvalue())
+
+    def test_transient_retry_after_honors_numeric_and_date_minimums(self):
+        for value,delay in ((30,31),('Thu, 01 Jan 1970 00:17:00 GMT',21)):
+            with self.subTest(value=value):
+                self.elapsed=0;transport=G.GitHub('example/project')
+                with mock.patch.object(transport,'_run',side_effect=[self.response(503,headers={'Retry-After':value},code=1),self.response()]):
+                    self.assertEqual(transport.json('endpoint'),{})
+                self.assertEqual(self.elapsed,delay)
+
+    def test_transient_attempt_deadline_and_shared_wait_limits(self):
+        transport=G.GitHub('example/project')
+        with mock.patch.object(transport,'_run',return_value=self.response(502,code=1)) as call:
+            with self.assertRaisesRegex(G.DeliveryError,'attempt limit exhausted'):transport.json('endpoint')
+        self.assertEqual(call.call_count,8);self.assertEqual(self.elapsed,189)
+        transport=G.GitHub('example/project');transport.wait_remaining=4
+        with mock.patch.object(transport,'_run',return_value=self.response(500,code=1)) as call:
+            with self.assertRaisesRegex(G.DeliveryError,'wait budget exhausted'):transport.json('endpoint')
+        self.assertEqual(call.call_count,2);self.assertEqual(transport.wait_remaining,1)
+        transport=G.GitHub('example/project');transport.REQUEST_DEADLINE=2
+        with mock.patch.object(transport,'_run',return_value=self.response(504,code=1)) as call:
+            with self.assertRaisesRegex(G.DeliveryError,'request deadline exhausted'):transport.json('endpoint')
+        self.assertEqual(call.call_count,1)
+
+    def test_transient_read_retry_stops_at_permission_or_invalid_complete_response(self):
+        for final in (self.response(403,b'{"message":"Resource not accessible by integration"}',code=1),
+                      self.response(200,b'{'),self.response(200,b'{"duplicate":1,"duplicate":2}'),
+                      self.response(200,b'partial',code=1)):
+            with self.subTest(payload=final.stdout):
+                transport=G.GitHub('example/project');start=self.elapsed
+                with mock.patch.object(transport,'_run',side_effect=[self.response(500,code=1),final]) as call:
+                    with self.assertRaises(G.DeliveryError):transport.json('endpoint')
+                self.assertEqual(call.call_count,2);self.assertEqual(self.elapsed-start,3)
+
+    def test_transient_pagination_discards_prefix_and_opaque_error_body(self):
+        transport=G.GitHub('example/project')
+        partial=self.response(payload=b'[{"id":1}]').stdout+b'\n'+self.response(502,b'private partial body\xff',code=1).stdout
+        complete=self.response(payload=b'[{"id":2}]').stdout+b'\n'+self.response(payload=b'[{"id":3}]').stdout
+        with mock.patch.object(transport,'_run',side_effect=[subprocess.CompletedProcess([],1,partial,b'private'),
+                subprocess.CompletedProcess([],0,complete,b'')]) as call:
+            self.assertEqual(transport.pages('endpoint'),[{'id':2},{'id':3}])
+        self.assertEqual(call.call_count,2);self.assertEqual(self.elapsed,3)
+        self.assertEqual(call.call_args_list[0].args,call.call_args_list[1].args)
+        self.assertNotIn('private',self.diagnostics.getvalue())
+
+    def test_transient_preflight_read_retries_before_one_write(self):
+        transport=G.GitHub('example/project')
+        with mock.patch.object(transport,'_run',side_effect=[self.response(503,code=1),self.quota(),self.response(201)]) as call:
+            self.assertEqual(transport.json('endpoint',method='POST'),{})
+        self.assertEqual([c.args[0][c.args[0].index('--method')+1] for c in call.call_args_list],['GET','GET','POST'])
+        self.assertEqual(self.elapsed,3)
+
+    def test_permission_and_other_failures_never_become_read_retries(self):
         responses=[self.response(403,b'{"message":"Resource not accessible by integration"}',
                                 {'X-RateLimit-Remaining':50,'X-RateLimit-Reset':4600},1),
                    self.response(403,b'{"message":"unrelated API rate limit exceeded for someone"}',code=1),
                    self.response(403,b'{"other":"You have exceeded a secondary rate limit."}',code=1),
                    self.response(403,b'{"message":"You have exceeded a secondary rate limit.","message":"ambiguous"}',code=1),
                    self.response(403,b'x'*4097,{'Retry-After':'private invalid','X-RateLimit-Remaining':0,'X-RateLimit-Reset':'invalid'},1),
-                   self.response(401,headers={'Retry-After':60},code=1),self.response(500,headers={'Retry-After':60},code=1)]
+                   self.response(401,headers={'Retry-After':60},code=1),
+                   self.response(501,headers={'Retry-After':60},code=1),self.response(505,headers={'Retry-After':60},code=1)]
         for response in responses:
             with self.subTest(response=response.returncode):
                 transport=G.GitHub('example/project')
@@ -587,7 +651,11 @@ class TransportTests(unittest.TestCase):
         self.assertIn('--include',call.call_args.args[0]);self.assertNotIn('--slurp',call.call_args.args[0])
 
     def test_download_retry_discards_partial_file_and_preserves_binary_bytes(self):
-        transport=G.GitHub('example/project');attempts=[]
+        for status in (429,500,502,503,504):
+            with self.subTest(status=status):self.check_download_retry(status)
+
+    def check_download_retry(self,status):
+        transport=G.GitHub('example/project');attempts=[];start=self.elapsed
         payload=b'\x00\r\nHTTP/2 403\n\nunaltered binary\xff'
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);path=root/'asset'
@@ -595,12 +663,12 @@ class TransportTests(unittest.TestCase):
                 self.assertFalse(path.exists())
                 if attempts:self.assertFalse(Path(attempts[-1]).exists())
                 attempts.append(output.name)
-                response=self.response(429,b'partial failed body',{'Retry-After':1},1) if len(attempts)==1 else self.response(payload=payload)
+                response=self.response(status,b'partial failed body\xff',{'Retry-After':1},1) if len(attempts)==1 else self.response(payload=payload)
                 output.write(response.stdout)
                 return subprocess.CompletedProcess([],response.returncode,None,b'private')
             with mock.patch.object(transport,'_run',side_effect=run):transport.download(123,path)
             self.assertEqual(path.read_bytes(),payload);self.assertEqual(list(root.iterdir()),[path])
-        self.assertEqual(len(set(attempts)),2);self.assertEqual(self.elapsed,2)
+        self.assertEqual(len(set(attempts)),2);self.assertEqual(self.elapsed-start,2)
 
     def test_download_failures_leave_no_destination_and_never_reuse_partial_bytes(self):
         for response in (self.response(200,b'partial body',code=1),self.response(206,b'partial content'),
@@ -632,7 +700,8 @@ class TransportTests(unittest.TestCase):
     def test_mutation_rate_or_partial_response_is_uncertain_and_never_replayed(self):
         for method in ('POST','PATCH','PUT','DELETE'):
             for response in (self.response(403,headers={'Retry-After':60},code=1),self.response(429,code=1),
-                             self.response(200,b'partial',code=1),self.response(200,b'{')):
+                             self.response(200,b'partial',code=1),self.response(200,b'{'),
+                             *(self.response(status,headers={'Retry-After':1},code=1) for status in (500,502,503,504))):
                 with self.subTest(method=method,code=response.returncode):
                     transport=G.GitHub('example/project')
                     with mock.patch.object(transport,'_run',side_effect=[self.quota(),response]) as call:
@@ -642,6 +711,7 @@ class TransportTests(unittest.TestCase):
 
     def test_upload_preflight_does_not_authorize_retry_after_rate_failure_or_timeout(self):
         for failure in (self.response(429,headers={'Retry-After':60},code=1),
+                        *(self.response(status,headers={'Retry-After':1},code=1) for status in (500,502,503,504)),
                         subprocess.TimeoutExpired(['private'],600,stderr=b'private')):
             with self.subTest(failure=type(failure).__name__):
                 transport=G.GitHub('example/project')
@@ -699,7 +769,7 @@ class TransportTests(unittest.TestCase):
 
     def test_pagination_rejects_partial_or_ambiguous_complete_output(self):
         transport=G.GitHub('example/project')
-        for raw in (b'', b'[] trailing', b'[] {"id":1}', b'[{"id":1}] [{"id":2,"id":3}]',
+        for raw in (b'["\xff"]', b'', b'[] trailing', b'[] {"id":1}', b'[{"id":1}] [{"id":2,"id":3}]',
                     b'[{"id":1}] [NaN]', b'[] [', b'[]\xff'):
             with self.subTest(raw=raw), mock.patch.object(transport,'_run',
                     return_value=self.response(payload=raw)):

@@ -216,6 +216,16 @@ an operator-trusted copy of the source tool tree and its `docs/release-policy.js
 at a persistent path, preserving the relative `tools`, `docs` and `third_party` paths.
 Do not download and execute a changing remote helper during refresh.
 
+The public client uses the REST API for complete release and asset metadata, then
+fetches file bytes from their canonical public release URLs. Routing every retained
+SDK, source, package and evidence file through the unauthenticated asset API can
+exceed its hourly quota in a single refresh. The client binds each download ID to
+the observed repository, tag, name, size and digest; limits HTTPS redirects and
+transfer duration; stages fresh bytes; and verifies the full signed channel before
+activation. Public data downloads do not require a GitHub token. Metadata calls
+still share the public API budget, so bound refresh frequency across clients and
+preserve the last verified generation when retrieval fails.
+
 Create a root-owned configuration outside the tool tree:
 
 ```json

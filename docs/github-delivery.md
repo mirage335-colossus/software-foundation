@@ -209,10 +209,12 @@ adapter rather than enabling overwrite or weakening repository policy.
 The shared transport follows [GitHub's rate-limit response rules](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#exceeding-the-rate-limit).
 Read-only requests may retry an explicit rate response after its `Retry-After`
 delay or exhausted primary quota's reset time. Recognized secondary limits use
-bounded backoff. Permission failures and other unrelated errors remain errors.
+bounded backoff. Confirmed transient HTTP 500, 502, 503 and 504 read responses
+also use bounded retries, honoring `Retry-After` when present. Permission failures,
+invalid complete data and other unrelated errors remain errors.
 Each read or write-quota preflight permits at most eight attempts within a
 180-minute deadline. Each transport instance shares a cumulative 180-minute
-rate-limit wait budget; a single CLI invocation has a ten-minute limit. Waits
+retry-wait budget; a single CLI invocation has a ten-minute limit. Waits
 are interruptible in at most 60-second steps, with sanitized quota diagnostics
 instead of credentials or raw private responses.
 

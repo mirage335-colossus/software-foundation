@@ -18,19 +18,44 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 import distribution_release as release
 
 MAX_JSON = 16 * 1024 * 1024
+MAX_DOWNLOAD_SECONDS = 600
+
+
+class ReleaseRedirects(HTTPRedirectHandler):
+    """Bound public release redirects before issuing the next HTTPS request."""
+    max_redirections = 5
+    max_repeats = 2
+
+    def __init__(self, initial):
+        self.initial = initial
+
+    def validate(self, url):
+        parsed = urlsplit(url)
+        if (parsed.scheme != 'https' or parsed.netloc not in ('github.com', 'release-assets.githubusercontent.com') or
+                parsed.fragment or not parsed.path.startswith('/') or
+                parsed.netloc == 'github.com' and url != self.initial):
+            raise ValueError('public asset redirect escaped its selected HTTPS release')
+        return url
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        self.validate(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class PublicGitHub:
     """Read-only public transport with bounded pages, timeouts and exact downloads."""
     def __init__(self, repository):
         self.repository = release.delivery.location(repository)
+        self.releases = {}
+        self.assets = {}
 
     def request(self, endpoint, accept='application/vnd.github+json'):
         if not endpoint.startswith('repos/' + self.repository + '/'):
@@ -60,19 +85,77 @@ class PublicGitHub:
             rows = self.json(endpoint + ('&' if '?' in endpoint else '?') + 'page=' + str(page))
             if not isinstance(rows, list): raise ValueError('expected complete array page')
             result.extend(rows)
-            if len(rows) < 100: return result
+            if len(rows) < 100:
+                self.remember(endpoint, result)
+                return result
         raise ValueError('public pagination exceeds bound; no partial inventory accepted')
 
+    def remember(self, endpoint, rows):
+        """Bind download IDs only after complete metadata pagination succeeds."""
+        route = endpoint.split('?', 1)[0]
+        base = 'repos/' + self.repository + '/releases'
+        if route == base:
+            observed = {}
+            for row in rows:
+                if (not isinstance(row, dict) or not release.delivery.positive(row.get('id')) or
+                        not isinstance(row.get('tag_name'), str) or row['id'] in observed):
+                    raise ValueError('invalid complete public release inventory')
+                observed[row['id']] = row['tag_name']
+            if any(key in self.releases and self.releases[key] != value for key, value in observed.items()):
+                raise ValueError('public release identity changed')
+            self.releases.update(observed)
+            return
+        match = re.fullmatch(re.escape(base) + r'/([1-9][0-9]*)/assets', route)
+        if match is None:
+            return
+        identity = int(match[1])
+        if identity not in self.releases:
+            raise ValueError('asset inventory needs its observed public release')
+        tag = release.delivery.valid_name(self.releases[identity])
+        observed = {}; names = set()
+        for row in rows:
+            if not isinstance(row, dict): raise ValueError('invalid public asset inventory')
+            name = release.delivery.valid_name(row.get('name'))
+            url = 'https://github.com/' + self.repository + '/releases/download/' + tag + '/' + name
+            if (not release.delivery.positive(row.get('id')) or row['id'] in observed or name.casefold() in names or
+                    row.get('state') != 'uploaded' or type(row.get('size')) is not int or not 0 <= row['size'] <= release.MAX_ASSET or
+                    not isinstance(row.get('digest'), str) or not re.fullmatch(r'sha256:[0-9a-f]{64}', row['digest']) or
+                    row.get('browser_download_url') != url):
+                raise ValueError('public asset lacks its exact release URL, size or digest')
+            observed[row['id']] = dict(url=url, size=row['size'], sha256=row['digest'][7:])
+            names.add(name.casefold())
+        if any(key in self.assets and self.assets[key] != value for key, value in observed.items()):
+            raise ValueError('public asset identity changed')
+        self.assets.update(observed)
+
     def download(self, asset_id, path):
-        if not release.delivery.positive(asset_id): raise ValueError('invalid asset identity')
-        with self.request(f'repos/{self.repository}/releases/assets/{asset_id}', 'application/octet-stream') as response, Path(path).open('xb') as output:
-            total = 0
-            while True:
-                data = response.read(1024 * 1024)
-                if not data: break
-                total += len(data)
-                if total > release.MAX_ASSET: raise ValueError('asset exceeds bound')
-                output.write(data)
+        if not release.delivery.positive(asset_id) or asset_id not in self.assets:
+            raise ValueError('download requires an observed complete public asset inventory')
+        item = self.assets[asset_id]; path = Path(path)
+        if path.exists() or path.is_symlink(): raise ValueError('public download destination must be new')
+        redirects = ReleaseRedirects(item['url'])
+        request = Request(redirects.validate(item['url']), headers={'User-Agent': 'software-foundation-channel/1'})
+        deadline = time.monotonic() + MAX_DOWNLOAD_SECONDS
+        # Stage only this response. A timeout or truncated body never becomes a
+        # destination, and the caller publishes its generation only after replay.
+        with tempfile.TemporaryDirectory(prefix='.public-asset-', dir=path.parent) as temporary:
+            staged = Path(temporary) / 'payload'
+            with build_opener(redirects).open(request, timeout=60) as response, staged.open('xb') as output:
+                redirects.validate(response.url)
+                total = 0; hashed = hashlib.sha256()
+                while True:
+                    if time.monotonic() >= deadline: raise ValueError('public asset transfer deadline exceeded')
+                    # read1 performs one bounded socket read; read(n) can wait for
+                    # n bytes indefinitely while a peer keeps trickling data.
+                    data = response.read1(min(1024 * 1024, item['size'] - total + 1))
+                    if time.monotonic() >= deadline: raise ValueError('public asset transfer deadline exceeded')
+                    if not data: break
+                    total += len(data)
+                    if total > item['size']: raise ValueError('public asset exceeds declared size')
+                    hashed.update(data); output.write(data)
+            if total != item['size'] or hashed.hexdigest() != item['sha256']:
+                raise ValueError('public asset bytes differ from complete inventory')
+            release.copy_new(staged, path)
 
 
 def configuration(value):

@@ -528,21 +528,28 @@ def qualification_batches(plan, *, runners=None):
     caps, not a promise that every member can exhaust its case allowance. Split
     future longer workloads here; this code is itself bound by the frozen plan.
     """
-    rows = [qualification_row(item, runners) for item in module('coverage').executions(plan)]
+    c = module('coverage')
+    rows = [qualification_row(item, runners) for item in c.executions(plan)]
     groups = {}
     for row in rows:
         groups.setdefault(tuple(row[key] for key in ('runner', 'image', 'target', 'environment')), []).append(row)
-    batches = []
+    batches, identities = [], set()
     for members in groups.values():
         # Bound future policy growth without changing logical or execution IDs.
         for start in range(0, len(members), 16):
             selected = members[start:start + 16]
             first = selected[0]
             batch = {key: first[key] for key in ('runner', 'image', 'target', 'environment')}
-            batch.update(id='batch-' + first['id'] + '-' + str(start // 16 + 1),
-                         checks=[row['id'] for row in selected],
+            batch.update(checks=[row['id'] for row in selected],
                          graphics=any(row['graphics'] for row in selected),
                          browser=any(row['target'] != 'windows-x86_64' and needs_browser_prerequisite(row['backend'], row['scope']) for row in selected))
+            # Transport labels have stricter characters and length than frozen
+            # check IDs. Leave room for browser-prerequisite- and a 19-digit
+            # attempt within ci_transport's 80-character bundle-name bound.
+            slug = re.sub(r'[^a-z0-9_-]', '-', first['id'].lower())[:20]
+            identity = 'batch-' + slug + '-' + c.digest(batch)[:12]
+            if identity in identities:raise ValueError('colliding batch transport identity')
+            identities.add(identity); batch['id'] = identity
             batches.append(batch)
     return {'include': batches}
 
