@@ -67,6 +67,35 @@ def source_group(root, version='1.0.0', release=1, backends=(), backend='core', 
 
 
 class RecipeTests(unittest.TestCase):
+    def test_current_recipes_require_complete_authenticated_notice_inventory(self):
+        gui='share/doc/Foundation/gui-boundary/';deps='share/doc/Foundation/dependency-notices/'
+        terms=b'Supplier terms\n';runtime=b'Runtime terms\n'
+        lock={'redistribution':{'approved':True,'license_files':['LICENSE']},'files':{'LICENSE':d.digest(terms)}}
+        index={'schema_version':1,'providers':[],'files':{'runtime.txt':{'sha256':d.digest(runtime),'size':len(runtime)}}}
+        payload={'bin/foundation-cli':(b'cli',0o755),'share/doc/Foundation/LICENSE':(b'Project terms',0o644),
+                 gui+'gui-boundary.lock.json':(d.encoded(lock),0o644),gui+'LICENSE':(terms,0o644),
+                 deps+'index.json':(d.encoded(index),0o644),deps+'runtime.txt':(runtime,0o644)}
+        expected=set(payload)-{'bin/foundation-cli'}
+        self.assertEqual(expected,set(d.required_license_files(payload)))
+        spec={'schema_version':3,'backend':'core','architecture':'x86_64','archive_sha256':'a'*64,
+              'license_files':['share/doc/Foundation/LICENSE']}
+        with self.assertRaisesRegex(ValueError,'omits required'):d.recipe_files(spec,'prefix',payload,'archive.tar.gz')
+        for missing in expected:
+            with self.subTest(missing=missing),self.assertRaises(ValueError):
+                d.required_license_files({k:v for k,v in payload.items() if k!=missing})
+        for changed in (gui+'LICENSE',deps+'runtime.txt'):
+            with self.subTest(changed=changed),self.assertRaises(ValueError):
+                d.required_license_files(dict(payload,**{changed:(b'changed',0o644)}))
+        with self.assertRaisesRegex(ValueError,'omits installed'):
+            d.required_license_files(dict(payload,**{deps+'unindexed.txt':(b'unlisted',0o644)}))
+        for bad in ('../escape','/absolute','index.json'):
+            altered=copy.deepcopy(index);altered['files']={bad:next(iter(index['files'].values()))}
+            with self.subTest(bad=bad),self.assertRaises(ValueError):
+                d.required_license_files(dict(payload,**{deps+'index.json':(d.encoded(altered),0o644)}))
+        lock['redistribution']['approved']=False
+        with self.assertRaisesRegex(ValueError,'redistribution'):
+            d.required_license_files(dict(payload,**{gui+'gui-boundary.lock.json':(d.encoded(lock),0o644)}))
+
     def test_combined_archive_projects_every_backend_and_executes_matching_recipes(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(d, 'require_gui_terms'):
             # Fixture approval is scoped here; the real public gate is tested below.

@@ -81,7 +81,15 @@ targets are `linux-x86_64` and `linux-aarch64`. The complete backend list comes 
 the certified archive, not from an operator-provided subset. Review the retained
 license list and host runtime prerequisites for that exact archive; GUI hosts also
 need compatible display services, fonts and drivers. The helper preserves the
-existing channel tools' ABI checks and redistribution gates.
+existing channel tools' ABI checks and redistribution gates. Current recipes derive
+the minimum complete license list from the actual archive: the project license,
+the bundled GUI lock and every notice it declares, and the dependency notice index
+and every file it indexes. Listed bytes, sizes and data-file modes are verified;
+omitted terms or unindexed dependency notices fail before signing. This applies
+to core projections too, because their shared resources remain installed. Use
+`distro_channel.required_license_files(payload)` on the verified archive payload
+to construct the request; review additional project-specific terms when adopting
+this example.
 
 Store the armored private signing key as the protected environment secret
 `DISTRIBUTION_SIGNING_KEY`, and its independently reviewed full primary fingerprint

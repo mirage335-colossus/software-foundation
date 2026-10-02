@@ -312,8 +312,53 @@ def select_payload(spec, root_name, payload):
     return kept, receipt
 
 
+def required_license_files(payload):
+    """Derive complete terms from the authenticated archive, not caller preference."""
+    required = {'share/doc/Foundation/LICENSE'}
+    gui = 'share/doc/Foundation/gui-boundary/'
+    deps = 'share/doc/Foundation/dependency-notices/'
+    lock_path, index_path = gui+'gui-boundary.lock.json', deps+'index.json'
+    has_gui = any(path.startswith(gui) or path.startswith('bin/foundation-gui-') for path in payload)
+    def data(path):
+        if path not in payload or payload[path][1] != 0o644:
+            raise ValueError('missing or non-data retained license file: '+path)
+        return payload[path][0]
+    if has_gui:
+        lock = document(data(lock_path)); permission = lock.get('redistribution', {})
+        names = permission.get('license_files')
+        if (permission.get('approved') is not True or not isinstance(names, list) or not names or
+                len(set(names)) != len(names) or not isinstance(lock.get('files'), dict)):
+            raise ValueError('incomplete bundled GUI redistribution terms')
+        required.add(lock_path)
+        for name in names:
+            safe_name(name); path = gui+name
+            if digest(data(path)) != lock['files'].get(name):
+                raise ValueError('bundled GUI license digest differs')
+            required.add(path)
+    if has_gui or any(path.startswith(deps) for path in payload):
+        index = document(data(index_path))
+        if (not isinstance(index, dict) or set(index) != {'schema_version','providers','files'} or
+                type(index['schema_version']) is not int or index['schema_version'] != 1 or
+                not isinstance(index['providers'], list) or not isinstance(index['files'], dict)):
+            raise ValueError('invalid bundled dependency notice index')
+        required.add(index_path)
+        for name, record in index['files'].items():
+            safe_name(name); path = deps+name
+            if (name == 'index.json' or not isinstance(record, dict) or set(record) != {'sha256','size'} or
+                    type(record['size']) is not int or record['size'] < 0 or
+                    record['size'] != len(data(path)) or record['sha256'] != digest(data(path))):
+                raise ValueError('bundled dependency notice identity differs')
+            required.add(path)
+        if {path for path in payload if path.startswith(deps)} != {deps+name for name in index['files']} | {index_path}:
+            raise ValueError('dependency notice inventory omits installed files')
+    for path in required: data(path)
+    return sorted(required)
+
+
 def recipe_files(spec, root_name, payload, archive_name):
     """Templates are also the verifier: unexpected hooks cannot be signed in silently."""
+    if spec['schema_version'] >= 3 and not set(required_license_files(payload)) <= set(spec['license_files']):
+        raise ValueError('license list omits required retained terms')
     backend, architecture = spec['backend'], spec['architecture']
     name = 'software-foundation-' + backend + '-bin'
     private = 'opt/software-foundation/' + backend
