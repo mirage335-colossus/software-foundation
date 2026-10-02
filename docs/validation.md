@@ -126,6 +126,22 @@ runner image was `20260927.320.1`. The compiler-specific helper policy preserves
 strict completion for other commands; these diagnostics do not replace full
 release qualification.
 
+At `7abbdaaf3566ca733a88ff8551204b533cac0915`, explicit build owners
+passed [one native check](https://github.com/mirage335-colossus/software-foundation/actions/runs/37060552322)
+and twenty repetitions each on
+[Python 3.12.10](https://github.com/mirage335-colossus/software-foundation/actions/runs/37061018594)
+and [Python 3.14.7](https://github.com/mirage335-colossus/software-foundation/actions/runs/37061021979).
+Each repeated run passed all sixty cases without exclusions or internal skips;
+all thirteen consumed source hashes were independently checked. Every repetition
+created two concurrent private PDB servers, pinned the control server's exact
+handle, and proved it remained alive through the other owner's cleanup and a
+second compile. Both owners then joined their selected helpers and immediately
+released their output directories. The graphics compiler and Firefox cleanup
+cases also passed. The selected toolset was MSVC 14.44.35207 on runner image
+`20260927.320.1`. These results qualify the observed endpoint isolation and
+cleanup behavior for these inputs; complete release certification remains a
+separate gate.
+
 ## Delivery workflow expansion
 
 The current update replaces Actions artifact transport with per-run private draft
