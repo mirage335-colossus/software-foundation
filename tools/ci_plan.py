@@ -507,6 +507,46 @@ def needs_windows_graphics(target, backends, backend, scope):
     return target == 'windows-x86_64' and 'rev' in backends and (scope in ('source', 'recovery') or backend == 'rev' and scope == 'archive')
 
 
+def qualification_row(item, runners=None):
+    """Keep execution routing identical for individual checks and CI batches."""
+    runners = STANDARD if runners is None else runners
+    if set(runners) != set(STANDARD) or any(not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]*', value) for value in runners.values()):
+        raise ValueError('explicit complete runner selection required')
+    target, environment, backend, scope = (item[key] for key in ('target', 'environment', 'backend', 'scope'))
+    images = {'debian-12': 'debian:bookworm', 'debian-13': 'debian:trixie', 'ubuntu-24.04': 'ubuntu:24.04'}
+    image = '' if (environment == 'ubuntu-24.04' and backend == 'hosted-web' and scope == 'archive' or
+                   target == 'browser-wasm32' and backend == 'wasm' and environment == 'chromium') else images.get(environment, 'debian:bookworm' if environment in ('firefox', 'chromium') else '')
+    return dict(id=item['id'], target=target, runner=runners.get(target, runners['linux-x86_64']),
+                image=image, environment=environment, scope=scope, backend=backend,
+                graphics='--windows-graphics-archive' in item['argv'])
+
+
+def qualification_batches(plan, *, runners=None):
+    """Share transport only; retain every frozen physical execution and receipt.
+
+    The 90-minute case and 240-minute hosted job limits are independent safety
+    caps, not a promise that every member can exhaust its case allowance. Split
+    future longer workloads here; this code is itself bound by the frozen plan.
+    """
+    rows = [qualification_row(item, runners) for item in module('coverage').executions(plan)]
+    groups = {}
+    for row in rows:
+        groups.setdefault(tuple(row[key] for key in ('runner', 'image', 'target', 'environment')), []).append(row)
+    batches = []
+    for members in groups.values():
+        # Bound future policy growth without changing logical or execution IDs.
+        for start in range(0, len(members), 16):
+            selected = members[start:start + 16]
+            first = selected[0]
+            batch = {key: first[key] for key in ('runner', 'image', 'target', 'environment')}
+            batch.update(id='batch-' + first['id'] + '-' + str(start // 16 + 1),
+                         checks=[row['id'] for row in selected],
+                         graphics=any(row['graphics'] for row in selected),
+                         browser=any(row['target'] != 'windows-x86_64' and needs_browser_prerequisite(row['backend'], row['scope']) for row in selected))
+            batches.append(batch)
+    return {'include': batches}
+
+
 def qualification_plan(candidate, profile, output, policy=None, *, runners=None):
     c = module('coverage')
     policy = policy or c.load(ROOT / 'docs/release-policy.json')
@@ -516,10 +556,6 @@ def qualification_plan(candidate, profile, output, policy=None, *, runners=None)
     if len(actual) != len(manifest['artifacts']) or actual != selected['targets']:
         raise ValueError('candidate does not match complete support profile')
     checks, matrix = [], []
-    runners = runners or STANDARD
-    if set(runners) != set(STANDARD) or any(not isinstance(value,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]*',value) for value in runners.values()):
-        raise ValueError('explicit complete runner selection required')
-    images = {'debian-12': 'debian:bookworm', 'debian-13': 'debian:trixie', 'ubuntu-24.04': 'ubuntu:24.04'}
     for item in selected['checks']:
         target, backend, environment, scope = (item[x] for x in ('target', 'backend', 'environment', 'scope'))
         check_id = '-'.join((target, backend, environment, scope))
@@ -540,10 +576,7 @@ def qualification_plan(candidate, profile, output, policy=None, *, runners=None)
             argv += ['--firefox', 'C:/Program Files/Mozilla Firefox/firefox.exe']
         checks.append(dict(item, id=check_id, required=True, argv=argv, timeout_seconds=5400,
                            warning_seconds=4500, expected_tests=[], qualification='qualification.json'))
-        matrix.append({'id': check_id, 'target': target, 'runner': runners.get(target, runners['linux-x86_64']),
-                       'image': '' if (environment == 'ubuntu-24.04' and backend == 'hosted-web' and scope == 'archive' or
-                                       target == 'browser-wasm32' and backend == 'wasm' and environment == 'chromium') else images.get(environment, 'debian:bookworm' if environment in ('firefox', 'chromium') else ''),
-                       'environment': environment, 'scope': scope, 'backend': backend, 'graphics': graphics})
+        matrix.append(qualification_row(checks[-1], runners))
     # Logical requirements remain intact; group only identical whole-artifact work.
     groups = {}
     for item in checks:
@@ -561,7 +594,7 @@ def qualification_plan(candidate, profile, output, policy=None, *, runners=None)
     logical = {x['id']: x for x in checks}
     matrix = [row for row in matrix if logical[row['id']].get('execution', row['id']) == row['id']]
     inputs = {str(p.relative_to(ROOT)).replace('\\', '/'): c.sha(p) for p in (ROOT / 'tools').glob('*.py')}
-    for name in ('docs/release-policy.json', '.github/scripts/lifecycle.py', '.github/workflows/certify.yml'):
+    for name in ('docs/release-policy.json', '.github/scripts/lifecycle.py', '.github/scripts/container_job.py', '.github/workflows/certify.yml'):
         inputs[name] = c.sha(ROOT / name)
     if any(item['graphics'] for item in matrix):
         for name in ('tools/windows_gl_probe.cpp', 'third_party/host-graphics/mesa-windows.json'):

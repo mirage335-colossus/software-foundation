@@ -204,6 +204,32 @@ immutable releases, collect evidence before publication or place later evidence 
 a separate durable store bound to the original inventory; qualify a corresponding
 adapter rather than enabling overwrite or weakening repository policy.
 
+## Rate-limited reads and bounded waiting
+
+The shared transport follows [GitHub's rate-limit response rules](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#exceeding-the-rate-limit).
+Read-only requests may retry an explicit rate response after its `Retry-After`
+delay or exhausted primary quota's reset time. Recognized secondary limits use
+bounded backoff. Permission failures and other unrelated errors remain errors.
+Each read or write-quota preflight permits at most eight attempts within a
+180-minute deadline. Each transport instance shares a cumulative 180-minute
+rate-limit wait budget; a single CLI invocation has a ten-minute limit. Waits
+are interruptible in at most 60-second steps, with sanitized quota diagnostics
+instead of credentials or raw private responses.
+
+A paginated retry starts a fresh complete response inventory; it never accepts a
+successful prefix of a failed read. Binary retries likewise use fresh temporary
+files and discard partial response data. The normal complete byte and identity
+verification still applies after transfer. Before writes, a read-only quota check
+can wait for 128 remaining requests (or the entire quota for a smaller limit),
+but it does not reserve repository capacity against other
+jobs. A failed write or upload is never automatically replayed. Preserve and
+reconcile its outcome using the procedure below.
+
+Budget quota waits separately from compilation and tests. The workflow batches
+independent cases to reduce repeated transfers while retaining their distinct
+results; see [qualification batching](ci.md#grouped-qualification-work). Waiting
+cannot guarantee service availability or replace a missing required result.
+
 ## Failure, uncertainty and recovery
 
 An API or CLI success is not sufficient evidence of publication. Every mutation

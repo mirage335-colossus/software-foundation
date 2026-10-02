@@ -154,11 +154,16 @@ class ContainerJobs(unittest.TestCase):
 
     def test_all_workflow_callers_use_common_host_identity_adapter(self):
         actions = {'sdk-maintenance':'sdk-produce','sdk-application':'application-build',
-                   'native-gui':'native-gui-check','certify':'check','candidate':'apt-native-smoke'}
+                   'native-gui':'native-gui-check','candidate':'apt-native-smoke'}
         for filename, action in actions.items():
             text = (ROOT/'.github/workflows'/f'{filename}.yml').read_text()
             self.assertIn("'.github/scripts/container_job.py', '"+action+"'", text)
             self.assertNotIn("subprocess.run(['docker'",text)
+        certification=(ROOT/'.github/workflows/certify.yml').read_text()
+        self.assertIn("'.github/scripts/lifecycle.py', 'check-batch'", certification)
+        batching=(ROOT/'.github/scripts/lifecycle.py').read_text()
+        self.assertIn("str(ROOT / '.github/scripts/container_job.py'), 'check'", batching)
+        self.assertNotIn("subprocess.run(['docker'", certification + batching)
         text=(ROOT/'.github/workflows/sdk-application.yml').read_text()
         self.assertIn('graphics_archive_url:',text)
         self.assertIn('build/produced/graphics-qualification.json',text)

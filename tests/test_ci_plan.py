@@ -476,6 +476,27 @@ class CandidateFetchTests(unittest.TestCase):
         with patch.object(ci,'module',side_effect=lambda name:release if name=='release' else original(name)):
             output=self.root/'all-gui-plan.json';matrix=ci.qualification_plan(self.fixture.directory,'all-gui',output,policy)
         frozen=json.loads(output.read_text());self.assertEqual(len(frozen['checks']),106);self.assertEqual(len(matrix['include']),66)
+        batches = ci.qualification_batches(frozen)['include']
+        self.assertEqual(len(batches), 11)
+        self.assertEqual(sorted(check for batch in batches for check in batch['checks']),
+                         sorted(row['id'] for row in matrix['include']))
+        self.assertEqual(sorted(len(batch['checks']) for batch in batches), [1, 1, 1, 3, 5, 5, 6, 6, 8, 15, 15])
+        self.assertEqual(sum(batch['browser'] for batch in batches), 8)
+        self.assertEqual(sum(batch['graphics'] for batch in batches), 1)
+        by_id = {row['id']: row for row in matrix['include']}
+        for batch in batches:
+            for check in batch['checks']:
+                self.assertEqual(tuple(batch[key] for key in ('runner', 'image', 'target', 'environment')),
+                                 tuple(by_id[check][key] for key in ('runner', 'image', 'target', 'environment')))
+        for target in ('linux-x86_64', 'linux-aarch64'):
+            ubuntu = [batch for batch in batches if batch['target'] == target and batch['environment'] == 'ubuntu-24.04']
+            self.assertEqual({batch['image'] for batch in ubuntu}, {'', 'ubuntu:24.04'})
+            self.assertEqual(next(batch for batch in ubuntu if not batch['image'])['checks'],
+                             [target + '-hosted-web-ubuntu-24.04-archive'])
+        windows = next(batch for batch in batches if batch['target'] == 'windows-x86_64')
+        self.assertTrue(windows['graphics']); self.assertFalse(windows['browser'])
+        changed = copy.deepcopy(frozen); changed['checks'][0]['environment'] = 'debian-13'
+        with self.assertRaises(ValueError): ci.qualification_batches(changed)
         chromium = next(row for row in matrix['include'] if row['id']=='browser-wasm32-wasm-chromium-archive')
         self.assertEqual(chromium['image'], '')
         command = next(row['argv'] for row in frozen['checks'] if row['id']==chromium['id'])
@@ -509,6 +530,116 @@ class CandidateFetchTests(unittest.TestCase):
         self.assertIn('tools/windows_gl_probe.cpp', frozen['inputs'])
         self.assertIn('third_party/host-graphics/mesa-windows.json', frozen['inputs'])
 
+
+
+class QualificationBatchTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        spec = importlib.util.spec_from_file_location('batch_lifecycle', ci.ROOT / '.github/scripts/lifecycle.py')
+        self.helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.helper)
+
+    def plan(self, backends=('terminal', 'fltk', 'sdl'), target='linux-x86_64', environment='debian-12'):
+        c = ci.module('coverage')
+        checks = [dict(id='case-' + str(index), target=target, environment=environment, backend=backend,
+                       scope='archive', required=True, argv=['python', 'check'], timeout_seconds=5400,
+                       warning_seconds=4500, expected_tests=[]) for index, backend in enumerate(backends)]
+        plan = c.freeze(dict(schema_version=1, mode='release', subject=dict(source_sha256='a'*64,
+                            inventory_sha256='b'*64, configuration_sha256='c'*64), inputs={}, checks=checks))
+        (self.root / 'build').mkdir(exist_ok=True)
+        (self.root / 'build/check-plan.json').write_text(json.dumps(plan))
+        return plan
+
+    def test_failed_case_continues_later_fresh_container_and_fails_batch(self):
+        import subprocess
+        plan = self.plan(); batch = ci.qualification_batches(plan)['include'][0]; seen = []
+        def run(command, **options):
+            seen.append((command, options))
+            if options['env']['CHECK'] == 'case-1': raise subprocess.CalledProcessError(1, command)
+        with patch.object(self.helper, 'ROOT', self.root), patch.object(self.helper.ci.platform, 'system', return_value='Linux'), \
+                patch.dict(self.helper.os.environ, BATCH=batch['id'], CHECK_IMAGE=batch['image']), \
+                patch.object(self.helper.subprocess, 'run', side_effect=run):
+            with self.assertRaisesRegex(ValueError, 'required batch executions failed: case-1'):
+                self.helper.check_batch()
+        self.assertEqual([options['env']['CHECK'] for command, options in seen], ['case-0', 'case-1', 'case-2'])
+        self.assertTrue(all(command[-2:] == [str(self.root / '.github/scripts/container_job.py'), 'check'] for command, options in seen))
+        self.assertTrue(all(options['cwd'] == self.root and options['check'] for command, options in seen))
+        self.assertFalse((self.root / 'build/evidence').exists())  # No fabricated success or empty output root.
+
+    def test_host_browser_keeps_per_case_prerequisite_before_check(self):
+        plan = self.plan(('wasm',), 'browser-wasm32', 'chromium'); batch = ci.qualification_batches(plan)['include'][0]
+        with patch.object(self.helper, 'ROOT', self.root), patch.object(self.helper.ci.platform, 'system', return_value='Linux'), \
+                patch.dict(self.helper.os.environ, BATCH=batch['id'], CHECK_IMAGE=''), \
+                patch.object(self.helper.subprocess, 'run') as run:
+            self.helper.check_batch()
+        self.assertEqual([call.args[0][-1] for call in run.call_args_list], ['check-prerequisites', 'check'])
+        self.assertTrue(all(call.kwargs['env']['CHECK'] == 'case-0' and call.kwargs['env']['CHECK_BROWSER'] == 'yes'
+                            for call in run.call_args_list))
+
+    def test_windows_batch_runs_independent_cases_without_container_or_browser_setup(self):
+        plan = self.plan(('terminal', 'rev'), 'windows-x86_64', 'windows-2022'); batch = ci.qualification_batches(plan)['include'][0]
+        with patch.object(self.helper, 'ROOT', self.root), patch.object(self.helper.ci.platform, 'system', return_value='Windows'), \
+                patch.dict(self.helper.os.environ, BATCH=batch['id'], CHECK_IMAGE=''), \
+                patch.object(self.helper.subprocess, 'run') as run:
+            self.helper.check_batch()
+        self.assertEqual([call.args[0][-1] for call in run.call_args_list], ['check', 'check'])
+        self.assertEqual([call.kwargs['env']['CHECK'] for call in run.call_args_list], ['case-0', 'case-1'])
+
+    def test_batch_selection_rejects_unknown_id_image_and_changed_frozen_input_before_launch(self):
+        plan = self.plan(); batch = ci.qualification_batches(plan)['include'][0]
+        with patch.object(self.helper, 'ROOT', self.root), patch.object(self.helper.ci.platform, 'system', return_value='Linux'), \
+                patch.object(self.helper.subprocess, 'run') as run:
+            for identity, image in (('absent', batch['image']), (batch['id'], 'ubuntu:24.04')):
+                with patch.dict(self.helper.os.environ, BATCH=identity, CHECK_IMAGE=image), self.assertRaises(ValueError):
+                    self.helper.check_batch()
+            (self.root / 'mapping.py').write_text('before')
+            plan.pop('id'); plan['inputs'] = {'mapping.py': ci.module('coverage').sha(self.root / 'mapping.py')}
+            plan = ci.module('coverage').freeze(plan)
+            (self.root / 'build/check-plan.json').write_text(json.dumps(plan))
+            (self.root / 'mapping.py').write_text('after')
+            with patch.dict(self.helper.os.environ, BATCH=batch['id'], CHECK_IMAGE=batch['image']), \
+                    self.assertRaisesRegex(ValueError, 'check input changed'):
+                self.helper.check_batch()
+            run.assert_not_called()
+
+    def test_future_batch_growth_splits_without_changing_execution_inventory(self):
+        plan = self.plan(tuple('backend-' + str(index) for index in range(33)))
+        batches = ci.qualification_batches(plan)['include']
+        self.assertEqual([len(batch['checks']) for batch in batches], [16, 16, 1])
+        self.assertEqual([check for batch in batches for check in batch['checks']], [item['id'] for item in plan['checks']])
+        self.assertEqual(len({batch['id'] for batch in batches}), 3)
+
+    def test_evidence_aggregation_fetches_each_batch_once_into_shared_case_root(self):
+        plan = self.plan(); batch = ci.qualification_batches(plan)['include'][0]
+        with patch.object(self.helper, 'ROOT', self.root), patch.object(self.helper.os, 'chdir'), \
+                patch.object(self.helper.evidence, 'load', return_value=plan), \
+                patch.dict(self.helper.os.environ, GITHUB_RUN_ATTEMPT='2'), \
+                patch.object(self.helper, 'fetch_bundle') as fetch:
+            self.helper.main('fetch-evidence-bundles')
+        fetch.assert_called_once_with('evidence-' + batch['id'] + '-2', 'build/evidence', allow_failed=True)
+
+    def test_batch_bundle_preserves_case_children_and_disjoint_restore_rejects_collision(self):
+        from unittest.mock import Mock
+        for name in ('case-a', 'case-b'):
+            path = self.root / 'build/evidence' / name; path.mkdir(parents=True)
+            (path / 'result.json').write_text(name)
+        with patch.object(self.helper, 'ROOT', self.root):
+            base, paths = self.helper.bundle_inputs('build/evidence/')
+        self.assertEqual(base, self.root / 'build/evidence')
+        self.assertEqual(paths, ['case-a', 'case-b'])
+        original = ci.module
+        def fetched(repository, run, attempt, source, workflow, name, output, **options):
+            path = output / name / 'result.json'; path.parent.mkdir(parents=True); path.write_text(name)
+            return {'manifest': {'files': {name + '/result.json': {'mode': 0o600}}}}
+        transport = Mock(fetch_bundle=Mock(side_effect=fetched)); destination = self.root / 'restored'
+        with patch.object(ci, 'module', side_effect=lambda name: transport if name == 'ci_transport' else original(name)):
+            for name in ('case-a', 'case-b'):
+                ci.restore_run_bundle('example/project', 1, 1, 'a'*40, 'certify.yml', name, destination, allow_failed=True)
+            with self.assertRaisesRegex(ValueError, 'existing file'):
+                ci.restore_run_bundle('example/project', 1, 1, 'a'*40, 'certify.yml', 'case-a', destination, allow_failed=True)
+        self.assertEqual({path.relative_to(destination).as_posix(): path.read_text() for path in destination.rglob('*.json')},
+                         {'case-a/result.json': 'case-a', 'case-b/result.json': 'case-b'})
 
 
 class SdkMaintenanceTests(unittest.TestCase):

@@ -278,6 +278,39 @@ def retained_request(target, profile, *, producer_host=False):
     return ci.retained_sdk_request(request, value('GITHUB_REPOSITORY'), target, profile, identity)
 
 
+def check_batch():
+    """Run independent frozen executions, retaining failed and later outcomes."""
+    plan = evidence.load(ROOT / 'build/check-plan.json')
+    evidence.validate(plan); evidence.check_inputs(plan, ROOT)
+    selected = [batch for batch in ci.qualification_batches(plan)['include'] if batch['id'] == value('BATCH')]
+    if len(selected) != 1 or os.environ.get('CHECK_IMAGE') != selected[0]['image']:
+        raise ValueError('batch or execution image differs from frozen inventory')
+    batch = selected[0]
+    expected_system = 'Windows' if batch['target'].startswith('windows-') else 'Linux'
+    if ci.platform.system() != expected_system:
+        raise ValueError('batch requires its selected native host')
+    checks = {item['id']: item for item in evidence.executions(plan)}
+    failures = []
+    for check_id in batch['checks']:
+        item = checks[check_id]
+        browser = ci.needs_browser_prerequisite(item['backend'], item['scope'])
+        environment = dict(os.environ, CHECK=check_id, CHECK_IMAGE=batch['image'],
+                           CHECK_BROWSER='yes' if browser else 'no')
+        lifecycle = [sys.executable, str(ROOT / '.github/scripts/lifecycle.py')]
+        commands = ([[sys.executable, str(ROOT / '.github/scripts/container_job.py'), 'check']]
+                    if batch['image'] else
+                    [lifecycle + [operation] for operation in
+                     (('check-prerequisites', 'check') if expected_system == 'Linux' else ('check',))])
+        try:
+            for command in commands:
+                subprocess.run(command, cwd=ROOT, env=environment, check=True)
+        except (OSError, subprocess.CalledProcessError) as error:
+            failures.append(check_id)
+            print('Qualification execution failed: ' + check_id + ': ' + str(error), file=sys.stderr)
+    if failures:
+        raise ValueError('required batch executions failed: ' + ', '.join(failures))
+
+
 def main(command):
     os.chdir(ROOT)
     (ROOT / 'build').mkdir(exist_ok=True)
@@ -295,9 +328,11 @@ def main(command):
         for target in evidence.load(Path('build/source/recipes.json')):
             fetch_bundle('application-'+target+'-'+value('GITHUB_RUN_ATTEMPT'),'build/packages/'+target)
     elif command == 'fetch-evidence-bundles':
-        for item in evidence.executions(evidence.load(Path('build/check-plan.json'))):
-            fetch_bundle('evidence-'+item['id']+'-'+value('GITHUB_RUN_ATTEMPT'),
-                         'build/evidence/'+item['id'],allow_failed=True)
+        plan = evidence.load(Path('build/check-plan.json'))
+        evidence.check_inputs(evidence.validate(plan), ROOT)
+        for batch in ci.qualification_batches(plan)['include']:
+            fetch_bundle('evidence-'+batch['id']+'-'+value('GITHUB_RUN_ATTEMPT'),
+                         'build/evidence',allow_failed=True)
     elif command == 'candidate-aggregate':
         import test_plan
         selected = delivery.parse(value('CANDIDATE_TARGETS'))
@@ -523,8 +558,10 @@ def main(command):
         ci.fetch_candidate(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'), Path('build/fetched'))
         shutil.move('build/fetched/candidate', 'build/candidate')
         shutil.move('build/fetched/delivery.json', 'build/delivery.json')
-        matrix = ci.qualification_plan(ROOT / 'build/candidate', value('PROFILE'), ROOT / 'build/check-plan.json')
-        output('matrix', matrix)
+        ci.qualification_plan(ROOT / 'build/candidate', value('PROFILE'), ROOT / 'build/check-plan.json')
+        output('matrix', ci.qualification_batches(evidence.load(ROOT / 'build/check-plan.json')))
+    elif command == 'check-batch':
+        check_batch()
     elif command in ('check-prerequisites', 'check'):
         plan = evidence.load(Path('build/check-plan.json'))
         evidence.validate(plan); evidence.check_inputs(plan, ROOT)

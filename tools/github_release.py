@@ -8,8 +8,11 @@ IDs and bytes before a new attempt. This helper never deletes or replaces assets
 import argparse
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
+from email.utils import parsedate_to_datetime
+import random
 import re
 import shutil
 import subprocess
@@ -75,66 +78,253 @@ def positive(value):
     return type(value) is int and value > 0
 
 
+HTTP_HEADER_LIMIT = 64 * 1024
+HTTP_JSON_LIMIT = 16 * 1024 * 1024
+RATE_HEADERS = {'retry-after', 'x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset'}
+
+
+def response_head(stream):
+    """Read one bounded gh --include header; never normalize binary body bytes."""
+    lines, size = [], 0
+    while True:
+        line = stream.readline(HTTP_HEADER_LIMIT + 1 - size)
+        size += len(line)
+        if not line or size > HTTP_HEADER_LIMIT:
+            raise DeliveryError('missing or oversized GitHub response headers')
+        if line in (b'\n', b'\r\n'):
+            break
+        lines.append(line.rstrip(b'\r\n'))
+    status = re.fullmatch(rb'HTTP/\S+ ([0-9]{3})(?: [^\r\n]*)?', lines[0] if lines else b'')
+    if not status:
+        raise DeliveryError('invalid GitHub HTTP status')
+    headers = {}
+    for line in lines[1:]:
+        key, separator, value = line.partition(b':')
+        if not separator or not re.fullmatch(rb"[!#$%&'*+.^_`|~0-9A-Za-z-]+", key):
+            raise DeliveryError('invalid GitHub response header')
+        key = key.decode('ascii').lower()
+        if key in RATE_HEADERS:
+            if key in headers:
+                raise DeliveryError('ambiguous GitHub rate-limit headers')
+            try:headers[key] = value.decode('ascii').strip()
+            except UnicodeError:raise DeliveryError('invalid GitHub rate-limit header') from None
+    return int(status[1]), headers
+
+
+def rate_integer(value):
+    return int(value) if isinstance(value, str) and re.fullmatch(r'[0-9]{1,12}', value) else None
+
+
+def rate_diagnostic(status, headers):
+    # Only parsed status and bounded numeric quota fields may reach public logs.
+    fields = ['HTTP ' + str(status)]
+    for name in ('x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset'):
+        number = rate_integer(headers.get(name))
+        if number is not None:fields.append(name.removeprefix('x-ratelimit-') + '=' + str(number))
+    return '; '.join(fields)
+
+
+class HTTPFailure(DeliveryError):
+    def __init__(self, status, headers, payload=b''):
+        super().__init__('GitHub API request failed (' + rate_diagnostic(status, headers) + ')')
+        self.status, self.headers, self.rate_message = status, headers, False
+        # Some secondary 403 responses omit Retry-After. Recognize only GitHub's
+        # explicit rate-limit messages, never arbitrary forbidden/error text.
+        if status in (403, 429) and len(payload) <= 4096:
+            try:
+                value = parse(payload)
+                message = value.get('message') if isinstance(value, dict) else None
+                self.rate_message = isinstance(message, str) and (
+                    message.startswith('API rate limit exceeded for ')
+                    or message == 'API rate limit exceeded.'
+                    or message.startswith('You have exceeded a secondary rate limit.')
+                    or message.startswith('You have triggered an abuse detection mechanism.'))
+            except (UnicodeError, ValueError):pass
+
+
 class GitHub:
-    """Argument-array transport; never return command stderr or credentials."""
+    """Bounded read retries; writes are never replayed after an ambiguous result."""
+    WAIT_BUDGET = 180 * 60
+    REQUEST_DEADLINE = 180 * 60
+    COMMAND_TIMEOUT = 10 * 60
+    MAX_ATTEMPTS = 8
+    WRITE_HEADROOM = 128
+
     def __init__(self, repository):
         self.repository = location(repository)
+        self.wait_remaining = float(self.WAIT_BUDGET)
 
-    def _run(self, arguments, *, body=None, output=None):
-        result = subprocess.run(['gh', *arguments], input=body,
-                                stdout=output if output is not None else subprocess.PIPE,
-                                stderr=subprocess.PIPE, check=False)
-        return result
+    def _run(self, arguments, *, body=None, output=None, timeout=None):
+        try:
+            return subprocess.run(['gh', *arguments], input=body,
+                stdout=output if output is not None else subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False,
+                timeout=self.COMMAND_TIMEOUT if timeout is None else timeout)
+        except subprocess.TimeoutExpired:
+            raise DeliveryError('GitHub CLI request exceeded its bounded deadline') from None
+        except OSError:
+            raise DeliveryError('GitHub CLI request could not complete') from None
+
+    def _timeout(self, deadline):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:raise DeliveryError('GitHub request deadline exhausted')
+        return min(self.COMMAND_TIMEOUT, remaining)
+
+    def _wait(self, delay, diagnostic, deadline):
+        delay += random.uniform(1, 5)
+        if delay > self.wait_remaining:
+            raise DeliveryError('GitHub rate-limit wait budget exhausted (' + diagnostic + ')')
+        if delay >= deadline - time.monotonic():
+            raise DeliveryError('GitHub request deadline exhausted (' + diagnostic + ')')
+        print(f'GitHub rate limit ({diagnostic}); waiting {delay:.1f}s; '
+              f'wait budget remaining {self.wait_remaining - delay:.1f}s', file=sys.stderr, flush=True)
+        remaining = delay
+        while remaining > 0:
+            self._timeout(deadline)
+            step = min(60, remaining)
+            self.wait_remaining -= step
+            time.sleep(step)  # Interrupts/cancellation propagate; no detached sleeper.
+            remaining -= step
+
+    def _rate_delay(self, failure, attempt):
+        if failure.status not in (403, 429):return None
+        headers = failure.headers
+        delays = []
+        retry = headers.get('retry-after')
+        seconds = rate_integer(retry)
+        if seconds is not None:
+            delays.append(seconds)
+        elif isinstance(retry, str) and len(retry) <= 100:
+            try:
+                date = parsedate_to_datetime(retry)
+                if date.tzinfo is not None:delays.append(max(0, date.timestamp() - time.time()))
+            except (ValueError, TypeError, OverflowError):pass
+        reset = rate_integer(headers.get('x-ratelimit-reset'))
+        if rate_integer(headers.get('x-ratelimit-remaining')) == 0 and reset is not None:
+            delays.append(max(1, reset - time.time()))
+        if delays:return max(delays)
+        if failure.status == 429 or failure.rate_message:
+            return min(60 * 2 ** (attempt - 1), 15 * 60)
+        return None
+
+    def _wait_after_limit(self, error, attempt, deadline):
+        delay = self._rate_delay(error, attempt)
+        if delay is None:raise error
+        if attempt == self.MAX_ATTEMPTS:
+            raise DeliveryError('GitHub rate-limit attempt limit exhausted (' +
+                                rate_diagnostic(error.status, error.headers) + ')') from None
+        self._wait(delay, rate_diagnostic(error.status, error.headers), deadline)
+
+    def _read(self, operation, *, deadline=None):
+        deadline = deadline if deadline is not None else time.monotonic() + self.REQUEST_DEADLINE
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            self._timeout(deadline)
+            try:return operation(deadline)
+            except HTTPFailure as error:self._wait_after_limit(error, attempt, deadline)
+
+    def _json_once(self, endpoint, method, body, missing, deadline):
+        arguments = ['api', '--hostname', 'github.com', '--include', '--method', method, endpoint]
+        if body is not None:arguments += ['--input', '-']
+        result = self._run(arguments, body=body, timeout=self._timeout(deadline))
+        if len(result.stdout) > HTTP_JSON_LIMIT:
+            raise DeliveryError('remote JSON exceeds supported inventory limit')
+        stream = io.BytesIO(result.stdout)
+        status, headers = response_head(stream);payload = stream.read()
+        if missing and status == 404 and result.returncode:return None
+        if not 200 <= status < 300:raise HTTPFailure(status, headers, payload)
+        if result.returncode:raise DeliveryError('GitHub API response was incomplete')
+        try:return parse(payload)
+        except (UnicodeError, ValueError):raise DeliveryError('invalid complete GitHub JSON response') from None
+
+    def _headroom(self):
+        """Unmetered primary-quota observation, never a shared-quota reservation."""
+        deadline = time.monotonic() + self.REQUEST_DEADLINE
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            try:value = self._json_once('rate_limit', 'GET', None, False, deadline)
+            except HTTPFailure as error:
+                self._wait_after_limit(error, attempt, deadline)
+                continue
+            resources = value.get('resources', {}) if isinstance(value, dict) else {}
+            core = resources.get('core', {}) if isinstance(resources, dict) else {}
+            if (not isinstance(core, dict) or not positive(core.get('limit'))
+                    or type(core.get('remaining')) is not int or not 0 <= core['remaining'] <= core['limit']
+                    or not positive(core.get('reset'))):
+                raise DeliveryError('GitHub primary quota preflight returned invalid core limits')
+            if core['remaining'] >= min(self.WRITE_HEADROOM, core['limit']):return
+            diagnostic = rate_diagnostic(200, {'x-ratelimit-' + k:str(core[k]) for k in ('limit','remaining','reset')})
+            if attempt == self.MAX_ATTEMPTS:
+                raise DeliveryError('GitHub quota preflight attempt limit exhausted (' + diagnostic + ')')
+            self._wait(max(1, core['reset'] - time.time()), diagnostic, deadline)
 
     def json(self, endpoint, *, method='GET', body=None, missing=False):
-        arguments = ['api', '--hostname', 'github.com', '--include', '--method', method, endpoint]
-        if body is not None:
-            arguments += ['--input', '-']
-        result = self._run(arguments, body=archive.encoded(body) if body is not None else None)
-        raw = result.stdout.replace(b'\r\n', b'\n')
-        head, separator, payload = raw.partition(b'\n\n')
-        status = re.match(rb'HTTP/\S+ ([0-9]{3})(?:\s|$)', head)
-        if missing and status and status[1] == b'404' and result.returncode:
-            return None
-        if (not separator or not status or not 200 <= int(status[1]) < 300 or result.returncode):
-            raise DeliveryError('GitHub API request failed; inspect authenticated CLI diagnostics privately')
-        return parse(payload)
+        encoded = archive.encoded(body) if body is not None else None
+        if method == 'GET':
+            return self._read(lambda end: self._json_once(endpoint, method, encoded, missing, end))
+        self._headroom()
+        try:return self._json_once(endpoint, method, encoded, missing, time.monotonic() + self.REQUEST_DEADLINE)
+        except DeliveryError as error:
+            raise DeliveryError(str(error) + '; remote outcome requires reconciliation', True) from None
 
     def pages(self, endpoint):
-        # Distribution CLI versions support --paginate without the newer
-        # --slurp option. Decode its complete concatenated JSON page stream.
-        result = self._run(['api', '--hostname', 'github.com', '--paginate', endpoint])
-        if result.returncode:
-            raise DeliveryError('complete remote pagination failed')
-        raw = result.stdout.decode('utf-8')
-        if len(raw) > 16 * 1024 * 1024:
-            raise DeliveryError('remote pagination exceeds supported inventory limit')
-        decoder = json.JSONDecoder(object_pairs_hook=coverage.object_pairs,
-            parse_constant=lambda _: (_ for _ in ()).throw(DeliveryError('nonfinite remote JSON')))
-        pages, offset = [], 0
-        while offset < len(raw):
-            while offset < len(raw) and raw[offset] in ' \r\n\t': offset += 1
-            if offset == len(raw): break
-            page, offset = decoder.raw_decode(raw, offset)
-            if not isinstance(page, list):
-                raise DeliveryError('expected every page of a remote array')
-            pages.append(page)
-        if not pages:
-            raise DeliveryError('complete remote pagination returned no pages')
-        return [item for page in pages for item in page]
+        # gh2.23 (bookworm) supports --include/--paginate, but not --slurp.
+        # Each attempt restarts the complete inventory; no prefix survives a retry.
+        def attempt(deadline):
+            result = self._run(['api', '--hostname', 'github.com', '--include', '--paginate',
+                                '--method', 'GET', endpoint], timeout=self._timeout(deadline))
+            raw = result.stdout
+            if len(raw) > HTTP_JSON_LIMIT:
+                raise DeliveryError('remote pagination exceeds supported inventory limit')
+            stream = io.BytesIO(raw)
+            decoder = json.JSONDecoder(object_pairs_hook=coverage.object_pairs,
+                parse_constant=lambda _: (_ for _ in ()).throw(DeliveryError('nonfinite remote JSON')))
+            pages = []
+            try:
+                while stream.tell() < len(raw):
+                    # gh inserts a newline between included page responses.
+                    while stream.tell() < len(raw) and raw[stream.tell()] in b' \r\n\t':stream.seek(1, 1)
+                    if stream.tell() == len(raw):break
+                    status, headers = response_head(stream)
+                    if not 200 <= status < 300:raise HTTPFailure(status, headers, stream.read(4097))
+                    offset = stream.tell();tail = raw[offset:].decode('utf-8')
+                    leading = len(tail) - len(tail.lstrip())
+                    page, end = decoder.raw_decode(tail, leading)
+                    if not isinstance(page, list):raise DeliveryError('expected every page of a remote array')
+                    pages.append(page);stream.seek(offset + len(tail[:end].encode('utf-8')))
+                if result.returncode or not pages:raise DeliveryError('incomplete remote page inventory')
+            except HTTPFailure:raise
+            except (UnicodeError, ValueError):
+                raise DeliveryError('complete remote pagination failed; invalid or incomplete response stream') from None
+            return [item for page in pages for item in page]
+        return self._read(attempt)
 
     def upload(self, tag, path):
-        result = self._run(['release', 'upload', tag, '--repo', 'github.com/' + self.repository, str(path)])
+        self._headroom()
+        try:
+            result = self._run(['release', 'upload', tag, '--repo', 'github.com/' + self.repository, str(path)])
+        except DeliveryError as error:
+            raise DeliveryError(str(error) + '; remote outcome requires reconciliation', True) from None
         if result.returncode:
             raise DeliveryError('asset upload failed; remote outcome requires reconciliation', True)
 
     def download(self, asset_id, path):
-        with Path(path).open('xb') as stream:
-            result = self._run(['api', '--hostname', 'github.com',
-                                f'repos/{self.repository}/releases/assets/{asset_id}',
-                                '-H', 'Accept:application/octet-stream'], output=stream)
-        if result.returncode:
-            raise DeliveryError('asset download failed; incomplete local staging must not be reused')
+        path = Path(path)
+        if path.exists() or path.is_symlink():raise DeliveryError('asset download destination must be new')
+        def attempt(deadline):
+            # Each failed attempt closes and removes its complete private response
+            # before any wait. Header bytes and partial payloads never reach path.
+            with tempfile.TemporaryDirectory(prefix='.github-download-', dir=path.parent) as temporary:
+                raw = Path(temporary) / 'response'
+                with raw.open('xb') as stream:
+                    result = self._run(['api', '--hostname', 'github.com', '--include', '--method', 'GET',
+                        f'repos/{self.repository}/releases/assets/{asset_id}',
+                        '-H', 'Accept:application/octet-stream'], output=stream, timeout=self._timeout(deadline))
+                with raw.open('rb') as stream:
+                    status, headers = response_head(stream)
+                    if not 200 <= status < 300:raise HTTPFailure(status, headers, stream.read(4097))
+                    if result.returncode or status != 200:
+                        raise DeliveryError('asset download failed; incomplete response must not be reused')
+                    with path.open('xb') as destination:shutil.copyfileobj(stream, destination)
+        return self._read(attempt)
 
 
 class Remote:

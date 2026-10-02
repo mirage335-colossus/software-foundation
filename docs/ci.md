@@ -163,6 +163,15 @@ disk. Neither workflow deletes originals or grants qualification.
 
 Release transport avoids Actions artifact quota; it still consumes transfer,
 runner disk and service resources. Budget bundle counts, bytes and retention.
+API requests are another shared budget. A standard workflow token has a
+[1,000-request hourly repository limit](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#primary-rate-limit-for-github_token-in-github-actions),
+independent of release storage and runner concurrency. Count paginated inventory
+reads, authenticated chunk downloads, provenance rechecks, upload lookups and
+readback, including final aggregation. More runners cannot increase that quota.
+Keep focused development checks small; complete release qualification still needs
+its declared coverage. Group setup and transport where the tested identities agree.
+Rate waits preserve required assertions; they do not turn unavailable work green.
+
 Review draft inventories periodically. Delete only specifically approved expired
 stores after confirming that no release, SDK replay or evidence record depends on
 them. Preserve referenced inputs in durable base or release-owned copies first.
@@ -214,6 +223,31 @@ that same inventory from retained inputs. Each Linux ABI operation audits its
 complete archive once. Native archive execution and package-manager checks remain
 separate for each backend. Browser source and recovery operations remain distinct
 for each required engine.
+
+The workflow places those unchanged operations into **11 CI batches**, selected
+by runner, container image, target and environment. Each batch downloads the exact
+input bundle once, then runs each original case with its own identity and evidence
+directory. Container cases still launch separate disposable systems, preserving
+package-manager isolation and per-case privilege rules. Native Ubuntu browser
+checks stay separate from Ubuntu container checks. Windows setup and the retained
+graphics download are shared only where required. A failed case does not suppress
+independent later cases, but any failure makes the batch fail.
+
+Transport retains the complete tree of case directories in one evidence bundle
+per batch. Aggregation restores each disjoint batch once and still requires every
+original logical result. This batches transfer and runner setup; it neither merges
+archive assertions nor changes the stricter whole-artifact execution contract below.
+The initial one-page/one-evidence-chunk estimate falls from roughly 3,900 to 754
+requests for check inputs, evidence publication and aggregation. This is a planning
+estimate: extra pages, chunks, fixed stages, retries and other repository activity
+still consume quota and need bounded rate handling.
+
+The workflow gives each batch a 240-minute job allowance, including quota waits.
+Each case retains its separate 90-minute safety cap. These are independent
+upper bounds, not a promise that every case can consume its entire allowance in
+one batch. When adding long checks, split the deterministic batches and budget
+setup, execution, evidence retention and API waits within the hosting service's
+job limit. Exhausting a batch deadline leaves incomplete qualification and must fail.
 
 A frozen `execution` group may share only identical source, release inventory,
 dependency bytes, command, configuration, target, actual environment and scope.
