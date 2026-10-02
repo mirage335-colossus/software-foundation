@@ -132,7 +132,7 @@ class InputIdentityTests(unittest.TestCase):
         frozen = self.freeze()
         (self.root / 'plan.json').write_text(json.dumps(frozen))
         (sdk / 'sysroot/usr/include/example.h').write_bytes(b'changed target input')
-        with patch.object(sys, 'argv', ['test_plan.py', 'run', '--build', str(self.build), '--plan', str(self.root / 'plan.json'), '--shard', '0', '--output', str(self.root / 'report.json')]), patch.object(plan.subprocess, 'run') as run:
+        with patch.object(sys, 'argv', ['test_plan.py', 'run', '--build', str(self.build), '--plan', str(self.root / 'plan.json'), '--shard', '0', '--output', str(self.root / 'report.json')]), patch.object(plan.windows_compiler, 'run') as run:
             with self.assertRaises(ValueError): plan.main()
             run.assert_not_called()
         self.assertFalse((self.root / 'report.json').exists())
@@ -207,7 +207,7 @@ class InputIdentityTests(unittest.TestCase):
         from unittest.mock import patch
         output = self.root / 'plan.json'
         def changed(*args, **kwargs): self.compiler.write_bytes(b'changed during build')
-        with patch.object(sys, 'argv', ['test_plan.py', 'plan', '--build', str(self.build), '--shards', '1', '--output', str(output)]), patch.object(plan.subprocess, 'run', side_effect=changed):
+        with patch.object(sys, 'argv', ['test_plan.py', 'plan', '--build', str(self.build), '--shards', '1', '--output', str(output)]), patch.object(plan.windows_compiler, 'run', side_effect=changed):
             with self.assertRaisesRegex(ValueError, 'compiling test prerequisites'):
                 plan.main()
         self.assertFalse(output.exists())
@@ -222,10 +222,89 @@ class InputIdentityTests(unittest.TestCase):
                 Path(argv[argv.index('--output-junit')+1]).write_text('<testsuite><testcase name="core.store" status="run"/></testsuite>')
                 self.compiler.write_bytes(b'changed during test')
             return subprocess.CompletedProcess(argv,0)
-        with patch.object(sys, 'argv', ['test_plan.py','run','--build',str(self.build),'--plan',str(path),'--shard','0','--output',str(output)]), patch.object(plan.subprocess,'run',side_effect=runner):
+        with patch.object(sys, 'argv', ['test_plan.py','run','--build',str(self.build),'--plan',str(path),'--shard','0','--output',str(output)]), patch.object(plan.windows_compiler,'run',side_effect=runner):
             with self.assertRaisesRegex(ValueError,'compiler'):
                 plan.main()
         self.assertFalse(output.exists())
+
+    def owned_route(self, route, output):
+        import json, sys
+        from unittest.mock import patch
+        if route == 'candidate':
+            (self.build / 'CTestTestfile.cmake').write_text('# declaration fixture\n')
+            (self.build / 'test-platform.json').write_text(json.dumps({'schema_version': 1, 'excluded_suites': {}}))
+            definitions = [{'name': 'core.store', 'command': ['inert']},
+                {'name': 'tools.fixture', 'properties': [{'name': 'LABELS', 'value': ['tools']}]},
+                {'name': 'integration.fixture', 'properties': [{'name': 'LABELS', 'value': ['integration']}]}]
+            with patch.object(plan, 'test_definitions', return_value=definitions):
+                return plan.candidate_run(self.build, 'core', output, jobs=3, build_jobs=2)
+        argv = ['test_plan.py', route, '--build', str(self.build), '--output', str(output), '--jobs', '2']
+        if route == 'run':
+            recipe = self.root / 'frozen-plan.json'; recipe.write_text(json.dumps(self.freeze()))
+            argv += ['--plan', str(recipe), '--shard', '0']
+        else:
+            argv += ['--shards', '1']
+        with patch.object(sys, 'argv', argv):
+            return plan.main()
+
+    def test_owned_ctest_nonzero_preserves_failed_receipts_and_junit(self):
+        import json, subprocess
+        from unittest.mock import patch
+        programs = {'cmake': 'owned-cmake', 'ctest': 'owned-ctest'}
+        environment = {'PATH': 'selected-toolkit'}
+        for route in ('candidate', 'run'):
+            with self.subTest(route=route):
+                output = self.root / (route + '-failed.json')
+                calls = []
+                def owned(argv, **options):
+                    calls.append(argv); self.assertEqual(options, {'env': environment})
+                    if argv[0] == programs['ctest']:
+                        junit = Path(argv[argv.index('--output-junit') + 1])
+                        junit.write_text('<testsuite><testcase name="core.store"><failure/></testcase></testsuite>')
+                        raise subprocess.CalledProcessError(8, argv)
+                    self.assertEqual(argv[0], programs['cmake'])
+                    self.assertIn('foundation-tests', argv)
+                    return subprocess.CompletedProcess(argv, 0)
+                with patch.object(plan, 'execution_context', return_value=(programs, environment)), \
+                        patch.object(plan.windows_compiler, 'run', side_effect=owned), \
+                        patch.object(plan.subprocess, 'run', side_effect=AssertionError('unowned test launch')):
+                    if route == 'candidate':
+                        with self.assertRaisesRegex(ValueError, 'candidate scope failed'):
+                            self.owned_route(route, output)
+                    else:
+                        self.assertEqual(self.owned_route(route, output), 1)
+                receipt = json.loads(output.read_text())
+                self.assertEqual(receipt['exit_code'], 8)
+                self.assertEqual(receipt['results'], {'core.store': 'failed_or_incomplete'})
+                self.assertEqual([argv[0] for argv in calls], ['owned-cmake', 'owned-ctest'])
+                self.assertTrue(Path(calls[-1][calls[-1].index('--output-junit') + 1]).is_file())
+                self.assertEqual(environment, {'PATH': 'selected-toolkit'})
+
+    def test_owner_and_timeout_failures_never_read_junit_or_emit_receipts(self):
+        import subprocess
+        from unittest.mock import patch
+        import process_tree
+        programs = {'cmake': 'owned-cmake', 'ctest': 'owned-ctest'}
+        for route in ('candidate', 'run', 'plan'):
+            for phase in ('compile', 'test') if route != 'plan' else ('compile',):
+                for failure in (process_tree.ProcessTreeError('descendant join unknown'),
+                                subprocess.TimeoutExpired('owned-command', 1)):
+                    with self.subTest(route=route, phase=phase, failure=type(failure).__name__):
+                        output = self.root / (route + '-' + phase + '-' + type(failure).__name__ + '.json')
+                        def owned(argv, **options):
+                            if (argv[0] == programs['cmake']) == (phase == 'compile'):
+                                raise failure
+                            return subprocess.CompletedProcess(argv, 0)
+                        with patch.object(plan, 'execution_context', return_value=(programs, {})), \
+                                patch.object(plan.windows_compiler, 'run', side_effect=owned) as run, \
+                                patch.object(plan.subprocess, 'run', side_effect=AssertionError('unowned test launch')), \
+                                patch.object(plan, 'junit_results', side_effect=AssertionError('unsafe JUnit read')) as read:
+                            with self.assertRaises(type(failure)) as caught:
+                                self.owned_route(route, output)
+                        self.assertIs(caught.exception, failure)
+                        self.assertEqual(run.call_count, 1 if phase == 'compile' else 2)
+                        read.assert_not_called()
+                        self.assertFalse(output.exists())
 
 class NativeExecutionTests(unittest.TestCase):
     def test_actual_cmake_plan_run_and_merge(self):
@@ -286,14 +365,14 @@ class CandidateInventoryTests(unittest.TestCase):
                 self.assertFalse((build/'relative.junit.xml').exists())
                 row=json.loads(paths[1].read_text());row['tool_reports']['tools.fixture']['results']['one']['status']='incomplete';paths[1].write_text(json.dumps(row))
                 with self.assertRaisesRegex(ValueError,'inner'):plan.candidate_merge(paths)
-                original_run=subprocess.run
+                original_run=plan.windows_compiler.run
                 def mutate_declaration(argv, **kwargs):
                     result=original_run(argv,**kwargs)
                     if '--build' in argv:
                         declaration=build/'CTestTestfile.cmake'
                         declaration.write_text(declaration.read_text()+'# changed during prerequisite build\n')
                     return result
-                with patch.object(plan.subprocess,'run',side_effect=mutate_declaration):
+                with patch.object(plan.windows_compiler,'run',side_effect=mutate_declaration):
                     with self.assertRaisesRegex(ValueError,'prerequisite compilation'):
                         plan.candidate_run(build,'core',root/'changed.json')
                 self.assertFalse((root/'changed.json').exists())

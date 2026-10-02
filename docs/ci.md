@@ -304,6 +304,21 @@ supplier inputs, source and notices and review redistribution terms before
 operating an archive mirror. Qualification demonstrates the tested software
 rendering environment; physical display and device checks remain separate.
 
+Early failures may precede every test or graphics output. The application and
+native GUI diagnostic selections therefore include the lifecycle's existing,
+immutable `build/receipts/failure.json`. Explicit process-ownership and timeout
+failures retain their original exception and traceback after the receipt is
+written. The selections preserve that bounded receipt even when no downstream
+output exists. Bundle paths follow the selected declarations'
+common root, including declarations that match no file. A failed
+application or native GUI selection uses `build` as its root: the receipt appears
+as `receipts/failure.json`, even without downstream files; application evidence
+appears beside it under `produced/`, and native GUI evidence under `native-gui/`. The receipt declaration is conditional on
+failure, so successful runs retain their existing evidence layout. Inspect the
+verified manifest when recovering failed evidence. Never substitute a recursive
+build-tree upload or read mutable output beneath an uncertain writer. The failure
+receipt grants no qualification or publication eligibility.
+
 ## Retained workflow validator
 
 The automatic workflow syntax job requires actionlint 1.7.12. It first uses an

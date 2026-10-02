@@ -953,9 +953,10 @@ def windows_gui_qualification(command, archive, build, output, jobs, *, protecte
         raise ValueError('Windows GUI qualification requires the complete release host test command')
     prepare = command.copy(); prepare[2] = 'build'; prepare.remove('--full')
     index = prepare.index('--junit'); del prepare[index:index + 2]
-    subprocess.run(prepare, cwd=cwd, check=True)
-    subprocess.run(['cmake', '--build', str(build), '--target', 'foundation-gui-tests',
-                    '--parallel', str(jobs)], cwd=cwd, check=True)
+    compiler = module('windows_compiler')
+    compiler.run(prepare, cwd=cwd)
+    compiler.run(['cmake', '--build', str(build), '--target', 'foundation-gui-tests',
+                  '--parallel', str(jobs)], cwd=cwd)
     probe = output / 'graphics-probe'; probe.mkdir()
     graphics = None; setup_receipt = None
     try:

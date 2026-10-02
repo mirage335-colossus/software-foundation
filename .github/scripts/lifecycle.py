@@ -16,6 +16,7 @@ import ci_plan as ci
 import github_release as delivery
 import dependency_store
 import coverage as evidence
+from process_tree import ProcessTreeError
 
 
 def retained_graphics(url, archive):
@@ -618,13 +619,21 @@ def main(command):
     else: raise ValueError('unknown workflow operation')
 
 
-if __name__ == '__main__':
-    try: main(sys.argv[1])
-    except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error:
-        uncertain = sys.argv[1] in ('bundle-store', 'publish-bases', 'publish-gui', 'publish-candidate', 'attach-certificate', 'promote')
+def cli(command):
+    try: main(command)
+    except (ValueError, OSError, KeyError, subprocess.CalledProcessError,
+            ProcessTreeError, subprocess.TimeoutExpired) as error:
+        uncertain = command in ('bundle-store', 'publish-bases', 'publish-gui', 'publish-candidate', 'attach-certificate', 'promote')
         receipt = {'ok': False, 'uncertain': uncertain or bool(getattr(error, 'uncertain', False)),
-                   'operation': sys.argv[1], 'error': str(error),
+                   'operation': command, 'error': str(error),
                    'action': 'reconcile remote state before retry' if uncertain else 'repair prerequisites and inspect retained evidence'}
         try: write('build/receipts/failure.json', receipt)
         except OSError: pass
+        if isinstance(error, (ProcessTreeError, subprocess.TimeoutExpired)):
+            # Retain the owner's original traceback and chained diagnostics.
+            raise
         raise SystemExit(json.dumps(receipt))
+
+
+if __name__ == '__main__':
+    cli(sys.argv[1])

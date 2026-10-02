@@ -177,6 +177,7 @@ jobs:
       env:
         BUNDLE_NAME: application-evidence-${{ matrix.target }}-${{ github.run_attempt }}
         BUNDLE_PATHS: |-
+          ${{ job.status == 'failure' && 'build/receipts/failure.json' || '' }}
           build/produced/source.junit.xml
           build/produced/work/build/Testing/Temporary/
           build/produced/work/build/test-reports/

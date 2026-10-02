@@ -36,6 +36,67 @@ class StorageLayoutTests(unittest.TestCase):
     def file(self,name,data=b'checked bytes'):
         p=self.root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data);return p
 
+    def diagnostic_paths(self, workflow, failed):
+        name = 'application-evidence-' if workflow == 'sdk-application' else 'native-gui-evidence-'
+        text = (ROOT / f'.github/workflows/{workflow}.yml').read_text()
+        block = text.split('        BUNDLE_NAME: ' + name, 1)[1].split('        BUNDLE_PATHS: |-\n', 1)[1]
+        lines = []
+        for line in block.splitlines():
+            if not line.startswith('          '):
+                break
+            lines.append(line.strip())
+        conditional = "${{ job.status == 'failure' && 'build/receipts/failure.json' || '' }}"
+        self.assertEqual(lines.count(conditional), 1)
+        return '\n'.join(
+            ('build/receipts/failure.json' if failed else '') if line == conditional else line
+            for line in lines)
+
+    def failure_receipt(self):
+        path = self.root / 'build/receipts/failure.json'
+        receipt = {'ok': False, 'operation': 'application-build', 'error': 'compiler failed'}
+        lifecycle.write(path, receipt)
+        with self.assertRaises(FileExistsError):
+            lifecycle.write(path, {'ok': True})
+        self.assertLess(path.stat().st_size, 4096)
+        return path
+
+    def test_early_failure_retains_only_existing_static_receipt(self):
+        receipt = self.failure_receipt()
+        for name in ('build/receipts/other.json', 'build/base/sdk.tar.gz',
+                     'build/produced/application.zip', 'build/native-gui/build/program.exe'):
+            self.file(name)
+        for workflow in ('sdk-application', 'native-gui'):
+            with self.subTest(workflow=workflow):
+                root, paths = lifecycle.bundle_inputs(self.diagnostic_paths(workflow, failed=True))
+                self.assertEqual(root, self.root / 'build')
+                inventory = ci_transport._inventory(root, paths, False)
+                self.assertEqual(set(inventory), {'receipts/failure.json'})
+                self.assertEqual(inventory['receipts/failure.json']['size'], receipt.stat().st_size)
+                self.assertEqual(inventory['receipts/failure.json']['sha256'],
+                                 hashlib.sha256(receipt.read_bytes()).hexdigest())
+
+    def test_failure_receipt_and_partial_diagnostics_preserve_declared_build_root(self):
+        self.failure_receipt()
+        for workflow, directory in (('sdk-application', 'produced'), ('native-gui', 'native-gui')):
+            with self.subTest(workflow=workflow):
+                self.file(f'build/{directory}/source.junit.xml', b'<testsuite failures="1"/>')
+                self.file(f'build/{directory}/build/private.bin')
+                root, paths = lifecycle.bundle_inputs(self.diagnostic_paths(workflow, failed=True))
+                self.assertEqual(root, self.root / 'build')
+                self.assertEqual(set(ci_transport._inventory(root, paths, False)),
+                                 {'receipts/failure.json', f'{directory}/source.junit.xml'})
+
+    def test_success_diagnostics_keep_existing_layout_without_failure_receipt(self):
+        for workflow, directory, relative in (('sdk-application', 'produced', 'source.junit.xml'),
+                                             ('native-gui', 'native-gui', 'native-gui/source.junit.xml')):
+            with self.subTest(workflow=workflow):
+                self.file(f'build/{directory}/source.junit.xml', b'<testsuite failures="0"/>')
+                self.file(f'build/{directory}/build/private.bin')
+                root, paths = lifecycle.bundle_inputs(self.diagnostic_paths(workflow, failed=False))
+                self.assertEqual(root, self.root / ('build/produced' if workflow == 'sdk-application' else 'build'))
+                self.assertEqual(set(ci_transport._inventory(root, paths, False)), {relative})
+        self.assertFalse((self.root / 'build/receipts/failure.json').exists())
+
     def test_single_directory_selects_contents_without_invalid_dot_path(self):
         self.file('build/group/a.json');self.file('build/group/nested/b.txt')
         root,paths=lifecycle.bundle_inputs('build/group/')

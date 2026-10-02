@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build as builder
+import windows_compiler
 from dependency_archive import read_json
 from dependency_store import verify_group
 from source_identity import source_tree
@@ -292,8 +293,8 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None):
     compile_jobs = build_jobs or builder.positive(os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL") or str(builder.default_jobs()))
     before = candidate_prerequisite_inputs(build)
     programs, environment = execution_context(build)
-    subprocess.run([programs["cmake"], "--build", str(build), "--target", "foundation-tests",
-                    "--parallel", str(compile_jobs)], check=True, env=environment)
+    windows_compiler.run([programs["cmake"], "--build", str(build), "--target", "foundation-tests",
+                          "--parallel", str(compile_jobs)], env=environment)
     if candidate_prerequisite_inputs(build) != before:
         raise ValueError("candidate inputs changed during prerequisite compilation")
     # CTest omits executable commands until their targets exist. Freeze the full
@@ -303,9 +304,14 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None):
     junit = output.with_suffix(".junit.xml").resolve()
     if junit.exists():
         raise ValueError("candidate JUnit must name a new attempt")
-    process = subprocess.run([programs["ctest"], "--test-dir", str(build), "--no-tests=error", "--output-on-failure",
-        "--parallel", str(jobs), "-R", "^(" + "|".join(re.escape(name) for name in names) + ")$",
-        "--output-junit", str(junit)], env=environment)
+    try:
+        exit_code = windows_compiler.run([programs["ctest"], "--test-dir", str(build), "--no-tests=error", "--output-on-failure",
+            "--parallel", str(jobs), "-R", "^(" + "|".join(re.escape(name) for name in names) + ")$",
+            "--output-junit", str(junit)], env=environment).returncode
+    except subprocess.CalledProcessError as error:
+        # The owner raises this only after a nonzero command and its children
+        # have joined. Ownership and timeout failures must bypass report creation.
+        exit_code = error.returncode
     outcomes = junit_results(junit, names)
     if candidate_plan(build) != frozen:
         raise ValueError("candidate inputs changed during execution")
@@ -315,9 +321,9 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None):
     inner = {name: checked.tool_report(read_json(build / "test-reports" / (name.removeprefix("tools.") + ".json")))
              for name in names if name.startswith("tools.")}
     result = dict(schema_version=1, plan=frozen, scope=scope, results=outcomes, tool_reports=inner,
-                  exit_code=process.returncode, junit_sha256=hashlib.sha256(junit.read_bytes()).hexdigest())
+                  exit_code=exit_code, junit_sha256=hashlib.sha256(junit.read_bytes()).hexdigest())
     save(output, result)
-    if process.returncode or any(value != "passed" for value in outcomes.values()):
+    if exit_code or any(value != "passed" for value in outcomes.values()):
         raise ValueError("candidate scope failed")
     return result
 
@@ -409,8 +415,8 @@ def main():
             validate_plan(planned)
             require_current(args.build, planned)
         programs, environment = execution_context(args.build)
-        subprocess.run([programs["cmake"], "--build", str(args.build), "--target", "foundation-tests",
-                        "--parallel", str(args.jobs)], check=True, env=environment)
+        windows_compiler.run([programs["cmake"], "--build", str(args.build), "--target", "foundation-tests",
+                              "--parallel", str(args.jobs)], env=environment)
         if before != source_id(args.build) or inputs_before != build_inputs(args.build):
             raise ValueError("source, compiler or prepared inputs changed while compiling test prerequisites")
     if args.action == "plan":
@@ -429,14 +435,17 @@ def main():
             junit = args.output.with_name(args.output.name + ".junit.xml").resolve()
             # Prevent stale JUnit data from surviving a failed test launch.
             junit.unlink(missing_ok=True)
-            result = subprocess.run([programs["ctest"], "--test-dir", str(args.build), "--no-tests=error", "--output-on-failure",
-                                     "--parallel", str(args.jobs), "-R", "^(" + "|".join(re.escape(x) for x in expected) + ")$",
-                                     "--output-junit", str(junit)], env=environment)
+            try:
+                exit_code = windows_compiler.run([programs["ctest"], "--test-dir", str(args.build), "--no-tests=error", "--output-on-failure",
+                    "--parallel", str(args.jobs), "-R", "^(" + "|".join(re.escape(x) for x in expected) + ")$",
+                    "--output-junit", str(junit)], env=environment).returncode
+            except subprocess.CalledProcessError as error:
+                exit_code = error.returncode
             results = junit_results(junit, expected)
             require_current(args.build, plan)
             save(args.output, {"schema_version": 1, "plan": plan["id"], "shard": args.shard,
-                               "exit_code": result.returncode, "results": results})
-            if result.returncode or any(value != "passed" for value in results.values()):
+                               "exit_code": exit_code, "results": results})
+            if exit_code or any(value != "passed" for value in results.values()):
                 return 1
     return 0
 

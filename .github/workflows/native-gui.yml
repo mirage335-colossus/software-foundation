@@ -73,6 +73,7 @@ jobs:
       env:
         BUNDLE_NAME: native-gui-evidence-${{ inputs.target }}-${{ github.run_attempt }}
         BUNDLE_PATHS: |-
+          ${{ job.status == 'failure' && 'build/receipts/failure.json' || '' }}
           build/native-gui/qualification.json
           build/native-gui/source.junit.xml
           build/native-gui/build/Testing/Temporary/

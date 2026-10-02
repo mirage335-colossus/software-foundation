@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import traceback
 import unittest
 from unittest.mock import patch
 
@@ -674,5 +675,78 @@ class SdkProducerIsolationTests(unittest.TestCase):
             self.assertEqual(receipt['status'],'passed')
             self.assertEqual((output/'qualification.json').exists(),not defer)
         self.assertEqual(sdk.install.call_count,2)
+
+
+
+class LifecycleFailureReceiptTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(); self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name).resolve()
+        previous = Path.cwd(); lifecycle.os.chdir(self.root)
+        self.addCleanup(lifecycle.os.chdir, previous)
+        self.receipt = self.root / 'build/receipts/failure.json'
+
+    def failures(self):
+        return (lifecycle.ProcessTreeError('owned helper remains live'),
+                subprocess.TimeoutExpired(['owned-compiler'], 3))
+
+    def test_owned_failure_receipt_preserves_original_exception_cause_and_traceback(self):
+        for command in ('gui-qualify', 'publish-candidate'):
+            for error in self.failures():
+                with self.subTest(command=command, error=type(error).__name__):
+                    cause = OSError('original owner diagnostic')
+                    def fail(operation):
+                        self.assertEqual(operation, command)
+                        raise error from cause
+                    with patch.object(lifecycle, 'main', side_effect=fail):
+                        try:
+                            lifecycle.cli(command)
+                        except (lifecycle.ProcessTreeError, subprocess.TimeoutExpired) as caught:
+                            self.assertIs(caught, error)
+                            self.assertIs(caught.__cause__, cause)
+                            self.assertIn('fail', [frame.name for frame in traceback.extract_tb(caught.__traceback__)])
+                        else:
+                            self.fail('owned failure was suppressed')
+                    receipt = json.loads(self.receipt.read_text())
+                    self.assertFalse(receipt['ok'])
+                    self.assertEqual(receipt['operation'], command)
+                    self.assertEqual(receipt['error'], str(error))
+                    self.assertEqual(receipt['uncertain'], command == 'publish-candidate')
+                    self.receipt.unlink()
+
+    def test_receipt_write_failure_preserves_original_owned_error(self):
+        for error in self.failures():
+            with self.subTest(error=type(error).__name__), \
+                 patch.object(lifecycle, 'main', side_effect=error), \
+                 patch.object(lifecycle, 'write', side_effect=OSError('receipt unavailable')):
+                with self.assertRaises(type(error)) as raised: lifecycle.cli('gui-qualify')
+                self.assertIs(raised.exception, error)
+        self.assertFalse(self.receipt.exists())
+
+    def test_existing_failure_receipt_is_never_overwritten(self):
+        self.receipt.parent.mkdir(parents=True); self.receipt.write_text('prior receipt')
+        for error in self.failures():
+            with self.subTest(error=type(error).__name__), patch.object(lifecycle, 'main', side_effect=error):
+                with self.assertRaises(type(error)) as raised: lifecycle.cli('gui-qualify')
+                self.assertIs(raised.exception, error)
+                self.assertEqual(self.receipt.read_text(), 'prior receipt')
+
+    def test_unrelated_runtime_error_does_not_enter_receipt_handling(self):
+        error = RuntimeError('unrelated programming error')
+        with patch.object(lifecycle, 'main', side_effect=error):
+            with self.assertRaises(RuntimeError) as raised: lifecycle.cli('gui-qualify')
+        self.assertIs(raised.exception, error)
+        self.assertFalse(self.receipt.exists())
+
+    def test_success_and_preexisting_error_exit_behavior_are_unchanged(self):
+        with patch.object(lifecycle, 'main') as main:
+            lifecycle.cli('gui-qualify')
+        main.assert_called_once_with('gui-qualify')
+        self.assertFalse(self.receipt.exists())
+        with patch.object(lifecycle, 'main', side_effect=ValueError('invalid input')):
+            with self.assertRaises(SystemExit) as raised: lifecycle.cli('gui-qualify')
+        self.assertEqual(json.loads(raised.exception.code), json.loads(self.receipt.read_text()))
+        self.assertFalse(json.loads(self.receipt.read_text())['ok'])
+
 
 if __name__ == '__main__': unittest.main()

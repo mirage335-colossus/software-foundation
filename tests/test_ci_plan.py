@@ -843,7 +843,7 @@ class WindowsGraphicsCiTests(unittest.TestCase):
         sys.path.insert(0, str(Path(__file__).parent)); import test_github_release
         fixture = test_github_release.DeliveryTests(); fixture.setUp(); self.addCleanup(fixture.doCleanups)
         root = fixture.root; output = root / 'graphics-check'; events = []; commands = []
-        original = ci.module; sdk = Mock(); graphics = Mock()
+        original = ci.module; sdk = Mock(); graphics = Mock(); compiler = Mock()
         sdk.install.return_value = {'capabilities': ['terminal', 'framebuffer', 'fltk', 'rev', 'sdl', 'hosted-web']}
         @contextmanager
         def stage(archive, directories, **options):
@@ -860,13 +860,15 @@ class WindowsGraphicsCiTests(unittest.TestCase):
             if name == 'windows_toolchain':
                 import windows_toolchain
                 return windows_toolchain
-            return sdk if name == 'sdk_windows' else graphics if name == 'windows_graphics' else original(name)
+            return {'sdk_windows': sdk, 'windows_graphics': graphics, 'windows_compiler': compiler}.get(name) or original(name)
         def command(argv, **kwargs):
+            self.assertEqual(kwargs, {'cwd': ci.ROOT})
             commands.append(argv)
             if argv[0] == 'cmake': events.append('prerequisites')
             else:
                 self.assertEqual(argv[2], 'build'); self.assertNotIn('--junit', argv); self.assertNotIn('--full', argv)
                 (output / 'build/gui').mkdir(parents=True); events.append('build')
+        compiler.run.side_effect = command
         def tested(argv, destination, staged):
             self.assertEqual(argv[2], 'test'); self.assertIn('--full', argv); self.assertIn('--host-tests', argv)
             self.assertEqual(staged.environment, {'TEST_GRAPHICS': 'owned'}); events.append('test')
@@ -874,11 +876,14 @@ class WindowsGraphicsCiTests(unittest.TestCase):
             for name in ('qualification.json', 'capture.png', 'capture.ppm'): (captures / name).write_bytes(b'fixture')
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
              patch('windows_toolchain.inspect_selected_linker', return_value={'version':'14.44.35207.0'}), \
-             patch.object(ci.subprocess, 'run', side_effect=command), patch.object(ci, 'graphics_test', side_effect=tested):
+             patch.object(ci.subprocess, 'run', side_effect=AssertionError('unowned compiler launch')), patch.object(ci, 'graphics_test', side_effect=tested):
             result = ci.prepared_check('windows-x86_64', fixture.fixture.recipe, root / 'group', output,
                                       gui_group=root / 'group', graphics_archive=root / 'graphics.7z')
         sdk.install.assert_called_once_with((root / 'group').resolve(strict=True), fixture.fixture.recipe, output / 'dependencies', '14.44.35207.0')
         self.assertEqual(events, ['build', 'prerequisites', 'probe', 'test', 'cleanup'])
+        self.assertEqual(compiler.run.call_count, 2)
+        self.assertEqual(compiler.run.call_args_list[1].args[0],
+                         ['cmake', '--build', str(output / 'build'), '--target', 'foundation-gui-tests', '--parallel', '2'])
         self.assertEqual(json.loads((output / 'graphics.json').read_text())['cleanup'], 'removed')
         self.assertIn('graphics.json', result['graphics_evidence'])
         self.assertIn('build/gui/visual-evidence/run-one/capture.png', result['graphics_evidence'])
@@ -888,7 +893,7 @@ class WindowsGraphicsCiTests(unittest.TestCase):
         events.clear(); commands.clear(); output = root / 'failed-graphics-check'
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
              patch('windows_toolchain.inspect_selected_linker', return_value={'version':'14.44.35207.0'}), \
-             patch.object(ci.subprocess, 'run', side_effect=command), \
+             patch.object(ci.subprocess, 'run', side_effect=AssertionError('unowned compiler launch')), \
              patch.object(ci, 'graphics_test', side_effect=RuntimeError('GUI assertion failed')):
             with self.assertRaisesRegex(RuntimeError, 'GUI assertion failed'):
                 ci.prepared_check('windows-x86_64', fixture.fixture.recipe, root / 'group', output,
@@ -901,7 +906,7 @@ class WindowsGraphicsCiTests(unittest.TestCase):
         graphics.qualified_stage.side_effect = failure
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
              patch('windows_toolchain.inspect_selected_linker', return_value={'version':'14.44.35207.0'}), \
-             patch.object(ci.subprocess, 'run', side_effect=command):
+             patch.object(ci.subprocess, 'run', side_effect=AssertionError('unowned compiler launch')):
             with self.assertRaisesRegex(RuntimeError, 'probe setup failed'):
                 ci.prepared_check('windows-x86_64', fixture.fixture.recipe, root / 'group', output,
                                   gui_group=root / 'group', graphics_archive=root / 'graphics.7z')
@@ -963,7 +968,8 @@ class WindowsGraphicsPackageTests(unittest.TestCase):
         ci.module('source_identity').archive_source(source, self.gui_source)
         self.output = self.root / 'produced'; self.archive = self.root / 'retained.7z'
         self.archive.write_bytes(b'inert retained archive fixture')
-        self.graphics = Mock(); self.sdk = Mock(); self.events = []; self.commands = []
+        self.graphics = Mock(); self.sdk = Mock(); self.compiler = Mock(); self.events = []; self.commands = []
+        self.compiler_failure = None
         self.sdk.install.return_value = {'capabilities': ['terminal', 'framebuffer', 'fltk', 'rev', 'sdl', 'hosted-web']}
         self.real_module = ci.module
         self.artifacts = Mock(describe=self.real_module('artifact').describe)
@@ -1013,7 +1019,8 @@ class WindowsGraphicsPackageTests(unittest.TestCase):
             if name == 'windows_toolchain':
                 import windows_toolchain
                 return windows_toolchain
-            return {'sdk_windows': self.sdk, 'windows_graphics': self.graphics, 'artifact': self.artifacts}.get(name) or self.real_module(name)
+            return {'sdk_windows': self.sdk, 'windows_graphics': self.graphics, 'artifact': self.artifacts,
+                    'windows_compiler': self.compiler}.get(name) or self.real_module(name)
         def launched(argv, **options):
             self.commands.append(argv)
             if argv[0] == 'cmake':
@@ -1031,12 +1038,23 @@ class WindowsGraphicsPackageTests(unittest.TestCase):
                 with zipfile.ZipFile(destination / 'application.zip', 'x') as archive:
                     archive.writestr('Foundation/bin/foundation-cli.exe', 'inert program fixture')
             else: raise AssertionError(argv)
+        def owned(argv, **options):
+            phase = 'prerequisites' if argv[0] == 'cmake' else 'build'
+            self.assertEqual(options, {'cwd': self.output / 'work/source'})
+            if self.compiler_failure == phase:
+                import process_tree
+                raise process_tree.ProcessTreeError('compiler cleanup unknown: ' + phase)
+            return launched(argv, **options)
+        def unmanaged(argv, **options):
+            self.assertEqual(argv[2], 'package', 'compiler launch bypassed its private owner')
+            return launched(argv, **options)
+        self.compiler.run.side_effect = owned
         self.graphics.qualified_stage.side_effect = stage
         self.graphics.run_owned.side_effect = run_test
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
              patch('windows_toolchain.inspect_selected_linker', return_value={'version':'14.44.35207.0'},
                    side_effect=getattr(self, 'probe_error', None)), \
-             patch.object(ci.subprocess, 'run', side_effect=launched):
+             patch.object(ci.subprocess, 'run', side_effect=unmanaged):
             return ci.prepared_package(target, self.recipe, self.group, source or self.gui_source,
                 self.output, 2, graphics_archive=self.archive if graphics else None)
 
@@ -1064,6 +1082,24 @@ class WindowsGraphicsPackageTests(unittest.TestCase):
         for name, digest in receipt['evidence'].items():
             self.assertEqual(self.real_module('coverage').sha(self.output / name), digest)
         self.assertFalse(list(self.output.rglob('*.dll')))
+
+    def test_compiler_owner_failure_stops_graphics_and_packaging(self):
+        import process_tree
+        for phase in ('build', 'prerequisites'):
+            with self.subTest(phase=phase):
+                self.output = self.root / ('failed-' + phase)
+                self.compiler_failure = phase
+                self.events.clear(); self.commands.clear(); self.compiler.reset_mock()
+                with self.assertRaisesRegex(process_tree.ProcessTreeError, 'compiler cleanup unknown: ' + phase):
+                    self.produce()
+                self.assertEqual(self.compiler.run.call_count, 1 if phase == 'build' else 2)
+                self.assertEqual(self.events, [] if phase == 'build' else ['build'])
+                self.graphics.qualified_stage.assert_not_called()
+                self.graphics.run_owned.assert_not_called()
+                self.artifacts.verify.assert_not_called()
+                self.assertFalse((self.output / 'graphics-qualification.json').exists())
+                self.assertFalse((self.output / 'artifact.json').exists())
+                self.assertNotIn('package', self.events)
 
     def test_absent_gui_input_and_unexpected_core_or_linux_input_never_build(self):
         for label, options in [('missing', {'graphics': False}), ('core', {'source': self.core_source}),

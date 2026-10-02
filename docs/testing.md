@@ -268,6 +268,12 @@ use the separate [private MSVC build-service owner](building.md#msvc-build-servi
 which additionally isolates and joins the selected PDB server. Both policies keep
 unknown members and uncertain cleanup as failures.
 
+Source-test candidates and shards own their prerequisite builds and entire CTest
+regions because tests can compile fixtures. A joined nonzero CTest exit still
+produces the ordinary failed JUnit/result evidence. Ownership failures and timeouts
+propagate before report processing; a partial test file cannot establish safe
+completion. Keep these outcomes distinct when adapting the test runner.
+
 The workflow always attempts to retain `result.json` and each repetition's logs
 and inventory through the existing lifecycle `bundle-store`, using the run-scoped
 `host-contracts-ATTEMPT` bundle. It needs repository contents write permission only

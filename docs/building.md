@@ -104,7 +104,8 @@ This provenance is not proof that rebuilding produces identical bytes.
 ## MSVC build-service ownership
 
 Separate build directories do not isolate compiler services. On Windows, the
-supported wrapper, release source checks and installed-consumer checks use
+supported wrapper, source-test planner, native GUI prerequisites, release source
+checks and installed-consumer checks use
 [`windows_compiler.py`](../tools/windows_compiler.py) around compiler-capable
 commands, including CMake configure/try-compile, build and tests that compile
 fixtures. Each operation owns its process tree through completion and cleanup.
