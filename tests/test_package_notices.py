@@ -85,6 +85,21 @@ class Notices(unittest.TestCase):
             report=n.collect(self.root/'notices',sdk=sdk,query=lambda *args:self.fail('host package lookup'))
         verify.assert_called_once_with(sdk.resolve(),release=True)
         self.assertEqual(len(report['files']),1);self.assertEqual(report['providers'][0]['recipe_id'],'a'*64)
+    def test_wasm_runtime_terms_are_required_from_authenticated_sdk_files(self):
+        sdk=self.root/'sdk';sdk.mkdir();(sdk/'LICENSE').write_text('top level')
+        files={}
+        for relative in n.WASM_RUNTIME_NOTICES:
+            path=sdk/relative;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('terms '+relative)
+            files[relative]=n.sha(path)
+        metadata={'recipe_id':'a'*64,'licenses':['LICENSE'],'target':{'system':'Emscripten','sysroot':'cache/sysroot'},'files':files}
+        (sdk/'sdk.json').write_text(json.dumps(metadata))
+        with patch('sdk_manifest.verify_sdk'):
+            report=n.collect(self.root/'notices',sdk=sdk)
+            self.assertEqual(1+len(n.WASM_RUNTIME_NOTICES),len(report['files']))
+            (sdk/n.WASM_RUNTIME_NOTICES[0]).write_text('changed')
+            with self.assertRaisesRegex(ValueError,'retained inventory'):
+                n.collect(self.root/'other-notices',sdk=sdk)
+
     def test_sdk_never_satisfies_missing_common_license_from_host(self):
         sdk=self.root/'sdk';(sdk/'legal').mkdir(parents=True);(sdk/'legal/COPYING').write_text(self.notice.read_text())
         (sdk/'sdk.json').write_text(json.dumps({'recipe_id':'a'*64,'licenses':['legal'],'target':{'sysroot':'target'}}))

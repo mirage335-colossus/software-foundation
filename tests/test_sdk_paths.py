@@ -34,6 +34,13 @@ class DependencyPaths(unittest.TestCase):
         result=subprocess.run([self.cmake,'--build',str(self.root/'build'),'--target','foundation-dependency-check'],capture_output=True,text=True)
         self.assertNotEqual(result.returncode,0);self.assertIn('bytes changed',result.stdout+result.stderr)
 
+    def test_supplier_project_is_registered_without_editing_supplier_source(self):
+        result=self.configure('add_subdirectory(supplier)',{'supplier':'project(Supplier NONE)\n'+self.body()})
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.lib.write_bytes(b'changed supplier dependency')
+        result=subprocess.run([self.cmake,'--build',str(self.root/'build'),'--target','foundation-dependency-check'],capture_output=True,text=True)
+        self.assertNotEqual(result.returncode,0);self.assertIn('bytes changed',result.stdout+result.stderr)
+
     def test_unregistered_child_cannot_escape_policy(self):
         result=self.configure('add_subdirectory(child)',{'child':self.body(self.external/'libfixture.a')})
         self.assertNotEqual(result.returncode,0);self.assertIn('foundation_register_build_directory',result.stderr)

@@ -58,6 +58,12 @@ function(foundation_register_build_directory)
   cmake_language(DEFER CALL _foundation_capture_directory_policy)
 endfunction()
 
+# A retained dependency with its own project() receives the same scoped guard
+# without editing supplier source. Preserve any existing project hooks.
+set(foundation_directory_hook "${CMAKE_BINARY_DIR}/foundation-register-directory.cmake")
+file(WRITE "${foundation_directory_hook}" "foundation_register_build_directory()\n")
+list(APPEND CMAKE_PROJECT_INCLUDE_BEFORE "${foundation_directory_hook}")
+
 function(_foundation_capture_directory_policy)
   get_property(captured DIRECTORY PROPERTY FOUNDATION_POLICY_CAPTURED)
   if(captured)

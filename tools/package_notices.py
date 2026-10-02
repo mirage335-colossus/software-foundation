@@ -11,6 +11,21 @@ import subprocess
 import tempfile
 
 
+# Existing retained SDK manifests authenticate these bytes but older license
+# inventories list only the top-level tool and Node notices. Include the complete
+# target runtime terms without changing or rebuilding the immutable SDK.
+WASM_RUNTIME_NOTICES = (
+    'upstream/emscripten/AUTHORS',
+    'upstream/emscripten/system/lib/libc/musl/COPYRIGHT',
+    'upstream/emscripten/system/lib/libcxx/LICENSE.TXT',
+    'upstream/emscripten/system/lib/libcxxabi/LICENSE.TXT',
+    'upstream/emscripten/system/lib/compiler-rt/LICENSE.TXT',
+    'upstream/emscripten/system/lib/libunwind/LICENSE.TXT',
+    # This source file contains its dedication; there is no separate license file.
+    'upstream/emscripten/system/lib/dlmalloc.c',
+)
+
+
 def sha(path):
     result = hashlib.sha256()
     with Path(path).open('rb') as stream:
@@ -139,6 +154,12 @@ def collect(destination, *, sdk=None, windows_dependencies=None, libraries=(), f
                 if root not in tree.resolve(strict=True).parents:
                     raise ValueError('SDK notice tree escapes its retained root')
                 inputs += notice_files(tree)
+            if data['target'].get('system') == 'Emscripten':
+                for relative in WASM_RUNTIME_NOTICES:
+                    path = regular(root / relative, root)
+                    if relative not in data['files'] or sha(path) != data['files'][relative]:
+                        raise ValueError('Wasm runtime notice differs from retained inventory: ' + relative)
+                    inputs.append(path)
             common_roots = [root / data['target']['sysroot'] / 'usr/share/common-licenses']
         providers.append({'provider': 'retained-sdk', 'recipe_id': data['recipe_id'],
                           'manifest_sha256': sha(root / 'sdk.json')})

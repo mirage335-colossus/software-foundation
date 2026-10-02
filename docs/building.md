@@ -309,3 +309,16 @@ configuration rejects an unregistered target directory. SDK containment runs bef
 compilation and installation, and imported-library bytes are checked again against
 the configured identity. Do not make imports global or skip an inaccessible target
 to work around this requirement.
+
+Retained browser SDKs may list only top-level tool licenses in older metadata. The
+application notice collector also requires the authenticated Emscripten authors,
+musl, C++ runtime, compiler runtime, unwinding and allocator terms already stored
+in those SDKs. It never downloads replacement notices or mutates retained SDK bytes.
+Checkout text uses LF on every host so exact patch and source identities survive
+Windows Git defaults; binary and explicitly byte-preserved dependencies remain exempt.
+
+Third-party subdirectories declaring their own CMake `project()` receive the scoped
+dependency guard through `CMAKE_PROJECT_INCLUDE_BEFORE`, preserving existing hooks.
+This covers retained source-built libraries without modifying supplier source.
+A target-bearing directory without `project()` still requires the explicit
+registration call; the final completeness check rejects an omitted directory.

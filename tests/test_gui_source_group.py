@@ -65,6 +65,21 @@ class SourceGroupTests(unittest.TestCase):
     def verify(self):
         return subject.verify(self.group, foundation_root=self.foundation)
 
+    def test_checkout_preserves_retained_text_with_windows_newline_settings(self):
+        repo = self.root/'checkout';repo.mkdir()
+        def git(*args):
+            return subprocess.run(['git','-C',str(repo),*args],check=True,capture_output=True)
+        git('init','-q');git('config','core.autocrlf','true')
+        shutil.copyfile(ROOT/'.gitattributes',repo/'.gitattributes')
+        files = {'gui/patches/host.patch':b'--- old\n+++ new\n@@ -1 +1 @@\n-old\n+new\n',
+                 'gui/browser.mjs':b'export const ready = true;\n', 'CMakeLists.txt':b'project(Example)\n'}
+        for name,data in files.items():
+            path=repo/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data)
+        git('add','.')
+        for name in files:(repo/name).unlink()
+        git('checkout-index','--all','--force')
+        for name,data in files.items():self.assertEqual(data,(repo/name).read_bytes(),name)
+
     def test_export_deterministic_restore_and_repeat(self):
         other = self.root / 'other'; subject.export(self.source, other, self.foundation)
         self.assertEqual(subject.archive.file_inventory(self.group), subject.archive.file_inventory(other))

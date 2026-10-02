@@ -1,4 +1,5 @@
-* text=auto
+# Keep exact retained-source identities stable on every checkout host.
+* text=auto eol=lf
 *.sh text eol=lf
 *.ps1 text eol=lf
 *.py text eol=lf
