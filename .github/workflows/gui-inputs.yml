@@ -23,8 +23,7 @@ jobs:
         persist-credentials: false
     - run: python3 .github/scripts/lifecycle.py gui-maintain
       id: maintain
-    - if: steps.maintain.outputs.redistributable == 'true'
-      name: Retain verified gui-inputs-${{ github.run_attempt }}
+    - name: Retain complete GUI inputs privately for exact future reuse
       run: python .github/scripts/lifecycle.py bundle-store
       env:
         BUNDLE_NAME: gui-inputs-${{ github.run_attempt }}
@@ -39,7 +38,7 @@ jobs:
         BUNDLE_PATHS: build/gui-publication-plan.json
     - if: inputs.execute && steps.maintain.outputs.redistributable != 'true'
       shell: python
-      run: raise SystemExit('GUI redistribution terms are unresolved; retained source stays runner-local')
+      run: raise SystemExit('GUI redistribution terms are unresolved; retained source stays private')
     outputs:
       redistributable: ${{ steps.maintain.outputs.redistributable }}
     permissions:
