@@ -8,7 +8,9 @@ supervision of cooperating programs, not hostile-process confinement. Other POSI
 systems fail closed until an equivalent descendant owner is supplied.
 Windows starts suspended and assigns a no-breakaway, kill-on-close Job Object
 before resuming the initial thread; assignment failure never runs child code.
-Windows completion checks signaled member handles and a fresh complete Job list
+Windows termination pins verified Job member handles before requesting exit and
+joins them under one deadline; changed cumulative assignments fail closed.
+Normal completion checks signaled member handles and a fresh complete Job list
 before waiting for accounting retirement; a running descendant fails immediately.
 Native qualification is required for each supported platform and environment.
 """
@@ -24,6 +26,13 @@ import time
 
 class ProcessTreeError(RuntimeError):
     pass
+
+
+def _remaining(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise ProcessTreeError('descendant exit deadline exhausted; retain output ownership')
+    return remaining
 
 
 def _direct_children():
@@ -315,12 +324,18 @@ class _WindowsJob:
             if not self.api.CloseHandle(thread):
                 self.fail('close initial thread handle')
 
-    def active(self):
+    def accounting(self):
         accounting = self.Accounting()
         if not self.api.QueryInformationJobObject(self.handle, 1, ctypes.byref(accounting),
                                                   ctypes.sizeof(accounting), None):
             self.fail('inspect job membership')
-        return accounting.active
+        return accounting
+
+    def active(self):
+        return self.accounting().active
+
+    def total(self):
+        return self.accounting().total
 
     def process_ids(self):
         """Take a complete, bounded Job snapshot, including nested members."""
@@ -401,6 +416,68 @@ class _WindowsJob:
         if not self.api.TerminateJobObject(self.handle, 1):
             self.fail('terminate job')
 
+    def terminate_and_wait(self, deadline):
+        """Pin identities before termination; accounting alone is not a join.
+
+        A cumulative assignment change can hide a new child that disappeared from
+        the active list before it was pinned. Reject that uncertainty, even when
+        the final list and active count are empty. This is not a creation freeze.
+        """
+        observed, requested, failure = {}, False, None
+        try:
+            _remaining(deadline)
+            total = self.total()
+            for pid in self.process_ids():
+                _remaining(deadline)
+                handle = self.api.OpenProcess(0x101000, False, pid)
+                if not handle:
+                    # Even ERROR_INVALID_PARAMETER cannot prove completion of an
+                    # observed identity that we never managed to pin.
+                    raise ProcessTreeError('cannot pin observed job member; retain output ownership')
+                observed[pid] = handle
+                member = self.w.BOOL()
+                if not self.api.IsProcessInJob(handle, self.handle, ctypes.byref(member)):
+                    self.fail('confirm termination member identity')
+                if not member.value:
+                    raise ProcessTreeError('termination member identity changed; retain output ownership')
+            def reconcile():
+                _remaining(deadline)
+                members = self.process_ids()
+                if any(pid not in observed for pid in members) or self.total() != total:
+                    raise ProcessTreeError('job assignments changed during termination; retain output ownership')
+            reconcile()
+            requested = True
+            self.terminate()
+            for handle in observed.values():
+                milliseconds = max(1, min(int(_remaining(deadline) * 1000), 0xfffffffe))
+                state = self.api.WaitForSingleObject(handle, milliseconds)
+                if state == 0x102:
+                    raise ProcessTreeError('descendant exit deadline exhausted; retain output ownership')
+                if state != 0:
+                    self.fail('join terminated job member')
+            reconcile()
+        except BaseException as error:
+            failure = error
+            raise
+        finally:
+            cleanup_errors = []
+            if not requested:
+                # Capture failed, but still stop executable members. This is a
+                # best-effort stop, never a substitute for the failed join proof.
+                try:
+                    self.terminate()
+                except BaseException as error:
+                    cleanup_errors.append('stop after failed capture: ' + str(error))
+            for handle in observed.values():
+                if not self.api.CloseHandle(handle):
+                    cleanup_errors.append('close termination observation failed')
+            if cleanup_errors:
+                message = '; '.join(cleanup_errors) + '; retain output ownership'
+                if failure is not None:
+                    raise ProcessTreeError(str(failure) + '; ' + message) from failure
+                raise ProcessTreeError(message)
+        return total
+
     def close(self):
         if self.handle is not None:
             if not self.api.CloseHandle(self.handle):
@@ -412,6 +489,8 @@ class ProcessTree:
     def __init__(self, process, job=None):
         self.process, self.job = process, job
         self.closed = False
+        self.termination_joined = False
+        self.termination_failure = None
 
     def poll(self):
         return self.process.poll()
@@ -428,21 +507,34 @@ class ProcessTree:
         """Stop all supervised members and wait for their output-writing lifetimes."""
         if self.closed:
             return
-        if isinstance(self.process, _LinuxProcess):
-            self.process.terminate()
-        elif self.job is not None:
-            self.job.terminate()
-        self.process.wait(timeout=timeout)
+        if self.termination_failure is not None:
+            raise ProcessTreeError(self.termination_failure)
+        if self.termination_joined:
+            return
         deadline = time.monotonic() + timeout
-        while self._live():
-            if time.monotonic() >= deadline:
-                raise ProcessTreeError('descendant exit remains unconfirmed; retain output ownership')
-            time.sleep(0.01)
+        try:
+            if isinstance(self.process, _LinuxProcess):
+                self.process.terminate()
+            elif self.job is not None:
+                total = self.job.terminate_and_wait(deadline)
+            self.process.wait(timeout=_remaining(deadline))
+            while self._live():
+                time.sleep(min(0.01, _remaining(deadline)))
+            _remaining(deadline)
+            if self.job is not None and self.job.total() != total:
+                raise ProcessTreeError('job assignments changed during termination; retain output ownership')
+            self.termination_joined = True
+        except BaseException as error:
+            if self.job is not None:
+                self.termination_failure = 'Windows termination remains unconfirmed: ' + str(error)
+            raise
 
     def finish(self):
         """A successful parent with surviving writers is an incomplete command."""
         if self.closed:
             raise ProcessTreeError('process owner already closed')
+        if self.termination_failure is not None:
+            raise ProcessTreeError(self.termination_failure)
         if self.process.poll() is None:
             raise ProcessTreeError('parent has not exited')
         if isinstance(self.process, _LinuxProcess):
@@ -466,7 +558,11 @@ class ProcessTree:
     def close(self):
         if not self.closed:
             try:
-                if self.process.poll() is None or self._live():
+                if self.termination_failure is not None:
+                    raise ProcessTreeError(self.termination_failure)
+                if self.job is not None or self.process.poll() is None or self._live():
+                    # Windows must not skip a required join merely because its
+                    # primary and aggregate counters already look completed.
                     self.terminate()
             finally:
                 if self.job is not None:
@@ -495,11 +591,14 @@ def launch(argv, cwd, stream, *, env=None):
         # Assignment failure leaves the child suspended; no child code ran.
         cleanup_errors = []
         actions = []
+        deadline = time.monotonic() + 5
         if process is not None:
             if job is not None:
-                actions.append(job.terminate)
+                # Resume can fail after the initial thread already ran (for
+                # example while closing its handle), so descendants need joining.
+                actions.append(lambda: job.terminate_and_wait(deadline))
             actions.extend((lambda: process.kill() if process.poll() is None else None,
-                            lambda: process.wait(timeout=5)))
+                            lambda: process.wait(timeout=_remaining(deadline))))
         if job is not None:
             actions.append(job.close)
         for action in actions:

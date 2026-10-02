@@ -31,8 +31,11 @@ print(json.dumps(dict(executable=sys.executable,version=sys.version,
 
 
 def digest(path):
+    value = hashlib.sha256()
     with Path(path).open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            value.update(block)
+    return value.hexdigest()
 
 
 def architecture(machine):

@@ -294,6 +294,134 @@ class WindowsCompletionObservation(unittest.TestCase):
                     with self.assertRaises(TREE.ProcessTreeError): job.process_ids()
 
 
+class WindowsTerminationJoining(unittest.TestCase):
+    def job(self, pids=(101, 102)):
+        job = WindowsCompletionObservation().job(pids=pids)
+        job.active = mock.Mock(return_value=0)
+        job.total = mock.Mock(return_value=len(pids))
+        job.api.TerminateJobObject.return_value = True
+        return job
+
+    def owner(self, job):
+        return WindowsCompletionObservation().owner(job)
+
+    def test_zero_accounting_still_joins_pinned_child_before_return(self):
+        job = self.job(); owner = self.owner(job); clock = [10.]
+        def wait(handle, milliseconds):
+            job.api.TerminateJobObject.assert_called_once_with(700, 1)
+            self.assertEqual(job.api.OpenProcess.call_count, 2)
+            job.api.CloseHandle.assert_not_called()
+            self.assertEqual(milliseconds, 5000 if handle == 1101 else 4000)
+            clock[0] += 1 if handle == 1101 else 2  # Child signaling is delayed.
+            return 0
+        job.api.WaitForSingleObject.side_effect = wait
+        with mock.patch.object(TREE.time, 'monotonic', side_effect=lambda: clock[0]):
+            owner.terminate(timeout=5)
+        owner.process.wait.assert_called_once_with(timeout=2)
+        self.assertTrue(owner.termination_joined)
+        self.assertEqual(job.api.CloseHandle.call_args_list, [mock.call(1101), mock.call(1102)])
+        self.assertEqual(job.total.call_count, 4)
+
+    def test_vanished_observed_pid_fails_even_when_final_inventory_is_empty(self):
+        job = self.job(); job.api.OpenProcess.side_effect = [1101, None]
+        owner = self.owner(job)
+        with self.assertRaisesRegex(TREE.ProcessTreeError, 'cannot pin observed'):
+            owner.terminate()
+        job.api.TerminateJobObject.assert_called_once_with(700, 1)
+        job.api.WaitForSingleObject.assert_not_called()
+        job.api.CloseHandle.assert_called_once_with(1101)
+        self.assertFalse(owner.termination_joined)
+        self.assertIn('cannot pin observed', owner.termination_failure)
+
+    def test_late_or_hidden_assignments_never_pass_as_empty_accounting(self):
+        scenarios = [([[101], [101, 102]], [1, 1]),
+                     ([[101], [101]], [1, 2]),
+                     ([[101], [101], []], [1, 1, 2]),
+                     ([[101], [101], [102]], [1, 1]),
+                     ([[101], [101], []], [1, 1, 1, 2])]
+        for snapshots, totals in scenarios:
+            with self.subTest(snapshots=snapshots, totals=totals):
+                job = self.job(pids=(101,)); job.process_ids.side_effect = snapshots; job.total.side_effect = totals
+                owner = self.owner(job)
+                with self.assertRaisesRegex(TREE.ProcessTreeError, 'assignments changed'):
+                    owner.terminate()
+                job.api.CloseHandle.assert_called_once_with(1101)
+                job.api.TerminateJobObject.assert_called_once_with(700, 1)
+                self.assertFalse(owner.termination_joined)
+
+    def test_membership_identity_failure_stops_job_and_closes_every_pinned_handle(self):
+        for failed_query in (False, True):
+            with self.subTest(failed_query=failed_query):
+                job = self.job(); owner = self.owner(job)
+                def membership(handle, exact_job, output):
+                    output._obj.value = handle != 1102
+                    return not failed_query or handle != 1102
+                job.api.IsProcessInJob.side_effect = membership
+                with self.assertRaises(TREE.ProcessTreeError):owner.terminate()
+                self.assertEqual(job.api.CloseHandle.call_args_list, [mock.call(1101), mock.call(1102)])
+                job.api.TerminateJobObject.assert_called_once_with(700, 1)
+                job.api.WaitForSingleObject.assert_not_called()
+
+    def test_timeout_or_failed_wait_preserves_uncertainty_and_closes_all_handles(self):
+        for state, message in ((0x102, 'deadline exhausted'), (0xffffffff, 'join terminated')):
+            with self.subTest(state=state):
+                job = self.job(); owner = self.owner(job)
+                job.api.WaitForSingleObject.side_effect = [0, state]
+                with self.assertRaisesRegex(TREE.ProcessTreeError, message):owner.terminate()
+                self.assertEqual(job.api.CloseHandle.call_args_list, [mock.call(1101), mock.call(1102)])
+                owner.process.wait.assert_not_called()
+                for operation in (owner.terminate, owner.finish, owner.close):
+                    with self.assertRaisesRegex(TREE.ProcessTreeError, 'termination remains unconfirmed'):operation()
+                self.assertFalse(owner.closed); self.assertFalse(owner.termination_joined)
+
+    def test_close_failure_does_not_hide_original_wait_error_or_skip_other_handles(self):
+        job = self.job(); owner = self.owner(job)
+        job.api.WaitForSingleObject.return_value = 0x102
+        job.api.CloseHandle.side_effect = [False, True]
+        with self.assertRaisesRegex(TREE.ProcessTreeError, 'deadline exhausted.*close termination observation') as caught:
+            owner.terminate()
+        self.assertIsInstance(caught.exception.__cause__, TREE.ProcessTreeError)
+        self.assertIn('deadline exhausted', str(caught.exception.__cause__))
+        self.assertEqual(job.api.CloseHandle.call_args_list, [mock.call(1101), mock.call(1102)])
+        self.assertFalse(owner.termination_joined)
+
+    def test_observation_close_failure_alone_keeps_join_unconfirmed(self):
+        job = self.job(); owner = self.owner(job)
+        job.api.CloseHandle.side_effect = [False, True]
+        with self.assertRaisesRegex(TREE.ProcessTreeError, 'close termination observation'):owner.terminate()
+        self.assertFalse(owner.termination_joined)
+        self.assertIn('close termination observation', owner.termination_failure)
+        self.assertEqual(job.api.CloseHandle.call_count, 2)
+
+    def test_termination_request_failure_closes_handles_and_never_claims_join(self):
+        job = self.job(); owner = self.owner(job)
+        job.api.TerminateJobObject.return_value = False
+        with self.assertRaisesRegex(TREE.ProcessTreeError, 'terminate job'):owner.terminate()
+        job.api.WaitForSingleObject.assert_not_called()
+        self.assertEqual(job.api.CloseHandle.call_count, 2)
+        self.assertFalse(owner.termination_joined)
+
+    def test_parent_wait_and_accounting_share_the_original_deadline(self):
+        job = self.job(pids=()); owner = self.owner(job); clock = [10.]
+        def wait(timeout):
+            self.assertEqual(timeout, 5)
+            clock[0] = 16
+        owner.process.wait.side_effect = wait; job.active.return_value = 1
+        with mock.patch.object(TREE.time, 'monotonic', side_effect=lambda: clock[0]), \
+                mock.patch.object(TREE.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(TREE.ProcessTreeError, 'deadline exhausted'):owner.terminate(timeout=5)
+        sleep.assert_not_called(); self.assertFalse(owner.termination_joined)
+
+    def test_close_cannot_bypass_join_when_parent_and_accounting_look_complete(self):
+        job = self.job(); owner = self.owner(job)
+        owner.close()
+        self.assertTrue(owner.closed); self.assertTrue(owner.termination_joined)
+        self.assertEqual(job.api.WaitForSingleObject.call_count, 2)
+        self.assertEqual(job.api.CloseHandle.call_args_list, [mock.call(1101), mock.call(1102), mock.call(700)])
+        owner.close()
+        self.assertEqual(job.api.WaitForSingleObject.call_count, 2)
+
+
 class WindowsLaunchOrdering(unittest.TestCase):
     def check_order(self, failure=None, environment=None):
         events = []
@@ -304,10 +432,14 @@ class WindowsLaunchOrdering(unittest.TestCase):
                 if failure == 'assign':raise TREE.ProcessTreeError('assignment rejected')
             def resume(self, process):
                 events.append('resume')
-                if failure in ('resume', 'cleanup'):raise TREE.ProcessTreeError('resume rejected')
+                if failure in ('resume', 'cleanup', 'join'):raise TREE.ProcessTreeError('resume rejected')
             def terminate(self):
                 events.append('terminate job')
                 if failure == 'cleanup':raise TREE.ProcessTreeError('job termination rejected')
+            def terminate_and_wait(self, deadline):
+                self.terminate()
+                events.append('join job')
+                if failure == 'join':raise TREE.ProcessTreeError('descendant join rejected')
             def close(self):events.append('close job')
         process = mock.Mock()
         process.poll.return_value = None
@@ -343,7 +475,11 @@ class WindowsLaunchOrdering(unittest.TestCase):
 
     def test_resume_failure_still_closes_job_and_joins_child(self):
         events = self.check_order('resume')
-        self.assertEqual(events[-4:], ['terminate job', 'kill suspended child', 'wait child', 'close job'])
+        self.assertEqual(events[-5:], ['terminate job', 'join job', 'kill suspended child', 'wait child', 'close job'])
+
+    def test_failed_descendant_join_still_attempts_primary_stop_wait_and_job_close(self):
+        events = self.check_order('join')
+        self.assertEqual(events[-5:], ['terminate job', 'join job', 'kill suspended child', 'wait child', 'close job'])
 
     def test_failed_cleanup_still_attempts_child_stop_join_and_job_close(self):
         events = self.check_order('cleanup')
