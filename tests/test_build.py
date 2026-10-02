@@ -82,6 +82,42 @@ class BuildTests(unittest.TestCase):
         with self.assertRaises(Exception):
             builder.positive("0")
 
+    def test_runtime_install_script_selects_sdk_baseline_and_editor(self):
+        import os
+        import shutil
+        import subprocess
+        template = Path(builder.__file__).resolve().parents[1] / 'cmake/InstallRuntime.cmake.in'
+        cmake = shutil.which('cmake')
+        self.assertIsNotNone(cmake, 'CMake is required for build policy tests')
+        with tempfile.TemporaryDirectory(prefix='runtime install ') as temporary:
+            root = Path(temporary)
+            (root / 'tools').mkdir()
+            output = root / 'arguments.json'
+            (root / 'tools/package_runtime.py').write_text(
+                'import json,sys\nfrom pathlib import Path\nPath(' + repr(str(output)) +
+                ').write_text(json.dumps(sys.argv[1:]))\n')
+            script = root / 'configure.cmake'
+            for sdk_root in ('', (root / 'retained SDK').as_posix()):
+                with self.subTest(sdk=bool(sdk_root)):
+                    script.write_text('cmake_minimum_required(VERSION 3.24)\n' +
+                        'set(Python3_EXECUTABLE "' + Path(sys.executable).as_posix() + '")\n' +
+                        'set(CMAKE_SOURCE_DIR "' + root.as_posix() + '")\n' +
+                        'set(CMAKE_INSTALL_PREFIX "/opt/example")\n' +
+                        'set(_portable_processor "x86_64")\n' +
+                        'set(FOUNDATION_RUNTIME_ROOTS "' + (root/'target libraries').as_posix() + '")\n' +
+                        'set(FOUNDATION_SDK_ROOT "' + sdk_root + '")\n' +
+                        'configure_file("' + template.as_posix() + '" "' +
+                        (root/'install.cmake').as_posix() + '" @ONLY)\n' +
+                        'include("' + (root/'install.cmake').as_posix() + '")\n')
+                    subprocess.run([cmake, '-P', str(script)], check=True,
+                                   env=dict(os.environ, DESTDIR='/staging'))
+                    args = json.loads(output.read_text())
+                    expected = ['--prefix', '/staging/opt/example', '--processor', 'x86_64',
+                                '--root', (root/'target libraries').as_posix()]
+                    if sdk_root:
+                        expected += ['--bookworm', '--elf-editor', sdk_root + '/bin/patchelf']
+                    self.assertEqual(expected, args)
+
     def test_package_configuration_cannot_be_mislabelled(self):
         import shutil
         import subprocess
