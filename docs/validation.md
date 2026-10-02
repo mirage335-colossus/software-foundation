@@ -58,6 +58,25 @@ status until certified promotion. This failed run is not qualification evidence
 for certification or Latest. Those scopes and native signed channels remain
 pending until their exact final receipts and client outcomes are recorded.
 
+## Native process cleanup evidence
+
+The strengthened Windows process test observes the exact descendant handle,
+confirms Job Object membership and requires it to be signaled before termination
+returns. This exposed a real cleanup race; an empty active-process count alone did
+not prove that every observed child had finished. The implementation now pins and
+joins descendant handles under one deadline, detects membership uncertainty and
+preserves cleanup failures instead of reporting later success.
+
+At `73f364feb08da1743fef52820ededd046bc801fd`, focused native diagnostics passed
+20 complete repetitions on both
+[Python 3.12.10](https://github.com/mirage335-colossus/software-foundation/actions/runs/37024667217)
+and [Python 3.14.7](https://github.com/mirage335-colossus/software-foundation/actions/runs/37024672042).
+Each run recorded 720 passed cases and 140 explicit Linux-only exclusions, with no
+failed or internally skipped executed cases. Both complete inventories were
+independently fetched and verified against the exact source hashes, interpreter
+binary and version. These focused diagnostics establish the observed cleanup
+behavior; they do not replace the complete release gates.
+
 ## Delivery workflow expansion
 
 The current update replaces Actions artifact transport with per-run private draft

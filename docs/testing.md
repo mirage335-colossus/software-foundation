@@ -219,6 +219,14 @@ a 50-minute limit. Cleanup must stop and join supervised writers before another
 repetition starts; uncertain cleanup stops the run and permits retention only of
 the failed summary, never potentially active child logs or inventories.
 
+On Windows, the process supervisor pins descendant identities and waits for their
+handles to become signaled after Job Object termination, under the same bounded
+deadline as parent cleanup. An empty active-process count alone cannot establish
+that child output handles have closed. Membership changes, inaccessible identities
+and cleanup failures remain failures. The native regression observes the exact
+child handle and immediately renames and removes its output after cleanup; it does
+not hide uncertain shutdown behind a delay or deletion retry.
+
 The workflow always attempts to retain `result.json` and each repetition's logs
 and inventory through the existing lifecycle `bundle-store`, using the run-scoped
 `host-contracts-ATTEMPT` bundle. It needs repository contents write permission only
