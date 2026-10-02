@@ -75,7 +75,17 @@ executions nevertheless failed strict completion: the source command left VCTIP
 and another unclassified process alive; recovery left the selected toolset's
 MSPDBSRV alive. The inner passes do not establish complete release qualification.
 This exposed compiler-capable build and installed-consumer commands outside the
-existing narrow graphics-probe owner. The candidate remains ineligible for promotion.
+existing narrow graphics-probe owner. Its failed certificate was attached immutably,
+promotion was skipped, and independent readback verified the public evidence bytes,
+original asset digests and prerelease status. The candidate remains ineligible for promotion.
+
+The next run,
+[37061687505](https://github.com/mirage335-colossus/software-foundation/actions/runs/37061687505),
+stopped at its Windows source gate before building release archives. A new unit
+fixture compared the temporary directory's short Windows path with its canonical
+expanded path. The fixture now canonicalizes its own root before testing exact
+selected-toolkit identity; production validation and the independently qualified
+native compiler-service behavior are unchanged.
 
 ## Native process cleanup evidence
 

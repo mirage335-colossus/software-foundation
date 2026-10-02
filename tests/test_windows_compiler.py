@@ -18,7 +18,9 @@ class BuildSessionTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # Native temporary roots may use a Windows 8.3 alias; selection returns
+        # canonical toolkit paths, so compare the same physical fixture paths.
+        self.root = Path(self.temporary.name).resolve(strict=True)
         self.directory = self.root / 'toolkit/bin/Hostx64/x64'
         self.directory.mkdir(parents=True)
         self.paths = {}
