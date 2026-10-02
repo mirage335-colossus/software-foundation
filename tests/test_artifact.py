@@ -207,6 +207,7 @@ class GraphicsArtifactTests(unittest.TestCase):
 
     def test_verify_dispatch_preserves_installed_consumer_after_graphics_scope(self):
         import json,sys
+        import windows_compiler
         archive = self.root / 'application.zip'
         with zipfile.ZipFile(archive, 'w') as bundle:
             for name in ('bin/foundation-cli.exe', 'bin/foundation-gui-rev.exe',
@@ -232,13 +233,49 @@ class GraphicsArtifactTests(unittest.TestCase):
         with self.mock.patch.object(artifact, 'os', fake_os), \
                 self.mock.patch.dict(sys.modules, verify_pe=self.types.SimpleNamespace(audit=self.mock.Mock())), \
                 self.mock.patch.object(artifact.subprocess, 'run', side_effect=run), \
+                self.mock.patch.object(windows_compiler, 'run', side_effect=run) as build, \
                 self.mock.patch.object(artifact, '_windows_rev_smoke', side_effect=smoke):
             result = artifact.verify(archive, manifest, backend='rev', windows_graphics_archive=self.archive,
                                      windows_graphics_evidence=self.evidence)
+        self.assertEqual(build.call_count, 2)
+        self.assertTrue(all(call.kwargs['env']['PATH'] == 'selected-compiler' for call in build.call_args_list))
         index = events.index(['qualified-smoke'])
         self.assertEqual(len(events[index+1:]), 3)
         self.assertEqual(events[index+1][0], 'cmake')
         self.assertEqual(result, {'windows_graphics': {'stage': {'cleanup': 'removed'}}})
+
+    def test_uncertain_cmake_consumer_preserves_extracted_workspace(self):
+        import json, sys, shutil
+        import process_tree, windows_compiler
+        archive = self.root / 'consumer.zip'
+        with zipfile.ZipFile(archive, 'w') as bundle:
+            for name in ('bin/foundation-cli.exe', 'lib/cmake/Foundation/FoundationConfig.cmake'):
+                bundle.writestr('application/' + name, 'fixture')
+        manifest = self.root / 'consumer.json'
+        manifest.write_text(json.dumps(artifact.describe(archive)))
+        workspace = self.root / 'uncertain-consumer'; workspace.mkdir()
+        self.addCleanup(shutil.rmtree, workspace)
+        def command(argv, **kwargs):
+            return self.types.SimpleNamespace(stdout='software-foundation 0.1.0\n')
+        def failed_build(*args, **kwargs):
+            try:
+                raise process_tree.ProcessTreeError('compiler writer remains uncertain')
+            except process_tree.ProcessTreeError as error:
+                raise RuntimeError('consumer configure failed') from error
+        fake_os = self.types.SimpleNamespace(name='nt', pathsep=';',
+            environ={'SystemRoot': str(self.root / 'Windows'), 'PATH': 'selected-compiler'})
+        with self.mock.patch.object(artifact, 'os', fake_os), \
+             self.mock.patch.dict(sys.modules, verify_pe=self.types.SimpleNamespace(audit=self.mock.Mock())), \
+             self.mock.patch.object(artifact.tempfile, 'mkdtemp', return_value=str(workspace)), \
+             self.mock.patch.object(artifact.subprocess, 'run', side_effect=command), \
+             self.mock.patch.object(windows_compiler, 'run', side_effect=failed_build) as build, \
+             self.mock.patch.object(artifact.shutil, 'rmtree') as remove:
+            with self.assertRaisesRegex(RuntimeError, 'consumer configure'):
+                artifact.verify(archive, manifest)
+            build.assert_called_once()
+            self.assertIn('-S', build.call_args.args[0])
+            remove.assert_not_called()
+        self.assertTrue((workspace / 'relocated prefix').is_dir())
 
     def test_application_archives_reject_host_dll_names_in_every_directory(self):
         for name in ('prefix/bin/OpenGL32.DLL', 'prefix/lib/runtime/libgallium_wgl.dll'):

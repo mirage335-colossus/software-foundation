@@ -16,6 +16,7 @@ TOOLS = Path(__file__).resolve().parent
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 import artifact
+import windows_compiler
 import release
 import sdk
 from dependency_archive import digest, extract, write_json
@@ -181,9 +182,9 @@ def run_windows_source(command, archive, work, evidence, protected_roots, jobs):
     prepare.remove("--full")
     index = prepare.index("--junit")
     del prepare[index:index + 2]
-    subprocess.run(prepare, cwd=work, check=True)
-    subprocess.run(["cmake", "--build", str(work / "build"), "--target", "foundation-gui-tests",
-                    "--parallel", str(jobs)], cwd=work, check=True)
+    windows_compiler.run(prepare, cwd=work)
+    windows_compiler.run(["cmake", "--build", str(work / "build"), "--target", "foundation-gui-tests",
+                          "--parallel", str(jobs)], cwd=work)
     directory = evidence / "windows-graphics"
     directory.mkdir()
     probe = work / "graphics-probe"
@@ -273,7 +274,7 @@ def run_source(candidate, manifest, entry, work, evidence, jobs, recovery=False,
         graphics = run_windows_source(command, archive, work, evidence,
             (candidate, work / "source", work / "windows-dependencies"), jobs)
     else:
-        subprocess.run(command, cwd=work, check=True)
+        windows_compiler.run(command, cwd=work)
     ctest = host_programs(work / "sdk" if (work / "sdk/sdk.json").is_file() else None)["ctest"]
     definitions = json.loads(subprocess.check_output([ctest, "--test-dir", str(work / "build"),
                                                      "--show-only=json-v1"], text=True))["tests"]
@@ -286,7 +287,7 @@ def run_source(candidate, manifest, entry, work, evidence, jobs, recovery=False,
                 "--source", str(work / "source"), "--config", "Release"]
     if (work / "sdk/sdk.json").is_file():
         consumer += ["--sdk", str(work / "sdk")]
-    subprocess.run(consumer, cwd=work, check=True)
+    windows_compiler.run(consumer, cwd=work)
     if not recovery:
         # Source checks also consume the exact delivered library/export. A good
         # rebuilt library cannot mask a broken SDK inside the shipped archive.

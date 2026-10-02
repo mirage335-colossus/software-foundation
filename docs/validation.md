@@ -65,6 +65,18 @@ results are preserved, not counted as successful release qualification. Latest
 and native signed channels remain pending until exact successful final receipts
 and client outcomes are recorded.
 
+The subsequent candidate
+[37045706923](https://github.com/mirage335-colossus/software-foundation/actions/runs/37045706923)
+at `52c5adf12c665c5743395bfe0677c33c7126d366` passed all six Windows
+archive checks. Its source and recovery executions each passed all 67 CTest entries
+and all 31 tool suites: 693 executed cases passed, with 60 declared platform
+exclusions. Their retained evidence hashes were independently verified. Both outer
+executions nevertheless failed strict completion: the source command left VCTIP
+and another unclassified process alive; recovery left the selected toolset's
+MSPDBSRV alive. The inner passes do not establish complete release qualification.
+This exposed compiler-capable build and installed-consumer commands outside the
+existing narrow graphics-probe owner. The candidate remains ineligible for promotion.
+
 ## Native process cleanup evidence
 
 The strengthened Windows process test observes the exact descendant handle,

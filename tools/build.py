@@ -9,6 +9,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import windows_compiler
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -101,7 +103,7 @@ def cache_identity(build):
 
 def run(command, **kwargs):
     print("+ " + subprocess.list2cmdline([str(x) for x in command]), flush=True)
-    subprocess.run(command, cwd=ROOT, check=True, **kwargs)
+    windows_compiler.run(command, cwd=ROOT, **kwargs)
 
 
 def main(argv=None):

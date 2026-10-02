@@ -14,6 +14,14 @@ spec.loader.exec_module(builder)
 
 
 class BuildTests(unittest.TestCase):
+    def test_supported_build_regions_use_explicit_compiler_owner(self):
+        from unittest.mock import patch
+        for command in (['cmake', '--preset', 'release'], ['cmake', '--build', 'tree'],
+                        ['ctest', '--test-dir', 'tree'], ['cpack', '--config', 'tree/CPackConfig.cmake']):
+            with self.subTest(command=command), patch.object(builder.windows_compiler, 'run') as run:
+                builder.run(command, env={'PATH': 'selected-toolkit'})
+            run.assert_called_once_with(command, cwd=builder.ROOT, env={'PATH': 'selected-toolkit'})
+
     def test_windows_linker_file_versions_use_same_order(self):
         from unittest.mock import patch
         for actual, minimum, success in (

@@ -100,6 +100,13 @@ def _workspace():
     disposition = {"retain": False}
     try:
         yield directory, disposition
+    except BaseException as error:
+        tools = str(Path(__file__).resolve().parent)
+        if tools not in sys.path:
+            sys.path.insert(0, tools)
+        from windows_graphics import retain_required
+        disposition["retain"] = disposition["retain"] or retain_required(error)
+        raise
     finally:
         # A failed supervisor must never trigger removal beneath possible writers.
         if not disposition["retain"]:
@@ -258,11 +265,15 @@ def verify(archive, manifest, runtime_only=False, abi=False, processor="x86_64",
                      "-DFOUNDATION_SDK_ROOT=" + str(sdk)]
             if programs["ninja"] != "ninja":
                 extra += ["-DCMAKE_MAKE_PROGRAM=" + programs["ninja"]]
-        subprocess.run([cmake, "-S", str(consumer), "-B", str(build), "-G", "Ninja",
+        tools = str(Path(__file__).resolve().parent)
+        if tools not in sys.path:
+            sys.path.insert(0, tools)
+        import windows_compiler
+        windows_compiler.run([cmake, "-S", str(consumer), "-B", str(build), "-G", "Ninja",
                         "-DCMAKE_BUILD_TYPE=Release", "-DFoundation_DIR=" + str(configs[0].parent),
                         "-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF", "-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF", *extra],
-                       check=True, env=compiler_environment)
-        subprocess.run([cmake, "--build", str(build), "--parallel", "2"], check=True, env=compiler_environment)
+                       env=compiler_environment)
+        windows_compiler.run([cmake, "--build", str(build), "--parallel", "2"], env=compiler_environment)
         subprocess.run([*executor, str(build / ("consumer" + suffix))], check=True)
         if sdk and sdk_identity(sdk) != sdk_before:
             raise ValueError("SDK changed during installed-consumer validation")

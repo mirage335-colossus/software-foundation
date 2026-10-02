@@ -68,7 +68,7 @@ class ReleaseCheckTests(unittest.TestCase):
             with patch.object(windows_graphics, 'verify_archive'), \
                     patch.object(windows_graphics, 'qualified_stage', staging), \
                     patch.object(windows_graphics, 'run_owned', side_effect=execute), \
-                    patch.object(check.subprocess, 'run', side_effect=build):
+                    patch.object(check.windows_compiler, 'run', side_effect=build):
                 result = check.run_windows_source(command, root / 'retained.7z', work, evidence, (root / 'sdk',), 2)
             self.assertEqual(events, ['build', 'gui-prerequisites', 'tests', 'cleanup'])
             self.assertEqual(json.loads((evidence / 'windows-graphics/graphics.json').read_text())['cleanup'], 'removed')

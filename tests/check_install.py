@@ -17,6 +17,7 @@ parser.add_argument("--sdk", type=Path)
 args = parser.parse_args()
 sys.path.insert(0, str(args.source / "tools"))
 from build import host_programs, sdk_identity
+import windows_compiler
 programs = host_programs(args.sdk)
 sdk_before = sdk_identity(args.sdk) if args.sdk else None
 environment = os.environ.copy()
@@ -26,12 +27,18 @@ if args.sdk:
 
 
 def run(command, **kwargs):
-    if command[0] == "cmake":
+    compiler = command[0] == "cmake"
+    if compiler:
         command[0] = programs["cmake"]
-    subprocess.run([str(part) for part in command], check=True, env=kwargs.pop("env", environment), **kwargs)
+    command = [str(part) for part in command]
+    selected_environment = kwargs.pop("env", environment)
+    if compiler:
+        windows_compiler.run(command, env=selected_environment, **kwargs)
+    else:
+        subprocess.run(command, check=True, env=selected_environment, **kwargs)
 
 
-with tempfile.TemporaryDirectory(prefix="foundation install ") as directory:
+with windows_compiler.workspace(prefix="foundation install ") as directory:
     root = Path(directory)
     original = root / "original prefix"
     moved = root / "relocated prefix"

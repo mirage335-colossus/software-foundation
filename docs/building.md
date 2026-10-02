@@ -101,6 +101,31 @@ recipe identity. A release build must use clean, identified source. Dirty
 development evidence needs a diff identity or file digests as well as a commit.
 This provenance is not proof that rebuilding produces identical bytes.
 
+## MSVC build-service ownership
+
+Separate build directories do not isolate compiler services. On Windows, the
+supported wrapper, release source checks and installed-consumer checks use
+[`windows_compiler.py`](../tools/windows_compiler.py) around compiler-capable
+commands, including CMake configure/try-compile, build and tests that compile
+fixtures. Each operation owns its process tree through completion and cleanup.
+
+The owner binds `cl.exe`, `link.exe` and their helper files to the selected
+`VCToolsInstallDir` and PATH, recording physical identity and SHA-256. Each owner,
+including a nested one, receives a fresh `_MSPDBSRV_ENDPOINT_` in its child
+environment. [Microsoft's build tooling uses this endpoint to isolate PDB-server I/O](https://github.com/microsoft/BuildXL/blob/main/Public/Sdk/Experimental/Msvc/Native/Tools/Link/Link.dsc).
+This implementation evidence is not a stable public toolset API promise: qualify
+the actual selected toolset with the [native isolation diagnostic](testing.md#focused-host-diagnostics)
+when adopting or upgrading it.
+
+After a successful command, every live pinned member must identify the exact
+selected `vctip.exe` or `mspdbsrv.exe` before bounded termination and joining.
+Another compiler, an unknown process, changed toolkit input or uncertain join
+fails. Ordinary commands retain strict descendant completion. Completion receipts
+are printed only after the owner closes successfully. Consumer workspaces remain
+intact when writer cleanup is uncertain; inspect them before later cleanup.
+This requires no global process-name kill, registry change, idle delay, compiler
+installation modification or removal of debug information.
+
 ## Faster iteration without changing behavior
 
 Use incremental builds and the smallest affected target or test label while

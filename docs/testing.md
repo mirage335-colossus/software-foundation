@@ -216,7 +216,12 @@ runs one complete `process_tree`, `windows_graphics`, `ci_plan`, `github_release
 or `ci_transport` unit suite directly on a Windows x64, Linux x64 or Linux ARM64
 runner. The opt-in `windows_hosts` suite requires Windows and exercises the actual
 installed MSVC compiler and Firefox. It compiles the same native probe with the
-same arguments and process owner as graphics qualification, then separately opens
+same arguments and process owner as graphics qualification. It also runs two
+simultaneous compiler clients with distinct private PDB-service endpoints, requires
+distinct server processes, and pins the control server's exact handle. Completing
+the first owner must leave that same control server alive through another compile;
+a replacement server cannot satisfy the check. Both owners must then join their
+services and immediately release their output directories. The suite separately opens
 an automation session, checks a simple page and verifies immediate profile removal
 after browser shutdown. It acquires no SDK or graphics driver and does not execute
 the graphics probe. These cases live outside ordinary unit-test discovery and
@@ -258,7 +263,10 @@ passing retry does not establish the cause. The native compiler has an explicit
 [exact-helper completion policy](windows-graphics.md#bounded-test-environment) for
 its identified optional telemetry child. This verifies every live member and
 terminates and joins it before reading output; it does not relax ordinary command
-completion or accept unclassified descendants.
+completion or accept unclassified descendants. Compiler-capable build operations
+use the separate [private MSVC build-service owner](building.md#msvc-build-service-ownership),
+which additionally isolates and joins the selected PDB server. Both policies keep
+unknown members and uncertain cleanup as failures.
 
 The workflow always attempts to retain `result.json` and each repetition's logs
 and inventory through the existing lifecycle `bundle-store`, using the run-scoped

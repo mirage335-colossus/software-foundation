@@ -317,7 +317,7 @@ class HostContracts(unittest.TestCase):
         paths = HOST.source_files('windows_hosts', 'windows-x86_64')
         self.assertEqual(len(paths), len(set(paths)))
         self.assertEqual(set(paths), {'tools/host_contracts.py', 'tools/run_tests.py', 'tools/process_tree.py',
-            'tests/diagnostics/windows_hosts.py', 'tools/windows_graphics.py', 'tools/windows_gl_probe.cpp', 'tools/windows_toolchain.py',
+            'tests/diagnostics/windows_hosts.py', 'tools/windows_graphics.py', 'tools/windows_gl_probe.cpp', 'tools/windows_toolchain.py', 'tools/windows_compiler.py',
             'gui/tests/browser_test.py', 'tools/ci_windows.ps1', 'tools/select-windows-toolchain.ps1',
             'third_party/sdk/windows-toolchain.json', '.github/workflows/host-contracts.yml'})
         self.assertTrue(all((ROOT / path).is_file() for path in paths))
