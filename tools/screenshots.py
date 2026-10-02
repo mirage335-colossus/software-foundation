@@ -15,12 +15,12 @@ import sys
 import tempfile
 import threading
 import time
-import uuid
 
 import ci_plan as ci
 import dependency_archive as archive
 import github_release as delivery
 import process_tree
+import gallery_browser
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKENDS = ('fltk', 'rev', 'sdl', 'terminal', 'framebuffer', 'hosted-web', 'wasm')
@@ -123,19 +123,12 @@ def web_host(native, wasm):
 
 def capture_web(native, wasm, directory):
     from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
     from selenium.webdriver.common.by import By
-    options = webdriver.ChromeOptions(); options.binary_location = shutil.which('chromium')
-    if not options.binary_location or not shutil.which('chromedriver'):
-        raise RuntimeError('explicit distribution Chromium and matching driver required')
-    for value in ('--headless=new', '--disable-dev-shm-usage', '--force-device-scale-factor=1',
-                  '--no-first-run', '--no-default-browser-check', '--user-data-dir=' + str(directory / 'browser-profile')):
-        options.add_argument(value)
-    if hasattr(os, 'geteuid') and os.geteuid() == 0:
-        raise ValueError('capture browser must run as the disposable unprivileged account')
-    service = Service(executable_path=shutil.which('chromedriver'), log_output=str(directory / 'chromedriver.log'))
+    options = gallery_browser.chrome_options(directory / 'browser-profile')
+    service = gallery_browser.chrome_service(directory / 'chromedriver.log')
     result = {}
     with web_host(native, wasm) as url, webdriver.Chrome(service=service, options=options) as browser:
+        sandbox = gallery_browser.sandbox_status(browser)
         browser.set_page_load_timeout(30); browser.set_script_timeout(10)
         browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {'source': '''
             window.galleryPending=0; const originalFetch=window.fetch;
@@ -182,6 +175,7 @@ def capture_web(native, wasm, directory):
             # Drop the first session before creating the independent next transport.
             browser.get('about:blank')
         result['browser'] = {key: browser.capabilities.get(key) for key in ('browserName', 'browserVersion')}
+        result['browser']['sandbox'] = sandbox
     return result
 
 
@@ -194,7 +188,7 @@ def surfaces(native, wasm, directory):
     display = text(['xdpyinfo'])
     if 'resolution:    96x96 dots per inch' not in display:
         raise ValueError('the private capture display must use 96 DPI')
-    for name in ('xdotool', 'import', 'identify', 'convert', 'xterm', 'chromium', 'chromedriver'):
+    for name in ('xdotool', 'import', 'identify', 'convert', 'xterm', 'chromedriver'):
         if not shutil.which(name):
             raise ValueError('missing screenshot prerequisite: ' + name)
     directory.mkdir(parents=True, exist_ok=False)
@@ -275,8 +269,9 @@ def collect(native_group, native_recipe, wasm_group, wasm_recipe, gui_group, wor
                            'redistributable', 'archive_sha256')},
                           'manifest_sha256': archive.digest(Path(gui_group) / 'manifest.json')},
             'binaries': binaries, 'captures': captures,
-            'tools': {name: text([name, '-version' if name == 'xterm' else '--version']).splitlines()[0]
-                      for name in ('cmake', 'chromium', 'chromedriver', 'xterm')},
+            'tools': {name: text([gallery_browser.chrome_options(work / 'unused-profile').binary_location if name == 'browser' else name,
+                           '-version' if name == 'xterm' else '--version']).splitlines()[0]
+                      for name in ('cmake', 'browser', 'chromedriver', 'xterm')},
             'images': {name + '.png': {'sha256': archive.digest(stage / (name + '.png')),
                                      'size': (stage / (name + '.png')).stat().st_size,
                                      'dimensions': list(png_size(stage / (name + '.png')))} for name in BACKENDS}}
@@ -336,58 +331,35 @@ def prepare_inputs(repository, native_recipe, wasm_recipe, directory, source='ba
 
 
 def hosted_command(native_recipe, wasm_recipe, jobs, *, uid=None, gid=None):
-    """One disposable Debian runtime; credentials stay outside the container."""
+    """Ordinary unprivileged Linux runtime; no container or host policy mutation."""
     for recipe in (native_recipe, wasm_recipe):
         if not delivery.SHA.fullmatch(recipe): raise ValueError('exact SDK recipe required')
     uid = os.getuid() if uid is None else uid; gid = os.getgid() if gid is None else gid
     if (type(uid) is not int or type(gid) is not int or not 0 < uid < 2**31 or
             not 0 < gid < 2**31 or type(jobs) is not int or not 1 <= jobs <= 8):
         raise ValueError('non-root host account and bounded concurrency required')
-    packages = ('ca-certificates git python3 python3-selenium cmake ninja-build build-essential '
-        'chromium chromium-driver xvfb xauth xterm xdotool x11-utils imagemagick fonts-dejavu-core '
-        'fonts-liberation libgl1 libopengl0 libgl1-mesa-dri libx11-6 libxext6 libxrender1 libxft2 '
-        'libxrandr2 libxcursor1 libxinerama1 libxfixes3 libwayland-client0 libxkbcommon0 libegl1 '
-        'libdbus-1-3 libibus-1.0-5')
-    argv = ['docker', 'run', '--rm', '-v', str(ROOT) + ':/work', '-w', '/work']
-    for name in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT'):
-        if name in os.environ: argv += ['-e', name]
-    argv += ['-e', 'PYTHONUTF8=1', '-e', 'PYTHONDONTWRITEBYTECODE=1', 'debian:bookworm', 'bash', '-euc',
-        'apt-get update; apt-get install -y --no-install-recommends ' + packages +
-        '; groupadd --gid "$1" gallery; useradd --create-home --uid "$2" --gid "$1" gallery; '
-        'exec runuser -u gallery -- xvfb-run -a -s "-screen 0 1280x900x24 -dpi 96" '
-        'env LIBGL_ALWAYS_SOFTWARE=1 SDL_VIDEODRIVER=x11 REV_SCALE=1 LC_ALL=C.UTF-8 '
-        'python3 -B tools/screenshots.py collect --native-group build/screenshots-inputs/native '
-        '--native-recipe "$3" --wasm-group build/screenshots-inputs/wasm --wasm-recipe "$4" '
-        '--gui-group build/screenshots-inputs/gui --origins build/screenshots-inputs/origins.json '
-        '--work build/screenshots-work --output build/gallery --jobs "$5"',
-        'gallery-container', str(gid), str(uid), native_recipe, wasm_recipe, str(jobs)]
-    return argv
+    return ['xvfb-run', '-a', '-s', '-screen 0 1280x900x24 -dpi 96', 'env',
+        'LIBGL_ALWAYS_SOFTWARE=1', 'SDL_VIDEODRIVER=x11', 'REV_SCALE=1', 'LC_ALL=C.UTF-8',
+        sys.executable, '-B', str(ROOT / 'tools/screenshots.py'), 'collect',
+        '--native-group', 'build/screenshots-inputs/native', '--native-recipe', native_recipe,
+        '--wasm-group', 'build/screenshots-inputs/wasm', '--wasm-recipe', wasm_recipe,
+        '--gui-group', 'build/screenshots-inputs/gui', '--origins', 'build/screenshots-inputs/origins.json',
+        '--work', 'build/screenshots-work', '--output', 'build/gallery', '--jobs', str(jobs)]
+
+
+def capture_environment():
+    # Compiler/application/browser children need runtime paths and provenance,
+    # never the authenticated transport credential used to acquire inputs.
+    names = ('PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'XDG_RUNTIME_DIR',
+             'GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')
+    return {**{name: os.environ[name] for name in names if name in os.environ},
+            'PYTHONUTF8': '1', 'PYTHONDONTWRITEBYTECODE': '1'}
 
 
 def run_hosted(argv):
-    """A Docker client timeout alone does not stop its daemon-owned container."""
-    owner = uuid.uuid4().hex
-    name = 'foundation-gallery-' + owner
-    argv = [*argv[:3], '--name', name, '--label', 'foundation.capture-owner=' + owner, *argv[3:]]
-    try:
-        command(argv, timeout=5400, cwd=ROOT)
-    except BaseException as original:
-        # No broad container pruning, host process killing or name-only removal.
-        # Observe the full container ID and our private ownership label first.
-        try:
-            observed = subprocess.run(['docker', 'inspect', '--type', 'container', '--format',
-                '{{.Id}} {{index .Config.Labels "foundation.capture-owner"}}', name],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
-            if observed.returncode:
-                raise RuntimeError('container absence or shutdown is unconfirmed; retain capture outputs')
-            fields = observed.stdout.strip().split()
-            if (len(fields) != 2 or not delivery.SHA.fullmatch(fields[0]) or fields[1] != owner):
-                raise RuntimeError('container ownership differs; no removal attempted')
-            command(['docker', 'rm', '--force', fields[0]], timeout=60,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        except BaseException as cleanup:
-            raise RuntimeError('capture container cleanup could not be verified; retain outputs: ' + str(cleanup)) from original
-        raise
+    import windows_graphics
+    windows_graphics.run_owned(argv, ROOT, ROOT / 'build/screenshot-hosted.log',
+        environment=capture_environment(), timeout=5400)
 
 
 def verify_gallery(directory):
@@ -415,9 +387,12 @@ def verify_gallery(directory):
             set(manifest['recipes']) != {'native', 'wasm'} or set(manifest['dependencies']) != {'native', 'wasm'} or
             manifest['host'].get('target') != 'linux-x86_64' or not manifest['distribution'] or
             not manifest['terminal'] or set(manifest['captures']) != {*BACKENDS, 'browser'} or
-            set(manifest['tools']) != {'cmake', 'chromium', 'chromedriver', 'xterm'} or
+            set(manifest['tools']) != {'cmake', 'browser', 'chromedriver', 'xterm'} or
             any(not isinstance(v, str) or not v for v in manifest['tools'].values())):
         raise ValueError('incomplete source, host, input or capture provenance')
+    sandbox = manifest['captures'].get('browser', {}).get('sandbox', {})
+    if gallery_browser.parse_sandbox({'rows': sandbox.get('rows'), 'evaluation': sandbox.get('evaluation')}) != sandbox:
+        raise ValueError('capture browser sandbox evidence differs')
     for name, recipe in manifest['recipes'].items():
         if (not delivery.SHA.fullmatch(recipe) or set(manifest['dependencies'][name]) != set(delivery.store.names(recipe)) or
                 any(not delivery.SHA.fullmatch(v) for v in manifest['dependencies'][name].values())):
@@ -487,6 +462,7 @@ def publish(repository, tag, directory, source_commit, *, execute=False, transpo
             'draft': True, 'prerelease': True, 'make_latest': 'false'}), tag)
         if not info['draft'] or not info['prerelease'] or info['name'] != tag or remote.reference(tag) != source_commit:
             raise ValueError('created gallery must be the exact private draft before uploading')
+        remote.wait_find(tag, release_id=info['id'])
         for name in files:
             remote.upload(tag, directory / name)
         current = remote.find(tag); assets = remote.assets(current)
@@ -539,6 +515,7 @@ def main(argv=None):
     if args.operation == 'verify': return verify_gallery(args.directory)
     if args.operation == 'hosted':
         argv = hosted_command(args.native_recipe, args.wasm_recipe, args.jobs)
+        gallery_browser.preflight(ROOT / 'build/browser-preflight')
         prepare_inputs(args.repository, args.native_recipe, args.wasm_recipe, ROOT / 'build/screenshots-inputs',
                        args.source, delivery.parse(args.retained_inputs) if args.retained_inputs else None)
         run_hosted(argv)

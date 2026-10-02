@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 sys.dont_write_bytecode = True
 TOOLS = str(Path(__file__).resolve().parent)
@@ -169,6 +170,17 @@ class Remote:
                 raise DeliveryError('required release is absent; no implicit build or publication')
             return None
         return matches[0]
+
+    def wait_find(self, tag, *, release_id=None):
+        """Bounded observation after initialization; never repeat a mutation."""
+        for delay in (0, .25, .5, 1, 2, 4, 8):
+            if delay: time.sleep(delay)
+            found = self.find(tag, required=False)
+            if found is not None:
+                if release_id is not None and found['id'] != release_id:
+                    raise DeliveryError('observed release ID differs from creation response')
+                return found
+        raise DeliveryError('release is not visible; preserve initialization state and reconcile')
 
     @staticmethod
     def info(value, tag):
@@ -386,6 +398,7 @@ def publish_base(repository, recipe, group, source_commit, *, execute=False, tra
                 'draft':True,'prerelease':True,'make_latest':'false'}), 'base')
             if not info['draft'] or not info['prerelease'] or info['name']!='base':
                 raise DeliveryError('created base does not match requested draft lifecycle')
+            remote.wait_find('base', release_id=info['id'])
         for name in store.names(recipe):remote.upload('base', Path(group) / name)
         current = remote.find('base'); assets = remote.assets(current)
         if any(current[key]!=info[key] for key in ('id','name','draft','prerelease')):
@@ -423,6 +436,7 @@ def publish_candidate(repository, tag, directory, source_commit, packager_commit
         info = remote.info(remote.change('/releases', body={'tag_name':tag,'target_commitish':delivery['tag_commit'],
             'name':'experiment' if experiment else tag,'body':'Certification pending. Immutable application assets.',
             'draft':True,'prerelease':experiment,'make_latest':'false'}), tag)
+        remote.wait_find(tag, release_id=info['id'])
         for name in delivery['files']:remote.upload(tag, Path(directory) / name)
         with tempfile.TemporaryDirectory(prefix='delivery-metadata-') as temporary:
             path=Path(temporary)/'delivery.json';path.write_bytes(archive.encoded(delivery));remote.upload(tag,path)

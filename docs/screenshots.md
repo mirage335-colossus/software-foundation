@@ -23,10 +23,14 @@ mode falls back to the other. Both selected origins are recorded in the gallery;
 retained bytes remain explicitly unqualified for SDK publication. Legacy Actions
 storage must first pass the explicit import workflow, never implicit retrieval.
 
-The capture job uses an unprivileged account in disposable Debian 12. It uses
-the prepared SDKs for compilation and explicit distribution packages for the
-display, software graphics, fonts, Chromium and its matching driver. No browser
-is added to either SDK. The default native client and browser application area
+The capture job uses the ordinary unprivileged Ubuntu runner account. It uses
+prepared Bookworm SDKs for compilation and explicit distribution packages for the
+display, software graphics, fonts and Selenium. Its installed Chromium or Chrome
+and matching driver remain host prerequisites; no browser enters either SDK.
+An [early sandbox and render probe](gallery-browser.md) must pass before SDK
+acquisition or compilation. Capture keeps the browser sandbox enabled and changes
+no host or container security policy. Compiler and capture children receive only
+runtime paths and provenance, excluding transport credentials. The default native client and browser application area
 are 640 by 480 pixels at scale one, on a private 96 DPI display. The terminal
 uses 80 by 31 cells with its status row and border retained; its physical size
 is recorded rather than cropped or stretched to resemble another renderer.
@@ -84,7 +88,7 @@ The [collector](../tools/screenshots.py) supports `collect` with exact existing
 `--native-group`, `--native-recipe`, `--wasm-group`, `--wasm-recipe` and
 `--gui-group` inputs, plus new `--work` and `--output` directories. Use Linux x64,
 a clean source checkout, the declared display/runtime environment and the same
-prerequisites as the workflow. `hosted` runs the complete disposable-container
+prerequisites as the workflow. `hosted` runs the complete unprivileged hosted-runtime
 path and explicitly fetches its existing SDK inputs. `publish` plans by default;
 only its `--execute` switch mutates a public release.
 

@@ -66,6 +66,8 @@ The manual lifecycle is executable, not only described:
   **_Publish new Latest release** entry point composes the full sequence.
 - [`screenshots.yml`](workflows/screenshots.yml): capture fresh initial views of
   all seven actual GUI hosts and optionally publish a non-Latest image gallery.
+- [`distribution.yml`](workflows/distribution.yml): turn a certified immutable
+  application into separately signed APT, Arch and Gentoo channels with exact retained inputs.
 - `gui-inputs.yml` and `native-gui.yml`: explicit supplier-input maintenance and
   native host qualification with separate Windows graphics prerequisites.
 

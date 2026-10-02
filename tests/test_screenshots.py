@@ -41,7 +41,11 @@ def gallery(path):
              'binaries': {name: 'd' * 64 for name in {*(f'native/gui/foundation-gui-{n}' for n in S.TARGETS),
                           'wasm/gui/gui_web_wasm.js', 'wasm/gui/gui_web_wasm.wasm'}},
              'captures': {'browser': {'browserName': 'fixture', 'browserVersion': '1'}},
-             'tools': {name: 'fixture version 1' for name in ('cmake', 'chromium', 'chromedriver', 'xterm')}}
+             'tools': {name: 'fixture version 1' for name in ('cmake', 'browser', 'chromedriver', 'xterm')}}
+    value['captures']['browser']['sandbox'] = S.gallery_browser.parse_sandbox({
+        'rows': [['Layer 1 Sandbox', 'Namespace'], ['PID namespaces', 'Yes'],
+                 ['Network namespaces', 'Yes'], ['Seccomp-BPF sandbox', 'Yes']],
+        'evaluation': 'You are adequately sandboxed.'})
     for name in S.BACKENDS:
         dimensions = [644, 500] if name == 'terminal' else [640, 480]
         p = path / (name + '.png'); p.write_bytes(png(*dimensions))
@@ -199,15 +203,16 @@ class ScreenshotTests(unittest.TestCase):
             S.publish('example/project', 'screenshots-1', self.directory, 'a' * 40, execute=True, transport=remote)
         self.assertTrue(caught.exception.uncertain); self.assertTrue(remote.releases[0]['draft'])
 
-    def test_hosted_capture_uses_unprivileged_debian_and_explicit_runtime_only(self):
-        with mock.patch.dict(os.environ, {'GH_TOKEN': 'do-not-copy', 'GITHUB_RUN_ID': '4'}):
+    def test_hosted_capture_uses_unprivileged_host_and_explicit_runtime_only(self):
+        with mock.patch.dict(os.environ, {'GH_TOKEN': 'do-not-copy', 'GITHUB_RUN_ID': '4',
+                                         'GITHUB_TOKEN': 'private', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'private'}):
             argv = S.hosted_command('a' * 64, 'b' * 64, 2, uid=1001, gid=1001)
-        self.assertIn('debian:bookworm', argv)
-        self.assertNotIn('GH_TOKEN', argv); self.assertNotIn('do-not-copy', ' '.join(argv))
-        script = argv[argv.index('-euc') + 1]
-        self.assertIn('runuser -u gallery', script); self.assertIn('96', script)
-        self.assertIn('SDL_VIDEODRIVER=x11', script)
-        self.assertNotIn('emscripten', script)
+            environment = S.capture_environment()
+        self.assertEqual(argv[0], 'xvfb-run'); self.assertIn('-screen 0 1280x900x24 -dpi 96', argv)
+        self.assertIn('SDL_VIDEODRIVER=x11', argv); self.assertNotIn('docker', argv)
+        self.assertNotIn('GH_TOKEN', environment); self.assertNotIn('GITHUB_TOKEN', environment)
+        self.assertNotIn('ACTIONS_ID_TOKEN_REQUEST_TOKEN', environment)
+        self.assertEqual(environment['GITHUB_RUN_ID'], '4')
         with self.assertRaisesRegex(ValueError, 'non-root'):
             S.hosted_command('a' * 64, 'b' * 64, 2, uid=0, gid=1001)
 
@@ -232,25 +237,24 @@ class ScreenshotTests(unittest.TestCase):
                 S.prepare_inputs('example/project', 'b' * 64, 'c' * 64, self.root / 'inputs', 'retained', requests)
         base.assert_not_called()
 
-    def test_container_timeout_stops_only_the_verified_owned_container(self):
-        unique = mock.Mock(hex='a' * 32)
-        inspected = mock.Mock(returncode=0, stdout='b' * 64 + ' ' + 'a' * 32)
-        with mock.patch.object(S.uuid, 'uuid4', return_value=unique), \
-             mock.patch.object(S, 'command', side_effect=[TimeoutError('client timeout'), None]) as run, \
-             mock.patch.object(S.subprocess, 'run', return_value=inspected):
-            with self.assertRaisesRegex(TimeoutError, 'client timeout'):
-                S.run_hosted(['docker', 'run', '--rm', 'image'])
-        self.assertIn('foundation-gallery-' + 'a' * 32, run.call_args_list[0].args[0])
-        self.assertEqual(run.call_args_list[1].args[0], ['docker', 'rm', '--force', 'b' * 64])
+    def test_host_capture_uses_owned_process_tree_and_sanitized_environment(self):
+        import windows_graphics
+        with mock.patch.object(windows_graphics, 'run_owned') as run, \
+             mock.patch.dict(os.environ, {'GH_TOKEN': 'private'}):
+            S.run_hosted(['xvfb-run', 'collector'])
+        args, kwargs = run.call_args
+        self.assertEqual(args[0], ['xvfb-run', 'collector'])
+        self.assertEqual(args[2], S.ROOT / 'build/screenshot-hosted.log')
+        self.assertNotIn('GH_TOKEN', kwargs['environment']); self.assertEqual(kwargs['timeout'], 5400)
 
-    def test_foreign_or_unknown_container_is_preserved_after_client_failure(self):
-        for row in (mock.Mock(returncode=0, stdout='b' * 64 + ' foreign'), mock.Mock(returncode=1, stdout='')):
-            with self.subTest(row=row), mock.patch.object(S, 'command', side_effect=TimeoutError('original')) as run, \
-                 mock.patch.object(S.subprocess, 'run', return_value=row):
-                with self.assertRaisesRegex(RuntimeError, 'cleanup could not') as caught:
-                    S.run_hosted(['docker', 'run', '--rm', 'image'])
-            self.assertIsInstance(caught.exception.__cause__, TimeoutError)
-            self.assertEqual(run.call_count, 1)
+    def test_browser_preflight_failure_prevents_input_acquisition_and_build(self):
+        with mock.patch.object(S, 'hosted_command', return_value=['capture']), \
+             mock.patch.object(S.gallery_browser, 'preflight', side_effect=ValueError('sandbox unavailable')), \
+             mock.patch.object(S, 'prepare_inputs') as inputs, mock.patch.object(S, 'run_hosted') as build:
+            with self.assertRaisesRegex(ValueError, 'sandbox unavailable'):
+                S.main(['hosted', '--repository', 'example/project', '--native-recipe', 'a'*64,
+                        '--wasm-recipe', 'b'*64])
+        inputs.assert_not_called(); build.assert_not_called()
 
 
 if __name__ == '__main__': unittest.main()

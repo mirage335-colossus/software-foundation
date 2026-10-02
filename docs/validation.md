@@ -26,9 +26,34 @@ one complete invocation and one targeted rerun: 770 inner Python cases passed,
 with two explicit native-Windows exclusions and no unexpected skips. The rerun
 made the new incremental-header fixture timestamp deterministically newer than
 its build stamp; all dependency-rejection assertions remain in place.
-New hosted transfer, screenshot and complete lifecycle results are pending; the
-older executions below establish only their recorded revisions and scopes.
-No SDK recipe or retained group bytes changed in this update.
+Subsequent integration passed all 41 CTest entries in one invocation: 832 inner
+Python cases passed, with two explicit native-Windows exclusions and no unexpected
+skips. This includes 36 transport, 31 delivery, 24 signed-distribution, 20 browser
+prerequisite and 13 opaque-preservation cases. Workflow syntax and documentation
+checks passed. The distribution cases include actual signed packages, exact Git
+source proofs, certificate replay and uncertain-creation recovery.
+
+Candidate [36943440689](https://github.com/mirage335-colossus/software-foundation/actions/runs/36943440689)
+passed all nineteen jobs at `fd646d616c129a6fede37e0ea7e7522d90565970`, including
+concurrent draft transport and fresh Linux x64, Linux ARM64 and Windows x64 archive
+consumers. GitHub permits duplicate draft tags: confirmed atomic tag creation now
+selects the sole initializer, with bounded read-only visibility reconciliation.
+
+All four exact legacy SDK imports passed at
+`2332d31e77e5b632e3f7d8a7b5031153e794e9dc`: browser
+[36942942745](https://github.com/mirage335-colossus/software-foundation/actions/runs/36942942745),
+Linux ARM64 [36942949383](https://github.com/mirage335-colossus/software-foundation/actions/runs/36942949383),
+Linux x64 [36942956015](https://github.com/mirage335-colossus/software-foundation/actions/runs/36942956015)
+and Windows x64 [36942962164](https://github.com/mirage335-colossus/software-foundation/actions/runs/36942962164).
+Each retained complete original proof bytes and emitted exact version-2 replay
+identities; import establishes storage preservation, not new SDK qualification.
+The full manifests and completed producer identities were independently checked.
+
+Opaque preservation [36943434563](https://github.com/mirage335-colossus/software-foundation/actions/runs/36943434563)
+retained 35 selected archives totaling 18,494,607,185 bytes in private draft bundles.
+Independent complete readback and original-storage cleanup are still pending.
+Actual screenshot and complete public lifecycle results remain separate outstanding
+scopes. No SDK recipe or retained group bytes changed in this update.
 
 ## Observed mechanisms
 

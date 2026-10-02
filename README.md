@@ -53,7 +53,9 @@ after installation. [COMPILE](COMPILE) is the short command reference;
 
 The [Latest entry point](docs/latest-release.md) composes the prepared-SDK release
 lifecycle, and the [screenshot workflow](docs/screenshots.md) captures all seven
-actual GUI hosts in the same initial state. Both have explicit publication gates.
+actual GUI hosts in the same initial state. The [signed package workflow](docs/distribution-release.md)
+retains certified inputs and exposes immutable APT, Arch and Gentoo channels.
+Each has explicit publication gates.
 
 Large CI outputs use verified private draft release bundles; routine PR feedback
 uses bounded logs. Compiler SDKs contain build inputs, while installed browsers,

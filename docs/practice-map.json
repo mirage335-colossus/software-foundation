@@ -646,6 +646,36 @@
       "checks": [
         "tests/test_legacy_artifacts.py"
       ]
+    },
+    {
+      "id": "DIST-RELEASE-1",
+      "requirement": "Publish independently signed immutable package channels from exact certified application, SDK, certificate and packaging-source bytes.",
+      "documents": [
+        "docs/distribution-release.md"
+      ],
+      "implementation": [
+        "tools/distribution_release.py",
+        ".github/workflows/distribution.yml"
+      ],
+      "checks": [
+        "tests/test_distribution_release.py"
+      ]
+    },
+    {
+      "id": "GUI-BROWSER-1",
+      "requirement": "Use ordinary installed browsers outside compiler SDKs; verify enabled sandbox and actual rendering before expensive builds, with owned children and isolated credentials.",
+      "documents": [
+        "docs/gallery-browser.md",
+        "docs/screenshots.md"
+      ],
+      "implementation": [
+        "tools/gallery_browser.py",
+        "tools/screenshots.py"
+      ],
+      "checks": [
+        "tests/test_gallery_browser.py",
+        "tests/test_screenshots.py"
+      ]
     }
   ]
 }

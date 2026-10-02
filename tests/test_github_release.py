@@ -399,6 +399,19 @@ class TransportTests(unittest.TestCase):
         self.assertNotIn('clobber',' '.join(argv));self.assertNotIn('private token',str(caught.exception))
         self.assertNotIn('shell',call.call_args.kwargs)
 
+    def test_created_release_visibility_waits_by_read_only_and_exact_id(self):
+        remote=G.Remote('example/project',FakeGitHub())
+        row=dict(id=7,tag_name='new',name='new',draft=True,prerelease=True)
+        with mock.patch.object(remote,'find',side_effect=[None,None,row]) as read, mock.patch.object(G.time,'sleep'):
+            self.assertEqual(row,remote.wait_find('new',release_id=7))
+        self.assertEqual(3,read.call_count);self.assertFalse(remote.transport.mutations)
+        with mock.patch.object(remote,'find',return_value=row), self.assertRaisesRegex(G.DeliveryError,'ID differs'):
+            remote.wait_find('new',release_id=8)
+        with mock.patch.object(remote,'find',return_value=None), mock.patch.object(G.time,'sleep'), \
+                self.assertRaisesRegex(G.DeliveryError,'not visible'):
+            remote.wait_find('new',release_id=7)
+        self.assertFalse(remote.transport.mutations)
+
     def test_access_failure_is_never_a_cache_miss(self):
         transport=G.GitHub('example/project')
         for raw in (b'HTTP/2 403 Forbidden\n\n{}',b'HTTP/2 500 Server Error\n\n{}',b'unknown'):
