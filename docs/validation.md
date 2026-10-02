@@ -65,7 +65,14 @@ Independent [readback 36949071982](https://github.com/mirage335-colossus/softwar
 passed for all 35 archives at `c2281bba00804bd7186f332098ff25576feded0a`.
 The complete report and every receipt were fetched and bound to manifest asset
 `604516921`, SHA-256 `94234661c4c45a96404f8115360cd5528d4df9d2216d833f4e6bcaef9a32feb4`.
-Original-storage cleanup remains a separate scoped operation. No SDK recipe or
+After rechecking all original identities, a separately reviewed manual operation
+deleted exactly those 35 originals and independently confirmed their absence.
+The remaining API inventory contains 225 artifacts totaling 18,809,636 bytes,
+with none at or above 1,000,000 bytes. The private preservation release retains
+manual audit asset `604540708` (`cleanup-receipt.json`), SHA-256
+`d834b495d696aa3ae42ad43ddc780d9a6d5f328d4cfe00789d57b03bf1a3f5f4`;
+its complete uploaded bytes were independently read back. No workflow run,
+unrelated artifact or preserved release bundle was deleted. No SDK recipe or
 retained SDK group bytes changed in this update.
 
 GUI source maintenance [36949360683](https://github.com/mirage335-colossus/software-foundation/actions/runs/36949360683)
@@ -76,8 +83,31 @@ and rendering preflight, then stopped because the restricted Wasm build path lac
 distro CMake. The repaired path installs ordinary host CMake/Ninja and explicitly
 joins its authenticated virtual display. Thirty-three focused gallery cases passed,
 with no skips, alongside actual local authenticated display, success/failure cleanup,
-4 MiB log-cap and surviving-descendant rejection checks. Hosted screenshot and
-complete public lifecycle results remain separate outstanding scopes.
+4 MiB log-cap and surviving-descendant rejection checks.
+
+Hosted gallery [36951973933](https://github.com/mirage335-colossus/software-foundation/actions/runs/36951973933)
+passed at `217ff90d01c25c419fc4e621515579f30668984e`. All seven actual surfaces
+were independently downloaded, checksum-verified and visually inspected. FLTK,
+Rev, SDL and framebuffer have closely matching layout; hosted web and Wasm agree
+in widget geometry and appearance. The terminal preserves the shared controls
+in its cell layout at 644 by 531 pixels; the other six images are 640 by 480.
+The ordinary Chrome 154.0.8037.57 host passed namespace and seccomp sandbox
+checks, and its authenticated 96-DPI Xvfb session reports joined cleanup.
+Gallery manifest asset `604563666` has SHA-256
+`9c9535b491791ade577c70a32b060b644bc40717d290f543e22efd361c7ad240`;
+the separately verified private diagnostics bind the exact retained GUI selector
+and contain no private display authorization file. `execute=false` retained
+private evidence and a publication plan; it did not publish a public gallery.
+Complete public base/application/certification/promotion execution remains a
+separate scope requiring the documented eligible inputs and publication setup.
+
+Final candidate [36951980262](https://github.com/mirage335-colossus/software-foundation/actions/runs/36951980262)
+passed all nineteen jobs at `217ff90d01c25c419fc4e621515579f30668984e`.
+Linux x64 and ARM64 each passed 813 Python cases; Windows x64 passed 558.
+All 33 screenshot fixtures passed on each native platform. Platform exclusions
+were explicit, with no failed, skipped or incomplete case outcomes. The separate
+distribution job passed all 48 cases and the actual signed HTTPS Debian client
+transaction, including upgrade, tamper rejection and removal.
 
 ## Observed mechanisms
 
