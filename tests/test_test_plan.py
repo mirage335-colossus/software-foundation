@@ -254,8 +254,9 @@ class CandidateInventoryTests(unittest.TestCase):
             root=Path(temporary);source=root/'source';source.mkdir();build=root/'build'
             script=source/'fixture.py'
             script.write_text("import json,sys\nfrom pathlib import Path\np=Path(sys.argv[1]);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps({'schema_version':1,'system':'fixture','status':'passed','inventory':['one'],'excluded':{},'results':{'one':{'status':'passed'}}}))\n")
-            cmake='cmake_minimum_required(VERSION 3.24)\nproject(CandidateProbe LANGUAGES CXX)\nenable_testing()\nadd_custom_target(foundation-tests)\n'
-            cmake+='add_test(NAME newly_unlabelled COMMAND "${CMAKE_COMMAND}" -E touch "${CMAKE_BINARY_DIR}/unlabelled-ran")\n'
+            (source/'main.cpp').write_text('#include <fstream>\nint main(int argc, char** argv) { if (argc != 2) return 1; std::ofstream out(argv[1]); out << \"ran\"; return out ? 0 : 1; }\n')
+            cmake='cmake_minimum_required(VERSION 3.24)\nproject(CandidateProbe LANGUAGES CXX)\nenable_testing()\nadd_executable(probe EXCLUDE_FROM_ALL main.cpp)\nadd_custom_target(foundation-tests DEPENDS probe)\n'
+            cmake+='add_test(NAME newly_unlabelled COMMAND probe "${CMAKE_BINARY_DIR}/unlabelled-ran")\n'
             cmake+='add_test(NAME tools.fixture COMMAND "'+sys.executable.replace('\\','/')+'" "${CMAKE_SOURCE_DIR}/fixture.py" "${CMAKE_BINARY_DIR}/test-reports/fixture.json")\nset_tests_properties(tools.fixture PROPERTIES LABELS tools)\n'
             cmake+='add_test(NAME integration.fixture COMMAND "${CMAKE_COMMAND}" -E true)\nset_tests_properties(integration.fixture PROPERTIES LABELS integration)\n'
             cmake+='file(WRITE "${CMAKE_BINARY_DIR}/build-info.txt" "fixture")\n'
@@ -264,6 +265,8 @@ class CandidateInventoryTests(unittest.TestCase):
             (build/'test-platform.json').write_text(json.dumps({'schema_version':1,'excluded_suites':{'tools.unavailable':'explicit fixture platform exclusion'}}))
             paths=[]
             with patch.object(plan,'ROOT',source):
+                unresolved=next(row for row in plan.test_definitions(build) if row['name']=='newly_unlabelled')
+                self.assertNotIn('command',unresolved)
                 frozen=plan.candidate_plan(build)
                 self.assertEqual(frozen['scopes']['core'],['newly_unlabelled'])
                 for scope in plan.CANDIDATE_SCOPES:
@@ -274,5 +277,23 @@ class CandidateInventoryTests(unittest.TestCase):
                 for changed in (paths[:2],paths+paths[:1]):
                     with self.assertRaises(ValueError):plan.candidate_merge(changed)
                 self.assertEqual(plan.candidate_merge(paths[:1],diagnostic=True)['omitted_scopes'],['integration','tools'])
+                # Exercise the actual CLI with the relative receipt path used in CI.
+                command=[sys.executable,'-B',str(Path(__file__).resolve().parents[1]/'tools/test_plan.py'),
+                         'candidate-run','--build',str(build),'--scope','core','--output','relative.json']
+                result=subprocess.run(command,cwd=root,capture_output=True,text=True)
+                self.assertEqual(0,result.returncode,result.stdout+result.stderr)
+                self.assertTrue((root/'relative.junit.xml').is_file())
+                self.assertFalse((build/'relative.junit.xml').exists())
                 row=json.loads(paths[1].read_text());row['tool_reports']['tools.fixture']['results']['one']['status']='incomplete';paths[1].write_text(json.dumps(row))
                 with self.assertRaisesRegex(ValueError,'inner'):plan.candidate_merge(paths)
+                original_run=subprocess.run
+                def mutate_declaration(argv, **kwargs):
+                    result=original_run(argv,**kwargs)
+                    if '--build' in argv:
+                        declaration=build/'CTestTestfile.cmake'
+                        declaration.write_text(declaration.read_text()+'# changed during prerequisite build\n')
+                    return result
+                with patch.object(plan.subprocess,'run',side_effect=mutate_declaration):
+                    with self.assertRaisesRegex(ValueError,'prerequisite compilation'):
+                        plan.candidate_run(build,'core',root/'changed.json')
+                self.assertFalse((root/'changed.json').exists())

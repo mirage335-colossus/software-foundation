@@ -271,6 +271,16 @@ def candidate_plan(build):
     return value
 
 
+def candidate_prerequisite_inputs(build):
+    """Freeze declarations before CTest can resolve freshly compiled executables."""
+    build = Path(build)
+    paths = set(build.rglob('CTestTestfile.cmake'))
+    paths.update(build/name for name in ('CTestTestfile.cmake', 'build-info.txt', 'test-platform.json'))
+    declarations = {str(path.relative_to(build)): hashlib.sha256(path.read_bytes()).hexdigest()
+                    for path in sorted(paths)}
+    return source_id(build), build_inputs(build), declarations
+
+
 def candidate_run(build, scope, output, jobs=2, *, build_jobs=None):
     """Freeze all tests; unlabelled new tests automatically belong to core."""
     if scope not in CANDIDATE_SCOPES or jobs < 1 or (build_jobs is not None and build_jobs < 1):
@@ -280,14 +290,17 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None):
         raise ValueError("candidate receipt must name a new attempt")
     output.parent.mkdir(parents=True, exist_ok=True)
     compile_jobs = build_jobs or builder.positive(os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL") or str(builder.default_jobs()))
-    frozen = candidate_plan(build)
+    before = candidate_prerequisite_inputs(build)
     programs, environment = execution_context(build)
     subprocess.run([programs["cmake"], "--build", str(build), "--target", "foundation-tests",
                     "--parallel", str(compile_jobs)], check=True, env=environment)
-    if candidate_plan(build) != frozen:
+    if candidate_prerequisite_inputs(build) != before:
         raise ValueError("candidate inputs changed during prerequisite compilation")
+    # CTest omits executable commands until their targets exist. Freeze the full
+    # runnable inventory only after compilation, keeping input/declaration guards.
+    frozen = candidate_plan(build)
     names = frozen["scopes"][scope]
-    junit = output.with_suffix(".junit.xml")
+    junit = output.with_suffix(".junit.xml").resolve()
     if junit.exists():
         raise ValueError("candidate JUnit must name a new attempt")
     process = subprocess.run([programs["ctest"], "--test-dir", str(build), "--no-tests=error", "--output-on-failure",
