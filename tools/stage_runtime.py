@@ -9,8 +9,36 @@ from dependency_archive import digest, write_json
 from verify_abi import HOST_LIBRARIES, audit, elf, inspect, version
 
 
+def normalize_empty_paths(path, readelf='readelf', elf_editor='patchelf'):
+    """Remove wholly empty tags from a staged copy, preserving input provenance.
+
+    An empty DT_RUNPATH supplies no directories but suppresses inherited RPATH.
+    Do not erase nonempty paths (including empty colon-delimited components).
+    The final installed-package audit must prove its inherited private closure.
+    """
+    before = inspect(path, readelf)
+    if '' not in before['rpaths']:
+        return None
+    if any(before['rpaths']):
+        raise ValueError('mixed empty and nonempty runtime paths: ' + str(path))
+    editor = shutil.which(str(elf_editor))
+    if editor is None:
+        raise ValueError('empty runtime paths require the selected ELF editor: ' + str(elf_editor))
+    editor_hash = digest(Path(editor))
+    subprocess.run([editor, '--remove-rpath', str(path)], check=True)
+    after = inspect(path, readelf)
+    if after['rpaths'] or any(before[key] != after[key] for key in before
+                             if key not in ('sha256', 'rpaths', 'rpath', 'runpath')):
+        raise ValueError('ELF editor changed runtime contracts or left search-path tags: ' + str(path))
+    if digest(Path(editor)) != editor_hash:
+        raise ValueError('ELF editor changed during runtime normalization')
+    return {'operation': 'remove-wholly-empty-rpath-tags', 'source_sha256': before['sha256'],
+            'installed_sha256': after['sha256'], 'editor_sha256': editor_hash,
+            'original_rpath': before['rpath'], 'original_runpath': before['runpath']}
+
+
 def stage(executables, roots, destination, processor='x86_64', readelf='readelf', host_libraries=None,
-          audit_baseline=True):
+          audit_baseline=True, elf_editor='patchelf'):
     """Collect target files; only an explicit native build may use observed floors."""
     if type(audit_baseline) is not bool:
         raise ValueError('runtime staging baseline policy must be explicit')
@@ -53,10 +81,17 @@ def stage(executables, roots, destination, processor='x86_64', readelf='readelf'
         staged = Path(temporary) / 'lib'
         staged.mkdir()
         staged.chmod(0o755)
+        transformations = {}
         for name, path in copied.items():
             shutil.copyfile(path, staged / name)
             (staged / name).chmod(0o755)
-        report = {'schema_version': 1, 'files': {name: digest(path) for name, path in copied.items()},
+            changed = normalize_empty_paths(staged / name, readelf, elf_editor)
+            if changed:
+                transformations[name] = changed
+        # files retains supplier identities used by dependency notice collection.
+        report = {'schema_version': 2, 'files': {name: digest(path) for name, path in copied.items()},
+                  'installed_files': {name: digest(staged / name) for name in copied},
+                  'transformations': transformations,
                   'host_libraries': sorted(host), 'processor': processor}
         if copied:
             # Staging has no executable ancestor or final directory layout.
@@ -85,8 +120,9 @@ def main():
     parser.add_argument('--root', type=Path, action='append', required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--processor', default='x86_64')
+    parser.add_argument('--elf-editor', default='patchelf')
     args = parser.parse_args()
-    stage(args.executable, args.root, args.output, args.processor)
+    stage(args.executable, args.root, args.output, args.processor, elf_editor=args.elf_editor)
 
 
 if __name__ == '__main__':

@@ -168,7 +168,8 @@ class PortabilityTests(unittest.TestCase):
         for name in public:
             with self.subTest(metadata=name):
                 self.assertEqual(0o644, stat.S_IMODE((package / name).stat().st_mode))
-                self.assertEqual(1, json.loads((package / name).read_text())['schema_version'])
+                self.assertEqual(2 if name.endswith('runtime-inventory.json') else 1,
+                                 json.loads((package / name).read_text())['schema_version'])
         self.assertEqual('passed', json.loads((package / public[1]).read_text())['status'])
         subprocess.run([str(executable)], check=True, cwd=self.root,
                        env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
@@ -213,6 +214,85 @@ class PortabilityTests(unittest.TestCase):
         self.assertEqual(report['runtime_resolution'], 'passed')
         subprocess.run([str(binary / 'application')], check=True,
                        env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'}, cwd=self.root)
+
+    def test_empty_supplier_runpath_staging_restores_real_indirect_loading(self):
+        from dependency_archive import digest
+        package, binary, libraries = self.linked_package()
+        middle = libraries / 'libmiddle.so.1'
+        clean = self.root / 'middle-without-path.so'
+        shutil.copyfile(middle, clean)
+        subprocess.run(['cc', '-shared', '-fPIC', str(self.root / 'middle.c'),
+                        str(libraries / 'libleaf.so.1'), '-Wl,-soname,libmiddle.so.1',
+                        '-Wl,--enable-new-dtags', '-Wl,-rpath,', '-o', str(middle)], check=True)
+        self.assertEqual([''], verify_abi.inspect(middle)['runpath'])
+        # Even a matching current-directory library must not rescue the empty tag.
+        shutil.copyfile(libraries / 'libleaf.so.1', self.root / 'libleaf.so.1')
+        environment = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'}
+        self.assertNotEqual(0, subprocess.run([str(binary / 'application')], cwd=self.root,
+                                             env=environment, capture_output=True).returncode)
+        supplier = self.root / 'supplier'
+        libraries.rename(supplier)
+        original = {p.name: digest(p) for p in supplier.iterdir()}
+        editor = self.root / 'fixture-editor'
+        editor.write_text('editor protocol fixture'); editor.chmod(0o755)
+        real_run = subprocess.run
+        def edit_copy(argv, **kwargs):
+            if argv[0] != str(editor):
+                return real_run(argv, **kwargs)
+            self.assertEqual(argv[1], '--remove-rpath')
+            # The protocol fixture supplies a separately linked real ELF with
+            # identical contracts and no search tags. Retained-SDK qualification
+            # separately exercises the actual authenticated patchelf executable.
+            shutil.copyfile(clean, argv[2])
+            return subprocess.CompletedProcess(argv, 0)
+        with patch('stage_runtime.subprocess.run', side_effect=edit_copy):
+            result = stage_runtime.stage([binary / 'application'], [supplier], libraries,
+                                        processor=self.processor, elf_editor=editor)
+        self.assertEqual(original, {p.name: digest(p) for p in supplier.iterdir()})
+        self.assertEqual(original, result['files'])
+        self.assertEqual(digest(libraries / middle.name), result['installed_files'][middle.name])
+        self.assertNotEqual(result['files'][middle.name], result['installed_files'][middle.name])
+        receipt = result['transformations'][middle.name]
+        self.assertEqual(digest(editor), receipt['editor_sha256'])
+        self.assertEqual([''], receipt['original_runpath'])
+        self.assertEqual(original[middle.name], receipt['source_sha256'])
+        self.assertEqual('passed', verify_abi.audit(package, processor=self.processor)['runtime_resolution'])
+        supplier.rename(self.root / 'unavailable-supplier')
+        relocated = self.root / 'relocated package'; package.rename(relocated)
+        subprocess.run([str(relocated / 'bin/application')], check=True, env=environment, cwd=self.root)
+
+    def test_nonempty_unsafe_path_is_not_normalized(self):
+        package, binary, libraries = self.linked_package()
+        subprocess.run(['cc', '-shared', '-fPIC', str(self.root / 'middle.c'),
+                        str(libraries / 'libleaf.so.1'), '-Wl,-soname,libmiddle.so.1',
+                        '-Wl,-rpath,:$ORIGIN', '-o', str(libraries / 'libmiddle.so.1')], check=True)
+        with self.assertRaisesRegex(ValueError, 'must be relative'):
+            stage_runtime.stage([binary / 'application'], [libraries], self.root / 'rejected',
+                                processor=self.processor, elf_editor='must-not-run')
+        self.assertFalse((self.root / 'rejected').exists())
+
+    def test_empty_path_editor_failure_does_not_publish(self):
+        package, binary, libraries = self.linked_package()
+        middle = libraries / 'libmiddle.so.1'
+        subprocess.run(['cc', '-shared', '-fPIC', str(self.root / 'middle.c'),
+                        str(libraries / 'libleaf.so.1'), '-Wl,-soname,libmiddle.so.1',
+                        '-Wl,-rpath,', '-o', str(middle)], check=True)
+        before = middle.read_bytes()
+        for editor, error in ((self.root / 'absent-editor', ValueError),
+                              (shutil.which('false'), subprocess.CalledProcessError),
+                              (shutil.which('true'), ValueError)):
+            with self.subTest(editor=editor), self.assertRaises(error):
+                stage_runtime.stage([binary / 'application'], [libraries], self.root / 'rejected',
+                                    processor=self.processor, elf_editor=editor)
+            self.assertFalse((self.root / 'rejected').exists())
+            self.assertEqual(before, middle.read_bytes())
+
+    def test_mixed_tags_never_invoke_editor(self):
+        with patch('stage_runtime.inspect', return_value={'rpaths': ['', '$ORIGIN']}), \
+             patch('stage_runtime.shutil.which') as editor:
+            with self.assertRaisesRegex(ValueError, 'mixed empty'):
+                stage_runtime.normalize_empty_paths(self.root / 'application')
+            editor.assert_not_called()
 
     def test_runpath_is_not_inherited(self):
         package, _, _ = self.linked_package(inherited=False)

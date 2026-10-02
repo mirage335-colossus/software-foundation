@@ -57,6 +57,26 @@ known defects. Prefer maintained fixes within the chosen ABI family, pin their
 exact source, and requalify the result. Record the target runtime's maintenance
 and end-of-support plan. A glibc-based package does not promise musl compatibility.
 
+## Staging relocatable Linux libraries
+
+The retained Linux SDK includes its hash-inventoried `bin/patchelf`. Installation
+uses that exact editor only when a copied supplier library has wholly empty
+`DT_RPATH`/`DT_RUNPATH` tags. An empty `DT_RUNPATH` prevents inherited executable
+RPATH lookup even though it supplies no directories; removing it lets the
+application's `$ORIGIN/../lib/runtime` RPATH reach indirect private dependencies.
+This follows [the baseline loader's lookup rules](https://github.com/bminor/glibc/blob/glibc-2.36/elf/dl-load.c).
+Nonempty paths are never erased to make an audit pass. Absolute paths, empty
+colon-delimited components and unresolved dependencies remain errors.
+
+Only temporary installed copies change. `runtime-inventory.json` schema 2 keeps
+`files` as the original supplier hashes used by notice collection, adds
+`installed_files` for shipped hashes and records each transformation with both
+hashes, original tags and the editor digest. Architecture, dependencies, loader
+and ABI requirements must remain unchanged. SDK bytes and recipes stay intact.
+A native non-SDK build needs distro-provided `patchelf` only if such empty tags
+occur; an explicitly selected SDK editor never falls back to a host executable.
+The final package must still pass full loader-closure and baseline checks.
+
 ## Enforced SDK input boundary
 
 Direct CMake and the wrapper verify a selected SDK's complete retained inventory.

@@ -15,12 +15,14 @@ def main():
     p.add_argument("--root", type=Path, action="append", default=[])
     p.add_argument("--processor", choices=("x86_64", "aarch64"), required=True)
     p.add_argument("--bookworm", action="store_true")
+    p.add_argument("--elf-editor", default="patchelf")
     a = p.parse_args()
     prefix = a.prefix.resolve(strict=True)
     inputs = [path for path in (prefix / "bin").iterdir() if path.is_file() and elf(path)]
     if not inputs:
         raise ValueError("installed package has no native executables")
-    stage(inputs, a.root, prefix / "lib/runtime", a.processor, audit_baseline=a.bookworm)
+    stage(inputs, a.root, prefix / "lib/runtime", a.processor, audit_baseline=a.bookworm,
+          elf_editor=a.elf_editor)
     ceilings = None
     if not a.bookworm:
         ceilings = {}
