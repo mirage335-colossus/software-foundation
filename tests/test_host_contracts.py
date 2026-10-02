@@ -185,6 +185,31 @@ class HostContracts(unittest.TestCase):
         self.assertIn('unavailable version', result['error']); run.assert_not_called()
         self.assertEqual(json.loads((self.root / 'evidence/result.json').read_text()), result)
 
+    def test_runner_metadata_preserves_native_environment_case_rules(self):
+        cases = (
+            ('Windows', {'IMAGEOS': 'win22', 'IMAGEVERSION': '20261001.1'}, 'win22', '20261001.1'),
+            ('Windows', {'ImageOS': 'win22', 'ImageVersion': '20261001.2'}, 'win22', '20261001.2'),
+            ('Linux', {'ImageOS': 'ubuntu24', 'IMAGEOS': 'different',
+                       'ImageVersion': '20261001.3'}, 'ubuntu24', '20261001.3'),
+            ('Linux', {'IMAGEOS': 'different', 'IMAGEVERSION': 'different'}, '', ''),
+            ('Windows', {}, '', ''),
+        )
+        for index, (system, environment, image_os, version) in enumerate(cases):
+            with self.subTest(system=system, environment=environment), \
+                 mock.patch.object(HOST.platform, 'system', return_value=system), \
+                 mock.patch.object(HOST, 'interpreter', side_effect=ValueError('setup unavailable')), \
+                 mock.patch.object(HOST, 'repetition') as run:
+                environment = dict(environment, GITHUB_SHA='source', GITHUB_RUN_ID='123')
+                result = HOST.execute(self.target, 'process_tree', '3.14', 1,
+                                      self.root / ('metadata-' + str(index)), environment)
+                self.assertEqual(result['workflow']['ImageOS'], image_os)
+                self.assertEqual(result['workflow']['ImageVersion'], version)
+                self.assertEqual(result['workflow']['GITHUB_SHA'], 'source')
+                self.assertEqual(result['workflow']['GITHUB_RUN_ID'], '123')
+                self.assertEqual(result['workflow']['GITHUB_RUN_ATTEMPT'], '')
+                self.assertEqual(result['status'], 'failed')
+                run.assert_not_called()
+
     def test_overall_deadline_preserves_completed_rows_but_fails_incomplete_run(self):
         clock = [0]
         def run(*args):

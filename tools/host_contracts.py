@@ -135,13 +135,16 @@ def execute(target, suite, selection, count, output, environ=None):
     if target not in TARGETS or suite not in SUITES or selection not in INTERPRETERS or count not in REPETITIONS:
         raise ValueError('unsupported diagnostic selection')
     environ = dict(os.environ if environ is None else environ)
+    # Windows normalizes environment keys; a plain snapshot loses that lookup behavior.
+    windows = platform.system() == 'Windows'
+    metadata = {key.upper(): value for key, value in environ.items()} if windows else environ
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=False)
     report = {'schema_version': 1, 'kind': 'host-contract-diagnostic', 'release_qualification': False,
               'target': target, 'suite': suite, 'interpreter': selection, 'requested_repetitions': count,
               'status': 'incomplete', 'repetitions': [], 'writers_stopped': True,
               'host': {'system': platform.system(), 'machine': platform.machine(), 'platform': platform.platform()},
-              'workflow': {key: environ.get(key, '') for key in ('GITHUB_SHA', 'GITHUB_RUN_ID',
+              'workflow': {key: metadata.get(key.upper() if windows else key, '') for key in ('GITHUB_SHA', 'GITHUB_RUN_ID',
                   'GITHUB_RUN_ATTEMPT', 'GITHUB_WORKFLOW_REF', 'ImageOS', 'ImageVersion')},
               'limits': {'repetition_seconds': CASE_SECONDS, 'total_seconds': TOTAL_SECONDS}}
     destination = output / 'result.json'
