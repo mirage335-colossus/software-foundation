@@ -144,8 +144,8 @@ jobs:
       actions: read
   verdict:
     permissions:
-      contents: write
-      actions: read
+      contents: read
+      actions: write
     if: always()
     needs:
     - plan
@@ -188,9 +188,18 @@ jobs:
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as report:
             report.write('Selected source scopes and applicable native package checks passed.\n')
             report.write('Prepared SDK, old-runtime, all-GUI and exact release certification remain separate required qualification scopes.\n')
+    - name: Remove this completed attempt's temporary handoffs
+      if: success() && !inputs.preserve_artifacts && startsWith(github.workflow_ref, format('{0}/.github/workflows/candidate.yml@', github.repository))
+      uses: ./.github/actions/ci-artifact-cleanup
+      continue-on-error: true
+      timeout-minutes: 3
 'on':
   workflow_dispatch:
     inputs:
+      preserve_artifacts:
+        description: Keep temporary handoffs and diagnostics for one day after completion
+        type: boolean
+        default: false
       devfast:
         description: Focused diagnostic only; cannot qualify a release
         type: boolean
@@ -217,6 +226,10 @@ jobs:
         default: true
   workflow_call:
     inputs:
+      preserve_artifacts:
+        description: Keep temporary handoffs and diagnostics for one day after completion
+        type: boolean
+        default: false
       devfast:
         description: Focused diagnostic only; cannot qualify a release
         type: boolean

@@ -24,7 +24,7 @@ class FakeGitHub:
     def __init__(self, *, first_normal_latest=False):
         self.first_normal_latest=first_normal_latest
         self.releases=[];self.refs={};self.data={};self.next_id=1;self.next_asset=100
-        self.latest=None;self.calls=[];self.fail_upload=None;self.change_download=None
+        self.latest=None;self.calls=[];self.fail_upload=None;self.change_download=None;self.private=True
 
     @property
     def mutations(self):
@@ -33,7 +33,7 @@ class FakeGitHub:
     def json(self,endpoint,method='GET',body=None,missing=False):
         self.calls.append((method,endpoint,copy.deepcopy(body)))
         prefix='repos/example/project'
-        if endpoint==prefix:return {'full_name':'example/project'}
+        if endpoint==prefix:return {'full_name':'example/project','private':self.private}
         path=endpoint[len(prefix):]
         if path.startswith('/git/ref/tags/'):
             value=self.refs.get(path.removeprefix('/git/ref/tags/'))
@@ -45,6 +45,16 @@ class FakeGitHub:
             tag=body['ref'].removeprefix('refs/tags/')
             if tag in self.refs:raise G.DeliveryError('tag exists')
             self.refs[tag]=body['sha'];return {'object':{'type':'commit','sha':body['sha']}}
+        if path.startswith('/releases/tags/') and method=='GET':
+            tag=path.removeprefix('/releases/tags/')
+            found=next((r for r in self.releases if G.quote(r['tag_name'],safe='')==tag and not r['draft']),None)
+            if found is None and missing:return None
+            if found is None:raise G.DeliveryError('published release missing')
+            return copy.deepcopy(found)
+        if path.startswith('/releases/') and path.removeprefix('/releases/').isdecimal() and method=='GET':
+            found=next((r for r in self.releases if r['id']==int(path.rsplit('/',1)[1])),None)
+            if found is None:raise G.DeliveryError('release ID missing')
+            return copy.deepcopy(found)
         if path=='/releases/latest':
             found=next((r for r in self.releases if r['id']==self.latest),None)
             if found is None and self.latest is None and self.first_normal_latest:
@@ -94,6 +104,23 @@ class FakeGitHub:
         value=self.data[asset['id']] if value is None else value
         asset.update(id=self.next_asset,size=len(value),digest='sha256:'+G.sha(value));self.next_asset+=1
         self.data[asset['id']]=value
+
+
+class PublicFakeGitHub(FakeGitHub):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs); self.private=False
+
+    def download_public(self,url,path,size,digest):
+        expected='https://github.com/example/project/releases/download/'
+        assert url.startswith(expected)
+        from urllib.parse import unquote
+        tag,name=map(unquote,url[len(expected):].split('/'))
+        row=next(r for r in self.releases if r['tag_name']==tag and not r['draft'])
+        asset=next(a for a in row['assets'] if a['name']==name)
+        self.calls.append(('public-download',asset['id']))
+        Path(path).write_bytes(self.data[asset['id']])
+        callback=self.change_download;self.change_download=None
+        if callback:callback()
 
 
 class DeliveryTests(unittest.TestCase):
@@ -1035,6 +1062,107 @@ class TransportTests(unittest.TestCase):
         for raw in (b'HTTP/2 403 Forbidden\n\n{}',b'HTTP/2 500 Server Error\n\n{}',b'unknown'):
             with mock.patch.object(transport,'_run',return_value=subprocess.CompletedProcess([],1,raw,b'secret')):
                 with self.assertRaises(ValueError):transport.json('endpoint',missing=True)
+
+
+class PublicPayloadTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary=tempfile.TemporaryDirectory();self.addCleanup(self.temporary.cleanup)
+        self.root=Path(self.temporary.name)
+        self.url='https://github.com/example/project/releases/download/v1/file.tar.gz'
+        self.payload=b'complete public bytes'
+
+    def response(self,payload=None,url=None,status=200):
+        response=io.BytesIO(self.payload if payload is None else payload)
+        response.url=url or 'https://release-assets.githubusercontent.com/asset?sig=hidden'
+        response.status=status
+        return response
+
+    def test_public_bytes_use_no_cli_or_authorization_and_have_separate_metrics(self):
+        metrics=G.RequestMetrics();transport=G.GitHub('example/project',metrics=metrics)
+        with mock.patch.object(G,'build_opener') as opener,mock.patch.object(transport,'_run') as cli:
+            opener.return_value.open.return_value=self.response()
+            transport.download_public(self.url,self.root/'output',len(self.payload),G.sha(self.payload))
+            request=opener.return_value.open.call_args.args[0]
+            self.assertNotIn('Authorization',request.headers);self.assertEqual(self.url,request.full_url)
+            cli.assert_not_called()
+        self.assertEqual(self.payload,(self.root/'output').read_bytes())
+        self.assertEqual(1,metrics.snapshot()['public_downloads']);self.assertEqual(0,metrics.snapshot()['api_responses'])
+
+    def test_public_redirect_rejects_other_repositories_hosts_protocols_and_credentials(self):
+        redirects=G.PublicReleaseRedirects(self.url)
+        request=G.Request(self.url,headers={'Authorization':'private-token'})
+        redirected=redirects.redirect_request(request,None,302,'',{},'https://release-assets.githubusercontent.com/asset?sig=hidden')
+        self.assertNotIn('Authorization',redirected.headers)
+        for url in ('http://github.com/example/project/releases/download/v1/file.tar.gz',
+                    'https://github.com/other/project/releases/download/v1/file.tar.gz',
+                    'https://attacker.invalid/asset','https://token@release-assets.githubusercontent.com/asset',
+                    'https://release-assets.githubusercontent.com:443/asset','https://release-assets.githubusercontent.com/asset#fragment'):
+            with self.subTest(url=url),self.assertRaisesRegex(ValueError,'redirect escaped'):
+                redirects.redirect_request(request,None,302,'',{},url)
+
+    def test_public_corrupt_short_oversized_and_untrusted_final_response_publish_nothing(self):
+        for payload,url,status in ((b'corrupt',None,200),(b'x'*(len(self.payload)+1),None,200),
+                                   (self.payload,'https://attacker.invalid/asset',200),(self.payload,None,206)):
+            with self.subTest(payload=payload,url=url,status=status),mock.patch.object(G,'build_opener') as opener:
+                opener.return_value.open.return_value=self.response(payload,url,status)
+                with self.assertRaises(ValueError):
+                    G.GitHub('example/project').download_public(self.url,self.root/'output',len(self.payload),G.sha(self.payload))
+                self.assertFalse((self.root/'output').exists());self.assertEqual([],list(self.root.iterdir()))
+
+    def test_public_transient_retry_discards_partial_bytes_without_auth_fallback(self):
+        from email.message import Message
+        headers=Message();headers['Retry-After']='0'
+        failed=G.HTTPError(self.url,503,'temporary',headers,io.BytesIO(b'private error body'))
+        transport=G.GitHub('example/project')
+        with mock.patch.object(G,'build_opener') as opener,mock.patch.object(transport,'_wait') as wait:
+            opener.return_value.open.side_effect=[failed,self.response()]
+            transport.download_public(self.url,self.root/'output',len(self.payload),G.sha(self.payload))
+            self.assertEqual(2,opener.return_value.open.call_count);wait.assert_called_once()
+        self.assertEqual(self.payload,(self.root/'output').read_bytes())
+
+    def test_visibility_is_explicit_and_private_downloads_keep_authenticated_transport(self):
+        asset=dict(id=3,name='file.tar.gz',state='uploaded',size=len(self.payload),digest='sha256:'+G.sha(self.payload))
+        info=dict(id=2,tag_name='v1',name='v1',draft=False,prerelease=True)
+        for private in (True,False):
+            with self.subTest(private=private):
+                adapter=mock.Mock();adapter.json.return_value={'full_name':'example/project','private':private}
+                adapter.download.side_effect=lambda identity,path:Path(path).write_bytes(self.payload)
+                adapter.download_public.side_effect=lambda url,path,size,digest:Path(path).write_bytes(self.payload)
+                remote=G.Remote('example/project',adapter);remote.visible();remote.pin_published(info,{'file.tar.gz':asset},private)
+                remote.download(asset,self.root/str(private))
+                self.assertEqual(1 if private else 0,adapter.download.call_count)
+                self.assertEqual(0 if private else 1,adapter.download_public.call_count)
+        adapter=mock.Mock();adapter.json.return_value={'full_name':'example/project'}
+        with self.assertRaisesRegex(ValueError,'visibility'):G.Remote('example/project',adapter).visible()
+
+    def test_exact_published_lookup_does_not_enumerate_release_history(self):
+        adapter=mock.Mock();row=dict(id=2,tag_name='v1',name='v1',draft=False,prerelease=True)
+        adapter.json.return_value=row
+        remote=G.Remote('example/project',adapter)
+        self.assertEqual(row,remote.published('v1'));self.assertEqual(row,remote.by_id(2,'v1'))
+        self.assertEqual(2,adapter.json.call_count);adapter.pages.assert_not_called()
+        adapter.json.return_value=dict(row,id=99)
+        with self.assertRaisesRegex(ValueError,'identity changed'):remote.by_id(2,'v1')
+
+    def test_bounded_cleanup_can_disable_reserve_probe_without_retrying_mutations(self):
+        transport=G.GitHub('example/project');transport.WRITE_HEADROOM=0
+        success=subprocess.CompletedProcess([],0,b'HTTP/2 204\r\n\r\n',b'')
+        with mock.patch.object(transport,'_run',return_value=success) as run,mock.patch.object(transport,'_headroom') as probe:
+            self.assertIsNone(transport.json('endpoint',method='DELETE'))
+            run.assert_called_once();probe.assert_not_called()
+        failure=subprocess.CompletedProcess([],1,b'HTTP/2 403\r\nRetry-After: 3600\r\n\r\n{}',b'')
+        with mock.patch.object(transport,'_run',return_value=failure) as run,mock.patch.object(transport,'_wait') as wait:
+            with self.assertRaises(G.DeliveryError):transport.json('endpoint',method='DELETE')
+            run.assert_called_once();wait.assert_not_called()
+
+    def test_empty_204_json_response_is_valid_but_other_empty_or_204_body_is_not(self):
+        transport=G.GitHub('example/project')
+        def result(status,body):return subprocess.CompletedProcess([],0,b'HTTP/2 '+str(status).encode()+b' Status\r\n\r\n'+body,b'')
+        with mock.patch.object(transport,'_run',return_value=result(204,b'')),mock.patch.object(transport,'_headroom'):
+            self.assertIsNone(transport.json('repos/example/project/actions/artifacts/1',method='DELETE'))
+        for status,body in ((204,b'{}'),(200,b'')):
+            with self.subTest(status=status),mock.patch.object(transport,'_run',return_value=result(status,body)):
+                with self.assertRaises(ValueError):transport.json('endpoint')
 
 
 if __name__=='__main__':unittest.main()

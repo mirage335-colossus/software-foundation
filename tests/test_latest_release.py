@@ -235,7 +235,9 @@ class WorkflowOverlapTests(unittest.TestCase):
         self.assertIn('regression_result: ${{ needs.regression.result }}', assembly)
         self.assertIn('value: ${{ jobs.assemble.outputs.regression_result }}', application)
         self.assertNotIn('  publish:\n', application)
-        self.assertIn('    - if: ${{ !inputs.execute }}\n      name: Retain verified candidate-', assembly)
+        self.assertIn('    - if: ${{ !inputs.execute }}\n      name: Retain candidate preparation controls', assembly)
+        self.assertIn('          build/publication-request.json', assembly)
+        self.assertIn('          build/publication-plan.json', assembly)
         self.assertNotIn('BUNDLE_OUTPUT: build\n', assembly)
 
 

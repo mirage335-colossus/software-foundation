@@ -169,7 +169,7 @@ class RetainedSdkRecoveryTests(unittest.TestCase):
         self.request = dict(schema_version=1, repository=self.repository, target='windows-x86_64', profile='core',
             recipe_id=self.recipe, run_id=123, source_commit='a' * 40, attempt=2, job_id=456,
             group={'id': 789, 'sha256': '0' * 64}, proof={'id': 790, 'sha256': '0' * 64})
-        self.repo = {'id': 42, 'full_name': self.repository}
+        self.repo = {'id': 42, 'full_name': self.repository, 'private': True}
         self.run = dict(id=123, run_attempt=2, head_sha='a' * 40, status='in_progress', conclusion=None,
             event='workflow_dispatch', path='.github/workflows/sdk-maintenance.yml',
             repository=self.repo.copy(), head_repository=self.repo.copy())

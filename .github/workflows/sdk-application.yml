@@ -2,6 +2,10 @@ name: Prepared SDK application and candidate
 'on':
   workflow_dispatch:
     inputs:
+      preserve_artifacts:
+        description: Keep temporary handoffs and diagnostics for one day after completion
+        type: boolean
+        default: false
       profile:
         description: Exact release inventory
         type: choice
@@ -53,6 +57,10 @@ name: Prepared SDK application and candidate
         required: false
   workflow_call:
     inputs:
+      preserve_artifacts:
+        description: Keep temporary handoffs and diagnostics for one day after completion
+        type: boolean
+        default: false
       profile:
         description: Exact release inventory
         type: string
@@ -121,7 +129,7 @@ jobs:
     if: inputs.require_regression
     permissions:
       contents: write
-      actions: read
+      actions: write
     uses: ./.github/workflows/candidate.yml
     with:
       devfast: false
@@ -147,11 +155,11 @@ jobs:
         FOUNDATION_FASTER_LINUX_RUNNER: ${{ vars.FOUNDATION_FAST_LINUX_RUNNER }}
         FOUNDATION_FASTER_ARM_RUNNER: ${{ vars.FOUNDATION_FAST_ARM_RUNNER }}
         FOUNDATION_FASTER_WINDOWS_RUNNER: ${{ vars.FOUNDATION_FAST_WINDOWS_RUNNER }}
-    - name: Retain verified source-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: source-${{ github.run_attempt }}
-        BUNDLE_PATHS: |-
+    - name: Retain source for the parallel application producers
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: source-${{ github.run_attempt }}
+        paths: |-
           build/source.tar.gz
           build/recipes.json
     permissions:
@@ -172,6 +180,10 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+    - name: Download source from this successful preparation
+      uses: ./.github/actions/ci-evidence-download
+      with:
+        pattern: source
     - shell: python
       run: |
         import subprocess,sys
@@ -200,13 +212,20 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/container_job.py', 'application-build'], check=True)
       if: runner.os == 'Linux'
+    - name: Retain the successfully built application
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: application-${{ matrix.target }}-${{ github.run_attempt }}
+        paths: |-
+          build/produced/*.tar.gz
+          build/produced/*.zip
+          build/produced/*.json
     - if: always()
-      name: Retain application and evidence with shared identity verification
-      run: python .github/scripts/lifecycle.py application-bundles
-      env:
-        APPLICATION_SUCCEEDED: ${{ job.status == 'success' }}
-        BUNDLE_NAME: application-evidence-${{ matrix.target }}-${{ github.run_attempt }}
-        BUNDLE_PATHS: |-
+      name: Retain application diagnostics including failures
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: application-evidence-${{ matrix.target }}-${{ github.run_attempt }}
+        paths: |-
           ${{ job.status == 'failure' && 'build/receipts/failure.json' || '' }}
           build/produced/source.junit.xml
           build/produced/work/build/Testing/Temporary/
@@ -236,6 +255,10 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+    - name: Download successful source and application handoffs
+      uses: ./.github/actions/ci-evidence-download
+      with:
+        pattern: '{source,application-linux-*,application-windows-*,application-browser-*}'
     - name: Restore source and all required application producers together
       shell: python
       env:
@@ -249,12 +272,12 @@ jobs:
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'assemble'], check=True)
       id: result
     - if: ${{ !inputs.execute }}
-      name: Retain verified candidate-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: candidate-${{ github.run_attempt }}
-        BUNDLE_PATHS: |-
-          build/candidate/
+      name: Retain candidate preparation controls without duplicating SDK archives
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: candidate-${{ github.run_attempt }}
+        paths: |-
+          build/candidate/release.json
           build/delivery.json
           build/publication-request.json
           build/publication-plan.json
@@ -263,11 +286,11 @@ jobs:
       run: python .github/scripts/lifecycle.py publish-candidate
       id: publication
     - if: always() && inputs.execute
-      name: Retain verified candidate-delivery-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: candidate-delivery-${{ github.run_attempt }}
-        BUNDLE_PATHS: build/receipts/
+      name: Retain candidate publication receipt
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: candidate-delivery-${{ github.run_attempt }}
+        paths: build/receipts/
     permissions:
       contents: write
       actions: read
@@ -278,6 +301,23 @@ jobs:
       inventory_sha256: ${{ steps.result.outputs.inventory_sha256 }}
       source_commit: ${{ steps.result.outputs.source_commit }}
       delivery_sha256: ${{ steps.result.outputs.delivery_sha256 }}
+
+  cleanup:
+    name: Remove temporary handoffs after their final consumer
+    if: always() && needs.assemble.result == 'success' && !inputs.preserve_artifacts && startsWith(github.workflow_ref, format('{0}/.github/workflows/sdk-application.yml@', github.repository))
+    needs: [regression, prepare, application, assemble]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/ci-artifact-cleanup
+      continue-on-error: true
+      timeout-minutes: 3
 
 env:
   GH_TOKEN: ${{ github.token }}

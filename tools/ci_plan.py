@@ -320,18 +320,20 @@ def assemble_release(source, packages, base, output, profile):
     return module('release').assemble(spec_path, base, output)
 
 
-def fetch_candidate(repository, tag, inventory, output, transport=None, *, metadata_only=False, planning=False):
+def fetch_candidate(repository, tag, inventory, output, transport=None, *, metadata_only=False, planning=False, workflow_context=None):
     import tempfile
     g = module('github_release')
     c = module('coverage')
     g.location(repository, tag)
     if type(planning) is not bool or planning and not metadata_only:
         raise ValueError('planning requires metadata-only acquisition')
+    if workflow_context is not None and (not planning or not g.workflow_context_matches(workflow_context) or workflow_context['repository'] != repository):
+        raise ValueError('snapshot context must identify this exact planning workflow')
     if not re.fullmatch(r'[0-9a-f]{64}', inventory) or output.exists() or output.is_symlink():
         raise ValueError('exact inventory digest and new candidate destination required')
     remote = g.Remote(repository, transport)
     remote.visible()
-    before = remote.find(tag)
+    before = remote.published(tag)
     assets = remote.assets(before)
     if 'delivery.json' not in assets:
         raise ValueError('published delivery descriptor is absent')
@@ -351,7 +353,14 @@ def fetch_candidate(repository, tag, inventory, output, transport=None, *, metad
             path = c.local(candidate, name); path.parent.mkdir(parents=True, exist_ok=True)
             selections.append((entry['asset'], path, entry['sha256']))
         g.download_files(remote, assets, selections)
-        info, verified_assets = g.verified_remote(remote, delivery, candidate, readback=False, metadata_only=metadata_only)
+        # The descriptor and selected bytes above already came from this exact
+        # observed inventory. Validate it locally, then reconcile once after all
+        # optional planning payloads finish; do not download the descriptor again.
+        g.validate_delivery(delivery,candidate,metadata_only=metadata_only)
+        g.validate_remote_inventory(delivery,before,assets)
+        if remote.reference(tag) != delivery['tag_commit']:
+            raise ValueError('tag commit differs from frozen delivery')
+        info, verified_assets = before, assets
         if planning:
             manifest = module('release').verify_metadata(candidate)
             source = manifest['source']['archive']; item = delivery['files'][source]
@@ -359,9 +368,12 @@ def fetch_candidate(repository, tag, inventory, output, transport=None, *, metad
             retained = module('source_identity').verify_source_archive(candidate / source)
             if retained['tree_sha256'] != manifest['source']['tree_sha256']:
                 raise ValueError('retained source tree differs from frozen inventory')
-            c.write_new(staged / 'candidate-remote.json', dict(schema_version=1, repository=repository, tag=tag,
+            snapshot = dict(schema_version=1, repository=repository, tag=tag,
                 inventory_sha256=inventory, delivery_sha256=g.sha(module('dependency_archive').encoded(delivery)),
-                release={key: info[key] for key in ('id', 'tag_name', 'name', 'draft', 'prerelease')}, assets=verified_assets))
+                release={key: info[key] for key in ('id', 'tag_name', 'name', 'draft', 'prerelease')}, assets=verified_assets)
+            if workflow_context is not None:
+                snapshot.update(schema_version=2, workflow_context=dict(workflow_context), repository_private=remote.private)
+            c.write_new(staged / 'candidate-remote.json', snapshot)
         remote.unchanged(tag, before, assets, delivery['tag_commit'])
         staged.rename(output)
     return delivery
@@ -369,14 +381,28 @@ def fetch_candidate(repository, tag, inventory, output, transport=None, *, metad
 
 
 
-def fetch_candidate_payloads(repository, tag, inventory, candidate, identity, frozen, plan, check_ids, *, transport=None):
-    """Read exact published inputs directly, with complete before/after identity checks."""
+def fetch_candidate_payloads(repository, tag, inventory, candidate, identity, frozen, plan, check_ids, *, transport=None, trusted_context=None):
+    """Restore pinned bytes; authenticated same-run controls avoid remote rescans.
+
+    Only pass trusted_context after restoring producer-validated workflow controls.
+    Final attachment/promotion still reconciles the complete live release identity.
+    """
     import tempfile
     g = module('github_release'); c = module('coverage'); a = module('dependency_archive')
     candidate = Path(candidate).absolute()
     g.location(repository, tag); g.validate_delivery(identity, candidate, metadata_only=True)
-    c.fields(frozen, {'schema_version', 'repository', 'tag', 'inventory_sha256', 'delivery_sha256', 'release', 'assets'})
-    if (frozen['schema_version'] != 1 or frozen['repository'] != repository or frozen['tag'] != tag or
+    version = frozen.get('schema_version') if isinstance(frozen,dict) else None
+    fields = {'schema_version', 'repository', 'tag', 'inventory_sha256', 'delivery_sha256', 'release', 'assets'}
+    if version == 2: fields |= {'workflow_context','repository_private'}
+    c.fields(frozen,fields)
+    trusted = trusted_context is not None
+    if (version == 2 and type(frozen['repository_private']) is not bool or trusted and
+            (version != 2 or not g.workflow_context_matches(trusted_context) or
+             trusted_context != frozen['workflow_context'] or trusted_context['repository'] != repository or
+             plan['inputs'].get('build/candidate-remote.json') != g.sha(a.encoded(frozen)) or
+             plan['inputs'].get('build/delivery.json') != g.sha(a.encoded(identity)))):
+        raise ValueError('trusted candidate snapshot differs from authenticated workflow controls')
+    if (type(version) is not int or version not in (1,2) or frozen['repository'] != repository or frozen['tag'] != tag or
             frozen['inventory_sha256'] != inventory or identity['repository'] != repository or
             identity['tag'] != tag or identity['inventory_sha256'] != inventory or
             frozen['delivery_sha256'] != g.sha(a.encoded(identity)) or
@@ -416,8 +442,12 @@ def fetch_candidate_payloads(repository, tag, inventory, candidate, identity, fr
         for parent in destination.parents:
             _bundle_directory(parent)
             if parent == candidate.parent: break
-    remote = g.Remote(repository, transport); remote.visible()
-    remote.unchanged(tag, frozen['release'], assets, identity['tag_commit'])
+    remote = g.Remote(repository, transport)
+    if trusted:
+        remote.pin_published(frozen['release'],assets,frozen['repository_private'])
+    else:
+        remote.visible()
+        remote.unchanged(tag, frozen['release'], assets, identity['tag_commit'])
     with tempfile.TemporaryDirectory(prefix='.qualification-payload-', dir=candidate.parent) as temporary:
         staged = Path(temporary); selections = []
         for name in names:
@@ -425,7 +455,7 @@ def fetch_candidate_payloads(repository, tag, inventory, candidate, identity, fr
             item = identity['files'][name]
             selections.append((item['asset'], path, item['sha256']))
         g.download_files(remote, assets, selections)
-        remote.unchanged(tag, frozen['release'], assets, identity['tag_commit'])
+        if not trusted: remote.unchanged(tag, frozen['release'], assets, identity['tag_commit'])
         # Recheck all outputs after network work, then use exclusive creation so
         # an intervening writer cannot be replaced by a POSIX rename.
         for name in names:
@@ -435,7 +465,7 @@ def fetch_candidate_payloads(repository, tag, inventory, candidate, identity, fr
             for parent in destination.parents:
                 _bundle_directory(parent)
                 if parent == candidate.parent: break
-        # Publish no payload before all downloads and both complete remote snapshots pass.
+        # Publish only after every pinned byte passes; strict callers also recheck remote snapshots.
         import shutil
         for name in names:
             destination = candidate / a.relative(name); destination.parent.mkdir(parents=True, exist_ok=True)

@@ -39,7 +39,10 @@ class StorageLayoutTests(unittest.TestCase):
     def diagnostic_paths(self, workflow, failed):
         name = 'application-evidence-' if workflow == 'sdk-application' else 'native-gui-evidence-'
         text = (ROOT / f'.github/workflows/{workflow}.yml').read_text()
-        block = text.split('        BUNDLE_NAME: ' + name, 1)[1].split('        BUNDLE_PATHS: |-\n', 1)[1]
+        if workflow == 'sdk-application':
+            block = text.split('        name: ' + name, 1)[1].split('        paths: |-\n', 1)[1]
+        else:
+            block = text.split('        BUNDLE_NAME: ' + name, 1)[1].split('        BUNDLE_PATHS: |-\n', 1)[1]
         lines = []
         for line in block.splitlines():
             if not line.startswith('          '):
@@ -347,9 +350,54 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('build/prerequisites/', certify)
         self.assertIn('build/attachment-plan.json', certify)
         self.assertEqual(certify.count('uses: ./.github/actions/ci-evidence-download'), 3)
-        for workflow in ('sdk-maintenance', 'sdk-application', 'sdk-import'):
+        for workflow in ('sdk-maintenance', 'sdk-import'):
             self.assertNotIn('uses: ./.github/actions/ci-evidence-publish',
                              (ROOT/f'.github/workflows/{workflow}.yml').read_text())
+
+    def test_native_package_consumers_remain_independent_and_application_assembly_is_gated(self):
+        package = (ROOT/'.github/workflows/candidate-package.yml').read_text()
+        self.assertIn('needs: package', package)
+        self.assertIn('pattern: package-${{ inputs.target }}', package)
+        self.assertNotIn('bundle-store', package)
+        self.assertLess(package.index('ci-evidence-download'), package.index("'bundle-fetch'"))
+        application = (ROOT/'.github/workflows/sdk-application.yml').read_text()
+        self.assertIn("needs.application.result == 'success'", application)
+        self.assertIn("inputs.require_regression && needs.regression.result == 'success'", application)
+        self.assertIn('pattern: source', application)
+        self.assertIn("pattern: '{source,application-linux-*,application-windows-*,application-browser-*}'", application)
+        self.assertNotIn('lifecycle.py application-bundles', application)
+        self.assertIn("- if: always()\n      name: Retain application diagnostics including failures", application)
+        # Preparation retains frozen controls; existing source/application handoffs and
+        # public SDK assets supply the bytes without a duplicate full candidate relay.
+        self.assertNotIn('lifecycle.py bundle-store', application)
+        preview = application.split('Retain candidate preparation controls', 1)[1].split('    - if: inputs.execute', 1)[0]
+        self.assertIn('name: candidate-${{ github.run_attempt }}', preview)
+        self.assertIn('build/candidate/release.json', preview)
+        self.assertNotIn('build/candidate/\n', preview)
+
+    def test_cleanup_is_opt_out_once_after_all_consumers_and_never_inside_reusable_children(self):
+        for filename, final in [('candidate.yml', 'verdict'), ('certify.yml', 'verdict'),
+                                ('sdk-application.yml', 'cleanup'), ('promote.yml', 'cleanup'),
+                                ('_release-latest.yml', 'final')]:
+            text = (ROOT/'.github/workflows'/filename).read_text()
+            with self.subTest(workflow=filename):
+                self.assertIn('preserve_artifacts:', text)
+                self.assertIn('!inputs.preserve_artifacts', text)
+                self.assertIn("format('{0}/.github/workflows/"+filename+"@', github.repository)", text)
+                self.assertEqual(text.count('uses: ./.github/actions/ci-artifact-cleanup'), 1)
+                tail = text.split('  '+final+':\n', 1)[1]
+                self.assertIn('actions: write', tail)
+                self.assertIn('needs:', tail)
+                self.assertIn('ci-artifact-cleanup', tail)
+                self.assertIn('continue-on-error: true', tail)
+                if final != 'cleanup':
+                    self.assertIn('if: success() && !inputs.preserve_artifacts', tail)
+                else:
+                    self.assertIn("result == 'success'", tail)
+        latest = (ROOT/'.github/workflows/_release-latest.yml').read_text()
+        self.assertLess(latest.index('tools/latest_release.py verify'), latest.index('ci-artifact-cleanup'))
+        candidate = (ROOT/'.github/workflows/candidate.yml').read_text()
+        self.assertLess(candidate.index('Required jobs failed'), candidate.index('ci-artifact-cleanup'))
 
     def test_explicit_legacy_import_neither_builds_nor_publishes_a_base(self):
         text=(ROOT/'.github/workflows/sdk-import.yml').read_text()

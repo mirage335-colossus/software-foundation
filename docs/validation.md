@@ -890,3 +890,53 @@ The source manifest, receipts and limitations are retained in
 model is `.agent-work/artifacts/release-api-v4/request-model.json`. No hosted run,
 public release, push or SDK rebuild was performed. Actual all-platform wall time
 and account quota use remain to be measured on the next ordinary hosted run.
+
+
+## Native routine transport and shared public discovery
+
+The later 2026-10-03 simplification supersedes the preceding 62-slot storage
+policy and 750–1,150 complete-release request estimate. Routine application,
+package, source and certification handoffs now use native Actions artifacts.
+The full certificate fits a dedicated 16 MiB slot; all 79 available slots total
+at most 370 MiB of content per attempt, plus outer archive overhead. SDK archives
+remain in release storage, including during preparation-only application runs.
+There is no automatic private-release fallback in routine workflows.
+
+Same-run consumers trust exact executing Actions context, immutable artifact
+names and explicit workflow dependencies, then verify complete local bytes.
+Certification shares one frozen public inventory. Offline transport fixtures
+confirm that the retained 23 public certification batches need no authenticated
+REST requests for their 87 payload acquisitions. Published-release boundary
+checks, complete first-publication byte readback and strict historical replay
+remain. A bounded independent review found no actionable issue in credential-free
+public redirects or context-bound frozen controls.
+
+The final applicable local coverage is **54 CTest entries**, including all five
+optional distribution suites, with **1,301 passed Python cases** and two explicit
+native-Windows exclusions on Linux. The isolated full run took **30.91 seconds**:
+52 suites passed and two failed because fixture expectations still described the
+old workflow transport or release-list endpoint. Only those fixtures changed;
+their signed-byte, isolated-consumer and active-generation assertions remain.
+Both affected suites then passed in **6.29 seconds**. Unchanged production source
+and the other 52 passing suites were not rerun. Earlier affected checks also
+caught an old step-title assertion and a repository-visibility mock omission;
+the final complete coverage includes their corrected contracts.
+
+All workflow files passed actionlint. Documentation validation, whitespace checks,
+117 Python files parsed with Python 3.9 grammar, and the generic-name scan passed.
+The tested snapshot matches implementation source; only final explanatory
+documentation changed afterward. Reports and exact source hashes are retained in
+`build/agents/transport-simple-integration-v1/validation.json` and its source
+manifest. Signed local fixtures used disposable GnuPG sockets and fake remote
+transport; no hosted job, public upload, SDK rebuild, commit or push was performed.
+
+The [current request accounting](development-speed.md#account-for-the-actual-critical-path)
+models **255 primary-quota operations** for a complete public warm-SDK release,
+or **201** when temporary artifacts expire instead of being deleted immediately.
+This includes 53 artifacts and 54 cleanup calls. Approximately 29 quota-preflight
+HTTP requests and native artifact/public download traffic are additional network
+operations. Authenticated graphics URLs can add eight quota operations; private
+repositories, retries, extra pages and cold publication cost more. Cleanup spaces
+its 53 deletions over at least 52 seconds, after the final consumer, and never
+waits for a quota reset. Failed runs keep one-day diagnostics.
+These are code-derived costs, not a newly measured hosted duration or quota result.

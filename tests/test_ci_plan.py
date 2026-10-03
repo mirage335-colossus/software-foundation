@@ -369,9 +369,9 @@ class CandidateFetchTests(unittest.TestCase):
         args.update(changes)
         return ci.fetch_candidate(**args)
 
-    def direct_plan(self, *, scopes=('archive', 'source', 'recovery')):
+    def direct_plan(self, *, scopes=('archive', 'source', 'recovery'), workflow_context=None):
         c = ci.module('coverage')
-        self.fetch(metadata_only=True, planning=True)
+        self.fetch(metadata_only=True, planning=True, workflow_context=workflow_context)
         root = self.root / 'fetched'
         policy = {'schema_version': 1, 'profiles': {'fixture': {'description': 'direct asset qualification',
             'targets': {self.fixture.target: ['core']}, 'checks': [dict(target=self.fixture.target,
@@ -379,15 +379,90 @@ class CandidateFetchTests(unittest.TestCase):
         ci.qualification_plan(root / 'candidate', 'fixture', root / 'check-plan.json', policy, metadata_only=True)
         return c.load(root / 'check-plan.json'), c.load(root / 'candidate-remote.json')
 
-    def direct_fetch(self, plan, frozen, scope, *, directory=None):
+    def direct_fetch(self, plan, frozen, scope, *, directory=None, trusted_context=None):
         import shutil
         candidate = directory or self.root / ('direct-' + scope)
         candidate.mkdir()
         shutil.copyfile(self.fixture.directory / 'release.json', candidate / 'release.json')
         item = next(row for row in ci.module('coverage').executions(plan) if row['scope'] == scope)
         result = ci.fetch_candidate_payloads('example/project', 'v1', self.inventory, candidate,
-            self.fixture.delivery, frozen, plan, [item['id']], transport=self.remote)
+            self.fixture.delivery, frozen, plan, [item['id']], transport=self.remote, trusted_context=trusted_context)
         return candidate, result
+
+    def workflow_context(self):
+        return dict(repository='example/project',run_id=123,attempt=2,source_commit='a'*40,workflow='certify.yml')
+
+    def workflow_environment(self):
+        return dict(GITHUB_ACTIONS='true',GITHUB_REPOSITORY='example/project',GITHUB_RUN_ID='123',
+                    GITHUB_RUN_ATTEMPT='2',GITHUB_SHA='a'*40,
+                    GITHUB_WORKFLOW_REF='example/project/.github/workflows/certify.yml@refs/heads/main')
+
+    def make_public(self):
+        from test_github_release import PublicFakeGitHub
+        remote=PublicFakeGitHub();remote.__dict__.update(self.remote.__dict__);remote.private=False;self.remote=remote
+
+    def test_authenticated_same_run_public_inputs_need_no_metadata_or_payload_api_calls(self):
+        self.make_public();context=self.workflow_context();self.remote.calls.clear()
+        with patch.dict(ci.os.environ,self.workflow_environment(),clear=True):
+            plan,frozen=self.direct_plan(workflow_context=context)
+            self.assertEqual(2,frozen['schema_version']);self.assertFalse(frozen['repository_private'])
+            self.assertEqual(7,sum(call[0] not in ('public-download','download') for call in self.remote.calls if call[0] not in ('POST','PATCH','upload')))
+            for scope in ('source','recovery','archive'):
+                self.remote.calls.clear()
+                candidate,receipt=self.direct_fetch(plan,frozen,scope,trusted_context=context)
+                self.assertTrue(self.remote.calls)
+                self.assertTrue(all(call[0]=='public-download' for call in self.remote.calls))
+                self.assertEqual(len(receipt['files']),len(self.remote.calls))
+                ci.module('release').verify_selection(candidate,self.fixture.target,'core',scope)
+
+    def test_authenticated_same_run_private_inputs_keep_exact_asset_api_downloads(self):
+        context=self.workflow_context()
+        with patch.dict(ci.os.environ,self.workflow_environment(),clear=True):
+            plan,frozen=self.direct_plan(workflow_context=context);self.remote.calls.clear()
+            _,receipt=self.direct_fetch(plan,frozen,'archive',trusted_context=context)
+        self.assertTrue(frozen['repository_private'])
+        self.assertTrue(all(call[0]=='download' for call in self.remote.calls))
+        self.assertEqual(len(receipt['files']),len(self.remote.calls))
+
+    def test_frozen_snapshot_requires_exact_run_attempt_and_plan_pins(self):
+        self.make_public();context=self.workflow_context()
+        with patch.dict(ci.os.environ,self.workflow_environment(),clear=True):
+            plan,frozen=self.direct_plan(workflow_context=context)
+            for label,changed,requested in (
+                    ('snapshot',dict(frozen,repository_private=True),context),
+                    ('attempt',frozen,dict(context,attempt=3)),
+                    ('commit',frozen,dict(context,source_commit='b'*40))):
+                self.remote.calls.clear()
+                with self.subTest(label=label),self.assertRaisesRegex(ValueError,'trusted candidate snapshot'):
+                    self.direct_fetch(plan,changed,'archive',directory=self.root/label,trusted_context=requested)
+                self.assertFalse(self.remote.calls)
+        with patch.dict(ci.os.environ,{},clear=True),self.assertRaisesRegex(ValueError,'trusted candidate snapshot'):
+            self.direct_fetch(plan,frozen,'archive',directory=self.root/'outside-run',trusted_context=context)
+
+    def test_retained_schema_two_without_explicit_trust_keeps_remote_boundary_checks(self):
+        context=self.workflow_context()
+        with patch.dict(ci.os.environ,self.workflow_environment(),clear=True):
+            plan,frozen=self.direct_plan(workflow_context=context)
+        self.remote.calls.clear()
+        self.direct_fetch(plan,frozen,'archive')
+        self.assertEqual(7,sum(call[0]!='download' for call in self.remote.calls))
+
+    def test_trusted_public_payload_tampering_is_quarantined_and_final_identity_check_remains(self):
+        self.make_public();context=self.workflow_context()
+        with patch.dict(ci.os.environ,self.workflow_environment(),clear=True):
+            plan,frozen=self.direct_plan(workflow_context=context)
+            entry=ci.module('release').verify_metadata(self.fixture.directory)['artifacts'][0]
+            row=frozen['assets'][entry['archive']];original=self.remote.data[row['id']]
+            self.remote.data[row['id']]=b'corrupt'
+            with self.assertRaisesRegex(ValueError,'downloaded asset bytes differ'):
+                self.direct_fetch(plan,frozen,'archive',trusted_context=context)
+            self.assertEqual(['release.json'],[p.name for p in (self.root/'direct-archive').iterdir()])
+            self.remote.data[row['id']]=original
+            self.remote.replace_asset(entry['archive'])
+            self.direct_fetch(plan,frozen,'archive',directory=self.root/'same-bytes',trusted_context=context)
+            remote=ci.module('github_release').Remote('example/project',self.remote)
+            with self.assertRaisesRegex(ValueError,'asset identities changed'):
+                remote.unchanged('v1',frozen['release'],frozen['assets'],self.fixture.delivery['tag_commit'])
 
     def test_direct_plan_downloads_only_source_and_controls_and_freezes_every_payload_digest(self):
         self.remote.calls.clear(); plan, frozen = self.direct_plan()
@@ -927,7 +1002,9 @@ class QualificationBatchTests(unittest.TestCase):
     def test_direct_metadata_fetch_authenticates_and_rederives_before_any_public_payload(self):
         names = ['qualification-inputs-2', 'qualification-linux-x86_64-2']
         plan = {'id':'a'*64}; batch = {'checks':['one']}; events = []
+        context = dict(repository='example/project',run_id=12,attempt=2,source_commit='a'*40,workflow='certify.yml')
         with patch.object(self.helper, 'ROOT', self.root), \
+                patch.object(self.helper, 'storage_context', return_value=context), \
                 patch.object(self.helper, 'fetch_bundle', side_effect=lambda *args: events.append('authenticated-controls')), \
                 patch.object(self.helper.evidence, 'load', return_value=plan), \
                 patch.object(self.helper.evidence, 'validate', return_value=plan), \
@@ -939,6 +1016,7 @@ class QualificationBatchTests(unittest.TestCase):
             self.helper.fetch_published_check_inputs()
             self.assertEqual(events, ['authenticated-controls', {'metadata_only':True}, {'check_ids':['one']}])
             payloads.assert_called_once()
+            self.assertEqual(context,payloads.call_args.kwargs['trusted_context'])
             payloads.reset_mock()
             with patch.dict(self.helper.os.environ, CHECK_PAYLOADS=json.dumps(names+['qualification-source-2'])), \
                     self.assertRaisesRegex(ValueError, 'differs from complete frozen'):

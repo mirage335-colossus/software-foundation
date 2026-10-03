@@ -12,6 +12,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 from email.utils import parsedate_to_datetime
 import random
@@ -22,6 +23,9 @@ import sys
 import tempfile
 import threading
 import time
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 sys.dont_write_bytecode = True
 TOOLS = str(Path(__file__).resolve().parent)
@@ -47,7 +51,7 @@ class RequestMetrics:
         self.lock = threading.Lock()
         self.values = dict(cli_calls=0, api_responses=0, quota_probes=0,
                            cli_seconds=0., capacity_wait_seconds=0., retry_wait_seconds=0.,
-                           downloaded_bytes=0, uploaded_bytes=0)
+                           downloaded_bytes=0, uploaded_bytes=0, public_downloads=0, public_download_seconds=0.)
         self.quota = None
 
     def add(self, **values):
@@ -83,7 +87,7 @@ def enable_metrics():
     sys.__dict__['_foundation_github_metrics_reporter'] = True
     def report():
         value = REQUEST_METRICS.snapshot()
-        if value['cli_calls']:
+        if value['cli_calls'] or value['public_downloads']:
             print('GitHub transport metrics: ' + json.dumps(value, sort_keys=True), file=sys.stderr, flush=True)
     atexit.register(report)
 
@@ -195,6 +199,45 @@ class HTTPFailure(DeliveryError):
                     or message.startswith('You have exceeded a secondary rate limit.')
                     or message.startswith('You have triggered an abuse detection mechanism.'))
             except (UnicodeError, ValueError):pass
+
+
+class PublicReleaseRedirects(HTTPRedirectHandler):
+    """Public bytes never carry credentials, including across CDN redirects."""
+    max_redirections = 5
+    max_repeats = 2
+
+    def __init__(self, initial):
+        self.initial = initial
+
+    def validate(self, url):
+        parsed = urlsplit(url)
+        if (parsed.scheme != 'https' or parsed.netloc not in
+                ('github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com') or
+                parsed.fragment or not parsed.path.startswith('/') or
+                parsed.netloc == 'github.com' and url != self.initial):
+            raise DeliveryError('public asset redirect escaped the selected HTTPS release')
+        return url
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        self.validate(newurl)
+        # Reconstruct instead of inheriting a caller's authentication headers.
+        return Request(newurl, headers={'User-Agent': 'software-foundation-release/1'})
+
+
+def workflow_context_matches(context):
+    """An explicit caller snapshot must belong to this exact executing workflow."""
+    if not isinstance(context, dict) or set(context) != {'repository','run_id','attempt','source_commit','workflow'}:
+        return False
+    return (os.environ.get('GITHUB_ACTIONS') == 'true' and
+            os.environ.get('GITHUB_REPOSITORY') == context['repository'] and
+            positive(context['run_id']) and positive(context['attempt']) and
+            os.environ.get('GITHUB_RUN_ID') == str(context['run_id']) and
+            os.environ.get('GITHUB_RUN_ATTEMPT') == str(context['attempt']) and
+            os.environ.get('GITHUB_SHA') == context['source_commit'] and
+            isinstance(context['source_commit'],str) and OID.fullmatch(context['source_commit']) is not None and
+            isinstance(context['workflow'],str) and re.fullmatch(r'[a-zA-Z0-9_-]+\.yml',context['workflow']) is not None and
+            os.environ.get('GITHUB_WORKFLOW_REF','').startswith(
+                context['repository']+'/.github/workflows/'+context['workflow']+'@'))
 
 
 class GitHub:
@@ -313,6 +356,9 @@ class GitHub:
         if missing and status == 404 and result.returncode:return None
         if not 200 <= status < 300:raise HTTPFailure(status, headers, payload)
         if result.returncode:raise DeliveryError('GitHub API response was incomplete')
+        if status == 204:
+            if payload: raise DeliveryError('HTTP 204 response must have an empty body')
+            return None
         try:return parse(payload)
         except (UnicodeError, ValueError):raise DeliveryError('invalid complete GitHub JSON response') from None
 
@@ -340,7 +386,7 @@ class GitHub:
         encoded = archive.encoded(body) if body is not None else None
         if method == 'GET':
             return self._read(lambda end: self._json_once(endpoint, method, encoded, missing, end))
-        self._headroom()
+        if self.WRITE_HEADROOM > 0: self._headroom()
         try:return self._json_once(endpoint, method, encoded, missing, time.monotonic() + self.REQUEST_DEADLINE)
         except DeliveryError as error:
             raise DeliveryError(str(error) + '; remote outcome requires reconciliation', True) from None
@@ -441,6 +487,54 @@ class GitHub:
                     self.metrics.add(downloaded_bytes=path.stat().st_size)
         return self._read(attempt)
 
+    def download_public(self, url, path, size, digest):
+        """Fetch hash-pinned public bytes without an authenticated REST request."""
+        parsed = urlsplit(url)
+        prefix = '/' + self.repository + '/releases/download/'
+        if (parsed.scheme != 'https' or parsed.netloc != 'github.com' or parsed.query or parsed.fragment or
+                not parsed.path.startswith(prefix) or len(parsed.path[len(prefix):].split('/')) != 2 or
+                type(size) is not int or not 0 <= size < 2*1024**3 or not isinstance(digest,str) or not SHA.fullmatch(digest)):
+            raise DeliveryError('public download requires an exact release URL, size and digest')
+        path = Path(path)
+        if path.exists() or path.is_symlink(): raise DeliveryError('asset download destination must be new')
+        deadline = time.monotonic() + 10*60
+        def attempt(end):
+            started = time.monotonic()
+            if not REQUEST_SLOTS.acquire(timeout=self._timeout(end)):
+                raise DeliveryError('public download capacity deadline exhausted')
+            acquired = time.monotonic(); self.metrics.add(capacity_wait_seconds=acquired-started, public_downloads=1)
+            try:
+                redirects = PublicReleaseRedirects(url)
+                request = Request(redirects.validate(url), headers={'User-Agent':'software-foundation-release/1'})
+                with tempfile.TemporaryDirectory(prefix='.github-public-',dir=path.parent) as temporary:
+                    staged = Path(temporary)/'payload'; total=0; hashed=hashlib.sha256()
+                    try:
+                        with build_opener(redirects).open(request,timeout=min(60,self._timeout(end))) as response, staged.open('xb') as output:
+                            redirects.validate(response.url)
+                            if response.status != 200: raise DeliveryError('public asset response was incomplete')
+                            while True:
+                                self._timeout(end)
+                                data=response.read1(min(1024*1024,size-total+1))
+                                self._timeout(end)
+                                if not data: break
+                                total+=len(data)
+                                if total>size: raise DeliveryError('public asset exceeds declared size')
+                                hashed.update(data);output.write(data)
+                    except HTTPError as error:
+                        with error:
+                            headers={key:error.headers.get(key) for key in RATE_HEADERS if error.headers.get(key) is not None}
+                            raise HTTPFailure(error.code,headers,b'') from None
+                    except (OSError,URLError):
+                        raise DeliveryError('public asset transfer failed; incomplete bytes discarded') from None
+                    if total!=size or hashed.hexdigest()!=digest:
+                        raise DeliveryError('public asset bytes differ from complete inventory')
+                    with staged.open('rb') as incoming,path.open('xb') as output: shutil.copyfileobj(incoming,output)
+                    self.metrics.add(downloaded_bytes=total)
+            finally:
+                self.metrics.add(public_download_seconds=time.monotonic()-acquired)
+                REQUEST_SLOTS.release()
+        return self._read(attempt,deadline=deadline)
+
 
 class Remote:
     def __init__(self, repository, transport=None):
@@ -448,12 +542,46 @@ class Remote:
         self.transport = transport or GitHub(repository)
         self.base = f'repos/{repository}'
         self.mutated = False
+        self.private = None
+        self._public_assets = {}
 
     def visible(self):
         value = self.transport.json(self.base)
         if (not isinstance(value, dict) or not isinstance(value.get('full_name'), str)
-                or value['full_name'].casefold() != self.repository.casefold()):
+                or value['full_name'].casefold() != self.repository.casefold() or type(value.get('private')) is not bool):
             raise DeliveryError('repository visibility or identity is unconfirmed')
+        self.private = value['private']
+        return self.private
+
+    def published(self, tag, required=True):
+        """Use GitHub's exact published-tag endpoint, independent of release history."""
+        valid_name(tag)
+        value = self.transport.json(self.base + '/releases/tags/' + quote(tag,safe=''), missing=True)
+        if value is None:
+            if required: raise DeliveryError('required published release is absent; no implicit fallback')
+            return None
+        self.info(value,tag)
+        if value['draft']: raise DeliveryError('published release endpoint returned a draft')
+        return value
+
+    def by_id(self, identity, tag):
+        if not positive(identity): raise DeliveryError('positive release identity required')
+        value = self.info(self.transport.json(self.base + '/releases/' + str(identity)),tag)
+        if value['id'] != identity: raise DeliveryError('release identity changed during operation')
+        return value
+
+    def pin_published(self, info, assets, private):
+        """Bind local immutable download inputs from an authenticated snapshot."""
+        self.info(info,info.get('tag_name'))
+        if info['draft'] or type(private) is not bool: raise DeliveryError('published repository visibility is required')
+        self.private = private
+        if not private:
+            for name,row in assets.items():
+                valid_name(name)
+                if not positive(row.get('id')) or row.get('name') != name:
+                    raise DeliveryError('public asset identity differs')
+                url='https://github.com/'+self.repository+'/releases/download/'+quote(info['tag_name'],safe='')+'/'+quote(name,safe='')
+                self._public_assets[row['id']] = url
 
     def find(self, tag, required=True):
         rows = self.transport.pages(self.base + '/releases?per_page=100')
@@ -508,6 +636,7 @@ class Remote:
                 raise DeliveryError('duplicate, incomplete or unbound asset inventory')
             assets[name] = {key: row[key] for key in ('id', 'name', 'state', 'size', 'digest')}
             ids.add(row['id']); folded.add(name.casefold())
+        if self.private is not None and info['draft'] is False: self.pin_published(info,assets,self.private)
         return assets
 
     def reference(self, tag, missing=False):
@@ -541,15 +670,19 @@ class Remote:
         expected = expected or row['digest'][7:]
         if row['digest'] != 'sha256:' + expected:
             raise DeliveryError('remote asset differs from expected bytes')
-        self.transport.download(row['id'], path)
+        public_url = self._public_assets.get(row['id'])
+        if self.private is False and public_url is not None and hasattr(self.transport,'download_public'):
+            self.transport.download_public(public_url,path,row['size'],expected)
+        else:
+            self.transport.download(row['id'], path)
         if Path(path).stat().st_size != row['size'] or archive.digest(path) != expected:
             raise DeliveryError('downloaded asset bytes differ from complete inventory')
 
     def unchanged(self, tag, before, assets, expected_ref=None):
-        after = self.find(tag)
+        after = self.by_id(before['id'],tag) if before['draft'] is False else self.find(tag)
         for key in ('id', 'tag_name', 'name', 'draft', 'prerelease'):
             if after[key] != before[key]:
-                raise DeliveryError('release identity changed during operation')
+                raise DeliveryError('release identity or lifecycle changed during operation')
         if self.assets(after) != assets:
             raise DeliveryError('remote asset identities changed during operation')
         if expected_ref is not None and self.reference(tag) != expected_ref:
@@ -653,11 +786,11 @@ def evidence_pairs(names):
         raise DeliveryError('partial certificate attempt requires reconciliation')
 
 
-def verified_remote(remote, delivery, directory, *, draft=False, prerelease=None, readback=True, metadata_only=False):
-    validate_delivery(delivery, directory, metadata_only=metadata_only)
+def validate_remote_inventory(delivery, info, assets, *, draft=False, prerelease=None):
+    """Reconcile a complete observed inventory without fetching it repeatedly."""
     if prerelease is not None and type(prerelease) is not bool:
         raise DeliveryError('prerelease pin must be a boolean or None')
-    tag = delivery['tag']; info = remote.find(tag)
+    tag = delivery['tag']; Remote.info(info,tag)
     title = 'experiment' if delivery['experiment'] else tag
     # Ordinary candidates are prereleases until certification permits promotion.
     # Experiment identity remains immutable and can never become an ordinary release.
@@ -665,9 +798,6 @@ def verified_remote(remote, delivery, directory, *, draft=False, prerelease=None
             or (delivery['experiment'] and not info['prerelease'])
             or (prerelease is not None and info['prerelease'] != prerelease)):
         raise DeliveryError('release lifecycle does not match frozen delivery')
-    if remote.reference(tag) != delivery['tag_commit']:
-        raise DeliveryError('tag commit differs from frozen delivery')
-    assets = remote.assets(info)
     expected = {item['asset'] for item in delivery['files'].values()} | {'delivery.json'}
     if not expected <= assets.keys():
         raise DeliveryError('published delivery is missing required assets')
@@ -679,6 +809,18 @@ def verified_remote(remote, delivery, directory, *, draft=False, prerelease=None
         row = assets[item['asset']]
         if row['digest'] != 'sha256:' + item['sha256'] or row['size'] != item['size']:
             raise DeliveryError('remote asset differs from complete frozen inventory')
+    descriptor = archive.encoded(delivery)
+    if assets['delivery.json']['digest'] != 'sha256:' + sha(descriptor) or assets['delivery.json']['size'] != len(descriptor):
+        raise DeliveryError('remote frozen delivery differs')
+
+
+def verified_remote(remote, delivery, directory, *, draft=False, prerelease=None, readback=True, metadata_only=False):
+    validate_delivery(delivery, directory, metadata_only=metadata_only)
+    tag = delivery['tag']; info = remote.find(tag) if draft else remote.published(tag)
+    assets = remote.assets(info)
+    validate_remote_inventory(delivery,info,assets,draft=draft,prerelease=prerelease)
+    if remote.reference(tag) != delivery['tag_commit']:
+        raise DeliveryError('tag commit differs from frozen delivery')
     with tempfile.TemporaryDirectory(prefix='delivery-verify-') as temporary:
         staged = Path(temporary)
         descriptor = staged / 'delivery.json'
@@ -727,7 +869,7 @@ def download_files(remote, assets, selections):
 def fetch_base(repository, recipe, output, *, transport=None, binary_only=False):
     if type(binary_only) is not bool: raise DeliveryError('binary-only selection must be boolean')
     expected = store.names(recipe); remote = Remote(repository, transport); remote.visible()
-    info = remote.find('base')
+    info = remote.published('base')
     if info['draft'] or not info['prerelease'] or info['name'] != 'base':
         raise DeliveryError('base must be a published prerelease')
     assets = remote.assets(info)
@@ -926,10 +1068,11 @@ def attach_certificate(repository, tag, directory, delivery, certificate, check_
         def act():
             remote.visible();info,before=verified_remote(remote,delivery,directory,readback=not metadata_only,metadata_only=metadata_only)
             if set(files)&before.keys():raise DeliveryError('certificate attempt already exists; inspect it, never overwrite')
-            remote.upload(tag,bundle);remote.upload(tag,report)
-            current,after=verified_remote(remote,delivery,directory,prerelease=info['prerelease'],readback=not metadata_only,metadata_only=metadata_only)
-            if current['id']!=info['id'] or set(after)!=set(before)|set(files) or any(after[n]!=v for n,v in before.items()):
-                raise DeliveryError('certificate attachment changed an existing asset')
+            remote.upload_to(info,bundle);remote.upload_to(info,report)
+            current=remote.by_id(info['id'],tag);after=remote.assets(current)
+            if (any(current[key]!=info[key] for key in ('id','tag_name','name','draft','prerelease')) or
+                    remote.reference(tag)!=delivery['tag_commit'] or set(after)!=set(before)|set(files) or any(after[n]!=v for n,v in before.items())):
+                raise DeliveryError('certificate attachment changed lifecycle or an existing asset')
             with tempfile.TemporaryDirectory(prefix='certificate-confirm-') as check:
                 for name,digest in files.items():remote.download(after[name],Path(check)/name,digest)
             remote.unchanged(tag,current,after,delivery['tag_commit'])
@@ -1003,13 +1146,14 @@ def promote(repository,tag,directory,delivery,policy,profile,run_id,attempt,cert
     def act():
         remote.visible();info,assets=verified_remote(remote,delivery,directory,readback=not metadata_only,metadata_only=metadata_only)
         evidence=verify_certificate(remote,assets,delivery,directory,policy,profile,run_id,attempt,certificate_sha256,metadata_only=metadata_only)
-        # Reread all byte identities immediately before the final mutation.
-        current,again=verified_remote(remote,delivery,directory,prerelease=info['prerelease'],readback=not metadata_only,metadata_only=metadata_only)
-        if current['id']!=info['id'] or again!=assets:raise DeliveryError('remote delivery changed after certificate review')
+        # Reconcile IDs, sizes, hashes and tag after certificate reproduction;
+        # this operation already downloaded and verified the immutable bytes.
+        remote.unchanged(tag,info,assets,delivery['tag_commit'])
         if archive.digest(policy)!=result['policy_sha256']:raise DeliveryError('promotion policy changed')
         remote.change(f'/releases/{info["id"]}',method='PATCH',body={'draft':False,'prerelease':False,'make_latest':'true'})
-        final,after=verified_remote(remote,delivery,directory,prerelease=False,readback=not metadata_only,metadata_only=metadata_only)
-        if final['id']!=info['id'] or after!=assets:raise DeliveryError('promoted assets changed')
+        final=remote.by_id(info['id'],tag);after=remote.assets(final)
+        if (final['draft'] or final['prerelease'] or final['name']!=info['name'] or after!=assets or
+                remote.reference(tag)!=delivery['tag_commit']):raise DeliveryError('promoted lifecycle or assets changed')
         latest=remote.transport.json(remote.base+'/releases/latest')
         remote.info(latest,tag)
         if latest['id']!=info['id'] or latest['draft'] or latest['prerelease']:

@@ -32,7 +32,7 @@ class EvidenceArtifacts(unittest.TestCase):
         self.name = 'evidence-batch-linux-source-aabbcc-2'
         self.downloads = self.root / 'downloaded'; self.downloads.mkdir()
         self.env = mock.patch.dict(os.environ, {
-            'GITHUB_REPOSITORY': 'example/project', 'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2',
+            'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'example/project', 'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2',
             'GITHUB_SHA': 'a' * 40, 'GITHUB_WORKFLOW_REF': 'example/project/.github/workflows/certify.yml@refs/heads/main',
             artifacts.ROOT_ENV: str(self.downloads)})
         self.env.start(); self.addCleanup(self.env.stop)
@@ -40,7 +40,7 @@ class EvidenceArtifacts(unittest.TestCase):
     def prepare(self, name=None, **kwargs):
         return artifacts.prepare(**self.context, name=name or self.name, root=self.source,
             paths=['nested', 'result.json'], output=self.root / ('stage-' + str(len(list(self.root.iterdir())))),
-            slot=kwargs.pop('slot', 0), runner_name='Hosted Runner 7', **kwargs)
+            slot=kwargs.pop('slot', 0), job_key='check', runner_name='Hosted Runner 7', **kwargs)
 
     def stage(self, **kwargs):
         result = self.prepare(**kwargs)
@@ -74,28 +74,30 @@ class EvidenceArtifacts(unittest.TestCase):
         with mock.patch.object(ci_transport.delivery, 'Remote', side_effect=AssertionError('unexpected API')):
             result = self.fetch()
         self.assertEqual(result['pointer']['transport'], 'actions')
-        self.assertEqual(result['producer'], dict(job_id=None, job_name=None, runner_name='Hosted Runner 7'))
+        self.assertEqual(result['producer'], dict(kind='workflow-needs', trust_basis=artifacts.TRUST_BASIS, job_key='check',
+                                                     runner_name='Hosted Runner 7', conclusion='success'))
         self.assertEqual(result['manifest']['metadata'], {'scope': 'source'})
         for name in ('nested/test.log', 'result.json'):
             self.assertEqual((self.root / 'result' / name).read_bytes(), (self.source / name).read_bytes())
 
     def test_names_have_finite_storage_bound_and_overflow_uses_release(self):
-        self.assertEqual(artifacts.MAX_ARTIFACTS, 62)
-        self.assertLess(artifacts.MAX_ARTIFACTS * artifacts.MAX_BUNDLE_BYTES, 128 * 1024**2)
+        self.assertEqual(artifacts.MAX_ARTIFACTS, 79)
+        self.assertEqual(artifacts.MAX_RUN_BYTES, 370 * artifacts.MIB)
+        self.assertLess(artifacts.MAX_RUN_BYTES, 384 * artifacts.MIB)
         for target in artifacts.TARGETS:
             for scope in artifacts.SCOPES:
                 name = 'source-' + target + '-' + scope + '-2'
                 self.assertIsNotNone(artifacts.slot_for(name, 2))
         for slot in range(48): self.assertEqual(artifacts.slot_for(self.name, 2, slot), 'evidence-' + str(slot).zfill(2))
         for slot in (-1, 48, None, True): self.assertIsNone(artifacts.slot_for(self.name, 2, slot))
-        self.assertEqual(self.prepare(slot=48)['transport'], 'release')
-        self.assertEqual(self.prepare(name='sdk-group-linux-x86_64-2')['transport'], 'release')
-        self.assertEqual(self.prepare(name='evidence-batch-linux-source-aabbcc-1')['transport'], 'release')
+        self.assertEqual(self.prepare(slot=48, allow_release_fallback=True)['transport'], 'release')
+        self.assertEqual(self.prepare(name='sdk-group-linux-x86_64-2', allow_release_fallback=True)['transport'], 'release')
+        self.assertEqual(self.prepare(name='evidence-batch-linux-source-aabbcc-1', allow_release_fallback=True)['transport'], 'release')
 
     def test_complete_oversize_payload_falls_back_without_truncating_input(self):
         data = os.urandom(artifacts.MAX_BUNDLE_BYTES)
         (self.source / 'nested/test.log').write_bytes(data)
-        result = self.prepare()
+        result = self.prepare(allow_release_fallback=True)
         self.assertEqual(result['transport'], 'release')
         self.assertIn('byte budget', result['reason'])
         self.assertEqual((self.source / 'nested/test.log').read_bytes(), data)
@@ -104,14 +106,17 @@ class EvidenceArtifacts(unittest.TestCase):
     def test_expanded_file_and_manifest_budgets_choose_release(self):
         for limit, value in (('MAX_EXPANDED_BYTES', 1), ('MAX_FILES', 1), ('MAX_MANIFEST_BYTES', 1)):
             with self.subTest(limit=limit), mock.patch.object(artifacts, limit, value):
-                self.assertEqual(self.prepare()['transport'], 'release')
+                self.assertEqual(self.prepare(allow_release_fallback=True)['transport'], 'release')
         self.assertTrue((self.source / 'result.json').is_file())
 
-    def test_absent_exact_bundle_is_the_only_normal_fallback(self):
-        self.assertIsNone(self.fetch())
+    def test_absent_artifact_fails_without_explicit_release_opt_in(self):
+        with self.assertRaisesRegex(ValueError, 'required native artifact'): self.fetch()
         self.stage(name='certificate-2')
-        self.assertIsNone(self.fetch())
+        with self.assertRaisesRegex(ValueError, 'required native artifact'): self.fetch()
+        with mock.patch.dict(os.environ, {artifacts.FALLBACK_ENV: 'true'}): self.assertIsNone(self.fetch())
         with mock.patch.dict(os.environ, {artifacts.ROOT_ENV: ''}): self.assertIsNone(self.fetch())
+        with mock.patch.dict(os.environ, {artifacts.ROOT_ENV: '', artifacts.REQUIRED_ENV: 'true'}):
+            with self.assertRaisesRegex(ValueError, 'directory is missing'): self.fetch()
 
     def test_run_source_workflow_and_attempt_are_not_interchangeable(self):
         target = self.stage()
@@ -181,33 +186,64 @@ class EvidenceArtifacts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'must be new'): self.fetch()
         self.assertEqual((self.root / 'result/keep').read_text(), 'preserve')
 
-    def test_producer_name_is_an_optional_descriptor_for_shared_api_validation(self):
+    def test_native_trust_is_explicit_and_never_satisfies_rest_pins(self):
         self.stage()
-        # The shared transport layer checks the actual job name and job ID.
-        self.assertEqual(self.fetch(job_name='Qualify Linux source')['producer']['job_name'], None)
+        for pin in (dict(job_name='Qualify Linux'), dict(job_id=99)):
+            with self.assertRaisesRegex(ValueError, 'REST producer pins'): self.fetch(**pin)
+        with mock.patch.dict(os.environ, {'GITHUB_ACTIONS': 'false'}):
+            with self.assertRaisesRegex(ValueError, 'executing Actions'): self.fetch()
 
-    def test_cli_pins_real_producer_once_before_staging(self):
+    def test_failed_evidence_requires_explicit_consumer_and_preserves_outcome(self):
+        self.stage(outcome='failure')
+        with self.assertRaisesRegex(ValueError, 'failed native producer'): self.fetch()
+        result = self.fetch(allow_failed=True)
+        self.assertEqual(result['producer']['conclusion'], 'failure')
+        self.assertNotIn('id', result['producer'])
+        self.assertNotIn('status', result['producer'])
+
+    def test_cli_uses_executing_context_without_any_rest_provenance_calls(self):
         lifecycle = mock.Mock()
         lifecycle.bundle_inputs.return_value = (self.source, ['nested', 'result.json'])
-        producer = dict(id=77, name='Workflow / Qualify Linux source', runner_name='Hosted Runner 7', runner_id=12)
         output = self.root / 'step-output'; output.touch()
         variables = dict(BUNDLE_NAME=self.name, BUNDLE_PATHS='ignored-by-fixture', ARTIFACT_SLOT='0',
                          RUNNER_TEMP=str(self.root), RUNNER_NAME='Hosted Runner 7', GITHUB_OUTPUT=str(output),
-                         GITHUB_SERVER_URL='https://github.com')
+                         GITHUB_SERVER_URL='https://github.com', GITHUB_JOB='check', ARTIFACT_PRODUCER_STATUS='success')
         with mock.patch.dict(os.environ, variables), mock.patch.object(artifacts, '_lifecycle', return_value=lifecycle), \
-                mock.patch.object(artifacts.delivery, 'Remote'), \
-                mock.patch.object(ci_transport, '_producer', return_value=(producer, producer)) as observed, \
+                mock.patch.object(artifacts.delivery, 'Remote', side_effect=AssertionError('unexpected REST')), \
+                mock.patch.object(ci_transport, '_producer', side_effect=AssertionError('unexpected jobs query')), \
                 mock.patch('builtins.print'):
             artifacts.main(['prepare'])
-        observed.assert_called_once()
-        self.assertTrue(observed.call_args.kwargs['publishing'])
         manifest = json.loads((self.root / ('foundation-evidence-stage-' + self.name) / 'manifest.json').read_bytes())
-        self.assertEqual(manifest['producer'], dict(job_id=77, job_name=producer['name'], runner_name='Hosted Runner 7'))
+        self.assertEqual(manifest['producer'], dict(job_key='check', outcome='success', runner_name='Hosted Runner 7'))
+        self.assertEqual(manifest['trust_basis'], artifacts.TRUST_BASIS)
         self.assertIn('transport=actions', output.read_text())
+
+    def test_realistic_certificate_above_old_limit_stays_native(self):
+        (self.source / 'nested/test.log').write_bytes(os.urandom(9 * artifacts.MIB))
+        result = self.prepare(name='certificate-2')
+        self.assertEqual(result['transport'], 'actions')
+        self.assertGreater(result['bytes'], 9 * artifacts.MIB)
+        self.assertLess(result['bytes'], 16 * artifacts.MIB)
+
+    def test_sdk_archives_are_excluded_and_oversize_does_not_silently_relay(self):
+        (self.source / 'nested/sdk-example-binary.tar.gz').write_bytes(b'sdk bytes')
+        with self.assertRaisesRegex(ValueError, 'SDK payloads'): self.prepare(name='candidate-2')
+        result = self.prepare(name='candidate-2', allow_release_fallback=True)
+        self.assertEqual(result['transport'], 'release')
+        (self.source / 'nested/sdk-example-binary.tar.gz').unlink()
+        with mock.patch.object(artifacts, 'MAX_EXPANDED_BYTES', 1):
+            with self.assertRaisesRegex(ValueError, 'explicit opt-in'): self.prepare()
+
+    def test_v1_native_manifest_cannot_claim_simplified_provenance(self):
+        target = self.stage()
+        self.edit_manifest(target, lambda value: value.update(schema_version=1))
+        with self.assertRaisesRegex(ValueError, 'provenance'): self.fetch()
 
     def test_fallback_invokes_complete_existing_release_publication(self):
         lifecycle = mock.Mock()
-        with mock.patch.object(artifacts, '_lifecycle', return_value=lifecycle): artifacts.main(['fallback'])
+        with mock.patch.object(artifacts, '_lifecycle', return_value=lifecycle):
+            with self.assertRaisesRegex(ValueError, 'not enabled'): artifacts.main(['fallback'])
+            with mock.patch.dict(os.environ, {artifacts.FALLBACK_ENV: 'true'}): artifacts.main(['fallback'])
         lifecycle.store_bundle.assert_called_once_with()
 
     @unittest.skipIf(os.name == 'nt', 'symlink creation needs native Windows privilege qualification')

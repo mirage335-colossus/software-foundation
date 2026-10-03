@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Private draft-release transport. Stored bytes never grant qualification.
+"""Native same-run handoffs and strict legacy draft-release transport.
 
-Every bundle has a complete manifest uploaded last. Large safe tar streams are
-split into bounded assets. This module never publishes a release, selects Latest,
-deletes remote state or overwrites an asset. Bounded same-run evidence may arrive
-through native Actions artifacts; large and retained bundles use draft releases.
+Native artifacts use the executing Actions context and workflow needs, with full
+byte/context validation. Legacy relay bundles retain complete remote provenance
+checks and bounded assets. Stored bytes alone never grant qualification.
 """
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -556,8 +555,11 @@ def _fetch_requests(repository, run_id, attempt, source_commit, workflow, reques
 
 
 def fetch_bundles(repository, run_id, attempt, source_commit, workflow, requests, *, transport=None):
-    """Verify an entire mixed local/remote batch before publishing its outputs."""
+    """Verify native same-run bytes; use strict relay only when explicitly selected."""
     requests, contexts, outputs = _fetch_requests(repository, run_id, attempt, source_commit, workflow, requests)
+    if (_same_run(contexts[0]) and os.environ.get('FOUNDATION_CI_ARTIFACTS_REQUIRED') == 'true' and
+            not os.environ.get('FOUNDATION_CI_ARTIFACTS_DIR')):
+        raise TransportError('required native artifact directory is missing')
     if not os.environ.get('FOUNDATION_CI_ARTIFACTS_DIR') or not _same_run(contexts[0]):
         return _fetch_release_bundles(repository, run_id, attempt, source_commit, workflow, requests, transport=transport)
     # The helper imports archive primitives from this module; import it only at
@@ -572,24 +574,9 @@ def fetch_bundles(repository, run_id, attempt, source_commit, workflow, requests
             item = dict(request=request, context=context, output=output, stage=stage, receipt=receipt)
             selected.append(item)
             if receipt is None: missing.append(item)
-        local = [item for item in selected if item['receipt'] is not None]
-        if local:
-            context = contexts[0]; remote = delivery.Remote(repository, transport)
-            _run(remote, context)
-            jobs = _jobs(remote, context)
-            for item in local:
-                request = item['request']; claimed = item['receipt']['producer']
-                matches = [job for job in jobs if (claimed.get('job_id') is None or job.get('id') == claimed['job_id']) and
-                           (not claimed.get('job_name') or job.get('name') == claimed['job_name']) and
-                           job.get('runner_name') == claimed['runner_name']]
-                if len(matches) != 1: raise TransportError('artifact producer is absent or ambiguous')
-                job = matches[0]
-                if request.get('job_id') is not None and request['job_id'] != job.get('id'):
-                    raise TransportError('manifest producer differs')
-                _, observed = _producer(remote, context, job_id=job['id'], job_name=request.get('job_name'),
-                    runner_name=claimed['runner_name'], allow_failed=request.get('allow_failed', False), observed=job)
-                item['receipt']['producer'] = observed
         if missing:
+            if os.environ.get('FOUNDATION_CI_ARTIFACT_RELEASE_FALLBACK') != 'true':
+                raise TransportError('required native artifact is absent; release relay is not enabled')
             remote_requests = [dict(item['request'], output=item['stage']) for item in missing]
             receipts = _fetch_release_bundles(repository, run_id, attempt, source_commit, workflow,
                                              remote_requests, transport=transport)

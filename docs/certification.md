@@ -196,8 +196,12 @@ it does not download and republish every SDK and application archive.
 
 Each qualification batch first authenticates those controls against the exact
 workflow run and attempt. It derives its consumed files from the frozen logical
-checks, then downloads those original published assets directly. Complete release,
-asset and tag snapshots must still match before and after the bounded downloads.
+checks, then downloads those original published assets directly. The frozen snapshot
+binds the exact acquisition workflow context and repository visibility. Authenticated
+same-run consumers use it without repeating release/tag/asset discovery in each job;
+historical or unbound consumers retain independent before/after remote checks.
+Public downloads carry no credentials; private repositories use authenticated asset
+requests. Attachment and promotion still reconcile the complete remote identity.
 No selected payload is exposed until the complete download transaction passes;
 each check rechecks its selected bytes before and after execution. Recovery keeps
 complete SDK binary/source/checksum groups. Older archived builders receive their

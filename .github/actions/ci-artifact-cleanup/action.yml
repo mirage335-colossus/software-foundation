@@ -1,0 +1,13 @@
+name: Remove consumed temporary CI artifacts
+description: Delete this attempt's evidence artifacts after its last consumer; keep all runs and release assets.
+runs:
+  using: composite
+  steps:
+    - name: Clean up this attempt's consumed evidence
+      if: always()
+      shell: python
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        import subprocess, sys
+        subprocess.run([sys.executable, '-B', 'tools/ci_cleanup.py'], check=True)

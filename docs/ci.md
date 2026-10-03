@@ -144,9 +144,10 @@ can explicitly enable this gate with `require_regression=true`.
 Executed candidates assemble and publish in the same protected publisher job,
 using the existing complete local validation and exact remote readback. This
 avoids storing and downloading the full assembled candidate between jobs.
-Preparation-only runs retain the complete candidate bundle for inspection;
-executed runs retain delivery receipts. Platform output bundles and complete
-assembly dependency verification remain required.
+Preparation-only runs retain candidate controls for inspection; their source and
+application archives already have separate handoffs, and SDKs remain in release
+storage. Executed runs retain delivery receipts. Complete assembly dependency
+verification remains required.
 
 Before adding a larger runner, measure queue delay, setup, cold compilation,
 incremental compilation, tests, artifact transfer, peak memory, total runner
@@ -158,40 +159,55 @@ measurement is itself requested work.
 
 ## Storage, caches, and SDK reuse
 
-Small regression receipts, certification controls and per-batch evidence use
-[bounded Actions artifacts](../tools/ci_artifacts.py). Each artifact contains a
-complete hashed tar bundle and manifest, expires after **one day**, and has a
-**2 MiB combined payload/manifest limit**. There are 62 immutable slots per run
-attempt: nine source scopes, five control/summary bundles and 48 certification
-batch slots. This bounds uploaded content to 124 MiB per attempt, plus small ZIP
-metadata overhead. Typical evidence is substantially smaller; SDKs, application
-archives and complete large certificates stay in release storage.
+Routine source, application-package, regression and certification handoffs use
+[bounded Actions artifacts](../tools/ci_artifacts.py). Durable public SDKs and
+published application/certification assets use release storage. Small handoffs no
+longer create private releases or re-query producer jobs through REST.
 
-The cap is per attempt, not a reservation of account storage. Concurrent runs,
-reruns and existing artifacts share the account allowance. Oversized bundles,
-unknown slots and failed Actions uploads retain the complete selected evidence
-through release transport. No files are truncated or silently omitted. Expiry
-handles ordinary cleanup; occasionally remove selected obsolete artifacts through
-GitHub if existing storage requires it. The workflow does not delete unrelated
-runs or artifacts. See [GitHub artifact retention](https://docs.github.com/en/actions/tutorials/store-and-share-data)
+Each native artifact contains a complete hashed archive and manifest. There are
+79 immutable slots per run attempt, with **370 MiB maximum combined content**
+across their individual budgets, plus ZIP metadata overhead. Ordinary receipts
+and individual check batches allow 2 MiB; source, application, native package and
+complete certificate slots allow 16 MiB; application diagnostic slots allow 8 MiB.
+The optional SDK-free candidate slot allows 64 MiB. SDK archives are excluded.
+These are ceilings, not reserved storage or expected consumption. The complete
+retained certificate was about 9.8 MB compressed, including its file manifest.
+
+Consumers download only the relevant slots from their exact executing Actions
+run. Immutable artifact names and explicit workflow `needs` establish producer
+ordering; the manifest records the observed producer outcome and this trust basis,
+without claiming an independently queried numeric job identity. Consumers verify
+repository, source, workflow, run, attempt, complete file inventory, sizes and hashes
+before exposing bytes. Successful consumers require successful producers; the
+certificate collector explicitly accepts failed check evidence while the final
+qualification gate still rejects failed, skipped or incomplete required jobs.
+Parallel jobs and all required logical checks remain.
+
+Artifacts have **one-day retention**. The outer candidate, SDK application,
+certification, promotion or Latest workflow removes only its own current-attempt
+artifacts after successful final verification, unless `preserve_artifacts=true` is selected.
+Failed or cancelled runs retain diagnostics for their one-day expiration.
+Nested reusable workflows skip cleanup so they cannot erase a caller's inputs.
+Cleanup lists the run once (with pagination when needed), then deletes each selected
+artifact; it never deletes workflow history, unrelated artifacts or release assets.
+Cleanup is best-effort with a three-minute step limit and no quota-headroom wait;
+interruption or failure leaves automatic expiration as the fallback. Concurrent
+runs and preexisting artifacts still share the account allowance.
+
+Unknown slots, oversize bundles and failed uploads fail visibly without silently
+starting the expensive release relay. The composite actions expose an explicit
+`allow-release-fallback` option for exceptional callers; routine workflows do not
+enable it. No files are truncated. See [GitHub artifact retention](https://docs.github.com/en/actions/tutorials/store-and-share-data)
 and [storage billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
 
-Consumers download only relevant same-run slots using the pinned official action.
-They verify the exact repository, source, workflow, run, attempt, producer, complete
-file inventory and hashes before exposing outputs. Producer completion is checked
-against one shared job inventory for a group of receipts. A malformed or corrupt
-artifact fails; only an absent artifact can fall back to the release copy.
-Failed-job evidence may be read for diagnostics, but cannot grant qualification.
-The final public certificate retains the complete evidence independently of the
-short-lived Actions copy. Parallel compute jobs and all required checks remain.
-
-[`ci_transport.py`](../tools/ci_transport.py) stores large, durable and fallback manual-run outputs in
-one **draft, non-Latest release per run and attempt**. The tag is
-`ci-RUN_ID-attempt-ATTEMPT`; its source and repository identity are fixed. Drafts
-are authenticated transport, not published application releases or SDK base
-qualification. Changing a draft into a public release breaks the transport
-contract. The helper never publishes, overwrites assets, deletes storage or moves
-Latest. Ordinary PR feedback stays read-only and retains bounded text in logs.
+[`ci_transport.py`](../tools/ci_transport.py) retains its legacy draft-release
+protocol for explicitly retained SDK groups, historical replay and deliberately selected legacy bundles. Preparation-only
+application runs retain candidate controls as native artifacts; their source and
+application components already have separate handoffs, and SDKs remain public assets. The tag remains
+`ci-RUN_ID-attempt-ATTEMPT`; draft transport is separate from public base and product
+publication. Ordinary PR feedback stays read-only. Routine native handoffs use the
+artifact path above, while public certificates retain their evidence independently
+of that temporary copy.
 
 Each named bundle uses a complete regular-file inventory, a deterministic tar
 stream split into at most 512 MiB assets, and a bounded JSON manifest uploaded
@@ -235,9 +251,15 @@ readback, including final aggregation. More runners cannot increase that quota.
 Keep focused development checks small; complete release qualification still needs
 its declared coverage. Group setup and transport where the tested identities agree.
 Rate waits preserve required assertions; they do not turn unavailable work green.
-The small-artifact path removes the per-bundle release protocol rather than merely
-compressing its bytes. Artifact service operations still exist; do not equate
-removed REST calls with zero storage-service requests or a quota guarantee.
+The native artifact path removes the per-bundle release protocol and repeated
+run/job lookups. Public payloads use credential-free release download URLs with
+pinned sizes and hashes; private repositories keep authenticated asset downloads.
+Certification preparation freezes a context-bound asset manifest once. Same-run
+checks use that authenticated manifest and verify their selected bytes locally;
+attachment and promotion still reconcile the complete remote identity. Historical
+or unbound acquisition retains the strict independent remote checks. Artifact and
+public download services still perform HTTP operations; fewer REST calls do not
+mean zero transfers or unlimited service capacity.
 
 Review draft inventories periodically. Delete only specifically approved expired
 stores after confirming that no release, SDK replay or evidence record depends on

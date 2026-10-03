@@ -83,9 +83,10 @@ payloads remain identified by the frozen metadata,
 and cannot be substituted or represented as executed coverage.
 
 Certification preparation retains only authenticated frozen controls. Checks
-fetch selected original candidate assets directly, verifying the complete frozen
-release inventory and tag before and after transfer and hashing all selected
-bytes before exposure. Preparation inspects the source archive for compatibility;
+fetch selected original candidate assets directly. Their authenticated same-run
+manifest supplies pinned IDs, locations, sizes and hashes; each consumer hashes
+all selected bytes before exposure without rediscovering the complete release.
+Final publication stages reconcile the remote inventory and tag. Preparation inspects the source archive for compatibility;
 it no longer downloads and republishes every SDK and application payload through
 private transport. Source and recovery still consume their complete declared inputs.
 
@@ -123,30 +124,28 @@ producer. Assembly and recovery continue to require the complete group. Containe
 prerequisites follow the actual action and test scope, avoiding development
 packages for archive or ABI-only checks.
 
-Small same-run receipts and certification evidence use one-day Actions artifacts.
-A complete bundle is capped at 2 MiB; 62 immutable slots cap each attempt at
-124 MiB plus archive overhead. Oversized evidence and storage-service upload
-failures fall back to complete release bundles. SDK and application payloads never
-use this small-file allowance. Consumers share run/producer observations and
-verify all local bytes; the [storage contract](ci.md#storage-caches-and-sdk-reuse)
-explains retention, bounds and failure behavior.
+Routine same-run source, package, receipt and certificate transfers use native
+Actions artifacts. Their finite slot budgets total at most 370 MiB per attempt;
+the complete certificate can use a 16 MiB slot. Producer/consumer REST provenance
+queries are replaced by the exact executing Actions context, immutable names,
+workflow dependencies and explicit outcomes. Complete local hash and safe archive
+validation remain. SDK archives stay in release storage.
 
-Private release transport supports deterministic low-cost compression for text evidence,
-while already-compressed package and SDK archives retain their ordinary encoding.
-Consumers fetch up to four independent chunks concurrently and reconstruct them
-in their authenticated order. Related bundles share complete run, producer and
-asset inventories at the start and end of one transfer transaction. Check jobs
-authenticate their controls, then fetch selected published candidate assets.
-Candidate aggregation and certification evidence collection each fetch related
-bundles together; application producers publish their output and diagnostics
-together. Downloads remain quarantined until the final checks
-pass, and publication writes manifest commit markers after all payloads verify.
-This reduces repeated API reads as well as bytes. Source identities, completed
-producer checks and whole-file hashes still apply. Keep actual network operations
-bounded across nested callers and join every worker before cleanup on failure. Uploads use the already
-validated release ID, avoiding another tag lookup for every asset. Even with
-these reductions, a complete all-platform release may cross a shared API quota
-window; grouped transfers do not create additional repository capacity.
+The outer workflow cleans its current attempt after successful final verification.
+Failed or cancelled runs keep diagnostics for one day. Select
+`preserve_artifacts=true` for one-day diagnostic retention; interrupted cleanup also
+falls back to expiration. Cleanup is bounded and does not delay qualification for
+an hourly quota reset. Native failures are explicit; the costly private-release
+fallback now requires deliberate opt-in. See the [storage contract](ci.md#storage-caches-and-sdk-reuse).
+
+Historical cross-run and explicitly requested private release transport retain
+strict remote producer verification, bounded parallel downloads and deterministic
+low-cost compression. Routine same-run handoffs no longer take that path.
+Certification planning freezes the public inventory once, distributes its small
+controls through Actions, and consumers download only their selected published
+assets. Each consumer verifies the source context, pinned size and hash before
+using the bytes. Publication, attachment, promotion and independent final
+verification retain their remote boundary checks.
 
 Single-part bundles use a private staging rename instead of another complete
 archive copy; whole-archive and member hash checks still run. Base SDK transfers
@@ -180,17 +179,56 @@ These counters add no requests. CLI and wait seconds accumulate across workers;
 they are not end-to-end wall time. Lost responses and legacy CLI uploads can make
 observed response counts lower than actual API consumption. Use the accompanying
 observed quota headers and job timestamps when accounting for a hosted run.
-Direct candidate reads remove a large byte relay but still require independent
-identity observations in each job. The current protocol therefore does not promise
-a complete release within one repository quota window.
+The earlier bounded-evidence design modeled about 610 transport REST calls and
+750–1,150 for the full public application release. Native handoffs now remove the
+routine relay and its producer queries; shared certification discovery removes
+repeated remote snapshots. In the retained 23-batch shape, 69 control-provenance
+reads and 161 repeated candidate metadata reads disappear; 87 payload acquisitions
+use public download URLs instead of authenticated REST requests when the repository
+is public. File transfers and local verification still occur.
 
-The bounded-evidence transport model estimates about 1,650 to 610 API calls for
-the same full regression/application/certification transport shape, approximately
-63% fewer. The combined certificate uses release fallback in this estimate.
-Public release operations, retries, pagination and Actions storage-service calls
-are additional costs. This is a structural estimate, not measured hosted time or
-a guarantee against shared quota exhaustion. See [validation](validation.md) for
-executed local checks and retained-model assumptions.
+The complete public all-GUI application release using already-published SDKs models
+**255 quota-counted REST operations**, or **201** with `preserve_artifacts=true`.
+The retained shape has 23 initial public assets and 53 temporary artifacts:
+
+| Stage | Modeled REST operations |
+| --- | ---: |
+| Initial preflight | 9 |
+| Candidate regression handoffs | 0 |
+| GUI inputs and eight SDK fetches | 63 |
+| Candidate publication and complete draft readback | 66 |
+| Certification planning and certificate attachment | 22 |
+| Promotion planning and promotion | 22 |
+| Independent Latest verification | 19 |
+| Cleanup: one listing and 53 deletions | 54 |
+| **Total** | **255** |
+
+This is a code-derived estimate, about **66–78% below** the previous full-release
+range, not a hosted measurement or guaranteed ceiling. It assumes public assets,
+one-page inventories and successful first attempts. There are also approximately
+29 quota-preflight HTTP requests, which do not consume the primary core quota.
+Actions artifact-service calls and public file downloads remain network work.
+Four Windows graphics consumers add eight REST operations if configured with
+an authenticated release-asset URL instead of a direct public URL. Private
+repositories retain approximately 127 authenticated downloads, bringing the
+comparable total to about 382 before that graphics adjustment. Cold SDK publication,
+optional distribution workflows, additional assets, retries, visibility polling
+and pagination cost more.
+
+Cleanup introduces 52 seconds of deliberate spacing for 53 deletions, plus request
+latency. It does not serialize preceding build/test jobs and never waits for an
+hourly quota reset. Preserving artifacts avoids this cleanup cost and lets their
+one-day expiry reclaim storage. The maximum allowed content across all 79 slots
+is 370 MiB per attempt, plus small outer archive overhead; ordinary runs use fewer
+slots and fewer bytes. Concurrent attempts can still accumulate storage.
+
+GitHub documents a normal `GITHUB_TOKEN` limit of
+[1,000 requests per hour per repository](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#primary-rate-limit-for-github_token-in-github-actions)
+and recommends [spacing mutations and avoiding unnecessary polling](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api).
+The new public release estimate uses about a quarter of that hourly allowance;
+other runs share it. Record actual response counters and elapsed time on the next
+ordinary hosted run; do not launch duplicate releases merely to measure the
+optimization. See [validation](validation.md) for executed checks and limitations.
 
 A native refresh still verifies the unified package-channel archive. Splitting it
 into separately signed frontend projections would change the compatibility and

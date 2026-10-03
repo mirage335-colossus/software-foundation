@@ -39,20 +39,19 @@ jobs:
         subprocess.run([sys.executable, 'tools/ci_plan.py', 'package', '--build', 'build/package',
                         '--jobs', os.environ['JOBS']], check=True)
     - name: Retain verified package-${{ inputs.target }}-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: package-${{ inputs.target }}-${{ github.run_attempt }}
-        BUNDLE_PATHS: |
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: package-${{ inputs.target }}-${{ github.run_attempt }}
+        paths: |
           build/package/packages/*.tar.gz
           build/package/packages/*.zip
           build/package/packages/*.json
     permissions:
-      contents: write
+      contents: read
       actions: read
   copied:
-    # Draft listings require push access even when this job only fetches bytes.
     permissions:
-      contents: write
+      contents: read
       actions: read
     needs: package
     runs-on: ${{ inputs.runner }}
@@ -62,6 +61,10 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+    - name: Download the exact successful package producer
+      uses: ./.github/actions/ci-evidence-download
+      with:
+        pattern: package-${{ inputs.target }}
     - env:
         GH_TOKEN: ${{ github.token }}
         GH_REPO: ${{ github.repository }}

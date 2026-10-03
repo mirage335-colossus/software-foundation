@@ -2,6 +2,10 @@ name: Certify exact published candidate
 'on':
   workflow_dispatch:
     inputs:
+      preserve_artifacts:
+        description: Keep temporary handoffs and diagnostics for one day after completion
+        type: boolean
+        default: false
       tag:
         description: Exact published candidate tag
         type: string
@@ -32,6 +36,10 @@ name: Certify exact published candidate
         default: false
   workflow_call:
     inputs:
+      preserve_artifacts:
+        description: Keep temporary handoffs and diagnostics for one day after completion
+        type: boolean
+        default: false
       tag:
         description: Exact published candidate tag
         type: string
@@ -245,6 +253,9 @@ jobs:
     outputs:
       attached: ${{ steps.result.outputs.attached }}
   verdict:
+    permissions:
+      contents: read
+      actions: write
     if: always()
     needs:
     - prepare
@@ -262,6 +273,15 @@ jobs:
         results=json.loads(os.environ['RESULTS'])
         required=['prepare','check','record'] + (['attach'] if os.environ['EXECUTE']=='true' else [])
         if any(results[k]['result'] != 'success' for k in required): raise SystemExit('Incomplete or failed exact qualification; inspect retained evidence')
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      if: success() && !inputs.preserve_artifacts && startsWith(github.workflow_ref, format('{0}/.github/workflows/certify.yml@', github.repository))
+      with:
+        persist-credentials: false
+    - name: Remove this completed attempt's temporary handoffs
+      if: success() && !inputs.preserve_artifacts && startsWith(github.workflow_ref, format('{0}/.github/workflows/certify.yml@', github.repository))
+      uses: ./.github/actions/ci-artifact-cleanup
+      continue-on-error: true
+      timeout-minutes: 3
 env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'

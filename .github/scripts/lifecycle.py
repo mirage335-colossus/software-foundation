@@ -357,7 +357,8 @@ def fetch_published_check_inputs():
     if names != expected: raise ValueError('payload selector differs from complete frozen qualification scope')
     result = ci.fetch_candidate_payloads(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'),
         ROOT / 'build/candidate', evidence.load(ROOT / 'build/delivery.json'),
-        evidence.load(ROOT / 'build/candidate-remote.json'), plan, batch['checks'])
+        evidence.load(ROOT / 'build/candidate-remote.json'), plan, batch['checks'],
+        trusted_context=storage_context())
     evidence.check_inputs(plan, ROOT, check_ids=batch['checks'])
     write(ROOT / 'build/transport-receipts/candidate-payloads.json', result)
 
@@ -757,7 +758,7 @@ def main(command):
         write('build/receipts/publication.json', delivery.publish_candidate(**request, execute=True))
         scalar_output('published',True)
     elif command == 'certification-plan':
-        ci.fetch_candidate(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'), Path('build/fetched'), metadata_only=True, planning=True)
+        ci.fetch_candidate(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'), Path('build/fetched'), metadata_only=True, planning=True, workflow_context=storage_context())
         shutil.move('build/fetched/candidate', 'build/candidate')
         shutil.move('build/fetched/delivery.json', 'build/delivery.json')
         shutil.move('build/fetched/candidate-remote.json', 'build/candidate-remote.json')

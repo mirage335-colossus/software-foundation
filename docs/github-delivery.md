@@ -230,7 +230,8 @@ files and discard partial response data. The normal complete byte and identity
 verification still applies after transfer. Before writes, a read-only quota check
 can wait for 128 remaining requests (or the entire quota for a smaller limit),
 but it does not reserve repository capacity against other
-jobs. A failed write or upload is never automatically replayed. Preserve and
+jobs. Best-effort temporary-artifact cleanup explicitly disables that preflight
+and fails promptly rather than waiting for a fresh quota window. A failed write or upload is never automatically replayed. Preserve and
 reconcile its outcome using the procedure below.
 
 Budget quota waits separately from compilation and tests. Grouped bundle reads
@@ -315,10 +316,14 @@ Certify a published candidate by its exact tag and release-inventory digest.
 The prepare job captures complete paged remote assets, verifies the inventory and
 delivery descriptor, downloads the source for archived-builder compatibility,
 and rereads remote IDs and the direct tag. It retains an authenticated control
-bundle containing the frozen complete public asset snapshot and plan. Each check
-fetches its required original source, archive or SDK assets directly, verifying
-that complete snapshot before and after transfer and hashing selected bytes in
-quarantine. This removes the complete-candidate private relay. Recovery still
+bundle containing the frozen complete asset snapshot, repository visibility,
+acquisition workflow context and plan. Same-run native consumers authenticate those
+controls through immutable Actions artifacts and workflow dependencies, then fetch
+their required original source, archive or SDK assets and hash bytes in quarantine.
+They do not rediscover the release in each parallel job. Unbound and historical
+consumers retain independent remote snapshots. Public payload URLs are credential-free
+and size/hash pinned; private repositories retain authenticated downloads. This
+removes the complete-candidate private relay and repeated same-run discovery. Recovery still
 receives complete retained inputs and every logical result remains required. Initial publication keeps
 its complete byte readback; recording, attachment and promotion reconcile the
 complete remote inventory and SHA-256 digests while downloading only their
@@ -391,8 +396,11 @@ policy check or unresolved redistribution requirement.
 ## Run storage separate from product publication
 
 [The CI storage contract](ci.md#storage-caches-and-sdk-reuse) uses
-[`ci_transport.py`](../tools/ci_transport.py) for large run outputs without Actions
-artifact quota. Every store is a draft prerelease tagged by exact run/attempt;
+native Actions artifacts for routine temporary handoffs, and
+[`ci_transport.py`](../tools/ci_transport.py) draft bundles for retained SDKs,
+historical replay and deliberately selected legacy bundles. Preparation-only
+application runs retain native candidate controls instead of another SDK-bearing
+archive. Every store is a draft prerelease tagged by exact run/attempt;
 it stays private, is never Latest and is not a qualified dependency base. Its
 manifest-last bundles permit same-byte reconciliation after an interrupted upload.
 This is deliberately a separate protocol from immutable candidate publication:
@@ -410,11 +418,14 @@ writing their manifest commit markers.
 
 Even with `execute=false`, trusted workflows may create these transport drafts.
 The execution gate controls public product/base changes and Latest. Small pointers
-live in job outputs and summaries; payloads, screenshots and logs use draft bundles.
+live in job outputs and summaries. Routine application payloads and diagnostics
+use bounded native artifacts; explicitly retained large inputs use draft bundles.
 Reference a bundle by repository, exact producer and manifest ID/digest when reusing
 another run. See [SDK retention and legacy migration](sdk.md#retain-complete-sdk-bytes-after-a-consumer-failure).
 Draft cleanup is an explicit reviewed operation after all consumers and durable
-copies are accounted for; there is no automated deletion or Actions fallback.
+copies are accounted for. This draft policy is separate from automatic cleanup
+of native artifacts after their final consumer. Native artifacts expire after one
+day when explicitly preserved or when bounded cleanup cannot finish.
 
 GitHub's [release API permission rules](https://docs.github.com/en/rest/releases/releases#create-a-release)
 require additional workflow-write authorization when the target commit changes

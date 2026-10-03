@@ -3,6 +3,10 @@ run-name: Latest preparation from ${{ github.ref_name }} (${{ inputs.profile }})
 'on':
   workflow_dispatch:
     inputs:
+      preserve_artifacts:
+        description: Keep temporary handoffs and diagnostics for one day after completion
+        type: boolean
+        default: false
       tag:
         description: New application tag; empty selects release-RUN-attempt-ATTEMPT
         type: string
@@ -92,7 +96,7 @@ jobs:
     needs: prepare
     permissions:
       contents: write
-      actions: read
+      actions: write
     uses: ./.github/workflows/sdk-application.yml
     with:
       profile: ${{ inputs.profile }}
@@ -111,7 +115,7 @@ jobs:
     needs: [application, regression]
     permissions:
       contents: write
-      actions: read
+      actions: write
     uses: ./.github/workflows/certify.yml
     with:
       tag: ${{ needs.application.outputs.tag }}
@@ -126,7 +130,7 @@ jobs:
     needs: [application, certification]
     permissions:
       contents: write
-      actions: read
+      actions: write
     uses: ./.github/workflows/promote.yml
     with:
       tag: ${{ needs.application.outputs.tag }}
@@ -143,8 +147,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
-      contents: write
-      actions: read
+      contents: read
+      actions: write
     env:
       STAGE_RESULTS: ${{ toJSON(needs) }}
     steps:
@@ -152,15 +156,11 @@ jobs:
       with:
         persist-credentials: false
     - run: python3 -B tools/latest_release.py verify --output build/latest-verification.json
-    - name: Retain verification as private release assets
-      shell: python
-      run: |
-        import os, subprocess, sys
-        subprocess.run([sys.executable, '-B', 'tools/ci_transport.py', 'publish',
-          '--repository', os.environ['GITHUB_REPOSITORY'], '--run-id', os.environ['GITHUB_RUN_ID'],
-          '--attempt', os.environ['GITHUB_RUN_ATTEMPT'], '--source-commit', os.environ['GITHUB_SHA'],
-          '--workflow', '_release-latest.yml', '--name', 'latest-verification', '--root', 'build',
-          '--path', 'latest-verification.json', '--pointer', 'build/latest-pointer.json'], check=True)
+    - name: Retain final verification receipt
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: latest-verification-${{ github.run_attempt }}
+        paths: build/latest-verification.json
     - name: Summarize the exact outcome
       shell: python
       run: |
@@ -171,3 +171,8 @@ jobs:
               'Preparation passed. No public candidate, release certification or Latest change was requested.')
         with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
           out.write(text+'\n\nSource: `'+value['source_commit']+'`\n\nInventory: `'+value['inventory_sha256']+'`\n')
+    - name: Remove this completed attempt's temporary handoffs
+      if: success() && !inputs.preserve_artifacts && startsWith(github.workflow_ref, format('{0}/.github/workflows/_release-latest.yml@', github.repository))
+      uses: ./.github/actions/ci-artifact-cleanup
+      continue-on-error: true
+      timeout-minutes: 3

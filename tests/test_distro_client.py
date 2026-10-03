@@ -562,6 +562,7 @@ class SignedClientTests(unittest.TestCase):
         info = dict(id=1, tag_name=tag, name=tag, draft=False, prerelease=True)
         def metadata(endpoint, **options):
             if '/releases/1/assets?' in endpoint: return rows
+            if endpoint.endswith('/releases/1'): return info
             if '/releases?' in endpoint: return [info]
             if '/git/ref/tags/' in endpoint: return {'object': {'type': 'commit', 'sha': self.f.req['packager_commit']}}
             if endpoint.endswith('/releases/latest'): return None
@@ -586,6 +587,7 @@ class SignedClientTests(unittest.TestCase):
         info = dict(id=1, tag_name=tag, name=tag, draft=False, prerelease=True)
         def metadata(endpoint, **options):
             if '/releases/1/assets?' in endpoint: return rows
+            if endpoint.endswith('/releases/1'): return info
             if '/releases?' in endpoint: return [info]
             if '/git/ref/tags/' in endpoint: return {'object': {'type': 'commit', 'sha': self.f.req['packager_commit']}}
             if endpoint.endswith('/releases/latest'): return None

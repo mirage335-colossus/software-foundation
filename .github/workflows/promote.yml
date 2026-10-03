@@ -2,6 +2,10 @@ name: Promote exact certified candidate
 'on':
   workflow_dispatch:
     inputs:
+      preserve_artifacts:
+        description: Keep temporary handoffs and diagnostics for one day after completion
+        type: boolean
+        default: false
       tag:
         description: Exact published candidate tag
         type: string
@@ -35,6 +39,10 @@ name: Promote exact certified candidate
         required: true
   workflow_call:
     inputs:
+      preserve_artifacts:
+        description: Keep temporary handoffs and diagnostics for one day after completion
+        type: boolean
+        default: false
       tag:
         description: Exact published candidate tag
         type: string
@@ -82,10 +90,10 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'promotion-plan'], check=True)
     - name: Retain verified promotion-inputs-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: promotion-inputs-${{ github.run_attempt }}
-        BUNDLE_PATHS: |-
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: promotion-inputs-${{ github.run_attempt }}
+        paths: |-
           build/candidate/release.json
           build/delivery.json
           build/receipts/
@@ -107,6 +115,10 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+    - name: Download successful promotion preparation
+      uses: ./.github/actions/ci-evidence-download
+      with:
+        pattern: promotion-inputs
     - shell: python
       run: |
         import subprocess,sys
@@ -121,12 +133,28 @@ jobs:
       id: result
     - if: always()
       name: Retain verified promotion-delivery-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: promotion-delivery-${{ github.run_attempt }}
-        BUNDLE_PATHS: build/receipts/
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: promotion-delivery-${{ github.run_attempt }}
+        paths: build/receipts/
     outputs:
       promoted: ${{ steps.result.outputs.promoted }}
+  cleanup:
+    name: Remove temporary handoffs after their final consumer
+    if: always() && needs.plan.result == 'success' && (!inputs.execute || needs.promote.result == 'success') && !inputs.preserve_artifacts && startsWith(github.workflow_ref, format('{0}/.github/workflows/promote.yml@', github.repository))
+    needs: [plan, promote]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/ci-artifact-cleanup
+      continue-on-error: true
+      timeout-minutes: 3
 env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'

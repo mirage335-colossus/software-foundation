@@ -58,11 +58,19 @@ GitHub's [reusable workflow contract](https://docs.github.com/en/actions/how-tos
 application preparation. Certification and promotion are deliberately omitted
 because no public candidate was requested. The final result says **prepared**,
 with `qualified=false` and `published=false`; it is not a Latest release success.
-Large inputs and durable evidence use private per-run draft release assets.
-Small regression receipts and certification controls/evidence use bounded one-day
-Actions artifacts, with complete release fallback on size or upload failure; see
-the [storage contract](ci.md#storage-caches-and-sdk-reuse). Successful publication
-retains the complete certificate evidence in the public release.
+Reusable SDKs and public application/certificate assets use release storage.
+Source, application and certification handoffs use bounded one-day Actions
+artifacts; the complete certificate fits its own larger slot. Preparation-only runs retain frozen candidate controls, while their source and
+application components already have separate handoffs. They do not upload duplicate
+SDK recovery archives. Native handoff failures do not silently activate a private relay.
+
+After successful final verification, cleanup removes only this attempt's temporary
+artifacts. Set `preserve_artifacts=true` to keep them for one day for investigation.
+Failed or cancelled runs keep their diagnostics for one day. Nested workflows defer
+cleanup to this outer caller. Cleanup failures are visible
+but cannot turn a completed release into an hour-long quota wait; expiration remains
+available. Workflow history and release assets are preserved. See the
+[storage contract](ci.md#storage-caches-and-sdk-reuse).
 
 `execute=true` requests the entire sequence. Public mutation jobs use the
 protected `release-publisher` environment and a shared publisher lock with

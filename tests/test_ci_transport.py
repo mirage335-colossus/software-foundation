@@ -637,7 +637,8 @@ class FastTransportTests(unittest.TestCase):
         output.mkdir(); (output/'file').write_text(request['name'])
         return dict(pointer=dict(name=request['name'], kind='actions-ci-evidence'),
                     manifest=dict(files={'file': {}}, metadata={}),
-                    producer=dict(job_name=None, runner_name='Runner 1'))
+                    producer=dict(kind='workflow-needs', trust_basis='same-run-actions-context-and-workflow-needs',
+                                  job_key='produce', runner_name='Runner 1', conclusion='success'))
 
     def test_same_run_gate_requires_every_exact_actions_context_field(self):
         environment = self.environment()
@@ -655,16 +656,13 @@ class FastTransportTests(unittest.TestCase):
             self.assertEqual(2, len(self.fetch_batch(['batch-0','batch-1'])))
         self.assertEqual(12, len(self.reads()))
 
-    def test_artifact_numeric_producer_pin_handles_reused_runner_name(self):
+    def test_native_provenance_does_not_invent_numeric_job_ids(self):
         self.remote.complete(); self.remote.jobs.append(dict(self.remote.jobs[0], id=31))
-        def local(context, request, output):
-            result = self.local(context, request, output)
-            result['producer']['job_id'] = 30
-            return result
         with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
-                patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=local)}):
+                patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=self.local)}):
             receipts = self.fetch_batch(['batch-0'])
-        self.assertEqual(30, receipts[0]['producer']['id']); self.assertEqual(3, len(self.remote.calls))
+        self.assertEqual('workflow-needs', receipts[0]['producer']['kind'])
+        self.assertNotIn('id', receipts[0]['producer']); self.assertEqual([], self.remote.calls)
 
     def test_same_run_release_batches_reduce_reads_and_pin_selected_release(self):
         with patch.dict(os.environ, self.environment(), clear=True):
@@ -696,14 +694,14 @@ class FastTransportTests(unittest.TestCase):
                 with self.assertRaises(ValueError): self.fetch_batch(['batch-0','batch-1'])
                 self.assertFalse((self.root/'batch-0').exists()); self.assertFalse((self.root/'batch-1').exists())
 
-    def test_eight_local_artifacts_share_three_provenance_reads_and_no_release_calls(self):
-        self.remote.complete()
+    def test_eight_native_artifacts_need_zero_provenance_or_release_requests(self):
         with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
-                patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=self.local)}):
+                patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=self.local)}), \
+                patch.object(t, '_run', side_effect=AssertionError('unexpected REST run query')), \
+                patch.object(t, '_jobs', side_effect=AssertionError('unexpected REST jobs query')):
             receipts = self.fetch_batch()
-        self.assertEqual(3, len(self.reads()))
-        self.assertEqual(3, len(self.remote.calls))
-        self.assertEqual([30]*8, [r['producer']['id'] for r in receipts])
+        self.assertEqual([], self.remote.calls)
+        self.assertEqual(['workflow-needs']*8, [r['producer']['kind'] for r in receipts])
         for request in self.requests():
             self.assertEqual(request['name'], (self.root/request['name']/'file').read_text())
 
@@ -719,27 +717,26 @@ class FastTransportTests(unittest.TestCase):
         self.assertFalse((self.root/'batch-0').exists()); self.assertFalse((self.root/'batch-1').exists())
         self.assertFalse(list(self.root.glob('.foundation-ci-input-*')))
 
-    def test_local_producer_requires_observed_exact_completed_success(self):
-        for state in ('running', 'failed', 'cancelled', 'ambiguous', 'different-run', 'wrong-job'):
-            with self.subTest(state=state):
-                self.remote = FakeGitHub(); self.remote.complete()
-                options = {}
-                if state == 'running': self.remote.jobs[0].update(status='in_progress', conclusion=None)
-                elif state == 'failed': self.remote.complete('failure')
-                elif state == 'cancelled': self.remote.complete('cancelled'); options['allow_failed'] = True
-                elif state == 'ambiguous': self.remote.jobs.append(dict(self.remote.jobs[0], id=31))
-                elif state == 'different-run': self.remote.jobs[0]['run_id'] = 13
-                else: options['job_id'] = 31
-                with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
-                        patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=self.local)}), \
-                        self.assertRaises(ValueError):
-                    self.fetch_batch(['batch-0'], **options)
-                self.assertFalse((self.root/'batch-0').exists())
-        self.remote = FakeGitHub(); self.remote.complete('failure')
-        with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
-                patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=self.local)}):
-            result = self.fetch_batch(['batch-0'], allow_failed=True, job_id=30)[0]
-        self.assertEqual('failure', result['producer']['conclusion'])
+    def test_native_producer_outcome_is_preserved_and_failed_consumption_is_explicit(self):
+        import ci_artifacts
+        for index, outcome in enumerate(('success', 'failure', 'cancelled')):
+            with self.subTest(outcome=outcome):
+                downloaded = self.root / ('downloaded-' + str(index)); downloaded.mkdir()
+                name = 'certificate-2'; context = dict(self.context, name=name)
+                ci_artifacts.prepare(**context, root=self.source, paths=['folder'],
+                    output=downloaded/ci_artifacts.artifact_name(context, ci_artifacts.slot_for(name, 2)),
+                    runner_name='Runner 1', job_key='produce', outcome=outcome)
+                environment = dict(self.environment(artifacts=True), FOUNDATION_CI_ARTIFACTS_DIR=str(downloaded))
+                with patch.dict(os.environ, environment, clear=True):
+                    if outcome != 'success':
+                        with self.assertRaisesRegex(ValueError, 'failed native producer'): self.fetch_batch([name])
+                        self.assertFalse((self.root/name).exists())
+                    receipt = self.fetch_batch([name], allow_failed=outcome != 'success')[0]
+                self.assertEqual(outcome, receipt['producer']['conclusion'])
+                self.assertEqual('same-run-actions-context-and-workflow-needs', receipt['producer']['trust_basis'])
+                import shutil
+                shutil.rmtree(self.root/name)
+        self.assertEqual([], self.remote.calls)
 
     def test_absent_local_artifact_falls_back_and_mixed_failure_publishes_nothing(self):
         self.publish_batch(self.requests(2)); self.remote.complete(); self.remote.calls.clear()
@@ -747,14 +744,14 @@ class FastTransportTests(unittest.TestCase):
             return self.local(context, request, output) if request['name'] == 'batch-0' else None
         bad = next(row for row in self.remote.releases[0]['assets'] if row['name'].startswith(t._prefix('batch-1')))
         self.remote.data[bad['id']] = b'corrupt'
-        with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
+        with patch.dict(os.environ, dict(self.environment(artifacts=True), FOUNDATION_CI_ARTIFACT_RELEASE_FALLBACK='true'), clear=True), \
                 patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=local)}), \
                 self.assertRaisesRegex(ValueError, 'downloaded asset'):
             self.fetch_batch(['batch-0','batch-1'])
         self.assertFalse((self.root/'batch-0').exists()); self.assertFalse((self.root/'batch-1').exists())
         self.assertTrue(any(call[0] == 'download' for call in self.remote.calls))
 
-    def test_real_bounded_artifact_roundtrip_authenticates_observed_job(self):
+    def test_real_native_roundtrip_validates_hashes_and_context_without_rest(self):
         import ci_artifacts
         downloaded = self.root/'downloaded'; downloaded.mkdir()
         names = ['qualification-inputs-2', 'certificate-2']
@@ -762,13 +759,14 @@ class FastTransportTests(unittest.TestCase):
             context = dict(self.context, name=name)
             slot = ci_artifacts.slot_for(name, 2)
             result = ci_artifacts.prepare(**context, root=self.source, paths=['folder','tool'],
-                output=downloaded/ci_artifacts.artifact_name(context, slot), runner_name='Runner 1')
+                output=downloaded/ci_artifacts.artifact_name(context, slot), runner_name='Runner 1', job_key='produce')
             self.assertEqual('actions', result['transport'])
-        self.remote.complete()
         with patch.dict(os.environ, self.environment(artifacts=True), clear=True):
-            receipts = self.fetch_batch(names, job_name='produce (linux-aarch64)', job_id=30)
-        self.assertEqual(3, len(self.remote.calls))
-        self.assertEqual([30,30], [receipt['producer']['id'] for receipt in receipts])
+            with self.assertRaisesRegex(ValueError, 'REST producer pins'):
+                self.fetch_batch(names, job_name='produce (linux-aarch64)', job_id=30)
+            receipts = self.fetch_batch(names)
+        self.assertEqual([], self.remote.calls)
+        self.assertEqual(['produce','produce'], [receipt['producer']['job_key'] for receipt in receipts])
         self.assertTrue(all(receipt['pointer']['transport'] == 'actions' for receipt in receipts))
         for name in names:
             self.assertEqual((self.source/'tool').read_bytes(), (self.root/name/'tool').read_bytes())
@@ -778,7 +776,7 @@ class FastTransportTests(unittest.TestCase):
         name = 'qualification-inputs-2'; self.publish(name=name); self.remote.complete(); self.remote.calls.clear()
         context = dict(self.context, name=name); downloaded = self.root/'downloaded'; downloaded.mkdir()
         staged = downloaded/ci_artifacts.artifact_name(context, ci_artifacts.slot_for(name, 2))
-        ci_artifacts.prepare(**context, root=self.source, paths=['folder'], output=staged, runner_name='Runner 1')
+        ci_artifacts.prepare(**context, root=self.source, paths=['folder'], output=staged, runner_name='Runner 1', job_key='produce')
         (staged/'payload.tar.gz').write_bytes(b'corrupt')
         with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
                 self.assertRaisesRegex(ValueError, 'artifact archive bytes'):
@@ -786,13 +784,23 @@ class FastTransportTests(unittest.TestCase):
         self.assertEqual([], self.remote.calls)
         self.assertFalse((self.root/name).exists())
 
-    def test_absent_artifact_only_falls_back_to_same_run_release(self):
+    def test_absent_native_artifact_requires_explicit_legacy_fallback(self):
         self.publish_batch(self.requests(2)); self.remote.complete(); self.remote.calls.clear()
         with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
                 patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=lambda *args:None)}):
-            receipts = self.fetch_batch(['batch-0','batch-1'])
+            with self.assertRaisesRegex(ValueError, 'release relay is not enabled'):
+                self.fetch_batch(['batch-0','batch-1'])
+            self.assertEqual([], self.remote.calls)
+            with patch.dict(os.environ, {'FOUNDATION_CI_ARTIFACT_RELEASE_FALLBACK':'true'}):
+                receipts = self.fetch_batch(['batch-0','batch-1'])
         self.assertEqual(2, len(receipts)); self.assertEqual(9, len(self.reads()))
         self.assertFalse(list(self.root.glob('.foundation-ci-input-*')))
+
+    def test_required_native_mode_rejects_missing_download_setup(self):
+        environment = dict(self.environment(), FOUNDATION_CI_ARTIFACTS_REQUIRED='true')
+        with patch.dict(os.environ, environment, clear=True), self.assertRaisesRegex(ValueError, 'directory is missing'):
+            self.fetch_batch(['batch-0'])
+        self.assertEqual([], self.remote.calls)
 
 
 if __name__ == '__main__': unittest.main()

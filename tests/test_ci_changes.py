@@ -196,8 +196,11 @@ class FeedbackWorkflowTests(unittest.TestCase):
         self.assertIn('runs-on: ${{ inputs.runner }}', consumer)
         self.assertIn('actions/checkout@', consumer)
         self.assertIn('--runtime-only', consumer)
-        for block in (producer, consumer):
-            self.assertIn('BUNDLE_NAME: package-${{ inputs.target }}-${{ github.run_attempt }}', block)
+        self.assertIn('uses: ./.github/actions/ci-evidence-publish', producer)
+        self.assertIn('name: package-${{ inputs.target }}-${{ github.run_attempt }}', producer)
+        self.assertIn('uses: ./.github/actions/ci-evidence-download', consumer)
+        self.assertIn('pattern: package-${{ inputs.target }}', consumer)
+        self.assertIn('BUNDLE_NAME: package-${{ inputs.target }}-${{ github.run_attempt }}', consumer)
 
 
 if __name__ == '__main__':
