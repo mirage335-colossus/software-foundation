@@ -311,7 +311,7 @@ def tool_report(value):
 
 def run_case(plan, check_id, root, output, run_id, attempt, *, _physical=False):
     validate(plan)
-    if not NAME.fullmatch(run_id) or type(attempt) is not int or attempt < 1:
+    if not isinstance(run_id, str) or not NAME.fullmatch(run_id) or type(attempt) is not int or attempt < 1:
         raise ValueError("invalid run identity")
     matches = [x for x in plan["checks"] if x["id"] == check_id]
     if len(matches) != 1:
@@ -326,6 +326,10 @@ def run_case(plan, check_id, root, output, run_id, attempt, *, _physical=False):
     argv = [x.replace("{python}", sys.executable).replace("{root}", str(root))
              .replace("{evidence}", str(output)).replace("{plan_id}", plan["id"])
              .replace("{run_id}", run_id).replace("{attempt}", str(attempt)) for x in item["argv"]]
+    # Execution identity belongs to the validated plan and invocation, not to
+    # inherited provider variables. Only the supervised child receives it.
+    environment = dict(os.environ, FOUNDATION_PLAN_ID=plan["id"], FOUNDATION_CHECK_ID=check_id,
+                       FOUNDATION_RUN_ID=run_id, FOUNDATION_RUN_ATTEMPT=str(attempt))
     started = time.monotonic()
     result = {"schema_version": 1, "plan": plan["id"], "subject": plan["subject"], "check": check_id,
               "run_id": run_id, "attempt": attempt, "status": "not_run", "exit_code": None,
@@ -341,7 +345,7 @@ def run_case(plan, check_id, root, output, run_id, attempt, *, _physical=False):
     from process_tree import launch, ProcessTreeError
     try:
         with log.open("xb") as stream:
-            owner = launch(argv, root, stream)
+            owner = launch(argv, root, stream, env=environment)
             process = owner.process
             while process.poll() is None:
                 elapsed = time.monotonic() - started

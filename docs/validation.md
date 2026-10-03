@@ -1047,3 +1047,35 @@ These are code-derived savings, not hosted measurements. Evidence and exact sour
 hashes are retained in `build/agents/sdk-metadata-batch-v1/validation.json`.
 Only this validation documentation changed after the tested snapshot. No hosted
 workflow, real remote operation, SDK rebuild, commit or push was performed.
+
+
+## Portable qualification commands
+
+The 2026-10-03 incremental extraction provides file-based plan, list, prerequisite
+and execution commands through `tools/qualification_tasks.py`. The core planner
+requires no provider files or GitHub context. Hosted scheduling, authenticated
+transport and publication stay in their adapter. Browser receipts now bind to
+explicit plan/check/run/attempt values supplied only to supervised children.
+The all-GUI coverage remains **106 logical checks, 66 physical executions and
+23 hosted batches**, with grouped work, selective payloads and full diagnostics.
+
+The isolated final native regression, including all five optional distribution
+suites, passed **56/56 CTest entries in 31.55 seconds**, with **1,357 passed Python
+cases** and the same two explicit native-Windows exclusions on Linux. The 19 new
+cases cover provider-free planning and real child execution, altered input and
+identity rejection, grouped report inventory, explicit browser setup and hosted
+boundary delegation. An initial full run exposed a missing receipt-parent creation
+and an outdated writer mock; the old behavior was restored, the fixture updated,
+and all 22 affected cases plus the complete final suite passed without removing
+assertions. Workflow lint, documentation, whitespace, Python 3.9 grammar for 122
+files and the generic-name scan passed. Independent integration review found no
+actionable issue before that final tested compatibility repair.
+
+Exact source hashes, reports and retained failure/final logs are recorded in
+`build/agents/portable-qualification-v1/validation.json`. Only this validation
+record changed after the final tested snapshot. No hosted workflow, real remote
+API operation, SDK rebuild, commit or push was performed. This extraction adds
+no artifact handoff or API request: the existing public complete-release model
+remains **189**, or **180** with preservation. These local tests establish the
+command boundary and preserved contracts, not a new hosted elapsed-time result
+or qualification of another provider's runners and transport.

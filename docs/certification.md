@@ -68,6 +68,68 @@ a new attempt directory. Aggregation uses one explicitly selected result per che
 from the same run. A previous attempt may be reused only under the unchanged plan;
 its actual attempt and logs remain visible.
 
+## File-based commands for another CI or a local scheduler
+
+[`qualification_tasks.py`](../tools/qualification_tasks.py) exposes the same planner,
+prerequisite stage and supervised checks independently of GitHub. Put the exact
+assembled release at `build/candidate` in a private source workspace, then freeze
+and inspect its execution requirements:
+
+```sh
+python3 tools/qualification_tasks.py plan --root . --profile core
+python3 tools/qualification_tasks.py list --root .
+```
+
+The JSON inventory lists physical execution IDs, target/environment requirements,
+logical checks and their relative result paths. Grouped checks launch once and
+still produce every logical receipt. A scheduler may dispatch independent
+executions concurrently on suitable hosts, or batch compatible executions to
+amortize worker setup. This command introduces no scheduler or serial execution
+loop. The existing hosted batching remains unchanged.
+
+Copy the same frozen plan, declared tools and required candidate files into each
+worker's `build/check-plan.json` and `build/candidate` layout. Keep the complete
+candidate metadata; selective payloads must satisfy `coverage.check_inputs` for
+the selected execution. The transport must authenticate workers and input origins;
+a local hash proves byte identity, not producer identity. Run on the actual
+platform and environment required by policy. Existing host checks, including the
+Windows baseline, remain enforced; another provider must supply a qualified
+adapter or an explicitly revised and qualified policy.
+
+```sh
+python3 tools/qualification_tasks.py prepare --root . --check CHECK_ID \
+  --run-id local-candidate --attempt 1
+python3 tools/qualification_tasks.py run --root . --check CHECK_ID \
+  --run-id local-candidate --attempt 1
+```
+
+Replace `CHECK_ID` with a physical execution ID from `list`. `prepare` is a no-op
+when browser setup is unnecessary. Browser setup retains its explicit disposable
+container, image and privilege requirements; it may contact distribution package
+repositories. `run` never silently installs prerequisites. Both stages use the
+same run ID and positive attempt. The executor supplies `FOUNDATION_PLAN_ID`,
+`FOUNDATION_CHECK_ID`, `FOUNDATION_RUN_ID` and `FOUNDATION_RUN_ATTEMPT` only to its
+child environment. Browser receipts must match all four; missing or mismatched
+context fails. Ordinary callers need not set these variables themselves.
+
+Each execution retains its complete evidence directory at
+`build/evidence/CHECK_ID`, with bounded console logs, timing, actual host details
+and logical results. A non-passing check exits nonzero. Preserve the entire
+directory when collecting results because receipts bind companion evidence files.
+Pass exactly the `reports` paths listed in the inventory to the existing
+`certify_release.py` command, using `--release build/candidate` and the same policy,
+profile and frozen plan. Do not substitute a broad `*/result.json` glob for grouped
+results. Use fresh worker/output trees for retries and collect one complete run
+and attempt; never overwrite earlier evidence.
+
+The portable plan requires no `.github` files, GitHub variables, `gh` executable
+or GitHub API calls. The hosted adapter additionally freezes its provider scripts,
+workflow and remote delivery descriptors, supplies native run identity, and retains
+producer authentication, selective parallel transfers and publication checks.
+SDK preparation, building, assembly and certification continue to use the existing
+file-based tools documented in [RELEASE](../RELEASE). This is an incremental
+boundary, not a claim that every hosted transport or platform adapter is portable.
+
 ## Authoritative check adapters
 
 [`release_check.py`](../tools/release_check.py) implements `source`,

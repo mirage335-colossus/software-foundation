@@ -46,7 +46,7 @@ def native_target(target):
 
 
 def browser_prerequisite_snapshot(options, target, backend, scope, subject):
-    """Bind an external CI browser receipt to this frozen case before execution."""
+    """Bind a browser prerequisite receipt to this explicit frozen execution."""
     import ci_plan
     path = options.get("browser_prerequisite")
     plan_path = options.get("browser_prerequisite_plan")
@@ -71,9 +71,12 @@ def browser_prerequisite_snapshot(options, target, backend, scope, subject):
     if (type(data["schema_version"]) is not int or data["schema_version"] != 1 or
             data["plan"] != plan["id"] or len(matches) != 1 or
             any(plan["subject"][key] != value for key, value in subject.items()) or
-            data["check"] != os.environ.get("CHECK") or data["run_id"] != os.environ.get("GITHUB_RUN_ID") or
+            data["plan"] != os.environ.get("FOUNDATION_PLAN_ID") or
+            data["check"] != os.environ.get("FOUNDATION_CHECK_ID") or
+            not isinstance(data["run_id"], str) or not c.NAME.fullmatch(data["run_id"]) or
+            data["run_id"] != os.environ.get("FOUNDATION_RUN_ID") or
             type(data["attempt"]) is not int or data["attempt"] < 1 or
-            str(data["attempt"]) != os.environ.get("GITHUB_RUN_ATTEMPT")):
+            str(data["attempt"]) != os.environ.get("FOUNDATION_RUN_ATTEMPT")):
         raise ValueError("browser prerequisite belongs to another frozen case or attempt")
     item = matches[0]
     if (item["target"], item["backend"], item["scope"]) != (target, backend, scope):

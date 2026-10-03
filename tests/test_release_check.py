@@ -197,7 +197,8 @@ class ReleaseCheckTests(unittest.TestCase):
         options = dict(browser_prerequisite=receipt_path, browser_prerequisite_plan=plan_path,
                        browser='firefox', firefox='/usr/bin/firefox-esr')
         host = dict(system='Linux', machine='x86_64', distribution='debian-12')
-        environment = dict(CHECK='browser-archive', GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='2')
+        environment = dict(FOUNDATION_PLAN_ID=plan['id'], FOUNDATION_CHECK_ID='browser-archive',
+                           FOUNDATION_RUN_ID='123', FOUNDATION_RUN_ATTEMPT='2')
         return subject, receipt, options, host, environment
 
     def test_browser_prerequisite_is_bound_to_actual_case_and_preserved(self):
@@ -213,6 +214,31 @@ class ReleaseCheckTests(unittest.TestCase):
             self.assertEqual(details['browser_prerequisite']['sha256'], check.digest(evidence / 'browser/prerequisite.json'))
             self.assertEqual(details['browser_prerequisite']['plan'], receipt['plan'])
 
+    def test_browser_prerequisite_ignores_conflicting_provider_environment(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            subject, receipt, options, host, environment = self.browser_fixture(Path(temporary))
+            inherited = dict(environment, CHECK='wrong-check', GITHUB_RUN_ID='wrong-run', GITHUB_RUN_ATTEMPT='999')
+            with patch.object(check.c, 'host_identity', return_value=host), patch.dict(check.os.environ, inherited, clear=True):
+                before = dict(check.os.environ)
+                state = check.browser_prerequisite_snapshot(options, 'linux-x86_64', 'hosted-web', 'archive', subject)
+                self.assertEqual(state['data'], receipt)
+                self.assertEqual(dict(check.os.environ), before)
+
+    def test_browser_prerequisite_requires_complete_exact_neutral_execution_context(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            subject, _, options, host, environment = self.browser_fixture(Path(temporary))
+            legacy = dict(CHECK='browser-archive', GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='2')
+            invalid = [legacy]
+            for key in environment:
+                missing = dict(environment); del missing[key]; invalid.append(dict(legacy, **missing))
+                wrong = dict(environment); wrong[key] = 'other'; invalid.append(dict(legacy, **wrong))
+            invalid.append(dict(environment, FOUNDATION_RUN_ATTEMPT='02'))
+            with patch.object(check.c, 'host_identity', return_value=host):
+                for values in invalid:
+                    with self.subTest(values=values), patch.dict(check.os.environ, values, clear=True):
+                        with self.assertRaisesRegex(ValueError, 'another frozen case or attempt'):
+                            check.browser_prerequisite_snapshot(options, 'linux-x86_64', 'hosted-web', 'archive', subject)
+
     def test_host_browser_receipt_selects_exact_native_bytes_and_rechecks_after_assertions(self):
         import ci_plan,json
         with tempfile.TemporaryDirectory() as temporary:
@@ -220,6 +246,7 @@ class ReleaseCheckTests(unittest.TestCase):
             spec=check.c.load(options['browser_prerequisite_plan']);del spec['id']
             spec['checks'][0]['environment']='ubuntu-24.04';frozen=check.c.freeze(spec)
             options['browser_prerequisite_plan'].write_text(json.dumps(frozen));receipt['plan']=frozen['id']
+            environment['FOUNDATION_PLAN_ID']=frozen['id']
             receipt['selection']=ci_plan.browser_prerequisite('linux-x86_64','ubuntu-24.04','hosted-web')
             native=root/'firefox-native';native.write_bytes(b'inspected executable')
             observed=dict(package='firefox',version=receipt['browser_version'],architecture='amd64',policy='preinstalled host prerequisite',
@@ -244,6 +271,7 @@ class ReleaseCheckTests(unittest.TestCase):
             spec=check.c.load(options['browser_prerequisite_plan']);del spec['id']
             spec['checks'][0].update(target='browser-wasm32',backend='wasm',environment='chromium')
             frozen=check.c.freeze(spec);options['browser_prerequisite_plan'].write_text(json.dumps(frozen))
+            environment['FOUNDATION_PLAN_ID']=frozen['id']
             receipt.update(plan=frozen['id'],selection=ci_plan.browser_prerequisite('browser-wasm32','chromium','wasm'),
                            browser_version='Google Chrome 154.0.1.2')
             observed=[]

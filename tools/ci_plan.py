@@ -740,75 +740,20 @@ def archived_binary_group_support(candidate, manifest):
 
 
 def qualification_plan(candidate, profile, output, policy=None, *, runners=None, metadata_only=False):
+    """Add hosted input bindings and runner routing to the local frozen plan."""
+    from types import SimpleNamespace
+    additional = {name: ROOT / name for name in
+        ('.github/scripts/lifecycle.py', '.github/scripts/container_job.py', '.github/workflows/certify.yml')}
+    if metadata_only:
+        additional.update({'build/' + name: candidate.parent / name
+                           for name in ('delivery.json', 'candidate-remote.json')})
+    helpers = SimpleNamespace(module=module, needs_browser_prerequisite=needs_browser_prerequisite,
+        browser_prerequisite=browser_prerequisite, needs_windows_graphics=needs_windows_graphics,
+        archived_binary_group_support=archived_binary_group_support)
+    value = module('qualification_plan').build_plan(ROOT, candidate, profile, policy,
+        additional_inputs=additional, metadata_only=metadata_only, _helpers=helpers)
     c = module('coverage')
-    policy = policy or c.load(ROOT / 'docs/release-policy.json')
-    selected, _ = module('certify_release').requirements(policy, profile)
-    manifest = (module('release').verify_metadata(candidate) if metadata_only else module('release').verify_release(candidate))
-    if metadata_only:
-        source = candidate / manifest['source']['archive']
-        if c.sha(source) != manifest['source']['sha256'] or module('source_identity').verify_source_archive(source)['tree_sha256'] != manifest['source']['tree_sha256']:
-            raise ValueError('retained source differs from frozen inventory')
-    actual = {x['target']: x['backends'] or ['core'] for x in manifest['artifacts']}
-    if len(actual) != len(manifest['artifacts']) or actual != selected['targets']:
-        raise ValueError('candidate does not match complete support profile')
-    binary_groups = archived_binary_group_support(candidate, manifest)
-    checks, matrix = [], []
-    for item in selected['checks']:
-        target, backend, environment, scope = (item[x] for x in ('target', 'backend', 'environment', 'scope'))
-        check_id = '-'.join((target, backend, environment, scope))
-        argv = ['{python}', '{root}/tools/release_check.py', scope, '--release', '{root}/build/candidate',
-                '--target', target, '--backend', backend, '--evidence', '{evidence}', '--jobs', 'auto']
-        if (target.startswith('linux-') or target == 'browser-wasm32') and needs_browser_prerequisite(backend, scope):
-            browser = browser_prerequisite(target, environment, backend)
-            argv += ['--browser-prerequisite', '{root}/build/prerequisites/' + check_id + '/browser.json',
-                     '--browser-prerequisite-plan', '{root}/build/check-plan.json']
-            if browser['engine'] == 'firefox': argv += ['--firefox', browser['executable']]
-        if environment in ('chromium', 'firefox'):
-            argv += ['--browser', environment]
-            if environment == 'chromium': argv += ['--browser-executable', browser['executable'], '--driver', browser['driver']]
-        graphics = needs_windows_graphics(target, selected['targets'][target], backend, scope)
-        if graphics:
-            argv += ['--windows-graphics-archive', '{root}/build/host-graphics/mesa-windows.7z']
-        if target == 'windows-x86_64' and backend == 'hosted-web' and scope == 'archive':
-            argv += ['--firefox', 'C:/Program Files/Mozilla Firefox/firefox.exe']
-        checks.append(dict(item, id=check_id, required=True, argv=argv, timeout_seconds=5400,
-                           warning_seconds=4500, expected_tests=[], qualification='qualification.json'))
-        if scope == 'source':
-            entry = next(row for row in manifest['artifacts'] if row['target'] == target)
-            needs_group_flag = target == 'windows-x86_64' or len(module('release').dependency_recipes(entry)) > 1
-            checks[-1]['sdk_payload'] = 'binary' if not needs_group_flag or binary_groups else 'complete'
-        matrix.append(qualification_row(checks[-1], runners))
-    # Logical requirements remain intact; group only identical whole-artifact work.
-    groups = {}
-    for item in checks:
-        if item['scope'] in ('source', 'recovery', 'abi') and item['target'] != 'browser-wasm32':
-            groups.setdefault(tuple(item[x] for x in ('target', 'environment', 'scope')), []).append(item)
-    for rows in groups.values():
-        if len(rows) < 2:
-            continue
-        leader = rows[0]
-        command = leader['argv'] + ['--execution-plan', '{root}/build/check-plan.json',
-            '--execution-id', leader['id'], '--run-id', '{run_id}', '--attempt', '{attempt}',
-            '--receipt', leader['id'] + '.qualification.json']
-        for item in rows:
-            item.update(execution=leader['id'], argv=command.copy(), qualification=item['id'] + '.qualification.json')
-    logical = {x['id']: x for x in checks}
-    matrix = [row for row in matrix if logical[row['id']].get('execution', row['id']) == row['id']]
-    inputs = {str(p.relative_to(ROOT)).replace('\\', '/'): c.sha(p) for p in (ROOT / 'tools').glob('*.py')}
-    for name in ('tools/ci-apt.sh', 'docs/release-policy.json', '.github/scripts/lifecycle.py', '.github/scripts/container_job.py', '.github/workflows/certify.yml'):
-        inputs[name] = c.sha(ROOT / name)
-    if any(item['graphics'] for item in matrix):
-        for name in ('tools/windows_gl_probe.cpp', 'third_party/host-graphics/mesa-windows.json'):
-            inputs[name] = c.sha(ROOT / name)
-    inputs.update({'build/candidate/' + name: digest for name, digest in manifest['files'].items()})
-    inputs['build/candidate/release.json'] = c.sha(candidate / 'release.json')
-    if metadata_only:
-        for name in ('delivery.json', 'candidate-remote.json'):
-            inputs['build/' + name] = c.sha(candidate.parent / name)
-    value = c.freeze({'schema_version': 1, 'mode': 'release',
-                      'subject': {'source_sha256': manifest['source']['sha256'], 'inventory_sha256': c.sha(candidate / 'release.json'),
-                                  'configuration_sha256': c.digest({'policy': policy, 'profile': profile})},
-                      'inputs': inputs, 'checks': checks})
+    matrix = [qualification_row(item, runners) for item in c.executions(value)]
     c.write_new(output, value)
     return {'include': matrix}
 

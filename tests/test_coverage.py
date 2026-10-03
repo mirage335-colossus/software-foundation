@@ -1,10 +1,12 @@
 import copy
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("foundation_coverage", Path(__file__).resolve().parents[1] / "tools/coverage.py")
 coverage = importlib.util.module_from_spec(spec)
@@ -33,6 +35,31 @@ class CoverageTests(unittest.TestCase):
             (root / "one/console.log").write_text("replaced")
             with self.assertRaisesRegex(ValueError, "evidence changed"):
                 coverage.merge(frozen, [root / "one/result.json"])
+
+    def test_child_execution_context_overrides_inheritance_without_mutating_parent(self):
+        inherited = dict(FOUNDATION_PLAN_ID='stale-plan', FOUNDATION_CHECK_ID='stale-check',
+                         FOUNDATION_RUN_ID='stale-run', FOUNDATION_RUN_ATTEMPT='99',
+                         CHECK='hosted-check', GITHUB_RUN_ID='hosted-run', GITHUB_RUN_ATTEMPT='88',
+                         FOUNDATION_TEST_KEEP='preserved caller value')
+        keys = list(inherited)
+        command = ['{python}', '-c', 'import os,json; print(json.dumps({key:os.environ.get(key) for key in ' + repr(keys) + '}))']
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, inherited):
+            root = Path(temporary); frozen = plan(command); before = dict(os.environ)
+            result = coverage.run_case(frozen, 'contract', root, root / 'context', 'local-release', 2)
+            self.assertEqual(result['status'], 'passed', result)
+            observed = json.loads((root / 'context/console.log').read_text())
+            expected = dict(inherited, FOUNDATION_PLAN_ID=frozen['id'], FOUNDATION_CHECK_ID='contract',
+                            FOUNDATION_RUN_ID='local-release', FOUNDATION_RUN_ATTEMPT='2')
+            self.assertEqual(observed, expected)
+            self.assertEqual(dict(os.environ), before)
+
+    def test_invalid_execution_identity_cannot_launch_or_create_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); frozen = plan()
+            for run_id, attempt in ((None, 1), ('../run', 1), ('run', True), ('run', '2'), ('run', 0)):
+                with self.subTest(run_id=run_id, attempt=attempt), self.assertRaisesRegex(ValueError, 'run identity'):
+                    coverage.run_case(frozen, 'contract', root, root / 'invalid', run_id, attempt)
+                self.assertFalse((root / 'invalid').exists())
 
     def test_failure_never_becomes_pass_and_missing_duplicate_results_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -145,9 +172,10 @@ class GroupedExecutionTests(unittest.TestCase):
         receipt=dict(schema_version=1,status='passed',source_sha256='a'*64,inventory_sha256='b'*64,
             target='linux-x86_64',backend='fltk',scope='abi',host=coverage.host_identity(),
             details={'execution':identity},assertions=['complete-artifact'],evidence={})
-        code="import json,sys,hashlib\nfrom pathlib import Path\nout=Path(sys.argv[1])\n"
+        code="import json,sys,hashlib,os\nfrom pathlib import Path\nout=Path(sys.argv[1])\n"
         code+="with Path('invocations').open('a') as stream: stream.write('one\\n')\n"
         code+='identity='+repr(identity)+'\nreceipt='+repr(receipt)+'\n'
+        code+="(out/'context.json').write_text(json.dumps({key:os.environ[key] for key in ('FOUNDATION_PLAN_ID','FOUNDATION_CHECK_ID','FOUNDATION_RUN_ID','FOUNDATION_RUN_ATTEMPT')}))\n"
         code+="p=out/'execution.json';p.write_text(json.dumps(identity));receipt['evidence']={'execution.json':hashlib.sha256(p.read_bytes()).hexdigest()};(out/'abi-fltk.qualification.json').write_text(json.dumps(receipt))\n"
         (root/'once.py').write_text(code)
         return frozen
@@ -158,6 +186,8 @@ class GroupedExecutionTests(unittest.TestCase):
             result=coverage.run_execution(frozen,'abi-fltk',root,out,'run',1)
             self.assertEqual(result['status'],'passed',result)
             self.assertEqual((root/'invocations').read_text(),'one\n')
+            self.assertEqual(coverage.load(out / 'context.json'), dict(FOUNDATION_PLAN_ID=frozen['id'],
+                FOUNDATION_CHECK_ID='abi-fltk', FOUNDATION_RUN_ID='run', FOUNDATION_RUN_ATTEMPT='1'))
             paths=[coverage.result_path(frozen,row['id'],root) for row in frozen['checks']]
             merged=coverage.merge(frozen,paths)
             self.assertEqual(set(merged['checks']),{'abi-fltk','abi-sdl'})

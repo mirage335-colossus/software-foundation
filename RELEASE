@@ -18,6 +18,12 @@ Software Foundation — release and recovery order
    Verify signed metadata and exact payloads; retain source/packager identities.
 8. Run the frozen certification policy against these exact bytes and retain all
    source, archive, recovery, backend and platform results with actual attempts.
+   For a prepared workspace on another CI or a local scheduler:
+   python3 tools/qualification_tasks.py plan --root . --profile core
+   python3 tools/qualification_tasks.py list --root .
+   Dispatch each listed physical execution to its required environment using the
+   prepare/run commands in docs/certification.md. Preserve grouped logical reports,
+   run identity and all companion evidence before using certify_release.py.
 9. Test recovery with the original base unavailable:
    python3 tools/release.py recover NEW_RELEASE --output NEW_RECOVERY
 10. When separately authorized, publish immutable assets, reverify downloads,

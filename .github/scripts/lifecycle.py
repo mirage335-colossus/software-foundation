@@ -17,6 +17,7 @@ import ci_plan as ci
 import github_release as delivery
 import dependency_store
 import coverage as evidence
+import qualification_tasks
 from process_tree import ProcessTreeError
 
 
@@ -767,26 +768,11 @@ def main(command):
     elif command == 'check-batch':
         check_batch()
     elif command in ('check-prerequisites', 'check'):
-        plan = evidence.load(Path('build/check-plan.json'))
-        evidence.validate(plan); evidence.check_inputs(plan, ROOT, check_ids=[value('CHECK')])
-        matches = [item for item in plan['checks'] if item['id'] == value('CHECK')]
-        if len(matches) != 1: raise ValueError('check not in frozen inventory')
-        item = matches[0]
-        if ci.platform.system() == 'Linux' and ci.needs_browser_prerequisite(item['backend'], item['scope']):
-            directory = ROOT / 'build/prerequisites' / value('CHECK')
-            if command == 'check-prerequisites':
-                receipt = ci.install_browser_prerequisite(item['target'], item['environment'], item['backend'], directory)
-                receipt.update(plan=plan['id'], check=item['id'], run_id=value('GITHUB_RUN_ID'),
-                               attempt=int(value('GITHUB_RUN_ATTEMPT')))
-                write(directory / 'browser.json', receipt)
-            elif not (directory / 'browser.json').is_file():
-                raise ValueError('run privileged browser prerequisite setup before unprivileged qualification')
-        if command == 'check':
-            # The invoked release check independently binds this receipt to the
-            # frozen plan, actual host, package/browser bytes and evidence.
-            result = evidence.run_execution(plan, value('CHECK'), ROOT, ROOT / 'build/evidence' / value('CHECK'),
-                                       value('GITHUB_RUN_ID'), int(value('GITHUB_RUN_ATTEMPT')))
-            if result['status'] != 'passed': raise ValueError('required qualification did not pass')
+        # Native workflow identity is translated only at this provider boundary.
+        operation = qualification_tasks.prepare if command == 'check-prerequisites' else qualification_tasks.run
+        result = operation(ROOT, value('CHECK'), value('GITHUB_RUN_ID'), int(value('GITHUB_RUN_ATTEMPT')))
+        if command == 'check' and result['status'] != 'passed':
+            raise ValueError('required qualification did not pass')
     elif command in ('certificate', 'attach-certificate'):
         identity = evidence.load(Path('build/delivery.json'))
         plan = evidence.load(Path('build/check-plan.json'))

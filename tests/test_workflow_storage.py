@@ -33,6 +33,22 @@ class StorageLayoutTests(unittest.TestCase):
             GITHUB_WORKFLOW_REF='example/foundation/.github/workflows/_release-latest.yml@refs/heads/main',
             RUNNER_NAME='runner-a',GITHUB_OUTPUT=str(self.root/'output'),GITHUB_STEP_SUMMARY=str(self.root/'summary'))).start()
 
+    def test_hosted_checks_translate_identity_at_provider_boundary(self):
+        previous = Path.cwd()
+        try:
+            with patch.dict(os.environ, CHECK='linux-check'), \
+                    patch.object(lifecycle.qualification_tasks, 'prepare', return_value={'status': 'prepared'}) as prepare, \
+                    patch.object(lifecycle.qualification_tasks, 'run', return_value={'status': 'passed'}) as run:
+                lifecycle.main('check-prerequisites')
+                lifecycle.main('check')
+                prepare.assert_called_once_with(self.root, 'linux-check', '123', 2)
+                run.assert_called_once_with(self.root, 'linux-check', '123', 2)
+                run.return_value = {'status': 'failed'}
+                with self.assertRaisesRegex(ValueError, 'qualification did not pass'):
+                    lifecycle.main('check')
+        finally:
+            os.chdir(previous)
+
     def file(self,name,data=b'checked bytes'):
         p=self.root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data);return p
 

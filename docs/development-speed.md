@@ -265,6 +265,22 @@ verification contracts; that further optimization is not implemented. First publ
 package-channel delivery also retains full source/SDK recovery bytes and verifies
 their upload. These remain real transfer costs.
 
+The [portable qualification commands](certification.md#file-based-commands-for-another-ci-or-a-local-scheduler)
+separate local planning, prerequisite setup and supervised execution from the
+provider adapter. They require no GitHub metadata requests once inputs are local.
+This preserves the all-GUI plan's 106 logical checks, 66 physical executions and
+23 hosted batches, as well as grouped builds, selective SDK transfers and bounded
+parallel downloads. It introduces no additional artifact, worker or persistent
+cache. Timings, console logs, JUnit, prerequisite evidence and exact input checks
+remain available for diagnosis by developers and agents. Existing hosted producer
+checks and certification-before-promotion ordering remain in the provider adapter.
+
+This portability extraction does not remove publication or transport operations:
+the complete public release model remains 189 quota-counted requests (180 with
+preservation). It does not establish a further hosted elapsed-time improvement.
+An alternative CI scheduler can reuse these commands without implementing GitHub's
+artifact and release API, while retaining the same evidence and parallel work.
+
 Use [testing](testing.md) for completeness rules, [CI](ci.md) for workflow inputs,
 [certification](certification.md) for exact-byte checks and [distribution release](distribution-release.md)
 for native channel acceptance. Actual observations and unexecuted platform limits

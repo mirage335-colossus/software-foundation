@@ -942,6 +942,105 @@ class CandidateFetchTests(unittest.TestCase):
 
 
 
+class PortableQualificationPlanTests(unittest.TestCase):
+    def setUp(self):
+        import shutil
+        sys.path.insert(0, str(Path(__file__).parent))
+        import test_github_release
+        self.fixture = test_github_release.DeliveryTests()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.root = self.fixture.root / 'portable-workspace'
+        shutil.copytree(ci.ROOT / 'tools', self.root / 'tools',
+                        ignore=shutil.ignore_patterns('__pycache__'))
+        (self.root / 'docs').mkdir()
+        shutil.copyfile(ci.ROOT / 'docs/release-policy.json', self.root / 'docs/release-policy.json')
+        shutil.copytree(self.fixture.directory, self.root / 'build/candidate')
+        self.candidate = self.root / 'build/candidate'
+        self.output = self.root / 'build/check-plan.json'
+        self.planner = ci.module('qualification_plan')
+        self.coverage = ci.module('coverage')
+        self.policy = {'schema_version': 1, 'profiles': {'fixture': {
+            'description': 'portable local qualification', 'targets': {self.fixture.target: ['core']},
+            'checks': [dict(target=self.fixture.target, backend='core', environment='fixture', scope=scope)
+                       for scope in ('source', 'archive', 'recovery')]}}}
+
+    def create(self, **changes):
+        options = dict(root=self.root, candidate=self.candidate, profile='fixture',
+                       output=self.output, policy=self.policy)
+        options.update(changes)
+        return self.planner.create_plan(**options)
+
+    def test_local_plan_needs_no_provider_tree_environment_or_requests(self):
+        import os
+        with patch.dict(os.environ, {}, clear=True), patch('subprocess.run') as run, \
+                patch('urllib.request.build_opener') as request:
+            plan = self.create()
+        run.assert_not_called(); request.assert_not_called()
+        self.assertFalse((self.root / '.github').exists())
+        self.assertEqual(plan, self.coverage.load(self.output))
+        self.assertFalse(any(name.startswith('.github/') for name in plan['inputs']))
+        self.assertNotIn('build/delivery.json', plan['inputs'])
+        self.assertNotIn('build/candidate-remote.json', plan['inputs'])
+        self.assertTrue(all('runner' not in item and 'image' not in item for item in plan['checks']))
+        self.coverage.check_inputs(plan, self.root)
+        hosted_output = self.fixture.root / 'hosted-plan.json'
+        matrix = ci.qualification_plan(self.fixture.directory, 'fixture', hosted_output, self.policy)
+        hosted = self.coverage.load(hosted_output)
+        self.assertEqual(plan['checks'], hosted['checks'])
+        self.assertEqual(plan['subject'], hosted['subject'])
+        self.assertEqual({item['id'] for item in self.coverage.executions(plan)},
+                         {item['id'] for item in matrix['include']})
+        self.assertEqual(set(hosted['inputs']) - set(plan['inputs']),
+                         {'.github/scripts/lifecycle.py', '.github/scripts/container_job.py',
+                          '.github/workflows/certify.yml'})
+
+    def test_metadata_only_plan_needs_retained_source_but_no_delivery_descriptors(self):
+        manifest = ci.module('release').verify_release(self.candidate)
+        source_name = manifest['source']['archive']
+        for name in manifest['files']:
+            if name != source_name:
+                (self.candidate / name).unlink()
+        plan = self.create(metadata_only=True)
+        self.coverage.check_inputs(plan, self.root, metadata_only=True)
+        self.assertEqual(plan['inputs']['build/candidate/' + source_name], manifest['source']['sha256'])
+        self.assertNotIn('build/candidate-remote.json', plan['inputs'])
+        self.output.unlink()
+        (self.candidate / source_name).write_bytes(b'changed retained source')
+        with self.assertRaisesRegex(ValueError, 'retained source'):
+            self.create(metadata_only=True)
+        self.assertFalse(self.output.exists())
+
+    def test_optional_provider_inputs_are_frozen_and_tampering_is_rejected(self):
+        name = 'provider/receipt.json'; receipt = self.root / name
+        receipt.parent.mkdir(); receipt.write_text('{"provider":"fixture","attempt":1}')
+        plan = self.create(additional_inputs={name: receipt})
+        self.coverage.check_inputs(plan, self.root)
+        receipt.write_text('{"provider":"fixture","attempt":2}')
+        with self.assertRaisesRegex(ValueError, 'check input changed: provider/receipt.json'):
+            self.coverage.check_inputs(plan, self.root)
+
+    def test_provider_inputs_cannot_replace_core_inputs_or_escape_workspace(self):
+        receipt = self.root / 'external.json'; receipt.write_text('{}')
+        for extra in ({'tools/release_check.py': receipt}, {'build/candidate/extra.json': receipt},
+                      {'../receipt.json': receipt}, [('provider.json', receipt), ('provider.json', receipt)]):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                self.create(additional_inputs=extra)
+            self.assertFalse(self.output.exists())
+
+    def test_hosted_invalid_runner_selection_does_not_publish_plan(self):
+        with self.assertRaisesRegex(ValueError, 'runner selection'):
+            ci.qualification_plan(self.fixture.directory, 'fixture', self.output, self.policy, runners={})
+        self.assertFalse(self.output.exists())
+
+    def test_new_plan_cannot_overwrite_an_existing_attempt(self):
+        expected = self.create(); before = self.output.read_bytes()
+        with self.assertRaises(FileExistsError):
+            self.create()
+        self.assertEqual(self.output.read_bytes(), before)
+        self.assertEqual(self.coverage.load(self.output), expected)
+
+
 class QualificationBatchTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

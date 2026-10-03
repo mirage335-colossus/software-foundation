@@ -232,16 +232,16 @@ class BrowserPrivilegeSplit(unittest.TestCase):
                     patch.object(lifecycle.ci.platform,'system',return_value='Linux'), \
                     patch.object(lifecycle.ci,'needs_browser_prerequisite',return_value=True), \
                     patch.object(lifecycle.ci,'install_browser_prerequisite',return_value={'selection':{'engine':'chromium'}}) as install, \
-                    patch.object(lifecycle,'write') as write, \
+                    patch.object(lifecycle.evidence,'write_new') as write, \
                     patch.object(lifecycle.evidence,'run_case',return_value={'status':'passed'}) as run:
                 lifecycle.main('check-prerequisites')
                 install.assert_called_once();run.assert_not_called()
                 self.assertEqual(write.call_args.args[1]['plan'], plan['id'])
                 self.assertEqual(write.call_args.args[1]['attempt'],2)
                 self.assertEqual(write.call_args.args[1]['run_id'],'123')
-                with self.assertRaisesRegex(ValueError,'privileged browser prerequisite'):
+                with self.assertRaisesRegex(ValueError,'explicit browser prerequisite'):
                     lifecycle.main('check')
-                receipt=root/'build/prerequisites/one/browser.json';receipt.parent.mkdir(parents=True);receipt.write_text('{}')
+                receipt=root/'build/prerequisites/one/browser.json';receipt.parent.mkdir(parents=True,exist_ok=True);receipt.write_text('{}')
                 lifecycle.main('check')
                 self.assertEqual(install.call_count,1)
                 run.assert_called_once()
