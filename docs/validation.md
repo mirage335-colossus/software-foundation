@@ -90,6 +90,26 @@ failure before the correction and passed afterward; the complete affected suite
 passed all 30 cases without exclusions. Signature, retained-reference and package
 validation remain intact.
 
+The corrected publication run
+[37089527346](https://github.com/mirage335-colossus/software-foundation/actions/runs/37089527346)
+at `ab095d83f2dfa77caa11e303e1ae52d38530fe16` published the unchanged
+certified application bytes in the signed x64 package prerelease
+`distro-0.1.0-x86_64-r1-s1`. Its manifest identity is
+`43eaa54dfab1cc1204b7d5e81172a6c6b4b08ce789901f46cc73de9eea46701f`.
+Native Debian Bookworm, Debian Trixie and Ubuntu checks passed; Arch and Gentoo
+failed after successful signature checks when reading decoded cleartext output.
+Arch GnuPG 2.4.9-3 returned exactly one terminal LF fewer than the signed Release;
+this was reproduced with the distribution verifier and its published patch.
+Gentoo GnuPG 2.5.21 left the requested decoded filename absent, consistent with
+its deferred named-output finalization. The failed run did not accept the channel.
+Its immutable signed bytes are preserved for separate native requalification.
+The correction captures checked verifier stdout and allows only the observed
+terminal framing LF difference while retaining both signatures and exact detached
+content authentication. Ten affected cases passed with stock GnuPG; 59 APT, native
+channel and distribution cases passed using the extracted official Arch verifier,
+with no exclusions. The isolated verifier used the Debian host runtime with
+Arch's matching private libassuan; this is not native Arch installation qualification.
+
 Earlier application runs remain useful failure evidence; none are relabeled as
 successful qualification. Run
 [36994657303](https://github.com/mirage335-colossus/software-foundation/actions/runs/36994657303)

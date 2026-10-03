@@ -405,13 +405,21 @@ def verify_repository(directory, trusted, previous=None, now=None):
     if fingerprint(directory / "archive-keyring.gpg") != trusted:
         raise ValueError("untrusted repository key")
     with tempfile.TemporaryDirectory(prefix="foundation verify ") as temp:
-        decoded = Path(temp) / "release"
         args = ["gpgv", "--homedir", temp, "--keyring", directory / "archive-keyring.gpg"]
-        run(*args, "--output", decoded, directory / "InRelease")
+        # Capture only a successful verifier's stdout: newer gpgv versions may
+        # leave named output in an unfinalized .part file.
+        decoded = run(*args, "--output", "-", directory / "InRelease")
         run(*args, directory / "Release.gpg", directory / "Release")
-        if decoded.read_bytes() != (directory / "Release").read_bytes():
+        release = (directory / "Release").read_bytes()
+        if not release.endswith(b"\n") or release.endswith(b"\n\n") or b"\r" in release:
+            raise ValueError("Release must use canonical LF with one terminal newline")
+        # CSF excludes its separator newline from signed text. Stock and Arch
+        # GnuPG differ by exactly that LF when signing/decoding across providers.
+        # The detached signature still authenticates every original Release byte;
+        # do not trim other whitespace, line endings, content or extra blank lines.
+        if decoded not in (release, release[:-1], release + b"\n"):
             raise ValueError("signed metadata disagree")
-    head, hashes = (directory / "Release").read_text().split("SHA256:\n")
+    head, hashes = release.decode("utf-8").split("SHA256:\n")
     fields = control_fields(head)
     if parsedate_to_datetime(fields["Valid-Until"]) <= now or parsedate_to_datetime(fields["Date"]) > now + timedelta(minutes=5):
         raise ValueError("repository metadata expired or from the future")

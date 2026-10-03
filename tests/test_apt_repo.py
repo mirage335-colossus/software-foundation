@@ -194,6 +194,91 @@ class AptTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 apt.verify_repository(root / "two", trusted)
 
+    @unittest.skipUnless(shutil.which("gpg") and shutil.which("gpgv"), "repository signing tools required")
+    def test_cleartext_provider_delimiters_preserve_both_signature_checks(self):
+        with tempfile.TemporaryDirectory() as temporary, apt.signing_home() as home:
+            root = Path(temporary)
+            receipt = self.fixture(root)
+            apt.run("gpg", "--batch", "--homedir", home, "--pinentry-mode", "loopback", "--passphrase", "",
+                    "--quick-generate-key", "Fixture <fixture@example.invalid>", "ed25519", "sign", "1d")
+            public = root / "public.gpg"
+            public.write_bytes(apt.run("gpg", "--batch", "--homedir", home, "--export"))
+            trusted = apt.fingerprint(public)
+            private = root / "private.asc"
+            private.write_bytes(apt.run("gpg", "--batch", "--homedir", home, "--armor", "--export-secret-keys", trusted))
+            repository = root / "repository"
+            apt.repository([receipt], repository, "https://example.invalid/releases/download/v1/", private, trusted, 1)
+            release = (repository / "Release").read_bytes()
+            expected = apt.verify_repository(repository, trusted)
+
+            def clearsigned(body):
+                # Explicit signed text plus one unsigned framing LF models both
+                # stock and Arch CSF producers, independent of the host signer.
+                source, signature = root / "signed-text", root / "text-signature.asc"
+                source.write_bytes(body)
+                apt.run("gpg", "--batch", "--yes", "--homedir", home, "--local-user", trusted,
+                        "--digest-algo", "SHA256", "--textmode", "--armor", "--output", signature,
+                        "--detach-sign", source)
+                (repository / "InRelease").write_bytes(
+                    b"-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA256\n\n" + body + b"\n" + signature.read_bytes())
+
+            for producer, body in (("stock", release[:-1]), ("extra-separator", release)):
+                with self.subTest(producer=producer):
+                    clearsigned(body)
+                    with patch.object(apt, "run", wraps=apt.run) as calls:
+                        self.assertEqual(apt.verify_repository(repository, trusted), expected)
+            verifications = [call.args for call in calls.call_args_list if call.args[0] == "gpgv"]
+            self.assertEqual(len(verifications), 2)
+            self.assertEqual(verifications[0][-3:], ("--output", "-", repository / "InRelease"))
+            self.assertEqual(verifications[1][-2:], (repository / "Release.gpg", repository / "Release"))
+
+            for body in (release.replace(b"Origin:", b"Changed:"), release[:-2], release + b"\n\n"):
+                with self.subTest(valid_signature_wrong_text=body):
+                    clearsigned(body)
+                    with self.assertRaisesRegex(ValueError, "signed metadata disagree"):
+                        apt.verify_repository(repository, trusted)
+            clearsigned(release[:-1])
+            valid = (repository / "InRelease").read_bytes()
+            (repository / "InRelease").write_bytes(valid.replace(b"Origin:", b"Changed:"))
+            with self.assertRaises(subprocess.CalledProcessError):
+                apt.verify_repository(repository, trusted)
+            (repository / "InRelease").write_bytes(valid)
+            detached = (repository / "Release.gpg").read_bytes()
+            (repository / "Release.gpg").write_bytes(b"not a signature")
+            with self.assertRaises(subprocess.CalledProcessError):
+                apt.verify_repository(repository, trusted)
+            (repository / "Release.gpg").write_bytes(detached)
+            with self.assertRaisesRegex(ValueError, "untrusted repository key"):
+                apt.verify_repository(repository, "0" * 40)
+
+    def test_cleartext_comparison_does_not_normalize_other_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            release = b"Origin: Fixture\nSHA256:\n one metadata\n"
+            (root / "Release").write_bytes(release)
+            trusted = "A" * 40
+            for decoded in (release, release[:-1], release + b"\n"):
+                with self.subTest(accepted=decoded), patch.object(apt, "fingerprint", return_value=trusted), \
+                        patch.object(apt, "run", side_effect=[decoded, b""]) as verify, \
+                        patch.object(apt, "control_fields", side_effect=RuntimeError("metadata reached")):
+                    with self.assertRaisesRegex(RuntimeError, "metadata reached"):
+                        apt.verify_repository(root, trusted)
+                    self.assertEqual(verify.call_count, 2)
+            for decoded in (b"", release[:-2], release + b"\n\n", release.replace(b"\n", b"\r\n"),
+                            release.replace(b"Fixture", b"Fixture "), release.replace(b"one", b"two"),
+                            release[:-1] + b" \n", release[:-1] + b"\t\n"):
+                with self.subTest(rejected=decoded), patch.object(apt, "fingerprint", return_value=trusted), \
+                        patch.object(apt, "run", side_effect=[decoded, b""]) as verify:
+                    with self.assertRaisesRegex(ValueError, "signed metadata disagree"):
+                        apt.verify_repository(root, trusted)
+                    self.assertEqual(verify.call_count, 2)
+            for noncanonical in (release[:-1], release + b"\n", release.replace(b"\n", b"\r\n")):
+                (root / "Release").write_bytes(noncanonical)
+                with self.subTest(noncanonical=noncanonical), patch.object(apt, "fingerprint", return_value=trusted), \
+                        patch.object(apt, "run", side_effect=[noncanonical, b""]):
+                    with self.assertRaisesRegex(ValueError, "canonical LF"):
+                        apt.verify_repository(root, trusted)
+
     def test_backend_runtime_dependencies_are_explicit(self):
         self.assertEqual('libc6 (>= 2.36)',apt.runtime_dependencies('core'))
         self.assertIn('python3',apt.runtime_dependencies('hosted-web'))

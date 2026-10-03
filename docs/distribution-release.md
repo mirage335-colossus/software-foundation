@@ -209,6 +209,16 @@ operation. The latter uses the protected publisher environment. A retry must mat
 the recorded exact identity; different accepted evidence needs an explicit reviewed
 lifecycle transition, not replacement in place.
 
+If a native check exposes a verifier or test-harness defect after publication,
+preserve the signed channel assets and their original packaging source tag. Fix
+and review the consumer-side defect, then dispatch the native workflow against
+the same exact channel with the corrected checkout. All required native jobs must
+pass in one qualifier run before acceptance. The public marker binds that
+qualifier revision independently of the packaging revision retained by the signed
+manifest. This permits requalification of unchanged packages without regenerating
+signatures or replacing public bytes; it does not repair a defective payload.
+Changed package contents require a new package release and immutable tag.
+
 [`distro_client.py`](../tools/distro_client.py) provides normal client refresh through
 Python, GnuPG and standard HTTPS. Public retrieval requires no GitHub account or
 third-party Git hosting service beyond the project's own retained release. Install
@@ -327,6 +337,16 @@ receipt. This makes the display service explicit while keeping package-manager
 and client-library verification native to each tested distribution. Gentoo
 prerequisites remain binary-only even when optional display-wrapper packages are
 absent from its current binary repository.
+
+APT metadata verification requires both the cleartext and detached signatures
+from the independently trusted key. Capture decoded cleartext from a successful
+`gpgv --output -` invocation: named-output finalization differs between versions.
+The detached signature authenticates the exact canonical `Release` bytes. Some
+providers include the cleartext framing newline in decoded output and others
+exclude it; the comparison permits only that one terminal LF difference in either
+direction. Other whitespace, line-ending or content changes fail. Keep tests for
+both provider directions and invalid signatures when upgrading signing tools;
+never substitute broad whitespace normalization for exact content checks.
 
 All native qualification frontends verify the complete signed distribution,
 including its Debian packages. The disposable Arch and Gentoo environments
