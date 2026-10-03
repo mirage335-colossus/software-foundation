@@ -459,6 +459,24 @@ class WorkflowContractTests(unittest.TestCase):
                     with self.assertRaises(SystemExit): run(selected, ids, source)
                     self.assertFalse(output.exists())
 
+    def test_repository_cleanup_is_manual_only_and_keeps_run_history_and_releases(self):
+        text = (ROOT/'.github/workflows/cleanup-artifacts.yml').read_text()
+        trigger = text.split("'on':\n", 1)[1].split('permissions:', 1)[0]
+        self.assertEqual(trigger.strip(), 'workflow_dispatch:')
+        self.assertIn('actions: write', text)
+        self.assertIn('contents: read', text)
+        self.assertNotIn('contents: write', text)
+        self.assertIn('cancel-in-progress: false', text)
+        self.assertIn('timeout-minutes: 30', text)
+        self.assertIn('persist-credentials: false', text)
+        self.assertIn('run: python3 -B tools/ci_cleanup_repository.py', text)
+        self.assertIn('GH_TOKEN: ${{ github.token }}', text)
+        for forbidden in ('upload-artifact', 'ci-evidence-publish', 'gh run delete', 'release delete'):
+            self.assertNotIn(forbidden, text)
+        for path in (ROOT/'.github/workflows').glob('*.yml'):
+            if path.name != 'cleanup-artifacts.yml':
+                self.assertNotIn('cleanup-artifacts.yml', path.read_text())
+
     def test_explicit_legacy_import_neither_builds_nor_publishes_a_base(self):
         text=(ROOT/'.github/workflows/sdk-import.yml').read_text()
         for required in ('sdk-import-legacy','sdk-import-request','sdk-group-','sdk-proof-','build/legacy-proof/'):

@@ -297,6 +297,39 @@ maintenance workflow, with [source preservation and relocation checks](sdk.md).
 Every binary release retains exact SDK binary/source/checksum copies; transport
 storage and base availability are not substitutes for those copies.
 
+## Manual artifact cleanup
+
+Use **Actions → Delete temporary artifacts → Run workflow** to reclaim all current
+Actions artifact storage for this repository. The manual-only
+[cleanup workflow](../.github/workflows/cleanup-artifacts.yml) has no required
+inputs and creates no artifacts of its own. It deletes Actions artifacts from all
+runs, including diagnostics retained by `preserve_artifacts=true`; it preserves
+workflow history, normal workflow logs, releases and SDK release assets.
+
+Run it between builds and keep the repository idle until it finishes. Before any
+deletion, the helper freezes the complete paginated artifact ID/size inventory,
+then checks `requested`, `pending`, `waiting`, `queued` and `in_progress` workflow
+runs. Any other active run aborts cleanup. This is a point-in-time guard, not a lock
+on future workflow starts; artifacts uploaded after the frozen inventory are not
+selected. Missing or inconsistent inventory data, or more than 10,000 artifacts,
+fails before deletion.
+
+The job summary reports selected and confirmed deleted counts and bytes. Deletes
+are sequential, one second apart. An API error, expiration race or exhausted
+quota stops the operation with partial progress; it does not retry a mutation or
+wait for an hourly reset. The helper stops starting deletes after 25 minutes to
+leave time for its final summary before the 30-minute job timeout. Progress is
+also printed every 100 confirmed deletions. A later manual run can remove
+anything remaining. An empty repository succeeds without deletion.
+
+For `N > 0` artifacts, the normal request count is approximately
+`N + ceil(N / 100) + 5`: one DELETE per artifact, one listing GET per 100 artifacts,
+and five idle-check GETs. Thus 44 artifacts cost about 50 requests, and 440 cost
+about 450. The five guard reads replace per-artifact producer/run lookups. Large
+backlogs can exceed the available workflow-token quota and need another manual
+run after capacity is available. This operation is optional maintenance; ordinary
+builds retain their existing early deletion and one-day expiry policy.
+
 ## Credentials and untrusted input
 
 Set workflow permissions to read-only by default. Grant write permission only
@@ -544,6 +577,7 @@ need narrowly scoped `contents: write`; untrusted PR jobs do not receive it.
 
 | Workflow | Inputs and resulting contract |
 | --- | --- |
+| `cleanup-artifacts.yml` | Manual deletion of the frozen Actions-artifact inventory after checking that other workflows are idle. Reports count and bytes; preserves run history and all release assets. |
 | `_release-latest.yml` | The [Latest entry point](latest-release.md) invokes full regression, prepared-SDK application production, exact-byte certification and final promotion verification. Missing base recipes fail before work; preparation remains distinct from publication. |
 | `screenshots.yml` | The [screenshot workflow](screenshots.md) builds all seven hosts from exact existing SDKs and a separately selected complete GUI source group, captures fresh initial views, retains the complete image gallery in a draft bundle, and optionally publishes a non-Latest gallery. Explicit retained-input recovery is separate from normal base selection. |
 | `legacy-artifacts.yml` / `verify-retention.yml` | Preserve an explicit original archive selection privately, then independently read every byte back with exact producer identities and durable per-archive receipts. Neither workflow deletes originals or grants SDK qualification. |

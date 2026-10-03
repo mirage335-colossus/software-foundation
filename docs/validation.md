@@ -983,3 +983,31 @@ The final source manifest, full-run manifest, receipts and logs are recorded in
 `build/agents/artifact-consumer-integration-v1/validation.json`. Only final validation
 documentation changed after the tested snapshot. No hosted workflow, actual remote
 artifact deletion, public upload, SDK rebuild, commit or push was performed.
+
+
+## Manual repository artifact cleanup
+
+The 2026-10-03 manual maintenance addition deletes a frozen, fully paginated
+Actions-artifact inventory while preserving workflow runs, normal logs and release
+assets. Before deleting, it checks all five active workflow statuses and refuses
+other runs. This observation does not lock out future workflow starts. Deletion
+has one-second spacing, no mutation retry or quota wait, a 25-minute loop budget,
+and confirmed count/byte reporting. It is not called by routine development jobs.
+
+All **15 focused offline helper tests passed**. The isolated integrated native
+suite, including all five optional distribution suites, passed **55/55 CTest
+entries in 30.57 seconds**, with **1,319 passed Python cases** and two explicitly
+inapplicable native-Windows cases on Linux. Coverage includes complete pagination,
+all busy statuses, changing or malformed inventories, duplicate IDs, partial
+failure, real transport handling of a 404, exact request counts, bounded progress,
+and deadline reporting. Workflow lint, documentation validation, whitespace,
+119 Python files parsed with Python 3.9 grammar, and the generic-name scan passed.
+Independent read-only review found no actionable issue.
+
+Exact source hashes, local receipts and the log are recorded in
+`build/agents/manual-artifact-cleanup-v1/validation.json`. Only this validation
+record changed after the tested source snapshot. No hosted workflow, remote
+artifact deletion, commit or push was performed. For a nonempty inventory of
+`N` artifacts, the normal API cost is `N + ceil(N / 100) + 5`; an empty inventory
+requires one GET. This optional maintenance cost does not change routine release
+request accounting.

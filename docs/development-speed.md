@@ -227,6 +227,12 @@ nine deletions, reducing the estimate to 201. No cleanup waits for an hourly quo
 reset. This reduces cleanup calls by about 83% and the immediately preceding
 255-call release estimate by about 18%.
 
+For occasional repository-wide reclamation, run the
+[manual artifact cleanup workflow](ci.md#manual-artifact-cleanup) between builds.
+It freezes all current artifact IDs, performs five active-run checks and deletes
+that snapshot one artifact per request. Its cost is separate from routine release
+accounting; it never runs automatically after development work.
+
 One day is the [minimum automatic artifact retention](https://github.com/actions/upload-artifact/blob/v4.6.2/action.yml);
 shorter lifetimes require explicit deletion. The maximum allowed content across
 all 79 slots is 370 MiB per attempt, plus small outer archive overhead; ordinary
