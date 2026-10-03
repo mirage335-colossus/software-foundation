@@ -122,7 +122,7 @@ function(foundation_gui_check name target labels)
     set_target_properties(${target} PROPERTIES EXCLUDE_FROM_ALL TRUE)
     add_test(NAME "foundation.gui.${name}" COMMAND ${target})
     set_tests_properties("foundation.gui.${name}" PROPERTIES LABELS "gui;${labels}" TIMEOUT 90)
-    add_dependencies(foundation-gui-tests ${target})
+    foundation_test_prerequisites("foundation.gui.${name}" ${target})
 endfunction()
 function(foundation_gui_sdl_display_test name)
     # Qualify the declared native service; minimal SDKs need no dummy driver.
@@ -137,7 +137,7 @@ function(foundation_gui_sdl_display_test name)
         RESOURCE_LOCK foundation_native_display)
 endfunction()
 if(BUILD_TESTING)
-    add_custom_target(foundation-gui-tests DEPENDS foundation-gui-hosts)
+    add_custom_target(foundation-gui-tests)
 endif()
 find_program(FOUNDATION_NODE_EXECUTABLE NAMES node nodejs)
 # Keep the browser asset names stable; both transport modes use the same renderer.
@@ -184,7 +184,7 @@ if(EMSCRIPTEN)
         add_test(NAME foundation.gui.wasm COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_test.mjs" $<TARGET_FILE:foundation-gui-web-wasm>)
         set_tests_properties(foundation.gui.wasm PROPERTIES LABELS "gui;host" TIMEOUT 60)
-        add_dependencies(foundation-gui-tests foundation-gui-web-wasm)
+        foundation_test_prerequisites(foundation.gui.wasm foundation-gui-web-wasm)
     endif()
     if(FOUNDATION_GUI_DISTRIBUTABLE)
         install(FILES "$<TARGET_FILE:foundation-gui-web-wasm>"
@@ -268,6 +268,7 @@ if(BUILD_TESTING)
     foreach(backend IN LISTS smoke_backends)
         add_test(NAME foundation.gui.installed-${backend} COMMAND ${Python3_EXECUTABLE} -B
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/installed_host_test.py" $<TARGET_FILE:foundation-gui-${backend}>)
+        foundation_test_prerequisites(foundation.gui.installed-${backend} foundation-gui-${backend})
         set_tests_properties(foundation.gui.installed-${backend} PROPERTIES LABELS "gui;host" TIMEOUT 40)
         if(backend STREQUAL "sdl")
             foundation_gui_sdl_display_test(foundation.gui.installed-${backend})
@@ -283,6 +284,7 @@ if(BUILD_TESTING)
     foundation_gui_check(parity foundation_gui_parity_test focused)
     add_test(NAME foundation.gui.transport COMMAND ${Python3_EXECUTABLE} -B
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/web_transport_test.py" "${CMAKE_CURRENT_BINARY_DIR}/web/serve.py")
+    foundation_test_prerequisites(foundation.gui.transport)
     set_tests_properties(foundation.gui.transport PROPERTIES LABELS "gui;focused" TIMEOUT 15)
     foreach(test_name contract bitmap adapter layout runtime presentation extension interaction framebuffer terminal web)
         set(test_target "foundation_gui_upstream_${test_name}")
@@ -308,10 +310,12 @@ if(BUILD_TESTING)
         foundation_gui_patch(tests/web_renderer_test.mjs web-ordering-test.patch tests/web_renderer_test.mjs)
         add_test(NAME foundation.gui.renderer COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
             "${CMAKE_CURRENT_BINARY_DIR}/tests/web_renderer_test.mjs")
+        foundation_test_prerequisites(foundation.gui.renderer)
         set_tests_properties(foundation.gui.renderer PROPERTIES LABELS "gui;regression" TIMEOUT 60)
         add_test(NAME foundation.gui.browser-lifecycle COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_lifecycle_test.mjs"
             "${CMAKE_CURRENT_BINARY_DIR}/web/browser_lifecycle.mjs")
+        foundation_test_prerequisites(foundation.gui.browser-lifecycle)
         set_tests_properties(foundation.gui.browser-lifecycle PROPERTIES LABELS "gui;focused" TIMEOUT 30)
     endif()
     if(FOUNDATION_GUI_HOST_TESTS)
@@ -319,14 +323,14 @@ if(BUILD_TESTING)
             add_test(NAME foundation.gui.terminal-host COMMAND ${Python3_EXECUTABLE} -B
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/terminal_host_test.py" $<TARGET_FILE:foundation-gui-terminal>)
             set_tests_properties(foundation.gui.terminal-host PROPERTIES LABELS "gui;host" TIMEOUT 25)
-            add_dependencies(foundation-gui-tests foundation-gui-terminal)
+            foundation_test_prerequisites(foundation.gui.terminal-host foundation-gui-terminal)
         endif()
         if(FOUNDATION_GUI_WEB)
             add_test(NAME foundation.gui.web-host COMMAND ${Python3_EXECUTABLE} -B
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/web_host_test.py"
                 "${CMAKE_CURRENT_BINARY_DIR}/web/serve.py" $<TARGET_FILE:foundation-gui-web>)
             set_tests_properties(foundation.gui.web-host PROPERTIES LABELS "gui;host" TIMEOUT 90)
-            add_dependencies(foundation-gui-tests foundation-gui-web)
+            foundation_test_prerequisites(foundation.gui.web-host foundation-gui-web)
         endif()
         foreach(backend fltk rev)
             string(TOUPPER "${backend}" upper)
@@ -361,6 +365,7 @@ if(BUILD_TESTING)
                 set_tests_properties("foundation.gui.supplier.${backend}" PROPERTIES RESOURCE_LOCK foundation_native_display)
                 if(backend STREQUAL "rev")
                     add_test(NAME foundation.gui.supplier.rev-scaled COMMAND ${supplier_target})
+                    foundation_test_prerequisites(foundation.gui.supplier.rev-scaled ${supplier_target})
                     set_tests_properties(foundation.gui.supplier.rev-scaled PROPERTIES
                         LABELS "gui;host;regression" TIMEOUT 90
                         ENVIRONMENT "REV_SCALE=1.25" RESOURCE_LOCK foundation_native_display)
@@ -387,6 +392,7 @@ if(BUILD_TESTING)
                 --fltk $<TARGET_FILE:foundation_gui_fltk_test>
                 --rev $<TARGET_FILE:foundation_gui_rev_test>
                 --output "${CMAKE_CURRENT_BINARY_DIR}/visual-evidence")
+            foundation_test_prerequisites(foundation.gui.visual foundation_gui_parity_test foundation_gui_fltk_test foundation_gui_rev_test)
             set_tests_properties(foundation.gui.visual PROPERTIES LABELS "gui;host;visual" TIMEOUT 180
                 RESOURCE_LOCK foundation_native_display)
         endif()

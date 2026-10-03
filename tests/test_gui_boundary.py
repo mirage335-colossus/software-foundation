@@ -243,6 +243,7 @@ function(foundation_gui_check name target labels)
     add_test(NAME foundation.gui.${name} COMMAND "${CMAKE_COMMAND}" --version)
 endfunction()
 """
+        project += 'include("' + (ROOT / 'cmake/TestPrerequisites.cmake').as_posix() + '")\n'
         with tempfile.TemporaryDirectory(prefix="SDL native display ") as directory:
             root = Path(directory)
             for system, driver in (("Linux", "x11"), ("Windows", "windows"), ("Other", None)):

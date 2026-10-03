@@ -195,6 +195,48 @@ def ctest_declarations(build):
     return result
 
 
+def prerequisites(build):
+    """Return the complete configured mapping; old external trees keep full builds."""
+    path = Path(build) / "test-prerequisites.json"
+    if not path.exists():
+        if builder.cache_identity(build).get("FOUNDATION_HAS_TEST_PREREQUISITES") == "ON":
+            raise ValueError("configured test prerequisite inventory is missing")
+        return None
+    value = read_json(path)
+    if (set(value) != {"schema_version", "tests"} or value["schema_version"] != 1 or
+            not isinstance(value["tests"], dict)):
+        raise ValueError("invalid test prerequisite inventory")
+    mapping = value["tests"]
+    if sorted(mapping) != inventory(build):
+        raise ValueError("test prerequisite inventory differs from complete CTest inventory")
+    validate_prerequisites(mapping)
+    return mapping
+
+
+def validate_prerequisites(mapping):
+    if not isinstance(mapping, dict) or not mapping:
+        raise ValueError("empty or invalid test prerequisite inventory")
+    for name, targets in mapping.items():
+        if (not isinstance(name, str) or not name or not isinstance(targets, list) or
+                any(not isinstance(x, str) or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.+-]*", x) for x in targets) or
+                targets != sorted(set(targets))):
+            raise ValueError("invalid or duplicate test prerequisites")
+
+
+def selected_targets(mapping, names):
+    validate_prerequisites(mapping)
+    if not names or not set(names) <= set(mapping):
+        raise ValueError("selected tests have missing prerequisites")
+    return sorted({target for name in names for target in mapping[name]})
+
+
+def compile_targets(programs, environment, build, targets, jobs):
+    # An empty script-only selection must not invoke CMake's default all target.
+    if targets:
+        windows_compiler.run([programs["cmake"], "--build", str(build), "--target", *targets,
+                              "--parallel", str(jobs)], env=environment)
+
+
 def configuration_id(build, *, declared_commands=False):
     build = build.resolve()
     inputs = build_inputs(build)
@@ -204,6 +246,9 @@ def configuration_id(build, *, declared_commands=False):
     info = (build / "build-info.txt").read_text()
     tests = test_definitions(build)
     identity = {"inputs": normalized, "build_info": info, "tests": tests}
+    mapping = prerequisites(build)
+    if mapping is not None:
+        identity["prerequisites"] = mapping
     if declared_commands:
         # CTest omits command arrays for not-yet-built executables. Bind the exact
         # generated commands instead, so independent scope builds have the same
@@ -217,16 +262,24 @@ def configuration_id(build, *, declared_commands=False):
 
 
 def require_current(build, plan):
-    if (configuration_id(build) != plan["configuration"] or source_id(build) != plan["source"]
+    declared = "prerequisites" in plan
+    if declared and prerequisites(build) != plan["prerequisites"]:
+        raise ValueError("test prerequisites changed since planning")
+    if (configuration_id(build, declared_commands=declared) != plan["configuration"] or source_id(build) != plan["source"]
             or inventory(build) != plan["tests"]):
         raise ValueError("source, compiler, prepared inputs or test configuration changed since planning")
 
 
-def make_plan(tests, shards, identity, configuration="unit-fixture"):
+def make_plan(tests, shards, identity, configuration="unit-fixture", *, prerequisites=None):
     if shards < 1 or shards > len(tests):
         raise ValueError("shards must be between 1 and the test count")
     plan = {"schema_version": 1, "source": identity, "configuration": configuration, "tests": sorted(tests),
             "shards": [sorted(tests)[index::shards] for index in range(shards)]}
+    if prerequisites is not None:
+        validate_prerequisites(prerequisites)
+        if sorted(prerequisites) != plan["tests"]:
+            raise ValueError("test prerequisites do not cover the complete inventory")
+        plan["prerequisites"] = prerequisites
     plan["id"] = digest(plan)
     return plan
 
@@ -235,6 +288,10 @@ def validate_plan(plan):
     body = {key: value for key, value in plan.items() if key != "id"}
     if plan.get("schema_version") != 1 or digest(body) != plan.get("id"):
         raise ValueError("plan identity mismatch")
+    if "prerequisites" in plan:
+        validate_prerequisites(plan["prerequisites"])
+        if sorted(plan["prerequisites"]) != plan["tests"]:
+            raise ValueError("test prerequisites do not cover the complete inventory")
     flat = [name for shard in plan["shards"] for name in shard]
     if not flat or any(not shard for shard in plan["shards"]) or sorted(flat) != plan["tests"] or len(set(flat)) != len(flat):
         raise ValueError("invalid shard inventory")
@@ -381,6 +438,8 @@ def candidate_prerequisite_inputs(build):
     build = Path(build)
     paths = {build/name for name in ctest_declarations(build)}
     paths.update(build/name for name in ('build-info.txt', 'test-platform.json'))
+    if (build / "test-prerequisites.json").exists():
+        paths.add(build / "test-prerequisites.json")
     declarations = {str(path.relative_to(build)): hashlib.sha256(path.read_bytes()).hexdigest()
                     for path in sorted(paths)}
     return source_id(build), build_inputs(build), declarations
@@ -400,8 +459,9 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None, summary=None
     before = candidate_prerequisite_inputs(build)
     frozen = candidate_plan(build)
     programs, environment = execution_context(build)
-    windows_compiler.run([programs["cmake"], "--build", str(build), "--target", "foundation-tests-" + scope,
-                          "--parallel", str(compile_jobs)], env=environment)
+    mapping = prerequisites(build)
+    targets = selected_targets(mapping, frozen["scopes"][scope]) if mapping is not None else ["foundation-tests-" + scope]
+    compile_targets(programs, environment, build, targets, compile_jobs)
     compiled_at = time.monotonic()
     if candidate_prerequisite_inputs(build) != before:
         raise ValueError("candidate inputs changed during prerequisite compilation")
@@ -539,13 +599,23 @@ def main():
             validate_plan(planned)
             require_current(args.build, planned)
         programs, environment = execution_context(args.build)
-        windows_compiler.run([programs["cmake"], "--build", str(args.build), "--target", "foundation-tests",
-                              "--parallel", str(compile_concurrency)], env=environment)
+        mapping = prerequisites(args.build)
+        declarations_before = ctest_declarations(args.build) if mapping is not None else None
+        if args.action == "run" and "prerequisites" in planned:
+            if not 0 <= args.shard < len(planned["shards"]):
+                raise ValueError("invalid shard or concurrency")
+            targets = selected_targets(mapping, planned["shards"][args.shard])
+        else:
+            targets = [] if mapping is not None and args.action == "plan" else ["foundation-tests"]
+        compile_targets(programs, environment, args.build, targets, compile_concurrency)
         compiled_at = time.monotonic()
-        if before != source_id(args.build) or inputs_before != build_inputs(args.build):
+        if (before != source_id(args.build) or inputs_before != build_inputs(args.build) or
+                prerequisites(args.build) != mapping or
+                (mapping is not None and ctest_declarations(args.build) != declarations_before)):
             raise ValueError("source, compiler or prepared inputs changed while compiling test prerequisites")
     if args.action == "plan":
-        save(args.output, make_plan(inventory(args.build), args.shards, source_id(args.build), configuration_id(args.build)))
+        save(args.output, make_plan(inventory(args.build), args.shards, source_id(args.build),
+            configuration_id(args.build, declared_commands=mapping is not None), prerequisites=mapping))
     else:
         plan = json.loads(args.plan.read_text())
         validate_plan(plan)

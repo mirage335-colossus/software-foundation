@@ -419,14 +419,29 @@ def run_execution(plan, check_id, root, output, run_id, attempt):
     return result
 
 
-def merge(plan, paths):
+def _result_snapshot(path):
+    """Bind parsed result fields to the same bounded bytes used by adoption."""
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('expected bounded regular JSON result')
+    with path.open('rb') as stream:
+        data = stream.read(8 * 1024 * 1024 + 1)
+    if len(data) > 8 * 1024 * 1024:
+        raise ValueError('expected bounded regular JSON result')
+    value = json.loads(data.decode('utf-8'), object_pairs_hook=object_pairs,
+                       parse_constant=lambda _: (_ for _ in ()).throw(ValueError('nonfinite JSON')))
+    return value, hashlib.sha256(data).hexdigest()
+
+
+def _validated_results(plan, paths, *, adoption=None, selection=False):
     validate(plan)
     expected = {x["id"]: x for x in plan["checks"]}
+    paths = [Path(path) for path in paths]
+    original_hashes, paths_by_id = {}, {}
     reports = {}
     run_ids = set()
     attempts = set()
     for path in paths:
-        value = load(path)
+        value, original_hashes[path] = _result_snapshot(path)
         name = value["check"]
         if (value.get("schema_version") != 1 or name not in expected or name in reports or
                 value["plan"] != plan["id"] or value["subject"] != plan["subject"] or
@@ -458,27 +473,129 @@ def merge(plan, paths):
         run_ids.add(value["run_id"])
         attempts.add(value["attempt"])
         reports[name] = value
-    if set(reports) != set(expected) or len(run_ids) != 1 or len(attempts) != 1:
+        paths_by_id[name] = path
+    if not reports or (not selection and set(reports) != set(expected)):
+        raise ValueError("missing results or mixed runs/attempts; omissions need explicit result records")
+    if adoption is not None:
+        _validate_adoption(plan, adoption)
+        selected = adoption['results']
+        if not set(selected) <= set(reports):
+            raise ValueError('adoption contains unused result selections')
+        for name, value in reports.items():
+            path = paths_by_id[name]
+            prior = selected.get(name)
+            if value['run_id'] != adoption['run_id']:
+                raise ValueError('adopted result belongs to another run')
+            if prior is None:
+                if value['attempt'] != adoption['attempt']:
+                    raise ValueError('prior result requires an explicit adoption selection')
+            elif (value['status'] != 'passed' or value['attempt'] != prior['attempt'] or
+                  value['host'] != prior['host'] or original_hashes[path] != prior['sha256']):
+                raise ValueError('adopted result identity or bytes changed')
+    elif not selection and (len(run_ids) != 1 or len(attempts) != 1):
         raise ValueError("missing results or mixed runs/attempts; omissions need explicit result records")
     for leader in executions(plan):
         if "execution" not in leader:
             continue
-        rows = [reports[x["id"]] for x in execution_members(plan, leader)]
+        members = execution_members(plan, leader)
+        if not any(x['id'] in reports for x in members):
+            continue
+        if any(x['id'] not in reports for x in members):
+            raise ValueError('adoption must select every logical result of a physical execution')
+        rows = [reports[x["id"]] for x in members]
         keys = ("run_id", "attempt", "status", "exit_code", "created_at", "argv", "host", "seconds", "warnings", "error")
         if any(any(row[key] != rows[0][key] for key in keys) for row in rows):
             raise ValueError("logical projections refer to different physical executions")
         if rows[0]["status"] == "passed":
-            paths_by_id = {load(path)["check"]: Path(path) for path in paths}
             receipts = [qualification(paths_by_id[x["id"]].parent, x, plan, rows[0]["host"]) for x in execution_members(plan, leader)]
             if any(row["details"] != receipts[0]["details"] or row["evidence"] != receipts[0]["evidence"] for row in receipts):
                 raise ValueError("grouped backend projections have different evidence")
             identity = receipts[0]["details"]["execution"]
             if (identity["run_id"], identity["attempt"]) != (rows[0]["run_id"], rows[0]["attempt"]):
                 raise ValueError("execution evidence belongs to another run or attempt")
+    if any(_result_snapshot(path)[1] != original_hashes[path] for path in paths):
+        raise ValueError('result changed during validation')
+    return reports, {name: (path, original_hashes[path]) for name, path in paths_by_id.items()}
+
+
+def _validate_adoption(plan, value):
+    fields(value, {'schema_version', 'plan', 'subject', 'run_id', 'attempt', 'results', 'id'})
+    if (value['schema_version'] != 1 or value['plan'] != plan['id'] or value['subject'] != plan['subject'] or
+            not isinstance(value['run_id'], str) or not NAME.fullmatch(value['run_id']) or
+            type(value['attempt']) is not int or value['attempt'] < 2 or
+            value['id'] != digest({key: item for key, item in value.items() if key != 'id'})):
+        raise ValueError('adoption plan, run or digest differs')
+    expected = {item['id'] for item in plan['checks']}
+    if not isinstance(value['results'], dict) or not value['results'] or not set(value['results']) <= expected:
+        raise ValueError('adoption needs explicit known results')
+    for item in value['results'].values():
+        fields(item, {'sha256', 'attempt', 'host'})
+        if (not isinstance(item['sha256'], str) or not SHA.fullmatch(item['sha256']) or
+                type(item['attempt']) is not int or not 1 <= item['attempt'] < value['attempt'] or
+                not isinstance(item['host'], dict) or not item['host']):
+            raise ValueError('adoption needs prior attempt, exact hash and original host')
+    return value
+
+
+def adopt(plan, paths, root, run_id, attempt):
+    """Explicitly select unchanged successful prior receipts; never rewrite them.
+
+    The local caller supplies trusted receipts; provider authentication remains
+    the scheduler's responsibility. Full input hashes and physical groups remain
+    required. The resulting manifest must be published with write_new().
+    """
+    validate(plan)
+    if not isinstance(run_id, str) or not NAME.fullmatch(run_id) or type(attempt) is not int or attempt < 2:
+        raise ValueError('adoption needs an explicit run and later positive attempt')
+    root = Path(root).resolve(strict=True)
+    reports, snapshots = _validated_results(plan, paths, selection=True)
+    leaders = sorted({item.get('execution', item['id']) for item in plan['checks'] if item['id'] in reports})
+    input_scope = {'check_ids': leaders} if plan['mode'] == 'release' else {}
+    check_inputs(plan, root, **input_scope)
+    for name, value in reports.items():
+        if value['status'] != 'passed' or value['run_id'] != run_id or not 1 <= value['attempt'] < attempt:
+            raise ValueError('only successful earlier attempts from the same run can be adopted')
+        check_host(plan, name, value, snapshots[name][0].parent)
+    check_inputs(plan, root, **input_scope)
+    if any(_result_snapshot(path)[1] != hashed for path, hashed in snapshots.values()):
+        raise ValueError('result changed during adoption')
+    value = dict(schema_version=1, plan=plan['id'], subject=plan['subject'], run_id=run_id, attempt=attempt,
+                 results={name: dict(sha256=snapshots[name][1], attempt=row['attempt'], host=row['host'])
+                          for name, row in reports.items()})
+    value['id'] = digest(value)
+    return _validate_adoption(plan, value)
+
+
+def check_host(plan, check_id, report, root):
+    """Validate actual retained execution context, including browser evidence."""
+    check = next(item for item in plan['checks'] if item['id'] == check_id)
+    observed = report['host']
+    if check['target'].startswith(('linux-', 'windows-')):
+        system, architecture = check['target'].split('-', 1)
+        machine = observed['machine'].lower()
+        machine = {'amd64': 'x86_64', 'arm64': 'aarch64'}.get(machine, machine)
+        if observed['system'].lower() != system or machine != architecture:
+            raise ValueError('actual execution host differs from declared target')
+        if check['environment'].startswith(('debian-', 'ubuntu-')) and observed.get('distribution') != check['environment']:
+            raise ValueError('actual user-space environment differs from required baseline')
+        if check['environment'] == 'windows-2022' and observed.get('runner_image') != 'win22':
+            raise ValueError('Windows runner image evidence missing or mismatched')
+    if check['environment'] in ('firefox', 'chromium') and report['status'] == 'passed':
+        receipt = load(local(root, check['qualification']))
+        browser = receipt['details'].get('browser', {})
+        if (browser.get('engine') != check['environment'] or not browser.get('browser_version') or browser.get('status') != 'passed'):
+            raise ValueError('actual browser evidence missing or differs from required engine')
+
+
+def merge(plan, paths, *, adoption=None):
+    reports, _ = _validated_results(plan, paths, adoption=adoption)
+    expected = {x['id']: x for x in plan['checks']}
+    run_ids = {row['run_id'] for row in reports.values()}
     required_ok = all(reports[name]["status"] == "passed" for name, x in expected.items() if x["required"])
     return {"schema_version": 1, "plan": plan["id"], "subject": plan["subject"], "mode": plan["mode"],
             "status": "passed" if required_ok else "failed", "run_id": next(iter(run_ids)),
-            "checks": reports, "omitted": [n for n, x in reports.items() if x["status"] != "passed"]}
+            "checks": reports, "omitted": [n for n, x in reports.items() if x["status"] != "passed"],
+            **({"adoption": adoption} if adoption is not None else {})}
 
 
 def main():
@@ -495,6 +612,7 @@ def main():
             sub.add_argument("--run-id", required=True)
             sub.add_argument("--attempt", type=int, default=1)
         else:
+            sub.add_argument("--adoption", type=Path)
             sub.add_argument("reports", type=Path, nargs="+")
         sub.add_argument("--output", type=Path, required=True)
     f.add_argument("--output", type=Path, required=True)
@@ -506,7 +624,7 @@ def main():
     if a.command == "run":
         result = run_execution(plan, a.check, a.root, a.output, a.run_id, a.attempt)
     else:
-        result = merge(plan, a.reports)
+        result = merge(plan, a.reports, adoption=load(a.adoption) if a.adoption else None)
         write_new(a.output, result)
     return 0 if result["status"] == "passed" else 1
 

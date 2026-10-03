@@ -72,10 +72,21 @@ def run(root, check_id, run_id, attempt):
     return evidence.run_execution(plan, check_id, root, root / 'build/evidence' / check_id, run_id, attempt)
 
 
+
+def adopt(root, run_id, attempt, reports, output):
+    """Create an immutable explicit selection of trusted earlier receipts."""
+    root, plan = load_plan(root)
+    output = Path(output)
+    if output.exists() or output.is_symlink():
+        raise ValueError('adoption must name a new immutable output')
+    result = evidence.adopt(plan, reports, root, run_id, attempt)
+    evidence.write_new(output, result)
+    return result
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='operation', required=True)
-    for name in ('plan', 'list', 'prepare', 'run'):
+    for name in ('plan', 'list', 'prepare', 'run', 'adopt'):
         command = commands.add_parser(name)
         command.add_argument('--root', type=Path, default=Path.cwd())
         if name == 'plan':
@@ -83,8 +94,12 @@ def main(argv=None):
             command.add_argument('--policy', type=Path)
         if name in ('prepare', 'run'):
             command.add_argument('--check', required=True)
+        if name in ('prepare', 'run', 'adopt'):
             command.add_argument('--run-id', required=True)
             command.add_argument('--attempt', type=int, required=True)
+        if name == 'adopt':
+            command.add_argument('--output', type=Path, required=True)
+            command.add_argument('reports', type=Path, nargs='+')
     args = parser.parse_args(argv)
     try:
         if args.operation == 'plan':
@@ -94,6 +109,8 @@ def main(argv=None):
             qualification_plan.create_plan(root, root / 'build/candidate', args.profile,
                                            root / 'build/check-plan.json', policy)
             result = executions(root)
+        elif args.operation == 'adopt':
+            result = adopt(args.root, args.run_id, args.attempt, args.reports, args.output)
         elif args.operation == 'list':
             result = executions(args.root)
         else:

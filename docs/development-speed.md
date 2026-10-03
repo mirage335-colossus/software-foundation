@@ -29,7 +29,11 @@ separate trees. Optional compiler caching remains an optimization, not a require
 supplier or a substitute for verifying the selected source and toolchain.
 
 The build wrapper can configure without compiling. Candidate scopes then compile
-only their declared prerequisites. The complete generated test declarations,
+only their declared prerequisites. The per-test prerequisite registry also makes
+ordinary local shards selective: planning requires no compilation, and running a
+shard builds only its own targets. Local core-labelled tests no longer compile
+unrelated GUI hosts; candidate core coverage still includes the configured GUI
+checks. The complete generated test declarations,
 configuration and source identity remain frozen so an unbuilt executable from a
 different scope does not hide a new test or change the aggregation identity.
 
@@ -293,3 +297,23 @@ Use [testing](testing.md) for completeness rules, [CI](ci.md) for workflow input
 for native channel acceptance. Actual observations and unexecuted platform limits
 belong in [validation](validation.md); structural transfer reductions do not by
 themselves establish a new hosted elapsed-time result.
+
+## Focused supplier diagnostics and retry reuse
+
+Before a compiler or Rev update triggers a complete graphics build, use the
+[small actual-module diagnostic](../tests/rev_style_probe/README.md). It consumes
+verified retained GUI inputs, compiles four production modules, and executes the
+comparison/layout regressions without acquiring dependencies or opening a display.
+Its result is diagnostic evidence, not GUI or release qualification.
+
+An unchanged frozen qualification plan can explicitly [adopt successful results
+from an earlier attempt](certification.md#explicit-prior-attempt-adoption).
+Original receipts, attempts, host identities and evidence remain intact. Bare
+mixed-attempt aggregation still fails. Hosted artifact acquisition does not
+implicitly trust earlier attempts; a scheduler must authenticate the selected
+producer and supply the exact retained files before using the adoption commands.
+
+A single slow suite can eventually use internal case/seed partitioning and original
+raw-result aggregation as described in [testing](testing.md). Add that mechanism
+only when current timings justify it. Existing CTest-level parallelism remains the
+default; no cases, statistical gates or real-time deadlines are weakened.

@@ -1108,8 +1108,12 @@ def bundle_certificate(directory, delivery, certificate, check_plan, policy, pro
     certificate = Path(certificate); reports = [Path(p) for p in reports]
     document = coverage.load(certificate)
     frozen = coverage.load(check_plan); rules = coverage.load(policy)
+    adoption = document.get('adoption')
+    if adoption is not None and (not isinstance(adoption, dict) or adoption.get('attempt') != attempt or
+                                 adoption.get('run_id') != document.get('run_id')):
+        raise DeliveryError('certificate adoption belongs to another run or attempt')
     expected = certification.certify(Path(directory), manifest, frozen, reports,
-                                     rules, profile, delivery['experiment'])
+                                     rules, profile, delivery['experiment'], adoption=adoption)
     if document != expected:raise DeliveryError('certificate does not match current complete policy and evidence')
     run_id = document['run_id']
     if not isinstance(run_id, str) or not coverage.NAME.fullmatch(run_id):raise DeliveryError('invalid certification run')
@@ -1140,7 +1144,8 @@ def bundle_certificate(directory, delivery, certificate, check_plan, policy, pro
     if (copied_certificate != document or coverage.load(tree / 'plan.json') != frozen
             or coverage.load(tree / 'policy.json') != rules
             or certification.certify(Path(directory), manifest, frozen,
-                                     copied_reports, rules, profile, delivery['experiment']) != document):
+                                     copied_reports, rules, profile, delivery['experiment'],
+                                     adoption=copied_certificate.get('adoption')) != document):
         raise DeliveryError('certificate evidence changed while creating the complete bundle')
     metadata={'schema_version':1,'delivery_sha256':sha(archive.encoded(delivery)), 'run_id':run_id,
               'attempt':attempt,'profile':profile,'reports':report_paths,
@@ -1223,7 +1228,11 @@ def verify_certificate(remote, assets, delivery, directory, policy, profile, run
         # Preserve original caller order when comparing the certifier's report list.
         frozen=coverage.load(tree/'plan.json')
         saved=coverage.load(tree/'certificate.json')
-        result=certification.certify(Path(directory),release.verify_metadata(directory) if metadata_only else release.verify_release(directory),frozen,reports,rules,profile,False)
+        adoption=saved.get('adoption')
+        if adoption is not None and (not isinstance(adoption,dict) or adoption.get('attempt')!=attempt or
+                                     adoption.get('run_id')!=run_id):
+            raise DeliveryError('certificate adoption belongs to another run or attempt')
+        result=certification.certify(Path(directory),release.verify_metadata(directory) if metadata_only else release.verify_release(directory),frozen,reports,rules,profile,False,adoption=adoption)
         if result!=saved or result['subject']!=envelope['subject']:
             raise DeliveryError('saved certificate does not reproduce from complete retained evidence')
         if (result['status'] not in ('passed','passed_with_warnings') or result['eligible_for_promotion'] is not True

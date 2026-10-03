@@ -39,10 +39,12 @@
       ],
       "implementation": [
         "CMakeLists.txt",
-        "tools/build.py"
+        "tools/build.py",
+        "cmake/TestPrerequisites.cmake"
       ],
       "checks": [
-        "tests/test_build.py"
+        "tests/test_build.py",
+        "tests/test_test_plan.py"
       ]
     },
     {
@@ -55,11 +57,13 @@
       "implementation": [
         "tools/distro_sdk.py",
         "tools/verify_abi.py",
-        "CMakeLists.txt"
+        "CMakeLists.txt",
+        "cmake/StaticCxxRuntime.cmake"
       ],
       "checks": [
         "tests/test_portability.py",
-        "tests/test_sdk.py"
+        "tests/test_sdk.py",
+        "tests/check_cxx_runtime.py"
       ]
     },
     {
@@ -237,7 +241,8 @@
       ],
       "implementation": [
         "tools/test_plan.py",
-        "tools/coverage.py"
+        "tools/coverage.py",
+        "tools/qualification_tasks.py"
       ],
       "checks": [
         "tests/test_test_plan.py",
@@ -678,6 +683,22 @@
       "checks": [
         "tests/test_gallery_browser.py",
         "tests/test_screenshots.py"
+      ]
+    },
+    {
+      "id": "BUILD-3",
+      "requirement": "Cheap actual-module compiler diagnostics preserve supplier behavior and exact retained-input identity without full graphics preparation.",
+      "documents": [
+        "docs/gui-audit.md",
+        "tests/rev_style_probe/README.md"
+      ],
+      "implementation": [
+        "tools/rev_probe.py",
+        ".github/workflows/rev-probe.yml"
+      ],
+      "checks": [
+        "tests/test_rev_probe.py",
+        "tests/rev_style_probe/style.cpp"
       ]
     }
   ]

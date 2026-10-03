@@ -1,11 +1,16 @@
 #include "foundation/store.hpp"
 #include "foundation/version.hpp"
+#include "platform/windows_arguments.hpp"
 
 #include <exception>
 #include <iostream>
 #include <string_view>
+#ifdef _WIN32
+#include <vector>
+#endif
 
-int main(int argc, char** argv) {
+namespace {
+int run(int argc, const char* const* argv) {
     try {
         if (argc == 2 && std::string_view(argv[1]) == "--version") {
             std::cout << "software-foundation " << FOUNDATION_VERSION << '\n';
@@ -39,3 +44,24 @@ int main(int argc, char** argv) {
     }
     return 0;
 }
+}  // namespace
+
+#ifdef _WIN32
+int wmain(int argc, wchar_t** argv) {
+    try {
+        std::vector<std::string> arguments;
+        arguments.reserve(static_cast<std::size_t>(argc));
+        for (int i = 0; i < argc; ++i)
+            arguments.push_back(foundation::platform::utf8_argument(argv[i]));
+        std::vector<const char*> pointers;
+        pointers.reserve(arguments.size());
+        for (const auto& value : arguments) pointers.push_back(value.c_str());
+        return run(argc, pointers.data());
+    } catch (const std::exception& error) {
+        std::cerr << error.what() << '\n';
+        return 1;
+    }
+}
+#else
+int main(int argc, char** argv) { return run(argc, argv); }
+#endif

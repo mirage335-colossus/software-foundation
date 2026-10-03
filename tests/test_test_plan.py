@@ -83,6 +83,7 @@ class CoverageTests(unittest.TestCase):
                      patch.object(plan, 'source_id', return_value='source'), patch.object(plan, 'build_inputs', return_value={}), \
                      patch.object(plan, 'configuration_id', return_value='configuration'), patch.object(plan, 'inventory', return_value=['test']), \
                      patch.object(plan, 'execution_context', return_value=({'cmake':'cmake'}, {})), \
+                     patch.object(plan.builder, 'cache_identity', return_value={}), \
                      patch.object(plan.build_capacity, 'compile_jobs', return_value=16), \
                      patch.object(plan.windows_compiler, 'run') as run:
                     self.assertEqual(plan.main(),0)
@@ -476,3 +477,116 @@ class CandidateInventoryTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError,'prerequisite compilation'):
                         plan.candidate_run(build,'core',root/'changed.json')
                 self.assertFalse((root/'changed.json').exists())
+
+
+class PrerequisiteInventoryTests(unittest.TestCase):
+    def fixture(self, root, *, omitted=False, unknown=False):
+        import shutil, subprocess
+        source = root / 'source'; source.mkdir()
+        build = root / 'build'
+        module = Path(__file__).resolve().parents[1] / 'cmake/TestPrerequisites.cmake'
+        shutil.copyfile(module, source / module.name)
+        (source / 'main.cpp').write_text('int main() { return 0; }\n')
+        script = """cmake_minimum_required(VERSION 3.24)
+project(PrerequisiteProbe LANGUAGES CXX)
+enable_testing()
+include(TestPrerequisites.cmake)
+add_executable(core EXCLUDE_FROM_ALL main.cpp)
+add_executable(gui EXCLUDE_FROM_ALL main.cpp)
+add_test(NAME a.core COMMAND core)
+set_tests_properties(a.core PROPERTIES LABELS core)
+foundation_test_prerequisites(a.core core)
+add_test(NAME c.tools COMMAND "${CMAKE_COMMAND}" -E true)
+set_tests_properties(c.tools PROPERTIES LABELS tools)
+foundation_test_prerequisites(c.tools)
+add_test(NAME d.install COMMAND "${CMAKE_COMMAND}" -E true)
+set_tests_properties(d.install PROPERTIES LABELS integration)
+foundation_test_prerequisites(d.install)
+add_subdirectory(gui-tests)
+file(WRITE "${CMAKE_BINARY_DIR}/build-info.txt" "fixture\\n")
+file(WRITE "${CMAKE_BINARY_DIR}/test-platform.json" [=[{"schema_version":1,"excluded_suites":{}}]=])
+cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
+"""
+        (source / 'CMakeLists.txt').write_text(script)
+        (source / 'gui-tests').mkdir()
+        child = 'add_test(NAME b.gui COMMAND gui)\n'
+        if not omitted:
+            child += 'foundation_test_prerequisites(b.gui ' + ('missing' if unknown else 'gui') + ')\n'
+        child += 'set_tests_properties(b.gui PROPERTIES LABELS gui)\n'
+        (source / 'gui-tests/CMakeLists.txt').write_text(child)
+        result = subprocess.run(['cmake', '-S', str(source), '-B', str(build), '-G', 'Ninja',
+                                 '-DCMAKE_BUILD_TYPE=Release'], capture_output=True, text=True)
+        return source, build, result
+
+    def test_missing_or_unknown_prerequisites_fail_configuration(self):
+        for option in ('omitted', 'unknown'):
+            with self.subTest(option=option), tempfile.TemporaryDirectory() as directory:
+                source, build, result = self.fixture(Path(directory), **{option: True})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('prerequisite', result.stdout + result.stderr)
+
+    def test_disjoint_shards_compile_only_selected_targets_and_keep_one_plan(self):
+        import json, sys, subprocess
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); source, build, result = self.fixture(root)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            recipe = root / 'plan.json'
+            def invoke(*args):
+                with patch.object(sys, 'argv', ['test_plan.py', *map(str, args)]):
+                    self.assertEqual(plan.main(), 0)
+            def exists(target):
+                return (build / target).is_file() or (build / (target + '.exe')).is_file()
+            with patch.object(plan, 'ROOT', source):
+                invoke('plan', '--build', build, '--shards', 4, '--output', recipe)
+                frozen = json.loads(recipe.read_text())
+                self.assertEqual(frozen['prerequisites'], {'a.core':['core'], 'b.gui':['gui'], 'c.tools':[], 'd.install':[]})
+                self.assertFalse(exists('core')); self.assertFalse(exists('gui'))
+                # Script-only scope invokes no build; it must never fall back to all.
+                invoke('run', '--build', build, '--plan', recipe, '--shard', 2, '--output', root/'part-2.json')
+                self.assertFalse(exists('core')); self.assertFalse(exists('gui'))
+                subprocess.run(['cmake', '--build', str(build), '--target', 'foundation-tests-core'], check=True, capture_output=True)
+                self.assertTrue(exists('core')); self.assertFalse(exists('gui'))
+                invoke('run', '--build', build, '--plan', recipe, '--shard', 0, '--output', root/'part-0.json')
+                self.assertFalse(exists('gui'))
+                for shard in (1, 3):
+                    invoke('run', '--build', build, '--plan', recipe, '--shard', shard, '--output', root/f'part-{shard}.json')
+                self.assertTrue(exists('gui'))
+                (build / ('gui.exe' if (build / 'gui.exe').exists() else 'gui')).unlink()
+                subprocess.run(['cmake', '--build', str(build), '--target', 'foundation-tests-gui'], check=True, capture_output=True)
+                self.assertTrue(exists('gui'), 'late child-directory labels must supply their prerequisites')
+                invoke('merge', '--plan', recipe, '--output', root/'merged.json', *(root/f'part-{i}.json' for i in range(4)))
+                self.assertEqual(json.loads((root/'merged.json').read_text())['tests'], 4)
+                # Complete identities survive the transition from unbuilt to built.
+                plan.require_current(build, frozen)
+                metadata = build / 'test-prerequisites.json'; original = metadata.read_text()
+                changed = json.loads(original); changed['tests']['a.core'] = ['gui']
+                metadata.write_text(json.dumps(changed))
+                with self.assertRaisesRegex(ValueError, 'prerequisites changed'):
+                    plan.require_current(build, frozen)
+                metadata.write_text(original); metadata.unlink()
+                with self.assertRaisesRegex(ValueError, 'inventory is missing'):
+                    plan.require_current(build, frozen)
+
+    def test_candidate_default_core_still_builds_gui_prerequisites(self):
+        import json
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); source, build, result = self.fixture(root)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            with patch.object(plan, 'ROOT', source):
+                frozen = plan.candidate_plan(build)
+                self.assertEqual(frozen['scopes']['core'], ['a.core', 'b.gui'])
+                receipt = plan.candidate_run(build, 'core', root/'candidate.json')
+                self.assertEqual(receipt['results'], {'a.core':'passed', 'b.gui':'passed'})
+                self.assertEqual(plan.candidate_plan(build), frozen)
+
+    def test_malformed_incomplete_and_unsafe_target_maps_are_rejected(self):
+        import json
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            build = Path(directory); path = build/'test-prerequisites.json'
+            for mapping in ({}, {'other':[]}, {'one':['--target']}, {'one':['a','a']}, {'one':'a'}):
+                path.write_text(json.dumps({'schema_version':1,'tests':mapping}))
+                with self.subTest(mapping=mapping), patch.object(plan, 'inventory', return_value=['one']):
+                    with self.assertRaises(ValueError): plan.prerequisites(build)

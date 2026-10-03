@@ -103,9 +103,15 @@ failed attempt.
 
 The supplied [`tools/test_plan.py`](../tools/test_plan.py) freezes the test
 inventory and source identity, runs disjoint selections, and rejects incomplete
-aggregation. It incrementally rebuilds `foundation-tests` before planning and
-before each shard run, preventing an old executable from representing newly
-edited source. Plans bind the complete source snapshot, including configured GUI
+aggregation. Every project test declares its compiled prerequisites through
+[`cmake/TestPrerequisites.cmake`](../cmake/TestPrerequisites.cmake), including an
+explicit empty declaration for script-only tests. Configuration rejects missing,
+duplicate or unknown declarations. Planning freezes the complete generated
+`test-prerequisites.json` and CTest declarations without compiling. Each shard
+then incrementally builds only the union of its selected targets. A script-only
+shard invokes no build command; it must never fall back to the default `all` target.
+Legacy external CMake trees without this registry retain the complete prerequisite
+build behavior. A registered tree with missing metadata fails. Plans bind the complete source snapshot, including configured GUI
 sources, current compiler bytes and resolved path, normalized complete CMake cache,
 build metadata, test definitions, and verified SDK/dependency/GUI input inventories.
 Shards recheck these before rebuilding prerequisites, after compilation, and after
@@ -119,7 +125,6 @@ sequentially so their use is safe in one owned local build tree:
 
 ```sh
 cmake --preset release
-cmake --build build/release --target foundation-tests --parallel 2
 python3 tools/test_plan.py plan --build build/release --shards 2 --output build/plan.json
 python3 tools/test_plan.py run --build build/release --plan build/plan.json \
   --shard 0 --jobs 2 --output build/result-0.json
@@ -170,7 +175,9 @@ allowance, or external timeout is never a pass. A successful near-timeout case
 can emit a timing warning. A progressing but unfinished case is incomplete.
 This example's required gates fail if mandatory coverage is incomplete.
 
-Local `test_plan.py plan` and `run` compile with automatic CPU/RAM capacity.
+Local `test_plan.py run` compiles selected prerequisites with automatic CPU/RAM
+capacity. Planning needs no compile in a registered tree; legacy external trees
+still build the complete prerequisite target.
 Use `--build-jobs N` for an explicit compile limit; an explicit legacy `--jobs N`
 continues to set compile/test concurrency. Test execution defaults to two.
 Both `run` and `candidate-run` accept `--summary PATH`.
@@ -224,12 +231,13 @@ explicit checks rather than assertions removed by the compiler.
 For multi-environment release work use [the frozen coverage and certification
 protocol](certification.md). Its immutable attempt directories and supervised
 process trees add source/asset/policy identity to the local CTest shard mechanism.
-Candidate execution configures one complete graph, then compiles only
-`foundation-tests-core`, `foundation-tests-tools` or
-`foundation-tests-integration` for the selected scope. Generated CTest commands
+Candidate execution configures one complete graph, then compiles the registered
+prerequisites for its complete selected scope. Candidate `core` owns all tests
+without a tools/integration label, including GUI tests. The local developer
+`--label core` selects only core-labelled tests and their prerequisites; it does
+not compile GUI hosts merely because GUI support is configured. Generated CTest commands
 and configuration stay frozen across those independent trees even before other
-executables exist. An ordinary shard still compiles the complete test prerequisite
-target. Neither local helper authorizes concurrent writes to a common build directory.
+executables exist. Ordinary shards use the same complete prerequisite registry. Neither local helper authorizes concurrent writes to a common build directory.
 
 
 ## Focused host diagnostics

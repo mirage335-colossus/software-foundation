@@ -126,6 +126,37 @@ automatically part of the operating system. If the project uses static CRT
 linkage, compile all cooperating objects consistently and avoid incompatible
 allocation ownership across module boundaries.
 
+The supplied portable Linux policy probes the selected C++ headers for
+`libstdc++` before applying GNU static-runtime flags. Compiler identity alone is
+insufficient: Clang can select another standard library. A different library or
+platform fails configuration until its runtime, notices and package policy are
+explicitly implemented and qualified. The probe runs again after reconfiguration;
+changing `-stdlib` or a toolchain cannot reuse a previous successful result.
+
+Application targets retain `--exclude-libs,ALL`: symbols from every linked static
+archive stay private, including GUI/toolkit dependencies and the GNU runtime.
+Direct application objects can still export an explicit plugin API. The installed
+`foundation_apply_runtime` helper hides only the static GNU runtime archives,
+allowing consumer applications and libraries to choose which of their own archive
+APIs to export. Both policies let host graphics plugins use their own shared
+C++ runtime. The Linux `integration.cxx_runtime` fixture demonstrates the
+bundled-runtime problem and an exported-static-symbol failure, then checks the
+protected relocated application with the broader policy and a real installed
+consumer with runtime-only hiding. No C++ objects or exceptions cross the
+fixture's plugin interface; this does not qualify arbitrary cross-runtime
+ownership or exception propagation.
+
+Windows CLI arguments enter through the CRT's wide-character entry point and
+are explicitly converted from UTF-16 to UTF-8. Invalid UTF-16 fails before record
+creation; the application does not depend on the active ANSI code page or a
+newer UTF-8 process manifest. The record contract remains printable ASCII: Unicode
+and non-ASCII POSIX bytes fail without partial output. Wide argument conversion
+prevents a Windows code page from silently replacing unsupported characters with
+ASCII question marks that would otherwise be accepted. A Windows-only fixture
+round-trips non-BMP Unicode through this same conversion helper and redirected
+UTF-8 output, and checks invalid-surrogate rejection; it does not broaden the
+application record contract. Windows console rendering is a separate scope.
+
 When consuming archived MSVC-built dependencies, check the documented toolset
 compatibility and use a sufficiently recent consuming linker and redistributable.
 Treat link-time optimized objects as a separate compatibility constraint. The

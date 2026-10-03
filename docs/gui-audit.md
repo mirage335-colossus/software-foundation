@@ -279,3 +279,25 @@ are not substituted for initial screenshots. The gallery records viewport, DPI,
 source, exact SDK groups, host prerequisites and image digests. Actual capture
 execution is recorded in [validation](validation.md); a helper fixture pass alone
 is not evidence that every native window was captured.
+
+## Small Rev compiler diagnostic
+
+[`tools/rev_probe.py`](../tools/rev_probe.py) compiles four modules from the verified
+retained GUI input group and runs two focused comparison/layout cases. It requires
+an installed supported compiler, CMake and Ninja, consumes no display or graphics
+dependency build, and performs no supplier download. Each new attempt records exact
+inputs, selected tool identities, case results and joined process lifetimes.
+The manual [Rev diagnostic workflow](../.github/workflows/rev-probe.yml) selects
+a native runner and an installed compiler, restores an exact existing GUI group,
+and retains bounded diagnostic evidence. It builds no SDK and installs no packages.
+For an installed Clang 19 toolchain and a prepared GUI group:
+
+```sh
+python3 -B tools/rev_probe.py --gui-input-group /prepared/gui-group \
+  --compiler clang++-19 --jobs auto --output build/rev-probe-001
+```
+
+Use a new owned output directory for every attempt. This optional module probe
+needs CMake 3.28+; it does not raise the ordinary build's CMake 3.24 minimum.
+See [the diagnostic instructions](../tests/rev_style_probe/README.md). This is useful
+before compiler or supplier upgrades; all-backend qualification remains required.

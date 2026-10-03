@@ -22,7 +22,7 @@ class QualificationTasksTests(unittest.TestCase):
         self.root.joinpath('build').mkdir()
 
     def plan(self, code="print('checked')", *, backend='core', grouped=False):
-        check = dict(id='abi-first', scope='abi', target='linux-x86_64', environment='fixture',
+        check = dict(id='abi-first', scope='abi', target=coverage.host_identity()['system'].lower()+'-'+{'amd64':'x86_64','arm64':'aarch64'}.get(coverage.host_identity()['machine'].lower(),coverage.host_identity()['machine'].lower()), environment='fixture',
                      backend=backend, required=True, argv=['{python}', '-c', code],
                      timeout_seconds=5, warning_seconds=4, expected_tests=[])
         rows = [check]
@@ -61,6 +61,35 @@ class QualificationTasksTests(unittest.TestCase):
         self.assertEqual(json.loads(listed.stdout)['executions'][0]['reports'],
                          ['build/evidence/abi-first/result.json'])
         self.assertEqual(coverage.merge(plan, [output / 'result.json'])['status'], 'passed')
+
+
+    def test_cli_adopts_explicit_prior_result_without_launch_or_overwrite(self):
+        plan = self.plan()
+        old = self.root / 'prior'
+        coverage.run_case(plan, 'abi-first', self.root, old, 'same-run', 1)
+        output = self.root / 'adoption.json'
+        args = ('--run-id', 'same-run', '--attempt', '2', '--output', str(output), str(old / 'result.json'))
+        result = self.cli('adopt', *args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        selected = coverage.load(output)
+        self.assertEqual(selected['results']['abi-first']['attempt'], 1)
+        self.assertFalse((self.root / 'build/evidence').exists())
+        self.assertEqual(coverage.merge(plan, [old/'result.json'], adoption=selected)['status'], 'passed')
+        original = output.read_bytes()
+        again = self.cli('adopt', *args)
+        self.assertNotEqual(again.returncode, 0)
+        self.assertIn('new immutable output', again.stderr)
+        self.assertEqual(output.read_bytes(), original)
+
+    def test_cli_adoption_failure_leaves_no_output(self):
+        plan = self.plan(); old = self.root / 'prior'
+        coverage.run_case(plan, 'abi-first', self.root, old, 'same-run', 1)
+        (self.root / 'input.txt').write_text('changed')
+        output = self.root / 'adoption.json'
+        result = self.cli('adopt', '--run-id', 'same-run', '--attempt', '2', '--output', str(output), str(old / 'result.json'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('input changed', result.stderr)
+        self.assertFalse(output.exists())
 
     def test_failed_child_is_nonzero_with_retained_failure_log(self):
         self.plan("print('compiler detail'); raise SystemExit(7)")

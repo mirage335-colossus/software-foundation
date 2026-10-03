@@ -744,6 +744,47 @@ class DeliveryTests(unittest.TestCase):
         self.assertFalse(caught.exception.uncertain)
         self.assertEqual(len(self.remote.mutations),count);self.assertIsNone(self.remote.latest)
 
+
+    def adopted_cert(self):
+        original = self.cert()
+        c = G.coverage; frozen = c.load(original['check_plan'])
+        root = original['check_plan'].parent
+        current = root / 'rerun-source'
+        c.run_case(frozen, 'source', root, current, 'qualification-run', 2)
+        prior = [path for path in original['reports'] if c.load(path)['check'] != 'source']
+        adoption = c.adopt(frozen, prior, root, 'qualification-run', 2)
+        reports = [*prior, current/'result.json']
+        document = G.certification.certify(self.directory,G.release.verify_release(self.directory),frozen,
+                    reports,c.load(original['policy']),'fixture',adoption=adoption)
+        certificate = root/'adopted-certificate.json'; c.write_new(certificate,document)
+        return original, dict(original, certificate=certificate, reports=reports, attempt=2)
+
+    def test_adopted_certificate_survives_complete_bundle_remote_verification_and_promotion(self):
+        self.publish(); original, adopted = self.adopted_cert()
+        G.attach_certificate(**original, execute=True, transport=self.remote)
+        old_assets = copy.deepcopy(self.remote.releases[0]['assets'])
+        old_bytes = {path:path.read_bytes() for path in original['reports']}
+        G.attach_certificate(**adopted, execute=True, transport=self.remote)
+        self.assertEqual(self.remote.releases[0]['assets'][:len(old_assets)],old_assets)
+        result = self.promotion(adopted,execute=True)
+        self.assertTrue(result['execute']); self.assertIsNotNone(self.remote.latest)
+        self.assertEqual({path:path.read_bytes() for path in original['reports']},old_bytes)
+        certificate = G.coverage.load(adopted['certificate'])
+        self.assertEqual(certificate['coverage']['source']['attempt'],2)
+        self.assertEqual(certificate['coverage']['archive']['attempt'],1)
+        self.assertEqual(certificate['adoption']['attempt'],2)
+
+    def test_adopted_certificate_cannot_be_attached_under_another_attempt_or_changed_evidence(self):
+        self.publish(); _, adopted = self.adopted_cert()
+        count = len(self.remote.mutations)
+        with self.assertRaisesRegex(ValueError,'adoption belongs to another'):
+            G.attach_certificate(**dict(adopted,attempt=3),execute=True,transport=self.remote)
+        self.assertEqual(len(self.remote.mutations),count)
+        adopted['reports'][0].parent.joinpath('console.log').write_text('changed old log')
+        with self.assertRaisesRegex(ValueError,'evidence changed'):
+            G.attach_certificate(**adopted,execute=True,transport=self.remote)
+        self.assertEqual(len(self.remote.mutations),count)
+
     def test_failed_later_attempt_keeps_older_reports_and_binary_bytes(self):
         self.publish();cert=self.cert();G.attach_certificate(**cert,execute=True,transport=self.remote)
         old=copy.deepcopy(self.remote.releases[0]['assets']);later=self.cert(2,failed=True)

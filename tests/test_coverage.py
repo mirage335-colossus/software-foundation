@@ -163,14 +163,14 @@ class GroupedExecutionTests(unittest.TestCase):
     def fixture(self, root):
         rows=[]
         for backend in ('fltk','sdl'):
-            rows.append(dict(id='abi-'+backend,execution='abi-fltk',scope='abi',target='linux-x86_64',
+            rows.append(dict(id='abi-'+backend,execution='abi-fltk',scope='abi',target=coverage.host_identity()['system'].lower()+'-'+{'amd64':'x86_64','arm64':'aarch64'}.get(coverage.host_identity()['machine'].lower(),coverage.host_identity()['machine'].lower()),
                 environment='fixture',backend=backend,required=True,argv=['{python}','{root}/once.py','{evidence}'],
                 timeout_seconds=5,warning_seconds=4,expected_tests=[],qualification='abi-'+backend+'.qualification.json'))
         frozen=coverage.freeze(dict(schema_version=1,mode='release',subject=dict(source_sha256='a'*64,
             inventory_sha256='b'*64,configuration_sha256='c'*64),inputs={},checks=rows))
         identity=coverage.execution_identity(frozen,rows[0],'run',1,coverage.host_identity())
         receipt=dict(schema_version=1,status='passed',source_sha256='a'*64,inventory_sha256='b'*64,
-            target='linux-x86_64',backend='fltk',scope='abi',host=coverage.host_identity(),
+            target=rows[0]['target'],backend='fltk',scope='abi',host=coverage.host_identity(),
             details={'execution':identity},assertions=['complete-artifact'],evidence={})
         code="import json,sys,hashlib,os\nfrom pathlib import Path\nout=Path(sys.argv[1])\n"
         code+="with Path('invocations').open('a') as stream: stream.write('one\\n')\n"
@@ -218,6 +218,124 @@ class GroupedExecutionTests(unittest.TestCase):
             self.assertEqual(coverage.merge(frozen,paths)['status'],'failed')
             self.assertTrue(all(json.loads(path.read_text())['status']=='failed' for path in paths))
 
+
+
+class AdoptionTests(unittest.TestCase):
+    def fixture(self, root):
+        value = {key: item for key, item in plan().items() if key != 'id'}
+        host = coverage.host_identity()
+        machine = {'amd64': 'x86_64', 'arm64': 'aarch64'}.get(host['machine'].lower(), host['machine'].lower())
+        value['checks'][0]['target'] = host['system'].lower() + '-' + machine
+        value['checks'].append(dict(value['checks'][0], id='second'))
+        (root / 'dependency').write_text('exact dependency')
+        value['inputs'] = {'dependency': coverage.sha(root / 'dependency')}
+        frozen = coverage.freeze(value)
+        paths = []
+        for name, attempt in [('contract', 1), ('second', 2)]:
+            coverage.run_case(frozen, name, root, root / name, 'retry-run', attempt)
+            paths.append(root / name / 'result.json')
+        return frozen, paths
+
+    def test_explicit_selection_reuses_only_exact_receipt_and_retains_original_attempt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); frozen, paths = self.fixture(root)
+            originals = {path: path.read_bytes() for path in paths}
+            with self.assertRaisesRegex(ValueError, 'mixed runs/attempts'):
+                coverage.merge(frozen, paths)
+            adoption = coverage.adopt(frozen, paths[:1], root, 'retry-run', 2)
+            result = coverage.merge(frozen, paths, adoption=adoption)
+            self.assertEqual(result['status'], 'passed')
+            self.assertEqual(result['checks']['contract']['attempt'], 1)
+            self.assertEqual(result['checks']['second']['attempt'], 2)
+            self.assertEqual(result['adoption'], adoption)
+            self.assertEqual(adoption['results']['contract']['sha256'], coverage.sha(paths[0]))
+            self.assertEqual({path: path.read_bytes() for path in paths}, originals)
+
+    def test_changed_plan_source_configuration_environment_or_dependency_cannot_be_adopted(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); frozen, paths = self.fixture(root)
+            for field in ('source_sha256', 'inventory_sha256', 'configuration_sha256', 'environment'):
+                wrong = copy.deepcopy(frozen); del wrong['id']
+                if field == 'environment': wrong['checks'][0]['environment'] = 'different'
+                else: wrong['subject'][field] = 'e'*64
+                with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'stale result'):
+                    coverage.adopt(coverage.freeze(wrong), paths[:1], root, 'retry-run', 2)
+            (root / 'dependency').write_text('new dependency')
+            with self.assertRaisesRegex(ValueError, 'input changed'):
+                coverage.adopt(frozen, paths[:1], root, 'retry-run', 2)
+
+    def test_failed_current_future_other_run_and_unknown_receipts_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); frozen, paths = self.fixture(root)
+            for run_id, attempt in [('other-run', 2), ('retry-run', 1), ('retry-run', 0), ('retry-run', True)]:
+                with self.subTest(run_id=run_id, attempt=attempt), self.assertRaises(ValueError):
+                    coverage.adopt(frozen, paths[:1], root, run_id, attempt)
+            with self.assertRaisesRegex(ValueError, 'earlier attempts'):
+                coverage.adopt(frozen, paths[1:], root, 'retry-run', 2)
+            row = coverage.load(paths[0]); row.update(status='failed', exit_code=7, error='assertion')
+            paths[0].write_text(json.dumps(row))
+            with self.assertRaisesRegex(ValueError, 'successful earlier'):
+                coverage.adopt(frozen, paths[:1], root, 'retry-run', 2)
+            with self.assertRaises(ValueError): coverage.adopt(frozen, [], root, 'retry-run', 2)
+            with self.assertRaises(ValueError): coverage.adopt(frozen, [paths[0], paths[0]], root, 'retry-run', 2)
+
+    def test_report_or_log_mutation_invalidates_adoption(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); frozen, paths = self.fixture(root)
+            adoption = coverage.adopt(frozen, paths[:1], root, 'retry-run', 2)
+            original = paths[0].read_bytes()
+            row = coverage.load(paths[0]); row['seconds'] += 1
+            paths[0].write_text(json.dumps(row))
+            with self.assertRaisesRegex(ValueError, 'identity or bytes changed'):
+                coverage.merge(frozen, paths, adoption=adoption)
+            paths[0].write_bytes(original)
+            (paths[0].parent / 'console.log').write_text('changed retained evidence')
+            with self.assertRaisesRegex(ValueError, 'evidence changed'):
+                coverage.merge(frozen, paths, adoption=adoption)
+
+    def test_tampered_manifest_unused_selection_and_unapproved_prior_result_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); frozen, paths = self.fixture(root)
+            adoption = coverage.adopt(frozen, paths[:1], root, 'retry-run', 3)
+            with self.assertRaisesRegex(ValueError, 'explicit adoption'):
+                coverage.merge(frozen, paths, adoption=adoption)
+            adoption['attempt'] = 2
+            with self.assertRaisesRegex(ValueError, 'digest differs'):
+                coverage.merge(frozen, paths, adoption=adoption)
+            adoption['id'] = coverage.digest({k:v for k,v in adoption.items() if k != 'id'})
+            wrong = copy.deepcopy(adoption); wrong['results']['unexpected'] = wrong['results']['contract']
+            wrong['id'] = coverage.digest({k:v for k,v in wrong.items() if k != 'id'})
+            with self.assertRaisesRegex(ValueError, 'known results'):
+                coverage.merge(frozen, paths, adoption=wrong)
+            # Complete required inventory remains mandatory with explicit reuse.
+            with self.assertRaisesRegex(ValueError, 'missing results'):
+                coverage.merge(frozen, paths[:1], adoption=adoption)
+
+    def test_actual_host_mismatch_cannot_be_adopted(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); frozen, paths = self.fixture(root)
+            row = coverage.load(paths[0]); row['host']['machine'] = 'wrong-architecture'
+            paths[0].write_text(json.dumps(row))
+            with self.assertRaisesRegex(ValueError, 'actual execution host'):
+                coverage.adopt(frozen, paths[:1], root, 'retry-run', 2)
+
+    def test_grouped_execution_requires_complete_original_projections(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            frozen = GroupedExecutionTests().fixture(root)
+            coverage.run_execution(frozen, 'abi-fltk', root, root / 'abi-fltk', 'run', 1)
+            paths = [coverage.result_path(frozen, row['id'], root) for row in frozen['checks']]
+            with self.assertRaisesRegex(ValueError, 'every logical result'):
+                coverage.adopt(frozen, paths[:1], root, 'run', 2)
+            adoption = coverage.adopt(frozen, paths, root, 'run', 2)
+            merged = coverage.merge(frozen, paths, adoption=adoption)
+            self.assertEqual(merged['status'], 'passed')
+            self.assertEqual((root / 'invocations').read_text(), 'one\n')
+            self.assertEqual({row['attempt'] for row in merged['checks'].values()}, {1})
+            wrong = copy.deepcopy(adoption); del wrong['results']['abi-sdl']
+            wrong['id'] = coverage.digest({k:v for k,v in wrong.items() if k != 'id'})
+            with self.assertRaisesRegex(ValueError, 'explicit adoption'):
+                coverage.merge(frozen, paths, adoption=wrong)
 
 if __name__ == "__main__":
     unittest.main()

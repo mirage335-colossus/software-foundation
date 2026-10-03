@@ -61,6 +61,29 @@ if data['scope'] in ('source', 'recovery'):
             self.assertTrue(result["eligible_for_promotion"])
             self.assertFalse(certify.certify(root, manifest, plan, reports, policy, "fixture", True)["eligible_for_promotion"])
 
+
+    def test_retry_certifies_exact_original_evidence_only_with_explicit_adoption(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest, plan, reports, policy = self.fixture(root)
+            prior_bytes = {path: path.read_bytes() for path in reports}
+            current = root / 'retry-source'
+            c.run_case(plan, 'source', root, current, 'run', 2)
+            selected = c.adopt(plan, reports[1:], root, 'run', 2)
+            mixed = [current/'result.json', *reports[1:]]
+            with self.assertRaisesRegex(ValueError, 'mixed runs/attempts'):
+                certify.certify(root, manifest, plan, mixed, policy, 'fixture')
+            result = certify.certify(root, manifest, plan, mixed, policy, 'fixture', adoption=selected)
+            self.assertEqual(result['status'], 'passed')
+            self.assertTrue(result['eligible_for_promotion'])
+            self.assertEqual(result['adoption'], selected)
+            self.assertEqual(result['coverage']['source']['attempt'], 2)
+            self.assertEqual(result['coverage']['archive']['attempt'], 1)
+            self.assertEqual({path: path.read_bytes() for path in reports}, prior_bytes)
+            (reports[1].parent/'qualification.json').write_text('{}')
+            with self.assertRaises(ValueError):
+                certify.certify(root, manifest, plan, mixed, policy, 'fixture', adoption=selected)
+
     def test_diagnostic_or_mutated_release_cannot_qualify(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

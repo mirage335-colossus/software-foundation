@@ -64,9 +64,68 @@ Replace `CHECK_ID` with a check declared in the plan and run every check on its
 named environment. Never run a Windows-labelled check on Linux and treat its label
 as evidence. The producer records actual host identity; the orchestration layer
 must provide the declared environment. Do not overwrite a result to retry: create
-a new attempt directory. Aggregation uses one explicitly selected result per check
-from the same run. A previous attempt may be reused only under the unchanged plan;
-its actual attempt and logs remain visible.
+a new attempt directory. Ordinary aggregation requires one run and attempt. To
+reuse successful earlier checks, create the explicit immutable adoption manifest
+below; arbitrary mixtures of attempts remain invalid. Original receipts, execution
+attempts, host identities and complete evidence remain unchanged and visible.
+
+### Explicit prior-attempt adoption
+
+The portable scheduler can rerun only failed physical executions. Prepare a new
+workspace with the **identical frozen plan and inputs**; keep the prior workspace
+and its evidence immutable. A changed source, dependency, configuration, required
+environment, test inventory or policy needs a new plan and fresh affected evidence.
+The actual required host still runs each remaining check. All logical backend
+results belonging to one physical execution must be selected together.
+
+For example, after `CHECK_A` passed and `CHECK_B` failed in attempt 1, run `CHECK_B`
+in an identical prepared attempt-2 workspace. These placeholders stand for exact
+physical check IDs from `qualification_tasks.py list`; enumerate every required
+check when more than two exist. Grouped checks use their listed `*.result.json`
+paths instead of `result.json`.
+
+```sh
+python3 tools/qualification_tasks.py prepare --root /work/attempt-2 \
+  --check CHECK_B --run-id release-candidate --attempt 2
+python3 tools/qualification_tasks.py run --root /work/attempt-2 \
+  --check CHECK_B --run-id release-candidate --attempt 2
+python3 tools/qualification_tasks.py adopt --root /work/attempt-2 \
+  --run-id release-candidate --attempt 2 --output /work/adoption-2.json \
+  /work/attempt-1/build/evidence/CHECK_A/result.json
+python3 tools/coverage.py merge --plan /work/attempt-2/build/check-plan.json \
+  --adoption /work/adoption-2.json --output /work/coverage-2.json \
+  /work/attempt-1/build/evidence/CHECK_A/result.json \
+  /work/attempt-2/build/evidence/CHECK_B/result.json
+```
+
+`adopt` verifies frozen input bytes, original complete passing evidence and actual
+host requirements; it selects only earlier attempts of that same run. Its new
+output binds the complete original result hashes, attempts and host identities.
+It never overwrites or relabels a receipt. Aggregation revalidates every original
+log, qualification receipt and nested evidence hash, rejects changed/unused
+selections, and still requires the complete logical inventory. Missing, failed,
+skipped, incomplete and future/current-attempt selections cannot be adopted.
+The adoption manifest may select older results from more than one prior attempt,
+but projections of a single physical execution must retain one original identity.
+
+Pass the same `--adoption /work/adoption-2.json` and exact selected result paths to
+`tools/certify_release.py` with its ordinary release, policy, profile, plan and new
+output arguments. Full certification retains the adoption manifest in the
+certificate alongside original result hashes and coverage. Certificate bundling,
+remote verification and promotion reproduce the same explicit selection and bind
+it to the certificate attempt; downstream signed-channel verification uses that
+same validator. `coverage.py merge`
+alone does not certify or promote a release. A new attempt may also execute all
+checks normally without using adoption.
+
+This is a local/file-based scheduling feature. The caller must supply trusted
+original evidence; hashes do not authenticate its producer. A hosted adapter must
+verify the original repository, workflow, run, attempt, successful producer and
+immutable artifact identity before supplying downloaded receipts. Current GitHub
+workflows still acquire only the executing attempt and do not automatically adopt
+siblings when choosing **Re-run failed jobs**. Do not weaken that transport check,
+rename old receipts to the new attempt, or use mutable artifact overwrite as a
+substitute for explicit adoption.
 
 ## File-based commands for another CI or a local scheduler
 

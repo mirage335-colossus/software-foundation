@@ -1115,3 +1115,61 @@ SDK rebuild, commit or push was performed. The public complete-release estimate
 remains **189 requests**, or **180** with preservation. Greater job concurrency
 changes request timing, not its normal total; hosted elapsed-time improvement and
 burst behavior require observation during an ordinary run.
+
+
+## Restore audited development and portability gaps
+
+The 2026-10-03 implementation adds complete explicit test prerequisites. Planning
+requires no compilation in registered builds, ordinary shards compile only their
+selected targets, and script-only selections invoke no build. Candidate core
+ownership still includes enabled GUI tests. Missing declarations and changed
+inventories fail instead of silently reducing coverage. Deferred directory-local
+label collection preserves the CMake 3.24 baseline; the optional Rev module probe
+separately requires CMake 3.28+ and a suitable installed module compiler.
+
+Explicit prior-attempt adoption preserves original successful receipts, attempt
+numbers, hosts and evidence bytes. Qualification, certification, certificate
+bundling and independent remote reconstruction validate that selection. Ordinary
+mixed-attempt aggregation still fails. Existing hosted workflows do not yet
+acquire and authenticate earlier-attempt artifacts automatically; this addition
+provides the explicit local/alternative-scheduler command and consumer boundary.
+
+The isolated native regression, including all five optional distribution suites,
+passed **58/58 CTest entries in 30.26 seconds**, with **1,396 passed Python cases**
+and two explicit native-Windows exclusions on Linux. Terminal, framebuffer and
+hosted-web GUI checks passed **25/25 entries in 5.08 seconds** using the unchanged
+retained GUI group. Address/undefined-behavior sanitizer core checks passed **2/2**
+with leak detection enabled. The small actual Rev probe compiled four pinned
+production modules and passed both comparison/layout cases with Clang 19 in
+**6.21 seconds**; its 16 helper cases also passed in the native suite.
+
+Final review preserved the existing application-wide static-archive symbol hiding;
+installed consumers receive narrower GNU-runtime hiding so their own archive APIs
+remain available. After that localized correction, a fresh isolated portable
+Release archive build passed, core checks passed **2/2**, and the installed consumer
+plus runtime/plugin integration passed **2/2 in 5.04 seconds**. The runtime fixture
+includes bundled-shared and exported-static negative controls, relocated execution,
+installed library consumption and stale-header-probe rejection. Other implementation
+bytes are unchanged from the preceding native/GUI/sanitizer runs and were not
+needlessly retested. Exact snapshot differences are retained with the results.
+
+The first full run exposed an extracted GUI CMake fixture missing the new helper;
+loading the actual helper repaired it without changing its assertions. A separate
+review caught and removed a CMake 3.28-only property API. GnuPG socket setup and
+LeakSanitizer failed under the execution sandbox; discriminating native runs
+confirmed those restrictions, and the affected checks passed with local sockets
+and normal process inspection available. No signing or sanitizer checks were
+weakened. Workflow lint, documentation, whitespace and Python 3.9 grammar for
+126 source files passed.
+
+Evidence, commands and exact source hashes are recorded in
+`build/agents/audit-integration-v1/validation.json`, with frozen source manifests
+and retained failure/final logs below that directory. Only this final validation
+record changed after the final source snapshot. Native Windows wide-argument
+conversion is registered but was not executed locally; ARM64, Wasm, FLTK/SDL/Rev
+native surfaces and actual hosted workflows were not rerun. CMake 3.24/3.25 was
+reviewed for API compatibility, not executed on this host. No SDK rebuild, dependency
+acquisition, remote publication, commit or push was performed. These checks do not
+establish a new hosted elapsed-time measurement or broaden the existing platform
+support claims. Internal case/seed partitioning remains conditional on measured
+need; current complete CTest-level parallelism is retained.

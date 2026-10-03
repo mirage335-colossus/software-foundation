@@ -59,6 +59,12 @@ Release configuration and all selected dependencies and notices.
 enabled local test suite. `--label fast`, `core`, `tools`, `integration`, or
 `gui` selects a focused scope. A label that selects nothing must fail. An
 optional feature's tests exist only when the feature is configured.
+Each test must call `foundation_test_prerequisites(NAME [TARGET ...])` after
+registration. Omit targets explicitly for scripts needing no compiled executable.
+The final registry checks every configured test and generates the development
+label targets. Keep installation prerequisites complete, including configured GUI
+hosts, while a local `core` selection builds only core prerequisites. Candidate
+scope assignment is broader and remains derived from the complete test inventory.
 
 Direct CMake remains supported:
 

@@ -49,7 +49,7 @@ def requirements(policy, profile):
     return selected, expected
 
 
-def certify(directory, manifest, plan, reports, policy, profile, experiment=False):
+def certify(directory, manifest, plan, reports, policy, profile, experiment=False, *, adoption=None):
     """verify_release must have verified manifest and file bytes before this call."""
     selected, expected = requirements(policy, profile)
     coverage.validate(plan)
@@ -87,27 +87,10 @@ def certify(directory, manifest, plan, reports, policy, profile, experiment=Fals
             covered = {x["backend"] for x in coverage.execution_members(plan, leader)}
             if covered != actual_targets[leader["target"]]:
                 raise ValueError("grouped execution must cover every delivered backend")
-    result = coverage.merge(plan, reports)
+    result = coverage.merge(plan, reports, adoption=adoption)
     report_paths = {coverage.load(path)["check"]: path for path in reports}
     for check in plan["checks"]:
-        observed = result["checks"][check["id"]]["host"]
-        if check["target"].startswith(("linux-", "windows-")):
-            system, architecture = check["target"].split("-", 1)
-            machine = observed["machine"].lower()
-            machine = {"amd64": "x86_64", "arm64": "aarch64"}.get(machine, machine)
-            if observed["system"].lower() != system or machine != architecture:
-                raise ValueError("actual execution host differs from declared target")
-            if check["environment"].startswith(("debian-", "ubuntu-")):
-                if observed.get("distribution") != check["environment"]:
-                    raise ValueError("actual user-space environment differs from required baseline")
-            if check["environment"] == "windows-2022" and observed.get("runner_image") != "win22":
-                raise ValueError("Windows runner image evidence missing or mismatched")
-        if check["environment"] in ("firefox", "chromium") and result["checks"][check["id"]]["status"] == "passed":
-            receipt = coverage.load(coverage.local(report_paths[check["id"]].parent, check["qualification"]))
-            browser = receipt["details"].get("browser", {})
-            if (browser.get("engine") != check["environment"] or not browser.get("browser_version") or
-                    browser.get("status") != "passed"):
-                raise ValueError("actual browser evidence missing or differs from required engine")
+        coverage.check_host(plan, check['id'], result['checks'][check['id']], report_paths[check['id']].parent)
     passed = result["status"] == "passed"
     # Neither an enclosing green workflow nor an advisory warning waives a check.
     warnings = {n: r["warnings"] for n, r in result["checks"].items() if r["warnings"]}
@@ -117,6 +100,7 @@ def certify(directory, manifest, plan, reports, policy, profile, experiment=Fals
             "run_id": result["run_id"], "description": selected["description"],
             "warnings": warnings, "omitted": result["omitted"], "coverage": result["checks"],
             "reports": [{"name": str(p.name), "sha256": coverage.sha(p)} for p in reports],
+            **({"adoption": result["adoption"]} if adoption is not None else {}),
             "limits": ["Evidence applies only to the named environments and exact bytes.",
                        "Containers do not qualify another kernel, physical device or desktop session.",
                        "This helper neither publishes a release nor changes a remote Latest pointer."]}
@@ -130,6 +114,7 @@ def main():
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--experiment", action="store_true")
+    parser.add_argument("--adoption", type=Path, help="immutable explicit prior-receipt selection")
     parser.add_argument("reports", type=Path, nargs="+")
     args = parser.parse_args()
     directory = args.release.resolve(strict=True)
@@ -139,7 +124,8 @@ def main():
     manifest = release.verify_release(directory)
     initial = coverage.sha(directory / "release.json")
     result = certify(directory, manifest, coverage.load(args.plan), args.reports,
-                     coverage.load(args.policy), args.profile, args.experiment)
+                     coverage.load(args.policy), args.profile, args.experiment,
+                     adoption=coverage.load(args.adoption) if args.adoption else None)
     release.verify_release(directory)
     if initial != coverage.sha(directory / "release.json"):
         raise ValueError("release changed during certification")
