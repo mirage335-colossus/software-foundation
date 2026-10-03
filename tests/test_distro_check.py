@@ -103,6 +103,48 @@ class NativeCheckTests(unittest.TestCase):
         check.require_version_upgrade(old,new)
         with self.assertRaises(ValueError):check.require_version_upgrade(new,old)
 
+    def test_arch_install_rejects_stale_native_revision_with_unchanged_payload(self):
+        names = ['software-foundation-core-bin', 'software-foundation-terminal-bin']
+        query = Path('/owned/arch-versions.txt')
+        calls = []
+        installed = {'version': '1.2.3-1'}
+        def run(*argv, capture=None):
+            calls.append((argv, capture))
+            if argv[:2] == ('pacman', '-Q'):
+                return ''.join(name+' '+installed['version']+'\n' for name in reversed(names)).encode()
+        # Successful install/update commands and identical payload are insufficient.
+        with self.assertRaisesRegex(ValueError, 'versions differ'):
+            check.install_arch(names, '1.2.3-2', run, query)
+        self.assertFalse(any(args[:2] == ('pacman', '-Qkk') for args, _ in calls))
+        installed['version'] = '1.2.3-2'; calls.clear()
+        self.assertEqual(dict.fromkeys(names, '1.2.3-2'), check.install_arch(names, '1.2.3-2', run, query))
+        self.assertEqual((('pacman', '-Q', *names), query), calls[2])
+        self.assertEqual([(('pacman', '-Qkk', name), None) for name in names], calls[3:])
+        for raw in (b'', b'foreign 1.2.3-2\n',
+                    ((names[0]+' 1.2.3-2\n')*2).encode(),
+                    (names[0]+' 1.2.3-2 extra\n'+names[1]+' 1.2.3-2\n').encode()):
+            with self.subTest(raw=raw), self.assertRaisesRegex(ValueError, 'versions differ'):
+                check.install_arch(names, '1.2.3-2', lambda *args, **kw: raw, query)
+
+    def test_acceptance_binds_exact_upgrade_predecessor_tag_and_digest(self):
+        prior = dict(self.selected, tag='distro-1.2.2-x86_64-r1-s1', manifest_sha256='e'*64)
+        env = dict(self.env, PREVIOUS=json.dumps(prior))
+        records = copy.deepcopy(self.records)
+        with self.assertRaisesRegex(ValueError, 'scope'):
+            check.qualification(self.selected, records, env)
+        for record in records:
+            record.update(upgrade_from=prior['tag'], upgrade_manifest_sha256=prior['manifest_sha256'])
+        check.qualification(self.selected, records, env)
+        with self.assertRaisesRegex(ValueError, 'scope'):
+            check.qualification(self.selected, records, self.env)
+        for key, value in (('upgrade_from', self.selected['tag']), ('upgrade_manifest_sha256', 'f'*64)):
+            altered = copy.deepcopy(records); altered[0][key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'scope'):
+                check.qualification(self.selected, altered, env)
+        for bad in (dict(prior, target='linux-aarch64'), self.selected):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, 'predecessor'):
+                check.qualification(self.selected, records, dict(env, PREVIOUS=json.dumps(bad)))
+
     def test_arch_keyring_setup_keeps_explicit_native_home_and_trust(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as temp:

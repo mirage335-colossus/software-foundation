@@ -44,9 +44,12 @@ Assign one publisher for a repository's release lifecycle. Hold the agreed relea
 resource claim from preflight through final receipt, including the shared `base`
 release and Latest pointer. Local [coordination](agent-coordination.md) protects
 cooperating sessions on one agreed board; it is not a distributed GitHub lock.
-Hosted workflows must use the same repository-wide concurrency group for all
-publishing operations, with `cancel-in-progress: false`. A different machine,
-workflow or manual publisher must participate in that same exclusion policy.
+Base/application publication, certificate attachment, promotion and native
+acceptance share the repository-wide release-lifecycle concurrency group.
+Signed-channel publication uses a target-scoped group so independent architectures
+can progress concurrently. Use `cancel-in-progress: false`; each hosted or manual
+publisher must honor the lock for the state it mutates. See the
+[distribution ordering contract](distribution-release.md) for predecessor gates.
 
 Keep the source checkout, assembled release, requests, SDK groups, policy, reports
 and retained logs stable during an operation. Own separate temporary and receipt
@@ -301,14 +304,17 @@ the same transported candidate and frozen plan. The recording job rejects
 missing, stale, mixed-run or altered evidence. A failed full report may be
 attached as a new attempt, preserving previous reports and binaries.
 
-Promotion is a separate manual workflow with `execute=false` by default. Its
+Promotion is a separately gated reusable workflow, dispatched manually with
+`execute=false` by default or invoked by Latest orchestration after certification. Its
 plan names one certificate run, attempt and digest; execution validates that
 remote certificate against the current reviewed policy and then verifies the
 Latest pointer. An updated qualification attempt never rebuilds or overwrites
 the candidate. A changed source or dependency inventory requires a new candidate.
 
-The protected publishing jobs all use one repository-wide concurrency group.
-Other workflows and manual publishers must honor that same exclusion. A failed
+Protected base/application publication, certificate attachment, promotion and
+native acceptance share the release-lifecycle group; signed-channel publication
+uses its target-scoped group. Other workflows and manual publishers must honor
+the corresponding exclusion. A failed
 publication step retains an uncertainty receipt whenever possible. A lost
 receipt still requires remote reconciliation before retrying; do not rerun
 an interrupted mutation blindly. Setup failures and incomplete artifacts remain
@@ -386,5 +392,13 @@ running these examples with the ordinary workflow token. Feature branches with
 unchanged workflow files can use the normal path. Do not interpret a 404/403 from
 this rule as an absent release or permission to change the source/tag identity.
 Use an explicitly reviewed operator credential only when a project deliberately
-qualifies that separate permission arrangement. Keep the workflow revision stable
-while the run reserves its source-bound transport draft.
+qualifies that separate permission arrangement. Keep the default branch's
+`.github/workflows/` bytes stable while any running producer still needs to create
+its source-bound tag, transport draft or product release, including failure
+retention. A workflow change pushed during a long preparation can make that older
+job require authorization its token cannot hold. Before dispatch, compare the
+selected revision's workflow tree with the default branch; this observation is
+not an atomic reservation or a guarantee of write permission. Coordinate the
+freeze with other publishers, then reconcile exact remote state after any refusal.
+Changing ordinary source or documentation without changing workflow bytes does
+not introduce this particular permission difference.

@@ -83,6 +83,20 @@ def verify_installed(root, expected, backend):
     return len(expected)
 
 
+def install_arch(names, version, run, query_path):
+    """Prove the package database advanced even when payload bytes are unchanged."""
+    run('pacman', '-Syu', '--noconfirm', *names)
+    run('pacman', '-Syu', '--noconfirm')
+    raw = run('pacman', '-Q', *names, capture=query_path)
+    rows = [line.split() for line in raw.decode('utf-8').splitlines()]
+    if (len(rows) != len(names) or any(len(row) != 2 for row in rows)
+            or len({row[0] for row in rows}) != len(names)
+            or dict(rows) != dict.fromkeys(names, version)):
+        raise ValueError('installed Arch package versions differ from signed channel')
+    for name in names: run('pacman', '-Qkk', name)
+    return dict(rows)
+
+
 def supervised(argv, stream, *, timeout, env=None):
     """Do not release an evidence stream while command descendants can write."""
     owner = process_tree.launch(argv, Path.cwd(), stream, env=env)
@@ -226,18 +240,26 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
     if kind != 'apt' and target != 'linux-x86_64': raise ValueError('this native frontend image is qualified only on x86-64')
     evidence = Path(evidence); evidence.mkdir(parents=True, exist_ok=False)
     commands = []
-    def run(*argv):
+    def run(*argv, capture=None):
         commands.append([str(arg) for arg in argv])
         with (evidence/'native.log').open('ab') as stream:
             stream.write(('COMMAND '+json.dumps(commands[-1])+'\n').encode()); stream.flush()
-            supervised(commands[-1], stream, timeout=900,
-                env=dict(os.environ, DEBIAN_FRONTEND='noninteractive', LC_ALL='C.UTF-8'))
+            environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', LC_ALL='C.UTF-8')
+            if capture is None:
+                supervised(commands[-1], stream, timeout=900, env=environment)
+                return None
+            # Keep the query output as separate evidence, including on failure.
+            with capture.open('xb') as captured:
+                supervised(commands[-1], captured, timeout=900, env=environment)
+            raw = capture.read_bytes()
+            stream.write(raw)
+            return raw
     with qualification_work(evidence) as work:
         rounds = []
         if previous:
             old = release.verify(previous, policy, trusted); require_version_upgrade(old, manifest)
             rounds.append((Path(previous), old))
-        rounds.append((Path(directory), manifest)); installed = []
+        rounds.append((Path(directory), manifest)); installed = []; package_versions = []
         for index, (assets, value) in enumerate(rounds):
             channels = extract_channels(assets, work/('channels-'+str(index)))
             url = release.base_url(value['request']); backends = value['backends']
@@ -261,8 +283,9 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
                         out.write('\n[options]\nNoExtract = !usr/share/man !usr/share/man/ !usr/share/man/man1 !usr/share/man/man1/ !usr/share/man/man7 !usr/share/man/man7/ !usr/share/man/man1/foundation-* !usr/share/man/man7/software-foundation-*\nInclude = /etc/pacman.d/software-foundation.conf\n')
                 Path('/etc/pacman.d/software-foundation.conf').write_text(f'[software-foundation]\nSigLevel = Required DatabaseRequired\nServer = {url.rstrip("/")}\n')
                 names = ['software-foundation-'+backend+'-bin' for backend in backends]
-                run('pacman', '-Syu', '--noconfirm', *names); run('pacman', '-Syu', '--noconfirm')
-                for name in names: run('pacman', '-Qkk', name)
+                version = value['request']['version']+'-'+str(value['request']['package_release'])
+                observed = install_arch(names, version, run, evidence/('arch-versions-'+str(index)+'.txt'))
+                package_versions.append(dict(tag=value['tag'], packages=observed))
             else:
                 # The signed recipes only wrap the retained archive; missing host
                 # prerequisites must come from binary repositories, never compilation.
@@ -310,7 +333,9 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
     result = dict(schema_version=1, status='passed', kind=kind, target=target, tag=manifest['tag'],
         manifest_sha256=release.archive.digest(Path(directory)/'distribution.json'),
         checks=['signature', 'published-download', 'install', 'repeated-update', 'exact-payload', 'self-check', 'remove'],
-        upgrade_from=rounds[0][1]['tag'] if len(rounds) == 2 else None, backends=installed,
+        upgrade_from=rounds[0][1]['tag'] if len(rounds) == 2 else None,
+        upgrade_manifest_sha256=release.archive.digest(rounds[0][0]/'distribution.json') if len(rounds) == 2 else None,
+        package_versions=package_versions, backends=installed,
         id=os.environ.get('CHECK_ID'), image=os.environ.get('CHECK_IMAGE'), image_id=os.environ.get('CHECK_IMAGE_ID'),
         os_release=Path('/etc/os-release').read_text(),
         source_commit=os.environ.get('GITHUB_SHA'), run_id=os.environ.get('GITHUB_RUN_ID'),
@@ -405,6 +430,9 @@ def container_with_display(root, check_id, environment, display):
 
 
 def qualification(selected, records, environment):
+    prior = selection(environment['PREVIOUS']) if environment.get('PREVIOUS') else None
+    if prior and (prior['target'] != selected['target'] or prior['tag'] == selected['tag']):
+        raise ValueError('native upgrade predecessor differs')
     expected = matrix(selected['target'])['include']; by_id = {}
     required = {'signature', 'published-download', 'install', 'repeated-update', 'exact-payload', 'self-check', 'remove'}
     for record in records:
@@ -418,7 +446,10 @@ def qualification(selected, records, environment):
                 result.get('kind') != row['kind'] or result.get('image') != row['image'] or result.get('tag') != selected['tag'] or
                 result.get('manifest_sha256') != selected['manifest_sha256'] or set(result.get('checks', [])) != required or
                 result.get('source_commit') != environment['GITHUB_SHA'] or result.get('run_id') != environment['GITHUB_RUN_ID'] or
-                result.get('attempt') != environment['GITHUB_RUN_ATTEMPT'] or not result.get('backends') or not result.get('commands') or
+                result.get('attempt') != environment['GITHUB_RUN_ATTEMPT'] or
+                result.get('upgrade_from') != (prior['tag'] if prior else None) or
+                result.get('upgrade_manifest_sha256') != (prior['manifest_sha256'] if prior else None) or
+                not result.get('backends') or not result.get('commands') or
                 not isinstance(result.get('image_id'), str) or not result['image_id'].startswith('sha256:') or
                 not release.delivery.SHA.fullmatch(result['image_id'][7:])):
             raise ValueError('native result scope or execution identity differs')

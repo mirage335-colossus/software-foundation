@@ -49,7 +49,7 @@ after installation. [COMPILE](COMPILE) is the short command reference;
 | CI | Disjoint scopes, reusable lifecycle workflows, explicit faster pools, draft release transport with no Actions artifact uploads | Exact hosted executions and remaining limits appear in [validation](docs/validation.md) |
 | Coordination | Scoped review, guarded saves, descriptor-relative atomic publication, handoffs, lifecycle and concurrency tests | Unsupported filesystem APIs require a qualified adapter or enforced private checkouts |
 | Releases | Immutable complete groups, mandatory per-release copies, offline recovery and exact-byte certification | Publication, certification attachment and promotion are explicit protected operations |
-| Distribution | Debian, Arch and Gentoo wrapping, signed indexes, payload verification, atomic update/rollback checks | Signed fixtures and disposable native APT install/upgrade/purge adapter; client qualification recorded separately |
+| Distribution | Debian, Arch and Gentoo wrapping, signed indexes, payload verification, atomic update/rollback checks | Disposable native APT, pacman and Portage checks; initial installation and true version upgrades have separate qualification evidence |
 
 The [Latest entry point](docs/latest-release.md) composes the prepared-SDK release
 lifecycle, and the [screenshot workflow](docs/screenshots.md) captures all seven

@@ -275,7 +275,7 @@ The first trusted selection still requires independent freshness review. Once a
 channel is accepted, sequence rollback, package removal, version downgrade and
 same-version byte replacement are rejected. Trust-key or policy updates require an
 operator-reviewed configuration change. Expired metadata fails; refresh signing
-metadata with a new sequence and immutable tag before its expiry.
+metadata with a new `sequence`, `package_release` and immutable tag before its expiry.
 
 ```sh
 sudo python3 -B /opt/foundation-tools/tools/distro_client.py refresh --config /etc/foundation-channel.json
@@ -355,6 +355,14 @@ receipt. This makes the display service explicit while keeping package-manager
 and client-library verification native to each tested distribution. Gentoo
 prerequisites remain binary-only even when optional display-wrapper packages are
 absent from its current binary repository.
+
+After both initial installation and each upgrade round, Arch qualification queries
+`pacman -Q` for every packaged backend and requires the exact signed version and
+package release. Payload equality and `pacman -Qkk` alone cannot prove an upgrade
+when two revisions install identical files. Retain each round's native query
+output and observed versions. Acceptance also binds every result to the requested
+predecessor's exact tag and manifest digest; an initial installation cannot be
+substituted for an upgrade or for another predecessor.
 
 Arch keyring initialization runs in a dedicated child that remains alive through
 initialization, key import, local trust, scoped service shutdown and bounded child

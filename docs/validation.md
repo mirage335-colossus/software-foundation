@@ -135,6 +135,29 @@ rate recovery, exhausted budgets, complete-pagination restart and preservation o
 an actual signed active generation. Those local tests use controlled responses;
 they do not establish that the hosted runner's public quota is available.
 
+ARM publication
+[37095147094](https://github.com/mirage335-colossus/software-foundation/actions/runs/37095147094)
+at `592ee7bb69c63e9eda4c30be5b161e870c1187cc` completed package
+preparation but GitHub rejected its first tag creation and failure retention with
+HTTP 403 while primary quota remained positive. Independent authenticated readback
+found neither its channel tag/release nor its transport tag/release. Default-branch
+workflow bytes changed during preparation, which is consistent with GitHub's
+[workflow-write permission restriction](https://docs.github.com/en/rest/releases/releases#create-a-release);
+the retained response omitted the error message, so the exact cause is unproven.
+No native qualification ran and no signed channel was published by this attempt.
+The replacement uses the current workflow revision and preserves the certified
+application inputs. Running replacements are not qualification evidence.
+
+A subsequent upgrade-path review found that Arch payload checks alone could
+accept unchanged installed files without proving a package-revision advance.
+The correction queries every installed backend's native package version after
+each round and rejects stale, duplicate, missing or foreign package records.
+Acceptance also checks the exact requested predecessor tag and manifest digest.
+All 14 focused native-checker cases passed without exclusions on the Linux host
+with private GnuPG sockets available. An earlier sandboxed attempt could not start
+the unrelated-keyring fixture and failed; it is not counted as passed coverage.
+These regressions do not replace the required live two-revision native upgrade.
+
 Earlier application runs remain useful failure evidence; none are relabeled as
 successful qualification. Run
 [36994657303](https://github.com/mirage335-colossus/software-foundation/actions/runs/36994657303)
