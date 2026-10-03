@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'tools'))
@@ -29,7 +30,7 @@ def marker(target='linux-x86_64'):
 
 def asset_row(identity, name, data, tag='distro-1.2.3-x86_64-r1-s7'):
     return dict(id=identity, name=name, state='uploaded', size=len(data), digest='sha256:' + hashlib.sha256(data).hexdigest(),
-                browser_download_url='https://github.com/example/project/releases/download/' + tag + '/' + name)
+                browser_download_url='https://github.com/example/project/releases/download/' + quote(tag, safe='') + '/' + quote(name, safe=''))
 
 
 def asset_response(data, url='https://release-assets.githubusercontent.com/fixture/object?signature=exact'):
@@ -61,6 +62,25 @@ class PublicDownloadTests(unittest.TestCase):
         self.assertEqual(metadata.call_count, 2); self.assertEqual(build.return_value.open.call_count, 70)
         self.assertEqual({path.name: path.read_bytes() for path in self.root.iterdir()},
                          {row['name']: bodies[row['browser_download_url']] for row in rows})
+
+    def test_canonical_encoded_release_components_keep_exact_asset_binding(self):
+        self.tag = 'release+one'
+        name = 'software-foundation-core_1.2.3+r1_amd64.deb'
+        canonical = ('https://github.com/example/project/releases/download/release%2Bone/'
+                     'software-foundation-core_1.2.3%2Br1_amd64.deb')
+        row = dict(id=1, name=name, state='uploaded', size=5,
+                   digest='sha256:'+hashlib.sha256(b'exact').hexdigest(), browser_download_url=canonical)
+        self.bind([row])
+        with patch.object(client, 'build_opener') as build:
+            build.return_value.open.return_value = asset_response(b'exact')
+            self.transport.download(1, self.root/name)
+            self.assertEqual(build.return_value.open.call_args.args[0].full_url, canonical)
+        self.assertEqual((self.root/name).read_bytes(), b'exact')
+        for url in (canonical.replace('%2B', '+'), canonical.replace('%2B', '%252B'),
+                    canonical.replace('%2B', '%2F'), canonical+'?replacement=1'):
+            with self.subTest(url=url), self.assertRaisesRegex(ValueError, 'exact release URL'):
+                self.transport.remember(self.assets, [dict(row, browser_download_url=url)])
+        self.assertEqual(self.transport.assets[1]['url'], canonical)
 
     def test_incomplete_asset_pagination_never_authorizes_download(self):
         rows = [asset_row(index + 1, 'asset-' + str(index), b'x') for index in range(100)]

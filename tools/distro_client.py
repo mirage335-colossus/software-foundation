@@ -20,7 +20,7 @@ import sys
 import tempfile
 import time
 from urllib.error import HTTPError
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 import distribution_release as release
@@ -175,7 +175,9 @@ class PublicGitHub:
         for row in rows:
             if not isinstance(row, dict): raise ValueError('invalid public asset inventory')
             name = release.delivery.valid_name(row.get('name'))
-            url = 'https://github.com/' + self.repository + '/releases/download/' + tag + '/' + name
+            # Valid portable names may contain plus signs; GitHub encodes each
+            # path component in browser_download_url. Do not decode arbitrary URLs.
+            url = 'https://github.com/' + self.repository + '/releases/download/' + quote(tag, safe='') + '/' + quote(name, safe='')
             if (not release.delivery.positive(row.get('id')) or row['id'] in observed or name.casefold() in names or
                     row.get('state') != 'uploaded' or type(row.get('size')) is not int or not 0 <= row['size'] <= release.MAX_ASSET or
                     not isinstance(row.get('digest'), str) or not re.fullmatch(r'sha256:[0-9a-f]{64}', row['digest']) or

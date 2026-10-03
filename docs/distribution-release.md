@@ -242,7 +242,11 @@ SDK, source, package and evidence file through the unauthenticated asset API can
 exceed its hourly quota in a single refresh. The client binds each download ID to
 the observed repository, tag, name, size and digest; limits HTTPS redirects and
 transfer duration; stages fresh bytes; and verifies the full signed channel before
-activation. Public data downloads do not require a GitHub token. Metadata calls
+activation. Public data downloads do not require a GitHub token. Construct the
+expected public URL by percent-encoding each validated tag and filename component;
+for example, the plus in a Debian revision becomes `%2B`. Compare that canonical
+URL exactly with metadata rather than decoding arbitrary URLs or relaxing origin,
+path, query or digest checks. Metadata calls
 still share the public API budget, so bound refresh frequency across clients and
 preserve the last verified generation when retrieval fails. Explicit rate-limit
 responses use at most three read attempts, a 120-second wait budget shared across

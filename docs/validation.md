@@ -135,6 +135,23 @@ rate recovery, exhausted budgets, complete-pagination restart and preservation o
 an actual signed active generation. Those local tests use controlled responses;
 they do not establish that the hosted runner's public quota is available.
 
+Native-only requalification
+[37097683752](https://github.com/mirage335-colossus/software-foundation/actions/runs/37097683752)
+at `1d96a7c1e30966074af867c8c596456b1ecb51c3` passed native Arch
+and all three APT clients. Gentoo completed prerequisite installation but its first
+public `emaint sync` rejected asset metadata; acceptance was skipped. Independent
+metadata readback identified fourteen Debian filenames whose plus signs are
+correctly percent-encoded as `%2B` in GitHub's public download URLs. The client
+incorrectly compared those URLs against unencoded path components. A focused
+regression reproduced the error before correction; all 32 public-client cases
+passed after canonical component encoding, with no exclusions. The checks still
+reject foreign, double-encoded, slash-substituted or query-modified URLs and verify
+exact downloaded size/digest before activation. One fixture attempt placed a
+private test key inside the checkout and correctly failed the key-location guard;
+the complete successful run used an owned temporary root outside the checkout.
+These local results do not relabel the failed native run or establish Gentoo
+installation until its corrected native workflow completes.
+
 ARM publication
 [37095147094](https://github.com/mirage335-colossus/software-foundation/actions/runs/37095147094)
 at `592ee7bb69c63e9eda4c30be5b161e870c1187cc` completed package
