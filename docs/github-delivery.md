@@ -136,7 +136,13 @@ adding a later group does not move that tag to the new recipe's source commit.
 Fetching validates repository visibility, base state, tag and the complete paged
 asset inventory. Missing recipes fail clearly. Authentication failures and unknown
 responses never become cache misses. A failed download remains in temporary staging;
-it does not publish a usable destination. Exact SDK source retention is required
+it does not publish a usable destination. The assembly job uses `fetch_bases` to
+share discovery across its recipes inside one process. It downloads and verifies
+the complete groups with the existing bounded transfer concurrency, performs one
+fresh reconciliation of the base release, tag and asset identities, then publishes
+the staged output directory. The batch uses seven metadata reads when inventories
+fit one page, instead of seven per recipe. It introduces no cross-job metadata
+artifact or persistent cache. Exact SDK source retention is required
 for [recovery qualification](certification.md), even when cached binaries exist.
 
 ## Candidate and certificate lifecycle
@@ -227,11 +233,16 @@ instead of credentials or raw private responses.
 A paginated retry starts a fresh complete response inventory; it never accepts a
 successful prefix of a failed read. Binary retries likewise use fresh temporary
 files and discard partial response data. The normal complete byte and identity
-verification still applies after transfer. Before writes, a read-only quota check
-can wait for 128 remaining requests (or the entire quota for a smaller limit),
-but it does not reserve repository capacity against other
-jobs. Best-effort temporary-artifact cleanup explicitly disables that preflight
-and fails promptly rather than waiting for a fresh quota window. A failed write or upload is never automatically replayed. Preserve and
+verification still applies after transfer. Before writes, each transport client
+reuses valid core-quota headers from its existing authenticated API responses for
+up to 30 seconds, with a conservative local remaining allowance. It serializes
+fallback read-only quota probes when observations are unavailable, stale or need
+replenishment. The check can wait for 128 remaining
+requests (or the entire quota for a smaller limit), but neither headers nor a
+separate probe reserve repository capacity against other jobs. Best-effort
+temporary-artifact cleanup explicitly disables that preflight and fails promptly
+rather than waiting for a fresh quota window. A failed write or upload is never
+automatically replayed. Preserve and
 reconcile its outcome using the procedure below.
 
 Budget quota waits separately from compilation and tests. Grouped bundle reads

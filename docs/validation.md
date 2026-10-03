@@ -1011,3 +1011,39 @@ artifact deletion, commit or push was performed. For a nonempty inventory of
 `N` artifacts, the normal API cost is `N + ceil(N / 100) + 5`; an empty inventory
 requires one GET. This optional maintenance cost does not change routine release
 request accounting.
+
+
+## Share SDK metadata within assembly
+
+The next 2026-10-03 change batches assembly's four SDK recipes behind one complete
+in-memory base-release inventory and one fresh final reconciliation. Downloads
+and group verification retain four-worker parallelism. Every file still passes
+its size/hash and SDK checks. All groups stay in temporary staging until the
+whole batch succeeds. There is no additional workflow job, artifact upload,
+cross-job metadata handoff or persistent cache.
+
+Release clients reuse valid core-quota response headers for up to 30 seconds,
+with conservative local write admissions. Fallback probes are serialized within
+the client and bounded by the existing request deadline, including lock wait.
+A fresh adequate probe can admit a write despite a lower local estimate, avoiding
+an unnecessary reset wait. Unknown or stale observations retain fallback checks;
+failed mutations are never replayed.
+
+The isolated full native regression, including all five optional distribution
+suites, passed **55/55 CTest entries in 30.56 seconds**, with **1,338
+passed Python cases** and two explicit native-Windows exclusions on Linux.
+The 19 new cases cover exact batch request counts, four simultaneous transfers,
+changed metadata, corrupt bytes, staging cleanup after joined workers, workflow
+ordering, header reuse, concurrent fallback, stale observations, bounded waits,
+and uncertain mutations. Workflow lint, documentation, whitespace, Python 3.9
+grammar for 119 files and the generic-name scan passed. Independent read-only
+review found no actionable issue.
+
+The public warm-SDK complete-release model falls from 210 to **189 quota-counted
+requests**, or **180** with preservation. Assembly metadata reads fall from 28
+to seven for four recipes and one-page inventories. The former 29 quota-probe
+requests become conditional fallback traffic; there is no guaranteed fixed count.
+These are code-derived savings, not hosted measurements. Evidence and exact source
+hashes are retained in `build/agents/sdk-metadata-batch-v1/validation.json`.
+Only this validation documentation changed after the tested snapshot. No hosted
+workflow, real remote operation, SDK rebuild, commit or push was performed.

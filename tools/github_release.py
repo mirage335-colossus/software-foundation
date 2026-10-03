@@ -139,7 +139,7 @@ def positive(value):
 
 HTTP_HEADER_LIMIT = 64 * 1024
 HTTP_JSON_LIMIT = 16 * 1024 * 1024
-RATE_HEADERS = {'retry-after', 'x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset'}
+RATE_HEADERS = {'retry-after', 'x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset', 'x-ratelimit-resource'}
 
 
 def response_head(stream):
@@ -247,6 +247,7 @@ class GitHub:
     COMMAND_TIMEOUT = 10 * 60
     MAX_ATTEMPTS = 8
     WRITE_HEADROOM = 128
+    QUOTA_MAX_AGE = 30
     TRANSIENT_STATUS = frozenset((500, 502, 503, 504))
 
     def __init__(self, repository, *, metrics=None):
@@ -254,6 +255,9 @@ class GitHub:
         self.repository = location(repository)
         self.wait_remaining = float(self.WAIT_BUDGET)
         self._budget_lock = threading.Lock()
+        self._quota_lock = threading.Lock()
+        self._quota_probe_lock = threading.Lock()
+        self._quota = None
 
     def _run(self, arguments, *, body=None, output=None, timeout=None):
         budget = self.COMMAND_TIMEOUT if timeout is None else timeout
@@ -352,7 +356,7 @@ class GitHub:
             raise DeliveryError('remote JSON exceeds supported inventory limit')
         stream = io.BytesIO(result.stdout)
         status, headers = response_head(stream);payload = stream.read()
-        self.metrics.observe(headers, quota_probe=endpoint == 'rate_limit')
+        self._observe(headers, quota_probe=endpoint == 'rate_limit')
         if missing and status == 404 and result.returncode:return None
         if not 200 <= status < 300:raise HTTPFailure(status, headers, payload)
         if result.returncode:raise DeliveryError('GitHub API response was incomplete')
@@ -362,9 +366,56 @@ class GitHub:
         try:return parse(payload)
         except (UnicodeError, ValueError):raise DeliveryError('invalid complete GitHub JSON response') from None
 
+    def _remember_core(self, numbers):
+        # Per-client observations only, never a reservation against other jobs.
+        # Out-of-order responses cannot replenish locally admitted writes.
+        with self._quota_lock:
+            before = self._quota
+            if before is not None and numbers['reset'] < before['reset']:
+                return
+            remaining = numbers['remaining']
+            if before is not None and numbers['reset'] == before['reset']:
+                remaining = min(remaining, before['remaining'])
+            self._quota = dict(numbers, remaining=remaining, observed=time.monotonic())
+
+    def _observe(self, headers, *, quota_probe=False):
+        self.metrics.observe(headers, quota_probe=quota_probe)
+        if headers.get('x-ratelimit-resource') != 'core':
+            return
+        numbers = {key: rate_integer(headers.get('x-ratelimit-' + key))
+                   for key in ('limit', 'remaining', 'reset')}
+        if (positive(numbers['limit']) and positive(numbers['reset']) and
+                numbers['remaining'] is not None and 0 <= numbers['remaining'] <= numbers['limit']):
+            self._remember_core(numbers)
+
+    def _reserve_headroom(self):
+        with self._quota_lock:
+            quota = self._quota
+            if (quota is None or not 0 <= time.monotonic() - quota['observed'] < self.QUOTA_MAX_AGE or
+                    quota['reset'] <= time.time() or
+                    quota['remaining'] < min(self.WRITE_HEADROOM, quota['limit'])):
+                return False
+            quota['remaining'] -= 1
+            return True
+
     def _headroom(self):
-        """Unmetered primary-quota observation, never a shared-quota reservation."""
+        if self.WRITE_HEADROOM <= 0 or self._reserve_headroom():
+            return
+        # One fallback probe can serve waiting upload workers as well. Network
+        # and backoff never hold the observation lock used by response handlers.
         deadline = time.monotonic() + self.REQUEST_DEADLINE
+        if not self._quota_probe_lock.acquire(timeout=self.REQUEST_DEADLINE):
+            raise DeliveryError('GitHub quota observation wait exceeded request deadline')
+        try:
+            self._timeout(deadline)
+            if self._reserve_headroom():
+                return
+            self._probe_headroom(deadline)
+        finally:
+            self._quota_probe_lock.release()
+
+    def _probe_headroom(self, deadline):
+        """Fallback only when fresh response headers cannot admit this write."""
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
             try:value = self._json_once('rate_limit', 'GET', None, False, deadline)
             except HTTPFailure as error:
@@ -376,7 +427,16 @@ class GitHub:
                     or type(core.get('remaining')) is not int or not 0 <= core['remaining'] <= core['limit']
                     or not positive(core.get('reset'))):
                 raise DeliveryError('GitHub primary quota preflight returned invalid core limits')
-            if core['remaining'] >= min(self.WRITE_HEADROOM, core['limit']):return
+            self._remember_core({key: core[key] for key in ('limit', 'remaining', 'reset')})
+            if self._reserve_headroom():return
+            if core['remaining'] >= min(self.WRITE_HEADROOM, core['limit']) and core['reset'] > time.time():
+                # Local reservations are deliberately conservative. A fresh
+                # successful probe still admits this write just as before;
+                # do not wait an hour only because cached estimates were lower.
+                # Keep the cache conservative for other concurrent admissions.
+                with self._quota_lock:
+                    self._quota['remaining'] = max(0, self._quota['remaining'] - 1)
+                return
             diagnostic = rate_diagnostic(200, {'x-ratelimit-' + k:str(core[k]) for k in ('limit','remaining','reset')})
             if attempt == self.MAX_ATTEMPTS:
                 raise DeliveryError('GitHub quota preflight attempt limit exhausted (' + diagnostic + ')')
@@ -410,7 +470,7 @@ class GitHub:
                     while stream.tell() < len(raw) and raw[stream.tell()] in b' \r\n\t':stream.seek(1, 1)
                     if stream.tell() == len(raw):break
                     status, headers = response_head(stream)
-                    self.metrics.observe(headers)
+                    self._observe(headers)
                     if not 200 <= status < 300:raise HTTPFailure(status, headers, stream.read(4097))
                     # A later error body is opaque, even if it is not UTF-8.
                     # Strictly re-encode only this successful JSON page below.
@@ -449,7 +509,7 @@ class GitHub:
                 '--input', str(path), '-H', 'Content-Type: application/octet-stream',
                 '-H', 'Content-Length: ' + str(before.st_size), '-H', 'Accept: application/vnd.github+json'])
             response = io.BytesIO(result.stdout); status, headers = response_head(response)
-            self.metrics.observe(headers)
+            self._observe(headers)
             if result.returncode or status != 201:
                 raise DeliveryError('asset upload failed; remote outcome requires reconciliation', True)
             body = response.read(HTTP_JSON_LIMIT + 1)
@@ -479,7 +539,7 @@ class GitHub:
                         '-H', 'Accept:application/octet-stream'], output=stream, timeout=self._timeout(deadline))
                 with raw.open('rb') as stream:
                     status, headers = response_head(stream)
-                    self.metrics.observe(headers)
+                    self._observe(headers)
                     if not 200 <= status < 300:raise HTTPFailure(status, headers, stream.read(4097))
                     if result.returncode or status != 200:
                         raise DeliveryError('asset download failed; incomplete response must not be reused')
@@ -866,33 +926,63 @@ def download_files(remote, assets, selections):
         for future in futures: future.result()
 
 
-def fetch_base(repository, recipe, output, *, transport=None, binary_only=False):
+def _fetch_base_groups(repository, recipes, output, *, transport, binary_only, single):
     if type(binary_only) is not bool: raise DeliveryError('binary-only selection must be boolean')
-    expected = store.names(recipe); remote = Remote(repository, transport); remote.visible()
+    if (not isinstance(recipes, (list, tuple)) or not recipes or
+            any(not isinstance(recipe, str) for recipe in recipes) or len(set(recipes)) != len(recipes)):
+        raise DeliveryError('expected distinct nonempty SDK recipe identities')
+    expected = {recipe: store.names(recipe) for recipe in recipes}
+    output = Path(output)
+    if output.exists() or output.is_symlink():
+        raise DeliveryError('fetch destination must be new')
+    remote = Remote(repository, transport); remote.visible()
     info = remote.published('base')
     if info['draft'] or not info['prerelease'] or info['name'] != 'base':
         raise DeliveryError('base must be a published prerelease')
     assets = remote.assets(info)
     reference = remote.reference('base')
-    if not set(expected) <= assets.keys():
+    if any(not set(names) <= assets.keys() for names in expected.values()):
         raise DeliveryError('exact complete dependency group is absent; no cold build fallback')
-    output = Path(output)
-    if output.exists() or output.is_symlink():
-        raise DeliveryError('fetch destination must be new')
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.base-fetch-', dir=output.parent) as temporary:
         stage = Path(temporary) / 'group'; stage.mkdir()
-        binary, source, checksum = expected
-        selected = (binary, checksum) if binary_only else expected
-        download_files(remote, assets, [(name, stage / name, None) for name in selected])
-        files = store.verify_binary_group(stage, recipe) if binary_only else store.verify_group(stage, recipe)
-        # The checksum binds the untransferred supplier source too. Reconcile
-        # every immutable API asset digest, not just the selected binary bytes.
-        if any(assets[name]['digest'] != 'sha256:' + files[name] for name in expected):
-            raise DeliveryError('base assets differ from complete checksum inventory')
+        groups, selections, results = {}, [], {}
+        for recipe, names in expected.items():
+            group = stage if single else stage / recipe
+            if not single: group.mkdir()
+            groups[recipe] = group
+            binary, source, checksum = names
+            selected = (binary, checksum) if binary_only else names
+            selections.extend((name, group / name, None) for name in selected)
+        # One pool across all recipes keeps four transfers active without
+        # nested per-recipe pools, additional handoffs or persistent metadata.
+        download_files(remote, assets, selections)
+        def verify(recipe):
+            group = groups[recipe]
+            files = store.verify_binary_group(group, recipe) if binary_only else store.verify_group(group, recipe)
+            if any(assets[name]['digest'] != 'sha256:' + files[name] for name in expected[recipe]):
+                raise DeliveryError('base assets differ from complete checksum inventory')
+            return dict(fetched=True, recipe=recipe, files=files,
+                        payload='binary' if binary_only else 'complete')
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            pending = {recipe: pool.submit(verify, recipe) for recipe in groups}
+            results = {recipe: future.result() for recipe, future in pending.items()}
+        # All consumers retain full byte checks; one fresh reconciliation covers
+        # the whole immutable snapshot before any output becomes available.
         remote.unchanged('base', info, assets, reference)
         stage.rename(output)
-    return {'fetched': True, 'recipe': recipe, 'files': files, 'payload': 'binary' if binary_only else 'complete'}
+    return results
+
+
+def fetch_base(repository, recipe, output, *, transport=None, binary_only=False):
+    return _fetch_base_groups(repository, [recipe], output, transport=transport,
+                              binary_only=binary_only, single=True)[recipe]
+
+
+def fetch_bases(repository, recipes, output, *, transport=None, binary_only=False):
+    """Fetch recipe subdirectories together using one in-memory base inventory."""
+    return _fetch_base_groups(repository, recipes, output, transport=transport,
+                              binary_only=binary_only, single=False)
 
 
 def publish_base(repository, recipe, group, source_commit, *, execute=False, transport=None):

@@ -143,6 +143,43 @@ class StorageLayoutTests(unittest.TestCase):
         self.assertEqual(merge.call_count, 3)
         self.assertTrue(all(len(call.args[0]) == 3 and call.kwargs == {'diagnostic':False} for call in merge.call_args_list))
 
+    def test_assembly_fetches_one_unique_sdk_batch_before_building_candidate(self):
+        recipes = {'linux': 'b' * 64, 'windows': 'a' * 64, 'alias': 'b' * 64}
+        events = []
+        previous = Path.cwd()
+        try:
+            with patch.dict(os.environ, PROFILE='all-gui', EXPERIMENT='false'), \
+                    patch.object(lifecycle.evidence, 'load', return_value=recipes), \
+                    patch.object(lifecycle.delivery, 'fetch_bases',
+                                 side_effect=lambda *args: events.append('fetched')) as fetch, \
+                    patch.object(ci, 'assemble_release', side_effect=lambda *args: events.append('assembled')), \
+                    patch.object(lifecycle.delivery, 'publish_candidate',
+                                 return_value={'delivery': {'inventory_sha256': 'c' * 64}}), \
+                    patch.object(lifecycle, 'write'), patch.object(lifecycle, 'scalar_output'), \
+                    patch.object(lifecycle.evidence, 'sha', return_value='d' * 64):
+                lifecycle.main('assemble')
+        finally:
+            os.chdir(previous)
+        fetch.assert_called_once_with('example/foundation', ['a' * 64, 'b' * 64], Path('build/base'))
+        self.assertEqual(events, ['fetched', 'assembled'])
+
+    def test_assembly_stops_before_candidate_or_publication_after_sdk_batch_failure(self):
+        previous = Path.cwd()
+        try:
+            with patch.object(lifecycle.evidence, 'load', return_value={'linux': 'a' * 64}), \
+                    patch.object(lifecycle.delivery, 'fetch_bases',
+                                 side_effect=ValueError('remote inventory changed')), \
+                    patch.object(ci, 'assemble_release') as assemble, \
+                    patch.object(lifecycle.delivery, 'publish_candidate') as publish, \
+                    patch.object(lifecycle, 'write') as write, \
+                    self.assertRaisesRegex(ValueError, 'remote inventory changed'):
+                lifecycle.main('assemble')
+        finally:
+            os.chdir(previous)
+        assemble.assert_not_called()
+        publish.assert_not_called()
+        write.assert_not_called()
+
     def test_single_directory_selects_contents_without_invalid_dot_path(self):
         self.file('build/group/a.json');self.file('build/group/nested/b.txt')
         root,paths=lifecycle.bundle_inputs('build/group/')

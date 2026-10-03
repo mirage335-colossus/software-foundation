@@ -316,6 +316,121 @@ class DeliveryTests(unittest.TestCase):
             G.fetch_base('example/project',self.fixture.recipe,self.root/'fetched',transport=self.remote)
         self.assertFalse((self.root/'fetched').exists());self.assertFalse(self.remote.mutations)
 
+    def base_groups(self, count=4):
+        recipes = [digit * 64 for digit in 'abcd'[:count]]
+        groups = {}
+        for recipe in recipes:
+            if recipe == self.fixture.recipe:
+                group = self.root / 'group'
+            else:
+                _, _, _, group = release_fixtures.fixture(self.root / ('sdk-' + recipe[0]), recipe=recipe)
+            G.publish_base('example/project', recipe, group, 'a' * 40, execute=True, transport=self.remote)
+            groups[recipe] = G.store.verify_group(group, recipe)
+        self.remote.calls.clear()
+        return recipes, groups
+
+    def test_batch_base_fetch_uses_one_inventory_and_one_reconciliation_for_four_groups(self):
+        recipes, expected = self.base_groups()
+        destination = self.root / 'fetched-batch'
+        result = G.fetch_bases('example/project', recipes, destination, transport=self.remote)
+        self.assertEqual(set(result), set(recipes))
+        for recipe in recipes:
+            self.assertEqual(result[recipe], dict(fetched=True, recipe=recipe, files=expected[recipe], payload='complete'))
+            self.assertEqual(G.store.verify_group(destination / recipe, recipe), expected[recipe])
+        metadata = [call for call in self.remote.calls if call[0] in ('GET', 'pages')]
+        self.assertEqual(len(metadata), 7)
+        self.assertEqual(sum(call[0] == 'download' for call in self.remote.calls), 12)
+        self.assertFalse(self.remote.mutations)
+
+    def test_batch_base_fetch_keeps_one_global_four_transfer_bound(self):
+        recipes, _ = self.base_groups()
+        barrier = threading.Barrier(4); guard = threading.Lock()
+        active = 0; peak = 0; completed = []
+        original = self.remote.download
+        def download(asset_id, path):
+            nonlocal active, peak
+            with guard:
+                active += 1; peak = max(peak, active)
+            try:
+                barrier.wait(timeout=5)
+                original(asset_id, path)
+                with guard: completed.append(asset_id)
+            finally:
+                with guard: active -= 1
+        with mock.patch.object(self.remote, 'download', side_effect=download):
+            G.fetch_bases('example/project', recipes, self.root / 'parallel-batch', transport=self.remote)
+        self.assertEqual(peak, 4); self.assertEqual(active, 0); self.assertEqual(len(completed), 12)
+
+    def test_batch_binary_fetch_verifies_complete_inventory_without_source_transfers(self):
+        recipes, expected = self.base_groups(2)
+        destination = self.root / 'binary-batch'
+        result = G.fetch_bases('example/project', recipes, destination, transport=self.remote, binary_only=True)
+        transferred = {call[1] for call in self.remote.calls if call[0] == 'download'}
+        for recipe in recipes:
+            binary, source, sums = G.store.names(recipe)
+            self.assertEqual({p.name for p in (destination / recipe).iterdir()}, {binary, sums})
+            self.assertEqual(result[recipe]['files'], expected[recipe])
+            self.assertEqual(result[recipe]['payload'], 'binary')
+            source_id = next(row['id'] for row in self.remote.releases[0]['assets'] if row['name'] == source)
+            self.assertNotIn(source_id, transferred)
+        self.assertEqual(len(transferred), 4)
+        self.remote.replace_asset(G.store.names(recipes[-1])[1], b'changed retained source')
+        invalid = self.root / 'invalid-binary-batch'
+        with self.assertRaisesRegex(ValueError, 'complete checksum inventory'):
+            G.fetch_bases('example/project', recipes, invalid, transport=self.remote, binary_only=True)
+        self.assertFalse(invalid.exists())
+
+    def test_batch_base_fetch_rejects_metadata_drift_before_exposing_any_group(self):
+        recipes, _ = self.base_groups(2)
+        original_row = copy.deepcopy(self.remote.releases[0]); original_refs = dict(self.remote.refs)
+        mutations = (lambda: self.remote.refs.update(base='b' * 40),
+                     lambda: self.remote.replace_asset(G.store.names(recipes[-1])[1]),
+                     lambda: self.remote.releases[0].update(prerelease=False))
+        for index, change in enumerate(mutations):
+            with self.subTest(change=index):
+                self.remote.releases[0] = copy.deepcopy(original_row); self.remote.refs = dict(original_refs)
+                self.remote.change_download = change
+                destination = self.root / ('drifting-batch-' + str(index))
+                with self.assertRaises(ValueError):
+                    G.fetch_bases('example/project', recipes, destination, transport=self.remote)
+                self.assertFalse(destination.exists())
+                self.assertFalse(list(self.root.glob('.base-fetch-*')))
+
+    def test_batch_base_fetch_corruption_leaves_no_complete_or_partial_output(self):
+        recipes, _ = self.base_groups(2)
+        binary = G.store.names(recipes[-1])[0]
+        asset = next(row for row in self.remote.releases[0]['assets'] if row['name'] == binary)
+        self.remote.data[asset['id']] = b'corrupt download'
+        destination = self.root / 'corrupt-batch'
+        with self.assertRaises(ValueError):
+            G.fetch_bases('example/project', recipes, destination, transport=self.remote)
+        self.assertFalse(destination.exists()); self.assertFalse(list(self.root.glob('.base-fetch-*')))
+
+    def test_batch_base_fetch_joins_workers_before_removing_failed_staging(self):
+        recipes, _ = self.base_groups(2)
+        fail_id = self.remote.releases[0]['assets'][0]['id']
+        started = threading.Barrier(4); completed = []; original = self.remote.download
+        first_wave = set(row['id'] for row in self.remote.releases[0]['assets'][:4])
+        def download(asset_id, path):
+            if asset_id in first_wave: started.wait(timeout=5)
+            if asset_id == fail_id: raise G.DeliveryError('injected failed transfer')
+            original(asset_id, path); completed.append(asset_id)
+        with mock.patch.object(self.remote, 'download', side_effect=download):
+            with self.assertRaisesRegex(ValueError, 'injected failed transfer'):
+                G.fetch_bases('example/project', recipes, self.root / 'failed-batch', transport=self.remote)
+        self.assertEqual(set(completed), {row['id'] for row in self.remote.releases[0]['assets']} - {fail_id})
+        self.assertFalse((self.root / 'failed-batch').exists()); self.assertFalse(list(self.root.glob('.base-fetch-*')))
+
+    def test_batch_base_fetch_invalid_selection_and_existing_output_fail_before_remote_reads(self):
+        destination = self.root / 'existing-batch'; destination.mkdir(); (destination / 'keep').write_text('retained')
+        for recipes in ([], 'a' * 64, [None], ['../bad'], ['a' * 64, 'a' * 64]):
+            with self.subTest(recipes=recipes), self.assertRaises(ValueError):
+                G.fetch_bases('example/project', recipes, self.root / 'invalid-batch', transport=self.remote)
+        with self.assertRaises(ValueError):
+            G.fetch_bases('example/project', ['a' * 64], destination, transport=self.remote)
+        self.assertEqual((destination / 'keep').read_text(), 'retained')
+        self.assertFalse(self.remote.calls); self.assertFalse((self.root / 'invalid-batch').exists())
+
     def test_base_publish_fetch_and_exact_reuse(self):
         self.base(execute=True)
         self.assertTrue(self.remote.releases[0]['prerelease']);self.assertIsNone(self.remote.latest)
@@ -664,17 +779,17 @@ class TransportTests(unittest.TestCase):
     def quota(self,remaining=1000,limit=1000,reset=4600):
         return self.response(payload=json.dumps({'resources':{'core':dict(limit=limit,remaining=remaining,reset=reset)}}).encode())
 
-    def test_accounting_counts_paginated_responses_and_quota_probes_without_extra_requests(self):
+    def test_accounting_reuses_paginated_quota_headers_without_extra_requests(self):
         metrics = G.RequestMetrics(); transport = G.GitHub('example/project', metrics=metrics)
-        headers = {'X-RateLimit-Limit': '1000', 'X-RateLimit-Remaining': '800', 'X-RateLimit-Reset': '4600'}
+        headers = self.core_headers()
         first = self.response(payload=b'[{"id":1}]', headers=headers).stdout
         second = self.response(payload=b'[{"id":2}]', headers=dict(headers, **{'X-RateLimit-Remaining':'799'})).stdout
-        with mock.patch.object(transport, '_run', side_effect=[subprocess.CompletedProcess([], 0, first+b'\n'+second, b''), self.quota()]) as run:
+        with mock.patch.object(transport, '_run', return_value=subprocess.CompletedProcess([], 0, first+b'\n'+second, b'')) as run:
             self.assertEqual(transport.pages('private-endpoint'), [{'id':1}, {'id':2}])
             transport._headroom()
-        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_count, 1)
         value = metrics.snapshot()
-        self.assertEqual(value['api_responses'], 2); self.assertEqual(value['quota_probes'], 1)
+        self.assertEqual(value['api_responses'], 2); self.assertEqual(value['quota_probes'], 0)
         self.assertEqual(value['observed_quota'], {'limit':1000, 'remaining':799, 'reset':4600})
         self.assertNotIn('private', json.dumps(value))
         metrics.observe(dict(headers, **{'X-RateLimit-Remaining':'900'}))
@@ -937,6 +1052,124 @@ class TransportTests(unittest.TestCase):
                 with mock.patch.object(transport,'_run') as call:
                     with self.assertRaisesRegex(G.DeliveryError,'destination must be new'):transport.download(123,path)
                 call.assert_not_called();self.assertEqual(path.read_bytes(),b'existing')
+
+    @staticmethod
+    def core_headers(remaining=800, reset=4600):
+        return {'X-RateLimit-Limit': '1000', 'X-RateLimit-Remaining': str(remaining),
+                'X-RateLimit-Reset': str(reset), 'X-RateLimit-Resource': 'core'}
+
+    def test_recent_core_response_headers_admit_multiple_writes_without_quota_probes(self):
+        transport = G.GitHub('example/project')
+        responses = [self.response(headers=self.core_headers()), self.response(201), self.response()]
+        with mock.patch.object(transport, '_run', side_effect=responses) as run:
+            transport.json('metadata')
+            transport.json('first', method='POST')
+            transport.json('second', method='PATCH')
+        self.assertEqual(run.call_count, 3)
+        self.assertFalse(any(call.args[0][-1] == 'rate_limit' for call in run.call_args_list))
+        self.assertFalse(self.sleeps)
+
+    def test_missing_invalid_or_noncore_quota_headers_use_one_fallback_probe(self):
+        valid = self.core_headers()
+        for headers in ({}, dict(valid, **{'X-RateLimit-Remaining': '1001'}),
+                        dict(valid, **{'X-RateLimit-Remaining': '-1'}),
+                        dict(valid, **{'X-RateLimit-Resource': 'search'}),
+                        {key: value for key, value in valid.items() if key != 'X-RateLimit-Resource'}):
+            with self.subTest(headers=headers):
+                transport = G.GitHub('example/project')
+                with mock.patch.object(transport, '_run', side_effect=[self.response(headers=headers), self.quota(), self.response(201)]) as run:
+                    transport.json('metadata'); transport.json('write', method='POST')
+                self.assertEqual(run.call_count, 3)
+                self.assertEqual(run.call_args_list[1].args[0][-1], 'rate_limit')
+        self.assertFalse(self.sleeps)
+
+    def test_stale_or_expired_quota_observation_is_reprobed_before_mutation(self):
+        for expired in (False, True):
+            with self.subTest(expired=expired):
+                transport = G.GitHub('example/project')
+                reset = int(1000 + self.elapsed + (1 if expired else 3600))
+                with mock.patch.object(transport, '_run', side_effect=[self.response(headers=self.core_headers(reset=reset)), self.quota(reset=reset+3600), self.response(201)]) as run:
+                    transport.json('metadata')
+                    self.elapsed += 2 if expired else transport.QUOTA_MAX_AGE + 1
+                    transport.json('write', method='POST')
+                self.assertEqual(run.call_count, 3)
+                self.assertEqual(run.call_args_list[1].args[0][-1], 'rate_limit')
+        self.assertFalse(self.sleeps)
+
+    def test_write_admission_decrements_observed_headroom_before_the_next_write(self):
+        transport = G.GitHub('example/project')
+        responses = [self.response(headers=self.core_headers(128)), self.response(201), self.quota(reset=8200), self.response(201)]
+        with mock.patch.object(transport, '_run', side_effect=responses) as run:
+            transport.json('metadata'); transport.json('first', method='POST'); transport.json('second', method='POST')
+        self.assertEqual([call.args[0][-1] for call in run.call_args_list], ['metadata', 'first', 'rate_limit', 'second'])
+        self.assertFalse(self.sleeps)
+
+    def test_out_of_order_same_window_quota_headers_never_restore_spent_headroom(self):
+        transport = G.GitHub('example/project')
+        responses = [self.response(headers=self.core_headers(128)), self.response(headers=self.core_headers(900)),
+                     self.response(201), self.quota(reset=8200), self.response(201)]
+        with mock.patch.object(transport, '_run', side_effect=responses) as run:
+            transport.json('first-observation'); transport.json('late-old-observation')
+            transport.json('first-write', method='POST'); transport.json('second-write', method='POST')
+        self.assertEqual(run.call_count, 5)
+        self.assertEqual(run.call_args_list[3].args[0][-1], 'rate_limit')
+
+    def test_fresh_quota_probe_admits_write_even_when_local_estimate_is_lower(self):
+        transport = G.GitHub('example/project')
+        responses = [self.response(headers=self.core_headers(128)), self.response(201),
+                     self.quota(remaining=128), self.response(201)]
+        with mock.patch.object(transport, '_run', side_effect=responses) as run:
+            transport.json('metadata'); transport.json('first', method='POST'); transport.json('second', method='POST')
+        self.assertEqual([call.args[0][-1] for call in run.call_args_list], ['metadata', 'first', 'rate_limit', 'second'])
+        self.assertFalse(self.sleeps)
+
+    def test_concurrent_writes_share_one_missing_cache_probe_and_keep_parallelism(self):
+        from concurrent.futures import ThreadPoolExecutor
+        transport = G.GitHub('example/project'); writes = threading.Barrier(4)
+        def run(arguments, **kwargs):
+            if arguments[-1] == 'rate_limit': return self.quota()
+            writes.wait(timeout=5)
+            return self.response(201)
+        with mock.patch.object(transport, '_run', side_effect=run) as observed:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                futures = [pool.submit(transport.json, 'write-' + str(index), method='POST') for index in range(4)]
+                self.assertEqual([future.result() for future in futures], [{}, {}, {}, {}])
+        self.assertEqual(observed.call_count, 5)
+        self.assertEqual(sum(call.args[0][-1] == 'rate_limit' for call in observed.call_args_list), 1)
+        self.assertFalse(self.sleeps)
+
+    def test_waiting_for_another_quota_probe_has_a_bounded_deadline(self):
+        transport = G.GitHub('example/project'); transport.REQUEST_DEADLINE = 0.01
+        transport._quota_probe_lock.acquire()
+        try:
+            with mock.patch.object(transport, '_run') as run:
+                with self.assertRaises(G.DeliveryError): transport.json('write', method='POST')
+            run.assert_not_called()
+        finally:
+            transport._quota_probe_lock.release()
+
+    def test_cached_headroom_never_retries_an_uncertain_mutation(self):
+        transport = G.GitHub('example/project')
+        responses = [self.response(headers=self.core_headers()), self.response(429, headers={'Retry-After': '60'}, code=1)]
+        with mock.patch.object(transport, '_run', side_effect=responses) as run:
+            transport.json('metadata')
+            with self.assertRaises(G.DeliveryError) as caught: transport.json('write', method='POST')
+        self.assertTrue(caught.exception.uncertain); self.assertEqual(run.call_count, 2); self.assertFalse(self.sleeps)
+
+    def test_direct_upload_reuses_metadata_headers_and_updates_quota_for_following_write(self):
+        transport = G.GitHub('example/project')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'payload.tar.gz'; path.write_bytes(b'verified payload')
+            row = {'id': 3, 'name': path.name, 'state': 'uploaded', 'size': path.stat().st_size,
+                   'digest': 'sha256:' + G.archive.digest(path)}
+            responses = [self.response(headers=self.core_headers()),
+                         self.response(201, G.archive.encoded(row), headers=self.core_headers(127)),
+                         self.quota(reset=8200), self.response(201)]
+            with mock.patch.object(transport, '_run', side_effect=responses) as run:
+                transport.json('metadata'); transport.upload_to(7, path); transport.json('write', method='POST')
+        self.assertEqual(run.call_count, 4)
+        self.assertEqual(run.call_args_list[2].args[0][-1], 'rate_limit')
+        self.assertFalse(self.sleeps)
 
     def test_low_headroom_waits_before_one_mutation_and_caps_at_token_limit(self):
         transport=G.GitHub('example/project')

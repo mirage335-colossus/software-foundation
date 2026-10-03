@@ -189,30 +189,41 @@ use public download URLs instead of authenticated REST requests when the reposit
 is public. File transfers and local verification still occur.
 
 The complete public all-GUI application release using already-published SDKs models
-**210 quota-counted REST operations**, or **201** with `preserve_artifacts=true`.
+**189 quota-counted REST operations**, or **180** with `preserve_artifacts=true`.
 The retained shape has 23 initial public assets and 53 temporary artifacts:
 
 | Stage | Modeled REST operations |
 | --- | ---: |
 | Initial preflight | 9 |
 | Candidate regression handoffs | 0 |
-| GUI inputs and eight SDK fetches | 63 |
+| GUI inputs, four build SDK fetches and one assembly SDK batch | 42 |
 | Candidate publication and complete draft readback | 66 |
 | Certification planning and certificate attachment | 22 |
 | Promotion planning and promotion | 22 |
 | Independent Latest verification | 19 |
 | Cleanup: nine direct-ID deletions, no listing | 9 |
-| **Total** | **210** |
+| **Total** | **189** |
 
-This is a code-derived estimate, about **72–82% below** the previous full-release
+This is a code-derived estimate, about **75–84% below** the previous full-release
 range, not a hosted measurement or guaranteed ceiling. It assumes public assets,
-one-page inventories and successful first attempts. There are also approximately
-29 quota-preflight HTTP requests, which do not consume the primary core quota.
+one-page inventories and successful first attempts. Assembly shares one in-process
+base-release inventory across its four SDK recipes and performs one fresh final
+reconciliation, reducing their metadata reads from 28 to seven. Every SDK payload
+is still verified and downloads retain bounded parallelism. No cross-job artifact,
+persistent cache or extra upload is introduced.
+
+Write headroom normally uses quota headers from existing API responses. A bounded
+fallback probe covers missing, stale or exhausted observations; other jobs can
+consume quota between any observation and the next request. The previous model
+had about 29 separate quota probes, which do not consume the primary core quota.
+That remains a conservative allowance when usable headers are unavailable, rather
+than an unconditional cost. Actual probe counts depend on responses and elapsed
+time; response reuse removes most routine probes, not a guaranteed fixed number.
 Actions artifact-service calls and public file downloads remain network work.
 Four Windows graphics consumers add eight REST operations if configured with
 an authenticated release-asset URL instead of a direct public URL. Private
 repositories retain approximately 127 authenticated downloads, bringing the
-comparable total to about 337 before that graphics adjustment. Cold SDK publication,
+comparable total to about 316 before that graphics adjustment. Cold SDK publication,
 optional distribution workflows, additional assets, retries, visibility polling
 and pagination cost more.
 
@@ -223,9 +234,10 @@ five-item publication cleanup adds four seconds of deliberate mutation spacing,
 plus request latency. The other four deletions are single-item operations at their
 own final consumers. Independent jobs remain parallel, and the extra cleanup
 runners and final 52-second deletion sequence are gone. Preservation disables all
-nine deletions, reducing the estimate to 201. No cleanup waits for an hourly quota
+nine deletions, reducing the estimate to 180. No cleanup waits for an hourly quota
 reset. This reduces cleanup calls by about 83% and the immediately preceding
-255-call release estimate by about 18%.
+255-call release estimate to 210 (about 18%); the shared assembly inventory
+then removes a further 21 calls to reach 189.
 
 For occasional repository-wide reclamation, run the
 [manual artifact cleanup workflow](ci.md#manual-artifact-cleanup) between builds.

@@ -736,8 +736,7 @@ def main(command):
                             if evidence.load(ROOT / 'build/application-sdk.json').get('payload') == 'binary' else None)
     elif command == 'assemble':
         recipes = evidence.load(Path('build/source/recipes.json'))
-        parallel_operations([lambda recipe=recipe: delivery.fetch_base(value('GITHUB_REPOSITORY'), recipe, Path('build/base') / recipe)
-                             for recipe in sorted(set(recipes.values()))])
+        delivery.fetch_bases(value('GITHUB_REPOSITORY'), sorted(set(recipes.values())), Path('build/base'))
         ci.assemble_release(Path('build/source/source.tar.gz'), Path('build/packages'), Path('build/base'), Path('build/candidate'), value('PROFILE'))
         tag = os.environ.get('TAG') or 'candidate-' + value('GITHUB_RUN_ID') + '-attempt-' + value('GITHUB_RUN_ATTEMPT')
         request = dict(repository=value('GITHUB_REPOSITORY'), tag=tag, directory='build/candidate',
