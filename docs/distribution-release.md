@@ -386,6 +386,15 @@ direction. Other whitespace, line-ending or content changes fail. Keep tests for
 both provider directions and invalid signatures when upgrading signing tools;
 never substitute broad whitespace normalization for exact content checks.
 
+New native recipes use specification version 4 so `src_prepare` invokes the
+mandatory Gentoo `eapply_user` hook. Schemas 1–3 remain reproducible for immutable
+readback, but their legacy no-op preparation phase cannot establish native Gentoo
+support. Correct a published recipe with a new package release and sequence;
+never edit signed historical bytes or silently change their template semantics.
+The disposable Portage configuration accepts each selected package's exact
+`Foundation-Bundled-<backend>` token. Partial license-name globs are not supported;
+do not replace them with global license acceptance.
+
 All native qualification frontends verify the complete signed distribution,
 including its Debian packages. The disposable Arch and Gentoo environments
 therefore install their distribution-provided `dpkg` verifier alongside signing

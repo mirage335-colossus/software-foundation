@@ -57,7 +57,7 @@ def request(value):
     apt.full_fingerprint(value['trusted_fingerprint'])
     # Validate caller-controlled recipe lists using the existing complete contract.
     placeholder = {'url': 'https://example.invalid/' + '0' * 64, 'sha256': '0' * 64}
-    distro.validate_spec(dict(schema_version=3, version=value['version'], package_release=value['package_release'],
+    distro.validate_spec(dict(schema_version=distro.CURRENT_SCHEMA, version=value['version'], package_release=value['package_release'],
         architecture=TARGETS[value['target']][0], backend='core', archive_url=placeholder['url'], archive_sha256='0' * 64,
         license_files=value['license_files'], redistribution_approved=True, application_source=placeholder,
         packaging_tool=placeholder, sdk=placeholder, dependencies=[], runtime_dependencies=value['runtime_dependencies']))
@@ -252,7 +252,7 @@ def prepare(value, candidate, identity, policy, packaging_source, output, key, *
                                    'sha256': archive.digest(stage / retained[logical])}
             dependencies = ['application/' + path for path in identity['files'] if path.startswith('dependencies/')]
             primary = next(path for path in dependencies if path.startswith('application/dependencies/' + item['sdk_recipe'] + '/') and path.endswith('-binary.tar.gz'))
-            spec = dict(schema_version=3, version=value['version'], package_release=value['package_release'],
+            spec = dict(schema_version=distro.CURRENT_SCHEMA, version=value['version'], package_release=value['package_release'],
                 architecture=TARGETS[value['target']][0], backend=backend,
                 archive_url=ref('application/' + item['archive'])['url'], archive_sha256=item['sha256'],
                 license_files=value['license_files'], redistribution_approved=True,

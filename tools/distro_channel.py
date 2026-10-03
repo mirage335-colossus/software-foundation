@@ -203,11 +203,14 @@ def runtime_policy(backend):
     return result
 
 
+CURRENT_SCHEMA = 4
+
+
 def validate_spec(spec):
     fields = {'schema_version', 'version', 'package_release', 'architecture', 'backend',
               'archive_url', 'archive_sha256', 'license_files', 'redistribution_approved',
               'application_source', 'packaging_tool', 'sdk', 'dependencies', 'runtime_dependencies'}
-    if not isinstance(spec, dict) or set(spec) != fields or type(spec['schema_version']) is not int or spec['schema_version'] not in (1, 2, 3):
+    if not isinstance(spec, dict) or set(spec) != fields or type(spec['schema_version']) is not int or spec['schema_version'] not in (1, 2, 3, 4):
         raise ValueError('invalid complete package specification')
     version_key(spec)
     if spec['architecture'] not in ARCHES or spec['backend'] not in BACKENDS or spec['redistribution_approved'] is not True:
@@ -443,12 +446,15 @@ def recipe_files(spec, root_name, payload, archive_name):
     revision = '' if spec['package_release'] == 1 else '-r' + str(spec['package_release'] - 1)
     ebuild_name = name + '-' + spec['version'] + revision + '.ebuild'
     license_name = 'Foundation-Bundled-' + backend
+    # Historical recipes stay byte-identical; EAPI phase compliance is versioned.
+    prepare_command = 'eapply_user' if spec['schema_version'] >= 4 else ':'
     ebuild = (f'EAPI=8\nDESCRIPTION="Generic prebuilt application ({backend})"\n'
               f'SRC_URI="{spec["archive_url"]} -> {archive_name}"\nS="${{WORKDIR}}/{root_name}"\n'
               f'LICENSE="{license_name}"\nSLOT="0"\nKEYWORDS="~{ARCHES[architecture]}"\n'
               f'RDEPEND="{" ".join(spec["runtime_dependencies"]["gentoo"])}"\n'
               'RESTRICT="strip"\nQA_PREBUILT="*"\n'
-              'src_prepare() { :; }\nsrc_configure() { :; }\nsrc_compile() { :; }\n'
+              f'src_prepare() {{ {prepare_command}; }}\n'
+              'src_configure() { :; }\nsrc_compile() { :; }\n'
               f'src_install() {{\n  insinto /{private}\n  doins -r "${{S}}/."\n')
     if selection is not None:
         ebuild += ''.join(f'  rm -- "${{D}}/{private}/{path}" || die\n' for path in sorted(selection['excluded_executables']))

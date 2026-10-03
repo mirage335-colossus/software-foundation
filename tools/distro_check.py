@@ -230,6 +230,12 @@ def require_version_upgrade(previous, candidate):
         raise ValueError('upgrade requires a newer package version or package release for every existing backend')
 
 
+def gentoo_license_config(backends):
+    """Portage accepts exact license names, not shell patterns in license tokens."""
+    return ''.join('app-misc/software-foundation-'+backend+'-bin Foundation-Bundled-'+backend+'\n'
+                   for backend in backends)
+
+
 def native(directory, policy, trusted, kind, evidence, *, previous=None):
     require_disposable()
     if kind not in ('apt', 'arch', 'gentoo'): raise ValueError('unknown package frontend')
@@ -301,7 +307,7 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
                 overlay = Path(config['location'])/'current/channels/native/gentoo'
                 for folder in ('package.accept_keywords', 'package.license'): (Path('/etc/portage')/folder).mkdir(exist_ok=True)
                 Path('/etc/portage/package.accept_keywords/software-foundation').write_text('app-misc/software-foundation-* ~amd64\n')
-                Path('/etc/portage/package.license/software-foundation').write_text('app-misc/software-foundation-* Foundation-Bundled-*\n')
+                Path('/etc/portage/package.license/software-foundation').write_text(gentoo_license_config(backends))
                 # Disable only package-byte transformations in this disposable host.
                 os.environ['FEATURES'] = subprocess.check_output(['portageq', 'envvar', 'FEATURES'], text=True).strip()+' -compressdebug'
                 for backend in backends:

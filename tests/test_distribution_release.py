@@ -213,6 +213,7 @@ class SignedDistributionTests(unittest.TestCase):
     def test_real_signatures_packages_and_source_closure_verify(self):
         value = d.verify(self.prepared, self.policy, self.trusted)
         self.assertEqual(value, self.frozen); self.assertEqual(['core'], value['backends'])
+        self.assertEqual({4}, {spec['schema_version'] for spec in value['specifications'].values()})
         self.assertTrue((self.prepared / 'Packages').is_file()); self.assertTrue((self.prepared / 'software-foundation.db').is_file())
         self.assertEqual(set(value['retained']), {'application/' + name for name in self.f.delivery['files']} |
             {'delivery.json', 'policy.json', 'packaging-source.tar.gz', 'certification-qualification-run-attempt-1.json', 'certification-qualification-run-attempt-1.tar.gz'})
@@ -221,6 +222,14 @@ class SignedDistributionTests(unittest.TestCase):
             filename = next(line.removeprefix('Filename: ').strip() for line in stream if line.startswith('Filename: '))
         self.assertTrue((self.prepared / filename).is_file())
         self.assertNotIn(self.private.read_bytes(), b''.join(p.read_bytes() for p in self.prepared.iterdir()))
+
+    def test_old_signed_schema_three_channel_still_replays_exactly(self):
+        legacy = self.work/'schema-three'
+        with patch.object(d.distro, 'CURRENT_SCHEMA', 3):
+            previous = d.prepare(self.req, self.f.directory, self.f.delivery, self.policy,
+                self.packaging, legacy, self.private, transport=self.remote, packaging_checkout=self.checkout)
+        self.assertEqual({3}, {spec['schema_version'] for spec in previous['specifications'].values()})
+        self.assertEqual(d.verify(legacy, self.policy, self.trusted), previous)
 
     def test_real_signed_combined_archive_verifies_every_backend(self):
         f = fixtures.DeliveryTests(); f.setUp(); self.addCleanup(f.doCleanups)

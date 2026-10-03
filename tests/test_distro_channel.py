@@ -67,6 +67,40 @@ def source_group(root, version='1.0.0', release=1, backends=(), backend='core', 
 
 
 class RecipeTests(unittest.TestCase):
+    def test_historical_recipe_inventories_remain_byte_identical(self):
+        expected = {
+            1: 'e352499fc2964a14546b6a22db432378b8c4730999622792e882ef7571a5d16d',
+            2: '3ed74ffbb3a93e6e93833adb8ee6f68fb61b533bd0a46f7be8223a85fbba61b0',
+            3: 'ed88f35210be2e9e0c4acae680629cd43ca9caa82678c5f0a3ecbf9dddadd076',
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            for schema, digest in expected.items():
+                with self.subTest(schema=schema):
+                    group = source_group(Path(temporary)/str(schema), schema=schema)
+                    self.assertEqual(d.digest(d.encoded(d.inventory(d.tree(group)))), digest)
+
+    def test_current_gentoo_prepare_honors_eapi_phase_contract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for schema in (3, d.CURRENT_SCHEMA):
+                group = source_group(root/str(schema), schema=schema)
+                ebuild = next(group.glob('gentoo/app-misc/*/*.ebuild'))
+                # EAPI >= 6 requires the user-patch hook even for binary recipes.
+                # Model the manager's post-phase invariant, not just phase exit0.
+                script = 'eapply_user() { called=yes; }; source "$1"; src_prepare; test "${called:-no}" = yes'
+                result = subprocess.run(['bash','-euc',script,'phase',str(ebuild)],
+                    env=dict(os.environ,WORKDIR=str(root)), capture_output=True, timeout=20)
+                self.assertEqual(result.returncode, 0 if schema == d.CURRENT_SCHEMA else 1)
+                if schema == d.CURRENT_SCHEMA:
+                    original = root/str(schema)/'application.tar.gz'
+                    prefix, complete = d.archive_payload(original, d.document((group/'portable-manifest.json').read_bytes()))
+                    generated, _ = d.expected_package(d.tree(group))
+                    archive = next(v[0] for n,v in generated.items() if n.endswith('.pkg.tar.gz'))
+                    with tarfile.open(fileobj=io.BytesIO(archive),mode='r:gz') as bundle:
+                        installed = {entry.name:(bundle.extractfile(entry).read(),entry.mode)
+                            for entry in bundle if entry.isfile() and not entry.name.startswith('.')}
+                    self.execute_recipes(root/'execute-current',group,complete,installed,'core')
+
     def test_current_recipes_require_complete_authenticated_notice_inventory(self):
         gui='share/doc/Foundation/gui-boundary/';deps='share/doc/Foundation/dependency-notices/'
         terms=b'Supplier terms\n';runtime=b'Runtime terms\n'
@@ -162,6 +196,8 @@ class RecipeTests(unittest.TestCase):
         ebuild = next(group.glob('gentoo/app-misc/*/*.ebuild'))
         functions = '''
 die() { exit 1; }
+eapply_user() { :; }
+docompress() { test "$1" = -x; }
 insinto() { target="$D/$1"; install -d "$target"; }
 doins() { test "$1" = -r; cp -a "$2" "$target/"; find "$target" -type f -exec chmod 0644 {} +; }
 newins() { install -m644 "$1" "$target/$2"; }

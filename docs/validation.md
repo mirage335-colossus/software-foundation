@@ -175,6 +175,20 @@ with private GnuPG sockets available. An earlier sandboxed attempt could not sta
 the unrelated-keyring fixture and failed; it is not counted as passed coverage.
 These regressions do not replace the required live two-revision native upgrade.
 
+Inspection against Gentoo's EAPI 8 preparation contract found that the existing
+schema-3 recipe omitted the required `eapply_user` call. A phase-invariant fixture
+reproduced old-recipe failure and corrected schema-4 success. New production now
+emits schema 4; complete schemas 1–3 inventory hashes are unchanged, and a real
+signed schema-3 channel still replays exactly through the current verifier.
+All 21 recipe and 31 distribution cases passed without exclusions. Native Portage
+configuration also now names each selected package's exact license token rather
+than an unsupported partial token glob; all 15 checker cases passed. The combined
+recipe, distribution, checker and public-client snapshot passed all 99 cases with
+no exclusions. These fixes
+do not make the historical x64 r1 recipe installable: it remains unqualified for
+Gentoo. A new immutable revision must establish the first successful installation,
+followed by a newer revision for actual cross-frontend upgrade qualification.
+
 Earlier application runs remain useful failure evidence; none are relabeled as
 successful qualification. Run
 [36994657303](https://github.com/mirage335-colossus/software-foundation/actions/runs/36994657303)

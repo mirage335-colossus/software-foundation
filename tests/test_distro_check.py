@@ -35,6 +35,25 @@ class NativeCheckTests(unittest.TestCase):
             altered=copy.deepcopy(self.records);altered[0][key]=value
             with self.subTest(key=key),self.assertRaises(ValueError):check.qualification(self.selected,altered,self.env)
 
+    def test_gentoo_accepts_each_selected_exact_license_without_broadening_scope(self):
+        backends = sorted(check.release.distro.BACKENDS)
+        config = check.gentoo_license_config(backends)
+        accepted = dict(line.split() for line in config.splitlines())
+        self.assertEqual(len(backends), len(config.splitlines()))
+        self.assertNotIn('*', config)
+        # Portage LicenseManager matches license tokens by exact membership;
+        # Foundation-Bundled-* does not accept any of these actual license names.
+        for backend in backends:
+            package = 'app-misc/software-foundation-'+backend+'-bin'
+            license_name = 'Foundation-Bundled-'+backend
+            self.assertEqual(license_name, accepted[package])
+            self.assertNotIn(license_name, {'Foundation-Bundled-*'})
+        self.assertEqual(
+            'app-misc/software-foundation-core-bin Foundation-Bundled-core\n'
+            'app-misc/software-foundation-hosted-web-bin Foundation-Bundled-hosted-web\n',
+            check.gentoo_license_config(['core', 'hosted-web']))
+        self.assertEqual('', check.gentoo_license_config([]))
+
     def test_installed_file_bytes_modes_and_extra_files_are_checked(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);private=root/'opt/software-foundation/core';private.mkdir(parents=True)
