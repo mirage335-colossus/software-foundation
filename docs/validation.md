@@ -233,8 +233,8 @@ pre-qualification snapshot confirmed release ID `402367320` and all 70 asset IDs
 names, sizes and digests were unchanged. Packaging remains bound to
 `a3a214a88d61db2cf0e534830fccbad7ff9df4e0`; qualification uses the later corrected
 helper. Latest remains `402199557`. This is the first accepted x64 installation;
-its receipts record `upgrade_from: null`, so a newer revision is still required
-to establish an actual x64 version upgrade.
+its receipts record `upgrade_from: null` and establish initial installation only.
+The later r2-to-r3 upgrade evidence is recorded below.
 
 The corrected Gentoo native step in
 [run 37108497393](https://github.com/mirage335-colossus/software-foundation/actions/runs/37108497393)
@@ -304,9 +304,34 @@ payloads and self-checks, then removed them. The exact accepted r1 tag and manif
 are recorded in every upgrade receipt. Independent readback and peer review
 reconciled both 70-asset inventories, signatures and native receipt identities;
 application/SDK input identities were unchanged, and Latest remained `402199557`.
-This establishes the observed ARM64 APT version upgrade. The x64 initial
-installation is accepted as recorded above; its later cross-revision upgrade
-remains pending completed evidence.
+This establishes the observed ARM64 APT version upgrade.
+
+Native-only requalification of
+[`distro-0.1.0-x86_64-r3-s3`](https://github.com/mirage335-colossus/software-foundation/releases/tag/distro-0.1.0-x86_64-r3-s3)
+subsequently passed all seven jobs in
+[run 37121695761](https://github.com/mirage335-colossus/software-foundation/actions/runs/37121695761)
+at `6b911833bc6e2eb17058bb1e65d1eb6b0e701968`. Its original packaging revision
+remains `d8295ec1724ee1a8da26b4d07a22d9c5ed564cac`, and its signed manifest
+remains `383f1bc7e510bc2a375d86ab3364adc7af6507e85d1a8af1bb6ddea170816a32`.
+Debian Bookworm, Debian Trixie, Ubuntu 24.04, Arch and Gentoo each installed and
+checked all seven variants from accepted channel r2, upgraded to r3, repeated
+repository refreshes, verified exact package versions, payloads and self-checks,
+then removed the packages. APT repeated exact-version installation requests;
+Arch repeated `pacman -Syu`.
+The native version transitions were `0.1.0+r2` to `0.1.0+r3` for APT,
+`0.1.0-2` to `0.1.0-3` for Arch, and `0.1.0-r1` to `0.1.0-r2` for Gentoo.
+Every receipt binds the exact accepted r2 tag and manifest recorded above.
+
+Independent readback verified both trusted signed manifests, complete remote
+asset inventories, all five native receipts and the exact acceptance marker.
+Comparison with the original r3 publication snapshot confirmed all 70 asset IDs,
+names, sizes and digests were preserved. A further readback confirmed the accepted
+r2 predecessor's 70 assets and the application's Latest release `402199557` with
+all 25 assets were unchanged. It also rechecked source tags and release bodies.
+Hosted native jobs replayed full payloads; this independent audit checked signed
+controls, retained execution evidence and remote metadata without repeating the
+multi-gigabyte payload replay locally. Application and SDK input identities were
+unchanged by these package revisions.
 
 Earlier application runs remain useful failure evidence; none are relabeled as
 successful qualification. Run
@@ -690,11 +715,11 @@ scope. The fixtures use disposable keys and never install or publish packages.
 - At that baseline, GUI redistribution was blocked by unresolved upstream terms;
   the subsequently reviewed permission scope is recorded in [the GUI audit](gui-audit.md).
   Local compilation and tests do not approve binary redistribution.
-- Signed-channel initial installation passed on x64 Debian Bookworm, Debian
-  Trixie, Ubuntu 24.04, Arch and Gentoo, and on ARM64 Debian Bookworm, Debian
-  Trixie and Ubuntu 24.04. The ARM64 APT version upgrade passed; the x64 upgrade
-  remains pending a complete native result. Arch/Gentoo native checks are scoped
-  to x64; generating their ARM64 recipes does not qualify those frontends.
+- Signed-channel initial installation and actual version upgrades passed on x64
+  Debian Bookworm, Debian Trixie, Ubuntu 24.04, Arch and Gentoo, and on ARM64
+  Debian Bookworm, Debian Trixie and Ubuntu 24.04, as recorded above.
+  Arch/Gentoo native checks are scoped to x64; generating their ARM64 recipes
+  does not qualify those frontends. Historical x64 r1 remains unaccepted.
 - SDK, gallery and signed-channel publication credentials were exercised
   as recorded above. An adopted repository must qualify its own permissions,
   signing trust and external services.
