@@ -503,9 +503,10 @@ ambiguous or unsupported prerequisite fails that lane. Both architectures retain
 real Ubuntu browser assertions. Browsers remain external execution prerequisites
 and never enter the compiler SDK.
 
-A separate `browser-prerequisite-<check>-<attempt>` draft bundle records the plan/check,
+A separate `browser-prerequisite-<batch>-<attempt>` draft bundle retains distinct
+per-check receipts from `build/prerequisites/`. Each receipt records the plan/check,
 run/attempt, actual package or inspected executable identity, architecture, origin
-and browser version. Setup initially retains this receipt outside the qualification output directory,
+and browser version. Setup initially retains each receipt outside the qualification output directory,
 which the checked runner must create afresh. After actual browser assertions, the
 qualification helper validates and copies the receipt into its browser evidence
 and binds its digest to the report. For an inspected host browser, executable

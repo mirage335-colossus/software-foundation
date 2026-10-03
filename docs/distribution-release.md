@@ -5,6 +5,16 @@ certified application release as a separate package-manager release. It never
 rebuilds application code, substitutes dependencies, appends package assets to the
 application release, or changes Latest. Its default dispatch validates a plan only.
 An explicit execute dispatch uses the protected `release-publisher` environment.
+Concurrency is scoped by target across refs: distinct target channels may publish
+and qualify in parallel, while revisions for the same target share one group.
+Native acceptance retains the separate shared release-lifecycle lock. Dispatch
+each new revision only after its predecessor is accepted; `cancel-in-progress:
+false` protects running work but does not preserve every pending dispatch in
+GitHub's [default concurrency queue](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency).
+A workflow adopted while an older concurrency
+group is still running does not acquire that older group's lock. Wait for the
+affected predecessor before dispatching its next revision. Invalid request JSON
+or an unsupported target must fail before signing or publication.
 
 The source application must be an ordinary public release with the exact requested
 inventory and a complete certificate attempt that reproduces against the current
@@ -234,7 +244,15 @@ the observed repository, tag, name, size and digest; limits HTTPS redirects and
 transfer duration; stages fresh bytes; and verifies the full signed channel before
 activation. Public data downloads do not require a GitHub token. Metadata calls
 still share the public API budget, so bound refresh frequency across clients and
-preserve the last verified generation when retrieval fails.
+preserve the last verified generation when retrieval fails. Explicit rate-limit
+responses use at most three read attempts, a 120-second wait budget shared across
+metadata operations and a 180-second deadline per complete metadata operation.
+The client respects the later applicable retry/reset delay; a reset outside its
+budget fails with a sanitized route, numeric quota fields and retry-delay guidance.
+It does not inject credentials, retry ordinary permission failures or accept a
+partial inventory. A rate response on a later page restarts the complete inventory.
+These bounds improve short transient recovery but cannot guarantee availability
+when a shared public-IP quota remains exhausted.
 
 Create a root-owned configuration outside the tool tree:
 
@@ -337,6 +355,14 @@ receipt. This makes the display service explicit while keeping package-manager
 and client-library verification native to each tested distribution. Gentoo
 prerequisites remain binary-only even when optional display-wrapper packages are
 absent from its current binary repository.
+
+Arch keyring initialization runs in a dedicated child that remains alive through
+initialization, key import, local trust, scoped service shutdown and bounded child
+joining. It preserves the official Arch keys in the disposable container's existing
+keyring. A successful `gpgconf --homedir ... --kill all` command alone does not
+prove daemon completion; the worker must join its adopted children before exit.
+The outer process owner still rejects any unconfirmed surviving descendant. Never
+replace this with process-name termination or cleanup of another session's keyring.
 
 APT metadata verification requires both the cleartext and detached signatures
 from the independently trusted key. Capture decoded cleartext from a successful

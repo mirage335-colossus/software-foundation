@@ -18,7 +18,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: foundation-distribution-${{ github.ref }}
+  group: foundation-distribution-${{ fromJSON(inputs.request).target }}
   cancel-in-progress: false
 env:
   PYTHONUTF8: '1'

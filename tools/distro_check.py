@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Native package-manager acceptance of exact, signed, already-built release bytes."""
 import argparse
+import ctypes
 import io
 import json
 import os
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import uuid
 
 import process_tree
@@ -92,6 +94,96 @@ def supervised(argv, stream, *, timeout, env=None):
         owner.close()
 
 
+def require_disposable():
+    if (not hasattr(os, 'geteuid') or os.geteuid() != 0 or not Path('/.dockerenv').is_file() or
+            os.environ.get('FOUNDATION_DISPOSABLE_CHECK') != '1'):
+        raise ValueError('native package installation requires an explicitly disposable root container')
+
+
+def keyring_subreaper():
+    """Only call in a dedicated single-threaded keyring worker, before spawning."""
+    if not sys.platform.startswith('linux') or process_tree._direct_children():
+        raise process_tree.ProcessTreeError('keyring worker requires a fresh Linux child process')
+    api = ctypes.CDLL(None, use_errno=True)
+    api.prctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
+    api.prctl.restype = ctypes.c_int
+    if api.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
+        raise process_tree.ProcessTreeError('keyring child-subreaper setup failed')
+
+
+def reap_keyring_children(timeout):
+    """Join adopted services after scoped shutdown; never signal arbitrary PIDs."""
+    deadline = time.monotonic() + timeout
+    reaped = []
+    while True:
+        try:
+            pid, status = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return reaped  # ECHILD proves that no owned daemon can create writers.
+        if pid:
+            reaped.append({'pid': pid, 'returncode': os.waitstatus_to_exitcode(status)})
+            if len(reaped) > 64:
+                raise process_tree.ProcessTreeError('unexpected keyring child count; retain output ownership')
+            continue
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise process_tree.ProcessTreeError('keyring descendants did not exit after scoped shutdown; retain output ownership')
+        time.sleep(min(.01, remaining))
+
+
+def keyring_session(home, commands, *, timeout=840, cleanup_timeout=30):
+    """Keep this dedicated worker alive through commands, service stop and join.
+
+    The existing strict outer ProcessTree owns the worker and catches any failed
+    cleanup. An established pacman home is private to the disposable container;
+    keeping it preserves the official distribution keys needed by pacman -Syu.
+    """
+    home = Path(home).resolve(strict=True)
+    if not home.is_dir(): raise ValueError('keyring home must be a directory')
+    keyring_subreaper()
+    deadline = time.monotonic() + timeout
+    failure = None
+    try:
+        for argv in commands:
+            print('COMMAND ' + json.dumps([str(arg) for arg in argv]), flush=True)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0: raise subprocess.TimeoutExpired(argv, timeout)
+            subprocess.run([str(arg) for arg in argv], check=True, timeout=remaining)
+    except BaseException as error:
+        failure = error
+    cleanup = ['gpgconf', '--homedir', str(home), '--kill', 'all']
+    errors = []
+    cleanup_deadline = time.monotonic() + cleanup_timeout
+    try:
+        print('COMMAND ' + json.dumps(cleanup), flush=True)
+        subprocess.run(cleanup, check=True, timeout=cleanup_timeout)
+    except BaseException as error:
+        errors.append(error)
+    try:
+        reaped = reap_keyring_children(max(0, cleanup_deadline - time.monotonic()))
+        if any(row['returncode'] for row in reaped):
+            raise process_tree.ProcessTreeError('keyring service exited unsuccessfully: ' + json.dumps(reaped))
+    except BaseException as error:
+        errors.append(error)
+    if errors:
+        message = '; '.join(str(error) for error in errors)
+        if failure is not None: message = str(failure) + '; ' + message
+        raise process_tree.ProcessTreeError('keyring cleanup failed: ' + message) from (failure or errors[0])
+    if failure is not None: raise failure
+    return dict(kind='arch-keyring', status='passed', home=str(home), cleanup=cleanup, joined=reaped)
+
+
+def prepare_arch_keyring(key, trusted):
+    require_disposable()
+    home = Path('/etc/pacman.d/gnupg')
+    home.mkdir(mode=0o700, parents=True, exist_ok=True)
+    trusted = release.distro.apt.full_fingerprint(trusted)
+    return keyring_session(home, [
+        ['pacman-key', '--gpgdir', home, '--init'],
+        ['pacman-key', '--gpgdir', home, '--add', Path(key).resolve(strict=True)],
+        ['pacman-key', '--gpgdir', home, '--lsign-key', trusted]])
+
+
 def image_identity(raw):
     values = release.delivery.parse(raw)
     if not isinstance(values, list) or len(values) != 1 or not isinstance(values[0], dict):
@@ -125,9 +217,7 @@ def require_version_upgrade(previous, candidate):
 
 
 def native(directory, policy, trusted, kind, evidence, *, previous=None):
-    if (not hasattr(os, 'geteuid') or os.geteuid() != 0 or not Path('/.dockerenv').is_file() or
-            os.environ.get('FOUNDATION_DISPOSABLE_CHECK') != '1'):
-        raise ValueError('native package installation requires an explicitly disposable root container')
+    require_disposable()
     if kind not in ('apt', 'arch', 'gentoo'): raise ValueError('unknown package frontend')
     manifest = release.verify(directory, policy, trusted)
     target = manifest['request']['target']
@@ -165,8 +255,8 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
                 run('apt-get', 'update'); run('apt-get', 'install', '-y', '--no-install-recommends', *names)
             elif kind == 'arch':
                 if index == 0:
-                    run('pacman-key', '--init'); run('pacman-key', '--add', assets/'archive-keyring.gpg')
-                    run('pacman-key', '--lsign-key', trusted)
+                    run(sys.executable, Path(__file__).resolve(), 'arch-keyring',
+                        '--directory', assets, '--trusted-fingerprint', trusted)
                     with Path('/etc/pacman.conf').open('a') as out:
                         out.write('\n[options]\nNoExtract = !usr/share/man !usr/share/man/ !usr/share/man/man1 !usr/share/man/man1/ !usr/share/man/man7 !usr/share/man/man7/ !usr/share/man/man1/foundation-* !usr/share/man/man7/software-foundation-*\nInclude = /etc/pacman.d/software-foundation.conf\n')
                 Path('/etc/pacman.d/software-foundation.conf').write_text(f'[software-foundation]\nSigLevel = Required DatabaseRequired\nServer = {url.rstrip("/")}\n')
@@ -380,11 +470,14 @@ def accept(selected, records, environment, output):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description=__doc__); p.add_argument('operation', choices=('plan', 'native'))
+    p = argparse.ArgumentParser(description=__doc__); p.add_argument('operation', choices=('plan', 'native', 'arch-keyring'))
     p.add_argument('--target'); p.add_argument('--directory', type=Path); p.add_argument('--previous', type=Path)
     p.add_argument('--policy', type=Path); p.add_argument('--trusted-fingerprint'); p.add_argument('--kind'); p.add_argument('--evidence', type=Path)
     a = p.parse_args(argv)
     if a.operation == 'plan': result = matrix(a.target)
+    elif a.operation == 'arch-keyring':
+        if not all((a.directory, a.trusted_fingerprint)): p.error('complete Arch keyring inputs required')
+        result = prepare_arch_keyring(a.directory/'archive-keyring.gpg', a.trusted_fingerprint)
     else:
         if not all((a.directory, a.policy, a.trusted_fingerprint, a.kind, a.evidence)): p.error('complete native inputs required')
         result = native(a.directory, a.policy, a.trusted_fingerprint, a.kind, a.evidence, previous=a.previous)

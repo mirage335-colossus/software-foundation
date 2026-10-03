@@ -132,6 +132,137 @@ class PublicDownloadTests(unittest.TestCase):
         self.assertLessEqual(len(calls), 7)
 
 
+class PublicRateTests(unittest.TestCase):
+    def setUp(self):
+        self.transport = client.PublicGitHub('example/project')
+        self.endpoint = 'repos/example/project/releases?per_page=100'
+        self.elapsed = 0
+        self.sleeps = []
+        def sleep(seconds):
+            self.sleeps.append(seconds); self.elapsed += seconds
+        for target, replacement in ((client.time, dict(monotonic=lambda: self.elapsed,
+                time=lambda: 1000 + self.elapsed, sleep=sleep)),
+                (client.release.delivery.random, dict(uniform=lambda a, b: 0))):
+            for name, value in replacement.items():
+                patcher = patch.object(target, name, value); patcher.start(); self.addCleanup(patcher.stop)
+
+    def failure(self, status=403, headers=None, message='API rate limit exceeded.'):
+        return client.HTTPError('https://api.github.com/' + self.endpoint, status, 'untrusted reason',
+            headers or {}, io.BytesIO(json.dumps({'message': message}).encode()))
+
+    def response(self, value):
+        return asset_response(json.dumps(value).encode(), 'https://api.github.com/' + self.endpoint)
+
+    def test_primary_reset_recovers_without_credentials_and_closes_failed_response(self):
+        error = self.failure(headers={'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '1002'})
+        with patch.dict(client.os.environ, {'GH_TOKEN': 'must-not-be-used', 'GITHUB_TOKEN': 'also-unused'}), \
+                patch.object(client, 'urlopen', side_effect=[error, self.response([])]) as request:
+            self.assertEqual(self.transport.json(self.endpoint), [])
+        self.assertEqual(request.call_count, 2); self.assertEqual(sum(self.sleeps), 2)
+        self.assertTrue(error.closed)
+        for call in request.call_args_list:
+            self.assertFalse(call.args[0].has_header('Authorization'))
+            self.assertEqual(call.args[0].get_method(), 'GET')
+            self.assertLessEqual(call.kwargs['timeout'], 60)
+
+    def test_retry_after_uses_later_delay_than_primary_reset(self):
+        for retry in ('5', 'Thu, 01 Jan 1970 00:16:45 GMT'):
+            with self.subTest(retry=retry):
+                self.elapsed = 0; self.sleeps.clear()
+                error = self.failure(headers={'retry-after': retry, 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1002'})
+                with patch.object(self.transport, 'request', side_effect=[error, self.response([])]):
+                    self.assertEqual(self.transport.json(self.endpoint), [])
+                self.assertEqual(sum(self.sleeps), 5)
+
+    def test_non_rate_forbidden_is_not_retried_or_reported_as_absence(self):
+        with patch.object(self.transport, 'request', side_effect=self.failure(message='secret forbidden body')) as request:
+            with self.assertRaisesRegex(ValueError, 'endpoint=.*HTTP 403') as caught:
+                self.transport.json(self.endpoint, missing=True)
+        self.assertEqual(request.call_count, 1); self.assertEqual(self.sleeps, [])
+        self.assertNotIn('secret', str(caught.exception)); self.assertNotIn('untrusted reason', str(caught.exception))
+
+    def test_rate_wait_budget_is_shared_across_metadata_operations(self):
+        with patch.object(self.transport, 'request', side_effect=[self.failure(429, {'retry-after': '70'}), self.response([])]):
+            self.transport.json(self.endpoint)
+        with patch.object(self.transport, 'request', side_effect=self.failure(429, {'retry-after': '51'})) as request:
+            with self.assertRaisesRegex(ValueError, 'wait budget exhausted'):
+                self.transport.json(self.endpoint)
+        self.assertEqual(request.call_count, 1); self.assertEqual(sum(self.sleeps), 70)
+        self.assertLessEqual(max(self.sleeps), 60)
+
+    def test_far_reset_fails_with_endpoint_and_quota_diagnostics_without_waiting(self):
+        error = self.failure(headers={'x-ratelimit-limit': '60', 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '5000'})
+        with patch.object(self.transport, 'request', side_effect=error) as request:
+            with self.assertRaisesRegex(ValueError, 'endpoint=.*limit=60; remaining=0; reset=5000'):
+                self.transport.json(self.endpoint)
+        self.assertEqual(request.call_count, 1); self.assertEqual(self.sleeps, [])
+
+    def test_exhausted_retry_after_guidance_omits_arbitrary_query_values(self):
+        endpoint = self.endpoint + '&page=2&access_token=do-not-log&per_page=secret'
+        with patch.object(self.transport, 'request', side_effect=self.failure(429, {'retry-after': '121'})):
+            with self.assertRaisesRegex(ValueError, r'endpoint=.*per_page=100&page=2.*retry-delay=121.000s') as caught:
+                self.transport.json(endpoint)
+        self.assertNotIn('access_token', str(caught.exception))
+        self.assertNotIn('do-not-log', str(caught.exception)); self.assertNotIn('secret', str(caught.exception))
+        self.assertEqual(self.sleeps, [])
+
+    def test_repeated_rate_limit_stops_at_attempt_bound(self):
+        def rejected(*args, **kwargs): raise self.failure(429, {'retry-after': '1'})
+        with patch.object(self.transport, 'request', side_effect=rejected) as request:
+            with self.assertRaisesRegex(ValueError, 'attempt limit exhausted'):
+                self.transport.json(self.endpoint)
+        self.assertEqual(request.call_count, 3); self.assertEqual(sum(self.sleeps), 2)
+
+    def test_malformed_reset_is_not_permission_to_retry_unclassified_forbidden(self):
+        for reset in ('tomorrow', '9' * 100):
+            error = self.failure(headers={'x-ratelimit-remaining': '0', 'x-ratelimit-reset': reset}, message='Forbidden')
+            with self.subTest(reset=reset), patch.object(self.transport, 'request', side_effect=error) as request:
+                with self.assertRaisesRegex(ValueError, 'HTTP 403'):
+                    self.transport.json(self.endpoint)
+                self.assertEqual(request.call_count, 1)
+        self.assertEqual(self.sleeps, [])
+
+    def test_late_page_rate_limit_restarts_inventory_without_retaining_prefix(self):
+        self.transport.releases[1] = 'distro-1.2.3-x86_64-r1-s7'
+        endpoint = 'repos/example/project/releases/1/assets?per_page=100'
+        stale = [asset_row(i + 1, 'old-' + str(i), b'x') for i in range(100)]
+        fresh = [asset_row(201, 'fresh', b'y')]
+        with patch.object(self.transport, 'request', side_effect=[self.response(stale),
+                self.failure(429, {'retry-after': '1'}), self.response(fresh)]) as request:
+            self.assertEqual(self.transport.pages(endpoint), fresh)
+        self.assertEqual([c.args[0] for c in request.call_args_list],
+                         [endpoint + '&page=1', endpoint + '&page=2', endpoint + '&page=1'])
+        self.assertEqual(set(self.transport.assets), {201})
+
+    def test_late_page_exhaustion_does_not_authorize_any_partial_asset(self):
+        self.transport.releases[1] = 'distro-1.2.3-x86_64-r1-s7'
+        rows = [asset_row(i + 1, 'asset-' + str(i), b'x') for i in range(100)]
+        endpoint = 'repos/example/project/releases/1/assets?per_page=100'
+        with patch.object(self.transport, 'request', side_effect=[self.response(rows), self.failure(429, {'retry-after': '121'})]):
+            with self.assertRaisesRegex(ValueError, r'endpoint=.*page=2.*wait budget exhausted'):
+                self.transport.pages(endpoint)
+        self.assertEqual(self.transport.assets, {}); self.assertEqual(self.sleeps, [])
+
+    def test_json_whole_response_deadline_stops_slow_trickle(self):
+        response = self.response([])
+        def slow_read(size):
+            self.elapsed += 181
+            return b'['
+        response.read1 = Mock(side_effect=slow_read)
+        with patch.object(self.transport, 'request', return_value=response):
+            with self.assertRaisesRegex(ValueError, 'deadline exhausted'):
+                self.transport.json(self.endpoint)
+        self.assertTrue(response.closed); self.assertEqual(response.read1.call_count, 1)
+
+    def test_public_scope_and_read_only_guards_survive_retry_wrapper(self):
+        with patch.object(client, 'urlopen') as request:
+            for endpoint, options in (('repos/foreign/project/releases', {}),
+                    (self.endpoint, {'method': 'POST'}), (self.endpoint, {'body': {}})):
+                with self.subTest(endpoint=endpoint, options=options), self.assertRaises(ValueError):
+                    self.transport.json(endpoint, **options)
+            request.assert_not_called()
+
+
 class ClientTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
@@ -145,7 +276,7 @@ class ClientTests(unittest.TestCase):
                 if status == 404 and missing:
                     self.assertIsNone(transport.json('repos/example/project/releases/latest',missing=missing))
                 else:
-                    with self.assertRaises(client.HTTPError):transport.json('repos/example/project/releases/latest',missing=missing)
+                    with self.assertRaises(ValueError):transport.json('repos/example/project/releases/latest',missing=missing)
 
     def test_generation_sync_flushes_nested_payload_before_directories(self):
         import os,stat
@@ -248,6 +379,19 @@ class SignedClientTests(unittest.TestCase):
             with self.assertRaises(ValueError): client.refresh(self.value, self.f.policy, transport=transport)
             self.assertEqual(current, client.current(self.root/'state'))
             self.assertEqual(client.release.verify(current/'assets', self.f.policy, self.f.trusted), self.f.frozen)
+
+    def test_public_rate_exhaustion_preserves_verified_active_generation(self):
+        client.refresh(self.value, self.f.policy, prepared=self.f.prepared)
+        current = client.current(self.root/'state')
+        error = client.HTTPError('https://api.github.com/repos/example/project/releases', 403, 'rate limited',
+            {'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '999999999999'}, io.BytesIO(b'{"message":"API rate limit exceeded."}'))
+        with patch.object(client, 'urlopen', side_effect=error) as request, patch.object(client, 'build_opener') as download:
+            with self.assertRaisesRegex(ValueError, 'wait budget exhausted'):
+                client.refresh(self.value, self.f.policy)
+        self.assertEqual(request.call_count, 1); download.assert_not_called()
+        self.assertEqual(client.current(self.root/'state'), current)
+        self.assertEqual(client.release.verify(current/'assets', self.f.policy, self.f.trusted), self.f.frozen)
+        self.assertEqual(list((self.root/'state').glob('.refresh-*')), [])
 
     def test_payload_sync_failure_cannot_publish_generation_or_pointer(self):
         with patch.object(client,'sync_tree',side_effect=OSError('durability fixture')):

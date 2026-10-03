@@ -1,6 +1,10 @@
 """Native qualification cannot substitute another target, scope, attempt or payload."""
 import copy
 import json
+import os
+import shutil
+import subprocess
+import time
 from pathlib import Path
 import sys
 import tempfile
@@ -98,6 +102,132 @@ class NativeCheckTests(unittest.TestCase):
         new['specifications']['core']['package_release'] = 2
         check.require_version_upgrade(old,new)
         with self.assertRaises(ValueError):check.require_version_upgrade(new,old)
+
+    def test_arch_keyring_setup_keeps_explicit_native_home_and_trust(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            key=Path(temp)/'public.gpg';key.write_bytes(b'public fixture')
+            with patch.object(check,'require_disposable') as guard, patch.object(Path,'mkdir'), \
+                    patch.object(check,'keyring_session',return_value={'status':'passed'}) as session:
+                check.prepare_arch_keyring(key,'a'*40)
+            guard.assert_called_once_with()
+            home=Path('/etc/pacman.d/gnupg')
+            self.assertEqual(session.call_args.args,(home,[
+                ['pacman-key','--gpgdir',home,'--init'],
+                ['pacman-key','--gpgdir',home,'--add',key.resolve()],
+                ['pacman-key','--gpgdir',home,'--lsign-key','A'*40]]))
+        with patch.object(check,'prepare_arch_keyring',return_value={}) as prepare, patch('builtins.print'):
+            check.main(['arch-keyring','--directory','/owned','--trusted-fingerprint','a'*40])
+        prepare.assert_called_once_with(Path('/owned/archive-keyring.gpg'),'a'*40)
+
+    def test_keyring_command_failure_stops_work_but_still_shuts_down_and_joins(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            home=Path(temp).resolve();failure=subprocess.CalledProcessError(7,['first'])
+            with patch.object(check,'keyring_subreaper'), patch.object(check.subprocess,'run',side_effect=[failure,None]) as run, \
+                    patch.object(check,'reap_keyring_children',return_value=[]) as join:
+                with self.assertRaises(subprocess.CalledProcessError) as caught:
+                    check.keyring_session(home,[['first'],['must-not-run']])
+                self.assertIs(caught.exception,failure)
+            self.assertEqual([c.args[0] for c in run.call_args_list],
+                [['first'],['gpgconf','--homedir',str(home),'--kill','all']])
+            join.assert_called_once()
+
+    def test_keyring_cleanup_failure_is_sticky_and_preserves_original(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            failure=subprocess.CalledProcessError(7,['first'])
+            for cleanup,joined in ((subprocess.CalledProcessError(3,['shutdown']),[]),
+                                   (None,check.process_tree.ProcessTreeError('join timed out')),
+                                   (None,[{'pid':123,'returncode':1}])):
+                with self.subTest(cleanup=cleanup,joined=joined), patch.object(check,'keyring_subreaper'), \
+                        patch.object(check.subprocess,'run',side_effect=[failure,cleanup]), \
+                        patch.object(check,'reap_keyring_children',side_effect=joined if isinstance(joined,Exception) else None,
+                                     return_value=joined) as join:
+                    with self.assertRaisesRegex(check.process_tree.ProcessTreeError,'keyring cleanup failed') as caught:
+                        check.keyring_session(Path(temp),[['first']])
+                    self.assertIs(caught.exception.__cause__,failure)
+                    join.assert_called_once()
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux child wait semantics required')
+    def test_keyring_join_waits_for_delayed_exit_and_requires_echild(self):
+        from unittest.mock import patch
+        with patch.object(check.os,'waitpid',side_effect=[(0,0),(123,0),ChildProcessError()]) as wait, \
+                patch.object(check.time,'sleep') as sleep:
+            self.assertEqual(check.reap_keyring_children(1),[{'pid':123,'returncode':0}])
+            self.assertEqual(wait.call_count,3);sleep.assert_called_once()
+        with patch.object(check.os,'waitpid',return_value=(0,0)), patch.object(check.time,'sleep') as sleep:
+            with self.assertRaisesRegex(check.process_tree.ProcessTreeError,'did not exit'):
+                check.reap_keyring_children(0)
+            sleep.assert_not_called()
+        with patch.object(check.os,'waitpid',side_effect=OSError('cannot inspect children')):
+            with self.assertRaises(OSError):check.reap_keyring_children(1)
+        with patch.object(check.process_tree,'_direct_children',return_value=[123]),patch.object(check.ctypes,'CDLL') as api:
+            with self.assertRaisesRegex(check.process_tree.ProcessTreeError,'fresh Linux child'):
+                check.keyring_subreaper()
+            api.assert_not_called()
+
+    @unittest.skipUnless(sys.platform.startswith('linux') and all(shutil.which(x) for x in
+        ('gpg','gpgconf','gpg-agent','gpg-connect-agent')), 'Linux and GnuPG lifecycle tools required')
+    def test_real_keyring_worker_joins_its_daemon_and_preserves_unrelated_home(self):
+        script = """import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+import distro_check as check
+home=Path(sys.argv[2])
+commands=[['gpg','--batch','--homedir',str(home),'--pinentry-mode','loopback','--passphrase','',
+           '--quick-generate-key','Fixture <fixture@example.invalid>','ed25519','sign','1d']]
+if sys.argv[3]=='unmanaged':
+ import subprocess
+ subprocess.run(commands[0],check=True)
+else:
+ print(check.keyring_session(home,commands,timeout=20,cleanup_timeout=10))
+"""
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);foreign=root/'foreign';foreign.mkdir(mode=0o700)
+            def agent_pid():
+                result=subprocess.run(['gpg-connect-agent','--homedir',str(foreign),'--no-autostart','GETINFO pid','/bye'],
+                    capture_output=True,text=True,timeout=5)
+                if result.returncode:return None
+                rows=[line[2:] for line in result.stdout.splitlines() if line.startswith('D ')]
+                return int(rows[0]) if len(rows)==1 and rows[0].isdecimal() else None
+            stop=root/'stop-foreign'
+            foreign_script = """import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+import distro_check as check
+wait = "import sys,time; from pathlib import Path; p=Path(sys.argv[1]); deadline=time.monotonic()+45\\nwhile not p.exists() and time.monotonic()<deadline: time.sleep(.01)\\nassert p.exists(), 'foreign owner stop deadline'"
+check.keyring_session(Path(sys.argv[2]),[
+ ['gpg-connect-agent','--homedir',sys.argv[2],'/bye'],
+ [sys.executable,'-B','-c',wait,sys.argv[3]]],timeout=50,cleanup_timeout=10)
+"""
+            with (root/'foreign.log').open('wb') as log:
+                foreign_owner=check.process_tree.launch([sys.executable,'-B','-c',foreign_script,
+                    str(ROOT/'tools'),str(foreign),str(stop)],ROOT,log)
+                try:
+                    deadline=time.monotonic()+5;before=None
+                    while before is None and time.monotonic()<deadline:
+                        before=agent_pid()
+                        if before is None:time.sleep(.01)
+                    self.assertIsNotNone(before)
+                    for mode in ('unmanaged','managed'):
+                        home=root/mode;home.mkdir(mode=0o700)
+                        with (root/(mode+'.log')).open('wb') as output:
+                            owner=check.process_tree.launch([sys.executable,'-B','-c',script,str(ROOT/'tools'),str(home),mode],ROOT,output)
+                            try:
+                                self.assertEqual(owner.wait(timeout=40),0)
+                                if mode=='unmanaged':
+                                    with self.assertRaisesRegex(check.process_tree.ProcessTreeError,'descendants outlived'):owner.finish()
+                                else:owner.finish()
+                            finally:owner.close()
+                        self.assertIsNone(foreign_owner.poll())
+                        self.assertEqual(agent_pid(),before)
+                finally:
+                    try:
+                        stop.write_text('stop')
+                        self.assertEqual(foreign_owner.wait(timeout=15),0);foreign_owner.finish()
+                    finally:foreign_owner.close()
+            renamed=root/'managed-closed';(root/'managed').rename(renamed);shutil.rmtree(renamed)
 
     def test_native_installation_refuses_regular_host(self):
         from unittest.mock import patch

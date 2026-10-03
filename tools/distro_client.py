@@ -50,45 +50,104 @@ class ReleaseRedirects(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+class _PublicReadBudget(release.delivery.GitHub):
+    """Reuse read-only rate classification, with limits below native sync's cap."""
+    WAIT_BUDGET = 120
+    REQUEST_DEADLINE = 180
+    COMMAND_TIMEOUT = 60
+    MAX_ATTEMPTS = 3
+    TRANSIENT_STATUS = frozenset()
+
+
 class PublicGitHub:
     """Read-only public transport with bounded pages, timeouts and exact downloads."""
     def __init__(self, repository):
         self.repository = release.delivery.location(repository)
         self.releases = {}
         self.assets = {}
+        self._reads = _PublicReadBudget(self.repository)
+        self._endpoint = 'no request issued'
+        self._retry_delay = None
 
-    def request(self, endpoint, accept='application/vnd.github+json'):
+    def request(self, endpoint, accept='application/vnd.github+json', *, deadline=None):
         if not endpoint.startswith('repos/' + self.repository + '/'):
             raise ValueError('public client request escaped its configured repository')
         response = urlopen(Request('https://api.github.com/' + endpoint,
-            headers={'Accept': accept, 'User-Agent': 'software-foundation-channel/1'}), timeout=60)
+            headers={'Accept': accept, 'User-Agent': 'software-foundation-channel/1'}),
+            timeout=60 if deadline is None else self._reads._timeout(deadline))
         if urlsplit(response.url).scheme != 'https':
             response.close(); raise ValueError('public transport redirected away from HTTPS')
         return response
 
-    def json(self, endpoint, **kwargs):
-        if kwargs.get('method', 'GET') != 'GET' or kwargs.get('body') is not None:
-            raise ValueError('public client cannot mutate remote state')
+    def _body(self, response, limit, deadline):
+        data = bytearray()
+        while len(data) <= limit:
+            self._reads._timeout(deadline)
+            chunk = response.read1(min(64 * 1024, limit + 1 - len(data)))
+            self._reads._timeout(deadline)
+            if not chunk: break
+            data.extend(chunk)
+        return bytes(data)
+
+    def _json_once(self, endpoint, missing, deadline):
+        # Log only a bounded repository-relative route, never response bodies or
+        # arbitrary query text. These routes carry no authentication material.
+        route, _, query = endpoint.partition('?')
+        self._endpoint = route if re.fullmatch(r'[A-Za-z0-9_./%-]{1,400}', route) else 'invalid endpoint'
+        pagination = []
+        for item in query.split('&'):
+            key, separator, value = item.partition('=')
+            if separator and key in ('page', 'per_page') and release.delivery.rate_integer(value) is not None:
+                pagination.append(key + '=' + str(int(value)))
+        if pagination: self._endpoint += '?' + '&'.join(pagination[:2])
+        self._retry_delay = None
         try:
-            with self.request(endpoint) as response:
-                data = response.read(MAX_JSON + 1)
+            with self.request(endpoint, deadline=deadline) as response:
+                data = self._body(response, MAX_JSON, deadline)
         except HTTPError as error:
-            if error.code == 404 and kwargs.get('missing') is True:
-                return None
-            raise
+            with error:
+                if error.code == 404 and missing: return None
+                headers = {}
+                for name in release.delivery.RATE_HEADERS:
+                    values = (error.headers.get_all(name, []) if hasattr(error.headers, 'get_all')
+                              else [v for k, v in error.headers.items() if k.lower() == name])
+                    if len(values) > 1: raise ValueError('ambiguous public rate-limit headers')
+                    if values: headers[name] = values[0]
+                payload = self._body(error, 4096, deadline) if error.fp is not None else b''
+                failure = release.delivery.HTTPFailure(error.code, headers, payload)
+                self._retry_delay = self._reads._retry_delay(failure, 1)
+                raise failure from None
         if len(data) > MAX_JSON: raise ValueError('public JSON exceeds bound')
         return release.delivery.parse(data)
 
+    def _metadata(self, operation):
+        try:
+            return self._reads._read(operation)
+        except release.delivery.DeliveryError as error:
+            delay = '' if self._retry_delay is None else '; retry-delay=' + format(self._retry_delay, '.3f') + 's'
+            raise ValueError('public metadata endpoint=' + self._endpoint + ': ' + str(error) + delay) from None
+
+    def json(self, endpoint, **kwargs):
+        if kwargs.get('method', 'GET') != 'GET' or kwargs.get('body') is not None:
+            raise ValueError('public client cannot mutate remote state')
+        # Pagination owns the retry, so a late-page rate response restarts the
+        # entire inventory instead of combining pages across retry attempts.
+        operation = lambda deadline: self._json_once(endpoint, kwargs.get('missing') is True, deadline)
+        if kwargs.get('_deadline') is not None: return operation(kwargs['_deadline'])
+        return self._metadata(operation)
+
     def pages(self, endpoint):
-        result = []
-        for page in range(1, 101):
-            rows = self.json(endpoint + ('&' if '?' in endpoint else '?') + 'page=' + str(page))
-            if not isinstance(rows, list): raise ValueError('expected complete array page')
-            result.extend(rows)
-            if len(rows) < 100:
-                self.remember(endpoint, result)
-                return result
-        raise ValueError('public pagination exceeds bound; no partial inventory accepted')
+        def attempt(deadline):
+            result = []
+            for page in range(1, 101):
+                rows = self.json(endpoint + ('&' if '?' in endpoint else '?') + 'page=' + str(page), _deadline=deadline)
+                if not isinstance(rows, list): raise ValueError('expected complete array page')
+                result.extend(rows)
+                if len(rows) < 100:
+                    self.remember(endpoint, result)
+                    return result
+            raise ValueError('public pagination exceeds bound; no partial inventory accepted')
+        return self._metadata(attempt)
 
     def remember(self, endpoint, rows):
         """Bind download IDs only after complete metadata pagination succeeds."""

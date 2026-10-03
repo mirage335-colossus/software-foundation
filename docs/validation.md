@@ -110,6 +110,31 @@ channel and distribution cases passed using the extracted official Arch verifier
 with no exclusions. The isolated verifier used the Debian host runtime with
 Arch's matching private libassuan; this is not native Arch installation qualification.
 
+Native-only requalification
+[37095133010](https://github.com/mirage335-colossus/software-foundation/actions/runs/37095133010)
+at `592ee7bb69c63e9eda4c30be5b161e870c1187cc` passed all three APT
+clients. Arch passed signed-distribution verification, then failed strict process
+completion after `pacman-key --init` returned while descendants remained alive.
+This is separate from metadata verification and does not qualify native Arch
+installation. Its retained failed evidence preserves the keyring initialization
+output. The correction groups initialization, import and local trust in one
+dedicated worker, shuts down only its container-owned GPG home, then joins every
+adopted child before exiting. The outer strict supervisor is unchanged. Twelve
+focused cases passed, including the original unmanaged-daemon failure, corrected
+completion and an unrelated keyring whose same daemon identity remains usable.
+That local regression does not replace native Arch package-manager qualification.
+Gentoo passed signed-distribution verification and prepared activation, then its
+first `emaint sync` failed on an unauthenticated metadata request with HTTP 403
+rate-limit status. The existing verified generation was preserved. The retained
+error does not identify the endpoint or rate headers, so it does not establish
+whether a primary shared-IP quota or secondary limit caused the refusal. The
+client already obtains asset bytes through public release URLs; a one-page exact
+refresh needs six REST metadata requests, separate from those data transfers.
+The bounded public retry correction passed 31 focused client cases, including
+rate recovery, exhausted budgets, complete-pagination restart and preservation of
+an actual signed active generation. Those local tests use controlled responses;
+they do not establish that the hosted runner's public quota is available.
+
 Earlier application runs remain useful failure evidence; none are relabeled as
 successful qualification. Run
 [36994657303](https://github.com/mirage335-colossus/software-foundation/actions/runs/36994657303)

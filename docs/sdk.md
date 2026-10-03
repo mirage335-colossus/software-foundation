@@ -600,8 +600,8 @@ from the pinned Windows SDK. The retained GUI source group already contains the
 exact GLEW and FreeType inputs compiled by its adapter; do not compile duplicate
 copies into the dependency base.
 
-The native GUI runtime requires an X11 service and a compatible installed OpenGL
-vendor driver. GLVND dispatch libraries may select that driver at runtime; it is
+The Linux native GUI profile requires an X11 service and a compatible installed
+OpenGL vendor driver. GLVND dispatch libraries may select that driver at runtime; it is
 an explicit host service, outside the private application library inventory.
 Test the exact package on both the oldest declared host and the intended display
 hosts. The SDK does not include an X server, desktop browser, or vendor driver.
