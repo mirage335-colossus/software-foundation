@@ -24,6 +24,7 @@ import dependency_archive as archive
 import github_release as delivery
 import process_tree
 import gallery_browser
+from build_capacity import compile_jobs
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKENDS = ('fltk', 'rev', 'sdl', 'terminal', 'framebuffer', 'hosted-web', 'wasm')
@@ -411,8 +412,8 @@ def hosted_command(native_recipe, wasm_recipe, jobs, *, uid=None, gid=None):
         if not delivery.SHA.fullmatch(recipe): raise ValueError('exact SDK recipe required')
     uid = os.getuid() if uid is None else uid; gid = os.getgid() if gid is None else gid
     if (type(uid) is not int or type(gid) is not int or not 0 < uid < 2**31 or
-            not 0 < gid < 2**31 or type(jobs) is not int or not 1 <= jobs <= 8):
-        raise ValueError('non-root host account and bounded concurrency required')
+            not 0 < gid < 2**31 or type(jobs) is not int or jobs < 1):
+        raise ValueError('non-root host account and positive concurrency required')
     return [sys.executable, '-B', str(ROOT / 'tools/screenshots.py'), 'display-collect',
         '--native-group', 'build/screenshots-inputs/native', '--native-recipe', native_recipe,
         '--wasm-group', 'build/screenshots-inputs/wasm', '--wasm-recipe', wasm_recipe,
@@ -694,7 +695,7 @@ def main(argv=None):
     p = sub.add_parser('verify'); p.add_argument('directory', type=Path)
     p = sub.add_parser('hosted')
     p.add_argument('--repository', required=True); p.add_argument('--native-recipe', required=True)
-    p.add_argument('--wasm-recipe', required=True); p.add_argument('--jobs', type=int, default=2)
+    p.add_argument('--wasm-recipe', required=True); p.add_argument('--jobs', type=compile_jobs, default='auto')
     p.add_argument('--source', choices=('base', 'retained'), default='base')
     p.add_argument('--gui-input', required=True, help='exact existing GUI group selector as JSON')
     p.add_argument('--retained-inputs', help='exact version-2 native and wasm requests as one JSON object')

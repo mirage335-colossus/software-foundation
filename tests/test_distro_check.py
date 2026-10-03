@@ -22,6 +22,25 @@ class NativeCheckTests(unittest.TestCase):
             source_commit='b'*40,run_id='123',attempt='1',backends=[dict(backend='core',files=1,payload_sha256='c'*64)],commands=[['true']])
             for row in check.matrix('linux-x86_64')['include']]
 
+    def test_native_command_accounting_preserves_failure_and_captured_bytes(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); timings = []
+            def output(argv, stream, **kwargs): stream.write(b'package 1.2.3\n')
+            with patch.object(check, 'supervised', side_effect=output):
+                self.assertEqual(b'package 1.2.3\n', check.recorded_command(
+                    ['query'], root, timings, capture=root/'query.txt'))
+            failure = subprocess.CalledProcessError(7, ['install'])
+            with patch.object(check, 'supervised', side_effect=failure):
+                with self.assertRaises(subprocess.CalledProcessError) as caught:
+                    check.recorded_command(['install'], root, timings)
+            self.assertIs(caught.exception, failure)
+            saved = json.loads((root/'command-timings.json').read_text())
+            self.assertEqual(['passed', 'failed'], [row['status'] for row in saved])
+            self.assertTrue(all(row['seconds'] >= 0 for row in saved))
+            self.assertEqual([['query'], ['install']], [row['command'] for row in saved])
+            self.assertIn('package 1.2.3', (root/'native.log').read_text())
+
     def test_native_matrix_and_complete_execution_binding(self):
         self.assertEqual(5,len(self.records));self.assertEqual(3,len(check.matrix('linux-aarch64')['include']))
         self.assertEqual(self.selected,check.selection(json.dumps(self.selected)))

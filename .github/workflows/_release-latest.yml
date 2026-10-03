@@ -70,20 +70,26 @@ jobs:
     - id: prepare
       run: python3 -B tools/latest_release.py preflight --output build/latest-request.json
   regression:
-    name: Full native source, distribution and fresh package checks
-    needs: prepare
-    permissions:
-      contents: write
-      actions: read
-    uses: ./.github/workflows/candidate.yml
-    with:
-      devfast: false
-      include_arm: true
-      linux_pool: ${{ inputs.linux_pool }}
-      build_jobs: ${{ inputs.jobs }}
+    name: Verify the nested full candidate regression receipt
+    if: always()
+    needs: application
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      APPLICATION_RESULT: ${{ needs.application.result }}
+      REGRESSION_RESULT: ${{ needs.application.outputs.regression_result }}
+    steps:
+    - name: Require successful full regression before certification
+      shell: python
+      run: |
+        import os
+        if os.environ['APPLICATION_RESULT'] != 'success' or os.environ['REGRESSION_RESULT'] != 'success':
+            raise SystemExit('Application or its required full candidate regression failed, was cancelled, skipped or incomplete')
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
+            out.write('Required full candidate regression passed inside SDK application production. This receipt gate does not repeat regression.\n')
   application:
     name: Consume exact SDKs and publish the complete ordinary candidate
-    needs: [prepare, regression]
+    needs: prepare
     permissions:
       contents: write
       actions: read
@@ -94,6 +100,7 @@ jobs:
       linux_pool: ${{ inputs.linux_pool }}
       tag: ${{ needs.prepare.outputs.tag }}
       experiment: false
+      require_regression: true
       jobs: ${{ inputs.jobs }}
       execute: ${{ inputs.execute }}
       gui_group: ${{ inputs.gui_group }}
@@ -101,7 +108,7 @@ jobs:
   certification:
     name: Certify exact remotely downloaded bytes and attach immutable evidence
     if: inputs.execute
-    needs: application
+    needs: [application, regression]
     permissions:
       contents: write
       actions: read

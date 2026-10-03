@@ -215,7 +215,7 @@ def source_archive(output, gui_source=None):
     return {'archive': str(output), 'sha256': module('coverage').sha(output)}
 
 
-def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_archive=None):
+def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_archive=None, expected_files=None):
     import shutil
     from dependency_archive import extract
     from dependency_store import verify_group
@@ -227,7 +227,8 @@ def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_
         raise ValueError('retained host graphics input applies only to Windows GUI production')
     if jobs < 1 or output.exists():
         raise ValueError('positive concurrency and new package output required')
-    verify_group(group, recipe)
+    if expected_files is None: verify_group(group, recipe)
+    else: module('dependency_store').verify_binary_group(group, recipe, expected_files)
     manifest = module('source_identity').verify_source_archive(source)
     output.mkdir(parents=True)
     work = output / 'work'
@@ -238,10 +239,13 @@ def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_
                '--portable', '--build-dir', str(build), '--build-jobs', str(jobs), '--test-jobs', '2', '--junit', str(output / 'source.junit.xml')]
     if target == 'windows-x86_64':
         version = module('windows_toolchain').inspect_selected_linker()['version']
-        sdk_metadata = module('sdk_windows').install(group, recipe, work / 'dependencies', version)
-        command += ['--dependency-group', str(group), '--windows-dependencies', str(work / 'dependencies')]
+        options = {} if expected_files is None else {'expected_files': expected_files}
+        sdk_metadata = module('sdk_windows').install(group, recipe, work / 'dependencies', version, **options)
+        command += ['--binary-dependency-group' if expected_files is not None else '--dependency-group',
+                    str(group), '--windows-dependencies', str(work / 'dependencies')]
     else:
-        sdk_metadata = module('sdk').install(group, recipe, work / 'sdk', production=True)
+        options = {} if expected_files is None else {'expected_files': expected_files}
+        sdk_metadata = module('sdk').install(group, recipe, work / 'sdk', production=True, **options)
         command += ['--sdk', str(work / 'sdk')]
     gui = root / 'third_party/retained/gui'
     if gui.is_dir():
@@ -339,10 +343,12 @@ def fetch_candidate(repository, tag, inventory, output, transport=None, *, metad
         if not isinstance(delivery.get('files'), dict) or not delivery['files']:
             raise ValueError('missing complete delivery file map')
         candidate = staged / 'candidate'; candidate.mkdir()
+        selections = []
         for name, entry in delivery['files'].items():
             if metadata_only and name != 'release.json': continue
             path = c.local(candidate, name); path.parent.mkdir(parents=True, exist_ok=True)
-            remote.download(assets[entry['asset']], path, entry['sha256'])
+            selections.append((entry['asset'], path, entry['sha256']))
+        g.download_files(remote, assets, selections)
         g.verified_remote(remote, delivery, candidate, readback=False, metadata_only=metadata_only)
         remote.unchanged(tag, before, assets, delivery['tag_commit'])
         staged.rename(output)
@@ -528,7 +534,7 @@ def qualification_row(item, runners=None):
                 graphics='--windows-graphics-archive' in item['argv'])
 
 
-def qualification_batches(plan, *, runners=None):
+def qualification_batches(plan, *, runners=None, manifest=None, attempt=None):
     """Keep independent scopes parallel and backend receipts complete.
 
     Whole-artifact source/recovery/ABI executions remain coalesced across
@@ -559,8 +565,42 @@ def qualification_batches(plan, *, runners=None):
             identity = 'batch-' + slug + '-' + c.digest(batch)[:12]
             if identity in identities:raise ValueError('colliding batch transport identity')
             identities.add(identity); batch['id'] = identity
+            if manifest is not None:
+                batch['payloads'] = qualification_payload_names(plan, batch, manifest, attempt)
             batches.append(batch)
     return {'include': batches}
+
+
+def qualification_payload_names(plan, batch, manifest, attempt, *, include_inputs=True):
+    """Derive a bounded exact projection from complete frozen qualification data."""
+    if not isinstance(attempt, str) or not re.fullmatch(r'[1-9][0-9]*', attempt):
+        raise ValueError('positive qualification attempt required')
+    checks = {item['id']: item for item in module('coverage').executions(plan)}
+    if not batch['checks'] or any(name not in checks for name in batch['checks']):
+        raise ValueError('unknown qualification execution')
+    items = [checks[name] for name in batch['checks']]
+    if len({(item['target'], item['scope']) for item in items}) != 1:
+        raise ValueError('one independent qualification scope required')
+    item = items[0]
+    entries = [entry for entry in manifest['artifacts'] if entry['target'] == item['target']]
+    if len(entries) != 1: raise ValueError('selected target is absent or duplicate')
+    names = ['qualification-inputs-' + attempt] if include_inputs else []
+    names.append('qualification-' + item['target'] + '-' + attempt)
+    if item['scope'] in ('source', 'recovery') or item['scope'] == 'archive' and any(row['backend'] in ('wasm', 'hosted-web') for row in items):
+        names.append('qualification-source-' + attempt)
+    if item['scope'] in ('source', 'recovery'):
+        required = set(module('release').dependency_recipes(entries[0]))
+        found = set()
+        for index, group in enumerate(manifest['dependencies']):
+            if group['recipe_id'] in required:
+                found.add(group['recipe_id'])
+                names.append('qualification-sdk-' + str(index) + '-' + attempt)
+                if item['scope'] == 'recovery' or item.get('sdk_payload') != 'binary':
+                    names.append('qualification-sdk-source-' + str(index) + '-' + attempt)
+        if found != required: raise ValueError('qualification SDK closure is incomplete')
+    if len(names) > 20 or len(names) != len(set(names)):
+        raise ValueError('bounded distinct qualification payloads required')
+    return names
 
 
 def archived_binary_group_support(candidate, manifest):
@@ -630,7 +670,7 @@ def qualification_plan(candidate, profile, output, policy=None, *, runners=None)
     logical = {x['id']: x for x in checks}
     matrix = [row for row in matrix if logical[row['id']].get('execution', row['id']) == row['id']]
     inputs = {str(p.relative_to(ROOT)).replace('\\', '/'): c.sha(p) for p in (ROOT / 'tools').glob('*.py')}
-    for name in ('docs/release-policy.json', '.github/scripts/lifecycle.py', '.github/scripts/container_job.py', '.github/workflows/certify.yml'):
+    for name in ('tools/ci-apt.sh', 'docs/release-policy.json', '.github/scripts/lifecycle.py', '.github/scripts/container_job.py', '.github/workflows/certify.yml'):
         inputs[name] = c.sha(ROOT / name)
     if any(item['graphics'] for item in matrix):
         for name in ('tools/windows_gl_probe.cpp', 'third_party/host-graphics/mesa-windows.json'):
@@ -682,6 +722,50 @@ def restore_run_bundle(repository, run_id, attempt, source_commit, workflow, nam
                 shutil.copyfileobj(incoming,outgoing)
             destination.chmod(info['mode'])
     return result
+
+
+def restore_run_bundles(repository, run_id, attempt, source_commit, workflow, requests):
+    """Fetch one authenticated batch before merging any selected payload files."""
+    import tempfile, shutil
+    a = module('dependency_archive'); transport = module('ci_transport')
+    if not isinstance(requests, list) or not requests:
+        raise ValueError('nonempty bundle restore batch required')
+    outputs = []
+    for request in requests:
+        if not isinstance(request, dict) or not {'name', 'output'} <= request.keys():
+            raise ValueError('bundle request requires exact name and output')
+        output = Path(request['output']).absolute()
+        for parent in (output, *output.parents): _bundle_directory(parent)
+        outputs.append(output)
+    outputs[0].parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.ci-batch-', dir=outputs[0].parent) as temporary:
+        stages = [Path(temporary) / str(index) / 'payload' for index in range(len(requests))]
+        selected = [dict(request, output=stage) for request, stage in zip(requests, stages)]
+        results = transport.fetch_bundles(repository, run_id, attempt, source_commit, workflow, selected)
+        if len(results) != len(requests): raise ValueError('bundle batch result inventory differs')
+        files = []; destinations = set()
+        for request, result, output, stage in zip(requests, results, outputs, stages):
+            if result['manifest']['name'] != request['name']:
+                raise ValueError('bundle batch result name differs')
+            for relative, info in result['manifest']['files'].items():
+                destination = output / a.relative(relative)
+                key = str(destination).casefold()
+                if key in destinations or destination.exists() or destination.is_symlink():
+                    raise ValueError('bundle restore refuses an existing or colliding file: ' + relative)
+                destinations.add(key)
+                for parent in destination.parents: _bundle_directory(parent)
+                files.append((stage / a.relative(relative), destination, info['mode']))
+        if any(str(parent).casefold() in destinations for _, destination, _ in files for parent in destination.parents):
+            raise ValueError('bundle restore file collides with another parent directory')
+        # Complete collision/type checks precede every final write. Exclusive
+        # creation rechecks later changes and never replaces an existing file.
+        for source, destination, mode in files:
+            for parent in destination.parents: _bundle_directory(parent)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with source.open('rb') as incoming, destination.open('xb') as outgoing:
+                shutil.copyfileobj(incoming, outgoing)
+            destination.chmod(mode)
+    return results
 
 
 def download_run(repository, run_id, source_commit, workflow, name, output):
@@ -841,11 +925,17 @@ def import_legacy_sdk(repository, request, target, profile, recipe, output, *, p
         raise ValueError('repository numeric identity is unavailable')
     run_endpoint = f'{base}/actions/runs/{run_id}/attempts/{attempt}'
     job_endpoint = f'{base}/actions/jobs/{request["job_id"]}'
-    runner = STANDARD.get(target, 'ubuntu-24.04')
+    standard = STANDARD.get(target, 'ubuntu-24.04')
+    prefix = 'arm' if target == 'linux-aarch64' else 'windows' if target.startswith('windows-') else 'linux'
 
     def producer():
         observed = remote.transport.json(run_endpoint)
         job = remote.transport.json(job_endpoint)
+        name = job.get('name', '')
+        match = re.fullmatch(r'produce \(' + re.escape(target) + r', ([A-Za-z0-9.-]+)\)', name) if isinstance(name, str) else None
+        runner = match[1] if match else ''
+        if runner != standard and not re.fullmatch('foundation-' + prefix + '-[a-z0-9-]+', runner):
+            raise ValueError('retained producer runner is outside the explicit target allowlist')
         if (observed.get('id') != run_id or observed.get('run_attempt') != attempt or
             observed.get('head_sha') != commit or observed.get('event') != 'workflow_dispatch' or
             observed.get('path') != '.github/workflows/sdk-maintenance.yml' or

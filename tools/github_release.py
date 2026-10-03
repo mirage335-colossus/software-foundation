@@ -6,6 +6,7 @@ an operation. A failed mutation has an unknown remote outcome: reconcile exact
 IDs and bytes before a new attempt. This helper never deletes or replaces assets.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib.util
 import io
@@ -18,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 sys.dont_write_bytecode = True
@@ -33,6 +35,11 @@ coverage = certification.coverage
 NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.+-]{0,180}\Z')
 OID = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})\Z')
 SHA = re.compile(r'[0-9a-f]{64}\Z')
+# Dynamic adapters may load this file under several module names. Share one
+# process-wide gate so nested four-worker pools still run at most four CLI
+# requests at once; backoff and local hashing do not hold a request slot.
+REQUEST_SLOTS = sys.__dict__.setdefault('_foundation_github_request_slots', threading.BoundedSemaphore(4))
+
 CERT = re.compile(r'certification-([A-Za-z0-9][A-Za-z0-9_.-]*)-attempt-([1-9][0-9]*)\.(json|tar.gz)\Z')
 
 
@@ -154,17 +161,25 @@ class GitHub:
     def __init__(self, repository):
         self.repository = location(repository)
         self.wait_remaining = float(self.WAIT_BUDGET)
+        self._budget_lock = threading.Lock()
 
     def _run(self, arguments, *, body=None, output=None, timeout=None):
+        budget = self.COMMAND_TIMEOUT if timeout is None else timeout
+        started = time.monotonic()
+        if not REQUEST_SLOTS.acquire(timeout=budget):
+            raise DeliveryError('GitHub request capacity wait exceeded its bounded deadline')
         try:
+            remaining = budget - (time.monotonic() - started)
+            if remaining <= 0: raise DeliveryError('GitHub CLI request exceeded its bounded deadline')
             return subprocess.run(['gh', *arguments], input=body,
                 stdout=output if output is not None else subprocess.PIPE,
-                stderr=subprocess.PIPE, check=False,
-                timeout=self.COMMAND_TIMEOUT if timeout is None else timeout)
+                stderr=subprocess.PIPE, check=False, timeout=remaining)
         except subprocess.TimeoutExpired:
             raise DeliveryError('GitHub CLI request exceeded its bounded deadline') from None
         except OSError:
             raise DeliveryError('GitHub CLI request could not complete') from None
+        finally:
+            REQUEST_SLOTS.release()
 
     def _timeout(self, deadline):
         remaining = deadline - time.monotonic()
@@ -173,17 +188,19 @@ class GitHub:
 
     def _wait(self, delay, diagnostic, deadline):
         delay += random.uniform(1, 5)
-        if delay > self.wait_remaining:
-            raise DeliveryError('GitHub read-retry wait budget exhausted (' + diagnostic + ')')
         if delay >= deadline - time.monotonic():
             raise DeliveryError('GitHub request deadline exhausted (' + diagnostic + ')')
+        with self._budget_lock:
+            if delay > self.wait_remaining:
+                raise DeliveryError('GitHub read-retry wait budget exhausted (' + diagnostic + ')')
+            self.wait_remaining -= delay
+            remaining_budget = self.wait_remaining
         print(f'GitHub read retry ({diagnostic}); waiting {delay:.1f}s; '
-              f'wait budget remaining {self.wait_remaining - delay:.1f}s', file=sys.stderr, flush=True)
+              f'wait budget remaining {remaining_budget:.1f}s', file=sys.stderr, flush=True)
         remaining = delay
         while remaining > 0:
             self._timeout(deadline)
             step = min(60, remaining)
-            self.wait_remaining -= step
             time.sleep(step)  # Interrupts/cancellation propagate; no detached sleeper.
             remaining -= step
 
@@ -311,6 +328,34 @@ class GitHub:
         if result.returncode:
             raise DeliveryError('asset upload failed; remote outcome requires reconciliation', True)
 
+    def upload_to(self, release_id, path):
+        """Upload once to a known immutable release ID, with no tag lookup."""
+        from urllib.parse import quote
+        if not positive(release_id): raise DeliveryError('positive upload release ID required')
+        path = Path(path).absolute(); name = valid_name(path.name)
+        if path.is_symlink() or not path.is_file(): raise DeliveryError('upload requires an ordinary payload file')
+        before = path.stat(); expected = archive.digest(path)
+        self._headroom()
+        endpoint = f'https://uploads.github.com/repos/{self.repository}/releases/{release_id}/assets?name=' + quote(name, safe='')
+        try:
+            result = self._run(['api', '--hostname', 'github.com', '--include', '--method', 'POST', endpoint,
+                '--input', str(path), '-H', 'Content-Type: application/octet-stream',
+                '-H', 'Content-Length: ' + str(before.st_size), '-H', 'Accept: application/vnd.github+json'])
+            response = io.BytesIO(result.stdout); status, _ = response_head(response)
+            if result.returncode or status != 201:
+                raise DeliveryError('asset upload failed; remote outcome requires reconciliation', True)
+            body = response.read(HTTP_JSON_LIMIT + 1)
+            if len(body) > HTTP_JSON_LIMIT: raise DeliveryError('upload response exceeds inventory limit', True)
+            row = parse(body); after = path.stat()
+            if (not isinstance(row, dict) or not positive(row.get('id')) or row.get('name') != name or
+                    row.get('state') != 'uploaded' or row.get('size') != before.st_size or
+                    row.get('digest') != 'sha256:' + expected or archive.digest(path) != expected or
+                    (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
+                    (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
+                raise DeliveryError('uploaded asset or local payload identity differs', True)
+        except (DeliveryError, OSError, ValueError) as error:
+            raise DeliveryError('asset upload could not be confirmed; remote outcome requires reconciliation', True) from error
+
     def download(self, asset_id, path):
         path = Path(path)
         if path.exists() or path.is_symlink():raise DeliveryError('asset download destination must be new')
@@ -417,6 +462,15 @@ class Remote:
     def upload(self, tag, path):
         self.mutated = True
         self.transport.upload(tag, path)
+
+    def upload_to(self, info, path):
+        # Callers retain this validated release snapshot through their final
+        # complete asset reconciliation; no response-loss mutation is replayed.
+        self.info(info, info.get('tag_name'))
+        self.mutated = True
+        if hasattr(self.transport, 'upload_to'):
+            return self.transport.upload_to(info['id'], path)
+        return self.transport.upload(info['tag_name'], path)
 
     def download(self, row, path, expected=None):
         expected = expected or row['digest'][7:]
@@ -567,15 +621,46 @@ def verified_remote(remote, delivery, directory, *, draft=False, prerelease=None
         if coverage.load(descriptor) != delivery:
             raise DeliveryError('remote frozen delivery differs')
         restored = staged / 'release'; restored.mkdir()
+        selections = []
         for name, item in (delivery['files'].items() if readback else ()):
             path = restored.joinpath(*archive.relative(name).parts); path.parent.mkdir(parents=True, exist_ok=True)
-            remote.download(assets[item['asset']], path, item['sha256'])
+            selections.append((item['asset'], path, item['sha256']))
+        download_files(remote, assets, selections)
         if readback: release.verify_release(restored)
     remote.unchanged(tag, info, assets, delivery['tag_commit'])
     return info, assets
 
 
-def fetch_base(repository, recipe, output, *, transport=None):
+def upload_files(remote, tag, paths, *, release_info=None):
+    """Bound independent payload uploads and join a failed batch before stopping.
+
+    Control descriptors and lifecycle transitions belong to the caller, after
+    every payload finishes. A response loss retains the outer mutation's sticky
+    uncertainty; queued later batches never launch after the first failure.
+    """
+    paths = [Path(path) for path in paths]
+    if len({path.name.casefold() for path in paths}) != len(paths):
+        raise DeliveryError('upload payload names must be distinct')
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for start in range(0, len(paths), 4):
+            futures = [pool.submit(remote.upload_to, release_info, path) if release_info is not None else
+                       pool.submit(remote.upload, tag, path) for path in paths[start:start + 4]]
+            for future in futures: future.result()
+
+
+def download_files(remote, assets, selections):
+    """Bounded independent immutable transfers; all workers join before return."""
+    selections = list(selections)
+    destinations = [str(Path(path).absolute()) for _, path, _ in selections]
+    if len(destinations) != len(set(destinations)):
+        raise DeliveryError('download destinations must be distinct')
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(remote.download, assets[name], path, digest) for name, path, digest in selections]
+        for future in futures: future.result()
+
+
+def fetch_base(repository, recipe, output, *, transport=None, binary_only=False):
+    if type(binary_only) is not bool: raise DeliveryError('binary-only selection must be boolean')
     expected = store.names(recipe); remote = Remote(repository, transport); remote.visible()
     info = remote.find('base')
     if info['draft'] or not info['prerelease'] or info['name'] != 'base':
@@ -590,12 +675,18 @@ def fetch_base(repository, recipe, output, *, transport=None):
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.base-fetch-', dir=output.parent) as temporary:
         stage = Path(temporary) / 'group'; stage.mkdir()
-        for name in expected:
+        binary, source, checksum = expected
+        selected = (binary, checksum) if binary_only else expected
+        for name in selected:
             remote.download(assets[name], stage / name)
-        files = store.verify_group(stage, recipe)
+        files = store.verify_binary_group(stage, recipe) if binary_only else store.verify_group(stage, recipe)
+        # The checksum binds the untransferred supplier source too. Reconcile
+        # every immutable API asset digest, not just the selected binary bytes.
+        if any(assets[name]['digest'] != 'sha256:' + files[name] for name in expected):
+            raise DeliveryError('base assets differ from complete checksum inventory')
         remote.unchanged('base', info, assets, reference)
         stage.rename(output)
-    return {'fetched': True, 'recipe': recipe, 'files': files}
+    return {'fetched': True, 'recipe': recipe, 'files': files, 'payload': 'binary' if binary_only else 'complete'}
 
 
 def publish_base(repository, recipe, group, source_commit, *, execute=False, transport=None):
@@ -668,9 +759,9 @@ def publish_candidate(repository, tag, directory, source_commit, packager_commit
             'name':'experiment' if experiment else tag,'body':'Certification pending. Immutable application assets.',
             'draft':True,'prerelease':True,'make_latest':'false'}), tag)
         remote.wait_find(tag, release_id=info['id'])
-        for name in delivery['files']:remote.upload(tag, Path(directory) / name)
+        upload_files(remote, tag, [Path(directory) / name for name in delivery['files']], release_info=info)
         with tempfile.TemporaryDirectory(prefix='delivery-metadata-') as temporary:
-            path=Path(temporary)/'delivery.json';path.write_bytes(archive.encoded(delivery));remote.upload(tag,path)
+            path=Path(temporary)/'delivery.json';path.write_bytes(archive.encoded(delivery));remote.upload_to(info,path)
         current, assets = verified_remote(remote, delivery, directory, draft=True, prerelease=True, metadata_only=True)
         if current['id'] != info['id']:raise DeliveryError('draft release identity changed')
         remote.change(f'/releases/{info["id"]}', method='PATCH', body={'draft':False,'prerelease':True,'make_latest':'false'})
@@ -679,6 +770,21 @@ def publish_candidate(repository, tag, directory, source_commit, packager_commit
         remote.not_latest(final)
         return dict(result, execute=True, release_id=final['id'])
     return run_mutation(remote, act)
+
+
+def retain_reports(reports, retain):
+    """Keep every logical report beside one copy of shared physical evidence."""
+    report_paths, parents = {}, {}
+    for path in reports:
+        path = Path(path); report = coverage.load(path); check = valid_name(report['check'])
+        if check in report_paths: raise DeliveryError('duplicate evidence check')
+        parent = path.parent.resolve(strict=True)
+        prefix = parents.setdefault(parent, 'reports/' + check)
+        relative = prefix + '/' + valid_name(path.name)
+        report_paths[check] = relative; retain(path, relative)
+        for name in report['evidence']:
+            retain(coverage.local(path.parent, name), prefix + '/' + name)
+    return report_paths
 
 
 def bundle_certificate(directory, delivery, certificate, check_plan, policy, profile, reports, attempt, destination, *, metadata_only=False):
@@ -695,21 +801,26 @@ def bundle_certificate(directory, delivery, certificate, check_plan, policy, pro
     if not isinstance(run_id, str) or not coverage.NAME.fullmatch(run_id):raise DeliveryError('invalid certification run')
     stem = valid_name(f'certification-{run_id}-attempt-{attempt}')
     tree = Path(destination) / 'contents'; tree.mkdir()
-    report_paths = {}
+    retained = {}
     def retain(source, name):
         source = Path(source)
         if source.is_symlink() or not source.is_file():raise DeliveryError('evidence must be an ordinary file')
-        target = tree.joinpath(*archive.relative(name).parts);target.parent.mkdir(parents=True,exist_ok=True)
+        current = source.stat(); identity = (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns)
+        digest = archive.digest(source)
+        target = tree.joinpath(*archive.relative(name).parts)
+        if name in retained:
+            if retained[name] != (source.resolve(), identity, digest) or archive.digest(target) != digest:
+                raise DeliveryError('shared evidence changed during retention')
+            return
+        target.parent.mkdir(parents=True,exist_ok=True)
         with source.open('rb') as incoming, target.open('xb') as outgoing:shutil.copyfileobj(incoming,outgoing)
-        if archive.digest(source) != archive.digest(target):raise DeliveryError('local evidence changed during retention')
+        after = source.stat()
+        if (identity != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) or
+                archive.digest(source) != digest or archive.digest(target) != digest):
+            raise DeliveryError('local evidence changed during retention')
+        retained[name] = (source.resolve(), identity, digest)
     for source,name in ((certificate,'certificate.json'),(check_plan,'plan.json'),(policy,'policy.json')):retain(source,name)
-    for path in reports:
-        report=coverage.load(path); check=valid_name(report['check'])
-        relative='reports/'+check+'/'+valid_name(path.name)
-        if check in report_paths:raise DeliveryError('duplicate evidence check')
-        report_paths[check]=relative;retain(path,relative)
-        for name in report['evidence']:
-            retain(coverage.local(path.parent,name),'reports/'+check+'/'+name)
+    report_paths = retain_reports(reports, retain)
     copied_reports = [tree / name for name in report_paths.values()]
     copied_certificate = coverage.load(tree / 'certificate.json')
     if (copied_certificate != document or coverage.load(tree / 'plan.json') != frozen

@@ -35,6 +35,10 @@ name: Prepared SDK application and candidate
         - '4'
         - '8'
         default: auto
+      require_regression:
+        description: Run full candidate regression alongside production and require it before assembly
+        type: boolean
+        default: false
       execute:
         description: Publish candidate after exact local verification
         type: boolean
@@ -73,6 +77,10 @@ name: Prepared SDK application and candidate
         description: Auto uses available CPU and RAM; explicit compile override
         type: string
         default: auto
+      require_regression:
+        description: Run full candidate regression alongside production and require it before assembly
+        type: boolean
+        default: false
       execute:
         description: Publish candidate after exact local verification
         type: boolean
@@ -100,11 +108,26 @@ name: Prepared SDK application and candidate
         value: ${{ jobs.assemble.outputs.delivery_sha256 }}
       published:
         description: Verified published
-        value: ${{ jobs.publish.outputs.published || 'false' }}
+        value: ${{ jobs.assemble.outputs.published || 'false' }}
+      regression_result:
+        description: Result of the required nested full candidate workflow, or skipped for standalone production
+        value: ${{ jobs.assemble.outputs.regression_result }}
 permissions:
   contents: read
   actions: read
 jobs:
+  regression:
+    name: Full candidate regression overlapping application production
+    if: inputs.require_regression
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/candidate.yml
+    with:
+      devfast: false
+      include_arm: true
+      linux_pool: ${{ inputs.linux_pool }}
+      build_jobs: ${{ inputs.jobs }}
   prepare:
     runs-on: ubuntu-24.04
     outputs:
@@ -159,8 +182,8 @@ jobs:
     - shell: python
       run: |-
         import subprocess, sys
-        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'fetch-sdk'], check=True)
-      name: Fetch exact complete existing dependency group; never cold-build
+        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'fetch-sdk-binary'], check=True)
+      name: Fetch exact verified binary SDK and paired checksum; never cold-build
     - name: Verify explicitly retained Windows host graphics input
       if: runner.os == 'Windows' && inputs.profile == 'all-gui'
       run: python .github/scripts/lifecycle.py graphics-input
@@ -208,10 +231,14 @@ jobs:
       contents: write
       actions: read
   assemble:
-    needs:
-    - prepare
-    - application
+    name: Verify complete candidate and publish directly after required regression
+    if: ${{ always() && needs.prepare.result == 'success' && needs.application.result == 'success' && ((inputs.require_regression && needs.regression.result == 'success') || (!inputs.require_regression && needs.regression.result == 'skipped')) }}
+    needs: [prepare, application, regression]
     runs-on: ubuntu-24.04
+    environment: ${{ inputs.execute && 'release-publisher' || '' }}
+    concurrency:
+      group: foundation-release-lifecycle
+      cancel-in-progress: false
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
@@ -232,7 +259,8 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'assemble'], check=True)
       id: result
-    - name: Retain verified candidate-${{ github.run_attempt }}
+    - if: ${{ !inputs.execute }}
+      name: Retain verified candidate-${{ github.run_attempt }}
       run: python .github/scripts/lifecycle.py bundle-store
       env:
         BUNDLE_NAME: candidate-${{ github.run_attempt }}
@@ -241,49 +269,27 @@ jobs:
           build/delivery.json
           build/publication-request.json
           build/publication-plan.json
-    permissions:
-      contents: write
-      actions: read
-    outputs:
-      tag: ${{ steps.result.outputs.tag }}
-      inventory_sha256: ${{ steps.result.outputs.inventory_sha256 }}
-      source_commit: ${{ steps.result.outputs.source_commit }}
-      delivery_sha256: ${{ steps.result.outputs.delivery_sha256 }}
-  publish:
-    if: inputs.execute
-    needs: assemble
-    runs-on: ubuntu-24.04
-    environment: release-publisher
-    concurrency:
-      group: foundation-release-lifecycle
-      cancel-in-progress: false
-    permissions:
-      contents: write
-      actions: read
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-    - shell: python
-      run: |
-        import subprocess,sys
-        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
-      env:
-        BUNDLE_NAME: candidate-${{ github.run_attempt }}
-        BUNDLE_OUTPUT: build
-    - shell: python
-      run: |-
-        import subprocess, sys
-        subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'publish-candidate'], check=True)
-      id: result
-    - if: always()
+    - if: inputs.execute
+      name: Publish verified local candidate without a full bundle round trip
+      run: python .github/scripts/lifecycle.py publish-candidate
+      id: publication
+    - if: always() && inputs.execute
       name: Retain verified candidate-delivery-${{ github.run_attempt }}
       run: python .github/scripts/lifecycle.py bundle-store
       env:
         BUNDLE_NAME: candidate-delivery-${{ github.run_attempt }}
         BUNDLE_PATHS: build/receipts/
+    permissions:
+      contents: write
+      actions: read
     outputs:
-      published: ${{ steps.result.outputs.published }}
+      regression_result: ${{ needs.regression.result }}
+      published: ${{ steps.publication.outputs.published }}
+      tag: ${{ steps.result.outputs.tag }}
+      inventory_sha256: ${{ steps.result.outputs.inventory_sha256 }}
+      source_commit: ${{ steps.result.outputs.source_commit }}
+      delivery_sha256: ${{ steps.result.outputs.delivery_sha256 }}
+
 env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'

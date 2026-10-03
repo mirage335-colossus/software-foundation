@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Disposable Linux jobs with host-owned outputs and explicit privilege boundaries."""
 import argparse
+from contextlib import contextmanager
+import uuid
 import os
 from pathlib import Path
 import re
@@ -13,11 +15,59 @@ ACTIONS = ('sdk-produce', 'application-build', 'native-gui-check', 'check', 'apt
 IMAGES = ('debian:bookworm', 'debian:trixie', 'ubuntu:24.04')
 ENVIRONMENT = ('SDK_PROFILE', 'PROFILE', 'JOBS', 'TARGET', 'RECIPE', 'GITHUB_REPOSITORY', 'GITHUB_SHA',
                'CHECK', 'CHECK_IMAGE', 'CHECK_BROWSER', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')
-PACKAGES = ('ca-certificates python3 nodejs openssl git build-essential cmake ninja-build file cpio '
-            'rsync unzip wget patch bc bzip2 xz-utils perl gawk libncurses-dev binutils dpkg-dev apt-utils '
-            'gnupg curl xvfb xauth fonts-dejavu-core libgl1 libopengl0 libgl1-mesa-dri libx11-dev '
-            'libxext-dev libxft-dev libxinerama-dev libxcursor-dev libxrender-dev libxfixes-dev '
-            'libwayland-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev').split()
+COMMON = 'ca-certificates python3 git file binutils gnupg openssl curl xz-utils unzip xvfb xauth fonts-dejavu-core'.split()
+BUILD = 'build-essential cmake ninja-build cpio rsync wget patch bc bzip2 perl gawk libncurses-dev dpkg-dev apt-utils nodejs'.split()
+GUI_RUNTIME = ('libgl1 libopengl0 libgl1-mesa-dri libegl1 libx11-6 libxext6 libxft2 libxinerama1 '
+               'libxcursor1 libxrender1 libxfixes3 libxrandr2 libice6 libsm6 libxdamage1 libxxf86vm1 '
+               'libwayland-client0 libwayland-cursor0 libwayland-egl1 libxkbcommon0 libdbus-1-3 libibus-1.0-5').split()
+GUI_BUILD = ('libx11-dev libxext-dev libxft-dev libxinerama-dev libxcursor-dev libxrender-dev libxfixes-dev '
+             'libwayland-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev').split()
+
+
+def packages(action, environment, item=None):
+    if action not in ACTIONS: raise ValueError('unsupported disposable container operation')
+    selected = list(COMMON)
+    if action in ('sdk-produce', 'application-build', 'native-gui-check', 'apt-native-smoke') or item and item['scope'] in ('source', 'recovery'):
+        selected += BUILD
+    gui = action == 'native-gui-check' or environment.get('SDK_PROFILE' if action == 'sdk-produce' else 'PROFILE') == 'all-gui'
+    if gui or action == 'check' and item and item['backend'] != 'core': selected += GUI_RUNTIME
+    if action == 'sdk-produce' and gui: selected += GUI_BUILD
+    return tuple(dict.fromkeys(selected))
+
+
+def bootstrap_script(selected):
+    return 'sh tools/ci-apt.sh install ' + ' '.join(selected)
+
+
+@contextmanager
+def prepared_checks(root, image, items, environment):
+    """Bootstrap once, then fork a fresh package database and account per case.
+
+    The committed layer contains setup only: no case, builder account, browser
+    receipt or host bind-mount bytes. It is private to this batch and removed
+    after every child process and output stream has finished.
+    """
+    if image not in IMAGES: raise ValueError('unsupported disposable container image')
+    root = Path(root).resolve(strict=True)
+    if ':' in str(root) or '\n' in str(root): raise ValueError('unsupported bind mount path')
+    selected = tuple(dict.fromkeys(name for item in items for name in packages('check', environment, item)))
+    name = 'foundation-check-setup-' + uuid.uuid4().hex
+    identity = None; created = False
+    try:
+        subprocess.run(['docker', 'create', '--name', name, '-v', str(root) + ':/work:ro', '-w', '/work',
+                        image, 'bash', '-euc', bootstrap_script(selected)], check=True)
+        created = True
+        subprocess.run(['docker', 'start', '--attach', name], check=True)
+        result = subprocess.run(['docker', 'commit', name], check=True, capture_output=True, text=True)
+        identity = result.stdout.strip()
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', identity):
+            raise ValueError('bootstrap commit did not return an immutable image ID')
+        yield identity
+    finally:
+        # Synchronous Docker subprocesses are joined before resource cleanup.
+        if created: subprocess.run(['docker', 'rm', name], check=True)
+        if identity and re.fullmatch(r'sha256:[0-9a-f]{64}', identity):
+            subprocess.run(['docker', 'image', 'rm', identity], check=True)
 
 
 def account_id(value):
@@ -26,7 +76,7 @@ def account_id(value):
     return value
 
 
-def command(action, root, uid, gid, environment):
+def command(action, root, uid, gid, environment, *, prepared_image=None):
     if action not in ACTIONS:
         raise ValueError('unsupported disposable container operation')
     uid, gid = account_id(uid), account_id(gid)
@@ -36,15 +86,18 @@ def command(action, root, uid, gid, environment):
     root = Path(root).resolve(strict=True)
     if ':' in str(root) or '\n' in str(root):
         raise ValueError('unsupported bind mount path')
+    if prepared_image is not None and (action != 'check' or not re.fullmatch(r'sha256:[0-9a-f]{64}', prepared_image)):
+        raise ValueError('only checks may use an immutable batch bootstrap image')
+    item = selection(root, environment) if action == 'check' else None
+    script = '' if prepared_image else bootstrap_script(packages(action, environment, item)) + '; '
     argv = ['docker', 'run', '--rm']
     for name in ENVIRONMENT:
         if name in environment:
             argv += ['-e', name]
     argv += ['-e', 'FOUNDATION_HOST_UID=' + str(uid), '-e', 'FOUNDATION_HOST_GID=' + str(gid),
              '-e', 'FOUNDATION_DISPOSABLE_CHECK=1', '-e', 'PYTHONUTF8=1', '-e', 'PYTHONDONTWRITEBYTECODE=1',
-             '-v', str(root) + ':/work', '-w', '/work', image, 'bash', '-euc',
-             'apt-get update; apt-get install -y --no-install-recommends ' + ' '.join(PACKAGES) +
-             '; exec python3 -B .github/scripts/container_job.py --inside "$1"', 'container-job', action]
+             '-v', str(root) + ':/work', '-w', '/work', prepared_image or image, 'bash', '-euc',
+             script + 'exec python3 -B .github/scripts/container_job.py --inside "$1"', 'container-job', action]
     return argv
 
 
@@ -162,14 +215,16 @@ def diagnostic(error):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inside', action='store_true')
+    parser.add_argument('--prepared-image')
     parser.add_argument('action', choices=ACTIONS)
     args = parser.parse_args(argv)
     if args.inside:
+        if args.prepared_image is not None: raise ValueError('bootstrap image selection belongs to the host launcher')
         inside(args.action)
     else:
         if not hasattr(os, 'getuid') or not hasattr(os, 'getgid'):
             raise ValueError('container launcher requires a Linux host')
-        subprocess.run(command(args.action, ROOT, os.getuid(), os.getgid(), os.environ), check=True)
+        subprocess.run(command(args.action, ROOT, os.getuid(), os.getgid(), os.environ, prepared_image=args.prepared_image), check=True)
     return 0
 
 

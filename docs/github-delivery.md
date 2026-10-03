@@ -230,9 +230,13 @@ but it does not reserve repository capacity against other
 jobs. A failed write or upload is never automatically replayed. Preserve and
 reconcile its outcome using the procedure below.
 
-Budget quota waits separately from compilation and tests. The workflow batches
-independent cases to reduce repeated transfers while retaining their distinct
-results; see [qualification batching](ci.md#grouped-qualification-work). Waiting
+Budget quota waits separately from compilation and tests. Grouped bundle reads
+and publications share authoritative run, producer and asset inventories at their
+transaction boundaries. This avoids repeating those API requests for each input;
+parallel downloads alone cannot reduce the request count. The workflow batches
+independent cases while retaining their distinct results; see
+[qualification batching](ci.md#grouped-qualification-work). Actual HTTP operations
+share a process-wide limit of four, including nested transfer callers. Waiting
 cannot guarantee service availability or replace a missing required result.
 
 ## Failure, uncertainty and recovery
@@ -378,7 +382,17 @@ artifact quota. Every store is a draft prerelease tagged by exact run/attempt;
 it stays private, is never Latest and is not a qualified dependency base. Its
 manifest-last bundles permit same-byte reconciliation after an interrupted upload.
 This is deliberately a separate protocol from immutable candidate publication:
-the product publisher does not adopt arbitrary partial drafts.
+the product publisher does not adopt arbitrary partial drafts. Text evidence can
+use deterministic gzip at a low compression level; consumers also accept existing
+uncompressed tar bundles. Independent chunks download concurrently with a maximum
+of four workers, then reassemble in the manifest's exact order. Every worker joins
+before cleanup or local publication, including after a failed download. A batch
+shares complete provenance inventories at its boundaries, including all selected
+producers. Every selected namespace must remain unchanged, and duplicate remote
+names or IDs are rejected across the complete asset inventory. Unrelated jobs
+may add their own bundles concurrently. Downloads stay private until every
+selected bundle passes the final checks; publication verifies all payloads before
+writing their manifest commit markers.
 
 Even with `execute=false`, trusted workflows may create these transport drafts.
 The execution gate controls public product/base changes and Latest. Small pointers

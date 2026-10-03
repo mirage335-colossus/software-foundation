@@ -112,6 +112,28 @@ the standard runner; requesting faster mode with no configured target fails.
 These variables are operator configuration, not executable event input. Actual
 host checks still reject a wrong operating system or architecture.
 
+The same validated pool selection is exposed by Latest, prepared-SDK application
+production, SDK maintenance, native GUI and screenshot workflows. `jobs=auto`
+uses each producer's available CPUs and RAM; a positive override remains explicit.
+Feedback and sanitizer compilation also use automatic capacity while test
+concurrency stays at two. Two independent distribution fixture suites can run
+concurrently on their existing runner, retain separate complete receipts and
+join before the required distribution gate. No package assertion is omitted.
+
+Latest requests full candidate regression inside the SDK application workflow.
+Regression and platform production start independently; assembly requires both
+to succeed. The outer regression job verifies that nested result and never
+runs a second candidate workflow. Failed, cancelled, skipped and missing nested
+results prevent publication and certification. A standalone SDK application run
+can explicitly enable this gate with `require_regression=true`.
+
+Executed candidates assemble and publish in the same protected publisher job,
+using the existing complete local validation and exact remote readback. This
+avoids storing and downloading the full assembled candidate between jobs.
+Preparation-only runs retain the complete candidate bundle for inspection;
+executed runs retain delivery receipts. Platform output bundles and complete
+assembly dependency verification remain required.
+
 Before adding a larger runner, measure queue delay, setup, cold compilation,
 incremental compilation, tests, artifact transfer, peak memory, total runner
 minutes, and elapsed critical path. More CPUs will not speed up serial tests,

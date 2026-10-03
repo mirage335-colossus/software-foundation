@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Thin hosted adapters; substantive byte and lifecycle checks live in tools/."""
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
@@ -123,8 +124,9 @@ def store_bundle():
     base, paths = bundle_inputs(value('BUNDLE_PATHS'))
     if not paths: raise ValueError('bundle selection contains no files')
     name=value('BUNDLE_NAME')
+    text_bundle = name.startswith(('evidence-', 'source-linux-', 'source-windows-', 'qualification-inputs-', 'candidate-coverage-', 'certificate-', 'browser-prerequisite-', 'application-evidence-', 'native-gui-evidence-', 'certification-delivery-', 'candidate-delivery-')) or name.endswith(('-diagnostics', '-publication'))
     pointer=ci_transport.publish_bundle(**storage_context(), name=name, root=base, paths=paths,
-        runner_name=value('RUNNER_NAME'))
+        runner_name=value('RUNNER_NAME'), compress=text_bundle)
     write(ROOT/'build/transport-pointers'/ (name+'.json'), pointer)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with Path(value('GITHUB_STEP_SUMMARY')).open('a',encoding='utf-8') as stream:
@@ -136,6 +138,16 @@ def fetch_bundle(name, output, *, allow_failed=False):
     result=ci.restore_run_bundle(**storage_context(), name=name, output=Path(output), allow_failed=allow_failed)
     write(ROOT/'build/transport-receipts'/(name+'.json'),result)
     return result
+
+
+def fetch_bundles(requests):
+    if len(requests) == 1:
+        request = requests[0]
+        return [fetch_bundle(request['name'], request['output'], allow_failed=request.get('allow_failed', False))]
+    results = ci.restore_run_bundles(**storage_context(), requests=requests)
+    for request, result in zip(requests, results):
+        write(ROOT/'build/transport-receipts'/(request['name']+'.json'),result)
+    return results
 
 
 def sdk_recipe(target, profile):
@@ -290,6 +302,13 @@ def compile_jobs():
     return resolve(os.environ.get('JOBS', 'auto'))
 
 
+def parallel_operations(operations):
+    """Join every independent writer, including after an earlier failure."""
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(operation) for operation in operations]
+        return [future.result() for future in futures]
+
+
 def qualification_payloads():
     """Publish each immutable source, target and dependency payload once."""
     import ci_transport
@@ -297,38 +316,58 @@ def qualification_payloads():
     plan = evidence.validate(evidence.load(ROOT / 'build/check-plan.json'))
     evidence.check_inputs(plan, ROOT)
     context = storage_context(); attempt = value('GITHUB_RUN_ATTEMPT')
-    def publish(label, names):
-        ci_transport.publish_bundle(**context, name='qualification-' + label + '-' + attempt,
-            root=ROOT / 'build', paths=['candidate/' + name for name in names], runner_name=value('RUNNER_NAME'))
-    publish('source', [manifest['source']['archive']])
-    for entry in manifest['artifacts']:
-        publish(entry['target'], [entry['archive'], entry['manifest']])
+    selections = [('source', [manifest['source']['archive']])]
+    selections += [(entry['target'], [entry['archive'], entry['manifest']]) for entry in manifest['artifacts']]
     for index, group in enumerate(manifest['dependencies']):
-        publish('sdk-' + str(index), ['dependencies/' + group['recipe_id'] + '/' + name for name in group['files'] if not name.endswith('-sources.tar.gz')])
-        publish('sdk-source-' + str(index), ['dependencies/' + group['recipe_id'] + '/' + name for name in group['files'] if name.endswith('-sources.tar.gz')])
+        selections.append(('sdk-' + str(index), ['dependencies/' + group['recipe_id'] + '/' + name for name in group['files'] if not name.endswith('-sources.tar.gz')]))
+        selections.append(('sdk-source-' + str(index), ['dependencies/' + group['recipe_id'] + '/' + name for name in group['files'] if name.endswith('-sources.tar.gz')]))
+    ci_transport.publish_bundles(**context, requests=[dict(name='qualification-' + label + '-' + attempt,
+        root=ROOT / 'build', paths=['candidate/' + name for name in names]) for label, names in selections] +
+        [dict(name='qualification-inputs-' + attempt, root=ROOT / 'build',
+              paths=['candidate/release.json', 'delivery.json', 'check-plan.json'], compress=True)],
+        runner_name=value('RUNNER_NAME'))
+    evidence.check_inputs(plan, ROOT)
+
+
+def check_payload_selection(plan):
+    batches = [row for row in ci.qualification_batches(plan, runners=selected_runners())['include'] if row['id'] == value('BATCH')]
+    if len(batches) != 1: raise ValueError('unknown physical qualification batch')
+    manifest = ci.module('release').verify_metadata(ROOT / 'build/candidate')
+    names = ci.qualification_payload_names(plan, batches[0], manifest, value('GITHUB_RUN_ATTEMPT'))
+    return batches[0], names
 
 
 def fetch_check_payloads():
     plan = evidence.validate(evidence.load(ROOT / 'build/check-plan.json'))
     evidence.check_inputs(plan, ROOT, metadata_only=True)
-    batches = [row for row in ci.qualification_batches(plan, runners=selected_runners())['include'] if row['id'] == value('BATCH')]
-    if len(batches) != 1: raise ValueError('unknown physical qualification batch')
-    items = [item for item in evidence.executions(plan) if item['id'] in batches[0]['checks']]
-    if not items or len({(item['target'], item['scope']) for item in items}) != 1:
-        raise ValueError('one independent qualification scope required')
-    item = items[0]; attempt = value('GITHUB_RUN_ATTEMPT')
-    manifest = ci.module('release').verify_metadata(ROOT / 'build/candidate')
-    entry = next(row for row in manifest['artifacts'] if row['target'] == item['target'])
-    fetch_bundle('qualification-' + item['target'] + '-' + attempt, ROOT / 'build')
-    if item['scope'] in ('source', 'recovery') or item['scope'] == 'archive' and any(row['backend'] in ('wasm', 'hosted-web') for row in items):
-        fetch_bundle('qualification-source-' + attempt, ROOT / 'build')
-    if item['scope'] in ('source', 'recovery'):
-        for index, group in enumerate(manifest['dependencies']):
-            if group['recipe_id'] in ci.module('release').dependency_recipes(entry):
-                fetch_bundle('qualification-sdk-' + str(index) + '-' + attempt, ROOT / 'build')
-                if item['scope'] == 'recovery' or item.get('sdk_payload') != 'binary':
-                    fetch_bundle('qualification-sdk-source-' + str(index) + '-' + attempt, ROOT / 'build')
-    evidence.check_inputs(plan, ROOT, check_ids=[row['id'] for row in items])
+    batch, names = check_payload_selection(plan)
+    fetch_bundles([dict(name=name, output=ROOT / 'build') for name in names[1:]])
+    evidence.check_inputs(plan, ROOT, check_ids=batch['checks'])
+
+
+def fetch_check_inputs():
+    """One grouped transfer, then reconcile the exact frozen scope before tests."""
+    raw = value('CHECK_PAYLOADS')
+    if len(raw) > 8192: raise ValueError('qualification payload selector exceeds bound')
+    names = delivery.parse(raw); attempt = value('GITHUB_RUN_ATTEMPT')
+    pattern = r'qualification-(?:inputs|source|linux-x86_64|linux-aarch64|windows-x86_64|browser-wasm32|sdk-[0-9]+|sdk-source-[0-9]+)-' + ci.re.escape(attempt)
+    if (not isinstance(names, list) or not 2 <= len(names) <= 20 or
+            any(not isinstance(name, str) or not ci.re.fullmatch(pattern, name) for name in names) or
+            len(names) != len(set(names)) or names[0] != 'qualification-inputs-' + attempt):
+        raise ValueError('bounded distinct qualification input names required')
+    fetch_bundles([dict(name=name, output=ROOT / 'build') for name in names])
+    plan = evidence.validate(evidence.load(ROOT / 'build/check-plan.json'))
+    evidence.check_inputs(plan, ROOT, metadata_only=True)
+    batch, expected = check_payload_selection(plan)
+    if names != expected: raise ValueError('payload selector differs from complete frozen qualification scope')
+    evidence.check_inputs(plan, ROOT, check_ids=batch['checks'])
+
+
+def container_bootstrap(root, image, items, environment):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('batch_container_job', Path(__file__).with_name('container_job.py'))
+    containers = importlib.util.module_from_spec(spec); spec.loader.exec_module(containers)
+    return containers.prepared_checks(root, image, items, environment)
 
 
 def check_batch():
@@ -345,22 +384,27 @@ def check_batch():
         raise ValueError('batch requires its selected native host')
     checks = {item['id']: item for item in evidence.executions(plan)}
     failures = []
-    for check_id in batch['checks']:
-        item = checks[check_id]
-        browser = ci.needs_browser_prerequisite(item['backend'], item['scope'])
-        environment = dict(os.environ, CHECK=check_id, CHECK_IMAGE=batch['image'],
-                           CHECK_BROWSER='yes' if browser else 'no')
-        lifecycle = [sys.executable, str(ROOT / '.github/scripts/lifecycle.py')]
-        commands = ([[sys.executable, str(ROOT / '.github/scripts/container_job.py'), 'check']]
-                    if batch['image'] else
-                    [lifecycle + [operation] for operation in
-                     (('check-prerequisites', 'check') if expected_system == 'Linux' else ('check',))])
-        try:
-            for command in commands:
-                subprocess.run(command, cwd=ROOT, env=environment, check=True)
-        except (OSError, subprocess.CalledProcessError) as error:
-            failures.append(check_id)
-            print('Qualification execution failed: ' + check_id + ': ' + str(error), file=sys.stderr)
+    if batch['image']:
+        bootstrap = container_bootstrap(ROOT, batch['image'], [checks[name] for name in batch['checks']], os.environ)
+    else:
+        bootstrap = nullcontext(None)
+    with bootstrap as prepared:
+        for check_id in batch['checks']:
+            item = checks[check_id]
+            browser = ci.needs_browser_prerequisite(item['backend'], item['scope'])
+            environment = dict(os.environ, CHECK=check_id, CHECK_IMAGE=batch['image'],
+                               CHECK_BROWSER='yes' if browser else 'no')
+            lifecycle = [sys.executable, str(ROOT / '.github/scripts/lifecycle.py')]
+            commands = ([[sys.executable, str(ROOT / '.github/scripts/container_job.py'), 'check', '--prepared-image', prepared]]
+                        if batch['image'] else
+                        [lifecycle + [operation] for operation in
+                         (('check-prerequisites', 'check') if expected_system == 'Linux' else ('check',))])
+            try:
+                for command in commands:
+                    subprocess.run(command, cwd=ROOT, env=environment, check=True)
+            except (OSError, subprocess.CalledProcessError) as error:
+                failures.append(check_id)
+                print('Qualification execution failed: ' + check_id + ': ' + str(error), file=sys.stderr)
     if failures:
         raise ValueError('required batch executions failed: ' + ', '.join(failures))
 
@@ -377,20 +421,19 @@ def main(command):
         qualification_payloads()
     elif command == 'fetch-check-payloads':
         fetch_check_payloads()
+    elif command == 'fetch-check-inputs':
+        fetch_check_inputs()
     elif command == 'fetch-sdk-bundles':
         targets=[*ci.STANDARD,'browser-wasm32'] if value('SDK_TARGET')=='all' else [value('SDK_TARGET')]
         if any(target not in (*ci.STANDARD,'browser-wasm32') for target in targets): raise ValueError('unknown SDK target')
-        for target in targets:
-            fetch_bundle('sdk-group-'+target+'-'+value('GITHUB_RUN_ATTEMPT'),'build/sdk-groups/'+target)
+        fetch_bundles([dict(name='sdk-group-'+target+'-'+value('GITHUB_RUN_ATTEMPT'), output='build/sdk-groups/'+target) for target in targets])
     elif command == 'fetch-application-bundles':
-        for target in evidence.load(Path('build/source/recipes.json')):
-            fetch_bundle('application-'+target+'-'+value('GITHUB_RUN_ATTEMPT'),'build/packages/'+target)
+        fetch_bundles([dict(name='application-'+target+'-'+value('GITHUB_RUN_ATTEMPT'), output='build/packages/'+target) for target in evidence.load(Path('build/source/recipes.json'))])
     elif command == 'fetch-evidence-bundles':
         plan = evidence.load(Path('build/check-plan.json'))
         evidence.check_inputs(evidence.validate(plan), ROOT, metadata_only=True)
-        for batch in ci.qualification_batches(plan, runners=selected_runners())['include']:
-            fetch_bundle('evidence-'+batch['id']+'-'+value('GITHUB_RUN_ATTEMPT'),
-                         'build/evidence',allow_failed=True)
+        fetch_bundles([dict(name='evidence-'+batch['id']+'-'+value('GITHUB_RUN_ATTEMPT'),
+                         output='build',allow_failed=True) for batch in ci.qualification_batches(plan, runners=selected_runners())['include']])
     elif command == 'candidate-aggregate':
         import test_plan
         selected = delivery.parse(value('CANDIDATE_TARGETS'))
@@ -455,7 +498,13 @@ def main(command):
         targets = [*ci.STANDARD, 'browser-wasm32']
         if value('TARGET') != 'all': targets = [value('TARGET')]
         if any(t not in (*ci.STANDARD, 'browser-wasm32') for t in targets): raise ValueError('unknown SDK target')
-        output('matrix', {'include': [{'target': t, 'runner': ci.STANDARD.get(t, 'ubuntu-24.04')} for t in targets]})
+        runners = selected_runners()
+        output('matrix', {'include': [{'target': t, 'runner': runners.get(t, runners['linux-x86_64'])} for t in targets]})
+    elif command == 'runner-plan':
+        target = os.environ.get('TARGET', 'linux-x86_64')
+        runners = selected_runners()
+        if target not in (*ci.STANDARD, 'browser-wasm32'): raise ValueError('unknown runner target')
+        scalar_output('runner', runners.get(target, runners['linux-x86_64']))
     elif command == 'sdk-inputs':
         identity = sdk_identity(value('TARGET'), value('SDK_PROFILE'))
         request = retained_request(value('TARGET'), value('SDK_PROFILE'), producer_host=True)
@@ -582,17 +631,21 @@ def main(command):
             restored = ci.gui_group_module().restore(Path('build/gui-group'), Path('build/gui-restored'))
             gui = Path(restored['source'])
         ci.source_archive(ROOT / 'build/source.tar.gz', gui)
-    elif command == 'fetch-sdk':
-        delivery.fetch_base(value('GITHUB_REPOSITORY'), value('RECIPE'), Path('build/base') / value('RECIPE'))
+    elif command in ('fetch-sdk', 'fetch-sdk-binary'):
+        origin = delivery.fetch_base(value('GITHUB_REPOSITORY'), value('RECIPE'), Path('build/base') / value('RECIPE'),
+                                     binary_only=command == 'fetch-sdk-binary')
+        write('build/application-sdk.json', origin)
     elif command == 'application-build':
         ci.prepared_package(value('TARGET'), value('RECIPE'), (ROOT / 'build/base' / value('RECIPE')),
                             ROOT / 'build/source/source.tar.gz', ROOT / 'build/produced', compile_jobs(),
                             graphics_archive=ROOT / 'build/host-graphics/mesa-windows.7z'
-                            if value('TARGET') == 'windows-x86_64' and value('PROFILE') == 'all-gui' else None)
+                            if value('TARGET') == 'windows-x86_64' and value('PROFILE') == 'all-gui' else None,
+                            expected_files=evidence.load(ROOT / 'build/application-sdk.json')['files']
+                            if evidence.load(ROOT / 'build/application-sdk.json').get('payload') == 'binary' else None)
     elif command == 'assemble':
         recipes = evidence.load(Path('build/source/recipes.json'))
-        for recipe in sorted(set(recipes.values())):
-            delivery.fetch_base(value('GITHUB_REPOSITORY'), recipe, Path('build/base') / recipe)
+        parallel_operations([lambda recipe=recipe: delivery.fetch_base(value('GITHUB_REPOSITORY'), recipe, Path('build/base') / recipe)
+                             for recipe in sorted(set(recipes.values()))])
         ci.assemble_release(Path('build/source/source.tar.gz'), Path('build/packages'), Path('build/base'), Path('build/candidate'), value('PROFILE'))
         tag = os.environ.get('TAG') or 'candidate-' + value('GITHUB_RUN_ID') + '-attempt-' + value('GITHUB_RUN_ATTEMPT')
         request = dict(repository=value('GITHUB_REPOSITORY'), tag=tag, directory='build/candidate',
@@ -617,7 +670,8 @@ def main(command):
         shutil.move('build/fetched/candidate', 'build/candidate')
         shutil.move('build/fetched/delivery.json', 'build/delivery.json')
         ci.qualification_plan(ROOT / 'build/candidate', value('PROFILE'), ROOT / 'build/check-plan.json', runners=selected_runners())
-        output('matrix', ci.qualification_batches(evidence.load(ROOT / 'build/check-plan.json'), runners=selected_runners()))
+        output('matrix', ci.qualification_batches(evidence.load(ROOT / 'build/check-plan.json'), runners=selected_runners(),
+            manifest=ci.module('release').verify_metadata(ROOT / 'build/candidate'), attempt=value('GITHUB_RUN_ATTEMPT')))
     elif command == 'check-batch':
         check_batch()
     elif command in ('check-prerequisites', 'check'):

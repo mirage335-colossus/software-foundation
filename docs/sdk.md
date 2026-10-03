@@ -342,6 +342,29 @@ only copies an existing exact group: it cannot build, download or choose a newer
 recipe. The local base format can be transported to a durable release store by
 an explicitly authorized publisher. These tools never publish remotely.
 
+Application producer jobs use `fetch-sdk-binary`: the binary archive and complete
+pair checksum are transferred, and all three immutable remote asset identities
+and digests are reconciled before activation. The binary's recipe and complete
+source-inventory binding are checked, then installation checks the complete frozen
+checksum map. Supplier source bytes remain in `base`; release assembly fetches
+and verifies the complete group once. SDK maintenance, relocation qualification,
+archive publication and offline recovery retain the full binary/source checks.
+
+Disposable container setup selects packages by action and qualification scope.
+Runtime archive checks omit compiler/development headers; application and
+source/recovery checks retain build tools for their full source/tool fixtures.
+GUI consumers install the runtime X11, Wayland and OpenGL services; GUI SDK
+producers also install development prerequisites. Every setup uses strict signed
+APT indexes and bounded transient-fetch recovery through `tools/ci-apt.sh`.
+A physical qualification batch bootstraps packages once into a private immutable
+Docker image, then starts a fresh disposable container and builder account for
+each case. Browser prerequisites and evidence are still bound per case. Case
+package-manager mutations cannot reach later cases; the setup image is removed
+after all child commands finish. Independent payload preparation, verified
+transfers and evidence fetches use at most four workers, joined before validation
+or cleanup. Text evidence transport uses deterministic fast compression; already
+compressed SDK/application archives keep their original bytes.
+
 Generated archives contain ordinary files only, with sorted entries, stable
 modes, normalized owner/time metadata and a deterministic gzip header. Supplier
 links must resolve inside their tree before materialization. Extraction rejects

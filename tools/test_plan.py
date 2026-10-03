@@ -3,8 +3,10 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 import tempfile
+import time
 from pathlib import Path
 import re
 import subprocess
@@ -15,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build as builder
 import windows_compiler
+import build_capacity
 from dependency_archive import read_json
 from dependency_store import verify_group
 from source_identity import source_tree
@@ -250,6 +253,66 @@ def junit_results(path, expected):
     return statuses
 
 
+
+def test_timeouts(definitions):
+    limits = {}
+    for item in definitions:
+        values = [prop["value"] for prop in item.get("properties", []) if prop["name"] == "TIMEOUT"]
+        if len(values) > 1:
+            raise ValueError("duplicate test timeout")
+        limit = float(values[0]) if values else None
+        if limit is not None and (not math.isfinite(limit) or limit < 0):
+            raise ValueError("test timeout must be finite and nonnegative")
+        limits[item["name"]] = limit or None
+    return limits
+
+
+def junit_timings(path, expected, timeouts):
+    """Retain measured JUnit times; absent durations remain explicitly unknown."""
+    statuses = junit_results(path, expected)
+    if not set(expected) <= set(timeouts):
+        raise ValueError("timing timeout inventory is incomplete")
+    rows = []
+    for case in ET.parse(path).getroot().iter("testcase"):
+        name = case.attrib["name"]
+        seconds = float(case.attrib["time"]) if "time" in case.attrib else None
+        limit = timeouts[name]
+        if seconds is not None and (not math.isfinite(seconds) or seconds < 0):
+            raise ValueError("JUnit duration must be finite and nonnegative")
+        if limit is not None and (not math.isfinite(limit) or limit <= 0):
+            raise ValueError("test timeout must be finite and positive")
+        rows.append(dict(name=name, status=statuses[name], seconds=seconds, timeout_seconds=limit,
+                         near_timeout=statuses[name] == "passed" and seconds is not None and
+                         limit is not None and seconds >= .8 * limit))
+    return sorted(rows, key=lambda row: row["name"])
+
+
+def timing_summary(timing, scope, summary=None):
+    rows = timing["tests"]
+    known = [row for row in rows if row["seconds"] is not None]
+    phases = timing["phase_seconds"]
+    lines = ["### Test timing: " + scope, "",
+             "Build: %.2fs; test wall time: %.2fs; complete scope: %.2fs." %
+             (phases["build"], phases["test"], phases["total"]), "",
+             "Measured test durations total %.2fs across %d cases (concurrent tests may overlap)." %
+             (sum(row["seconds"] for row in known), len(known)), ""]
+    for row in sorted(known, key=lambda row: row["seconds"], reverse=True)[:5]:
+        name = row["name"].replace("`", "'").replace("\n", " ").replace("\r", " ")
+        warning = " — passed at 80% or more of its declared timeout" if row["near_timeout"] else ""
+        lines.append("- `%s`: %.2fs (%s)%s" % (name, row["seconds"], row["status"], warning))
+    if len(known) != len(rows):
+        lines += ["", "%d cases have no reported JUnit duration." % (len(rows) - len(known))]
+    warnings = [row["name"] for row in rows if row["near_timeout"]]
+    if warnings:
+        lines += ["", "Timeout margin warning: " + ", ".join(name.replace("\n", " ").replace("\r", " ") for name in warnings) + "."]
+    text = "\n".join(lines) + "\n"
+    print(text)
+    if summary is not None:
+        with Path(summary).open("a", encoding="utf-8") as stream:
+            stream.write(text + "\n")
+    return text
+
+
 def merge(plan, reports):
     validate_plan(plan)
     seen = set()
@@ -308,7 +371,7 @@ def candidate_plan(build):
         raise ValueError("invalid explicit platform exclusions")
     value = dict(schema_version=1, source=source_id(build), configuration=configuration_id(build, declared_commands=True),
                  tests=tests, scopes={key: sorted(value) for key, value in assignments.items()},
-                 platform_exclusions=platform["excluded_suites"])
+                 platform_exclusions=platform["excluded_suites"], timeouts=test_timeouts(definitions))
     value["id"] = digest(value)
     return value
 
@@ -323,7 +386,7 @@ def candidate_prerequisite_inputs(build):
     return source_id(build), build_inputs(build), declarations
 
 
-def candidate_run(build, scope, output, jobs=2, *, build_jobs=None):
+def candidate_run(build, scope, output, jobs=2, *, build_jobs=None, summary=None):
     """Freeze all tests; unlabelled new tests automatically belong to core."""
     if scope not in CANDIDATE_SCOPES or jobs < 1 or (build_jobs is not None and build_jobs < 1):
         raise ValueError("invalid candidate scope or concurrency")
@@ -333,11 +396,13 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None):
     output.parent.mkdir(parents=True, exist_ok=True)
     from build_capacity import compile_jobs as selected_compile_jobs
     compile_jobs = build_jobs or selected_compile_jobs(os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL"))
+    started = time.monotonic()
     before = candidate_prerequisite_inputs(build)
     frozen = candidate_plan(build)
     programs, environment = execution_context(build)
     windows_compiler.run([programs["cmake"], "--build", str(build), "--target", "foundation-tests-" + scope,
                           "--parallel", str(compile_jobs)], env=environment)
+    compiled_at = time.monotonic()
     if candidate_prerequisite_inputs(build) != before:
         raise ValueError("candidate inputs changed during prerequisite compilation")
     if candidate_plan(build) != frozen:
@@ -346,6 +411,7 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None):
     junit = output.with_suffix(".junit.xml").resolve()
     if junit.exists():
         raise ValueError("candidate JUnit must name a new attempt")
+    testing_at = time.monotonic()
     try:
         exit_code = windows_compiler.run([programs["ctest"], "--test-dir", str(build), "--no-tests=error", "--output-on-failure",
             "--parallel", str(jobs), "-R", "^(" + "|".join(re.escape(name) for name in names) + ")$",
@@ -354,7 +420,9 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None):
         # The owner raises this only after a nonzero command and its children
         # have joined. Ownership and timeout failures must bypass report creation.
         exit_code = error.returncode
+    tested_at = time.monotonic()
     outcomes = junit_results(junit, names)
+    timed_tests = junit_timings(junit, names, frozen["timeouts"])
     if candidate_plan(build) != frozen:
         raise ValueError("candidate inputs changed during execution")
     import importlib.util
@@ -363,8 +431,11 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None):
     inner = {name: checked.tool_report(read_json(build / "test-reports" / (name.removeprefix("tools.") + ".json")))
              for name in names if name.startswith("tools.")}
     result = dict(schema_version=1, plan=frozen, scope=scope, results=outcomes, tool_reports=inner,
-                  exit_code=exit_code, junit_sha256=hashlib.sha256(junit.read_bytes()).hexdigest())
+                  exit_code=exit_code, junit_sha256=hashlib.sha256(junit.read_bytes()).hexdigest(),
+                  timing=dict(tests=timed_tests, phase_seconds=dict(build=compiled_at-started,
+                              test=tested_at-testing_at, total=time.monotonic()-started)))
     save(output, result)
+    timing_summary(result["timing"], scope, summary)
     if exit_code or any(value != "passed" for value in outcomes.values()):
         raise ValueError("candidate scope failed")
     return result
@@ -393,6 +464,13 @@ def candidate_merge(paths, *, diagnostic=False):
         junit = Path(path).with_suffix(".junit.xml")
         if hashlib.sha256(junit.read_bytes()).hexdigest() != report["junit_sha256"] or junit_results(junit,names) != report["results"]:
             raise ValueError("candidate JUnit changed")
+        if report["timing"]["tests"] != junit_timings(junit, names, frozen["timeouts"]):
+            raise ValueError("candidate timing differs from retained JUnit")
+        phases = report["timing"]["phase_seconds"]
+        if (set(phases) != {"build", "test", "total"} or
+                any(type(value) not in (int, float) or not math.isfinite(value) or value < 0 for value in phases.values()) or
+                phases["total"] < phases["build"] + phases["test"]):
+            raise ValueError("invalid candidate phase timings")
         if set(report["tool_reports"]) != {name for name in names if name.startswith("tools.")}:
             raise ValueError("candidate inner-case inventory missing")
         for name, inner in report["tool_reports"].items():
@@ -409,13 +487,16 @@ def main():
     plan_cmd = sub.add_parser("plan")
     plan_cmd.add_argument("--build", type=Path, required=True)
     plan_cmd.add_argument("--shards", type=int, default=2)
-    plan_cmd.add_argument("--jobs", type=int, default=2)
+    plan_cmd.add_argument("--jobs", type=builder.positive, help="legacy explicit compile concurrency")
+    plan_cmd.add_argument("--build-jobs", type=builder.positive)
     plan_cmd.add_argument("--output", type=Path, required=True)
     run_cmd = sub.add_parser("run")
     run_cmd.add_argument("--build", type=Path, required=True)
     run_cmd.add_argument("--plan", type=Path, required=True)
     run_cmd.add_argument("--shard", type=int, required=True)
-    run_cmd.add_argument("--jobs", type=int, default=2)
+    run_cmd.add_argument("--jobs", type=builder.positive, help="legacy explicit compile/test concurrency")
+    run_cmd.add_argument("--build-jobs", type=builder.positive)
+    run_cmd.add_argument("--summary", type=Path)
     run_cmd.add_argument("--output", type=Path, required=True)
     merge_cmd = sub.add_parser("merge")
     merge_cmd.add_argument("--plan", type=Path, required=True)
@@ -427,13 +508,14 @@ def main():
     candidate_cmd.add_argument("--jobs", type=builder.positive, default=2, help="test concurrency")
     candidate_cmd.add_argument("--build-jobs", type=builder.positive)
     candidate_cmd.add_argument("--output", type=Path, required=True)
+    candidate_cmd.add_argument("--summary", type=Path, help="append timing to the hosted job summary")
     candidate_merge_cmd = sub.add_parser("candidate-merge")
     candidate_merge_cmd.add_argument("--output", type=Path, required=True)
     candidate_merge_cmd.add_argument("--diagnostic", action="store_true")
     candidate_merge_cmd.add_argument("reports", type=Path, nargs="+")
     args = parser.parse_args()
     if args.action == "candidate-run":
-        candidate_run(args.build, args.scope, args.output, args.jobs, build_jobs=args.build_jobs)
+        candidate_run(args.build, args.scope, args.output, args.jobs, build_jobs=args.build_jobs, summary=args.summary)
         return 0
     if args.action == "candidate-merge":
         if args.output.exists():
@@ -445,9 +527,9 @@ def main():
         raise ValueError("output must not replace an input")
     # A failed attempt must never leave a previous successful receipt behind.
     args.output.unlink(missing_ok=True)
+    started = time.monotonic()
     if args.action in ("plan", "run"):
-        if args.jobs < 1:
-            raise ValueError("concurrency must be positive")
+        compile_concurrency = args.build_jobs or args.jobs or build_capacity.compile_jobs(os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL"))
         cache = (args.build / "CMakeCache.txt").read_text()
         if re.search(r"^CMAKE_CONFIGURATION_TYPES:.*=.+", cache, flags=re.M):
             raise ValueError("test-plan example requires a single-configuration build tree")
@@ -458,7 +540,8 @@ def main():
             require_current(args.build, planned)
         programs, environment = execution_context(args.build)
         windows_compiler.run([programs["cmake"], "--build", str(args.build), "--target", "foundation-tests",
-                              "--parallel", str(args.jobs)], env=environment)
+                              "--parallel", str(compile_concurrency)], env=environment)
+        compiled_at = time.monotonic()
         if before != source_id(args.build) or inputs_before != build_inputs(args.build):
             raise ValueError("source, compiler or prepared inputs changed while compiling test prerequisites")
     if args.action == "plan":
@@ -469,7 +552,7 @@ def main():
         if args.action == "merge":
             save(args.output, merge(plan, [json.loads(path.read_text()) for path in args.reports]))
         else:
-            if args.jobs < 1 or not 0 <= args.shard < len(plan["shards"]):
+            if not 0 <= args.shard < len(plan["shards"]):
                 raise ValueError("invalid shard or concurrency")
             require_current(args.build, plan)
             expected = plan["shards"][args.shard]
@@ -477,16 +560,22 @@ def main():
             junit = args.output.with_name(args.output.name + ".junit.xml").resolve()
             # Prevent stale JUnit data from surviving a failed test launch.
             junit.unlink(missing_ok=True)
+            testing_at = time.monotonic()
             try:
                 exit_code = windows_compiler.run([programs["ctest"], "--test-dir", str(args.build), "--no-tests=error", "--output-on-failure",
-                    "--parallel", str(args.jobs), "-R", "^(" + "|".join(re.escape(x) for x in expected) + ")$",
+                    "--parallel", str(args.jobs or 2), "-R", "^(" + "|".join(re.escape(x) for x in expected) + ")$",
                     "--output-junit", str(junit)], env=environment).returncode
             except subprocess.CalledProcessError as error:
                 exit_code = error.returncode
+            tested_at = time.monotonic()
             results = junit_results(junit, expected)
+            timed_tests = junit_timings(junit, expected, test_timeouts(test_definitions(args.build)))
             require_current(args.build, plan)
+            timing = dict(tests=timed_tests, phase_seconds=dict(build=compiled_at-started,
+                          test=tested_at-testing_at, total=time.monotonic()-started))
             save(args.output, {"schema_version": 1, "plan": plan["id"], "shard": args.shard,
-                               "exit_code": exit_code, "results": results})
+                               "exit_code": exit_code, "results": results, "timing": timing})
+            timing_summary(timing, "shard " + str(args.shard), args.summary)
             if exit_code or any(value != "passed" for value in results.values()):
                 return 1
     return 0

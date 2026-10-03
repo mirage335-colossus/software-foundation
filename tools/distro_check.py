@@ -112,6 +112,29 @@ def supervised(argv, stream, *, timeout, env=None):
         owner.close()
 
 
+def recorded_command(argv, evidence, timings, *, capture=None, env=None):
+    """Persist elapsed time even for a failed native prerequisite or package step."""
+    argv = [str(arg) for arg in argv]
+    row = dict(command=argv, started_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), status='failed')
+    start = time.monotonic()
+    try:
+        with (evidence/'native.log').open('ab') as stream:
+            stream.write(('COMMAND '+json.dumps(argv)+'\n').encode()); stream.flush()
+            if capture is None:
+                supervised(argv, stream, timeout=900, env=env)
+                raw = None
+            else:
+                with capture.open('xb') as captured:
+                    supervised(argv, captured, timeout=900, env=env)
+                raw = capture.read_bytes(); stream.write(raw)
+        row['status'] = 'passed'
+        return raw
+    finally:
+        row['seconds'] = round(time.monotonic()-start, 6)
+        timings.append(row)
+        release.archive.write_json(evidence/'command-timings.json', timings)
+
+
 def require_disposable():
     if (not hasattr(os, 'geteuid') or os.geteuid() != 0 or not Path('/.dockerenv').is_file() or
             os.environ.get('FOUNDATION_DISPOSABLE_CHECK') != '1'):
@@ -272,21 +295,11 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
     if target != 'linux-'+machine: raise ValueError('native package target differs from execution processor')
     if kind != 'apt' and target != 'linux-x86_64': raise ValueError('this native frontend image is qualified only on x86-64')
     evidence = Path(evidence); evidence.mkdir(parents=True, exist_ok=False)
-    commands = []
+    commands, timings = [], []
     def run(*argv, capture=None):
         commands.append([str(arg) for arg in argv])
-        with (evidence/'native.log').open('ab') as stream:
-            stream.write(('COMMAND '+json.dumps(commands[-1])+'\n').encode()); stream.flush()
-            environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', LC_ALL='C.UTF-8')
-            if capture is None:
-                supervised(commands[-1], stream, timeout=900, env=environment)
-                return None
-            # Keep the query output as separate evidence, including on failure.
-            with capture.open('xb') as captured:
-                supervised(commands[-1], captured, timeout=900, env=environment)
-            raw = capture.read_bytes()
-            stream.write(raw)
-            return raw
+        environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', LC_ALL='C.UTF-8')
+        return recorded_command(commands[-1], evidence, timings, capture=capture, env=environment)
     with qualification_work(evidence) as work:
         rounds = []
         if previous:
@@ -304,10 +317,9 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
                 shutil.copyfile(assets/'archive-keyring.gpg', key); key.chmod(0o644)
                 Path('/etc/apt/sources.list.d/software-foundation.sources').write_text(
                     f'Types: deb\nURIs: {url}\nSuites: ./\nArchitectures: {release.TARGETS[target][1]}\nSigned-By: {key}\n')
-                run('apt-get', 'update')
                 names = ['software-foundation-'+backend+'='+value['request']['version']+'+r'+str(value['request']['package_release']) for backend in backends]
-                run('apt-get', 'install', '-y', '--no-install-recommends', *names)
-                run('apt-get', 'update'); run('apt-get', 'install', '-y', '--no-install-recommends', *names)
+                run('sh', Path(__file__).with_name('ci-apt.sh'), 'install', *names)
+                run('sh', Path(__file__).with_name('ci-apt.sh'), 'install', *names)
             elif kind == 'arch':
                 if index == 0:
                     run(sys.executable, Path(__file__).resolve(), 'arch-keyring',
@@ -378,7 +390,7 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
         id=os.environ.get('CHECK_ID'), image=os.environ.get('CHECK_IMAGE'), image_id=os.environ.get('CHECK_IMAGE_ID'),
         os_release=Path('/etc/os-release').read_text(),
         source_commit=os.environ.get('GITHUB_SHA'), run_id=os.environ.get('GITHUB_RUN_ID'),
-        attempt=os.environ.get('GITHUB_RUN_ATTEMPT'), commands=commands)
+        attempt=os.environ.get('GITHUB_RUN_ATTEMPT'), commands=commands, command_timings=timings)
     release.archive.write_json(evidence/'result.json', result)
     return result
 
@@ -434,7 +446,7 @@ def container_with_display(root, check_id, environment, display):
         '--mount', f'type=bind,source={root},target=/source,readonly',
         '--mount', f'type=bind,source={output},target=/evidence', '-w', '/source']
     commands = {
-        'apt': 'apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 gnupg gpgv dpkg-dev binutils',
+        'apt': 'sh tools/ci-apt.sh install ca-certificates python3 gnupg gpgv dpkg-dev binutils',
         'arch': 'pacman -Syu --noconfirm --needed python gnupg binutils dpkg',
         'gentoo': 'export FEATURES="$(portageq envvar FEATURES) parallel-install -merge-sync"\nemerge --getbinpkgonly --usepkgonly --binpkg-respect-use=y --oneshot --with-bdeps=n --jobs="$(python3 -B tools/build_capacity.py)" app-crypt/gnupg app-arch/dpkg'
     }

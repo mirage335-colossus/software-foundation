@@ -22,14 +22,16 @@ name: Explicit native GUI qualification
         description: Exact existing base or retained GUI selector JSON; acquisition is a separate maintenance workflow
         type: string
         required: true
-      jobs:
-        description: Compilation concurrency
+      linux_pool:
+        description: Standard or explicitly configured faster native runners
         type: choice
-        options:
-        - '2'
-        - '4'
-        - '8'
-        default: '2'
+        options: [standard, faster]
+        default: standard
+      jobs:
+        description: Auto uses available CPU and RAM; explicit compile override
+        type: choice
+        options: [auto, '2', '4', '8']
+        default: auto
 permissions:
   contents: read
   actions: read
@@ -37,15 +39,30 @@ env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'
   PYTHONDONTWRITEBYTECODE: '1'
+  LINUX_POOL: ${{ inputs.linux_pool }}
+  FOUNDATION_FASTER_LINUX_RUNNER: ${{ vars.FOUNDATION_FAST_LINUX_RUNNER }}
+  FOUNDATION_FASTER_ARM_RUNNER: ${{ vars.FOUNDATION_FAST_ARM_RUNNER }}
+  FOUNDATION_FASTER_WINDOWS_RUNNER: ${{ vars.FOUNDATION_FAST_WINDOWS_RUNNER }}
   TARGET: ${{ inputs.target }}
   RECIPE: ${{ inputs.recipe }}
   GUI_INPUT: ${{ inputs.gui_input }}
   JOBS: ${{ inputs.jobs }}
   GRAPHICS_ARCHIVE_URL: ${{ inputs.graphics_archive_url }}
 jobs:
+  plan:
+    name: Validate and freeze the selected native runner
+    runs-on: ubuntu-24.04
+    outputs:
+      runner: ${{ steps.plan.outputs.runner }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - id: plan
+      run: python .github/scripts/lifecycle.py runner-plan
   qualify:
-    runs-on: ${{ inputs.target == 'windows-x86_64' && 'windows-2022' || inputs.target == 'linux-aarch64' && 'ubuntu-24.04-arm'
-      || 'ubuntu-24.04' }}
+    needs: plan
+    runs-on: ${{ needs.plan.outputs.runner }}
     timeout-minutes: 120
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

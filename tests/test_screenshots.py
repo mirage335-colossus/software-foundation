@@ -217,6 +217,22 @@ class ScreenshotTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'non-root'):
             S.hosted_command('a' * 64, 'b' * 64, 2, uid=0, gid=1001)
 
+    def test_hosted_auto_compiles_with_available_capacity_and_keeps_explicit_override(self):
+        with mock.patch.object(S, 'compile_jobs', side_effect=lambda value: 16 if value == 'auto' else int(value)), \
+             mock.patch.object(S, 'hosted_command', return_value=['capture']) as command, \
+             mock.patch.object(S.gallery_browser, 'preflight', side_effect=ValueError('stop before acquisition')):
+            for jobs, expected in (('auto', 16), ('3', 3)):
+                with self.assertRaisesRegex(ValueError, 'stop before acquisition'):
+                    S.main(['hosted', '--repository', 'example/project', '--native-recipe', 'a'*64,
+                            '--wasm-recipe', 'b'*64, '--jobs', jobs, '--gui-input',
+                            json.dumps({'source': 'base', 'manifest_sha256': 'c'*64})])
+                self.assertEqual(command.call_args.args[2], expected)
+        argv = S.hosted_command('a'*64, 'b'*64, 16, uid=1001, gid=1001)
+        self.assertEqual(argv[-2:], ['--jobs', '16'])
+        for invalid in (0, -1, True):
+            with self.assertRaisesRegex(ValueError, 'positive'):
+                S.hosted_command('a'*64, 'b'*64, invalid, uid=1001, gid=1001)
+
     def test_retained_mode_requires_both_exact_requests_without_base_fallback(self):
         requests = {name: {'schema_version': 2, 'repository': 'example/project', 'target': target,
             'profile': 'all-gui', 'recipe_id': recipe, 'workflow': 'sdk-import.yml', 'run_id': 123,

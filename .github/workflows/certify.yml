@@ -92,16 +92,8 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'certification-plan'], check=True)
       id: plan
-    - name: Retain each immutable qualification payload once
+    - name: Retain frozen metadata and immutable payloads in one verified publication
       run: python .github/scripts/lifecycle.py qualification-payloads
-    - name: Retain verified qualification-inputs-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: qualification-inputs-${{ github.run_attempt }}
-        BUNDLE_PATHS: |-
-          build/candidate/release.json
-          build/delivery.json
-          build/check-plan.json
     permissions:
       contents: write
       actions: read
@@ -122,18 +114,13 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
-    - shell: python
-      run: |
-        import subprocess,sys
-        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
-      env:
-        BUNDLE_NAME: qualification-inputs-${{ github.run_attempt }}
-        BUNDLE_OUTPUT: build
-    - name: Fetch only frozen inputs required by this physical execution
+    - name: Restore frozen metadata and required payloads in one verified transaction
       shell: python
+      env:
+        CHECK_PAYLOADS: ${{ toJSON(matrix.payloads) }}
       run: |
         import subprocess,sys
-        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-check-payloads'],check=True)
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-check-inputs'],check=True)
     - name: Verify the explicitly supplied retained Windows graphics input
       if: runner.os == 'Windows' && matrix.graphics
       run: python .github/scripts/lifecycle.py graphics-input
@@ -150,13 +137,9 @@ jobs:
       run: python .github/scripts/lifecycle.py bundle-store
       env:
         BUNDLE_NAME: evidence-${{ matrix.id }}-${{ github.run_attempt }}
-        BUNDLE_PATHS: build/evidence/
-    - if: always() && matrix.browser
-      name: Retain verified browser-prerequisite-${{ matrix.id }}-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: browser-prerequisite-${{ matrix.id }}-${{ github.run_attempt }}
-        BUNDLE_PATHS: build/prerequisites/
+        BUNDLE_PATHS: |-
+          build/evidence/
+          build/prerequisites/
     permissions:
       contents: write
       actions: read

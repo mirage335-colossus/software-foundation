@@ -170,4 +170,62 @@ L.main()
                 L.verify_latest(req, value, transport=fixture.remote)
 
 
+class WorkflowOverlapTests(unittest.TestCase):
+    def test_certification_restores_exact_frozen_payloads_once_and_keeps_diagnostics(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root/'.github/workflows/certify.yml').read_text()
+        prepare = workflow.split('  prepare:\n', 1)[1].split('  check:\n', 1)[0]
+        self.assertIn('qualification-payloads', prepare)
+        self.assertNotIn('qualification-inputs-', prepare)
+        self.assertNotIn('bundle-store', prepare)
+        check = workflow.split('  check:\n', 1)[1].split('  record:\n', 1)[0]
+        self.assertEqual(check.count("'fetch-check-inputs'"), 1)
+        self.assertIn('CHECK_PAYLOADS: ${{ toJSON(matrix.payloads) }}', check)
+        self.assertNotIn("'bundle-fetch'", check)
+        self.assertNotIn("'fetch-check-payloads'", check)
+        self.assertIn('    - if: always()\n      name: Retain verified evidence-', check)
+        self.assertIn('BUNDLE_PATHS: |-\n          build/evidence/\n          build/prerequisites/', check)
+        self.assertNotIn('browser-prerequisite-', check)
+        self.assertIn('      fail-fast: false', check)
+        self.assertIn("'check-batch'", check)
+
+    def test_nested_regression_receipt_fails_closed_and_does_not_repeat_work(self):
+        root = Path(__file__).resolve().parents[1]
+        latest = (root/'.github/workflows/_release-latest.yml').read_text()
+        application = (root/'.github/workflows/sdk-application.yml').read_text()
+        gate = latest.split('  regression:\n', 1)[1].split('  application:\n', 1)[0]
+        code = gate.split('      run: |\n', 1)[1]
+        code = '\n'.join(line[8:] for line in code.splitlines())
+        with tempfile.TemporaryDirectory() as directory:
+            summary = Path(directory)/'summary.md'
+            for app, result in (('failure', 'success'), ('success', 'failure'), ('success', 'cancelled'),
+                                ('success', 'skipped'), ('success', '')):
+                with mock.patch.dict(os.environ, {'APPLICATION_RESULT': app, 'REGRESSION_RESULT': result,
+                                                  'GITHUB_STEP_SUMMARY': str(summary)}):
+                    with self.assertRaises(SystemExit): exec(compile(code, 'regression-receipt', 'exec'), {})
+            self.assertFalse(summary.exists())
+            with mock.patch.dict(os.environ, {'APPLICATION_RESULT': 'success', 'REGRESSION_RESULT': 'success',
+                                              'GITHUB_STEP_SUMMARY': str(summary)}):
+                exec(compile(code, 'regression-receipt', 'exec'), {})
+            self.assertIn('does not repeat regression', summary.read_text())
+        outer_app = latest.split('  application:\n', 1)[1].split('  certification:\n', 1)[0]
+        self.assertIn('    needs: prepare\n', outer_app)
+        self.assertIn('      require_regression: true', outer_app)
+        nested = application.split('jobs:\n', 1)[1].split('  prepare:\n', 1)[0]
+        self.assertIn('uses: ./.github/workflows/candidate.yml', nested)
+        self.assertNotIn('needs:', nested)
+        assembly = application.split('  assemble:\n', 1)[1].split('\nenv:\n', 1)[0]
+        self.assertIn('needs: [prepare, application, regression]', assembly)
+        self.assertIn("inputs.require_regression && needs.regression.result == 'success'", assembly)
+        self.assertIn("!inputs.require_regression && needs.regression.result == 'skipped'", assembly)
+        self.assertIn('environment: ${{ inputs.execute', assembly)
+        self.assertIn('group: foundation-release-lifecycle', assembly)
+        self.assertIn('publish-candidate', assembly)
+        self.assertIn('regression_result: ${{ needs.regression.result }}', assembly)
+        self.assertIn('value: ${{ jobs.assemble.outputs.regression_result }}', application)
+        self.assertNotIn('  publish:\n', application)
+        self.assertIn('    - if: ${{ !inputs.execute }}\n      name: Retain verified candidate-', assembly)
+        self.assertNotIn('BUNDLE_OUTPUT: build\n', assembly)
+
+
 if __name__ == '__main__': unittest.main()

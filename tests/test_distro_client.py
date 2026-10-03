@@ -620,11 +620,19 @@ class SignedClientTests(unittest.TestCase):
         client.refresh(self.value, self.f.policy, prepared=self.f.prepared)
         current = client.current(self.root/'state')
         error = client.HTTPError('https://api.github.com/repos/example/project/releases', 403, 'rate limited',
-            {'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '999999999999'}, io.BytesIO(b'{"message":"API rate limit exceeded."}'))
-        with patch.object(client, 'urlopen', side_effect=error) as request, patch.object(client, 'build_opener') as download:
+            {'x-ratelimit-remaining': '0', 'retry-after': '150'}, io.BytesIO(b'{"message":"API rate limit exceeded."}'))
+        # 150 seconds exceeds the public 120-second wait budget but fits its
+        # 180-second request deadline. Freeze elapsed time and jitter so this
+        # assertion tests budget exhaustion independently of deadline precedence.
+        with patch.object(client, 'urlopen', side_effect=error) as request, \
+                patch.object(client, 'build_opener') as download, \
+                patch.object(client.time, 'monotonic', return_value=100), \
+                patch.object(client.time, 'sleep') as sleep, \
+                patch.object(client.release.delivery.random, 'uniform', return_value=0):
             with self.assertRaisesRegex(ValueError, 'wait budget exhausted'):
                 client.refresh(self.value, self.f.policy)
-        self.assertEqual(request.call_count, 1); download.assert_not_called()
+        self.assertEqual(request.call_count, 1); download.assert_not_called(); sleep.assert_not_called()
+        self.assertTrue(error.closed)
         self.assertEqual(client.current(self.root/'state'), current)
         self.assertEqual(client.release.verify_native(current/'assets', self.f.policy, self.f.trusted), self.f.frozen)
         self.assertEqual(list((self.root/'state').glob('.refresh-*')), [])

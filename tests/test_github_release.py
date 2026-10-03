@@ -9,6 +9,7 @@ import platform
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -19,6 +20,7 @@ import test_release as release_fixtures
 
 
 class FakeGitHub:
+    _lock=threading.RLock()
     def __init__(self, *, first_normal_latest=False):
         self.first_normal_latest=first_normal_latest
         self.releases=[];self.refs={};self.data={};self.next_id=1;self.next_asset=100
@@ -69,19 +71,22 @@ class FakeGitHub:
         return copy.deepcopy(next(r for r in self.releases if r['id']==rid)['assets'])
 
     def upload(self,tag,path):
-        self.calls.append(('upload',tag,Path(path).name))
-        row=next(r for r in self.releases if r['tag_name']==tag)
-        if any(a['name']==Path(path).name for a in row['assets']):raise G.DeliveryError('asset exists')
-        value=Path(path).read_bytes();asset={'id':self.next_asset,'name':Path(path).name,'state':'uploaded',
-                                        'size':len(value),'digest':'sha256:'+G.sha(value)}
-        self.next_asset+=1;self.data[asset['id']]=value;row['assets'].append(asset)
-        if self.fail_upload==asset['name']:raise G.DeliveryError('injected response loss after upload')
+        with self._lock:
+            self.calls.append(('upload',tag,Path(path).name))
+            row=next(r for r in self.releases if r['tag_name']==tag)
+            if any(a['name']==Path(path).name for a in row['assets']):raise G.DeliveryError('asset exists')
+            value=Path(path).read_bytes();asset={'id':self.next_asset,'name':Path(path).name,'state':'uploaded',
+                                            'size':len(value),'digest':'sha256:'+G.sha(value)}
+            self.next_asset+=1;self.data[asset['id']]=value;row['assets'].append(asset)
+            if self.fail_upload==asset['name']:raise G.DeliveryError('injected response loss after upload')
 
     def download(self,asset_id,path):
-        self.calls.append(('download',asset_id))
-        Path(path).write_bytes(self.data[asset_id])
-        if self.change_download:
-            callback=self.change_download;self.change_download=None;callback()
+        with self._lock:
+            self.calls.append(('download',asset_id))
+            data=self.data[asset_id]
+            callback=self.change_download;self.change_download=None
+        Path(path).write_bytes(data)
+        if callback:callback()
 
     def replace_asset(self,name,value=None):
         row=next(r for r in self.releases if any(a['name']==name for a in r['assets']))
@@ -293,6 +298,99 @@ class DeliveryTests(unittest.TestCase):
         self.assertEqual(result['files'],G.store.verify_group(self.root/'group',self.fixture.recipe))
         count=len(self.remote.mutations);self.assertTrue(self.base(execute=True)['reused'])
         self.assertEqual(len(self.remote.mutations),count)
+
+    def test_binary_base_fetch_reconciles_complete_triplet_without_source_download(self):
+        self.base(execute=True); self.remote.calls.clear()
+        destination = self.root / 'binary-fetch'
+        result = G.fetch_base('example/project', self.fixture.recipe, destination, transport=self.remote, binary_only=True)
+        binary, source, sums = G.store.names(self.fixture.recipe)
+        self.assertEqual(set(p.name for p in destination.iterdir()), {binary, sums})
+        self.assertEqual(result['files'], G.store.verify_group(self.root/'group', self.fixture.recipe))
+        self.assertEqual(result['payload'], 'binary')
+        source_id = next(row['id'] for row in self.remote.releases[0]['assets'] if row['name'] == source)
+        self.assertNotIn(('download', source_id), self.remote.calls)
+        self.assertEqual(sum(call[0] == 'download' for call in self.remote.calls), 2)
+
+    def test_binary_base_fetch_rejects_changed_untransferred_source_digest(self):
+        self.base(execute=True); source = G.store.names(self.fixture.recipe)[1]
+        self.remote.replace_asset(source, b'changed supplier source')
+        destination = self.root/'invalid-binary-fetch'
+        with self.assertRaisesRegex(ValueError, 'complete checksum inventory'):
+            G.fetch_base('example/project', self.fixture.recipe, destination, transport=self.remote, binary_only=True)
+        self.assertFalse(destination.exists())
+
+    def test_binary_base_fetch_rejects_tag_or_asset_replacement_before_activation(self):
+        self.base(execute=True)
+        self.remote.change_download = lambda: self.remote.refs.update(base='b'*40)
+        destination = self.root/'replaced-binary-fetch'
+        with self.assertRaises(ValueError):
+            G.fetch_base('example/project', self.fixture.recipe, destination, transport=self.remote, binary_only=True)
+        self.assertFalse(destination.exists())
+
+    def test_parallel_downloads_join_all_writers_after_failure_and_reject_collisions(self):
+        import threading
+        started = threading.Barrier(4); completed = []; guard = threading.Lock()
+        class Remote:
+            def download(self, asset, path, digest):
+                started.wait(timeout=5)
+                if asset == 0: raise ValueError('transfer failed')
+                with guard: completed.append(asset)
+        selections = [(str(i), self.root/str(i), 'a'*64) for i in range(4)]
+        with self.assertRaisesRegex(ValueError, 'transfer failed'):
+            G.download_files(Remote(), {str(i):i for i in range(4)}, selections)
+        self.assertEqual(set(completed), {1, 2, 3})
+        with self.assertRaisesRegex(ValueError, 'distinct'):
+            G.download_files(Remote(), {'0':0}, [selections[0], selections[0]])
+
+    def test_candidate_upload_response_loss_joins_payload_batch_and_omits_control_and_publish(self):
+        self.remote.fail_upload = 'application.tar.gz'
+        with self.assertRaises(G.DeliveryError) as caught: self.publish()
+        self.assertTrue(caught.exception.uncertain)
+        self.assertTrue(self.remote.releases[0]['draft'])
+        self.assertFalse(any(row[0] == 'PATCH' for row in self.remote.calls))
+        self.assertFalse(any(row[0] == 'upload' and row[2] == 'delivery.json' for row in self.remote.calls))
+
+    def test_parallel_uploads_join_failed_batch_before_later_batch_or_controls(self):
+        barrier=threading.Barrier(4); completed=[]; lock=threading.Lock()
+        class Remote:
+            def upload(self, tag, path):
+                barrier.wait(timeout=5)
+                if path.name == '0': raise G.DeliveryError('upload response lost', uncertain=True)
+                with lock: completed.append(path.name)
+        with self.assertRaisesRegex(G.DeliveryError, 'upload response lost'):
+            G.upload_files(Remote(), 'fixture', [self.root/str(i) for i in range(8)])
+        self.assertEqual(set(completed), {'1','2','3'})
+        with self.assertRaisesRegex(G.DeliveryError,'distinct'):
+            G.upload_files(Remote(), 'fixture', [self.root/'one', self.root/'ONE'])
+
+    def test_shared_physical_evidence_keeps_all_logical_reports_and_original_bytes(self):
+        parent=self.root/'shared-execution'; parent.mkdir(); console=parent/'console.log'; console.write_bytes(b'shared execution log')
+        reports=[]
+        for check in ('backend-a','backend-b','backend-c'):
+            path=parent/(check+'.result.json')
+            path.write_bytes(G.archive.encoded({'check':check,'evidence':{'console.log':G.archive.digest(console)}}))
+            reports.append(path)
+        target=self.root/'shared-retention'; target.mkdir(); copies={}; seen=[]
+        def retain(source,name):
+            seen.append(name); source=Path(source); data=source.read_bytes()
+            if name in copies:
+                self.assertEqual(copies[name],(source.resolve(),data)); return
+            copies[name]=(source.resolve(),data)
+            path=target/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data)
+        mapping=G.retain_reports(reports,retain)
+        self.assertEqual(set(mapping),{'backend-a','backend-b','backend-c'})
+        self.assertEqual(len(copies),4)
+        self.assertEqual(len(set(Path(name).parent for name in mapping.values())),1)
+        for path in reports:
+            retained=target/mapping[G.coverage.load(path)['check']]
+            self.assertEqual(path.read_bytes(),retained.read_bytes())
+            self.assertEqual(G.coverage.load(retained)['evidence']['console.log'],G.archive.digest(retained.parent/'console.log'))
+        other=self.root/'another-execution';other.mkdir();(other/'console.log').write_bytes(console.read_bytes())
+        path=other/'other.result.json';path.write_bytes(G.archive.encoded({'check':'other','evidence':{'console.log':G.archive.digest(console)}}))
+        mapping=G.retain_reports(reports+[path],retain)
+        self.assertNotEqual(Path(mapping['other']).parent,Path(mapping['backend-a']).parent)
+        with self.assertRaisesRegex(G.DeliveryError,'duplicate'):
+            G.retain_reports([reports[0],reports[0]],retain)
 
     def test_base_release_replacement_during_upload_is_uncertain(self):
         original=self.remote.upload
@@ -648,6 +746,55 @@ class TransportTests(unittest.TestCase):
                 mock.patch.object(G.time,'sleep',side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):transport.json('endpoint')
         self.assertEqual(call.call_count,1)
+
+    def test_direct_release_id_upload_uses_canonical_binary_endpoint_once(self):
+        transport=G.GitHub('example/project')
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'payload+1.tar.gz';path.write_bytes(b'\x00exact payload\xff')
+            row={'id':3,'name':path.name,'state':'uploaded','size':path.stat().st_size,'digest':'sha256:'+G.archive.digest(path)}
+            response=self.response(201,G.archive.encoded(row))
+            with mock.patch.object(transport,'_headroom') as headroom, mock.patch.object(transport,'_run',return_value=response) as run:
+                transport.upload_to(7,path)
+            headroom.assert_called_once();run.assert_called_once()
+            argv=run.call_args.args[0]
+            self.assertIn('https://uploads.github.com/repos/example/project/releases/7/assets?name=payload%2B1.tar.gz',argv)
+            self.assertIn('Content-Type: application/octet-stream',argv)
+            self.assertIn('Content-Length: '+str(path.stat().st_size),argv)
+            self.assertEqual(argv[argv.index('--input')+1],str(path));self.assertNotIn('release',argv)
+            for status in (403,429,502):
+                with mock.patch.object(transport,'_headroom'), mock.patch.object(transport,'_run',return_value=self.response(status,code=1)) as run:
+                    with self.assertRaises(G.DeliveryError) as caught:transport.upload_to(7,path)
+                    self.assertTrue(caught.exception.uncertain);run.assert_called_once()
+            with mock.patch.object(transport,'_headroom'), mock.patch.object(transport,'_run',return_value=self.response(201,G.archive.encoded(dict(row,name='renamed')))):
+                with self.assertRaisesRegex(G.DeliveryError,'could not be confirmed') as caught:transport.upload_to(7,path)
+                self.assertTrue(caught.exception.uncertain)
+            with mock.patch.object(transport,'_run') as run:
+                for invalid in (0,True,-1,'7'):
+                    with self.assertRaises(G.DeliveryError):transport.upload_to(invalid,path)
+                run.assert_not_called()
+
+    def test_nested_transport_clients_share_four_process_request_slots(self):
+        from concurrent.futures import ThreadPoolExecutor
+        entered=threading.Event();release=threading.Event();lock=threading.Lock();counts={'active':0,'peak':0}
+        def run(argv, **options):
+            with lock:
+                counts['active']+=1;counts['peak']=max(counts['peak'],counts['active'])
+                if counts['active']==4:entered.set()
+            try:
+                self.assertTrue(release.wait(timeout=5))
+                return subprocess.CompletedProcess(argv,0,b'',b'')
+            finally:
+                with lock:counts['active']-=1
+        spec=importlib.util.spec_from_file_location('independent_github_adapter',ROOT/'tools/github_release.py')
+        alias=importlib.util.module_from_spec(spec);spec.loader.exec_module(alias)
+        self.assertIs(alias.REQUEST_SLOTS,G.REQUEST_SLOTS)
+        with mock.patch.object(G.subprocess,'run',side_effect=run), ThreadPoolExecutor(max_workers=8) as pool:
+            futures=[pool.submit((G if index%2 else alias).GitHub('example/project')._run,['api','fixture'],timeout=5) for index in range(8)]
+            try:
+                self.assertTrue(entered.wait(timeout=5));self.assertEqual(counts['peak'],4)
+            finally:release.set()
+            for future in futures:future.result()
+        self.assertEqual(counts,{'active':0,'peak':4})
 
     def test_cli_timeout_is_bounded_sanitized_and_never_retried(self):
         transport=G.GitHub('example/project')

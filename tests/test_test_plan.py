@@ -48,6 +48,46 @@ class CoverageTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 plan.junit_results(path, ["a", "b", "c"])
 
+    def test_junit_timing_rejects_invalid_data_and_warns_only_for_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "results.xml"
+            path.write_text('<testsuite><testcase name="slow" time="8"/><testcase name="failed" time="9"><failure/></testcase><testcase name="unknown"/></testsuite>')
+            limits = {"slow": 10, "failed": 10, "unknown": None}
+            rows = plan.junit_timings(path, list(limits), limits)
+            by_name = {row["name"]: row for row in rows}
+            self.assertTrue(by_name["slow"]["near_timeout"])
+            self.assertFalse(by_name["failed"]["near_timeout"])
+            self.assertEqual(by_name["failed"]["status"], "failed_or_incomplete")
+            self.assertIsNone(by_name["unknown"]["seconds"])
+            summary = Path(tmp) / "summary.md"
+            text = plan.timing_summary({"tests": rows, "phase_seconds": {"build": 1, "test": 9, "total": 11}}, "fixture", summary)
+            self.assertIn("failed_or_incomplete", text)
+            self.assertIn("Timeout margin warning: slow.", text)
+            self.assertEqual(summary.read_text(), text + "\n")
+            self.assertEqual(plan.test_timeouts([{ "name": "unlimited", "properties": [{"name": "TIMEOUT", "value": 0}]}]), {"unlimited": None})
+            for value in ("nan", "inf", "-1"):
+                path.write_text('<testsuite><testcase name="slow" time="' + value + '"/></testsuite>')
+                with self.assertRaisesRegex(ValueError, "duration"):
+                    plan.junit_timings(path, ["slow"], limits)
+            with self.assertRaisesRegex(ValueError, "timeout"):
+                plan.test_timeouts([{"name": "a", "properties": [{"name": "TIMEOUT", "value": float("inf")}]}])
+
+    def test_local_plan_auto_compilation_and_explicit_legacy_overrides(self):
+        import sys
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            build = Path(tmp); (build/'CMakeCache.txt').write_text('')
+            for flags, expected in (([], 16), (['--jobs', '3'], 3), (['--jobs', '3', '--build-jobs', '7'], 7)):
+                output=build/'plan.json'
+                with patch.object(sys, 'argv', ['test_plan.py','plan','--build',str(build),'--shards','1','--output',str(output),*flags]), \
+                     patch.object(plan, 'source_id', return_value='source'), patch.object(plan, 'build_inputs', return_value={}), \
+                     patch.object(plan, 'configuration_id', return_value='configuration'), patch.object(plan, 'inventory', return_value=['test']), \
+                     patch.object(plan, 'execution_context', return_value=({'cmake':'cmake'}, {})), \
+                     patch.object(plan.build_capacity, 'compile_jobs', return_value=16), \
+                     patch.object(plan.windows_compiler, 'run') as run:
+                    self.assertEqual(plan.main(),0)
+                    self.assertEqual(run.call_args.args[0][-2:], ['--parallel',str(expected)])
+
     def test_location_normalization_precedes_windows_json_escaping(self):
         from unittest.mock import patch
         value={'path':r'C:\work\source\main.cpp','command':['C:/work/source/test.py',r'C:\external\compiler.exe']}
@@ -392,9 +432,17 @@ class CandidateInventoryTests(unittest.TestCase):
                 (consumer/'CTestTestfile.cmake').write_text('add_test(unrelated ignored)\n')
                 self.assertEqual(plan.candidate_plan(build),frozen)
                 for scope in plan.CANDIDATE_SCOPES:
-                    output=root/(scope+'.json');plan.candidate_run(build,scope,output);paths.append(output)
+                    output=root/(scope+'.json');plan.candidate_run(build,scope,output,summary=root/'summary.md');paths.append(output)
                 self.assertTrue((build/'unlabelled-ran').is_file())
                 merged=plan.candidate_merge(paths)
+                self.assertIn("Test timing: core", (root/'summary.md').read_text())
+                receipt=json.loads(paths[0].read_text())
+                self.assertEqual(receipt['timing']['tests'][0]['name'],'newly_unlabelled')
+                self.assertIsNotNone(receipt['timing']['tests'][0]['seconds'])
+                tampered=copy.deepcopy(receipt);tampered['timing']['tests'][0]['seconds']+=1
+                paths[0].write_text(json.dumps(tampered))
+                with self.assertRaisesRegex(ValueError,'timing'):plan.candidate_merge(paths)
+                paths[0].write_text(json.dumps(receipt))
                 # Separate runners compile disjoint prerequisites in distinct
                 # trees. Both trees must bind exactly the same complete plan.
                 twin=root/'independent-build'

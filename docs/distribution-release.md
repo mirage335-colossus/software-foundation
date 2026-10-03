@@ -18,8 +18,15 @@ or an unsupported target must fail before signing or publication.
 
 The source application must be an ordinary public release with the exact requested
 inventory and a complete certificate attempt that reproduces against the current
-release policy. The helper fetches and verifies the complete original delivery,
-then repeats certificate verification before signing and before publication. A
+release policy. Preparation fetches and verifies the complete original delivery
+once, retaining
+its recovery closure. Later checks reconcile every remote asset ID, size and digest
+against the frozen delivery. The exact certificate pair is downloaded once during
+preparation and retained; publication reproduces that evidence locally and checks
+its hashes against the current remote assets. Independent channel uploads, complete
+recovery fetches and first-publication readback use at most four transfers
+concurrently; payload writes join before signed control records or publication,
+and all transfers join before cleanup. A
 passing workflow name, stored status or adjacent checksum alone cannot authorize
 this operation. GUI material still requires resolved recorded redistribution terms.
 
@@ -135,21 +142,38 @@ python3 tools/distribution_release.py publish --directory build/distribution \
 
 `prepare` performs read-only remote retrieval and local signing. `publish` prints
 its plan unless `--execute` is explicitly supplied. Publication checks the current
-remote application and certificate again, creates a draft, uploads without
-overwrite, downloads every asset and reruns signature and channel verification
-before exposing the release. Lost responses or incomplete uploads preserve their
+remote application inventory and exact certificate again, creates a draft, uploads
+without overwrite, downloads every channel asset and reruns signature and complete
+closure verification before first publication. Identical already-public retries
+reconcile the complete signed inventory and remote asset identities without
+repeating payload downloads. A still-private draft always receives full readback.
+Lost responses or incomplete uploads preserve their
 draft state. Only confirmed fresh atomic tag creation permits one draft creation;
 other writers and uncertain responses use bounded reads. An orphan tag without a
 visible draft requires explicit reconciliation, never another creation request.
+
+Successful workflow diagnostics retain the signed descriptor, signature, keyring,
+request and publication receipt. The complete closure already lives in its exact
+public channel and is not uploaded again to private run transport. Failed
+publication diagnostics retain the complete prepared closure for recovery.
 Retry the identical prepared directory to reconcile exact bytes; do not
 regenerate it with new timestamps under the same tag. A public incomplete or changed
 release is rejected and is never repaired automatically.
 
 ```sh
-python3 tools/distribution_release.py fetch --repository OWNER/REPOSITORY \
+python3 tools/distribution_release.py fetch --native-only --repository OWNER/REPOSITORY \
   --tag distro-1.2.3-x86_64-r1-s1 --manifest-sha256 EXACT_MANIFEST_SHA256 \
   --output build/verified-channel --trusted-fingerprint FULL_PRIMARY_FINGERPRINT
 ```
+
+`--native-only` fetches or verifies the four-file native channel projection while
+reconciling every retained asset against the authenticated complete descriptor.
+Use `verify --native-only --directory build/verified-channel` with the independently
+trusted fingerprint before native configuration. Omit the flag for a complete
+source/SDK/certificate recovery download and verification. Older signed installation
+instructions remain verifiable; newly generated instructions select the native path.
+The native projection still transfers the unified APT/Arch/Gentoo archive;
+frontend-specific transfer requires a separately versioned authenticated format.
 
 Fetch requires the exact manifest digest and independent fingerprint. It rejects
 unexpected files, changed asset IDs during retrieval, missing evidence, wrong policy,

@@ -6,6 +6,9 @@ split into bounded assets. This module never publishes a release, selects Latest
 deletes remote state, overwrites an asset, or uses Actions artifact storage.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack, contextmanager
+import gzip
 import hashlib
 import json
 import os
@@ -26,6 +29,7 @@ MAX_BYTES = 64 * 1024**3
 MAX_FILES = 10000
 MAX_MANIFEST = 8 * 1024 * 1024
 MAX_PARTS = 256
+MAX_BUNDLES = 128
 NAME = re.compile(r'[a-z0-9][a-z0-9_-]{0,79}')
 SHA = re.compile(r'[0-9a-f]{64}')
 
@@ -83,8 +87,12 @@ def _jobs(remote, context):
 
 
 def _producer(remote, context, *, job_id=None, job_name=None, runner_name=None,
-              publishing=False, allow_failed=False):
-    if job_id is not None:
+              publishing=False, allow_failed=False, observed=None):
+    if observed is not None:
+        job = observed
+        if job_id is not None and job.get("id") != job_id:
+            raise TransportError("producer job identity differs")
+    elif job_id is not None:
         if not _positive(job_id): raise TransportError('positive producer job ID required')
         job = remote.transport.json(remote.base + '/actions/jobs/' + str(job_id))
     else:
@@ -167,14 +175,20 @@ def _manifest_name(name):
     return 'bundle-' + name + '.json'
 
 
-def _assets(remote, info, name):
+def _asset_inventory(remote, info):
     rows = remote.transport.pages(remote.base + '/releases/' + str(info['id']) + '/assets?per_page=100')
     result, names, ids = {}, set(), set()
     for row in rows:
         key = row.get('name')
         if not isinstance(key, str) or key.casefold() in names or not _positive(row.get('id')) or row['id'] in ids:
             raise TransportError('duplicate or incomplete remote asset inventory')
-        names.add(key.casefold()); ids.add(row['id'])
+        names.add(key.casefold()); ids.add(row['id']); result[key] = row
+    return result
+
+
+def _bundle_assets(inventory, name):
+    result = {}
+    for key, row in inventory.items():
         if key != _manifest_name(name) and not key.startswith(_prefix(name)): continue
         if (row.get('state') != 'uploaded' or type(row.get('size')) is not int or
                 not 0 <= row['size'] < 2 * 1024**3 or not isinstance(row.get('digest'), str) or
@@ -182,6 +196,10 @@ def _assets(remote, info, name):
             raise TransportError('bundle contains an incomplete or unbound remote asset; preserve it')
         result[key] = {k: row[k] for k in ('id', 'name', 'state', 'size', 'digest')}
     return result
+
+
+def _assets(remote, info, name):
+    return _bundle_assets(_asset_inventory(remote, info), name)
 
 
 def _path(name):
@@ -243,8 +261,9 @@ def _pointer(context, info, producer, row):
     return value
 
 
-def _put(remote, context, info, path, expected):
-    rows = _assets(remote, info, context['name']); row = rows.get(path.name)
+def _put(remote, context, info, path, expected, *, known=None):
+    rows = _assets(remote, info, context['name']) if known is None else known
+    row = rows.get(path.name)
     if row is None:
         remote.upload(_tag(context), path)
         row = _assets(remote, info, context['name']).get(path.name)
@@ -253,65 +272,152 @@ def _put(remote, context, info, path, expected):
     return row
 
 
-def publish_bundle(repository, run_id, attempt, source_commit, workflow, name, root, paths, *,
-                   job_id=None, job_name=None, runner_name=None, metadata=None, allow_missing=False,
-                   transport=None, chunk_bytes=CHUNK_BYTES):
-    """Store exact bytes privately; completed failed jobs may retain diagnostics."""
-    context = _context(repository, run_id, attempt, source_commit, workflow, name)
+def _batch_requests(requests, required, optional):
+    if not isinstance(requests, (list, tuple)) or not 1 <= len(requests) <= MAX_BUNDLES:
+        raise TransportError('nonempty bounded bundle request list required')
+    seen = set()
+    for request in requests:
+        if (not isinstance(request, dict) or not required <= set(request) or
+                set(request) - required - optional or not isinstance(request.get('name'), str) or
+                not NAME.fullmatch(request['name']) or request['name'] in seen):
+            raise TransportError('complete distinct bundle requests required')
+        seen.add(request['name'])
+    return [dict(request) for request in requests]
+
+
+def _parallel(operations):
+    # One flattened pool: no per-bundle pools multiply the transport bound.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(operation) for operation in operations]
+        return [future.result() for future in futures]
+
+
+def _stage_bundle(stage, context, root, paths, *, metadata=None, allow_missing=False,
+                  chunk_bytes=CHUNK_BYTES, compress=False):
     if type(chunk_bytes) is not int or not 1 <= chunk_bytes <= CHUNK_BYTES:
         raise TransportError('chunk size exceeds transport policy')
+    if type(compress) is not bool or type(allow_missing) is not bool:
+        raise TransportError('compression and missing selections must be boolean')
     metadata = {} if metadata is None else metadata
     if not isinstance(metadata, dict) or len(archive.encoded(metadata)) > 65536:
         raise TransportError('bounded metadata object required')
-    # Roundtrip rejects nonfinite values and unsupported JSON values before writes.
     metadata = delivery.parse(archive.encoded(metadata))
-    root = Path(root).absolute(); paths = list(paths)
-    files = _inventory(root, paths, allow_missing)
-    remote = delivery.Remote(repository, transport)
-    repository_id = _run(remote, context)
-    producer, _ = _producer(remote, context, job_id=job_id, job_name=job_name,
-                            runner_name=runner_name, publishing=True)
+    root = Path(root).absolute(); paths = list(paths); files = _inventory(root, paths, allow_missing)
+    stage.mkdir(); bundle = stage / 'payload.tar'
+    with ExitStack() as stack:
+        stream = stack.enter_context(bundle.open('wb'))
+        if compress:
+            stream = stack.enter_context(gzip.GzipFile(filename='', mode='wb', fileobj=stream, compresslevel=1, mtime=0))
+        output = stack.enter_context(tarfile.open(fileobj=stream, mode='w', format=tarfile.PAX_FORMAT))
+        for relative, item in files.items():
+            header = tarfile.TarInfo(relative); header.size = item['size']; header.mode = item['mode']; header.mtime = 0
+            with (root / relative).open('rb') as incoming: output.addfile(header, incoming)
+    if _inventory(root, paths, allow_missing) != files: raise TransportError('input changed while staging bundle')
+    whole = dict(size=bundle.stat().st_size, sha256=None, parts=[])
+    if whole['size'] > MAX_BYTES + 32 * 1024**2: raise TransportError('bundle archive exceeds supported limit')
+    if (whole['size'] + chunk_bytes - 1) // chunk_bytes > MAX_PARTS:
+        raise TransportError('bundle needs too many bounded chunks')
+    chunks, hasher = [], hashlib.sha256()
+    with bundle.open('rb') as stream:
+        index = 0
+        while True:
+            data = stream.read(chunk_bytes)
+            if not data: break
+            hasher.update(data); sha = hashlib.sha256(data).hexdigest()
+            part = stage / (_prefix(context['name']) + str(index).zfill(4) + '-' + sha)
+            part.write_bytes(data); chunks.append((part, sha)); index += 1
+    whole['sha256'] = hasher.hexdigest()
+    bundle.unlink()  # Chunks retain exact bytes; batch staging need not keep a second complete copy.
+    return dict(context=context, stage=stage, root=root, paths=paths, files=files,
+                metadata=metadata, allow_missing=allow_missing, whole=whole, chunks=chunks)
+
+
+def publish_bundles(repository, run_id, attempt, source_commit, workflow, requests, *,
+                    job_id=None, job_name=None, runner_name=None, transport=None):
+    """Publish one producer's bundles with shared authoritative boundaries.
+
+    Payload writes join before any manifest marker. All selected existing IDs and
+    immutable bytes remain pinned; unrelated bundles may progress independently.
+    """
+    requests = _batch_requests(requests, {'name', 'root', 'paths'},
+        {'metadata', 'allow_missing', 'chunk_bytes', 'compress'})
+    contexts = [_context(repository, run_id, attempt, source_commit, workflow, request['name']) for request in requests]
+    context = contexts[0]; remote = delivery.Remote(repository, transport)
     with tempfile.TemporaryDirectory(prefix='foundation-ci-publish-') as temporary:
-        stage = Path(temporary); bundle = stage / 'payload.tar'
-        with tarfile.open(bundle, 'w', format=tarfile.PAX_FORMAT) as output:
-            for relative, item in files.items():
-                header = tarfile.TarInfo(relative); header.size = item['size']; header.mode = item['mode']; header.mtime = 0
-                with (root / relative).open('rb') as stream: output.addfile(header, stream)
-        if _inventory(root, paths, allow_missing) != files: raise TransportError('input changed while staging bundle')
-        whole = dict(size=bundle.stat().st_size, sha256=archive.digest(bundle), parts=[])
-        if whole['size'] > MAX_BYTES + 32 * 1024**2: raise TransportError('bundle archive exceeds supported limit')
-        if (whole['size'] + chunk_bytes - 1) // chunk_bytes > MAX_PARTS:
-            raise TransportError('bundle needs too many bounded chunks')
-        chunks = []
-        with bundle.open('rb') as stream:
-            index = 0
-            while True:
-                data = stream.read(chunk_bytes)
-                if not data: break
-                sha = hashlib.sha256(data).hexdigest(); part = stage / (_prefix(name) + str(index).zfill(4) + '-' + sha)
-                part.write_bytes(data); chunks.append((part, sha)); index += 1
-        info = _store(remote, context, repository_id, create=True)
-        rows = _assets(remote, info, name)
-        expected_names = {p.name for p, _ in chunks} | {_manifest_name(name)}
-        if set(rows) - expected_names: raise TransportError('unexpected prior bundle assets; preserve and inspect')
-        for path, sha in chunks: whole['parts'].append(_asset(_put(remote, context, info, path, sha)))
-        manifest = dict(schema_version=1, **context, repository_id=repository_id, release_id=info['id'],
-                        producer=producer, metadata=metadata, files=files, archive=whole)
-        encoded = archive.encoded(manifest)
-        if len(encoded) > MAX_MANIFEST: raise TransportError('manifest exceeds bounded inventory size')
-        if _inventory(root, paths, allow_missing) != files: raise TransportError('input changed before commit marker')
-        _run(remote, context)
-        if _producer(remote, context, job_id=producer['id'], publishing=True)[0] != producer:
-            raise TransportError('producer identity changed before commit marker')
-        if _store(remote, context, repository_id)['id'] != info['id']: raise TransportError('release changed')
-        path = stage / _manifest_name(name); path.write_bytes(encoded)
-        row = _put(remote, context, info, path, hashlib.sha256(encoded).hexdigest())
-        final = _assets(remote, info, name)
-        if (set(final) != expected_names or final[_manifest_name(name)] != row or
-                any(_asset(final[p['name']]) != p for p in whole['parts']) or
-                _store(remote, context, repository_id)['id'] != info['id']):
-            raise TransportError('bundle assets changed after commit marker')
-        return _pointer(context, info, producer, row)
+        work = Path(temporary)
+        staged = [_stage_bundle(work / str(index), selected, **{key: value for key, value in request.items() if key != 'name'})
+                  for index, (selected, request) in enumerate(zip(contexts, requests))]
+        def act():
+            repository_id = _run(remote, context)
+            producer, _ = _producer(remote, context, job_id=job_id, job_name=job_name,
+                                     runner_name=runner_name, publishing=True)
+            info = _store(remote, context, repository_id, create=True)
+            before = _asset_inventory(remote, info); operations = []
+            for item in staged:
+                rows = _bundle_assets(before, item['context']['name']); item['before'] = rows
+                expected = {path.name for path, _ in item['chunks']} | {_manifest_name(item['context']['name'])}
+                item['expected'] = expected
+                if set(rows) - expected: raise TransportError('unexpected prior bundle assets; preserve and inspect')
+                for path, sha in item['chunks']:
+                    row = rows.get(path.name)
+                    if row is not None:
+                        if row['size'] != path.stat().st_size or row['digest'] != 'sha256:' + sha:
+                            raise TransportError('immutable remote asset differs; never overwrite it')
+                    else:
+                        operations.append(lambda path=path: remote.upload_to(info, path))
+            _parallel(operations)
+            payloads = _asset_inventory(remote, info)
+            for item in staged:
+                rows = _bundle_assets(payloads, item['context']['name'])
+                if set(rows) - item['expected'] or any(rows.get(name) != row for name, row in item['before'].items()):
+                    raise TransportError('bundle assets changed before commit marker')
+                for path, sha in item['chunks']:
+                    row = rows.get(path.name)
+                    if row is None or row['size'] != path.stat().st_size or row['digest'] != 'sha256:' + sha:
+                        raise TransportError('immutable remote asset differs; never overwrite it')
+                    item['whole']['parts'].append(_asset(row))
+                item['manifest'] = dict(schema_version=1, **item['context'], repository_id=repository_id,
+                    release_id=info['id'], producer=producer, metadata=item['metadata'],
+                    files=item['files'], archive=item['whole'])
+                raw = archive.encoded(item['manifest'])
+                if len(raw) > MAX_MANIFEST: raise TransportError('manifest exceeds bounded inventory size')
+                path = item['stage'] / _manifest_name(item['context']['name']); path.write_bytes(raw)
+                item['marker'] = path; item['marker_sha'] = hashlib.sha256(raw).hexdigest()
+                prior = rows.get(path.name)
+                if prior is not None and (prior['size'] != len(raw) or prior['digest'] != 'sha256:' + item['marker_sha']):
+                    raise TransportError('immutable remote asset differs; never overwrite it')
+                if _inventory(item['root'], item['paths'], item['allow_missing']) != item['files']:
+                    raise TransportError('input changed before commit marker')
+            if _run(remote, context) != repository_id or _producer(remote, context, job_id=producer['id'], publishing=True)[0] != producer:
+                raise TransportError('producer identity changed before commit marker')
+            if _store(remote, context, repository_id)['id'] != info['id']: raise TransportError('release changed')
+            _parallel([lambda item=item: remote.upload_to(info, item['marker']) for item in staged
+                       if item['marker'].name not in _bundle_assets(payloads, item['context']['name'])])
+            markers = _asset_inventory(remote, info)
+            if _store(remote, context, repository_id)['id'] != info['id']:
+                raise TransportError('release changed after commit marker')
+            final = _asset_inventory(remote, info)
+            pointers = []
+            for item in staged:
+                rows = _bundle_assets(final, item['context']['name']); marker = rows.get(item['marker'].name)
+                if (rows != _bundle_assets(markers, item['context']['name']) or
+                        set(rows) != item['expected'] or marker is None or
+                        marker['size'] != item['marker'].stat().st_size or marker['digest'] != 'sha256:' + item['marker_sha'] or
+                        any(_asset(rows[part['name']]) != part for part in item['whole']['parts']) or
+                        any(rows.get(name) != row for name, row in item['before'].items())):
+                    raise TransportError('bundle assets changed after commit marker')
+                pointers.append(_pointer(item['context'], info, producer, marker))
+            return pointers
+        return delivery.run_mutation(remote, act)
+
+
+def publish_bundle(repository, run_id, attempt, source_commit, workflow, name, root, paths, *,
+                   job_id=None, job_name=None, runner_name=None, metadata=None, allow_missing=False,
+                   transport=None, chunk_bytes=CHUNK_BYTES, compress=False):
+    return publish_bundles(repository, run_id, attempt, source_commit, workflow,
+        [dict(name=name, root=root, paths=paths, metadata=metadata, allow_missing=allow_missing,
+              chunk_bytes=chunk_bytes, compress=compress)], job_id=job_id, job_name=job_name,
+        runner_name=runner_name, transport=transport)[0]
 
 
 def _validate_manifest(value, context, info, repository_id):
@@ -355,9 +461,32 @@ def _validate_manifest(value, context, info, repository_id):
     if size != bundle['size']: raise TransportError('archive chunk sizes do not cover complete bytes')
 
 
+@contextmanager
+def _tar_input(bundle, files):
+    # Bound expanded bytes before tarfile parses variable-length PAX headers.
+    # Names/records are already bounded by the complete authenticated manifest.
+    with bundle.open('rb') as stream:
+        compressed = stream.read(2) == b'\x1f\x8b'
+    if not compressed:
+        yield bundle
+        return
+    limit = sum(item['size'] for item in files.values()) + 2 * MAX_MANIFEST + len(files) * 1024 + 10240
+    with tempfile.TemporaryDirectory(prefix='expanded-', dir=bundle.parent) as temporary:
+        expanded = Path(temporary) / 'payload.tar'
+        total = 0
+        with gzip.open(bundle, 'rb') as stream, expanded.open('xb') as target:
+            while True:
+                data = stream.read(min(1024 * 1024, limit-total+1))
+                if not data: break
+                total += len(data)
+                if total > limit: raise TransportError('expanded archive exceeds declared payload bound')
+                target.write(data)
+        yield expanded
+
+
 def _extract(bundle, output, files):
     seen = set()
-    with tarfile.open(bundle, 'r:') as source:
+    with _tar_input(bundle, files) as raw, tarfile.open(raw, 'r:') as source:
         for item in source:
             _path(item.name)
             if not item.isfile() or item.sparse is not None or item.name in seen or item.name not in files:
@@ -372,48 +501,92 @@ def _extract(bundle, output, files):
     if seen != set(files): raise TransportError('transport is missing declared files')
 
 
+def fetch_bundles(repository, run_id, attempt, source_commit, workflow, requests, *, transport=None):
+    """Quarantine a bundle batch until shared complete remote boundaries pass."""
+    requests = _batch_requests(requests, {'name', 'output'},
+        {'job_id', 'job_name', 'manifest_id', 'manifest_sha256', 'allow_failed'})
+    contexts = [_context(repository, run_id, attempt, source_commit, workflow, request['name']) for request in requests]
+    outputs = [Path(request['output']).absolute() for request in requests]
+    for index, output in enumerate(outputs):
+        if output.exists() or output.is_symlink(): raise TransportError('transport output must be new')
+        if any(output == other or output in other.parents or other in output.parents for other in outputs[:index]):
+            raise TransportError('batch outputs must be distinct without overlapping ancestors')
+    for request in requests:
+        mid, digest = request.get('manifest_id'), request.get('manifest_sha256')
+        if ((mid is None) != (digest is None) or mid is not None and
+                (not _positive(mid) or not isinstance(digest, str) or not SHA.fullmatch(digest))):
+            raise TransportError('pin both manifest asset ID and SHA256')
+        if type(request.get('allow_failed', False)) is not bool: raise TransportError('failure policy must be boolean')
+        if request.get('job_id') is not None and not _positive(request['job_id']):
+            raise TransportError('positive producer job ID required')
+    context = contexts[0]; remote = delivery.Remote(repository, transport)
+    repository_id = _run(remote, context); info = _store(remote, context, repository_id)
+    inventory = _asset_inventory(remote, info)
+    with ExitStack() as stack:
+        selections = []
+        for index, (request, selected, output) in enumerate(zip(requests, contexts, outputs)):
+            rows = _bundle_assets(inventory, selected['name']); row = rows.get(_manifest_name(selected['name']))
+            if (row is None or not 0 < row['size'] <= MAX_MANIFEST or request.get('manifest_id') is not None and
+                    (row['id'] != request['manifest_id'] or row['digest'] != 'sha256:' + request['manifest_sha256'])):
+                raise TransportError('complete pinned transport manifest is absent or differs')
+            output.parent.mkdir(parents=True, exist_ok=True)
+            stage = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='.foundation-ci-fetch-', dir=output.parent)))
+            selections.append(dict(context=selected, request=request, output=output, stage=stage, rows=rows, row=row))
+        _parallel([lambda item=item: remote.download(item['row'], item['stage'] / 'manifest.json') for item in selections])
+        # One complete job inventory covers every selected producer, including
+        # multiple bundles from the same job. Other jobs may progress normally.
+        jobs = {job['id']: job for job in _jobs(remote, context)}
+        downloads = []
+        for item in selections:
+            manifest = delivery.parse((item['stage'] / 'manifest.json').read_bytes())
+            _validate_manifest(manifest, item['context'], info, repository_id)
+            request = item['request']; selected_id = manifest['producer']['id']
+            if request.get('job_id') is not None and selected_id != request['job_id']:
+                raise TransportError('manifest producer differs')
+            producer, job = _producer(remote, context, job_id=selected_id, job_name=request.get('job_name'),
+                allow_failed=request.get('allow_failed', False), observed=jobs.get(selected_id, {}))
+            if producer != manifest['producer']: raise TransportError('manifest producer identity differs')
+            item.update(manifest=manifest, producer=producer, job=job)
+            parts = manifest['archive']['parts']; expected = {part['name'] for part in parts} | {item['row']['name']}
+            if set(item['rows']) != expected or any(_asset(item['rows'][part['name']]) != part for part in parts):
+                raise TransportError('remote bundle is not the complete declared asset set')
+            downloads += [lambda item=item, part=part: remote.download(item['rows'][part['name']], item['stage'] / part['name'], part['sha256']) for part in parts]
+        _parallel(downloads)
+        for item in selections:
+            manifest = item['manifest']; bundle = item['stage'] / 'payload.tar'
+            with bundle.open('xb') as stream:
+                for part in manifest['archive']['parts']:
+                    path = item['stage'] / part['name']
+                    with path.open('rb') as source: shutil.copyfileobj(source, stream)
+                    path.unlink()
+            if bundle.stat().st_size != manifest['archive']['size'] or archive.digest(bundle) != manifest['archive']['sha256']:
+                raise TransportError('reconstructed archive bytes differ')
+            extracted = item['stage'] / 'payload'; extracted.mkdir(); _extract(bundle, extracted, manifest['files'])
+        if _run(remote, context) != repository_id or _store(remote, context, repository_id)['id'] != info['id']:
+            raise TransportError('producer or release assets changed during fetch')
+        after = _asset_inventory(remote, info); jobs_after = {job['id']: job for job in _jobs(remote, context)}
+        for item in selections:
+            if (_bundle_assets(after, item['context']['name']) != item['rows'] or
+                    jobs_after.get(item['producer']['id']) != item['job']):
+                raise TransportError('producer or release assets changed during fetch')
+            _producer(remote, context, job_id=item['producer']['id'], allow_failed=item['request'].get('allow_failed', False),
+                      observed=jobs_after.get(item['producer']['id'], {}))
+            if item['output'].exists() or item['output'].is_symlink(): raise TransportError('transport output must be new')
+        results = []
+        for item in selections:
+            (item['stage'] / 'payload').rename(item['output'])
+            results.append(dict(pointer=_pointer(item['context'], info, item['producer'], item['row']),
+                                manifest=item['manifest'], producer=item['job']))
+        return results
+
+
 def fetch_bundle(repository, run_id, attempt, source_commit, workflow, name, output, *,
                  job_id=None, job_name=None, manifest_id=None, manifest_sha256=None,
                  allow_failed=False, transport=None):
     """Fetch an exact completed producer; no automatic failed-run fallback."""
-    context = _context(repository, run_id, attempt, source_commit, workflow, name)
-    if ((manifest_id is None) != (manifest_sha256 is None) or manifest_id is not None and
-            (not _positive(manifest_id) or not isinstance(manifest_sha256, str) or not SHA.fullmatch(manifest_sha256))):
-        raise TransportError('pin both manifest asset ID and SHA256')
-    output = Path(output).absolute()
-    if output.exists() or output.is_symlink(): raise TransportError('transport output must be new')
-    remote = delivery.Remote(repository, transport); repository_id = _run(remote, context)
-    info = _store(remote, context, repository_id); rows = _assets(remote, info, name)
-    row = rows.get(_manifest_name(name))
-    if (row is None or not 0 < row['size'] <= MAX_MANIFEST or
-            manifest_id is not None and (row['id'] != manifest_id or row['digest'] != 'sha256:' + manifest_sha256)):
-        raise TransportError('complete pinned transport manifest is absent or differs')
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.foundation-ci-fetch-', dir=output.parent) as temporary:
-        stage = Path(temporary); path = stage / 'manifest.json'; remote.download(row, path)
-        manifest = delivery.parse(path.read_bytes()); _validate_manifest(manifest, context, info, repository_id)
-        if job_id is not None and manifest['producer']['id'] != job_id: raise TransportError('manifest producer differs')
-        producer, job = _producer(remote, context, job_id=manifest['producer']['id'], job_name=job_name, allow_failed=allow_failed)
-        if producer != manifest['producer']: raise TransportError('manifest producer identity differs')
-        parts = manifest['archive']['parts']; expected_names = {p['name'] for p in parts} | {row['name']}
-        if set(rows) != expected_names or any(_asset(rows[p['name']]) != p for p in parts):
-            raise TransportError('remote bundle is not the complete declared asset set')
-        bundle = stage / 'payload.tar'
-        with bundle.open('xb') as stream:
-            for part in parts:
-                path = stage / part['name']; remote.download(rows[part['name']], path, part['sha256'])
-                with path.open('rb') as source: shutil.copyfileobj(source, stream)
-                path.unlink()
-        if bundle.stat().st_size != manifest['archive']['size'] or archive.digest(bundle) != manifest['archive']['sha256']:
-            raise TransportError('reconstructed archive bytes differ')
-        extracted = stage / 'payload'; extracted.mkdir(); _extract(bundle, extracted, manifest['files'])
-        _run(remote, context)
-        if (_store(remote, context, repository_id)['id'] != info['id'] or _assets(remote, info, name) != rows or
-                _producer(remote, context, job_id=producer['id'], allow_failed=allow_failed)[1] != job):
-            raise TransportError('producer or release assets changed during fetch')
-        pointer = _pointer(context, info, producer, row)
-        extracted.rename(output)
-        return dict(pointer=pointer, manifest=manifest, producer=job)
+    return fetch_bundles(repository, run_id, attempt, source_commit, workflow,
+        [dict(name=name, output=output, job_id=job_id, job_name=job_name, manifest_id=manifest_id,
+              manifest_sha256=manifest_sha256, allow_failed=allow_failed)], transport=transport)[0]
 
 
 def main(argv=None):
@@ -424,6 +597,7 @@ def main(argv=None):
     parser.add_argument('--job-id', type=int); parser.add_argument('--job-name')
     parser.add_argument('--root', type=Path); parser.add_argument('--path', action='append', default=[])
     parser.add_argument('--metadata', type=Path); parser.add_argument('--pointer', type=Path)
+    parser.add_argument('--compress', action='store_true', help='fast deterministic compression for text evidence')
     parser.add_argument('--allow-missing', action='store_true'); parser.add_argument('--allow-failed', action='store_true')
     parser.add_argument('--output', type=Path); parser.add_argument('--receipt', type=Path)
     parser.add_argument('--manifest-id', type=int); parser.add_argument('--manifest-sha256')
@@ -434,7 +608,7 @@ def main(argv=None):
     if args.operation == 'publish':
         if args.root is None or not args.path: parser.error('publish requires --root and --path')
         result = publish_bundle(**common, root=args.root, paths=args.path, allow_missing=args.allow_missing,
-                                metadata=delivery.parse(args.metadata.read_bytes()) if args.metadata else None)
+                                metadata=delivery.parse(args.metadata.read_bytes()) if args.metadata else None, compress=args.compress)
         destination = args.pointer
     else:
         if args.output is None: parser.error('fetch requires --output')

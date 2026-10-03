@@ -170,6 +170,21 @@ allowance, or external timeout is never a pass. A successful near-timeout case
 can emit a timing warning. A progressing but unfinished case is incomplete.
 This example's required gates fail if mandatory coverage is incomplete.
 
+Local `test_plan.py plan` and `run` compile with automatic CPU/RAM capacity.
+Use `--build-jobs N` for an explicit compile limit; an explicit legacy `--jobs N`
+continues to set compile/test concurrency. Test execution defaults to two.
+Both `run` and `candidate-run` accept `--summary PATH`.
+
+Candidate scope receipts retain each case's measured JUnit duration and declared
+CTest timeout, plus prerequisite-build, test and complete-scope wall times.
+`candidate-run --summary PATH` appends the five longest cases to the job summary.
+The hosted candidate uses this for its existing GitHub summary file. Passed cases
+using at least 80% of their declared timeout produce a margin warning; failed
+and incomplete cases retain their failure outcome. Missing JUnit durations are
+reported as unknown. Aggregation rechecks case timings against the exact retained
+JUnit and frozen timeout inventory. Per-test durations may overlap under CTest
+parallelism, so their sum is not elapsed wall time.
+
 If a product permits a narrow environmental exception, define a typed error
 classifier, exact affected scope, evidence, owner, expiry/recheck condition,
 and release consequence in advance. Preserve unrelated mandatory checks. Do

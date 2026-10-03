@@ -130,7 +130,7 @@ class StorageLayoutTests(unittest.TestCase):
              patch.object(ci_transport,'publish_bundle',return_value=pointer) as publish:
             lifecycle.store_bundle()
         self.assertEqual(publish.call_args.kwargs,dict(self.context,name='report',root=self.root/'build/report',
-                                                      paths=['check.json'],runner_name='runner-a'))
+                                                      paths=['check.json'],runner_name='runner-a',compress=False))
         self.assertEqual(json.loads((self.root/'build/transport-pointers/report.json').read_text()),pointer)
         self.assertIn('"manifest"',(self.root/'summary').read_text())
 
@@ -305,7 +305,10 @@ class WorkflowContractTests(unittest.TestCase):
             text=(ROOT/f'.github/workflows/{name}.yml').read_text()
             self.assertIn('workflow_call:',text)
             for output in outputs: self.assertIn('outputs.'+output,text)
-            if name=='sdk-application': self.assertIn("jobs.publish.outputs.published || 'false'",text)
+            if name=='sdk-application':
+                self.assertIn("jobs.assemble.outputs.published || 'false'",text)
+                self.assertIn('published: ${{ steps.publication.outputs.published }}',text)
+                self.assertIn('jobs.assemble.outputs.regression_result',text)
 
 
 if __name__=='__main__': unittest.main()

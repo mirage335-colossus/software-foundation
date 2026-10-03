@@ -6,6 +6,7 @@ changes. Planning is the default; publication requires a separate explicit flag.
 """
 import argparse
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -105,22 +106,27 @@ def selected(manifest, value):
     return item, backends
 
 
-def certified(remote, candidate, identity, policy, value):
+def certified(remote, candidate, identity, policy, value, *, certificate_paths=None, certificate_directory=None):
     request(value)
     if (identity['repository'] != value['repository'] or identity['tag'] != value['application_tag'] or
             identity['inventory_sha256'] != value['inventory_sha256'] or identity['experiment']):
         raise ValueError('application differs from exact ordinary certified input')
-    info, assets = delivery.verified_remote(remote, identity, candidate, prerelease=False)
-    result = delivery.verify_certificate(remote, assets, identity, candidate, policy, value['profile'],
-        value['certificate_run'], value['certificate_attempt'], value['certificate_sha256'])
+    if certificate_paths is not None and certificate_directory is not None:
+        raise ValueError('one exact certificate evidence source required')
+    info, assets = delivery.verified_remote(remote, identity, candidate, prerelease=False,
+                                           readback=False, metadata_only=True)
+    reader = (LocalEvidence(certificate_paths) if certificate_paths is not None else
+              CertificateCache(remote, certificate_directory, value) if certificate_directory is not None else remote)
+    result = delivery.verify_certificate(reader, assets, identity, candidate, policy, value['profile'],
+        value['certificate_run'], value['certificate_attempt'], value['certificate_sha256'], metadata_only=True)
     remote.unchanged(identity['tag'], info, assets, identity['tag_commit'])
     return info, assets, result
 
 
-def instructions(value, backends):
+def instructions(value, backends, *, native_only=False):
     url = base_url(value); trusted = value['trusted_fingerprint']; arch, debarch = TARGETS[value['target']]
     version = value['version'] + '+r' + str(value['package_release'])
-    return (f'# Immutable package channel {tag_for(value)}\n\n'
+    rendered = (f'# Immutable package channel {tag_for(value)}\n\n'
         f'Application: {value["application_tag"]}; inventory SHA256: {value["inventory_sha256"]}.\n'
         f'Trust the full signing fingerprint independently: `{trusted}`.\n'
         'Downloaded adjacent keys alone do not establish trust. Verify distribution.json.sig and the complete '
@@ -145,6 +151,12 @@ def instructions(value, backends):
         'Available variants: ' + ', '.join(backends) + '. All original sources, SDK triplets and selected '
         'certificate evidence remain content-addressed assets. Native package-manager installation qualification '
         'is separate from archive qualification. Move clients only after the required native install/update checks.\n').encode()
+    if native_only:
+        rendered = rendered.replace(b'complete distribution with tools/distribution_release.py verify',
+                                    b'signed native channel with tools/distribution_release.py verify --native-only')
+        rendered = rendered.replace(b'`tools/distribution_release.py fetch`',
+                                    b'`tools/distribution_release.py fetch --native-only`')
+    return rendered
 
 
 def _key_outside(key, *roots):
@@ -225,10 +237,10 @@ def prepare(value, candidate, identity, policy, packaging_source, output, key, *
     if any(entry['backends'] for entry in manifest['artifacts']): distro.require_gui_terms()
     packaging_proof = source_commit_proof(packaging_checkout, packaging_source, value['packager_commit'])
     remote = delivery.Remote(value['repository'], transport)
-    info, assets, evidence = certified(remote, candidate, identity, policy, value)
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.distribution-', dir=output.parent) as temporary:
         work = Path(temporary); stage = work / 'assets'; stage.mkdir(); channels = work / 'channels'; channels.mkdir()
+        info, assets, evidence = certified(remote, candidate, identity, policy, value, certificate_directory=work)
         retained = {}
         def retain(logical, source):
             name = alias(source)
@@ -241,7 +253,7 @@ def prepare(value, candidate, identity, policy, packaging_source, output, key, *
         packaging = retain('packaging-source.tar.gz', Path(packaging_source))
         stem = f'certification-{value["certificate_run"]}-attempt-{value["certificate_attempt"]}'
         for suffix in ('.json', '.tar.gz'):
-            path = work / (stem + suffix); remote.download(assets[path.name], path); retain(path.name, path)
+            path = work / (stem + suffix); retain(path.name, path)
         apt_receipts = []; native_groups = []; specifications = {}
         for backend in backends:
             out = work / ('apt-' + backend)
@@ -269,7 +281,7 @@ def prepare(value, candidate, identity, policy, packaging_source, output, key, *
         for path in [*(channels / 'apt').iterdir(), *(channels / 'native/arch').iterdir()]:
             copy_new(path, stage / path.name)
         archive.archive_tree(channels, stage / 'channels.tar.gz')
-        (stage / 'INSTALL.md').write_bytes(instructions(value, backends))
+        (stage / 'INSTALL.md').write_bytes(instructions(value, backends, native_only=True))
         frozen = dict(schema_version=1, request=value, tag=tag_for(value), application_release_id=info['id'],
             delivery_sha256=delivery.sha(archive.encoded(identity)), certificate=evidence,
             policy_sha256=archive.digest(policy), packaging_source_proof=packaging_proof, backends=backends, retained=retained,
@@ -282,8 +294,8 @@ def prepare(value, candidate, identity, policy, packaging_source, output, key, *
             if public != (stage / 'archive-keyring.gpg').read_bytes(): raise ValueError('channel signing keys differ')
             (stage / 'distribution.json.sig').write_bytes(sign((stage / 'distribution.json').read_bytes()))
         verify(stage, policy, value['trusted_fingerprint'])
-        again, after, _ = certified(remote, candidate, identity, policy, value)
-        if again['id'] != info['id'] or after != assets: raise ValueError('application changed during distribution assembly')
+        # Reconcile frozen remote identities and digests without downloading again.
+        remote.unchanged(identity['tag'], info, assets, identity['tag_commit'])
         stage.rename(output)
     return frozen
 
@@ -296,6 +308,22 @@ class LocalEvidence:
         if asset_info(source) != {'size': row['size'], 'sha256': row['digest'][7:]} or expected not in (None, row['digest'][7:]):
             raise ValueError('retained certificate changed')
         copy_new(source, path)
+
+
+class CertificateCache:
+    """Download each exact certificate asset once, then verify/copy those bytes."""
+    def __init__(self, remote, directory, value):
+        self.remote, self.directory = remote, Path(directory)
+        stem = f'certification-{value["certificate_run"]}-attempt-{value["certificate_attempt"]}'
+        self.names = {stem + suffix for suffix in ('.json', '.tar.gz')}
+
+    def download(self, row, path, expected=None):
+        if row['name'] not in self.names:
+            raise ValueError('unexpected certificate cache asset')
+        cached = self.directory / row['name']
+        if not cached.exists():
+            self.remote.download(row, cached, expected)
+        LocalEvidence({row['name']: cached}).download(row, path, expected)
 
 
 def verify(directory, policy, trusted):
@@ -390,7 +418,8 @@ def verify(directory, policy, trusted):
                 name = reference['url'].removeprefix(base_url(req))
                 if reference['url'] != base_url(req) + name or name not in retained.values() or files[name]['sha256'] != reference['sha256']:
                     raise ValueError('recipe does not resolve to retained content-addressed bytes')
-        if (directory / 'INSTALL.md').read_bytes() != instructions(req, backends): raise ValueError('installation instructions differ')
+        if (directory / 'INSTALL.md').read_bytes() not in (instructions(req, backends), instructions(req, backends, native_only=True)):
+            raise ValueError('installation instructions differ')
     expected_files = set(retained.values()) | set(value['apt_files']) | set(value['arch_files']) | {'channels.tar.gz', 'INSTALL.md'}
     if set(files) != expected_files: raise ValueError('unreferenced distribution asset')
     return value
@@ -601,10 +630,12 @@ def fetch(repository, tag, manifest_sha256, output, policy, trusted, *, transpor
         value = archive.read_json(stage / 'distribution.json')
         expected = set(value['files']) | CONTROL
         if set(rows) != expected: raise ValueError('remote channel inventory differs')
+        selections = []
         for name in sorted(expected - {'distribution.json'}):
             delivery.valid_name(name)
             expected_hash = value['files'][name]['sha256'] if name in value['files'] else None
-            remote.download(rows[name], stage / name, expected_hash)
+            selections.append((name, stage / name, expected_hash))
+        delivery.download_files(remote, rows, selections)
         value = verify(stage, policy, trusted)
         if value['request']['repository'] != repository or value['tag'] != tag: raise ValueError('remote distribution identity differs')
         if not info['prerelease']: native_marker(body['native_qualification'], value['request']['target'])
@@ -643,6 +674,23 @@ def initialize_channel(remote, tag, commit, body):
     return existing
 
 
+def upload_files(remote, tag, directory, names):
+    """Four independent writes at most; join a failed batch before returning."""
+    names = list(names)
+    if len(names) != len(set(names)):
+        raise ValueError('upload asset names must be distinct')
+    # Control records are a commit gate and follow every successfully joined payload.
+    groups = ([name for name in names if name not in CONTROL],
+              [name for name in names if name in CONTROL])
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for group in groups:
+            for start in range(0, len(group), 4):
+                futures = [pool.submit(remote.upload, tag, Path(directory) / name)
+                           for name in group[start:start + 4]]
+                for future in futures:
+                    future.result()
+
+
 def publish(directory, policy, trusted, *, execute=False, transport=None):
     directory = Path(directory); frozen = verify(directory, policy, trusted); req = frozen['request']; result = plan(req)
     result['manifest_sha256'] = archive.digest(directory / 'distribution.json')
@@ -651,9 +699,15 @@ def publish(directory, policy, trusted, *, execute=False, transport=None):
     def act():
         remote.visible()
         with tempfile.TemporaryDirectory(prefix='distribution-authority-') as temporary:
-            fetched = Path(temporary) / 'source'
-            identity = ci.fetch_candidate(req['repository'], req['application_tag'], req['inventory_sha256'], fetched, transport=transport)
-            info, app_assets, _ = certified(remote, fetched / 'candidate', identity, policy, req)
+            # Full local closure was verified above; reconcile exact remote metadata.
+            candidate = Path(temporary) / 'candidate'; candidate.mkdir()
+            identity = archive.read_json(directory / frozen['retained']['delivery.json'])
+            copy_new(directory / frozen['retained']['application/release.json'], candidate / 'release.json')
+            stem = f'certification-{req["certificate_run"]}-attempt-{req["certificate_attempt"]}'
+            certpaths = {stem + suffix: directory / frozen['retained'][stem + suffix]
+                         for suffix in ('.json', '.tar.gz')}
+            info, app_assets, evidence = certified(remote, candidate, identity, policy, req, certificate_paths=certpaths)
+            if evidence != frozen['certificate']: raise ValueError('certified application evidence changed')
             if info['id'] != frozen['application_release_id'] or delivery.sha(archive.encoded(identity)) != frozen['delivery_sha256']:
                 raise ValueError('certified application remote identity changed')
             tag = frozen['tag']; existing = remote.find(tag, required=False)
@@ -671,19 +725,26 @@ def publish(directory, policy, trusted, *, execute=False, transport=None):
             expected = {p.name: asset_info(p) for p in directory.iterdir()}; rows = remote.assets(existing)
             if set(rows) - set(expected): raise ValueError('unexpected distribution release assets; preserve state')
             if not existing['draft'] and set(rows) != set(expected): raise ValueError('published channel is incomplete; never repair in place')
-            for name in sorted(expected, key=lambda n: (n in CONTROL, n)):
-                if name in rows:
-                    if rows[name]['digest'] != 'sha256:' + expected[name]['sha256'] or rows[name]['size'] != expected[name]['size']:
-                        raise ValueError('existing immutable channel bytes differ; never overwrite')
-                else: remote.upload(tag, directory / name)
+            for name in rows:
+                if rows[name]['digest'] != 'sha256:' + expected[name]['sha256'] or rows[name]['size'] != expected[name]['size']:
+                    raise ValueError('existing immutable channel bytes differ; never overwrite')
+            upload_files(remote, tag, directory, sorted(set(expected) - set(rows)))
             rows = remote.assets(existing)
-            with tempfile.TemporaryDirectory(prefix='distribution-readback-') as downloaded:
-                downloaded = Path(downloaded)
-                if set(rows) != set(expected): raise ValueError('uploaded complete asset set differs')
-                for name, record in expected.items(): remote.download(rows[name], downloaded / name, record['sha256'])
-                if verify(downloaded, policy, trusted) != frozen: raise ValueError('downloaded signed channel differs')
+            if set(rows) != set(expected) or any(rows[name]['size'] != record['size'] or
+                    rows[name]['digest'] != 'sha256:' + record['sha256'] for name, record in expected.items()):
+                raise ValueError('uploaded complete asset identities differ')
+            if existing['draft']:
+                # First publication proves the full delivered closure. Identical
+                # public retries reconcile every immutable asset ID and digest.
+                with tempfile.TemporaryDirectory(prefix='distribution-readback-') as downloaded:
+                    downloaded = Path(downloaded)
+                    delivery.download_files(remote, rows, [(name, downloaded / name, record['sha256'])
+                                                          for name, record in expected.items()])
+                    if verify(downloaded, policy, trusted) != frozen: raise ValueError('downloaded signed channel differs')
             remote.unchanged(req['application_tag'], info, app_assets, identity['tag_commit'])
-            if verify(directory, policy, trusted) != frozen: raise ValueError('local channel changed before publication')
+            if ({path.name: asset_info(path) for path in directory.iterdir()} != expected or
+                    archive.digest(policy) != frozen['policy_sha256']):
+                raise ValueError('local channel or policy changed before publication')
             remote.unchanged(tag, existing, rows, req['packager_commit'])
             if existing['draft']:
                 remote.change('/releases/' + str(existing['id']), method='PATCH', body={'draft': False, 'prerelease': True, 'make_latest': 'false'})
@@ -702,7 +763,10 @@ def main(argv=None):
     p.add_argument('--policy', type=Path, default=ROOT / 'docs/release-policy.json'); p.add_argument('--trusted-fingerprint')
     p.add_argument('--signing-key', type=Path); p.add_argument('--execute', action='store_true')
     p.add_argument('--repository'); p.add_argument('--tag'); p.add_argument('--manifest-sha256')
+    p.add_argument('--native-only', action='store_true', help='verify/fetch the signed native channel projection')
     args = p.parse_args(argv)
+    if args.native_only and args.operation not in ('verify', 'fetch'):
+        p.error('--native-only applies only to verify or fetch')
     if args.operation in ('plan', 'prepare'):
         if args.request is None: p.error('--request required')
         req = request(archive.read_json(args.request)); result = plan(req)
@@ -718,11 +782,11 @@ def main(argv=None):
                 result = prepare(req, work / 'input/candidate', identity, args.policy, work / 'packaging-source.tar.gz', args.output, args.signing_key)
     elif args.operation == 'fetch':
         if not all((args.repository, args.tag, args.manifest_sha256, args.output, args.trusted_fingerprint)): p.error('fetch needs exact repository/tag/manifest, output and trusted fingerprint')
-        result = fetch(args.repository, args.tag, args.manifest_sha256, args.output, args.policy, args.trusted_fingerprint)
+        result = fetch(args.repository, args.tag, args.manifest_sha256, args.output, args.policy, args.trusted_fingerprint, native_only=args.native_only)
     else:
         if not args.directory or not args.trusted_fingerprint: p.error('--directory and --trusted-fingerprint required')
         result = (publish(args.directory, args.policy, args.trusted_fingerprint, execute=args.execute) if args.operation == 'publish'
-                  else verify(args.directory, args.policy, args.trusted_fingerprint))
+                  else (verify_native if args.native_only else verify)(args.directory, args.policy, args.trusted_fingerprint))
     print(json.dumps(result, sort_keys=True, indent=2))
 
 

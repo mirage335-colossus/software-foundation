@@ -721,6 +721,36 @@ replace those execution environments. The archived-builder compatibility path,
 missing remote digests, tampered selected payloads, failed refresh preservation
 and rejection of partial native acceptance were exercised locally.
 
+## Transfer and scheduling follow-up validation
+
+A further isolated native run on 2026-10-03 configured, compiled and exercised
+51 CTest entries in 40.81 seconds using eight compile jobs and two test jobs.
+Integration exposed two outdated workflow contract expectations and one retry
+fixture that reached its request deadline before its intended wait-budget limit.
+Those fixtures were corrected and only the two affected suites were rerun:
+23 workflow-storage cases and 44 signed-client cases passed. Combined with the
+unchanged production-code results, all 1,198 applicable registered unit cases
+passed; two explicitly native Windows cases remained excluded on Linux. The
+native application, install consumer, documentation, workflow lint, Python syntax,
+whitespace and generic-name checks passed. Signing fixtures used disposable keys
+and local sockets with mocked remotes; no packages were installed or published.
+
+A one-page transport fixture measured 12 metadata reads for eight grouped bundle
+fetches, versus 96 when fetched separately. Eight-bundle publication used 18
+metadata reads on creation and 16 on an identical retry. These counts exclude
+asset downloads/uploads and initialization POSTs; real pagination adds requests.
+Exact scope selection, changed identities, collisions, failed parallel transfers,
+immutable retries, compression bounds, and joined workers were checked. The
+production upload path uses a validated release ID without another tag lookup.
+Success diagnostics retained controls and receipts; failed-publication selection
+retained complete prepared payloads.
+
+These results do not measure hosted throughput, real Docker bootstrap reuse,
+Windows/ARM64 execution, cold SDK construction or complete GUI/browser operation.
+The full release still retains required recovery inputs and can exceed one shared
+API quota window. Reduced byte and request counts are structural improvements,
+not a claim that a particular hosted elapsed time has been achieved.
+
 ## Reproduce the integrated checks
 
 ```sh

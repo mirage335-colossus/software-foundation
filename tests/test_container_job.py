@@ -37,6 +37,54 @@ class ContainerJobs(unittest.TestCase):
             with self.assertRaises(ValueError): job.command('sdk-produce', self.root, uid, gid, {})
         with self.assertRaises(ValueError): job.command('check', self.root, 1001, 1002, {'CHECK_IMAGE': 'untrusted:tag'})
 
+    def test_package_selection_avoids_gui_headers_for_runtime_or_core_producers(self):
+        core = job.packages('application-build', {'PROFILE':'core'})
+        gui = job.packages('sdk-produce', {'SDK_PROFILE':'all-gui'})
+        runtime = job.packages('check', {}, {'scope':'archive','backend':'fltk'})
+        self.assertNotIn('libx11-dev', core); self.assertNotIn('libx11-dev', runtime)
+        self.assertIn('libx11-dev', gui); self.assertIn('libgl1', runtime)
+        self.assertNotIn('build-essential', runtime)
+        self.assertIn('build-essential', job.packages('check', {}, {'scope':'recovery','backend':'core'}))
+        self.assertIn('sh tools/ci-apt.sh install', job.command('sdk-produce', self.root, 1001, 1002, {})[-3])
+
+    def test_batch_setup_is_committed_once_and_each_case_uses_a_fresh_run(self):
+        calls=[]; identity='sha256:'+'d'*64
+        def run(argv, **options):
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0, identity+'\n' if argv[1] == 'commit' else '')
+        items=[{'scope':'archive','backend':'fltk'}, {'scope':'archive','backend':'terminal'}]
+        with patch.object(job.subprocess, 'run', side_effect=run):
+            with job.prepared_checks(self.root, 'debian:bookworm', items, {}) as prepared:
+                self.assertEqual(prepared, identity)
+                with patch.object(job, 'selection', return_value=items[0]):
+                    one=job.command('check', self.root, 1001, 1002, {'CHECK_IMAGE':'debian:bookworm'}, prepared_image=prepared)
+                    two=job.command('check', self.root, 1001, 1002, {'CHECK_IMAGE':'debian:bookworm'}, prepared_image=prepared)
+                self.assertEqual(one[:4], ['docker','run','--rm','-e'])
+                self.assertEqual(one, two); self.assertIn(identity, one)
+                self.assertNotIn('apt-get', one[-3]); self.assertNotIn('ci-apt.sh', one[-3])
+                self.assertIn('--inside', one[-3])
+        self.assertEqual([row[1] for row in calls], ['create','start','commit','rm','image'])
+        self.assertNotIn('useradd', calls[0][-1])
+        self.assertNotIn('check-prerequisites', calls[0][-1])
+
+    def test_batch_setup_failure_or_case_failure_joins_before_exact_resource_cleanup(self):
+        identity='sha256:'+'e'*64
+        for fail in ('start', 'case'):
+            calls=[]
+            def run(argv, **options):
+                calls.append(argv)
+                if argv[1] == fail: raise subprocess.CalledProcessError(7,argv)
+                return subprocess.CompletedProcess(argv,0,identity+'\n' if argv[1]=='commit' else '')
+            with self.subTest(fail=fail), patch.object(job.subprocess,'run',side_effect=run):
+                with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                    with job.prepared_checks(self.root,'debian:bookworm',[{'scope':'archive','backend':'core'}],{}):
+                        raise ValueError('case failed')
+            self.assertEqual(calls[-1][1], 'rm' if fail == 'start' else 'image')
+            self.assertEqual(sum(row[1]=='rm' for row in calls),1)
+            self.assertFalse(any('--force' in row for row in calls))
+        with self.assertRaises(ValueError):
+            job.command('application-build', self.root, 1001, 1002, {}, prepared_image=identity)
+
     def test_builder_creation_uses_matching_ids_and_reuses_only_existing_group(self):
         calls = []
         def run(argv, **kwargs):

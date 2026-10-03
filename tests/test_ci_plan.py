@@ -1,4 +1,5 @@
 import importlib.util
+from contextlib import nullcontext
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import tempfile
 import json
@@ -451,6 +452,7 @@ class CandidateFetchTests(unittest.TestCase):
             target = destination / name; target.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(ci.ROOT / name, target)
         shutil.copytree(self.fixture.directory, destination / 'build/candidate')
         (destination / 'build/check-plan.json').write_text(json.dumps(plan))
+        (destination / 'build/delivery.json').write_text(json.dumps(self.fixture.delivery))
         spec = importlib.util.spec_from_file_location('projected_lifecycle', ci.ROOT / '.github/scripts/lifecycle.py')
         helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
         payloads = {}
@@ -458,9 +460,10 @@ class CandidateFetchTests(unittest.TestCase):
             payloads[options['name']] = {name: (options['root'] / name).read_bytes() for name in options['paths']}
         with patch.object(helper, 'ROOT', destination), patch.object(helper, 'storage_context', return_value={}), \
                 patch.dict(helper.os.environ, GITHUB_RUN_ATTEMPT='1', RUNNER_NAME='fixture-runner'), \
-                patch.object(ci_transport, 'publish_bundle', side_effect=publish):
+                patch.object(ci_transport, 'publish_bundles', side_effect=lambda **options: [publish(**request) for request in options['requests']]):
             helper.qualification_payloads()
-        self.assertEqual(len(payloads), 4)  # source, target, SDK binary pair, SDK sources
+        self.assertEqual(len(payloads), 5)  # source, target, SDK pair/sources, complete metadata
+        self.assertEqual(set(payloads['qualification-inputs-1']), {'candidate/release.json','delivery.json','check-plan.json'})
         binary = payloads['qualification-sdk-0-1']; sources = payloads['qualification-sdk-source-0-1']
         self.assertEqual(len(binary), 2); self.assertEqual(len(sources), 1)
         self.assertFalse(any(name.endswith('-sources.tar.gz') for name in binary))
@@ -479,13 +482,32 @@ class CandidateFetchTests(unittest.TestCase):
                     path = Path(output) / relative; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
             with patch.object(helper, 'ROOT', destination), \
                     patch.dict(helper.os.environ, GITHUB_RUN_ATTEMPT='1', BATCH=batch['id']), \
-                    patch.object(helper, 'fetch_bundle', side_effect=restore):
+                    patch.object(helper, 'fetch_bundles', side_effect=lambda requests: [restore(request['name'], request['output']) for request in requests]):
                 helper.fetch_check_payloads()
             actual = {path.relative_to(destination / 'build/candidate').as_posix() for path in (destination / 'build/candidate').rglob('*') if path.is_file()}
             expected = {'release.json', *release.required_files(manifest, self.fixture.target, 'core', scope)}
             self.assertEqual(actual, expected)
             self.assertEqual('qualification-sdk-source-0-1' in fetched, scope == 'recovery')
             self.assertEqual('qualification-sdk-0-1' in fetched, scope != 'archive')
+
+    def test_frozen_batch_payload_list_includes_inputs_and_exact_recovery_closure(self):
+        c=ci.module('coverage'); release=ci.module('release')
+        policy={'schema_version':1,'profiles':{'fixture':{'description':'frozen input selector',
+            'targets':{self.fixture.target:['core']},'checks':[dict(target=self.fixture.target,backend='core',environment='debian-12',scope=scope) for scope in ('source','archive','recovery')]}}}
+        path=self.root/'named-plan.json';ci.qualification_plan(self.fixture.directory,'fixture',path,policy)
+        plan=c.load(path);manifest=release.verify_metadata(self.fixture.directory)
+        plain=ci.qualification_batches(plan)['include']
+        frozen=ci.qualification_batches(plan,manifest=manifest,attempt='2')['include']
+        self.assertEqual([row['id'] for row in plain],[row['id'] for row in frozen])
+        for batch in frozen:
+            scope=next(row['scope'] for row in c.executions(plan) if row['id']==batch['checks'][0])
+            self.assertEqual(batch['payloads'][0],'qualification-inputs-2')
+            self.assertEqual(any(name.startswith('qualification-sdk-source-') for name in batch['payloads']),scope=='recovery')
+            self.assertEqual(any(name.startswith('qualification-sdk-0-') for name in batch['payloads']),scope!='archive')
+        altered=copy.deepcopy(manifest);altered['dependencies']=[]
+        recovery=next(batch for batch in plain if next(row['scope'] for row in c.executions(plan) if row['id']==batch['checks'][0])=='recovery')
+        with self.assertRaisesRegex(ValueError,'closure is incomplete'):
+            ci.qualification_payload_names(plan,recovery,altered,'2')
 
     def test_sparse_execution_inputs_reject_omitted_inventory_and_changed_selected_bytes(self):
         import shutil
@@ -563,6 +585,45 @@ class CandidateFetchTests(unittest.TestCase):
         self.assertEqual(entry['dependency_recipes'], [self.fixture.fixture.recipe])
         self.assertTrue((produced / 'artifact.json').is_file())
         sdk.install.assert_called_once()
+        fake_artifact.verify.assert_called_once()
+
+    def test_binary_only_prepared_producer_binds_complete_triplet_without_supplier_sources(self):
+        import shutil
+        from unittest.mock import Mock
+        original = ci.module
+        sdk = Mock()
+        artifacts = original('artifact')
+        fake_artifact = Mock(describe=artifacts.describe)
+        def selected(name):
+            if name == 'sdk': return sdk
+            if name == 'artifact': return fake_artifact
+            return original(name)
+        produced = self.root / 'produced'
+        store=ci.module('dependency_store'); recipe=self.fixture.fixture.recipe
+        complete=store.verify_group(self.fixture.root/'group',recipe)
+        binary_group=self.root/'binary-group';binary_group.mkdir()
+        for name in store.names(recipe):
+            if not name.endswith('-sources.tar.gz'):shutil.copyfile(self.fixture.root/'group'/name,binary_group/name)
+        archive = self.fixture.directory / ci.module('release').verify_release(self.fixture.directory)['artifacts'][0]['archive']
+        commands = []
+        def launch(argv, **kwargs):
+            commands.append(argv)
+            if argv[2] == 'package':
+                destination = produced / 'work/build/packages'
+                destination.mkdir(parents=True)
+                shutil.copyfile(archive, destination / 'application.tar.gz')
+        with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run', side_effect=launch):
+            entry = ci.prepared_package('linux-x86_64', self.fixture.fixture.recipe, binary_group,
+                    self.fixture.directory / ci.module('release').verify_release(self.fixture.directory)['source']['archive'], produced, 2, expected_files=complete)
+        self.assertEqual([x[2] for x in commands], ['test', 'package'])
+        self.assertIn('--full', commands[0]); self.assertNotIn('--full', commands[1])
+        self.assertNotIn('--junit', commands[1])
+        self.assertEqual(entry['path'], 'linux-x86_64.tar.gz')
+        self.assertEqual(entry['manifest_path'], 'linux-x86_64.tar.gz.json')
+        self.assertEqual(entry['sdk_recipe'], self.fixture.fixture.recipe)
+        self.assertEqual(entry['dependency_recipes'], [self.fixture.fixture.recipe])
+        self.assertTrue((produced / 'artifact.json').is_file())
+        sdk.install.assert_called_once_with(binary_group,recipe,produced/'work/sdk',production=True,expected_files=complete)
         fake_artifact.verify.assert_called_once()
 
     def test_policy_derived_plan_binds_inputs_and_every_required_scope(self):
@@ -736,13 +797,81 @@ class QualificationBatchTests(unittest.TestCase):
             if options['env']['CHECK'] == 'case-1': raise subprocess.CalledProcessError(1, command)
         with patch.object(self.helper, 'ROOT', self.root), patch.object(self.helper.ci.platform, 'system', return_value='Linux'), \
                 patch.dict(self.helper.os.environ, BATCH=batch['id'], CHECK_IMAGE=batch['image']), \
-                patch.object(self.helper.subprocess, 'run', side_effect=run):
+                patch.object(self.helper.subprocess, 'run', side_effect=run), \
+                patch.object(self.helper, 'container_bootstrap', return_value=nullcontext('sha256:' + 'd'*64)) as bootstrap:
             with self.assertRaisesRegex(ValueError, 'required batch executions failed: case-1'):
                 self.helper.check_batch()
         self.assertEqual([options['env']['CHECK'] for command, options in seen], ['case-0', 'case-1', 'case-2'])
-        self.assertTrue(all(command[-2:] == [str(self.root / '.github/scripts/container_job.py'), 'check'] for command, options in seen))
+        self.assertTrue(all(command[-4:] == [str(self.root / '.github/scripts/container_job.py'), 'check', '--prepared-image', 'sha256:' + 'd'*64] for command, options in seen))
+        bootstrap.assert_called_once()
         self.assertTrue(all(options['cwd'] == self.root and options['check'] for command, options in seen))
         self.assertFalse((self.root / 'build/evidence').exists())  # No fabricated success or empty output root.
+
+    def test_parallel_operations_join_remaining_writers_after_earlier_failure(self):
+        import threading
+        barrier=threading.Barrier(4); completed=[]; lock=threading.Lock()
+        def task(index):
+            barrier.wait(timeout=5)
+            if index == 0: raise ValueError('first transfer failed')
+            with lock: completed.append(index)
+        with self.assertRaisesRegex(ValueError,'first transfer failed'):
+            self.helper.parallel_operations([lambda index=index: task(index) for index in range(4)])
+        self.assertEqual(set(completed),{1,2,3})
+
+    def test_runner_plan_uses_complete_allowlisted_selection(self):
+        with patch.object(self.helper, 'ROOT', self.root), patch.object(self.helper.os, 'chdir'), \
+                patch.dict(self.helper.os.environ, TARGET='linux-aarch64', LINUX_POOL='faster', FOUNDATION_FASTER_ARM_RUNNER='foundation-arm-fast'), \
+                patch.object(self.helper, 'scalar_output') as output:
+            self.helper.main('runner-plan')
+        output.assert_called_once_with('runner','foundation-arm-fast')
+        with patch.dict(self.helper.os.environ, TARGET='linux-aarch64', LINUX_POOL='faster', FOUNDATION_FASTER_ARM_RUNNER='unapproved-runner'):
+            with self.assertRaisesRegex(ValueError,'authorized'): self.helper.selected_runners()
+
+    def test_check_input_fetch_rederives_exact_scope_before_executing_any_case(self):
+        names=['qualification-inputs-2','qualification-linux-x86_64-2']
+        plan={'id':'a'*64};batch={'checks':['one']}
+        with patch.object(self.helper,'fetch_bundles') as fetch, \
+                patch.object(self.helper.evidence,'load',return_value=plan), \
+                patch.object(self.helper.evidence,'validate',return_value=plan), \
+                patch.object(self.helper.evidence,'check_inputs') as check_inputs, \
+                patch.object(self.helper,'check_payload_selection',return_value=(batch,names)), \
+                patch.dict(self.helper.os.environ,GITHUB_RUN_ATTEMPT='2',CHECK_PAYLOADS=json.dumps(names)):
+            self.helper.fetch_check_inputs()
+            self.assertEqual(fetch.call_count,1)
+            self.assertEqual([row['name'] for row in fetch.call_args.args[0]],names)
+            self.assertEqual(check_inputs.call_args.kwargs,{'check_ids':['one']})
+            wrong=names+['qualification-source-2']
+            with patch.dict(self.helper.os.environ,CHECK_PAYLOADS=json.dumps(wrong)), self.assertRaisesRegex(ValueError,'differs from complete frozen'):
+                self.helper.fetch_check_inputs()
+            self.assertEqual(check_inputs.call_args.kwargs,{'metadata_only':True})
+        with patch.object(self.helper,'fetch_bundles') as fetch:
+            for invalid in ([],names+names,[names[0],'unrelated-2'],[names[0],'qualification-linux-x86_64-1']):
+                with patch.dict(self.helper.os.environ,GITHUB_RUN_ATTEMPT='2',CHECK_PAYLOADS=json.dumps(invalid)), self.assertRaises(ValueError):
+                    self.helper.fetch_check_inputs()
+            fetch.assert_not_called()
+
+    def test_group_restore_preflights_all_collisions_before_final_file_writes(self):
+        from unittest.mock import Mock
+        original=ci.module;transport=Mock(); output=self.root/'restored'
+        requests=[{'name':'one','output':output},{'name':'two','output':output}]
+        collision=[False]
+        def fetch(repository,run_id,attempt,source_commit,workflow,selected):
+            result=[]
+            for index,request in enumerate(selected):
+                staged=Path(request['output']);staged.mkdir(parents=True)
+                name='shared.log' if collision[0] else 'case-'+str(index)+'/result.json'
+                path=staged/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'proof'+str(index).encode())
+                result.append({'manifest':{'name':request['name'],'files':{name:{'mode':0o600}}}})
+            return result
+        transport.fetch_bundles.side_effect=fetch
+        with patch.object(ci,'module',side_effect=lambda name:transport if name=='ci_transport' else original(name)):
+            results=ci.restore_run_bundles('example/project',1,2,'a'*40,'certify.yml',requests)
+            self.assertEqual(len(results),2);self.assertEqual((output/'case-0/result.json').read_bytes(),b'proof0')
+            self.assertEqual((output/'case-1/result.json').stat().st_mode & 0o777,0o600)
+            collision[0]=True;other=self.root/'collision';requests=[dict(request,output=other) for request in requests]
+            with self.assertRaisesRegex(ValueError,'colliding'):
+                ci.restore_run_bundles('example/project',1,2,'a'*40,'certify.yml',requests)
+            self.assertFalse(other.exists())
 
     def test_host_browser_keeps_per_case_prerequisite_before_check(self):
         plan = self.plan(('wasm',), 'browser-wasm32', 'chromium'); batch = ci.qualification_batches(plan)['include'][0]
@@ -812,7 +941,7 @@ class QualificationBatchTests(unittest.TestCase):
                 patch.dict(self.helper.os.environ, GITHUB_RUN_ATTEMPT='2'), \
                 patch.object(self.helper, 'fetch_bundle') as fetch:
             self.helper.main('fetch-evidence-bundles')
-        fetch.assert_called_once_with('evidence-' + batch['id'] + '-2', 'build/evidence', allow_failed=True)
+        fetch.assert_called_once_with('evidence-' + batch['id'] + '-2', 'build', allow_failed=True)
 
     def test_batch_bundle_preserves_case_children_and_disjoint_restore_rejects_collision(self):
         from unittest.mock import Mock

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -110,6 +111,48 @@ class InitializationTests(unittest.TestCase):
         self.assertFalse(any(c[0]=='upload' for c in self.transport.calls))
 
 
+class ParallelUploadTests(unittest.TestCase):
+    def test_payloads_are_bounded_and_controls_wait_for_all_payloads(self):
+        active = 0; maximum = 0; completed = set(); lock = threading.Lock()
+        barrier = threading.Barrier(4)
+        names = [f'payload-{i}' for i in range(8)]
+        class Remote:
+            def upload(self, tag, path):
+                nonlocal active, maximum
+                name = path.name
+                with lock:
+                    active += 1; maximum = max(maximum, active)
+                    if name in d.CONTROL:
+                        self_check.assertEqual(set(names), completed - d.CONTROL)
+                if name not in d.CONTROL:
+                    barrier.wait(timeout=5)
+                with lock:
+                    completed.add(name); active -= 1
+        self_check = self
+        d.upload_files(Remote(), 'tag', '/unused', [*names, *sorted(d.CONTROL)])
+        self.assertEqual(4, maximum)
+        self.assertEqual(set(names) | d.CONTROL, completed)
+        self.assertEqual(0, active)
+
+    def test_failed_batch_joins_workers_and_prevents_later_payloads_and_controls(self):
+        completed = set(); barrier = threading.Barrier(4); lock = threading.Lock()
+        class Remote:
+            def upload(self, tag, path):
+                name = path.name
+                barrier.wait(timeout=5)
+                with lock: completed.add(name)
+                if name == 'payload-0': raise d.delivery.DeliveryError('lost upload response')
+        with self.assertRaisesRegex(d.delivery.DeliveryError, 'lost upload response'):
+            d.upload_files(Remote(), 'tag', '/unused', [f'payload-{i}' for i in range(8)] + sorted(d.CONTROL))
+        self.assertEqual({f'payload-{i}' for i in range(4)}, completed)
+
+    def test_duplicate_assets_fail_before_upload(self):
+        with patch.object(d.delivery.Remote, 'upload') as upload:
+            with self.assertRaisesRegex(ValueError, 'distinct'):
+                d.upload_files(d.delivery.Remote('example/project'), 'tag', '/unused', ['a', 'a'])
+            upload.assert_not_called()
+
+
 class RequestTests(unittest.TestCase):
     def test_workflow_retains_complete_large_notice_inventory(self):
         value = request()
@@ -147,6 +190,25 @@ class RequestTests(unittest.TestCase):
                         {'certificate_attempt': 0}, {'extra': 1}, {'repository': 'bad/repo/extra'},
                         {'license_files': ['../file']}, {'runtime_dependencies': {'arch': ['$(x)'], 'gentoo': ['glibc']}}):
             with self.subTest(changes=changes), self.assertRaises(ValueError): d.plan(dict(request(), **changes))
+
+    def test_native_cli_fetch_and_verify_are_explicit(self):
+        common = ['--policy', '/tmp/policy.json', '--trusted-fingerprint', 'A' * 40]
+        with patch.object(d, 'fetch', return_value={}) as fetch, patch('builtins.print'):
+            d.main(['fetch', '--repository', 'example/project', '--tag', 'channel',
+                    '--manifest-sha256', 'a' * 64, '--output', '/tmp/assets', '--native-only', *common])
+        self.assertTrue(fetch.call_args.kwargs['native_only'])
+        with patch.object(d, 'verify_native', return_value={}) as verify, patch('builtins.print'):
+            d.main(['verify', '--directory', '/tmp/assets', '--native-only', *common])
+        verify.assert_called_once_with(Path('/tmp/assets'), Path('/tmp/policy.json'), 'A' * 40)
+        with patch('sys.stderr'), self.assertRaises(SystemExit) as error:
+            d.main(['publish', '--native-only', *common])
+        self.assertEqual(2, error.exception.code)
+
+    def test_native_instructions_keep_legacy_rendering_available(self):
+        self.assertNotIn(b'--native-only', d.instructions(request(), ['core']))
+        current = d.instructions(request(), ['core'], native_only=True)
+        self.assertIn(b'verify --native-only', current)
+        self.assertIn(b'fetch --native-only', current)
 
     def test_private_key_inside_checkout_or_output_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -209,6 +271,36 @@ class SignedDistributionTests(unittest.TestCase):
                             self.f.delivery, self.policy, self.req)
         replay.assert_not_called()
         self.assertEqual(before, len(self.remote.mutations))
+
+    def test_prepare_fetches_only_one_exact_certificate_pair(self):
+        self.remote.calls.clear()
+        output = self.work / 'prepared-once'
+        d.prepare(self.req, self.f.directory, self.f.delivery, self.policy, self.packaging, output,
+                  self.private, transport=self.remote, packaging_checkout=self.checkout)
+        names = {row['id']: row['name'] for row in self.remote.releases[0]['assets']}
+        downloads = [names[call[1]] for call in self.remote.calls if call[0] == 'download']
+        stem = f'certification-{self.req["certificate_run"]}-attempt-{self.req["certificate_attempt"]}'
+        self.assertCountEqual(['delivery.json', stem + '.json', stem + '.tar.gz'], downloads)
+        self.assertIn(b'fetch --native-only', (output / 'INSTALL.md').read_bytes())
+
+    def test_cached_certificate_must_match_current_remote_digest(self):
+        stem = f'certification-{self.req["certificate_run"]}-attempt-{self.req["certificate_attempt"]}'
+        self.remote.replace_asset(stem + '.tar.gz', b'changed certificate')
+        before = len(self.remote.mutations)
+        with self.assertRaisesRegex(ValueError, 'retained certificate changed'):
+            d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
+        self.assertEqual(before, len(self.remote.mutations))
+
+    def test_legacy_signed_instructions_remain_verifiable(self):
+        output = self.work / 'legacy-instructions'
+        shutil.copytree(self.prepared, output)
+        (output / 'INSTALL.md').write_bytes(d.instructions(self.req, self.frozen['backends']))
+        value = d.archive.read_json(output / 'distribution.json')
+        value['files']['INSTALL.md'] = d.asset_info(output / 'INSTALL.md')
+        d.archive.write_json(output / 'distribution.json', value)
+        with d.distro.signing(self.private, self.trusted) as (_, sign):
+            (output / 'distribution.json.sig').write_bytes(sign((output / 'distribution.json').read_bytes()))
+        self.assertEqual(value, d.verify(output, self.policy, self.trusted))
 
     def test_real_signatures_packages_and_source_closure_verify(self):
         value = d.verify(self.prepared, self.policy, self.trusted)
@@ -360,14 +452,22 @@ class SignedDistributionTests(unittest.TestCase):
 
     def test_publish_readback_fetch_and_identical_retry_preserve_application_and_latest(self):
         application = copy.deepcopy(self.remote.releases[0]); self.remote.latest = application['id']
+        self.remote.calls.clear()
         result = d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
         self.assertTrue(result['execute']); self.assertEqual(application, self.remote.releases[0]); self.assertEqual(application['id'], self.remote.latest)
+        application_names = {row['id']: row['name'] for row in self.remote.releases[0]['assets']}
+        app_downloads = [application_names[call[1]] for call in self.remote.calls
+                         if call[0] == 'download' and call[1] in application_names]
+        self.assertEqual(['delivery.json'], app_downloads)
+        channel_ids = {row['id'] for row in self.remote.releases[-1]['assets']}
+        self.assertEqual(channel_ids, {call[1] for call in self.remote.calls if call[0] == 'download'} - set(application_names))
         restored = self.work / 'restored'
         self.assertEqual(self.frozen, d.fetch('example/project', d.tag_for(self.req), d.archive.digest(self.prepared / 'distribution.json'),
                          restored, self.policy, self.trusted, transport=self.remote))
-        uploads = len([x for x in self.remote.calls if x[0] == 'upload'])
+        self.remote.calls.clear()
         d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
-        self.assertEqual(uploads, len([x for x in self.remote.calls if x[0] == 'upload']))
+        self.assertFalse(any(call[0] == 'upload' for call in self.remote.calls))
+        self.assertEqual(['delivery.json'], [application_names[call[1]] for call in self.remote.calls if call[0] == 'download'])
 
     def test_native_projection_keeps_signed_complete_inventory_without_sdk_downloads(self):
         d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
@@ -449,9 +549,14 @@ class SignedDistributionTests(unittest.TestCase):
             d.fetch('example/project',selected['tag'],selected['manifest_sha256'],self.work/'wrong-target',self.policy,self.trusted,transport=self.remote)
 
     def test_partial_upload_failure_retains_draft_and_exact_retry_reconciles(self):
+        self.remote.calls.clear()
         self.remote.fail_upload = 'Packages'
-        with self.assertRaises(d.delivery.DeliveryError): d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
+        with self.assertRaises(d.delivery.DeliveryError) as failed:
+            d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
+        self.assertTrue(failed.exception.uncertain)
         channel = self.remote.releases[-1]; self.assertTrue(channel['draft']); self.assertTrue(channel['assets'])
+        self.assertFalse(d.CONTROL & {row['name'] for row in channel['assets']})
+        self.assertFalse(any(call[0] == 'PATCH' for call in self.remote.calls))
         self.remote.fail_upload = None
         d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
         self.assertFalse(self.remote.releases[-1]['draft'])

@@ -127,6 +127,52 @@ class TransportTests(unittest.TestCase):
         self.assertEqual('false', self.remote.releases[0]['make_latest'])
         self.assertFalse(any('/actions/artifacts' in str(c) for c in self.remote.calls))
 
+    def test_compressed_evidence_is_smaller_and_retry_identical(self):
+        (self.source / 'log.txt').write_text('Repeated diagnostic text\n' * 10000)
+        pointer = self.publish(paths=['log.txt'], compress=True)
+        _, manifest = self.manifest()
+        self.assertLess(manifest['archive']['size'], (self.source / 'log.txt').stat().st_size // 10)
+        uploads = [c for c in self.remote.calls if c[0] == 'upload']
+        self.assertEqual(pointer, self.publish(paths=['log.txt'], compress=True))
+        self.assertEqual(uploads, [c for c in self.remote.calls if c[0] == 'upload'])
+        self.remote.complete(); self.fetch()
+        self.assertEqual((self.source / 'log.txt').read_bytes(), (self.root / 'restored/log.txt').read_bytes())
+
+    def test_compressed_input_cannot_expand_past_declared_payload_bound(self):
+        path = self.root / 'oversized.gz'
+        with t.gzip.open(path, 'wb') as stream: stream.write(b'x' * 100000)
+        output = self.root / 'expanded'; output.mkdir()
+        files = {'file': dict(size=1, mode=0o644, sha256=t.delivery.sha(b'x'))}
+        with patch.object(t, 'MAX_MANIFEST', 100), self.assertRaisesRegex(ValueError, 'expanded archive'):
+            t._extract(path, output, files)
+        self.assertFalse(list(output.iterdir()))
+        self.assertFalse(list(self.root.glob('expanded-*')))
+
+    def test_parallel_chunk_fetch_joins_failure_without_publishing_partial_output(self):
+        self.publish(chunk_bytes=1024); self.remote.complete()
+        original = self.remote.download
+        import threading
+        gate = threading.Barrier(2, timeout=3)
+        active, maximum = 0, 0
+        lock = threading.Lock()
+        def download(aid, path):
+            nonlocal active, maximum
+            if path.name.startswith('blob-'):
+                with lock:
+                    active += 1; maximum = max(maximum, active)
+                try:
+                    if any(part in path.name for part in ('-0000-', '-0001-')): gate.wait()
+                    if '-0000-' in path.name: raise OSError('network failure')
+                    original(aid, path)
+                finally:
+                    with lock: active -= 1
+            else: original(aid, path)
+        with patch.object(self.remote, 'download', side_effect=download):
+            with self.assertRaises(OSError): self.fetch()
+        self.assertGreaterEqual(maximum, 2)
+        self.assertEqual(active, 0)
+        self.assertFalse((self.root / 'restored').exists())
+
     def test_manifest_uploaded_last_and_identical_retry_performs_no_upload(self):
         first = self.publish(); uploads = [c for c in self.remote.calls if c[0] == 'upload']
         self.assertTrue(uploads[-1][1].startswith('bundle-')); self.assertGreater(len(uploads), 2)
@@ -136,7 +182,8 @@ class TransportTests(unittest.TestCase):
     def test_partial_response_loss_retains_bytes_and_exact_retry_reconciles(self):
         self.remote.lose_upload = True
         with self.assertRaises(t.delivery.DeliveryError): self.publish()
-        self.assertEqual(1, len(self.remote.releases[0]['assets']))
+        self.assertGreaterEqual(len(self.remote.releases[0]['assets']), 1)
+        self.assertLessEqual(len(self.remote.releases[0]['assets']), 4)
         self.assertFalse(any(x['name'].startswith('bundle-') for x in self.remote.releases[0]['assets']))
         self.publish(); self.remote.complete(); self.fetch()
 
@@ -402,15 +449,16 @@ class TransportTests(unittest.TestCase):
         self.assertFalse(self.remote.releases[0]['assets'])
 
     def test_manifest_identity_replacement_after_upload_is_rejected(self):
-        original = t._put
-        def replaced(*args, **kwargs):
-            row = original(*args, **kwargs)
-            if row['name'].startswith('bundle-'):
-                remote_row = next(a for a in self.remote.releases[0]['assets'] if a['id'] == row['id'])
-                old_id = remote_row['id']; remote_row['id'] += 10000
-                self.remote.data[remote_row['id']] = self.remote.data[old_id]
-            return row
-        with patch.object(t, '_put', side_effect=replaced), self.assertRaisesRegex(ValueError, 'after commit marker'):
+        original = t._asset_inventory; changed = False
+        def replaced(remote, info):
+            nonlocal changed
+            result = original(remote, info)
+            if any(name.startswith('bundle-') for name in result) and not changed:
+                changed = True
+                marker = next(row for row in self.remote.releases[0]['assets'] if row['name'].startswith('bundle-'))
+                marker['id'] += 10000
+            return result
+        with patch.object(t, '_asset_inventory', side_effect=replaced), self.assertRaisesRegex(ValueError, 'after commit marker'):
             self.publish()
 
     def test_transport_tag_change_after_manifest_upload_is_rejected(self):
@@ -430,6 +478,133 @@ class TransportTests(unittest.TestCase):
         self.publish(chunk_bytes=1024); self.remote.complete(); result = self.fetch()
         parts = result['manifest']['archive']['parts']; self.assertGreater(len(parts), 2)
         self.assertEqual(list(range(len(parts))), [int(p['name'][len(t._prefix(self.context['name'])):][:4]) for p in parts])
+
+
+
+
+class BatchTransportTests(unittest.TestCase):
+    setUp = TransportTests.setUp
+    publish = TransportTests.publish
+    fetch = TransportTests.fetch
+
+    def common(self):
+        return {key:value for key,value in self.context.items() if key != 'name'}
+
+    def requests(self, count=8):
+        return [dict(name='batch-'+str(i), root=self.source, paths=['folder', 'empty', 'tool'],
+                     compress=bool(i % 2)) for i in range(count)]
+
+    def publish_batch(self, requests=None):
+        return t.publish_bundles(**self.common(), requests=requests or self.requests(),
+                                 job_id=30, transport=self.remote)
+
+    def fetch_batch(self, names=None, **options):
+        names = names or [row['name'] for row in self.requests()]
+        return t.fetch_bundles(**self.common(), requests=[dict(name=name, output=self.root/name, **options)
+                              for name in names], transport=self.remote)
+
+    def reads(self):
+        return [call for call in self.remote.calls if call[0] in ('GET', 'pages')]
+
+    def test_eight_fetches_share_exact_provenance_and_inventory_boundaries(self):
+        pointers = self.publish_batch(); self.remote.complete(); self.remote.calls.clear()
+        receipts = self.fetch_batch()
+        self.assertEqual(pointers, [result['pointer'] for result in receipts])
+        self.assertEqual(12, len(self.reads()))
+        self.assertEqual(2, sum('/jobs?per_page=' in call[1] for call in self.reads()))
+        self.assertFalse(any('/actions/jobs/' in call[1] for call in self.reads()))
+        for result in receipts:
+            self.assertEqual(b'abc'*100, (self.root/result['pointer']['name']/'folder/file with spaces').read_bytes())
+        self.remote.calls.clear()
+        for request in self.requests(): self.fetch(name=request['name'], output=self.root/('single-'+request['name']))
+        self.assertEqual(96, len(self.reads()))
+
+    def test_batch_publication_has_constant_metadata_reads_and_payloads_before_markers(self):
+        pointers = self.publish_batch()
+        self.assertEqual(18, len(self.reads()))
+        uploads = [call[1] for call in self.remote.calls if call[0] == 'upload']
+        first_marker = next(i for i,name in enumerate(uploads) if name.startswith('bundle-'))
+        self.assertEqual(8, first_marker)
+        self.assertTrue(all(name.startswith('bundle-') for name in uploads[first_marker:]))
+        self.remote.calls.clear()
+        self.assertEqual(pointers, self.publish_batch())
+        self.assertEqual(16, len(self.reads()))
+        self.assertFalse(any(call[0] == 'upload' for call in self.remote.calls))
+
+    def test_every_output_is_quarantined_until_last_bundle_bytes_verify(self):
+        self.publish_batch(); self.remote.complete()
+        row = next(row for row in self.remote.releases[0]['assets'] if row['name'].startswith(t._prefix('batch-7')))
+        self.remote.data[row['id']] = b'tampered'
+        with self.assertRaisesRegex(ValueError, 'downloaded asset'): self.fetch_batch()
+        self.assertFalse(any((self.root/request['name']).exists() for request in self.requests()))
+        self.assertFalse(list(self.root.glob('.foundation-ci-fetch-*')))
+
+    def test_selected_remote_boundary_changes_reject_all_outputs(self):
+        changes = ('source', 'tag', 'release', 'producer', 'asset', 'extra')
+        for change in changes:
+            with self.subTest(change=change):
+                remote = FakeGitHub(); self.remote = remote
+                self.publish_batch(self.requests(2)); remote.complete(); original = remote.download; changed = False
+                def download(identity, path):
+                    nonlocal changed
+                    original(identity, path)
+                    if path.name.startswith('blob-') and not changed:
+                        changed = True
+                        if change == 'source': remote.run['head_sha'] = 'b'*40
+                        elif change == 'tag': remote.refs['ci-12-attempt-2'] = 'b'*40
+                        elif change == 'release': remote.releases[0]['draft'] = False
+                        elif change == 'producer': remote.jobs[0]['conclusion'] = 'failure'
+                        elif change == 'asset': remote.releases[0]['assets'][0]['id'] += 9999
+                        else: remote.releases[0]['assets'].append(dict(remote.releases[0]['assets'][0],
+                            id=9999, name=t._prefix('batch-0')+'extra'))
+                with patch.object(remote, 'download', side_effect=download), self.assertRaises(ValueError):
+                    self.fetch_batch(['batch-0','batch-1'], allow_failed=True)
+                self.assertFalse((self.root/'batch-0').exists()); self.assertFalse((self.root/'batch-1').exists())
+
+    def test_unrelated_job_progress_and_partial_asset_do_not_change_selected_scope(self):
+        self.publish_batch(self.requests(2)); self.remote.complete()
+        self.remote.jobs.append(dict(self.remote.jobs[0], id=31, name='unrelated', status='in_progress', conclusion=None))
+        self.remote.on_download = lambda: (self.remote.jobs[1].update(status='completed', conclusion='failure'),
+            self.remote.releases[0]['assets'].append(dict(id=9999,name=t._prefix('unrelated')+'uploading',state='starter')))
+        self.assertEqual(2, len(self.fetch_batch(['batch-0','batch-1'])))
+
+    def test_each_bundle_enforces_its_exact_producer_and_failure_policy(self):
+        self.publish_batch(self.requests(2)); self.remote.complete('failure')
+        requests = [dict(name='batch-0',output=self.root/'batch-0',allow_failed=True),
+                    dict(name='batch-1',output=self.root/'batch-1',allow_failed=False)]
+        with self.assertRaisesRegex(ValueError,'completion'):
+            t.fetch_bundles(**self.common(),requests=requests,transport=self.remote)
+        self.assertFalse((self.root/'batch-0').exists())
+        self.remote.complete()
+        requests[1]['job_id'] = 31
+        with self.assertRaisesRegex(ValueError,'producer differs'):
+            t.fetch_bundles(**self.common(),requests=requests,transport=self.remote)
+        self.assertFalse((self.root/'batch-0').exists())
+
+    def test_invalid_duplicate_and_overlapping_requests_fail_before_remote_io(self):
+        for requests in ([], [dict(name='a',output=self.root/'a'),dict(name='a',output=self.root/'b')],
+                         [dict(name='a',output=self.root/'a'),dict(name='b',output=self.root/'a'/'b')],
+                         [dict(name='a',output=self.root/'a',unknown=True)],
+                         [dict(name='a',output=self.root/'a',job_id=True)]):
+            with self.subTest(requests=requests), self.assertRaises(ValueError):
+                t.fetch_bundles(**self.common(),requests=requests,transport=self.remote)
+        self.assertEqual([],self.remote.calls)
+
+    def test_batch_uploads_use_only_the_validated_release_id(self):
+        observed = []
+        def upload_to(identity, path):
+            observed.append(identity)
+            self.remote.upload('ci-12-attempt-2', path)
+        self.remote.upload_to = upload_to
+        self.publish_batch()
+        self.assertEqual([9]*16, observed)
+
+    def test_uncertain_payload_upload_never_commits_any_manifest_and_retries_exactly(self):
+        self.remote.lose_upload = True
+        with self.assertRaises(t.delivery.DeliveryError) as failed: self.publish_batch()
+        self.assertTrue(failed.exception.uncertain)
+        self.assertFalse(any(row['name'].startswith('bundle-') for row in self.remote.releases[0]['assets']))
+        self.publish_batch(); self.remote.complete(); self.assertEqual(8,len(self.fetch_batch()))
 
 
 if __name__ == '__main__': unittest.main()
