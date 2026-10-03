@@ -846,3 +846,47 @@ and measurement limits are retained in
 remains unmeasured. Target-specific signed distribution recovery inventories,
 per-format signed projections and a new private transport trust protocol were
 not introduced; their compatibility and identity contracts require separate work.
+
+
+## Bounded evidence artifacts and lower transport cost
+
+The 2026-10-03 transport pass replaces the blanket Actions-artifact prohibition
+for selected small regression and certification evidence. The complete selection
+is limited to 62 immutable slots per run attempt, at most 2 MiB each, with one-day
+retention. Oversized bundles and failed artifact uploads preserve complete release
+fallback. SDK/application archives continue to use release storage. Downloads
+verify context, actual producer identity/completion, whole archives and all member
+hashes; corrupt artifacts cannot silently fall back. Mixed inputs remain private
+until every selected input passes. Historical cross-run transport keeps its
+stricter checks.
+
+The same 23-batch model estimates roughly **1,650 to 610 transport API calls**,
+about **63% fewer**, including the large combined certificate's release fallback.
+This excludes Actions runtime storage traffic, public SDK/release operations,
+initial draft creation, pagination and retries. It is not a hosted measurement or
+a guarantee of staying within one quota window. Retained evidence is about 9 MB
+compressed in total; representative individual reports are about 257 KB and
+seven-backend groups about 1.8 MB. The complete certificate appropriately exceeds
+the small-artifact cap and remains in release storage.
+
+Local archive qualification now combines inventory with extraction or small
+build-record inspection: a native archive check uses three application archive
+decompression passes instead of six and removes two complete temporary package
+extractions. All backend checks and final payload verification remain. Source and
+recovery testing uses the wrapper's resource-aware worker default independently
+of compile parallelism.
+
+The final isolated source snapshot passed **53/53 CTest entries**, including the
+optional signed distribution fixtures, in **33.32 seconds** with eight compiler
+and four test workers. Its receipts account for **1,269 passed Python cases** and
+two explicit native-Windows exclusions on Linux. Workflow lint, Python 3.9 grammar,
+documentation and whitespace checks passed. An initial 47/48 native pass exposed
+one fixture that asserted the old workflow transport layout; its replacement
+asserts bounded control publication and preservation of evidence/prerequisites.
+The final run includes that corrected test and all five optional distro suites.
+
+The source manifest, receipts and limitations are retained in
+`build/agents/artifact-speed-integration-v1/validation.json`; the detailed request
+model is `.agent-work/artifacts/release-api-v4/request-model.json`. No hosted run,
+public release, push or SDK rebuild was performed. Actual all-platform wall time
+and account quota use remain to be measured on the next ordinary hosted run.

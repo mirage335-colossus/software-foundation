@@ -31,8 +31,12 @@ def member_path(name):
     return path
 
 
-def inspect_archive(archive, destination=None):
-    """Only regular files/directories, bounded sizes and unique normalized paths."""
+def inspect_archive(archive, destination=None, *, contents=None):
+    """Validate all members, optionally extracting and collecting selected contents.
+
+    ``contents`` maps exact member paths to bytes; only its existing keys are read
+    back to the caller. The complete archive still receives every safety check.
+    """
     inventory = {}
     seen = set()
     total = 0
@@ -60,6 +64,8 @@ def inspect_archive(archive, destination=None):
         if len(data) != size:
             raise ValueError("archive member size mismatch")
         inventory[str(path)] = {"size": size, "sha256": hashlib.sha256(data).hexdigest()}
+        if contents is not None and str(path) in contents:
+            contents[str(path)] = data
         if target:
             target.parent.mkdir(parents=True, exist_ok=True)
             with target.open("xb") as out:
@@ -88,10 +94,18 @@ def inspect_archive(archive, destination=None):
     return inventory
 
 
-def describe(archive):
-    return {"schema_version": 1, "archive": archive.name,
-            "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
-            "files": inspect_archive(archive)}
+def describe(archive, destination=None, *, contents=None):
+    def checksum():
+        with archive.open("rb") as stream:
+            value = hashlib.sha256()
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                value.update(chunk)
+            return value.hexdigest()
+    before = checksum()
+    files = inspect_archive(archive, destination, contents=contents)
+    if checksum() != before:
+        raise ValueError("archive changed during inspection")
+    return {"schema_version": 1, "archive": archive.name, "sha256": before, "files": files}
 
 
 @contextmanager
@@ -184,13 +198,12 @@ def verify(archive, manifest, runtime_only=False, abi=False, processor="x86_64",
         raise ValueError("host graphics qualification inputs apply only to Windows Rev verification")
     graphics_result = None
     expected = json.loads(manifest.read_text())
-    if describe(archive) != expected:
-        raise ValueError("archive identity or member inventory mismatch")
     browser_sdk = bool(sdk and json.loads((sdk / "sdk.json").read_text())["target"]["system"] == "Emscripten")
     with _workspace() as (temp, disposition):
         prefix = Path(temp) / "relocated prefix"
         prefix.mkdir()
-        inspect_archive(archive, prefix)
+        if describe(archive, prefix) != expected:
+            raise ValueError("archive identity or member inventory mismatch")
         if abi:
             tools = str(Path(__file__).resolve().parent)
             if tools not in sys.path:

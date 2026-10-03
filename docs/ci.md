@@ -158,15 +158,34 @@ measurement is itself requested work.
 
 ## Storage, caches, and SDK reuse
 
-These examples use **no Actions artifact uploads**, including screenshots, SDKs,
-packages and diagnostic bundles. This keeps inherited private repositories within
-small account allowances; GitHub currently lists 500 MB of Actions artifact
-storage for its Free plan. See [the current billing limits](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
-A public origin does not establish an adequate quota for private downstream use.
-Do not introduce `upload-artifact`, Actions artifact ZIP transport or an unbounded
-cache as an alternative large-file store.
+Small regression receipts, certification controls and per-batch evidence use
+[bounded Actions artifacts](../tools/ci_artifacts.py). Each artifact contains a
+complete hashed tar bundle and manifest, expires after **one day**, and has a
+**2 MiB combined payload/manifest limit**. There are 62 immutable slots per run
+attempt: nine source scopes, five control/summary bundles and 48 certification
+batch slots. This bounds uploaded content to 124 MiB per attempt, plus small ZIP
+metadata overhead. Typical evidence is substantially smaller; SDKs, application
+archives and complete large certificates stay in release storage.
 
-[`ci_transport.py`](../tools/ci_transport.py) stores trusted manual-run outputs in
+The cap is per attempt, not a reservation of account storage. Concurrent runs,
+reruns and existing artifacts share the account allowance. Oversized bundles,
+unknown slots and failed Actions uploads retain the complete selected evidence
+through release transport. No files are truncated or silently omitted. Expiry
+handles ordinary cleanup; occasionally remove selected obsolete artifacts through
+GitHub if existing storage requires it. The workflow does not delete unrelated
+runs or artifacts. See [GitHub artifact retention](https://docs.github.com/en/actions/tutorials/store-and-share-data)
+and [storage billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
+
+Consumers download only relevant same-run slots using the pinned official action.
+They verify the exact repository, source, workflow, run, attempt, producer, complete
+file inventory and hashes before exposing outputs. Producer completion is checked
+against one shared job inventory for a group of receipts. A malformed or corrupt
+artifact fails; only an absent artifact can fall back to the release copy.
+Failed-job evidence may be read for diagnostics, but cannot grant qualification.
+The final public certificate retains the complete evidence independently of the
+short-lived Actions copy. Parallel compute jobs and all required checks remain.
+
+[`ci_transport.py`](../tools/ci_transport.py) stores large, durable and fallback manual-run outputs in
 one **draft, non-Latest release per run and attempt**. The tag is
 `ci-RUN_ID-attempt-ATTEMPT`; its source and repository identity are fixed. Drafts
 are authenticated transport, not published application releases or SDK base
@@ -177,9 +196,11 @@ Latest. Ordinary PR feedback stays read-only and retains bounded text in logs.
 Each named bundle uses a complete regular-file inventory, a deterministic tar
 stream split into at most 512 MiB assets, and a bounded JSON manifest uploaded
 **last**. Every file, ordered chunk and complete stream has a size and digest.
-Consumers verify the exact repository, workflow, source, run, attempt, completed
+Release-bundle consumers verify the exact repository, workflow, source, run, attempt, completed
 producer job, manifest asset ID/digest and all bytes before publishing a new local
-output directory. The consumer rereads remote identities to detect replacement.
+output directory. The consumer rereads remote identities to detect replacement. Exact same-run
+transfers share invariant workflow observations and pin the release ID after
+discovery; historical cross-run reads retain the stricter original checks.
 GitHub draft listings require push access; qualify the actual consumer token,
 including fetch-only jobs, and grant access only to trusted manual workflows.
 Independent bundles share a draft but own disjoint asset names. Only the publisher
@@ -214,6 +235,9 @@ readback, including final aggregation. More runners cannot increase that quota.
 Keep focused development checks small; complete release qualification still needs
 its declared coverage. Group setup and transport where the tested identities agree.
 Rate waits preserve required assertions; they do not turn unavailable work green.
+The small-artifact path removes the per-bundle release protocol rather than merely
+compressing its bytes. Artifact service operations still exist; do not equate
+removed REST calls with zero storage-service requests or a quota guarantee.
 
 Review draft inventories periodically. Delete only specifically approved expired
 stores after confirming that no release, SDK replay or evidence record depends on

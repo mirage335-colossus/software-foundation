@@ -244,7 +244,7 @@ def run_source(candidate, manifest, entry, work, evidence, jobs, recovery=False,
     binary_only = not recovery and not any((group / name).exists() for name in group_files if name.endswith("-sources.tar.gz"))
     expected_files = group_files if binary_only else None
     command = [sys.executable, str(work / "source/tools/build.py"), "test", "release", "--full",
-               "--portable", "--build-jobs", str(jobs), "--test-jobs", "2", "--build-dir", str(work / "build"),
+               "--portable", "--build-jobs", str(jobs), "--build-dir", str(work / "build"),
                "--junit", str(evidence / "source.junit.xml")]
     if entry["target"].startswith("linux-") or browser_target:
         sdk.install(group, entry["sdk_recipe"], work / "sdk", production=True, **({"expected_files": expected_files} if expected_files is not None else {}))

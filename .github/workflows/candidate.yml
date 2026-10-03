@@ -67,10 +67,10 @@ jobs:
                         '--summary', os.environ['GITHUB_STEP_SUMMARY']], check=True)
     - if: always()
       name: Retain verified source-${{ matrix.target }}-${{ matrix.scope }}-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: source-${{ matrix.target }}-${{ matrix.scope }}-${{ github.run_attempt }}
-        BUNDLE_PATHS: |
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: source-${{ matrix.target }}-${{ matrix.scope }}-${{ github.run_attempt }}
+        paths: |
           build/release/Testing/Temporary/
           build/release/build-info.txt
           build/release/test-reports/
@@ -133,10 +133,10 @@ jobs:
         subprocess.run([sys.executable, '.github/scripts/container_job.py', 'apt-native-smoke'], check=True)
     - if: always()
       name: Retain verified apt-mechanism-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: apt-mechanism-${{ github.run_attempt }}
-        BUNDLE_PATHS: |
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: apt-mechanism-${{ github.run_attempt }}
+        paths: |
           build/apt-evidence/
           build/distribution-tests/
     permissions:
@@ -159,6 +159,11 @@ jobs:
       with:
         persist-credentials: false
     - if: needs.source.result == 'success'
+      name: Download bounded source evidence
+      uses: ./.github/actions/ci-evidence-download
+      with:
+        pattern: source-*
+    - if: needs.source.result == 'success'
       name: Verify complete platform inventories and explicit exclusions
       run: python .github/scripts/lifecycle.py candidate-aggregate
       env:
@@ -166,10 +171,10 @@ jobs:
         DEVFAST: ${{ inputs.devfast }}
     - if: always() && needs.source.result == 'success'
       name: Retain complete candidate inventory verdicts
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: candidate-coverage-${{ github.run_attempt }}
-        BUNDLE_PATHS: build/candidate-results/*/coverage.json
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: candidate-coverage-${{ github.run_attempt }}
+        paths: build/candidate-results/*/coverage.json
     - env:
         RESULTS: ${{ toJSON(needs) }}
         DEVFAST: ${{ inputs.devfast }}

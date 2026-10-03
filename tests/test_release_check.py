@@ -12,6 +12,23 @@ spec.loader.exec_module(check)
 
 
 class ReleaseCheckTests(unittest.TestCase):
+    def test_source_test_capacity_is_independent_of_compile_override(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); recipe = 'a' * 64
+            entry = {'target': 'linux-x86_64', 'sdk_recipe': recipe, 'backends': []}
+            manifest = {'source': {'archive': 'source.tar.gz'},
+                        'dependencies': [{'recipe_id': recipe, 'files': {'sources.tar.gz': 'b' * 64}}]}
+            with patch.object(check, 'native_target'), patch.object(check, 'verify_source_archive', return_value='snapshot'), \
+                    patch.object(check, 'extract'), patch.object(check, 'source_tree', return_value='snapshot'), \
+                    patch.object(check.sdk, 'install'), \
+                    patch.object(check.windows_compiler, 'run', side_effect=RuntimeError('inspect build command')) as run:
+                with self.assertRaisesRegex(RuntimeError, 'inspect build command'):
+                    check.run_source(root, manifest, entry, root / 'work', root / 'evidence', 16)
+                command = run.call_args.args[0]
+                self.assertEqual(command[command.index('--build-jobs') + 1], '16')
+                self.assertNotIn('--test-jobs', command)
+                self.assertIn('--full', command)
+
     def test_windows_source_consumes_verified_file_version_and_rejects_bad_probe(self):
         import sdk_windows
         import windows_toolchain

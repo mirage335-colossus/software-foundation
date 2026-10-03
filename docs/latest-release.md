@@ -58,8 +58,11 @@ GitHub's [reusable workflow contract](https://docs.github.com/en/actions/how-tos
 application preparation. Certification and promotion are deliberately omitted
 because no public candidate was requested. The final result says **prepared**,
 with `qualified=false` and `published=false`; it is not a Latest release success.
-Private per-run draft release assets retain inputs and evidence in either mode.
-No Actions artifacts are used for transport, including large SDKs or reports.
+Large inputs and durable evidence use private per-run draft release assets.
+Small regression receipts and certification controls/evidence use bounded one-day
+Actions artifacts, with complete release fallback on size or upload failure; see
+the [storage contract](ci.md#storage-caches-and-sdk-reuse). Successful publication
+retains the complete certificate evidence in the public release.
 
 `execute=true` requests the entire sequence. Public mutation jobs use the
 protected `release-publisher` environment and a shared publisher lock with

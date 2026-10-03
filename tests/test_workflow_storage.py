@@ -327,12 +327,29 @@ class LegacyImportTests(unittest.TestCase):
 
 
 class WorkflowContractTests(unittest.TestCase):
-    def test_all_workflows_use_no_actions_artifact_storage(self):
+    def test_workflows_route_actions_artifacts_through_bounded_adapter(self):
         for path in (ROOT/'.github/workflows').glob('*.yml'):
             with self.subTest(path=path.name):
                 text=path.read_text()
                 for forbidden in ('actions/upload-artifact@','actions/download-artifact@','gh run download'):
                     self.assertNotIn(forbidden,text)
+
+    def test_small_evidence_has_downloads_before_consumers_and_keeps_all_failure_receipts(self):
+        candidate = (ROOT/'.github/workflows/candidate.yml').read_text()
+        certify = (ROOT/'.github/workflows/certify.yml').read_text()
+        self.assertEqual(candidate.count('uses: ./.github/actions/ci-evidence-publish'), 3)
+        self.assertEqual(certify.count('uses: ./.github/actions/ci-evidence-publish'), 4)
+        self.assertLess(candidate.index('uses: ./.github/actions/ci-evidence-download'),
+                        candidate.index('lifecycle.py candidate-aggregate'))
+        self.assertIn('slot: ${{ strategy.job-index }}', certify)
+        self.assertIn("if: always() && needs.prepare.result == 'success'", certify)
+        self.assertIn('max-parallel: 8', certify)
+        self.assertIn('build/prerequisites/', certify)
+        self.assertIn('build/attachment-plan.json', certify)
+        self.assertEqual(certify.count('uses: ./.github/actions/ci-evidence-download'), 3)
+        for workflow in ('sdk-maintenance', 'sdk-application', 'sdk-import'):
+            self.assertNotIn('uses: ./.github/actions/ci-evidence-publish',
+                             (ROOT/f'.github/workflows/{workflow}.yml').read_text())
 
     def test_explicit_legacy_import_neither_builds_nor_publishes_a_base(self):
         text=(ROOT/'.github/workflows/sdk-import.yml').read_text()

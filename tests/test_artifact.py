@@ -12,6 +12,43 @@ spec.loader.exec_module(artifact)
 
 
 class ArtifactTests(unittest.TestCase):
+    def test_describe_extracts_and_collects_exact_members_in_one_pass(self):
+        from unittest.mock import patch
+        for kind in ("tar", "zip"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); path = root / ("package." + kind)
+                members = {"prefix/build-info.txt": b"target=linux-x86_64\n", "prefix/bin/payload": b"payload"}
+                if kind == "zip":
+                    with zipfile.ZipFile(path, "w") as bundle:
+                        for name, data in members.items(): bundle.writestr(name, data)
+                else:
+                    with tarfile.open(path, "w") as bundle:
+                        for name, data in members.items():
+                            item = tarfile.TarInfo(name); item.size = len(data)
+                            bundle.addfile(item, io.BytesIO(data))
+                expected = artifact.describe(path)
+                output = root / "unpacked"; output.mkdir()
+                contents = {"prefix/build-info.txt": None}
+                with patch.object(artifact, "inspect_archive", wraps=artifact.inspect_archive) as inspect:
+                    self.assertEqual(artifact.describe(path, output, contents=contents), expected)
+                    self.assertEqual(inspect.call_count, 1)
+                self.assertEqual(contents, {"prefix/build-info.txt": members["prefix/build-info.txt"]})
+                for name, data in members.items(): self.assertEqual((output / name).read_bytes(), data)
+
+    def test_describe_rejects_archive_changed_during_combined_inspection(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "package.zip"
+            with zipfile.ZipFile(path, "w") as bundle: bundle.writestr("payload", "original")
+            original = artifact.inspect_archive
+            def changed(*args, **kwargs):
+                value = original(*args, **kwargs)
+                with zipfile.ZipFile(path, "w") as bundle: bundle.writestr("payload", "changed")
+                return value
+            with patch.object(artifact, "inspect_archive", side_effect=changed):
+                with self.assertRaisesRegex(ValueError, "changed during inspection"):
+                    artifact.describe(path)
+
     def test_rejects_escaping_paths_and_duplicates(self):
         for name in ("../outside", "/absolute", "C:/drive", "back\\slash"):
             with self.assertRaises(ValueError):

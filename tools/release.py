@@ -26,31 +26,33 @@ def dependency_recipes(entry):
     return sorted(recipes)
 
 
-def validate_package(archive, entry, source_identity):
-    with tempfile.TemporaryDirectory(prefix='release-inspect-') as temporary:
-        root = Path(temporary)
-        artifact.inspect_archive(archive, root)
-        records = list(root.rglob('build-info.txt'))
-        if len(records) != 1:
-            raise ValueError('application archive requires one build information record')
-        info = {}
-        for line in records[0].read_text().splitlines():
-            if '=' in line:
-                key, value = line.split('=', 1)
-                if key in info: raise ValueError('duplicate packaged build information field')
-                info[key] = value
-        if info.get('sdk_recipe_id') != entry['sdk_recipe']:
-            raise ValueError('packaged SDK recipe differs from release specification')
-        if info.get('source_tree_sha256') != source_identity:
-            raise ValueError('packaged source tree differs from retained source archive')
-        if info.get('target') != entry['target']:
-            raise ValueError('packaged target differs from release specification')
-        backends = [value for value in info.get('gui_backends', '').split(',') if value]
-        if len(backends) != len(set(backends)) or sorted(backends) != sorted(entry.get('backends', [])):
-            raise ValueError('packaged backends differ from release specification')
-        declared = info.get('dependency_recipes', '').split(',')
-        if sorted(declared) != dependency_recipes(entry):
-            raise ValueError('packaged dependency list differs from release specification')
+def validate_package(archive, entry, source_identity, expected):
+    # Read the small build record while validating every archive member. No full
+    # temporary extraction is needed for this metadata-only package check.
+    records = [name for name in expected["files"] if Path(name).name == "build-info.txt"]
+    if len(records) != 1:
+        raise ValueError('application archive requires one build information record')
+    contents = {records[0]: None}
+    if artifact.describe(archive, contents=contents) != expected:
+        raise ValueError('release application archive inventory mismatch')
+    info = {}
+    for line in contents[records[0]].decode('utf-8').splitlines():
+        if '=' in line:
+            key, value = line.split('=', 1)
+            if key in info: raise ValueError('duplicate packaged build information field')
+            info[key] = value
+    if info.get('sdk_recipe_id') != entry['sdk_recipe']:
+        raise ValueError('packaged SDK recipe differs from release specification')
+    if info.get('source_tree_sha256') != source_identity:
+        raise ValueError('packaged source tree differs from retained source archive')
+    if info.get('target') != entry['target']:
+        raise ValueError('packaged target differs from release specification')
+    backends = [value for value in info.get('gui_backends', '').split(',') if value]
+    if len(backends) != len(set(backends)) or sorted(backends) != sorted(entry.get('backends', [])):
+        raise ValueError('packaged backends differ from release specification')
+    declared = info.get('dependency_recipes', '').split(',')
+    if sorted(declared) != dependency_recipes(entry):
+        raise ValueError('packaged dependency list differs from release specification')
 
 
 def verify_metadata(directory):
@@ -127,15 +129,15 @@ def verify_selection(directory, target, backend, scope):
     actual = file_inventory(directory, exclude=('release.json',))
     if not set(names) <= set(actual) or not set(actual) <= set(data['files']):
         raise ValueError('missing or unexpected physical qualification input')
-    verify_inventory(directory, {name: data['files'][name] for name in actual}, exclude=('release.json',))
+    if actual != {name: data['files'][name] for name in actual}:
+        raise ValueError('retained file inventory or checksum mismatch')
     entry = next(item for item in data['artifacts'] if item['target'] == target)
     if data['source']['archive'] in names:
         source = verify_source_archive(directory / data['source']['archive'])
         if source['tree_sha256'] != data['source']['tree_sha256']:
             raise ValueError('release source tree binding mismatch')
-    if artifact.describe(directory / entry['archive']) != read_json(directory / entry['manifest']):
-        raise ValueError('release application archive inventory mismatch')
-    validate_package(directory / entry['archive'], entry, data['source']['tree_sha256'])
+    validate_package(directory / entry['archive'], entry, data['source']['tree_sha256'],
+                     read_json(directory / entry['manifest']))
     if scope in ('source', 'recovery'):
         for group in data['dependencies']:
             if group['recipe_id'] in dependency_recipes(entry):
@@ -166,9 +168,8 @@ def verify_release(directory):
             safe_name(entry[name])
         if digest(directory / entry['archive']) != entry['sha256'] or digest(directory / entry['manifest']) != entry['manifest_sha256']:
             raise ValueError('release application identity mismatch')
-        if artifact.describe(directory / entry['archive']) != read_json(directory / entry['manifest']):
-            raise ValueError('release application archive inventory mismatch')
-        validate_package(directory / entry['archive'], entry, source_manifest['tree_sha256'])
+        validate_package(directory / entry['archive'], entry, source_manifest['tree_sha256'],
+                         read_json(directory / entry['manifest']))
         wanted.update(dependency_recipes(entry))
     observed = set()
     for entry in metadata['dependencies']:
@@ -225,12 +226,10 @@ def assemble(spec_path, base, output):
         for entry in spec['artifacts']:
             archive = retain(entry['path'])
             manifest = retain(entry['manifest_path'])
-            if artifact.describe(staged / archive) != read_json(staged / manifest):
-                raise ValueError('application archive does not match its manifest')
             if digest(staged / archive) != entry['sha256']:
                 raise ValueError('application archive differs from frozen specification')
             recipe = entry['sdk_recipe']
-            validate_package(staged / archive, entry, source_manifest['tree_sha256'])
+            validate_package(staged / archive, entry, source_manifest['tree_sha256'], read_json(staged / manifest))
             recipes.update(dependency_recipes(entry))
             metadata['artifacts'].append({'archive': archive, 'sha256': digest(staged / archive),
                 'manifest': manifest, 'manifest_sha256': digest(staged / manifest),

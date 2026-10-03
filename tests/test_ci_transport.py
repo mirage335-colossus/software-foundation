@@ -1,4 +1,4 @@
-"""Release transport fixtures use no network or Actions artifact storage."""
+"""Release and bounded artifact transport fixtures use no network."""
 import copy
 import hashlib
 import io
@@ -39,6 +39,7 @@ class FakeGitHub:
         if path.startswith('/actions/runs/12/attempts/2/jobs?'):
             page = int(path.rsplit('page=', 1)[1]); rows = self.jobs[(page - 1) * 100:page * 100]
             return dict(total_count=len(self.jobs), jobs=copy.deepcopy(rows))
+        if path == '/releases/9': return copy.deepcopy(next(row for row in self.releases if row['id'] == 9))
         if path.startswith('/actions/jobs/'):
             return copy.deepcopy(next(j for j in self.jobs if j['id'] == int(path.rsplit('/', 1)[1])))
         if path.startswith('/git/ref/tags/'):
@@ -613,6 +614,185 @@ class BatchTransportTests(unittest.TestCase):
         self.assertTrue(failed.exception.uncertain)
         self.assertFalse(any(row['name'].startswith('bundle-') for row in self.remote.releases[0]['assets']))
         self.publish_batch(); self.remote.complete(); self.assertEqual(8,len(self.fetch_batch()))
+
+
+class FastTransportTests(unittest.TestCase):
+    setUp = TransportTests.setUp
+    publish = TransportTests.publish
+    fetch = TransportTests.fetch
+    common = BatchTransportTests.common
+    requests = BatchTransportTests.requests
+    publish_batch = BatchTransportTests.publish_batch
+    fetch_batch = BatchTransportTests.fetch_batch
+    reads = BatchTransportTests.reads
+
+    def environment(self, *, artifacts=False):
+        value = dict(GITHUB_ACTIONS='true', GITHUB_REPOSITORY='example/project', GITHUB_RUN_ID='12',
+                     GITHUB_RUN_ATTEMPT='2', GITHUB_SHA='a'*40,
+                     GITHUB_WORKFLOW_REF='example/project/.github/workflows/sdk-maintenance.yml@refs/heads/main')
+        if artifacts: value['FOUNDATION_CI_ARTIFACTS_DIR'] = str(self.root/'downloaded')
+        return value
+
+    def local(self, context, request, output):
+        output.mkdir(); (output/'file').write_text(request['name'])
+        return dict(pointer=dict(name=request['name'], kind='actions-ci-evidence'),
+                    manifest=dict(files={'file': {}}, metadata={}),
+                    producer=dict(job_name=None, runner_name='Runner 1'))
+
+    def test_same_run_gate_requires_every_exact_actions_context_field(self):
+        environment = self.environment()
+        with patch.dict(os.environ, environment, clear=True): self.assertTrue(t._same_run(self.context))
+        for key in environment:
+            with self.subTest(field=key), patch.dict(os.environ, dict(environment, **{key:'different'}), clear=True):
+                self.assertFalse(t._same_run(self.context))
+        with patch.dict(os.environ, {}, clear=True): self.assertFalse(t._same_run(self.context))
+
+    def test_cross_run_ignores_current_workflow_artifacts_and_keeps_strict_checks(self):
+        self.publish_batch(self.requests(2)); self.remote.complete(); self.remote.calls.clear()
+        environment = dict(self.environment(artifacts=True), GITHUB_RUN_ID='99')
+        with patch.dict(os.environ, environment, clear=True), \
+                patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=lambda *args:self.fail('cross-run local read'))}):
+            self.assertEqual(2, len(self.fetch_batch(['batch-0','batch-1'])))
+        self.assertEqual(12, len(self.reads()))
+
+    def test_artifact_numeric_producer_pin_handles_reused_runner_name(self):
+        self.remote.complete(); self.remote.jobs.append(dict(self.remote.jobs[0], id=31))
+        def local(context, request, output):
+            result = self.local(context, request, output)
+            result['producer']['job_id'] = 30
+            return result
+        with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
+                patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=local)}):
+            receipts = self.fetch_batch(['batch-0'])
+        self.assertEqual(30, receipts[0]['producer']['id']); self.assertEqual(3, len(self.remote.calls))
+
+    def test_same_run_release_batches_reduce_reads_and_pin_selected_release(self):
+        with patch.dict(os.environ, self.environment(), clear=True):
+            pointers = self.publish_batch()
+            self.assertEqual(12, len(self.reads()))  # Includes initial draft creation reads.
+            self.remote.calls.clear(); self.assertEqual(pointers, self.publish_batch())
+            self.assertEqual(10, len(self.reads()))
+            self.remote.complete(); self.remote.calls.clear()
+            self.assertEqual(pointers, [r['pointer'] for r in self.fetch_batch()])
+            self.assertEqual(9, len(self.reads()))
+            self.assertEqual(1, sum(call[1].endswith('/releases?per_page=100') for call in self.reads()))
+            self.assertEqual(1, sum(call[1].endswith('/releases/9') for call in self.reads()))
+            self.assertEqual(1, sum('/jobs?per_page=' in call[1] for call in self.reads()))
+
+    def test_same_run_still_rejects_changed_release_tag_and_payload_identity(self):
+        for change in ('tag', 'release', 'asset', 'extra', 'bytes'):
+            with self.subTest(change=change), patch.dict(os.environ, self.environment(), clear=True):
+                self.remote = FakeGitHub(); self.publish_batch(self.requests(2)); self.remote.complete()
+                if change == 'bytes':
+                    row = self.remote.releases[0]['assets'][0]; self.remote.data[row['id']] = b'tampered'
+                else:
+                    def mutate():
+                        if change == 'tag': self.remote.refs['ci-12-attempt-2'] = 'b'*40
+                        elif change == 'release': self.remote.releases[0]['draft'] = False
+                        elif change == 'asset': self.remote.releases[0]['assets'][0]['id'] += 9999
+                        else: self.remote.releases[0]['assets'].append(dict(self.remote.releases[0]['assets'][0],
+                            id=9999, name=t._prefix('batch-0')+'extra'))
+                    self.remote.on_download = mutate
+                with self.assertRaises(ValueError): self.fetch_batch(['batch-0','batch-1'])
+                self.assertFalse((self.root/'batch-0').exists()); self.assertFalse((self.root/'batch-1').exists())
+
+    def test_eight_local_artifacts_share_three_provenance_reads_and_no_release_calls(self):
+        self.remote.complete()
+        with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
+                patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=self.local)}):
+            receipts = self.fetch_batch()
+        self.assertEqual(3, len(self.reads()))
+        self.assertEqual(3, len(self.remote.calls))
+        self.assertEqual([30]*8, [r['producer']['id'] for r in receipts])
+        for request in self.requests():
+            self.assertEqual(request['name'], (self.root/request['name']/'file').read_text())
+
+    def test_invalid_local_artifact_never_falls_back_or_publishes_other_outputs(self):
+        def local(context, request, output):
+            if request['name'] == 'batch-1': raise ValueError('invalid artifact digest')
+            return self.local(context, request, output)
+        with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
+                patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=local)}), \
+                self.assertRaisesRegex(ValueError, 'invalid artifact'):
+            self.fetch_batch(['batch-0','batch-1'])
+        self.assertFalse(self.remote.calls)
+        self.assertFalse((self.root/'batch-0').exists()); self.assertFalse((self.root/'batch-1').exists())
+        self.assertFalse(list(self.root.glob('.foundation-ci-input-*')))
+
+    def test_local_producer_requires_observed_exact_completed_success(self):
+        for state in ('running', 'failed', 'cancelled', 'ambiguous', 'different-run', 'wrong-job'):
+            with self.subTest(state=state):
+                self.remote = FakeGitHub(); self.remote.complete()
+                options = {}
+                if state == 'running': self.remote.jobs[0].update(status='in_progress', conclusion=None)
+                elif state == 'failed': self.remote.complete('failure')
+                elif state == 'cancelled': self.remote.complete('cancelled'); options['allow_failed'] = True
+                elif state == 'ambiguous': self.remote.jobs.append(dict(self.remote.jobs[0], id=31))
+                elif state == 'different-run': self.remote.jobs[0]['run_id'] = 13
+                else: options['job_id'] = 31
+                with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
+                        patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=self.local)}), \
+                        self.assertRaises(ValueError):
+                    self.fetch_batch(['batch-0'], **options)
+                self.assertFalse((self.root/'batch-0').exists())
+        self.remote = FakeGitHub(); self.remote.complete('failure')
+        with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
+                patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=self.local)}):
+            result = self.fetch_batch(['batch-0'], allow_failed=True, job_id=30)[0]
+        self.assertEqual('failure', result['producer']['conclusion'])
+
+    def test_absent_local_artifact_falls_back_and_mixed_failure_publishes_nothing(self):
+        self.publish_batch(self.requests(2)); self.remote.complete(); self.remote.calls.clear()
+        def local(context, request, output):
+            return self.local(context, request, output) if request['name'] == 'batch-0' else None
+        bad = next(row for row in self.remote.releases[0]['assets'] if row['name'].startswith(t._prefix('batch-1')))
+        self.remote.data[bad['id']] = b'corrupt'
+        with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
+                patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=local)}), \
+                self.assertRaisesRegex(ValueError, 'downloaded asset'):
+            self.fetch_batch(['batch-0','batch-1'])
+        self.assertFalse((self.root/'batch-0').exists()); self.assertFalse((self.root/'batch-1').exists())
+        self.assertTrue(any(call[0] == 'download' for call in self.remote.calls))
+
+    def test_real_bounded_artifact_roundtrip_authenticates_observed_job(self):
+        import ci_artifacts
+        downloaded = self.root/'downloaded'; downloaded.mkdir()
+        names = ['qualification-inputs-2', 'certificate-2']
+        for name in names:
+            context = dict(self.context, name=name)
+            slot = ci_artifacts.slot_for(name, 2)
+            result = ci_artifacts.prepare(**context, root=self.source, paths=['folder','tool'],
+                output=downloaded/ci_artifacts.artifact_name(context, slot), runner_name='Runner 1')
+            self.assertEqual('actions', result['transport'])
+        self.remote.complete()
+        with patch.dict(os.environ, self.environment(artifacts=True), clear=True):
+            receipts = self.fetch_batch(names, job_name='produce (linux-aarch64)', job_id=30)
+        self.assertEqual(3, len(self.remote.calls))
+        self.assertEqual([30,30], [receipt['producer']['id'] for receipt in receipts])
+        self.assertTrue(all(receipt['pointer']['transport'] == 'actions' for receipt in receipts))
+        for name in names:
+            self.assertEqual((self.source/'tool').read_bytes(), (self.root/name/'tool').read_bytes())
+
+    def test_real_corrupt_artifact_cannot_use_an_available_release_fallback(self):
+        import ci_artifacts
+        name = 'qualification-inputs-2'; self.publish(name=name); self.remote.complete(); self.remote.calls.clear()
+        context = dict(self.context, name=name); downloaded = self.root/'downloaded'; downloaded.mkdir()
+        staged = downloaded/ci_artifacts.artifact_name(context, ci_artifacts.slot_for(name, 2))
+        ci_artifacts.prepare(**context, root=self.source, paths=['folder'], output=staged, runner_name='Runner 1')
+        (staged/'payload.tar.gz').write_bytes(b'corrupt')
+        with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
+                self.assertRaisesRegex(ValueError, 'artifact archive bytes'):
+            self.fetch_batch([name])
+        self.assertEqual([], self.remote.calls)
+        self.assertFalse((self.root/name).exists())
+
+    def test_absent_artifact_only_falls_back_to_same_run_release(self):
+        self.publish_batch(self.requests(2)); self.remote.complete(); self.remote.calls.clear()
+        with patch.dict(os.environ, self.environment(artifacts=True), clear=True), \
+                patch.dict(sys.modules, {'ci_artifacts':SimpleNamespace(fetch_local=lambda *args:None)}):
+            receipts = self.fetch_batch(['batch-0','batch-1'])
+        self.assertEqual(2, len(receipts)); self.assertEqual(9, len(self.reads()))
+        self.assertFalse(list(self.root.glob('.foundation-ci-input-*')))
 
 
 if __name__ == '__main__': unittest.main()

@@ -93,7 +93,16 @@ jobs:
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'certification-plan'], check=True)
       id: plan
     - name: Retain the frozen complete inventory and exact original asset identities
-      run: python .github/scripts/lifecycle.py qualification-metadata
+      run: python .github/scripts/lifecycle.py qualification-metadata-check
+    - name: Retain bounded certification controls
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: qualification-inputs-${{ github.run_attempt }}
+        paths: |-
+          build/candidate/release.json
+          build/delivery.json
+          build/candidate-remote.json
+          build/check-plan.json
     permissions:
       contents: write
       actions: read
@@ -114,6 +123,10 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+    - name: Download bounded workflow evidence
+      uses: ./.github/actions/ci-evidence-download
+      with:
+        pattern: qualification-inputs
     - name: Restore frozen metadata and only required original published assets
       shell: python
       env:
@@ -134,10 +147,11 @@ jobs:
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'check-batch'], check=True)
     - if: always()
       name: Retain verified evidence-${{ matrix.id }}-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: evidence-${{ matrix.id }}-${{ github.run_attempt }}
-        BUNDLE_PATHS: |-
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: evidence-${{ matrix.id }}-${{ github.run_attempt }}
+        slot: ${{ strategy.job-index }}
+        paths: |-
           build/evidence/
           build/prerequisites/
     permissions:
@@ -153,6 +167,10 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+    - name: Download bounded workflow evidence
+      uses: ./.github/actions/ci-evidence-download
+      with:
+        pattern: '{qualification-inputs,evidence-*}'
     - name: Restore frozen controls and every batch outcome together
       shell: python
       env:
@@ -167,10 +185,10 @@ jobs:
       id: result
     - if: always()
       name: Retain verified certificate-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: certificate-${{ github.run_attempt }}
-        BUNDLE_PATHS: |-
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: certificate-${{ github.run_attempt }}
+        paths: |-
           build/candidate/release.json
           build/delivery.json
           build/candidate-remote.json
@@ -202,6 +220,10 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+    - name: Download bounded certificate evidence
+      uses: ./.github/actions/ci-evidence-download
+      with:
+        pattern: certificate
     - shell: python
       run: |
         import subprocess,sys
@@ -216,10 +238,10 @@ jobs:
       id: result
     - if: always()
       name: Retain verified certification-delivery-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: certification-delivery-${{ github.run_attempt }}
-        BUNDLE_PATHS: build/receipts/
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: certification-delivery-${{ github.run_attempt }}
+        paths: build/receipts/
     outputs:
       attached: ${{ steps.result.outputs.attached }}
   verdict:

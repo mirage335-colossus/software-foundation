@@ -330,11 +330,13 @@ def store_application_bundles():
         write(ROOT/'build/transport-pointers'/(name+'.json'), pointer)
 
 
-def qualification_metadata():
+def qualification_metadata(*, prepare_only=False):
     """Retain controls only; selected consumers read the original published assets."""
     import ci_transport
     plan = evidence.validate(evidence.load(ROOT / 'build/check-plan.json'))
     evidence.check_inputs(plan, ROOT, metadata_only=True)
+    if prepare_only:
+        return
     names = ['candidate/release.json', 'delivery.json', 'candidate-remote.json', 'check-plan.json']
     ci_transport.publish_bundle(**storage_context(), name='qualification-inputs-' + value('GITHUB_RUN_ATTEMPT'),
         root=ROOT / 'build', paths=names, runner_name=value('RUNNER_NAME'), compress=True)
@@ -495,6 +497,8 @@ def main(command):
         store_application_bundles()
     elif command == 'qualification-metadata':
         qualification_metadata()
+    elif command == 'qualification-metadata-check':
+        qualification_metadata(prepare_only=True)
     elif command == 'fetch-published-check-inputs':
         fetch_published_check_inputs()
     elif command == 'fetch-certification-evidence':

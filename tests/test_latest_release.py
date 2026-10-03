@@ -177,7 +177,10 @@ class WorkflowOverlapTests(unittest.TestCase):
         prepare = workflow.split('  prepare:\n', 1)[1].split('  check:\n', 1)[0]
         self.assertIn('qualification-metadata', prepare)
         self.assertNotIn('qualification-payloads', prepare)
-        self.assertNotIn('qualification-inputs-', prepare)
+        self.assertEqual(prepare.count('uses: ./.github/actions/ci-evidence-publish'), 1)
+        self.assertIn('name: qualification-inputs-${{ github.run_attempt }}', prepare)
+        self.assertIn('qualification-metadata-check', prepare)
+        self.assertNotIn('build/candidate/dependencies/', prepare)
         self.assertNotIn('bundle-store', prepare)
         check = workflow.split('  check:\n', 1)[1].split('  record:\n', 1)[0]
         self.assertEqual(check.count("'fetch-published-check-inputs'"), 1)
@@ -185,7 +188,9 @@ class WorkflowOverlapTests(unittest.TestCase):
         self.assertNotIn("'bundle-fetch'", check)
         self.assertNotIn("'fetch-check-payloads'", check)
         self.assertIn('    - if: always()\n      name: Retain verified evidence-', check)
-        self.assertIn('BUNDLE_PATHS: |-\n          build/evidence/\n          build/prerequisites/', check)
+        self.assertIn('paths: |-\n          build/evidence/\n          build/prerequisites/', check)
+        self.assertIn('uses: ./.github/actions/ci-evidence-publish', check)
+        self.assertIn('slot: ${{ strategy.job-index }}', check)
         self.assertNotIn('browser-prerequisite-', check)
         self.assertIn('      fail-fast: false', check)
         self.assertIn("'check-batch'", check)

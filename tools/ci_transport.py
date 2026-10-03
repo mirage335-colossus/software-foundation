@@ -3,7 +3,8 @@
 
 Every bundle has a complete manifest uploaded last. Large safe tar streams are
 split into bounded assets. This module never publishes a release, selects Latest,
-deletes remote state, overwrites an asset, or uses Actions artifact storage.
+deletes remote state or overwrites an asset. Bounded same-run evidence may arrive
+through native Actions artifacts; large and retained bundles use draft releases.
 """
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -51,6 +52,21 @@ def _context(repository, run_id, attempt, source_commit, workflow, name):
         raise TransportError('exact run, attempt, commit, workflow and portable bundle name required')
     return dict(repository=repository, run_id=run_id, attempt=attempt,
                 source_commit=source_commit, workflow=workflow, name=name)
+
+
+def _same_run(context):
+    """Reuse immutable run identity only inside its exact executing workflow.
+
+    This is a request-local optimization, never a persistent provenance cache.
+    Historical/cross-run reads keep every strict remote boundary check.
+    """
+    return (os.environ.get('GITHUB_ACTIONS') == 'true' and
+            os.environ.get('GITHUB_REPOSITORY', '').casefold() == context['repository'].casefold() and
+            os.environ.get('GITHUB_RUN_ID') == str(context['run_id']) and
+            os.environ.get('GITHUB_RUN_ATTEMPT') == str(context['attempt']) and
+            os.environ.get('GITHUB_SHA') == context['source_commit'] and
+            os.environ.get('GITHUB_WORKFLOW_REF', '').startswith(
+                context['repository'] + '/.github/workflows/' + context['workflow'] + '@'))
 
 
 def _run(remote, context):
@@ -125,11 +141,18 @@ def _tag(context):
     return 'ci-' + str(context['run_id']) + '-attempt-' + str(context['attempt'])
 
 
-def _store(remote, context, repository_id, *, create=False):
+def _store(remote, context, repository_id, *, create=False, release_id=None):
     tag = _tag(context)
     identity = {k: v for k, v in context.items() if k != 'name'}
     identity.update(schema_version=1, kind='private-ci-transport', repository_id=repository_id)
-    info = remote.find(tag, required=False)
+    if release_id is None:
+        info = remote.find(tag, required=False)
+    else:
+        # Once selected in this request, an exact ID avoids paginating every
+        # historical release. A replacement draft cannot satisfy this identity.
+        info = remote.transport.json(remote.base + '/releases/' + str(release_id))
+        remote.info(info, tag)
+        if info['id'] != release_id: raise TransportError('release changed')
     if info is None and create:
         ref = remote.reference(tag, missing=True)
         if ref not in (None, context['source_commit']): raise TransportError('transport tag source differs')
@@ -351,7 +374,7 @@ def publish_bundles(repository, run_id, attempt, source_commit, workflow, reques
     requests = _batch_requests(requests, {'name', 'root', 'paths'},
         {'metadata', 'allow_missing', 'chunk_bytes', 'compress'})
     contexts = [_context(repository, run_id, attempt, source_commit, workflow, request['name']) for request in requests]
-    context = contexts[0]; remote = delivery.Remote(repository, transport)
+    context = contexts[0]; remote = delivery.Remote(repository, transport); same_run = _same_run(context)
     with tempfile.TemporaryDirectory(prefix='foundation-ci-publish-') as temporary:
         work = Path(temporary)
         staged = [_stage_bundle(work / str(index), selected, **{key: value for key, value in request.items() if key != 'name'})
@@ -397,15 +420,17 @@ def publish_bundles(repository, run_id, attempt, source_commit, workflow, reques
                     raise TransportError('immutable remote asset differs; never overwrite it')
                 if _inventory(item['root'], item['paths'], item['allow_missing']) != item['files']:
                     raise TransportError('input changed before commit marker')
-            if _run(remote, context) != repository_id or _producer(remote, context, job_id=producer['id'], publishing=True)[0] != producer:
-                raise TransportError('producer identity changed before commit marker')
-            if _store(remote, context, repository_id)['id'] != info['id']: raise TransportError('release changed')
+            if not same_run:
+                if _run(remote, context) != repository_id or _producer(remote, context, job_id=producer['id'], publishing=True)[0] != producer:
+                    raise TransportError('producer identity changed before commit marker')
+                if _store(remote, context, repository_id)['id'] != info['id']: raise TransportError('release changed')
             _parallel([lambda item=item: remote.upload_to(info, item['marker']) for item in staged
                        if item['marker'].name not in _bundle_assets(payloads, item['context']['name'])])
-            markers = _asset_inventory(remote, info)
-            if _store(remote, context, repository_id)['id'] != info['id']:
+            markers = None if same_run else _asset_inventory(remote, info)
+            if _store(remote, context, repository_id, release_id=info['id'] if same_run else None)['id'] != info['id']:
                 raise TransportError('release changed after commit marker')
             final = _asset_inventory(remote, info)
+            if markers is None: markers = final
             pointers = []
             for item in staged:
                 rows = _bundle_assets(final, item['context']['name']); marker = rows.get(item['marker'].name)
@@ -510,8 +535,7 @@ def _extract(bundle, output, files):
     if seen != set(files): raise TransportError('transport is missing declared files')
 
 
-def fetch_bundles(repository, run_id, attempt, source_commit, workflow, requests, *, transport=None):
-    """Quarantine a bundle batch until shared complete remote boundaries pass."""
+def _fetch_requests(repository, run_id, attempt, source_commit, workflow, requests):
     requests = _batch_requests(requests, {'name', 'output'},
         {'job_id', 'job_name', 'manifest_id', 'manifest_sha256', 'allow_failed'})
     contexts = [_context(repository, run_id, attempt, source_commit, workflow, request['name']) for request in requests]
@@ -528,7 +552,58 @@ def fetch_bundles(repository, run_id, attempt, source_commit, workflow, requests
         if type(request.get('allow_failed', False)) is not bool: raise TransportError('failure policy must be boolean')
         if request.get('job_id') is not None and not _positive(request['job_id']):
             raise TransportError('positive producer job ID required')
-    context = contexts[0]; remote = delivery.Remote(repository, transport)
+    return requests, contexts, outputs
+
+
+def fetch_bundles(repository, run_id, attempt, source_commit, workflow, requests, *, transport=None):
+    """Verify an entire mixed local/remote batch before publishing its outputs."""
+    requests, contexts, outputs = _fetch_requests(repository, run_id, attempt, source_commit, workflow, requests)
+    if not os.environ.get('FOUNDATION_CI_ARTIFACTS_DIR') or not _same_run(contexts[0]):
+        return _fetch_release_bundles(repository, run_id, attempt, source_commit, workflow, requests, transport=transport)
+    # The helper imports archive primitives from this module; import it only at
+    # the opt-in workflow boundary to keep offline/retained release use independent.
+    import ci_artifacts
+    with ExitStack() as stack:
+        selected = []; missing = []
+        for request, context, output in zip(requests, contexts, outputs):
+            output.parent.mkdir(parents=True, exist_ok=True)
+            stage = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='.foundation-ci-input-', dir=output.parent))) / 'payload'
+            receipt = ci_artifacts.fetch_local(context, request, stage)
+            item = dict(request=request, context=context, output=output, stage=stage, receipt=receipt)
+            selected.append(item)
+            if receipt is None: missing.append(item)
+        local = [item for item in selected if item['receipt'] is not None]
+        if local:
+            context = contexts[0]; remote = delivery.Remote(repository, transport)
+            _run(remote, context)
+            jobs = _jobs(remote, context)
+            for item in local:
+                request = item['request']; claimed = item['receipt']['producer']
+                matches = [job for job in jobs if (claimed.get('job_id') is None or job.get('id') == claimed['job_id']) and
+                           (not claimed.get('job_name') or job.get('name') == claimed['job_name']) and
+                           job.get('runner_name') == claimed['runner_name']]
+                if len(matches) != 1: raise TransportError('artifact producer is absent or ambiguous')
+                job = matches[0]
+                if request.get('job_id') is not None and request['job_id'] != job.get('id'):
+                    raise TransportError('manifest producer differs')
+                _, observed = _producer(remote, context, job_id=job['id'], job_name=request.get('job_name'),
+                    runner_name=claimed['runner_name'], allow_failed=request.get('allow_failed', False), observed=job)
+                item['receipt']['producer'] = observed
+        if missing:
+            remote_requests = [dict(item['request'], output=item['stage']) for item in missing]
+            receipts = _fetch_release_bundles(repository, run_id, attempt, source_commit, workflow,
+                                             remote_requests, transport=transport)
+            for item, receipt in zip(missing, receipts): item['receipt'] = receipt
+        for item in selected:
+            if item['output'].exists() or item['output'].is_symlink(): raise TransportError('transport output must be new')
+        for item in selected: item['stage'].rename(item['output'])
+        return [item['receipt'] for item in selected]
+
+
+def _fetch_release_bundles(repository, run_id, attempt, source_commit, workflow, requests, *, transport=None):
+    """Quarantine release bundles until their remote boundaries pass."""
+    requests, contexts, outputs = _fetch_requests(repository, run_id, attempt, source_commit, workflow, requests)
+    context = contexts[0]; remote = delivery.Remote(repository, transport); same_run = _same_run(context)
     repository_id = _run(remote, context); info = _store(remote, context, repository_id)
     inventory = _asset_inventory(remote, info)
     with ExitStack() as stack:
@@ -575,9 +650,11 @@ def fetch_bundles(repository, run_id, attempt, source_commit, workflow, requests
             if bundle.stat().st_size != manifest['archive']['size'] or archive.digest(bundle) != manifest['archive']['sha256']:
                 raise TransportError('reconstructed archive bytes differ')
             extracted = item['stage'] / 'payload'; extracted.mkdir(); _extract(bundle, extracted, manifest['files'])
-        if _run(remote, context) != repository_id or _store(remote, context, repository_id)['id'] != info['id']:
+        if ((not same_run and _run(remote, context) != repository_id) or
+                _store(remote, context, repository_id, release_id=info['id'] if same_run else None)['id'] != info['id']):
             raise TransportError('producer or release assets changed during fetch')
-        after = _asset_inventory(remote, info); jobs_after = {job['id']: job for job in _jobs(remote, context)}
+        after = _asset_inventory(remote, info)
+        jobs_after = jobs if same_run else {job['id']: job for job in _jobs(remote, context)}
         for item in selections:
             if (_bundle_assets(after, item['context']['name']) != item['rows'] or
                     jobs_after.get(item['producer']['id']) != item['job']):

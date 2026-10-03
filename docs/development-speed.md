@@ -55,7 +55,11 @@ own target producer, while retaining a separate fresh runner.
 
 Complete certification keeps every required logical result. Native source checks
 share one build across the selected backends in that target/environment; recovery
-is a separate reconstruction. Independent source, recovery, archive, ABI, browser
+is a separate reconstruction. Both use the build wrapper's resource-aware test
+worker default independently of compiler parallelism. Archive qualification combines
+member inventory with extraction or small metadata inspection; it does not extract
+the complete application merely to read build information. Exact payload hashes,
+safe member checks and before/after qualification validation remain required. Independent source, recovery, archive, ABI, browser
 and package operations occupy 23 scope-separated batches, with up to eight running
 concurrently in the complete all-GUI plan. Transport grouping follows required
 inputs rather than forcing unrelated operations through one serial batch.
@@ -119,7 +123,15 @@ producer. Assembly and recovery continue to require the complete group. Containe
 prerequisites follow the actual action and test scope, avoiding development
 packages for archive or ABI-only checks.
 
-Private transport supports deterministic low-cost compression for text evidence,
+Small same-run receipts and certification evidence use one-day Actions artifacts.
+A complete bundle is capped at 2 MiB; 62 immutable slots cap each attempt at
+124 MiB plus archive overhead. Oversized evidence and storage-service upload
+failures fall back to complete release bundles. SDK and application payloads never
+use this small-file allowance. Consumers share run/producer observations and
+verify all local bytes; the [storage contract](ci.md#storage-caches-and-sdk-reuse)
+explains retention, bounds and failure behavior.
+
+Private release transport supports deterministic low-cost compression for text evidence,
 while already-compressed package and SDK archives retain their ordinary encoding.
 Consumers fetch up to four independent chunks concurrently and reconstruct them
 in their authenticated order. Related bundles share complete run, producer and
@@ -171,6 +183,14 @@ observed quota headers and job timestamps when accounting for a hosted run.
 Direct candidate reads remove a large byte relay but still require independent
 identity observations in each job. The current protocol therefore does not promise
 a complete release within one repository quota window.
+
+The bounded-evidence transport model estimates about 1,650 to 610 API calls for
+the same full regression/application/certification transport shape, approximately
+63% fewer. The combined certificate uses release fallback in this estimate.
+Public release operations, retries, pagination and Actions storage-service calls
+are additional costs. This is a structural estimate, not measured hosted time or
+a guarantee against shared quota exhaustion. See [validation](validation.md) for
+executed local checks and retained-model assumptions.
 
 A native refresh still verifies the unified package-channel archive. Splitting it
 into separately signed frontend projections would change the compatibility and

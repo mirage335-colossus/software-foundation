@@ -39,6 +39,27 @@ class ReleaseTests(unittest.TestCase):
 
     def tearDown(self): self.temp.cleanup()
 
+    def test_package_validation_reads_archive_once_without_full_extraction(self):
+        from unittest.mock import patch
+        entry = self.spec['artifacts'][0]
+        source = read_json(Path(entry['manifest_path']))
+        source_identity = archive_source(self.root / 'sources', self.root / 'test-source.tar.gz')['tree_sha256']
+        with patch.object(artifact, 'inspect_archive', wraps=artifact.inspect_archive) as inspect:
+            release.validate_package(Path(entry['path']), entry, source_identity, source)
+            self.assertEqual(inspect.call_count, 1)
+            self.assertIsNone(inspect.call_args.args[1])
+            self.assertEqual(list(inspect.call_args.kwargs['contents']), ['build-info.txt'])
+
+    def test_selected_inventory_is_hashed_once_and_still_rejects_changes(self):
+        from unittest.mock import patch
+        output = self.root / 'release'; release.assemble(self.spec_path, self.base, output)
+        with patch.object(release, 'file_inventory', wraps=release.file_inventory) as inventory:
+            release.verify_selection(output, 'linux-x86_64', 'core', 'archive')
+            self.assertEqual(inventory.call_count, 1)
+        (output / 'application.tar.gz').write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+            release.verify_selection(output, 'linux-x86_64', 'core', 'archive')
+
     def test_release_owns_exact_groups_and_recovers_without_base(self):
         output = self.root / 'release'
         release.assemble(self.spec_path, self.base, output)
