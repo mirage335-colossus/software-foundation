@@ -1,7 +1,11 @@
 foundation_register_build_directory()
-# Explicit, preserved source input. Configuration never fetches dependencies.
+# Preserved local input by default; explicit source/group selections take precedence.
+# Configuration never fetches dependencies.
 set(FOUNDATION_GUI_SOURCE "" CACHE PATH "Verified gui-boundary source checkout or archive")
 set(FOUNDATION_GUI_INPUT_GROUP "" CACHE PATH "Retained complete GUI input group")
+if(NOT FOUNDATION_GUI_SOURCE AND NOT FOUNDATION_GUI_INPUT_GROUP)
+    set(FOUNDATION_GUI_INPUT_GROUP "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/gui-inputs")
+endif()
 if(FOUNDATION_GUI_INPUT_GROUP)
     if(FOUNDATION_GUI_SOURCE)
         message(FATAL_ERROR "Select FOUNDATION_GUI_INPUT_GROUP or FOUNDATION_GUI_SOURCE, not both")

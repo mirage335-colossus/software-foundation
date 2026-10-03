@@ -89,8 +89,24 @@ font files and retained toolkit/library archives. It also retains the exact
 Foundation dependency lock, integration patches and patch applicator. Git metadata,
 build outputs and ignored local files are excluded. The group contains
 `gui-inputs.tar.gz`, `manifest.json` and `SHA256SUMS`; it is a source input group,
-not an SDK. Compiler, platform headers and toolkit system dependencies still come
-from the selected prepared [SDK](sdk.md).
+not an SDK. The verified group is committed under
+[`third_party/gui-inputs`](../third_party/gui-inputs/manifest.json), including
+upstream's Rev sources, retained GLEW/FreeType archives and fonts. The FLTK
+adapter is included; the FLTK library remains a distribution or SDK dependency. Compiler, platform headers
+and toolkit dependencies come from distribution packages for ordinary native
+Linux builds, or from an explicitly selected prepared [SDK](sdk.md).
+
+```sh
+./build.sh test dev --gui --gui-backends terminal,framebuffer,hosted-web --label gui
+```
+
+This command uses only checkout bytes and installed host packages. The group
+stays compressed in source control and is restored once per owned GUI build tree;
+unchanged restored files are verified and reused without rewriting them.
+Ordinary core builds do not restore the group. Integrity checks still detect
+changed retained or restored inputs. No SDK is built implicitly.
+
+For a dependency upgrade or an explicitly maintained external group:
 
 ```sh
 python3 -B gui/source_group.py export --source /path/to/gui-boundary \
@@ -114,7 +130,10 @@ lock supplies input identity. Keep the group under the signed release inventory
 when transferring it through a release channel.
 
 The build wrapper restores into its owned build inputs before computing source
-identity. Direct CMake consumers can select
+identity. With `-DFOUNDATION_BUILD_GUI=ON` and neither source selector, direct
+CMake uses the checkout's bundled group. Explicit source/group selectors take
+precedence; a missing or corrupt explicit input never falls back to the bundle.
+Direct CMake consumers can select
 `-DFOUNDATION_GUI_INPUT_GROUP=/path/to/retained-gui` instead of
 `FOUNDATION_GUI_SOURCE`. Both routes use the same verification and atomic restore,
 require no network or Git in the restored tree, and expose the verified upstream
@@ -136,14 +155,13 @@ ordinary export does not grant a general downstream supplier license.
 
 ## Build and run
 
-Acquire the locked revision as a preparation step. Configure/build never download
-source, libraries, toolchains, fonts or browser modules.
+The bundled group supplies the locked revision. Configure/build never download
+source, libraries, toolchains, fonts or browser modules. A separate pinned checkout
+is only needed when deliberately maintaining or overriding that input.
 
 ```sh
-git clone -c core.autocrlf=false https://github.com/mirage335-colossus/gui-boundary.git /path/to/gui-boundary
-git -C /path/to/gui-boundary checkout --detach 7a704f73e563a167ea335dd23ccd9f383ebec274
 cmake -S . -B build/gui -G Ninja -DCMAKE_BUILD_TYPE=Debug \
-  -DFOUNDATION_BUILD_GUI=ON -DFOUNDATION_GUI_SOURCE=/path/to/gui-boundary
+  -DFOUNDATION_BUILD_GUI=ON
 cmake --build build/gui --target foundation-gui-tests --parallel 2
 ctest --test-dir build/gui -L gui --output-on-failure --parallel 2
 ./build/gui/gui/foundation-gui-terminal
@@ -241,7 +259,7 @@ Wasm uses a separately prepared SDK, not the host's native sysroot:
 
 ```sh
 emcmake cmake -S . -B build/gui-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DFOUNDATION_BUILD_GUI=ON -DFOUNDATION_GUI_SOURCE=/path/to/gui-boundary
+  -DFOUNDATION_BUILD_GUI=ON
 cmake --build build/gui-wasm --target foundation-gui-tests --parallel 2
 ctest --test-dir build/gui-wasm -L gui --output-on-failure
 python3 -B build/gui-wasm/gui/web/serve.py --wasm-dir build/gui-wasm/gui

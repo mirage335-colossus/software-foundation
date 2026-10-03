@@ -19,9 +19,33 @@ Git. Ordinary CMake configuration must not fetch dependencies.
 
 Optional external checkouts must be explicitly selected and pinned. Do not
 silently discover a sibling repository and use whichever revision happens to
-be present. The GUI source is supplied through the documented optional
-integration and is not vendored into this repository. Its license and complete
-dependency inventory remain release prerequisites.
+be present. GUI builds default to the complete preserved source group in
+[`gui-inputs/`](gui-inputs/), so ordinary Linux builds need only the checkout and
+the documented distribution build/development packages. An explicitly selected
+source checkout or input group takes precedence. The default core-only build
+does not restore or verify this optional group.
+
+## Preserved GUI source
+
+`gui-inputs/` contains byte-identical `gui-inputs.tar.gz`, `manifest.json` and
+`SHA256SUMS` from the reviewed group for gui-boundary revision
+`7a704f73e563a167ea335dd23ccd9f383ebec274`. The manifest SHA-256 is
+`10d22dd104c3c3de38b979b5c5d9b6d3e9cea827d0dc748b87d97baee081c8b3`.
+It preserves the complete supplier tree, notices, retained Rev/GLEW/FreeType
+inputs, and this project's exact integration lock and patches. FLTK and SDL2 for
+ordinary Linux builds come from distribution development packages; prepared SDK
+builds use their retained SDK libraries. This group contains no compiled SDK.
+
+Verify with `python3 -B gui/source_group.py verify third_party/gui-inputs`.
+The strict three-file directory must contain no extra documentation or outputs.
+To upgrade, review the upstream revision, licenses, complete source tree and
+integration changes using [the dependency procedure](../docs/dependencies.md);
+update the lock/patches together, export a fresh group using
+[the GUI source-group tool](../docs/gui-boundary.md#complete-offline-gui-input-group),
+verify it against the updated checkout, and replace all three files together.
+Run the source-group fixtures and affected GUI build/tests before delivery.
+Keep exact supplier notices and owner-specific Rev permission scope; this
+retention does not grant downstream users new supplier permissions.
 
 ## Prepared input producers
 

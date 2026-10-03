@@ -49,8 +49,26 @@ arguments must be passed as arguments, never evaluated as shell text.
 | `asan` | `build/asan/` | Instrumented development and regression tests |
 | A preset with `--sdk PATH` | `build/PRESET-sdk/` | Explicit prepared SDK selection |
 
-An explicit `--gui-source /absolute/path/to/pinned-checkout` adds the optional
-GUI integration and a `-gui` directory suffix. Follow
+`--gui` adds the optional GUI integration using the complete verified source group
+in this checkout, with a `-gui` directory suffix. It needs no second repository,
+submodule initialization or supplier download. For example:
+
+```sh
+./build.sh test dev --gui --gui-backends terminal,framebuffer,hosted-web --label gui
+./build.sh build release --gui --gui-backends fltk
+```
+
+The second command also needs the distribution's FLTK development package and
+its platform dependencies. On Debian 12 these are distribution packages; GUI
+sources and retained toolkit archives are already in this checkout. The Rev
+backend requires the newer compiler/CMake versions described in the GUI guide.
+A prepared SDK is optional for ordinary native builds and required when its
+specific target/toolchain contract is selected.
+
+`--gui-source /absolute/path/to/pinned-checkout` and `--gui-input-group PATH`
+remain explicit alternatives to `--gui`; these three selectors are mutually
+exclusive. `--gui-backends` alone does not enable GUI, preserving core-only Wasm
+builds. Default core builds do not restore or compile GUI inputs. Follow
 [the GUI guide](gui-boundary.md) for extra native-host options. GUI distribution
 checks the locked, reviewed supplier permissions. `package` requires a
 Release configuration and all selected dependencies and notices.

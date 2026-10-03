@@ -7,6 +7,7 @@ import json
 from pathlib import Path, PureWindowsPath
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -64,6 +65,70 @@ class SourceGroupTests(unittest.TestCase):
 
     def verify(self):
         return subject.verify(self.group, foundation_root=self.foundation)
+
+    def test_checkout_retains_complete_reviewed_gui_group(self):
+        manifest = subject.verify(ROOT / 'third_party/gui-inputs', foundation_root=ROOT)
+        lock = subject.archive.read_json(ROOT / 'third_party/gui-boundary.lock.json')
+        self.assertEqual(lock['revision'], manifest['revision'])
+        self.assertEqual(lock['source_tree'], manifest['source_tree'])
+        self.assertIn('upstream/LICENSE', manifest['files'])
+        self.assertIn('upstream/include/gui/contract.hpp', manifest['files'])
+        self.assertTrue(manifest['redistributable'])
+
+    def cmake_input_fixture(self):
+        # Execute the real selection/restore block with tiny retained inputs;
+        # no compiler, toolkit, SDK, sibling checkout or network is required.
+        cmake = (ROOT / 'gui/CMakeLists.txt').read_text().split('option(FOUNDATION_GUI_FLTK', 1)[0]
+        (self.foundation / 'gui/CMakeLists.txt').write_text(cmake)
+        (self.foundation / 'tools').mkdir()
+        shutil.copyfile(ROOT / 'gui/source_group.py', self.foundation / 'gui/source_group.py')
+        shutil.copyfile(ROOT / 'tools/dependency_archive.py', self.foundation / 'tools/dependency_archive.py')
+        shutil.copytree(self.group, self.foundation / 'third_party/gui-inputs')
+        (self.foundation / 'CMakeLists.txt').write_text(
+            'cmake_minimum_required(VERSION 3.24)\nproject(InputSelection NONE)\n'
+            'function(foundation_register_build_directory)\nendfunction()\n'
+            'add_subdirectory(gui)\n'
+            'file(WRITE "${CMAKE_BINARY_DIR}/selected.txt" "${FOUNDATION_GUI_SOURCE}")\n')
+
+    def configure_inputs(self, name, *arguments):
+        output = self.root / name
+        result = subprocess.run(['cmake', '-G', 'Ninja', '-S', str(self.foundation), '-B', str(output),
+                                 '-DPython3_EXECUTABLE=' + sys.executable, *arguments],
+                                text=True, capture_output=True)
+        return output, result
+
+    def test_cmake_default_group_and_explicit_inputs(self):
+        self.cmake_input_fixture()
+        output, result = self.configure_inputs('default')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        restored = output / 'gui/retained-inputs/upstream'
+        self.assertEqual(restored.resolve(), Path((output / 'selected.txt').read_text()).resolve())
+        self.assertEqual((self.source / 'api.hpp').read_bytes(), (restored / 'api.hpp').read_bytes())
+        # A broken bundled group must not override a caller's explicit input.
+        archive = self.foundation / 'third_party/gui-inputs/gui-inputs.tar.gz'
+        archive.write_bytes(b'corrupt local default')
+        output, result = self.configure_inputs('explicit-source', '-DFOUNDATION_GUI_SOURCE=' + self.source.as_posix())
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(self.source.as_posix(), (output / 'selected.txt').read_text())
+        self.assertFalse((output / 'gui/retained-inputs').exists())
+        output, result = self.configure_inputs('explicit-group', '-DFOUNDATION_GUI_INPUT_GROUP=' + self.group.as_posix())
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertTrue((output / 'gui/retained-inputs/upstream/api.hpp').is_file())
+        output, result = self.configure_inputs('conflict', '-DFOUNDATION_GUI_SOURCE=' + self.source.as_posix(),
+                                               '-DFOUNDATION_GUI_INPUT_GROUP=' + self.group.as_posix())
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('not both', result.stdout + result.stderr)
+        self.assertFalse((output / 'gui/retained-inputs').exists())
+
+    def test_cmake_corrupt_default_fails_without_partial_restore(self):
+        self.cmake_input_fixture()
+        archive = self.foundation / 'third_party/gui-inputs/gui-inputs.tar.gz'
+        archive.write_bytes(b'corrupt local default')
+        output, result = self.configure_inputs('corrupt-default')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('checksum', result.stdout + result.stderr)
+        self.assertFalse((output / 'gui/retained-inputs').exists())
+        self.assertEqual(b'corrupt local default', archive.read_bytes())
 
     def test_checkout_preserves_retained_text_with_windows_newline_settings(self):
         repo = self.root/'checkout';repo.mkdir()

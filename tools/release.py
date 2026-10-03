@@ -245,10 +245,76 @@ def assemble(spec_path, base, output):
     return metadata
 
 
+def verify_recovery(directory, expected_release_sha256=None):
+    """Verify a standalone recovery kit without the original release or base.
+
+    A caller-supplied release digest is the trust anchor. Without it, this checks
+    local integrity and completeness, not publisher identity or qualification.
+    """
+    directory = Path(directory).absolute()
+    if directory.is_symlink() or not directory.is_dir():
+        raise ValueError('recovery kit must be an ordinary directory')
+    directory = directory.resolve(strict=True)
+    receipt_path = directory / 'recovery.json'
+    if receipt_path.is_symlink() or not receipt_path.is_file():
+        raise ValueError('recovery kit needs an ordinary recovery.json')
+    receipt_hash = digest(receipt_path)
+    receipt = read_json(receipt_path)
+    if not isinstance(receipt, dict) or 'schema_version' not in receipt:
+        raise ValueError('legacy recovery kit lacks retained release metadata; re-export from the verified release')
+    if (type(receipt['schema_version']) is not int or receipt['schema_version'] != 1 or
+            set(receipt) != {'schema_version', 'release_sha256', 'source', 'dependencies'}):
+        raise ValueError('unsupported recovery manifest')
+    release_hash = receipt['release_sha256']
+    if not isinstance(release_hash, str) or not re.fullmatch(r'[0-9a-f]{64}', release_hash):
+        raise ValueError('invalid recovery release identity')
+    if expected_release_sha256 is not None:
+        if (not isinstance(expected_release_sha256, str) or
+                not re.fullmatch(r'[0-9a-f]{64}', expected_release_sha256)):
+            raise ValueError('expected release identity must be a complete SHA-256')
+        if release_hash != expected_release_sha256:
+            raise ValueError('recovery release differs from trusted release identity')
+    manifest_path = directory / 'release.json'
+    if manifest_path.is_symlink() or not manifest_path.is_file() or digest(manifest_path) != release_hash:
+        raise ValueError('retained release metadata is missing or changed')
+    data = verify_metadata(directory)
+    if receipt['source'] != data['source'] or receipt['dependencies'] != data['dependencies']:
+        raise ValueError('recovery declarations differ from retained release metadata')
+    source = data['source']
+    if source['archive'] in ('release.json', 'recovery.json', 'dependencies'):
+        raise ValueError('source archive collides with recovery metadata')
+    expected = {'release.json': release_hash, 'recovery.json': receipt_hash,
+                source['archive']: source['sha256']}
+    for entry in data['dependencies']:
+        recipe = entry['recipe_id']
+        expected.update(('dependencies/' + recipe + '/' + name, value)
+                        for name, value in entry['files'].items())
+    # Check ordinary entries and frozen hashes before parsing any payload. Inner
+    # inventories then bind the source tree and each compiled SDK to its sources.
+    verify_inventory(directory, expected)
+    if verify_source_archive(directory / source['archive'])['tree_sha256'] != source['tree_sha256']:
+        raise ValueError('recovery source tree binding mismatch')
+    for entry in data['dependencies']:
+        if verify_group(directory / 'dependencies' / entry['recipe_id'], entry['recipe_id']) != entry['files']:
+            raise ValueError('recovery dependency identity mismatch')
+    expected_directories = {str(parent) for name in expected for parent in relative(name).parents if str(parent) != '.'}
+    if {path.relative_to(directory).as_posix() for path in directory.rglob('*') if path.is_dir()} != expected_directories:
+        raise ValueError('unexpected recovery directory')
+    # Recheck after archive inspection: concurrent mutation cannot leave a success
+    # receipt describing bytes that failed the frozen inventory at completion.
+    verify_inventory(directory, expected)
+    return {'schema_version': 1, 'status': 'passed', 'scope': 'retained-recovery-inputs',
+            'release_sha256': release_hash, 'release_pin_verified': expected_release_sha256 is not None,
+            'source': source, 'dependencies': data['dependencies'], 'artifacts': data['artifacts']}
+
+
 def recover(directory, output):
     directory, output = Path(directory).resolve(strict=True), Path(output).absolute()
-    data = verify_release(directory)
+    if output == directory or directory in output.resolve().parents:
+        raise ValueError('recovery output must be outside the release tree')
     if output.exists() or output.is_symlink(): raise ValueError('recovery output must be new')
+    release_hash = digest(directory / 'release.json')
+    data = verify_release(directory)
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=output.parent, prefix='.recover-') as temporary:
         staged = Path(temporary) / 'recovered'
@@ -257,8 +323,10 @@ def recover(directory, output):
         for entry in data['dependencies']:
             recipe = entry['recipe_id']
             copy_group(directory / 'dependencies' / recipe, staged / 'dependencies' / recipe, recipe)
-        write_json(staged / 'recovery.json', {'release_sha256': digest(directory / 'release.json'),
+        shutil.copyfile(directory / 'release.json', staged / 'release.json')
+        write_json(staged / 'recovery.json', {'schema_version': 1, 'release_sha256': release_hash,
                    'source': data['source'], 'dependencies': data['dependencies']})
+        verify_recovery(staged, release_hash)
         staged.rename(output)
     return data
 
@@ -270,13 +338,16 @@ def main():
     create.add_argument('--spec', type=Path, required=True)
     create.add_argument('--base', type=Path, required=True)
     create.add_argument('--output', type=Path, required=True)
-    for action in ('verify', 'recover'):
+    for action in ('verify', 'recover', 'verify-recovery'):
         command = sub.add_parser(action)
         command.add_argument('directory', type=Path)
         if action == 'recover': command.add_argument('--output', type=Path, required=True)
+        if action == 'verify-recovery':
+            command.add_argument('--expected-release-sha256', help='independently trusted SHA-256 of the original release.json')
     args = parser.parse_args()
     if args.action == 'assemble': result = assemble(args.spec, args.base, args.output)
     elif args.action == 'verify': result = verify_release(args.directory)
+    elif args.action == 'verify-recovery': result = verify_recovery(args.directory, args.expected_release_sha256)
     else: result = recover(args.directory, args.output)
     print(encoded(result).decode(), end='')
 

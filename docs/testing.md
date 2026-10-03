@@ -27,6 +27,13 @@ suite is registered once and records every case through the common test runner.
 The wrapper rebuilds test prerequisites. Direct `ctest` alone does
 not compile modified source.
 
+During diagnosis, `./build.sh test dev --label core --stop-on-failure` stops
+CTest from scheduling further cases after its first failure. The same option works
+with `test asan`. Already running cases may still finish when tests run in parallel.
+The command remains failed; unexecuted cases are incomplete coverage. Without the
+option, all selected cases run as before. After the fix, rerun the required complete
+scope without this option; it does not alter candidate or release qualification.
+
 | Change | First useful evidence | Candidate checks |
 | --- | --- | --- |
 | Library behavior or public contract | Reproducer and affected core tests | Full local suite; supported platform and sanitizer scopes |

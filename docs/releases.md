@@ -242,6 +242,50 @@ uses only the release tree and never consults the base, package manager or
 upstream server. Restore a dependency group's sources or install its binary with
 [`sdk.py`](../tools/sdk.py); use the retained producer for source replay.
 
+A new recovery kit retains the byte-identical `release.json`, a versioned
+`recovery.json`, the complete application source archive (including retained GUI
+source when enabled), and every declared SDK binary/source/checksum group. It
+omits application binaries. The exporter checks the staged kit before publishing
+it, rejects output inside the original release, and preserves existing destinations.
+Use an exclusively owned new output directory, as for release assembly.
+
+Verify a copied kit independently after the original release and base are gone:
+
+```sh
+python3 tools/release.py verify-recovery /owned/recovered \
+  --expected-release-sha256 ORIGINAL_MANIFEST_SHA256
+```
+
+Replace `ORIGINAL_MANIFEST_SHA256` with the independently trusted digest of the
+original `release.json`, for example the inventory identity in verified release
+certification. Do not obtain the trust pin from the kit being checked. Verification
+checks the actual retained manifest bytes, complete target/dependency relationships,
+source archive and tree identity, every SDK group's inner inventories, and the exact
+kit file inventory. Missing, added, linked, substituted or changed inputs fail.
+Without the optional pin, the result explicitly says `release_pin_verified: false`:
+that proves local consistency, not publisher authenticity. Success reports
+`scope: retained-recovery-inputs`; it does not certify binaries or execute a rebuild.
+Legacy unversioned kits lack original release metadata and are rejected with a
+re-export instruction; they are never silently upgraded or treated as authenticated.
+
+After verification, extract the source archive into a new owned source directory.
+Select the intended target in the retained manifest's `artifacts` list and its
+exact `sdk_recipe`/`dependency_recipes`. For Linux and Wasm, install its retained
+binary group with
+`tools/sdk.py install --group KIT/dependencies/RECIPE --recipe RECIPE --output NEW_SDK`.
+For Windows, use `tools/sdk_windows.py install` with the same arguments and
+`--linker-version ACTUAL_SELECTED_LINKER_VERSION`, following the
+[Windows host-tool selection and compatibility checks](sdk.md#windows-dependency-base-and-separately-installed-host-tools).
+To extract retained producer inputs, use `tools/sdk.py restore-sources` with the
+group, recipe and output arguments. Then follow
+[the target-specific SDK build instructions](sdk.md) from that source.
+Keep the verified kit immutable and place extraction, SDK and build outputs outside
+it. These operations require no base or upstream server; independently retain the
+[declared host prerequisites](dependencies.md#bootstrap-without-recurring-supplier-access).
+Wasm recovery still includes retained upstream precompiled tools; it does not claim
+that LLVM, Binaryen or Node have been rebuilt from distribution-provided source.
+This explicit verifier adds no work or dependency to ordinary application builds.
+
 The `release.json` output binds source bytes, application archive/member
 inventories, complete dependency-group hashes, target/backend identity and
 required scopes. Assembly marks it `candidate`. [Certification](certification.md)

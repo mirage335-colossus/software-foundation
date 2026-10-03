@@ -13,6 +13,43 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
+## Offline checkout and retained SDK inputs (2026-10-03)
+
+The completed implementation snapshot before this validation entry has source-tree
+SHA-256 `9eb82e3315aed150828944e24bebf80f82574eb0a07801a03bc96dc4e27ffab3`
+(311 source files). It includes offline release-recovery verification, opt-in
+CTest stop-on-failure, the complete retained GUI group, explicit `--gui` selection,
+direct CMake fallback and the optional Windows host-tool bootstrap helper.
+The GUI group contains exactly three files totaling 5,961,400 bytes.
+
+A clean source export without Git metadata or an external GUI supplement passed
+in a fresh network namespace with only loopback available:
+
+- Default Release `test --full`: 53/53 CTest entries, with 1,274 Python outcomes
+  passed and two explicitly excluded native Windows cases.
+- Release `test --gui --gui-backends terminal,framebuffer,hosted-web --label gui`:
+  23/23 CTest entries; all 59 included Python outcomes passed.
+- Repeating the GUI command left every restored file's modification time unchanged
+  and Ninja reported no work. Cold build plus tests took 75.675 seconds; the repeat
+  took 6.665 seconds with two compile/test workers.
+- Direct CMake with `FOUNDATION_BUILD_GUI=ON` and no source selectors configured
+  successfully using checkout-contained inputs. Default core GUI support stayed off.
+
+A five-sample warm hashing comparison measured approximately 6.4 milliseconds of
+additional source-hash time per pass for the retained group on this host. This is
+an observation with uncontrolled OS caching, not a cross-machine timing guarantee.
+Documentation and whitespace checks passed. Publication review verified every
+implementation file still matched this tested snapshot; only this validation
+entry was subsequently added.
+
+The native Windows bootstrap's eight opt-in diagnostics were not executed here;
+its three original retained ZIP hashes/layouts and source were inspected. Fresh
+stock Bookworm, FLTK/SDL/Rev execution, prepared Wasm consumers and native Windows
+remain outside this local qualification. No SDK recipe, hosted test matrix or
+ordinary-build dependency preparation changed. Detailed raw results remain under
+`build/agents/checkout-sdk-independence-v1/`; this maintained summary preserves the
+observed scope independently of ignored local evidence.
+
 ## Current public delivery evidence (2026-10-03)
 
 The four SDK base qualification and public publication runs completed successfully:

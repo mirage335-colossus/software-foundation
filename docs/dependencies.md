@@ -8,8 +8,9 @@ notice files with the source and all applicable binary distributions.
 
 The default library and CLI use the C++ standard library and platform/compiler
 runtimes. They have no added third-party application runtime dependency. Optional
-GUI integration consumes a separately prepared checkout, with its own source,
-toolchain, runtime, and redistribution requirements. Build/test tools are still
+GUI integration consumes the complete source group retained in this checkout,
+with its own toolchain, runtime, and redistribution requirements. An explicit
+pinned checkout or source group can override the bundled input. Build/test tools are still
 dependencies and must be identified in environment records. Keep three inventories
 separate: tools needed to build, files shipped with the application, and tools
 needed only for validation. A WebAssembly compiler and its Node executor belong
@@ -127,6 +128,30 @@ hypotheses until validated against the pinned dependency and current callers.
 
 
 ## Bootstrap without recurring supplier access
+
+The supported independence boundary is explicit:
+
+| Build | Inputs retained before disconnecting |
+| --- | --- |
+| Ordinary native Linux core/CLI | This checkout and distribution build packages |
+| Ordinary native Linux GUI | This checkout (including `third_party/gui-inputs`) and the selected distribution toolkit/development packages |
+| Linux with a controlled newer compiler or target sysroot | Checkout, complete matching SDK group and its declared distribution host prerequisites |
+| Browser/Wasm | Checkout, complete prepared Emscripten/Node SDK group and declared distribution host prerequisites |
+| Native Windows | Checkout, complete matching dependency group, local host tools and complete Microsoft compiler/Windows SDK installer layout |
+
+“Complete group” includes binary, source/bootstrap inputs and checksum inventory;
+it is kept outside Git in durable local storage. A release URL or recipe alone
+is not an offline input. Regular builds reuse installed verified SDKs; cold SDK
+reconstruction and complete source-group recovery are separate maintenance checks.
+Do not add either operation to every edit/build/test cycle. Existing compilation
+parallelism, focused tests and certification gates remain unchanged.
+
+The GUI group preserves upstream's Rev sources, GLEW/FreeType archives, fonts and
+notices. It includes the FLTK adapter; the FLTK library itself comes from the
+distribution FLTK package, or the complete prepared SDK for that target.
+Rev needs newer compiler/CMake support than stock Debian 12 supplies; use suitable
+distribution packages or the prepared SDK. See [GUI inputs](gui-boundary.md#complete-offline-gui-input-group)
+and [SDK recovery](sdk.md#replay-without-supplier-acquisition).
 
 Debian 12 supplies the default C++20 compiler, CMake, Ninja and Python through its
 normal package repositories. Native SDK preparation also uses the explicit

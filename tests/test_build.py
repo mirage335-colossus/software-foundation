@@ -14,6 +14,57 @@ spec.loader.exec_module(builder)
 
 
 class BuildTests(unittest.TestCase):
+    def test_bundled_gui_is_explicit_and_retains_group_identity(self):
+        from unittest.mock import patch
+        import source_identity
+        for selector in ([], ['--gui'], ['--gui-source', 'selected'],
+                         ['--gui-input-group', 'selected-group']):
+            with self.subTest(selector=selector), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = root / 'selected'
+                source.mkdir()
+                bundled = root / 'third_party/gui-inputs'
+                bundled.mkdir(parents=True)
+                explicit = root / 'selected-group'
+                explicit.mkdir()
+                arguments = [str(root / arg) if arg in ('selected', 'selected-group') else arg
+                             for arg in selector]
+                receipt = json.dumps({'source': str(source), 'group_sha256': 'a' * 64})
+                with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run, \
+                        patch.object(builder, 'cache_identity', return_value={}), \
+                        patch.object(builder.subprocess, 'check_output', return_value=receipt) as restore, \
+                        patch.object(source_identity, 'source_tree', return_value={}):
+                    self.assertEqual(builder.main(['build', 'dev', '--configure-only', *arguments]), 0)
+                configure = run.call_args.args[0]
+                enabled = bool(selector)
+                self.assertIn('-DFOUNDATION_BUILD_GUI=' + ('ON' if enabled else 'OFF'), configure)
+                tree = root / ('build/dev-gui' if enabled else 'build/dev')
+                identity = json.loads((tree / 'wrapper-identity.json').read_text())
+                if selector and selector[0] != '--gui-source':
+                    group = bundled if selector == ['--gui'] else explicit
+                    self.assertEqual(restore.call_count, 2)
+                    self.assertEqual(restore.call_args_list[0].args[0][3:5], ['restore', str(group)])
+                    self.assertEqual(identity['gui_input_group'], {'root': str(group), 'sha256': 'a' * 64})
+                else:
+                    restore.assert_not_called()
+                    self.assertNotIn('gui_input_group', identity)
+
+    def test_bundled_gui_missing_or_conflicting_input_fails_before_configure(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run:
+                with self.assertRaises(FileNotFoundError):
+                    builder.main(['build', '--gui'])
+                run.assert_not_called()
+                self.assertFalse((root / 'build').exists())
+                for option in ('--gui-source', '--gui-input-group'):
+                    with self.subTest(option=option), redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                        builder.main(['build', '--gui', option, str(root)])
+                run.assert_not_called()
+
     def test_configure_only_keeps_identity_guards_without_compiling(self):
         from unittest.mock import patch
         import source_identity
@@ -29,6 +80,63 @@ class BuildTests(unittest.TestCase):
         for action in ('test', 'package'):
             with self.subTest(action=action), self.assertRaises(SystemExit):
                 builder.main([action, 'release', '--configure-only'])
+
+    def test_stop_on_failure_requires_test_before_starting_work(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from unittest.mock import patch
+        for action in ('build', 'package'):
+            with self.subTest(action=action), patch.object(builder, 'run') as run, \
+                    redirect_stderr(StringIO()) as error, self.assertRaises(SystemExit) as rejected:
+                builder.main([action, 'release', '--stop-on-failure'])
+            self.assertEqual(rejected.exception.code, 2)
+            self.assertIn('--stop-on-failure applies only to test', error.getvalue())
+            run.assert_not_called()
+
+    def test_stop_on_failure_preserves_failure_and_default_full_execution(self):
+        import shutil
+        import subprocess
+        import source_identity
+        from unittest.mock import patch
+        ctest = shutil.which('ctest')
+        self.assertIsNotNone(ctest, 'CTest is required for build wrapper tests')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tree = root / 'build/dev'
+            tree.mkdir(parents=True)
+            (tree / 'fail.py').write_text('raise SystemExit(1)\n')
+            marker = tree / 'after-ran'
+            (tree / 'after.py').write_text(
+                'from pathlib import Path\nPath(__file__).with_name("after-ran").write_text("executed")\n')
+            command = '[=[' + sys.executable.replace('\\', '/') + ']=]'
+            (tree / 'CTestTestfile.cmake').write_text(
+                'add_test(01_fail ' + command + ' "fail.py")\n'
+                'add_test(02_after ' + command + ' "after.py")\n'
+                'set_tests_properties(01_fail 02_after PROPERTIES LABELS core)\n'
+                'set_tests_properties(02_after PROPERTIES DEPENDS 01_fail)\n')
+            def run(command, **kwargs):
+                if command[0] == 'ctest':
+                    subprocess.run([ctest, *command[1:]], cwd=root,
+                        env=kwargs['env'], capture_output=True, text=True, check=True)
+            identity = None
+            # The scheduling flag can change in the same configured tree. A
+            # failing first case remains a failure with either execution policy.
+            for stop in (False, True, False):
+                marker.unlink(missing_ok=True)
+                with self.subTest(stop=stop), patch.object(builder, 'ROOT', root), \
+                        patch.object(builder, 'run', side_effect=run), \
+                        patch.object(builder, 'cache_identity', return_value={}), \
+                        patch.object(source_identity, 'source_tree', return_value={}):
+                    with self.assertRaises(subprocess.CalledProcessError) as failed:
+                        builder.main(['test', 'dev', '--label', 'core', '--jobs', '1',
+                                      *(['--stop-on-failure'] if stop else [])])
+                self.assertNotEqual(failed.exception.returncode, 0)
+                self.assertIn('01_fail', failed.exception.stdout)
+                self.assertEqual(marker.exists(), not stop)
+                current = (tree / 'wrapper-identity.json').read_bytes()
+                if identity is not None:
+                    self.assertEqual(current, identity)
+                identity = current
 
     def test_supported_build_regions_use_explicit_compiler_owner(self):
         from unittest.mock import patch

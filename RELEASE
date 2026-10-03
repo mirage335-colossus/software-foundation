@@ -26,6 +26,9 @@ Software Foundation — release and recovery order
    run identity and all companion evidence before using certify_release.py.
 9. Test recovery with the original base unavailable:
    python3 tools/release.py recover NEW_RELEASE --output NEW_RECOVERY
+   python3 tools/release.py verify-recovery NEW_RECOVERY --expected-release-sha256 TRUSTED_RELEASE_SHA256
+   Retain the trusted original release.json digest independently; kit verification
+   checks complete local inputs, not successful reconstruction or certification.
 10. When separately authorized, publish immutable assets, reverify downloads,
     certify the delivered bytes and only then promote an eligible ordinary release.
     Experiments and incomplete qualification cannot become a stable release.

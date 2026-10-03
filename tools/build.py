@@ -117,6 +117,8 @@ def main(argv=None):
     parser.add_argument("--jobs", type=positive)
     parser.add_argument("--build-jobs", type=positive, help="independent compilation concurrency")
     parser.add_argument("--test-jobs", type=positive, help="independent test concurrency")
+    parser.add_argument("--stop-on-failure", action="store_true",
+                        help="stop testing after the first failed CTest case; remaining coverage is incomplete")
     parser.add_argument("--dependency-prefix", type=Path, help="verified native development prefix")
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--label", choices=("fast", "core", "tools", "integration", "gui"))
@@ -128,10 +130,11 @@ def main(argv=None):
     parser.add_argument("--binary-dependency-group", type=Path, action="append", default=[],
                         help="explicit binary/checksum consumer input; source payload qualification is separate")
     gui_input = parser.add_mutually_exclusive_group()
+    gui_input.add_argument("--gui", action="store_true", help="use the verified GUI sources retained in this checkout")
     gui_input.add_argument("--gui-source", type=Path)
     gui_input.add_argument("--gui-input-group", type=Path, help="verified offline GUI source group")
     parser.add_argument("--gui-backends", default="terminal,framebuffer,hosted-web",
-                        help="comma-separated backends; requires a GUI source or input group")
+                        help="comma-separated backends; enable GUI with --gui, --gui-source or --gui-input-group")
     parser.add_argument("--host-tests", action="store_true")
     parser.add_argument("--portable", action="store_true", help="generic CPU and private static C++ runtime")
     parser.add_argument("--build-dir", type=Path, help="owned per-session output tree")
@@ -141,6 +144,8 @@ def main(argv=None):
     preset = args.preset or ("release" if args.action == "package" else "dev")
     if args.configure_only and args.action != "build":
         parser.error("--configure-only applies only to build")
+    if args.stop_on_failure and args.action != "test":
+        parser.error("--stop-on-failure applies only to test")
     if (args.label or args.full or args.junit) and args.action != "test":
         parser.error("test selection applies only to test")
     if args.action == "package" and preset != "release":
@@ -149,6 +154,8 @@ def main(argv=None):
     allowed = {"terminal", "framebuffer", "fltk", "rev", "sdl", "hosted-web", "wasm"}
     if len(set(backends)) != len(backends) or not set(backends) <= allowed:
         parser.error("unknown or duplicate GUI backend")
+    if args.gui:
+        args.gui_input_group = ROOT / "third_party/gui-inputs"
     has_gui = bool(args.gui_source or args.gui_input_group)
     if args.host_tests and not has_gui:
         parser.error("host checks require GUI inputs")
@@ -322,6 +329,8 @@ def main(argv=None):
             command += ["--output-junit", str(junit)]
         if args.label:
             command += ["-L", "^" + args.label + "$"]
+        if args.stop_on_failure:
+            command.append("--stop-on-failure")
         run(command, env=child_environment)
     elif args.action == "package":
         run([programs["cpack"], "--config", str(build / "CPackConfig.cmake"), "-C", "Release"], env=child_environment)

@@ -13,6 +13,12 @@ archives are generated outputs, not committed inputs. A runnable producer does
 not establish that every host or target is qualified; record actual cold-build
 and oldest-runtime results separately.
 
+Ordinary Linux builds need only the checkout and distribution packages, including
+selected toolkit development packages. `--gui` restores the checked-in source
+group; it does not prepare an SDK. Wasm and Windows instead use the checkout plus
+retained complete SDK/dependency groups and their declared host prerequisites.
+Keep these groups outside Git. See the [independence boundary](dependencies.md#bootstrap-without-recurring-supplier-access).
+
 ## SDK versus installed developer package
 
 The installed `Foundation` CMake package contains the application library,
@@ -528,6 +534,63 @@ layout using the supplier
 Do not retain only an online bootstrap executable. Tool availability and an edition's
 license eligibility are separate questions; this repository does not certify
 eligibility for every organization. Native Windows execution remains required.
+
+### One-time Windows host-tool bootstrap
+
+Retain Python, CMake, Ninja and Git alongside the Microsoft offline installer
+layout. The Windows all-GUI SDK source archive already retains the first three
+ZIPs in its complete download cache. The empty core dependency base does not;
+retain these host-tool inputs separately for a core-only offline kit. Git is
+needed for checkout identity and Git-based test fixtures. Do not assume the
+Microsoft compiler layout includes it. Browser/graphics validation also needs its
+separately retained host prerequisites.
+
+On a new Windows host without Python, use Windows' bundled `tar.exe` to extract
+only `sources.json` and the three named tool ZIPs from an already verified source
+archive. Check the outer archive SHA-256 against the trusted retained checksum
+inventory before extracting; do not derive trust from a newly computed hash.
+For the currently retained all-GUI group the member names are:
+
+```text
+sources.json
+cache/downloads/python-3.14.2-embed-amd64.zip
+cache/downloads/cmake-4.4.0-windows-x86_64.zip
+cache/downloads/ninja-win-1.13.2.zip
+```
+
+Use a new owned extraction directory. Pass those local ZIP paths and their
+individual hashes from the trusted `sources.json` inventory to the explicit
+[bootstrap helper](../tools/restore-windows-host-tools.ps1):
+
+```powershell
+$inputs = 'C:\offline\extracted-inputs'
+$files = (Get-Content -LiteralPath "$inputs\sources.json" -Raw | ConvertFrom-Json).files
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\restore-windows-host-tools.ps1 `
+  -PythonArchive "$inputs\cache\downloads\python-3.14.2-embed-amd64.zip" `
+  -PythonSha256 $files.'cache/downloads/python-3.14.2-embed-amd64.zip' `
+  -CmakeArchive "$inputs\cache\downloads\cmake-4.4.0-windows-x86_64.zip" `
+  -CmakeSha256 $files.'cache/downloads/cmake-4.4.0-windows-x86_64.zip' `
+  -NinjaArchive "$inputs\cache\downloads\ninja-win-1.13.2.zip" `
+  -NinjaSha256 $files.'cache/downloads/ninja-win-1.13.2.zip' `
+  -Output C:\offline\host-tools
+```
+
+The helper requires Windows PowerShell 5.1, drive-absolute local paths for every
+archive/output argument, and a new destination beneath an existing owned directory.
+The example changes script execution policy only for that process. It checks hashes, member paths, collisions, types and
+expanded-size limits before publishing the tool tree. It preserves the embedded
+Python standard library and original isolated-path policy, disabling that policy
+only after validating its expected layout so Python can import sibling checkout
+helpers. It downloads and executes nothing. Its receipt records `not-executed`;
+extraction alone is not host qualification.
+
+Use the Python path and CMake/Ninja directories in `bootstrap.json` in the chosen
+shell environment, initialize the separately installed Microsoft compiler, then
+run the ordinary retained-group restore/install and build commands above. Qualify
+the actual tools and run the opt-in extraction diagnostics with
+`python -B tests/diagnostics/windows_bootstrap.py -v` on native Windows. This
+one-time helper is not invoked by ordinary builds, tests, SDK consumers or CI.
+Changing its behavior does not relabel existing SDK recipes or rebuild an SDK.
 
 Prepared SDK trees remain immutable during ordinary builds. Tool environments and
 WebAssembly compiler wrappers disable Python bytecode writes, WebAssembly library caches
