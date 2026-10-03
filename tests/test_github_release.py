@@ -317,7 +317,7 @@ class DeliveryTests(unittest.TestCase):
         self.assertFalse((self.root/'fetched').exists());self.assertFalse(self.remote.mutations)
 
     def base_groups(self, count=4):
-        recipes = [digit * 64 for digit in 'abcd'[:count]]
+        recipes = [digit * 64 for digit in 'abcdef'[:count]]
         groups = {}
         for recipe in recipes:
             if recipe == self.fixture.recipe:
@@ -360,6 +360,110 @@ class DeliveryTests(unittest.TestCase):
         with mock.patch.object(self.remote, 'download', side_effect=download):
             G.fetch_bases('example/project', recipes, self.root / 'parallel-batch', transport=self.remote)
         self.assertEqual(peak, 4); self.assertEqual(active, 0); self.assertEqual(len(completed), 12)
+
+    def test_batch_base_fetch_verifies_complete_recipes_while_other_downloads_continue(self):
+        recipes, expected = self.base_groups(2)
+        later_assets = {row['id'] for row in self.remote.releases[0]['assets']
+                        if row['name'] in G.store.names(recipes[-1])}
+        original_download = self.remote.download
+        for binary_only in (False, True):
+            with self.subTest(binary_only=binary_only):
+                verifying = threading.Event(); completed = []
+                destination = self.root / ('overlap-' + str(binary_only))
+                name = 'verify_binary_group' if binary_only else 'verify_group'
+                original_verify = getattr(G.store, name)
+                def download(asset_id, path):
+                    if asset_id in later_assets:
+                        self.assertTrue(verifying.wait(timeout=5), 'early verification waited for later downloads')
+                    original_download(asset_id, path); completed.append(asset_id)
+                def verify(group, recipe):
+                    self.assertFalse(destination.exists())
+                    if recipe == recipes[0]:
+                        self.assertFalse(later_assets.intersection(completed))
+                        verifying.set()
+                    return original_verify(group, recipe)
+                self.remote.calls.clear()
+                with mock.patch.object(self.remote, 'download', side_effect=download), \
+                        mock.patch.object(G.store, name, side_effect=verify):
+                    result = G.fetch_bases('example/project', recipes, destination,
+                                           transport=self.remote, binary_only=binary_only)
+                self.assertTrue(verifying.is_set())
+                self.assertEqual({recipe: row['files'] for recipe, row in result.items()}, expected)
+                self.assertEqual(sum(call[0] in ('GET', 'pages') for call in self.remote.calls), 7)
+                self.assertEqual(len(completed), 4 if binary_only else 6)
+
+    def test_batch_base_fetch_bounds_verification_workers_independently(self):
+        recipes, _ = self.base_groups(6)
+        barrier = threading.Barrier(4); guard = threading.Lock()
+        active = 0; peak = 0; completed = []
+        original = G.store.verify_group
+        def verify(group, recipe):
+            nonlocal active, peak
+            with guard:
+                active += 1; peak = max(peak, active)
+            try:
+                if recipe in recipes[:4]: barrier.wait(timeout=5)
+                result = original(group, recipe)
+                with guard: completed.append(recipe)
+                return result
+            finally:
+                with guard: active -= 1
+        with mock.patch.object(G.store, 'verify_group', side_effect=verify):
+            G.fetch_bases('example/project', recipes, self.root / 'bounded-verification', transport=self.remote)
+        self.assertEqual(peak, 4); self.assertEqual(active, 0); self.assertCountEqual(completed, recipes)
+
+    def test_batch_transfer_failure_joins_running_verifier_before_staging_cleanup(self):
+        recipes, _ = self.base_groups(2)
+        verifying = threading.Event(); failed = threading.Event(); verified = threading.Event()
+        fail_name = G.store.names(recipes[-1])[0]
+        fail_id = next(row['id'] for row in self.remote.releases[0]['assets'] if row['name'] == fail_name)
+        original_download = self.remote.download; original_verify = G.store.verify_group
+        destination = self.root / 'transfer-failed-pipeline'; completed = []
+        def download(asset_id, path):
+            if asset_id == fail_id:
+                self.assertTrue(verifying.wait(timeout=5))
+                failed.set()
+                raise G.DeliveryError('injected pipelined transfer failure')
+            original_download(asset_id, path); completed.append(asset_id)
+        def verify(group, recipe):
+            if recipe == recipes[0]:
+                verifying.set()
+                self.assertTrue(failed.wait(timeout=5))
+                result = original_verify(group, recipe)
+                self.assertTrue(Path(group).is_dir()); verified.set()
+                return result
+            return original_verify(group, recipe)
+        with mock.patch.object(self.remote, 'download', side_effect=download), \
+                mock.patch.object(G.store, 'verify_group', side_effect=verify):
+            with self.assertRaisesRegex(ValueError, 'injected pipelined transfer failure'):
+                G.fetch_bases('example/project', recipes, destination, transport=self.remote)
+        self.assertTrue(verified.is_set())
+        self.assertEqual(set(completed), {row['id'] for row in self.remote.releases[0]['assets']} - {fail_id})
+        self.assertFalse(destination.exists()); self.assertFalse(list(self.root.glob('.base-fetch-*')))
+
+    def test_batch_verification_failure_joins_later_transfers_before_staging_cleanup(self):
+        recipes, _ = self.base_groups(2)
+        verifying = threading.Event(); downloading = threading.Event(); failed = threading.Event()
+        late_name = G.store.names(recipes[-1])[0]
+        late_id = next(row['id'] for row in self.remote.releases[0]['assets'] if row['name'] == late_name)
+        original_download = self.remote.download; original_verify = G.store.verify_group
+        destination = self.root / 'verify-failed-pipeline'; completed = []
+        def download(asset_id, path):
+            if asset_id == late_id:
+                self.assertTrue(verifying.wait(timeout=5)); downloading.set()
+                self.assertTrue(failed.wait(timeout=5))
+            original_download(asset_id, path); completed.append(asset_id)
+        def verify(group, recipe):
+            if recipe == recipes[0]:
+                verifying.set(); self.assertTrue(downloading.wait(timeout=5)); failed.set()
+                raise G.DeliveryError('injected pipelined verification failure')
+            return original_verify(group, recipe)
+        with mock.patch.object(self.remote, 'download', side_effect=download), \
+                mock.patch.object(G.store, 'verify_group', side_effect=verify):
+            with self.assertRaisesRegex(ValueError, 'injected pipelined verification failure'):
+                G.fetch_bases('example/project', recipes, destination, transport=self.remote)
+        self.assertEqual(set(completed), {row['id'] for row in self.remote.releases[0]['assets']})
+        self.assertFalse(destination.exists()); self.assertFalse(list(self.root.glob('.base-fetch-*')))
 
     def test_batch_binary_fetch_verifies_complete_inventory_without_source_transfers(self):
         recipes, expected = self.base_groups(2)

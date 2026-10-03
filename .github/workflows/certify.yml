@@ -91,6 +91,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      max_parallel: ${{ steps.plan.outputs.max_parallel }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
@@ -119,7 +120,7 @@ jobs:
     needs: prepare
     strategy:
       fail-fast: false
-      max-parallel: 8
+      max-parallel: ${{ fromJSON(needs.prepare.outputs.max_parallel) }}
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     # Includes bounded shared GitHub quota waits as well as execution.
@@ -290,6 +291,7 @@ env:
   TAG: ${{ inputs.tag }}
   INVENTORY: ${{ inputs.inventory }}
   PROFILE: ${{ inputs.profile }}
+  CERTIFICATION_JOBS: ${{ vars.FOUNDATION_CERTIFICATION_JOBS || '0' }}
   LINUX_POOL: ${{ inputs.linux_pool }}
   FOUNDATION_FASTER_LINUX_RUNNER: ${{ vars.FOUNDATION_FAST_LINUX_RUNNER }}
   FOUNDATION_FASTER_ARM_RUNNER: ${{ vars.FOUNDATION_FAST_ARM_RUNNER }}

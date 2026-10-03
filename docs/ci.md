@@ -362,8 +362,15 @@ separate for each backend. Browser source and recovery operations remain distinc
 for each required engine.
 
 The workflow places those unchanged operations into **23 CI batches**, selected
-by runner, container image, target, environment and scope, with up to eight batches
-running concurrently. Source and recovery can therefore run independently. Each
+by runner, container image, target, environment and scope. By default all planned
+batches are eligible to run concurrently, subject to available runners and account
+limits. Set the repository Actions variable `FOUNDATION_CERTIFICATION_JOBS` to a
+positive integer from 1 to 256 to cap concurrent certification batches for a
+constrained runner pool. Unset or `0` selects the actual batch count; a larger
+value cannot add jobs. Invalid values fail before fetching candidate inputs.
+The setting applies to both direct certification and the full Latest workflow's
+reusable certification call. It does not change compiler/test concurrency,
+coverage, artifact slots or request counts. Source and recovery remain independent. Each
 batch downloads the frozen control bundle once and only the source, archive or SDK
 components consumed by its checks. Recovery receives complete retained SDK groups;
 ordinary source checks receive the compiled SDK and its complete checksum binding.

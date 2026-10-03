@@ -138,7 +138,10 @@ asset inventory. Missing recipes fail clearly. Authentication failures and unkno
 responses never become cache misses. A failed download remains in temporary staging;
 it does not publish a usable destination. The assembly job uses `fetch_bases` to
 share discovery across its recipes inside one process. It downloads and verifies
-the complete groups with the existing bounded transfer concurrency, performs one
+the complete groups with four transfer workers. Each SDK starts verification as
+soon as all of its files finish, using a separate pool of at most four verification
+workers while other transfers continue. Failure joins both pools before removing
+staging; no partially verified destination becomes available. It performs one
 fresh reconciliation of the base release, tag and asset identities, then publishes
 the staged output directory. The batch uses seven metadata reads when inventories
 fit one page, instead of seven per recipe. It introduces no cross-job metadata

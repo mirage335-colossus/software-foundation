@@ -1079,3 +1079,39 @@ no artifact handoff or API request: the existing public complete-release model
 remains **189**, or **180** with preservation. These local tests establish the
 command boundary and preserved contracts, not a new hosted elapsed-time result
 or qualification of another provider's runners and transport.
+
+
+## Restore SDK overlap and certification concurrency
+
+The next 2026-10-03 change starts verification of each fully downloaded SDK while
+other SDK downloads continue. Separate pools retain at most four transfer workers
+and four verification workers. Both pools finish before failed staging cleanup;
+all verification and the final shared remote reconciliation must pass before the
+output directory becomes available. The four-recipe metadata cost remains seven
+reads, with no additional transfer, artifact or persistent cache.
+
+Certification now makes every planned batch eligible by default: all 23 batches
+for the current all-GUI policy. The repository Actions variable
+`FOUNDATION_CERTIFICATION_JOBS` optionally caps jobs for constrained runner pools;
+unset or `0` uses the actual matrix count. Invalid values fail before remote input
+acquisition. Runner/account availability still controls actual concurrency. Batch
+identity, artifact slots, coverage and publication gates remain unchanged.
+
+The final isolated native regression, including all five optional distribution
+suites, passed **56/56 CTest entries in 30.96 seconds**, with **1,364 passed Python
+cases** and two explicit native-Windows exclusions on Linux. Seven new cases cover
+real thread ordering for overlapping download/verification, independent worker
+bounds, joining writers after failure in either stage, full-matrix/default and
+lower-cap scheduling, invalid settings and empty matrix rejection. Existing exact
+API-count, tamper and output-publication checks also passed. Focused runs passed
+105/105 SDK delivery cases and 38/38 workflow storage cases. Independent read-only
+review, workflow lint, documentation, whitespace, Python 3.9 grammar for 122 files
+and the generic-name scan passed.
+
+Exact source hashes and reports are recorded in
+`build/agents/concurrency-restore-v1/validation.json`. Only this validation record
+changed after the tested snapshot. No hosted workflow, real remote API operation,
+SDK rebuild, commit or push was performed. The public complete-release estimate
+remains **189 requests**, or **180** with preservation. Greater job concurrency
+changes request timing, not its normal total; hosted elapsed-time improvement and
+burst behavior require observation during an ordinary run.

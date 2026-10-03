@@ -303,6 +303,14 @@ def compile_jobs():
     return resolve(os.environ.get('JOBS', 'auto'))
 
 
+def certification_job_limit():
+    """Zero schedules all planned batches; a positive repository setting caps them."""
+    raw = os.environ.get('CERTIFICATION_JOBS', '0')
+    if not ci.re.fullmatch(r'0|[1-9][0-9]{0,2}', raw) or int(raw) > 256:
+        raise ValueError('FOUNDATION_CERTIFICATION_JOBS must be 0 (all batches) or an integer from 1 to 256')
+    return int(raw)
+
+
 def parallel_operations(operations):
     """Join every independent writer, including after an earlier failure."""
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -758,13 +766,19 @@ def main(command):
         write('build/receipts/publication.json', delivery.publish_candidate(**request, execute=True))
         scalar_output('published',True)
     elif command == 'certification-plan':
+        limit = certification_job_limit()  # Reject invalid configuration before remote work.
         ci.fetch_candidate(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'), Path('build/fetched'), metadata_only=True, planning=True, workflow_context=storage_context())
         shutil.move('build/fetched/candidate', 'build/candidate')
         shutil.move('build/fetched/delivery.json', 'build/delivery.json')
         shutil.move('build/fetched/candidate-remote.json', 'build/candidate-remote.json')
         ci.qualification_plan(ROOT / 'build/candidate', value('PROFILE'), ROOT / 'build/check-plan.json', runners=selected_runners(), metadata_only=True)
-        output('matrix', ci.qualification_batches(evidence.load(ROOT / 'build/check-plan.json'), runners=selected_runners(),
-            manifest=ci.module('release').verify_metadata(ROOT / 'build/candidate'), attempt=value('GITHUB_RUN_ATTEMPT')))
+        matrix = ci.qualification_batches(evidence.load(ROOT / 'build/check-plan.json'), runners=selected_runners(),
+            manifest=ci.module('release').verify_metadata(ROOT / 'build/candidate'), attempt=value('GITHUB_RUN_ATTEMPT'))
+        count = len(matrix['include'])
+        if not 1 <= count <= 256:
+            raise ValueError('qualification matrix requires 1 to 256 batches')
+        output('matrix', matrix)
+        scalar_output('max_parallel', min(limit or count, count))
     elif command == 'check-batch':
         check_batch()
     elif command in ('check-prerequisites', 'check'):

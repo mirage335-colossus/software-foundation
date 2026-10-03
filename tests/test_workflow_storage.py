@@ -33,6 +33,44 @@ class StorageLayoutTests(unittest.TestCase):
             GITHUB_WORKFLOW_REF='example/foundation/.github/workflows/_release-latest.yml@refs/heads/main',
             RUNNER_NAME='runner-a',GITHUB_OUTPUT=str(self.root/'output'),GITHUB_STEP_SUMMARY=str(self.root/'summary'))).start()
 
+    def test_certification_plan_defaults_to_all_batches_and_honors_lower_limit(self):
+        matrix = {'include': [{'id': 'batch-' + str(index)} for index in range(23)]}
+        for limit, expected in [('0', 23), ('4', 4), ('8', 8), ('16', 16), ('23', 23), ('256', 23)]:
+            with self.subTest(limit=limit), patch.dict(os.environ, CERTIFICATION_JOBS=limit,
+                    TAG='candidate', INVENTORY='a'*64, PROFILE='all-gui'), \
+                    patch.object(lifecycle.os, 'chdir'), patch.object(lifecycle.shutil, 'move'), \
+                    patch.object(ci, 'fetch_candidate') as fetch, \
+                    patch.object(ci, 'qualification_plan'), patch.object(ci, 'module'), \
+                    patch.object(ci, 'qualification_batches', return_value=matrix), \
+                    patch.object(lifecycle.evidence, 'load'), patch.object(lifecycle, 'output') as output, \
+                    patch.object(lifecycle, 'scalar_output') as scalar:
+                lifecycle.main('certification-plan')
+                fetch.assert_called_once()
+                output.assert_called_once_with('matrix', matrix)
+                scalar.assert_called_once_with('max_parallel', expected)
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(lifecycle.certification_job_limit(), 0)
+
+    def test_invalid_certification_limit_stops_before_remote_work(self):
+        for limit in ('', '-1', '1.5', '257', '08', '1e2', 'true', ' 8', '8\\n'):
+            with self.subTest(limit=limit), patch.dict(os.environ, CERTIFICATION_JOBS=limit), \
+                    patch.object(lifecycle.os, 'chdir'), patch.object(ci, 'fetch_candidate') as fetch, \
+                    patch.object(lifecycle, 'output') as output, \
+                    self.assertRaisesRegex(ValueError, 'FOUNDATION_CERTIFICATION_JOBS'):
+                lifecycle.main('certification-plan')
+            fetch.assert_not_called(); output.assert_not_called()
+
+    def test_certification_cannot_schedule_an_empty_matrix(self):
+        with patch.dict(os.environ, CERTIFICATION_JOBS='0', TAG='candidate', INVENTORY='a'*64, PROFILE='core'), \
+                patch.object(lifecycle.os, 'chdir'), patch.object(lifecycle.shutil, 'move'), \
+                patch.object(ci, 'fetch_candidate'), patch.object(ci, 'qualification_plan'), \
+                patch.object(ci, 'module'), patch.object(ci, 'qualification_batches', return_value={'include': []}), \
+                patch.object(lifecycle.evidence, 'load'), patch.object(lifecycle, 'output') as output, \
+                patch.object(lifecycle, 'scalar_output') as scalar, \
+                self.assertRaisesRegex(ValueError, '1 to 256 batches'):
+            lifecycle.main('certification-plan')
+        output.assert_not_called(); scalar.assert_not_called()
+
     def test_hosted_checks_translate_identity_at_provider_boundary(self):
         previous = Path.cwd()
         try:
@@ -399,7 +437,9 @@ class WorkflowContractTests(unittest.TestCase):
                         candidate.index('lifecycle.py candidate-aggregate'))
         self.assertIn('slot: ${{ strategy.job-index }}', certify)
         self.assertIn("if: always() && needs.prepare.result == 'success'", certify)
-        self.assertIn('max-parallel: 8', certify)
+        self.assertIn('max_parallel: ${{ steps.plan.outputs.max_parallel }}', certify)
+        self.assertIn('max-parallel: ${{ fromJSON(needs.prepare.outputs.max_parallel) }}', certify)
+        self.assertIn("CERTIFICATION_JOBS: ${{ vars.FOUNDATION_CERTIFICATION_JOBS || '0' }}", certify)
         self.assertIn('build/prerequisites/', certify)
         self.assertIn('build/attachment-plan.json', certify)
         self.assertEqual(certify.count('uses: ./.github/actions/ci-evidence-download'), 3)

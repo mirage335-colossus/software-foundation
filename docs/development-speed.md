@@ -60,8 +60,11 @@ worker default independently of compiler parallelism. Archive qualification comb
 member inventory with extraction or small metadata inspection; it does not extract
 the complete application merely to read build information. Exact payload hashes,
 safe member checks and before/after qualification validation remain required. Independent source, recovery, archive, ABI, browser
-and package operations occupy 23 scope-separated batches, with up to eight running
-concurrently in the complete all-GUI plan. Transport grouping follows required
+and package operations occupy 23 scope-separated batches, all eligible to run
+concurrently by default in the complete all-GUI plan. The optional repository
+variable `FOUNDATION_CERTIFICATION_JOBS` lowers the job limit for constrained pools;
+unset or `0` uses the full planned batch count. Actual concurrency still depends
+on runner/account capacity. Transport grouping follows required
 inputs rather than forcing unrelated operations through one serial batch.
 
 The complete Latest flow overlaps native regression with application producers.
@@ -209,7 +212,11 @@ range, not a hosted measurement or guaranteed ceiling. It assumes public assets,
 one-page inventories and successful first attempts. Assembly shares one in-process
 base-release inventory across its four SDK recipes and performs one fresh final
 reconciliation, reducing their metadata reads from 28 to seven. Every SDK payload
-is still verified and downloads retain bounded parallelism. No cross-job artifact,
+is still verified and downloads retain bounded parallelism. Each completed SDK
+starts verification while other SDKs continue downloading, using separate pools
+of at most four transfer workers and four verification workers. All writers join
+before cleanup, and no output becomes available until every verification and the
+fresh remote reconciliation pass. No cross-job artifact,
 persistent cache or extra upload is introduced.
 
 Write headroom normally uses quota headers from existing API responses. A bounded

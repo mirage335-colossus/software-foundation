@@ -7,7 +7,7 @@ IDs and bytes before a new attempt. This helper never deletes or replaces assets
 """
 import argparse
 import atexit
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import importlib.util
 import io
@@ -915,15 +915,19 @@ def upload_files(remote, tag, paths, *, release_info=None):
             for future in futures: future.result()
 
 
-def download_files(remote, assets, selections):
+def download_files(remote, assets, selections, *, _completed=None):
     """Bounded independent immutable transfers; all workers join before return."""
     selections = list(selections)
     destinations = [str(Path(path).absolute()) for _, path, _ in selections]
     if len(destinations) != len(set(destinations)):
         raise DeliveryError('download destinations must be distinct')
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(remote.download, assets[name], path, digest) for name, path, digest in selections]
-        for future in futures: future.result()
+        futures = {pool.submit(remote.download, assets[name], path, digest): name
+                   for name, path, digest in selections}
+        for future in as_completed(futures) if _completed is not None else futures:
+            future.result()
+            if _completed is not None:
+                _completed(futures[future])  # Coordinator only; never a transfer worker.
 
 
 def _fetch_base_groups(repository, recipes, output, *, transport, binary_only, single):
@@ -946,7 +950,7 @@ def _fetch_base_groups(repository, recipes, output, *, transport, binary_only, s
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.base-fetch-', dir=output.parent) as temporary:
         stage = Path(temporary) / 'group'; stage.mkdir()
-        groups, selections, results = {}, [], {}
+        groups, selections, remaining, owners = {}, [], {}, {}
         for recipe, names in expected.items():
             group = stage if single else stage / recipe
             if not single: group.mkdir()
@@ -954,9 +958,8 @@ def _fetch_base_groups(repository, recipes, output, *, transport, binary_only, s
             binary, source, checksum = names
             selected = (binary, checksum) if binary_only else names
             selections.extend((name, group / name, None) for name in selected)
-        # One pool across all recipes keeps four transfers active without
-        # nested per-recipe pools, additional handoffs or persistent metadata.
-        download_files(remote, assets, selections)
+            remaining[recipe] = len(selected)
+            owners.update((name, recipe) for name in selected)
         def verify(recipe):
             group = groups[recipe]
             files = store.verify_binary_group(group, recipe) if binary_only else store.verify_group(group, recipe)
@@ -964,9 +967,18 @@ def _fetch_base_groups(repository, recipes, output, *, transport, binary_only, s
                 raise DeliveryError('base assets differ from complete checksum inventory')
             return dict(fetched=True, recipe=recipe, files=files,
                         payload='binary' if binary_only else 'complete')
+        # A recipe can verify while other recipes still download. Separate
+        # bounded pools avoid verification occupying transfer slots or waiting
+        # on unfinished files. Both pools join before failed staging is removed.
         with ThreadPoolExecutor(max_workers=4) as pool:
-            pending = {recipe: pool.submit(verify, recipe) for recipe in groups}
-            results = {recipe: future.result() for recipe, future in pending.items()}
+            pending = {}
+            def downloaded(name):
+                recipe = owners[name]
+                remaining[recipe] -= 1
+                if remaining[recipe] == 0:
+                    pending[recipe] = pool.submit(verify, recipe)
+            download_files(remote, assets, selections, _completed=downloaded)
+            results = {recipe: pending[recipe].result() for recipe in groups}
         # All consumers retain full byte checks; one fresh reconciliation covers
         # the whole immutable snapshot before any output becomes available.
         remote.unchanged('base', info, assets, reference)
