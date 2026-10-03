@@ -65,6 +65,26 @@ class SDKTests(unittest.TestCase):
         sdk.restore_sources(self.group, self.recipe, self.root / 'restored')
         self.assertEqual(file_inventory(self.sources), file_inventory(self.root / 'restored'))
 
+    def test_binary_only_install_keeps_complete_checksum_binding_and_full_recovery_requires_sources(self):
+        from dependency_store import names, verify_group, verify_binary_group
+        import copy
+        files = verify_group(self.group, self.recipe)
+        (self.group / names(self.recipe)[1]).unlink()
+        self.assertEqual(verify_binary_group(self.group, self.recipe, files), files)
+        installed = self.root / 'binary consumer'
+        sdk.install(self.group, self.recipe, installed, production=False, expected_files=files)
+        verify_sdk(installed)
+        with self.assertRaisesRegex(ValueError, 'exactly'):
+            verify_group(self.group, self.recipe)
+        with self.assertRaises(ValueError): sdk.restore_sources(self.group, self.recipe, self.root / 'missing recovery')
+        for name in files:
+            changed = dict(files); changed[name] = '0'*64
+            with self.assertRaisesRegex(ValueError, 'frozen complete inventory'):
+                verify_binary_group(self.group, self.recipe, changed)
+        binary = self.group / names(self.recipe)[0]; binary.write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError, 'checksum'):
+            verify_binary_group(self.group, self.recipe, files)
+
     def test_fixture_cannot_claim_release_readiness(self):
         with self.assertRaisesRegex(ValueError, 'preparation kind'):
             sdk.install(self.group, self.recipe, self.root / 'production')

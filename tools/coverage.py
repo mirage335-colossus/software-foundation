@@ -110,7 +110,7 @@ def validate(plan):
     seen = set()
     for item in plan["checks"]:
         fields(item, {"id", "scope", "target", "environment", "backend", "required", "argv",
-                      "timeout_seconds", "warning_seconds", "expected_tests"}, {"junit", "qualification", "execution"})
+                      "timeout_seconds", "warning_seconds", "expected_tests"}, {"junit", "qualification", "execution", "sdk_payload"})
         for key in ("id", "scope", "target", "environment", "backend"):
             if not isinstance(item[key], str) or not NAME.fullmatch(item[key]):
                 raise ValueError("invalid check identity")
@@ -138,6 +138,8 @@ def validate(plan):
             relative(item["junit"])
         if "qualification" in item:
             relative(item["qualification"])
+        if "sdk_payload" in item and (item["scope"] != "source" or item["sdk_payload"] not in ("binary", "complete")):
+            raise ValueError("invalid source SDK payload selection")
     validate_executions(plan)
     if plan["id"] != digest({k: v for k, v in plan.items() if k != "id"}):
         raise ValueError("coverage plan digest differs")
@@ -159,7 +161,7 @@ def validate_executions(plan):
                 not item["target"].startswith(("linux-", "windows-")) or
                 item["scope"] == "abi" and not item["target"].startswith("linux-")):
             raise ValueError("unsupported grouped execution")
-        common = ("execution", "target", "environment", "scope", "argv", "timeout_seconds", "warning_seconds", "expected_tests")
+        common = ("execution", "target", "environment", "scope", "argv", "timeout_seconds", "warning_seconds", "expected_tests", "sdk_payload")
         if (any(any(row.get(key) != item.get(key) for key in common) for row in members) or
                 len({row["backend"] for row in members}) != len(members) or
                 len({row.get("qualification") for row in members}) != len(members) or
@@ -196,10 +198,32 @@ def freeze(spec):
     return validate(plan)
 
 
-def check_inputs(plan, root):
-    for name, expected in plan["inputs"].items():
+def check_inputs(plan, root, *, check_ids=None, metadata_only=False):
+    """Verify frozen common inputs and exactly the selected physical payloads."""
+    selected = None
+    if (check_ids is not None or metadata_only) and any(name.startswith('build/candidate/') for name in plan['inputs']):
+        validate(plan)
+        if plan['mode'] != 'release': raise ValueError('scoped inputs require a frozen release plan')
+        import release
+        candidate = Path(root) / 'build/candidate'; manifest = release.verify_metadata(candidate)
+        if sha(candidate / 'release.json') != plan['subject']['inventory_sha256']:
+            raise ValueError('release metadata differs from frozen subject')
+        declared = {'build/candidate/' + name: value for name, value in manifest['files'].items()}
+        if any(plan['inputs'].get(name) != value for name, value in declared.items()) or (
+                {name for name in plan['inputs'] if name.startswith('build/candidate/')} != set(declared) | {'build/candidate/release.json'}):
+            raise ValueError('frozen release input inventory differs from complete metadata')
+        selected = {'build/candidate/release.json'}
+        if check_ids is not None:
+            if not check_ids or len(check_ids) != len(set(check_ids)):
+                raise ValueError('complete nonempty check selection required')
+            matches = [item for item in executions(plan) if item['id'] in check_ids]
+            if {item['id'] for item in matches} != set(check_ids): raise ValueError('unknown physical check selection')
+            for item in matches:
+                selected.update('build/candidate/' + name for name in release.required_files(manifest, item['target'], item['backend'], item['scope'], binary_source=item.get('sdk_payload') == 'binary'))
+    for name, expected in plan['inputs'].items():
+        if selected is not None and name.startswith('build/candidate/') and name not in selected: continue
         if sha(local(root, name)) != expected:
-            raise ValueError("check input changed: " + name)
+            raise ValueError('check input changed: ' + name)
 
 
 def junit(path, expected):
@@ -296,7 +320,7 @@ def run_case(plan, check_id, root, output, run_id, attempt, *, _physical=False):
     if "execution" in item and not _physical:
         raise ValueError("grouped check requires the physical execution entry point")
     root = root.resolve(strict=True)
-    check_inputs(plan, root)
+    check_inputs(plan, root, **({'check_ids': [check_id]} if plan['mode'] == 'release' else {}))
     output.mkdir(parents=True, exist_ok=False)
     output = output.resolve()
     argv = [x.replace("{python}", sys.executable).replace("{root}", str(root))
@@ -337,7 +361,7 @@ def run_case(plan, check_id, root, output, run_id, attempt, *, _physical=False):
             junit(local(output, item["junit"]), item["expected_tests"])
         if result["status"] == "passed" and "qualification" in item:
             qualification(output, item, plan, result["host"])
-        check_inputs(plan, root)
+        check_inputs(plan, root, **({'check_ids': [check_id]} if plan['mode'] == 'release' else {}))
     except (OSError, ValueError, ET.ParseError, ProcessTreeError, subprocess.TimeoutExpired) as error:
         result["status"], result["error"] = "failed", str(error)
     finally:

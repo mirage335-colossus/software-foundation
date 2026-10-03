@@ -5,13 +5,16 @@ then run the required broader checks when the candidate is ready. A focused
 pass proves only its named scope. A test plan must identify what is required
 for the change and what remains outstanding.
 
+See [development speed](development-speed.md) for targeted prerequisites, independent
+compile/test concurrency and scope-specific release inputs.
+
 ## Everyday sequence
 
 ```sh
-./build.sh test dev --label core --jobs 2
-./build.sh test dev --full --jobs 2
-./build.sh test asan --jobs 2
-./build.sh package release --jobs 2
+./build.sh test dev --label core
+./build.sh test dev --full
+./build.sh test asan
+./build.sh package release
 ```
 
 Choose the first label for the actual change: `core`, `tools`, `integration`, or
@@ -206,7 +209,12 @@ explicit checks rather than assertions removed by the compiler.
 For multi-environment release work use [the frozen coverage and certification
 protocol](certification.md). Its immutable attempt directories and supervised
 process trees add source/asset/policy identity to the local CTest shard mechanism.
-Neither local helper authorizes concurrent writes to a common build directory.
+Candidate execution configures one complete graph, then compiles only
+`foundation-tests-core`, `foundation-tests-tools` or
+`foundation-tests-integration` for the selected scope. Generated CTest commands
+and configuration stay frozen across those independent trees even before other
+executables exist. An ordinary shard still compiles the complete test prerequisite
+target. Neither local helper authorizes concurrent writes to a common build directory.
 
 
 ## Focused host diagnostics

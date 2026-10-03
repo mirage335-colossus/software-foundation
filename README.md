@@ -12,6 +12,9 @@ Start with the [engineering contract](docs/engineering-contract.md),
 and [documentation index](docs/README.md). Contributors and automated assistants
 read [AGENTS.md](AGENTS.md) before editing shared resources.
 
+For focused development, automatic compile limits and efficient release qualification,
+see [development speed](docs/development-speed.md).
+
 ## Run the example
 
 Requires CMake 3.24+, Ninja, a C++20 compiler, and Python 3.9+ for tooling/tests.
@@ -21,14 +24,14 @@ point shown below. Configuring the project never downloads dependencies.
 ```sh
 ./build.sh
 ./build/dev/foundation-cli -- "First entry" "Second entry"
-./build.sh test dev --label core --jobs 2
-./build.sh test release --full --jobs 2
-./build.sh package release --jobs 2
+./build.sh test dev --label core
+./build.sh test release --full
+./build.sh package release
 ```
 
 ```powershell
-python tools/build.py test release --full --jobs 2
-python tools/build.py package release --jobs 2
+python tools/build.py test release --full
+python tools/build.py package release
 ```
 
 The library installs as CMake package `Foundation`, target `foundation::core`.

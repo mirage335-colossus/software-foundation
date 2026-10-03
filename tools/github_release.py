@@ -477,8 +477,11 @@ def candidate_identity(directory, repository, tag, source_commit, packager_commi
             raise DeliveryError('flattened asset names collide with another asset or evidence namespace')
         seen.add(asset.casefold())
         mapping[name] = {'asset': asset, 'sha256': archive.digest(path), 'size': path.stat().st_size}
-    if (release.verify_release(directory) != manifest
-            or archive.digest(directory / 'release.json') != mapping['release.json']['sha256']):
+        if name != 'release.json' and mapping[name]['sha256'] != manifest['files'][name]:
+            raise DeliveryError('local release changed while freezing delivery identity')
+    archive.verify_inventory(directory, manifest['files'], exclude=('release.json',))
+    if (coverage.load(directory / 'release.json') != manifest or
+            archive.digest(directory / 'release.json') != mapping['release.json']['sha256']):
         raise DeliveryError('local release changed while freezing delivery identity')
     return {'schema_version': 1, 'repository': repository, 'tag': tag, 'source_commit': source_commit,
             'packager_commit': packager_commit, 'tag_commit': packager_commit,
@@ -487,9 +490,32 @@ def candidate_identity(directory, repository, tag, source_commit, packager_commi
             'files': mapping}
 
 
-def validate_delivery(delivery, directory):
+def validate_delivery(delivery, directory, *, metadata_only=False):
     if not isinstance(delivery, dict):
         raise DeliveryError('delivery identity must be an object')
+    if metadata_only:
+        metadata = release.verify_metadata(directory)
+        coverage.fields(delivery, {'schema_version', 'repository', 'tag', 'source_commit', 'packager_commit', 'tag_commit',
+            'publication_id', 'experiment', 'source_sha256', 'inventory_sha256', 'files'})
+        location(delivery['repository'], delivery['tag']); valid_name(delivery['publication_id'])
+        if (delivery['schema_version'] != 1 or type(delivery['experiment']) is not bool or
+                not OID.fullmatch(delivery['source_commit']) or not OID.fullmatch(delivery['packager_commit']) or
+                delivery['tag_commit'] != delivery['packager_commit'] or
+                not delivery['experiment'] and delivery['source_commit'] != delivery['packager_commit'] or
+                delivery['source_sha256'] != metadata['source']['sha256'] or
+                delivery['inventory_sha256'] != archive.digest(Path(directory) / 'release.json')):
+            raise DeliveryError('delivery identity differs from complete release metadata')
+        expected = dict(metadata['files'], **{'release.json': delivery['inventory_sha256']})
+        if set(delivery['files']) != set(expected): raise DeliveryError('delivery file inventory differs')
+        seen = {'delivery.json'}
+        for name, digest in expected.items():
+            item = delivery['files'][name]; coverage.fields(item, {'asset', 'sha256', 'size'})
+            asset = valid_name(Path(name).name)
+            if (item['asset'] != asset or item['sha256'] != digest or asset.casefold() in seen or
+                    CERT.fullmatch(asset) or type(item['size']) is not int or item['size'] < 0):
+                raise DeliveryError('delivery asset identity differs from complete metadata')
+            seen.add(asset.casefold())
+        return sha(archive.encoded(delivery))
     expected = candidate_identity(directory, **{key: delivery[key] for key in
         ('repository', 'tag', 'source_commit', 'packager_commit', 'publication_id', 'experiment')})
     if expected != delivery:
@@ -508,8 +534,8 @@ def evidence_pairs(names):
         raise DeliveryError('partial certificate attempt requires reconciliation')
 
 
-def verified_remote(remote, delivery, directory, *, draft=False, prerelease=None):
-    validate_delivery(delivery, directory)
+def verified_remote(remote, delivery, directory, *, draft=False, prerelease=None, readback=True, metadata_only=False):
+    validate_delivery(delivery, directory, metadata_only=metadata_only)
     if prerelease is not None and type(prerelease) is not bool:
         raise DeliveryError('prerelease pin must be a boolean or None')
     tag = delivery['tag']; info = remote.find(tag)
@@ -530,6 +556,10 @@ def verified_remote(remote, delivery, directory, *, draft=False, prerelease=None
     if draft and extras:
         raise DeliveryError('unexpected draft assets')
     evidence_pairs(extras)
+    for item in delivery['files'].values():
+        row = assets[item['asset']]
+        if row['digest'] != 'sha256:' + item['sha256'] or row['size'] != item['size']:
+            raise DeliveryError('remote asset differs from complete frozen inventory')
     with tempfile.TemporaryDirectory(prefix='delivery-verify-') as temporary:
         staged = Path(temporary)
         descriptor = staged / 'delivery.json'
@@ -537,10 +567,10 @@ def verified_remote(remote, delivery, directory, *, draft=False, prerelease=None
         if coverage.load(descriptor) != delivery:
             raise DeliveryError('remote frozen delivery differs')
         restored = staged / 'release'; restored.mkdir()
-        for name, item in delivery['files'].items():
+        for name, item in (delivery['files'].items() if readback else ()):
             path = restored.joinpath(*archive.relative(name).parts); path.parent.mkdir(parents=True, exist_ok=True)
             remote.download(assets[item['asset']], path, item['sha256'])
-        release.verify_release(restored)
+        if readback: release.verify_release(restored)
     remote.unchanged(tag, info, assets, delivery['tag_commit'])
     return info, assets
 
@@ -641,23 +671,24 @@ def publish_candidate(repository, tag, directory, source_commit, packager_commit
         for name in delivery['files']:remote.upload(tag, Path(directory) / name)
         with tempfile.TemporaryDirectory(prefix='delivery-metadata-') as temporary:
             path=Path(temporary)/'delivery.json';path.write_bytes(archive.encoded(delivery));remote.upload(tag,path)
-        current, assets = verified_remote(remote, delivery, directory, draft=True, prerelease=True)
+        current, assets = verified_remote(remote, delivery, directory, draft=True, prerelease=True, metadata_only=True)
         if current['id'] != info['id']:raise DeliveryError('draft release identity changed')
         remote.change(f'/releases/{info["id"]}', method='PATCH', body={'draft':False,'prerelease':True,'make_latest':'false'})
-        final, final_assets = verified_remote(remote, delivery, directory, prerelease=True)
+        final, final_assets = verified_remote(remote, delivery, directory, prerelease=True, readback=False, metadata_only=True)
         if final['id'] != info['id'] or final_assets != assets:raise DeliveryError('publication identity changed')
         remote.not_latest(final)
         return dict(result, execute=True, release_id=final['id'])
     return run_mutation(remote, act)
 
 
-def bundle_certificate(directory, delivery, certificate, check_plan, policy, profile, reports, attempt, destination):
-    validate_delivery(delivery, directory)
+def bundle_certificate(directory, delivery, certificate, check_plan, policy, profile, reports, attempt, destination, *, metadata_only=False):
+    validate_delivery(delivery, directory, metadata_only=metadata_only)
+    manifest = release.verify_metadata(directory) if metadata_only else release.verify_release(directory)
     if not positive(attempt):raise DeliveryError('certificate attempt must be positive')
     certificate = Path(certificate); reports = [Path(p) for p in reports]
     document = coverage.load(certificate)
     frozen = coverage.load(check_plan); rules = coverage.load(policy)
-    expected = certification.certify(Path(directory), release.verify_release(directory), frozen, reports,
+    expected = certification.certify(Path(directory), manifest, frozen, reports,
                                      rules, profile, delivery['experiment'])
     if document != expected:raise DeliveryError('certificate does not match current complete policy and evidence')
     run_id = document['run_id']
@@ -683,7 +714,7 @@ def bundle_certificate(directory, delivery, certificate, check_plan, policy, pro
     copied_certificate = coverage.load(tree / 'certificate.json')
     if (copied_certificate != document or coverage.load(tree / 'plan.json') != frozen
             or coverage.load(tree / 'policy.json') != rules
-            or certification.certify(Path(directory), release.verify_release(directory), frozen,
+            or certification.certify(Path(directory), manifest, frozen,
                                      copied_reports, rules, profile, delivery['experiment']) != document):
         raise DeliveryError('certificate evidence changed while creating the complete bundle')
     metadata={'schema_version':1,'delivery_sha256':sha(archive.encoded(delivery)), 'run_id':run_id,
@@ -701,21 +732,21 @@ def bundle_certificate(directory, delivery, certificate, check_plan, policy, pro
 
 
 def attach_certificate(repository, tag, directory, delivery, certificate, check_plan, policy, profile,
-                       reports, attempt, *, execute=False, transport=None):
+                       reports, attempt, *, execute=False, transport=None, metadata_only=False):
     location(repository,tag)
     if (repository,tag)!=(delivery.get('repository'),delivery.get('tag')):raise DeliveryError('delivery belongs to another location')
     with tempfile.TemporaryDirectory(prefix='certificate-package-') as temporary:
-        envelope,report,bundle=bundle_certificate(directory,delivery,certificate,check_plan,policy,profile,reports,attempt,temporary)
+        envelope,report,bundle=bundle_certificate(directory,delivery,certificate,check_plan,policy,profile,reports,attempt,temporary,metadata_only=metadata_only)
         files={p.name:archive.digest(p) for p in (report,bundle)}
         result=plan('attach-certificate',repository,tag=tag,files=files,certificate=envelope,
                     lifecycle='append one immutable attempt; preserve every previous asset; no promotion')
         if not execute:return result
         remote=Remote(repository,transport)
         def act():
-            remote.visible();info,before=verified_remote(remote,delivery,directory)
+            remote.visible();info,before=verified_remote(remote,delivery,directory,readback=not metadata_only,metadata_only=metadata_only)
             if set(files)&before.keys():raise DeliveryError('certificate attempt already exists; inspect it, never overwrite')
             remote.upload(tag,bundle);remote.upload(tag,report)
-            current,after=verified_remote(remote,delivery,directory,prerelease=info['prerelease'])
+            current,after=verified_remote(remote,delivery,directory,prerelease=info['prerelease'],readback=not metadata_only,metadata_only=metadata_only)
             if current['id']!=info['id'] or set(after)!=set(before)|set(files) or any(after[n]!=v for n,v in before.items()):
                 raise DeliveryError('certificate attachment changed an existing asset')
             with tempfile.TemporaryDirectory(prefix='certificate-confirm-') as check:
@@ -725,7 +756,7 @@ def attach_certificate(repository, tag, directory, delivery, certificate, check_
         return run_mutation(remote,act)
 
 
-def verify_certificate(remote, assets, delivery, directory, policy, profile, run_id, attempt, certificate_sha256):
+def verify_certificate(remote, assets, delivery, directory, policy, profile, run_id, attempt, certificate_sha256, *, metadata_only=False):
     if not positive(attempt) or not coverage.NAME.fullmatch(run_id) or not SHA.fullmatch(certificate_sha256):
         raise DeliveryError('exact certificate run, attempt and digest are required')
     stem=valid_name(f'certification-{run_id}-attempt-{attempt}')
@@ -766,7 +797,7 @@ def verify_certificate(remote, assets, delivery, directory, policy, profile, run
         # Preserve original caller order when comparing the certifier's report list.
         frozen=coverage.load(tree/'plan.json')
         saved=coverage.load(tree/'certificate.json')
-        result=certification.certify(Path(directory),release.verify_release(directory),frozen,reports,rules,profile,False)
+        result=certification.certify(Path(directory),release.verify_metadata(directory) if metadata_only else release.verify_release(directory),frozen,reports,rules,profile,False)
         if result!=saved or result['subject']!=envelope['subject']:
             raise DeliveryError('saved certificate does not reproduce from complete retained evidence')
         if (result['status'] not in ('passed','passed_with_warnings') or result['eligible_for_promotion'] is not True
@@ -776,8 +807,8 @@ def verify_certificate(remote, assets, delivery, directory, policy, profile, run
         return {'certificate_sha256':certificate_sha256,'run_id':run_id,'attempt':attempt,'status':result['status']}
 
 
-def promote(repository,tag,directory,delivery,policy,profile,run_id,attempt,certificate_sha256,*,execute=False,transport=None):
-    location(repository,tag);validate_delivery(delivery,directory)
+def promote(repository,tag,directory,delivery,policy,profile,run_id,attempt,certificate_sha256,*,execute=False,transport=None,metadata_only=False):
+    location(repository,tag);validate_delivery(delivery,directory,metadata_only=metadata_only)
     if (repository,tag)!=(delivery['repository'],delivery['tag']) or delivery['experiment'] or tag=='base':
         raise DeliveryError('only this ordinary application release can be promoted')
     if not positive(attempt) or not coverage.NAME.fullmatch(run_id) or not SHA.fullmatch(certificate_sha256):
@@ -789,14 +820,14 @@ def promote(repository,tag,directory,delivery,policy,profile,run_id,attempt,cert
     if not execute:return result
     remote=Remote(repository,transport)
     def act():
-        remote.visible();info,assets=verified_remote(remote,delivery,directory)
-        evidence=verify_certificate(remote,assets,delivery,directory,policy,profile,run_id,attempt,certificate_sha256)
+        remote.visible();info,assets=verified_remote(remote,delivery,directory,readback=not metadata_only,metadata_only=metadata_only)
+        evidence=verify_certificate(remote,assets,delivery,directory,policy,profile,run_id,attempt,certificate_sha256,metadata_only=metadata_only)
         # Reread all byte identities immediately before the final mutation.
-        current,again=verified_remote(remote,delivery,directory,prerelease=info['prerelease'])
+        current,again=verified_remote(remote,delivery,directory,prerelease=info['prerelease'],readback=not metadata_only,metadata_only=metadata_only)
         if current['id']!=info['id'] or again!=assets:raise DeliveryError('remote delivery changed after certificate review')
         if archive.digest(policy)!=result['policy_sha256']:raise DeliveryError('promotion policy changed')
         remote.change(f'/releases/{info["id"]}',method='PATCH',body={'draft':False,'prerelease':False,'make_latest':'true'})
-        final,after=verified_remote(remote,delivery,directory,prerelease=False)
+        final,after=verified_remote(remote,delivery,directory,prerelease=False,readback=not metadata_only,metadata_only=metadata_only)
         if final['id']!=info['id'] or after!=assets:raise DeliveryError('promoted assets changed')
         latest=remote.transport.json(remote.base+'/releases/latest')
         remote.info(latest,tag)

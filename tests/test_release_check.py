@@ -17,7 +17,10 @@ class ReleaseCheckTests(unittest.TestCase):
         import windows_toolchain
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); entry = {'target':'windows-x86_64','sdk_recipe':'a'*64,'backends':[]}
-            manifest = {'source':{'archive':'source.tar.gz'}}
+            source_name = 'sdk-' + entry['sdk_recipe'] + '-sources.tar.gz'
+            group = root / 'dependencies' / entry['sdk_recipe']; group.mkdir(parents=True)
+            (group / source_name).write_text('full-group source fixture')
+            manifest = {'source':{'archive':'source.tar.gz'}, 'dependencies':[{'recipe_id':entry['sdk_recipe'], 'files':{source_name:'b'*64}}]}
             with patch.object(check,'native_target'), patch.object(check,'verify_source_archive',return_value='snapshot'), \
                  patch.object(check,'extract'), patch.object(check,'source_tree',return_value='snapshot'), \
                  patch.object(windows_toolchain,'inspect_selected_linker',return_value={'version':'14.44.35207.0'}) as probe, \
@@ -78,7 +81,7 @@ class ReleaseCheckTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); manifest, unused = self.fixture(root)
             manifest['artifacts'][0].update(target='windows-x86_64', backends=['terminal', 'rev'])
-            with patch.object(check.release, 'verify_release', return_value=manifest), \
+            with patch.object(check.release, 'verify_selection', return_value=manifest), \
                     patch.object(check, 'native_target'), patch.object(check.artifact, 'verify') as verify:
                 for scope, backend, options in [('source', 'terminal', {}), ('recovery', 'rev', {}),
                     ('archive', 'rev', {}), ('archive', 'terminal', {'windows_graphics_archive': root / 'retained.7z'})]:
@@ -147,7 +150,7 @@ class ReleaseCheckTests(unittest.TestCase):
                 inventory_sha256=check.digest(root/'release.json'),configuration_sha256='c'*64),
                 execution='abi-fltk',checks=['abi-fltk','abi-sdl'],backends=['fltk','sdl'],target='linux-x86_64',
                 environment='fixture',scope='abi',run_id='run',attempt=1,host=check.c.host_identity())
-            with patch.object(check.release,'verify_release',return_value=manifest),patch.object(check,'native_target'), \
+            with patch.object(check.release,'verify_selection',return_value=manifest),patch.object(check,'native_target'), \
                  patch.object(check.artifact,'inspect_archive'),patch.object(check,'audit',return_value={'audited':'all'}) as audit:
                 wrong=copy.deepcopy(identity);wrong['backends']=['fltk']
                 with self.assertRaisesRegex(ValueError,'complete native artifact'):
@@ -408,12 +411,12 @@ class ReleaseCheckTests(unittest.TestCase):
             def performed(candidate, entry, backend, work, evidence):
                 (evidence / 'apt.log').write_bytes(b'actual adapter log fixture')
                 return {'archive_sha256': entry['sha256'], 'checks': ['install', 'upgrade', 'purge']}
-            with patch.object(check.release, 'verify_release', return_value=manifest), \
+            with patch.object(check.release, 'verify_selection', return_value=manifest), \
                     patch.object(check, 'run_apt', side_effect=performed) as apt:
                 result = check.check(root, target, 'core', 'apt', root / 'evidence')
                 self.assertEqual(apt.call_args.args[2], 'core')
                 self.assertEqual(result['evidence'], {'apt.log': check.digest(root / 'evidence/apt.log')})
-            with patch.object(check.release, 'verify_release', return_value=manifest), \
+            with patch.object(check.release, 'verify_selection', return_value=manifest), \
                     patch.object(check, 'run_apt', side_effect=ValueError('install failed')):
                 with self.assertRaisesRegex(ValueError, 'install failed'):
                     check.check(root, target, 'core', 'apt', root / 'failed')
@@ -433,7 +436,7 @@ class ReleaseCheckTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             manifest, target = self.fixture(root)
-            with patch.object(check.release, 'verify_release', return_value=manifest) as verify, patch.object(check.artifact, 'verify') as runtime:
+            with patch.object(check.release, 'verify_selection', return_value=manifest) as verify, patch.object(check.artifact, 'verify') as runtime:
                 result = check.check(root, target, 'core', 'archive', root / 'evidence')
                 self.assertEqual(verify.call_count, 2)
                 self.assertEqual(runtime.call_args.kwargs['backend'], 'core')
@@ -450,11 +453,11 @@ class ReleaseCheckTests(unittest.TestCase):
             manifest, target = self.fixture(root)
             def mutate(*args, **kwargs):
                 (root / 'release.json').write_text('{"changed":true}')
-            with patch.object(check.release, 'verify_release', return_value=manifest), patch.object(check.artifact, 'verify', side_effect=mutate):
+            with patch.object(check.release, 'verify_selection', return_value=manifest), patch.object(check.artifact, 'verify', side_effect=mutate):
                 with self.assertRaisesRegex(ValueError, 'changed'):
                     check.check(root, target, 'core', 'archive', root / 'evidence')
                 self.assertFalse((root / 'evidence/qualification.json').exists())
-            with patch.object(check.release, 'verify_release', return_value=manifest), patch.object(check.artifact, 'verify', side_effect=ValueError('runtime failed')):
+            with patch.object(check.release, 'verify_selection', return_value=manifest), patch.object(check.artifact, 'verify', side_effect=ValueError('runtime failed')):
                 with self.assertRaisesRegex(ValueError, 'runtime failed'):
                     check.check(root, target, 'core', 'archive', root / 'failure')
                 self.assertFalse((root / 'failure/qualification.json').exists())

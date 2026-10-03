@@ -101,8 +101,17 @@ def build_inputs(build):
         if wrapper.get("gui") != expected_gui:
             raise ValueError("GUI source differs from configured wrapper identity")
         for item in wrapper.get("dependencies", []):
-            actual = {"root": str(Path(item["root"]).resolve(strict=True)), "recipe": item["recipe"],
-                      "files": verify_group(item["root"], item["recipe"])}
+            payload = item.get("payload", "complete")
+            if payload == "binary":
+                from dependency_store import verify_binary_group
+                files = verify_binary_group(item["root"], item["recipe"])
+            elif payload == "complete":
+                files = verify_group(item["root"], item["recipe"])
+            else:
+                raise ValueError("unknown retained dependency payload scope")
+            actual = {"root": str(Path(item["root"]).resolve(strict=True)), "recipe": item["recipe"], "files": files}
+            if payload == "binary":
+                actual["payload"] = "binary"
             if actual != item or item["recipe"] in recipe_ids:
                 raise ValueError("retained dependency group changed or is duplicated")
             recipe_ids.append(item["recipe"])
@@ -162,14 +171,46 @@ def inventory(build):
     return tests
 
 
-def configuration_id(build):
+def ctest_declarations(build):
+    """Read only CTest's declared tree, excluding tests' nested consumer builds."""
+    root = Path(build).resolve(strict=True)
+    pending, result = [root / "CTestTestfile.cmake"], {}
+    while pending:
+        path = pending.pop().resolve(strict=True)
+        path.relative_to(root)
+        relative = str(path.relative_to(root))
+        if relative in result:
+            raise ValueError("recursive or duplicated CTest declaration directory")
+        text = path.read_text(encoding="utf-8")
+        result[relative] = text
+        for line in text.splitlines():
+            if line.strip().startswith("subdirs("):
+                match = re.fullmatch(r'\s*subdirs\("([^"\\]+)"\)\s*', line)
+                if not match:
+                    raise ValueError("unsupported generated CTest subdirectory declaration")
+                pending.append(path.parent / match[1] / "CTestTestfile.cmake")
+    return result
+
+
+def configuration_id(build, *, declared_commands=False):
     build = build.resolve()
     inputs = build_inputs(build)
     # Normalize checkout/build locations while preserving actual compiler and
     # retained-input digests, complete cache values and external locations.
     normalized = normalize_locations(inputs, build)
     info = (build / "build-info.txt").read_text()
-    return digest({"inputs": normalized, "build_info": info, "tests": test_definitions(build)})
+    tests = test_definitions(build)
+    identity = {"inputs": normalized, "build_info": info, "tests": tests}
+    if declared_commands:
+        # CTest omits command arrays for not-yet-built executables. Bind the exact
+        # generated commands instead, so independent scope builds have the same
+        # inventory identity without compiling unrelated executables.
+        declarations = ctest_declarations(build)
+        if not declarations:
+            raise ValueError("candidate needs complete generated CTest declarations")
+        identity["tests"] = [{key:value for key,value in item.items() if key != "command"} for item in tests]
+        identity["declarations"] = normalize_locations(declarations, build)
+    return digest(identity)
 
 
 def require_current(build, plan):
@@ -265,7 +306,7 @@ def candidate_plan(build):
             any(not name.startswith("tools.") or name in tests or not isinstance(reason, str) or not reason
                 for name, reason in platform["excluded_suites"].items())):
         raise ValueError("invalid explicit platform exclusions")
-    value = dict(schema_version=1, source=source_id(build), configuration=configuration_id(build),
+    value = dict(schema_version=1, source=source_id(build), configuration=configuration_id(build, declared_commands=True),
                  tests=tests, scopes={key: sorted(value) for key, value in assignments.items()},
                  platform_exclusions=platform["excluded_suites"])
     value["id"] = digest(value)
@@ -275,8 +316,8 @@ def candidate_plan(build):
 def candidate_prerequisite_inputs(build):
     """Freeze declarations before CTest can resolve freshly compiled executables."""
     build = Path(build)
-    paths = set(build.rglob('CTestTestfile.cmake'))
-    paths.update(build/name for name in ('CTestTestfile.cmake', 'build-info.txt', 'test-platform.json'))
+    paths = {build/name for name in ctest_declarations(build)}
+    paths.update(build/name for name in ('build-info.txt', 'test-platform.json'))
     declarations = {str(path.relative_to(build)): hashlib.sha256(path.read_bytes()).hexdigest()
                     for path in sorted(paths)}
     return source_id(build), build_inputs(build), declarations
@@ -290,16 +331,17 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None):
     if output.exists():
         raise ValueError("candidate receipt must name a new attempt")
     output.parent.mkdir(parents=True, exist_ok=True)
-    compile_jobs = build_jobs or builder.positive(os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL") or str(builder.default_jobs()))
+    from build_capacity import compile_jobs as selected_compile_jobs
+    compile_jobs = build_jobs or selected_compile_jobs(os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL"))
     before = candidate_prerequisite_inputs(build)
+    frozen = candidate_plan(build)
     programs, environment = execution_context(build)
-    windows_compiler.run([programs["cmake"], "--build", str(build), "--target", "foundation-tests",
+    windows_compiler.run([programs["cmake"], "--build", str(build), "--target", "foundation-tests-" + scope,
                           "--parallel", str(compile_jobs)], env=environment)
     if candidate_prerequisite_inputs(build) != before:
         raise ValueError("candidate inputs changed during prerequisite compilation")
-    # CTest omits executable commands until their targets exist. Freeze the full
-    # runnable inventory only after compilation, keeping input/declaration guards.
-    frozen = candidate_plan(build)
+    if candidate_plan(build) != frozen:
+        raise ValueError("candidate inventory changed during prerequisite compilation")
     names = frozen["scopes"][scope]
     junit = output.with_suffix(".junit.xml").resolve()
     if junit.exists():

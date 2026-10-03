@@ -21,14 +21,20 @@ name: Prepared SDK application and candidate
         description: Keep this candidate a prerelease and ineligible for Latest
         type: boolean
         default: true
+      linux_pool:
+        description: Standard or explicitly configured faster runners for every platform
+        type: choice
+        options: [standard, faster]
+        default: standard
       jobs:
-        description: Compile concurrency
+        description: Auto uses available CPU and RAM; explicit compile override
         type: choice
         options:
+        - auto
         - '2'
         - '4'
         - '8'
-        default: '2'
+        default: auto
       execute:
         description: Publish candidate after exact local verification
         type: boolean
@@ -59,10 +65,14 @@ name: Prepared SDK application and candidate
         description: Keep this candidate a prerelease and ineligible for Latest
         type: boolean
         default: false
-      jobs:
-        description: Compile concurrency
+      linux_pool:
+        description: Standard or explicitly configured faster runners for every platform
         type: string
-        default: '2'
+        default: standard
+      jobs:
+        description: Auto uses available CPU and RAM; explicit compile override
+        type: string
+        default: auto
       execute:
         description: Publish candidate after exact local verification
         type: boolean
@@ -110,6 +120,10 @@ jobs:
       id: plan
       env:
         RECIPES: ${{ inputs.recipes }}
+        LINUX_POOL: ${{ inputs.linux_pool }}
+        FOUNDATION_FASTER_LINUX_RUNNER: ${{ vars.FOUNDATION_FAST_LINUX_RUNNER }}
+        FOUNDATION_FASTER_ARM_RUNNER: ${{ vars.FOUNDATION_FAST_ARM_RUNNER }}
+        FOUNDATION_FASTER_WINDOWS_RUNNER: ${{ vars.FOUNDATION_FAST_WINDOWS_RUNNER }}
     - name: Retain verified source-${{ github.run_attempt }}
       run: python .github/scripts/lifecycle.py bundle-store
       env:

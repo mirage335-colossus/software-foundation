@@ -27,7 +27,9 @@ def default_jobs():
 
 
 def job_limits(args):
-    build = args.build_jobs or args.jobs or positive(os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL") or str(default_jobs()))
+    from build_capacity import compile_jobs
+    environment = os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL")
+    build = args.build_jobs or args.jobs or (compile_jobs(environment) if environment else default_jobs())
     tests = args.test_jobs or args.jobs or positive(os.environ.get("CTEST_PARALLEL_LEVEL") or "2")
     return build, tests
 
@@ -110,6 +112,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", nargs="?", choices=("build", "test", "package"), default="build")
     parser.add_argument("preset", nargs="?", choices=("dev", "release", "asan"), default=None)
+    parser.add_argument("--configure-only", action="store_true", help="configure without compiling; candidate scopes build their own prerequisites")
     parser.add_argument("--jobs", type=positive)
     parser.add_argument("--build-jobs", type=positive, help="independent compilation concurrency")
     parser.add_argument("--test-jobs", type=positive, help="independent test concurrency")
@@ -120,7 +123,9 @@ def main(argv=None):
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--windows-dependencies", type=Path, help="verified restored Windows dependency export")
     parser.add_argument("--dependency-group", type=Path, action="append", default=[],
-                        help="verified retained group; first group is primary for host-supplied toolchains")
+                        help="verified complete retained group; first group is primary for host-supplied toolchains")
+    parser.add_argument("--binary-dependency-group", type=Path, action="append", default=[],
+                        help="explicit binary/checksum consumer input; source payload qualification is separate")
     gui_input = parser.add_mutually_exclusive_group()
     gui_input.add_argument("--gui-source", type=Path)
     gui_input.add_argument("--gui-input-group", type=Path, help="verified offline GUI source group")
@@ -133,6 +138,8 @@ def main(argv=None):
     parser.add_argument("--junit", type=Path, help="machine-readable outcomes for this test invocation")
     args = parser.parse_args(argv)
     preset = args.preset or ("release" if args.action == "package" else "dev")
+    if args.configure_only and args.action != "build":
+        parser.error("--configure-only applies only to build")
     if (args.label or args.full or args.junit) and args.action != "test":
         parser.error("test selection applies only to test")
     if args.action == "package" and preset != "release":
@@ -212,12 +219,12 @@ def main(argv=None):
     dependency_ids = []
     if args.sdk:
         dependency_ids.append(json.loads((args.sdk.resolve() / "sdk.json").read_text(encoding="utf-8"))["recipe_id"])
-    if args.dependency_group:
+    if args.dependency_group or args.binary_dependency_group:
         tools = str(Path(__file__).resolve().parent)
         if tools not in sys.path:
             sys.path.insert(0, tools)
         from dependency_store import verify_group
-        for group_arg in args.dependency_group:
+        for group_arg, binary in [(group, False) for group in args.dependency_group] + [(group, True) for group in args.binary_dependency_group]:
             group = group_arg.resolve(strict=True)
             checksums = list(group.glob("sdk-*-SHA256SUMS"))
             if len(checksums) != 1:
@@ -226,11 +233,18 @@ def main(argv=None):
             if not match:
                 raise ValueError("invalid retained group identity")
             recipe = match[1]
-            hashes = verify_group(group, recipe)
+            if binary:
+                from dependency_store import verify_binary_group
+                hashes = verify_binary_group(group, recipe)
+            else:
+                hashes = verify_group(group, recipe)
             if recipe in dependency_ids:
                 raise ValueError("duplicate prepared group")
             dependency_ids.append(recipe)
-            identity["dependencies"].append({"root": str(group), "recipe": recipe, "files": hashes})
+            entry = {"root": str(group), "recipe": recipe, "files": hashes}
+            if binary:
+                entry["payload"] = "binary"
+            identity["dependencies"].append(entry)
     if args.windows_dependencies:
         if os.name != "nt" or args.sdk or not args.portable:
             raise ValueError("Windows dependency exports require a native portable Windows build")
@@ -293,7 +307,8 @@ def main(argv=None):
     target = "all"
     if args.action == "test":
         target = "foundation-tests" + ("-" + args.label if args.label else "")
-    run([programs["cmake"], "--build", str(build), "--parallel", str(jobs), "--target", target], env=child_environment)
+    if not args.configure_only:
+        run([programs["cmake"], "--build", str(build), "--parallel", str(jobs), "--target", target], env=child_environment)
     if source_tree(ROOT, args.gui_source) != source_before:
         raise ValueError("source changed during compilation; rebuild a stable candidate")
     if args.action == "test":

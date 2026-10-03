@@ -369,17 +369,37 @@ def refresh(value, policy, *, transport=None, prepared=None):
         selected = select(value, transport)
         with tempfile.TemporaryDirectory(prefix='.refresh-', dir=location) as temporary:
             stage = Path(temporary)/'generation'; stage.mkdir(mode=0o755); stage.chmod(0o755)
+            unchanged = previous is not None and selected['manifest_sha256'] == release.archive.digest(prior/'assets/distribution.json')
+            if unchanged:
+                if prepared is None:
+                    manifest, _, _, _ = release.remote_native_descriptor(value['repository'], selected['tag'],
+                        selected['manifest_sha256'], Path(temporary)/'controls', policy,
+                        value['trusted_fingerprint'], transport)
+                else:
+                    if release.archive.digest(Path(prepared)/'distribution.json') != selected['manifest_sha256']:
+                        raise ValueError('prepared manifest differs from selected bytes')
+                    manifest = release.verify_native(prepared, policy, value['trusted_fingerprint'])
+                if manifest != previous or manifest['tag'] != selected['tag']:
+                    raise ValueError('same-sequence replacement')
+                if release.verify_native(prior/'assets', policy, value['trusted_fingerprint']) != manifest:
+                    raise ValueError('existing generation differs')
+                try:
+                    release.verify_native_channels(prior/'channels', manifest, value['trusted_fingerprint'])
+                except (ValueError, OSError) as error:
+                    raise ValueError('derived channel changed; preserve state for inspection') from error
+                return {'changed': False, 'tag': selected['tag'], 'sequence': manifest['request']['sequence']}
             if prepared is None:
                 manifest = release.fetch(value['repository'], selected['tag'], selected['manifest_sha256'],
-                    stage/'assets', policy, value['trusted_fingerprint'], transport=transport)
+                    stage/'assets', policy, value['trusted_fingerprint'], transport=transport,
+                    native_only=True, reuse=prior/'assets' if prior else None)
             else:
                 if release.archive.digest(Path(prepared)/'distribution.json') != selected['manifest_sha256']:
                     raise ValueError('prepared manifest differs from selected bytes')
-                manifest = release.verify(prepared, policy, value['trusted_fingerprint'])
+                manifest = release.verify_native(prepared, policy, value['trusted_fingerprint'])
                 if manifest['tag'] != selected['tag'] or manifest['request']['repository'] != value['repository']:
                     raise ValueError('prepared channel identity differs')
                 shutil.copytree(prepared, stage/'assets')
-                if release.verify(stage/'assets', policy, value['trusted_fingerprint']) != manifest:
+                if release.verify_native(stage/'assets', policy, value['trusted_fingerprint']) != manifest:
                     raise ValueError('prepared bytes changed while copying')
             if manifest['request']['target'] != value['target']: raise ValueError('selected channel target differs')
             if previous: advance(previous, manifest)
@@ -395,7 +415,7 @@ def refresh(value, policy, *, transport=None, prepared=None):
             destination = generations/identity
             if destination.exists():
                 # Exact assets must remain untouched; derived Portage metadata belongs outside assets.
-                if release.verify(destination/'assets', policy, value['trusted_fingerprint']) != manifest:
+                if release.verify_native(destination/'assets', policy, value['trusted_fingerprint']) != manifest:
                     raise ValueError('existing generation differs')
                 if release.distro.tree(destination/'channels') != release.distro.tree(stage/'channels'):
                     raise ValueError('derived channel changed; preserve state for inspection')

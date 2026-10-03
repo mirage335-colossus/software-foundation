@@ -71,7 +71,7 @@ def main():
     p.add_argument("target", choices=tuple(STANDARD))
     p = sub.add_parser("package")
     p.add_argument("--build", type=Path, required=True)
-    p.add_argument("--jobs", type=int, default=2)
+    p.add_argument("--jobs", type=module("build_capacity").compile_jobs, default="auto")
     p = sub.add_parser("check-archives")
     p.add_argument("directory", type=Path)
     p.add_argument("--runtime-only", action="store_true")
@@ -183,7 +183,11 @@ def exact_commit(value):
     return value
 
 
-def release_matrix(recipes, profile='core', policy=None):
+def runner_selection(pool='standard', configured='', configured_arm='', configured_windows=''):
+    return {row['target']: row['runner'] for row in plan(pool=pool, configured=configured, configured_arm=configured_arm, configured_windows=configured_windows)['packages']['include']}
+
+
+def release_matrix(recipes, profile='core', policy=None, *, runners=None):
     policy = policy or module('coverage').load(ROOT / 'docs/release-policy.json')
     selected, _ = module('certify_release').requirements(policy, profile)
     if not isinstance(recipes, dict) or set(recipes) != set(selected['targets']):
@@ -194,11 +198,13 @@ def release_matrix(recipes, profile='core', policy=None):
         lock = module('coverage').load(ROOT / 'third_party/gui-boundary.lock.json')
         if lock.get('redistribution', {}).get('approved') is not True:
             raise ValueError('GUI redistribution licensing must be resolved before producing release assets')
+    runners = STANDARD if runners is None else runners
+    if set(runners) != set(STANDARD): raise ValueError('complete runner selection required')
     rows = []
     for target, backends in selected['targets'].items():
         if target not in (*STANDARD, 'browser-wasm32'):
             raise ValueError('no qualified runner adapter for target')
-        rows.append({'target': target, 'runner': STANDARD.get(target, 'ubuntu-24.04'),
+        rows.append({'target': target, 'runner': runners.get(target, runners['linux-x86_64']),
                      'recipe': recipes[target], 'backends': backends,
                      'container': 'debian:bookworm' if target.startswith('linux-') else ''})
     return {'include': rows}
@@ -229,7 +235,7 @@ def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_
     root = work / 'source'
     build = work / 'build'
     command = [sys.executable, str(root / 'tools/build.py'), 'test', 'release', '--full',
-               '--portable', '--build-dir', str(build), '--jobs', str(jobs), '--junit', str(output / 'source.junit.xml')]
+               '--portable', '--build-dir', str(build), '--build-jobs', str(jobs), '--test-jobs', '2', '--junit', str(output / 'source.junit.xml')]
     if target == 'windows-x86_64':
         version = module('windows_toolchain').inspect_selected_linker()['version']
         sdk_metadata = module('sdk_windows').install(group, recipe, work / 'dependencies', version)
@@ -310,7 +316,7 @@ def assemble_release(source, packages, base, output, profile):
     return module('release').assemble(spec_path, base, output)
 
 
-def fetch_candidate(repository, tag, inventory, output, transport=None):
+def fetch_candidate(repository, tag, inventory, output, transport=None, *, metadata_only=False):
     import tempfile
     g = module('github_release')
     c = module('coverage')
@@ -334,9 +340,10 @@ def fetch_candidate(repository, tag, inventory, output, transport=None):
             raise ValueError('missing complete delivery file map')
         candidate = staged / 'candidate'; candidate.mkdir()
         for name, entry in delivery['files'].items():
+            if metadata_only and name != 'release.json': continue
             path = c.local(candidate, name); path.parent.mkdir(parents=True, exist_ok=True)
             remote.download(assets[entry['asset']], path, entry['sha256'])
-        g.verified_remote(remote, delivery, candidate)
+        g.verified_remote(remote, delivery, candidate, readback=False, metadata_only=metadata_only)
         remote.unchanged(tag, before, assets, delivery['tag_commit'])
         staged.rename(output)
     return delivery
@@ -522,8 +529,10 @@ def qualification_row(item, runners=None):
 
 
 def qualification_batches(plan, *, runners=None):
-    """Share transport only; retain every frozen physical execution and receipt.
+    """Keep independent scopes parallel and backend receipts complete.
 
+    Whole-artifact source/recovery/ABI executions remain coalesced across
+    backends; archive/client checks share only one same-scope transport batch.
     The 90-minute case and 240-minute hosted job limits are independent safety
     caps, not a promise that every member can exhaust its case allowance. Split
     future longer workloads here; this code is itself bound by the frozen plan.
@@ -532,7 +541,7 @@ def qualification_batches(plan, *, runners=None):
     rows = [qualification_row(item, runners) for item in c.executions(plan)]
     groups = {}
     for row in rows:
-        groups.setdefault(tuple(row[key] for key in ('runner', 'image', 'target', 'environment')), []).append(row)
+        groups.setdefault(tuple(row[key] for key in ('runner', 'image', 'target', 'environment', 'scope')), []).append(row)
     batches, identities = [], set()
     for members in groups.values():
         # Bound future policy growth without changing logical or execution IDs.
@@ -554,6 +563,21 @@ def qualification_batches(plan, *, runners=None):
     return {'include': batches}
 
 
+def archived_binary_group_support(candidate, manifest):
+    """Inspect the exact retained builder; old candidates keep complete SDKs."""
+    import ast, tarfile
+    source = candidate / manifest['source']['archive']
+    with tarfile.open(source, 'r:*') as archive:
+        members = [item for item in archive.getmembers() if item.name == 'tools/build.py']
+        if not members: return False
+        if len(members) != 1 or not members[0].isfile() or members[0].size > 8*1024**2:
+            raise ValueError('invalid retained builder capability input')
+        tree = ast.parse(archive.extractfile(members[0]).read().decode('utf-8'))
+    return any(isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and
+               node.func.attr == 'add_argument' and any(isinstance(arg, ast.Constant) and
+               arg.value == '--binary-dependency-group' for arg in node.args) for node in ast.walk(tree))
+
+
 def qualification_plan(candidate, profile, output, policy=None, *, runners=None):
     c = module('coverage')
     policy = policy or c.load(ROOT / 'docs/release-policy.json')
@@ -562,12 +586,13 @@ def qualification_plan(candidate, profile, output, policy=None, *, runners=None)
     actual = {x['target']: x['backends'] or ['core'] for x in manifest['artifacts']}
     if len(actual) != len(manifest['artifacts']) or actual != selected['targets']:
         raise ValueError('candidate does not match complete support profile')
+    binary_groups = archived_binary_group_support(candidate, manifest)
     checks, matrix = [], []
     for item in selected['checks']:
         target, backend, environment, scope = (item[x] for x in ('target', 'backend', 'environment', 'scope'))
         check_id = '-'.join((target, backend, environment, scope))
         argv = ['{python}', '{root}/tools/release_check.py', scope, '--release', '{root}/build/candidate',
-                '--target', target, '--backend', backend, '--evidence', '{evidence}', '--jobs', '2']
+                '--target', target, '--backend', backend, '--evidence', '{evidence}', '--jobs', 'auto']
         if (target.startswith('linux-') or target == 'browser-wasm32') and needs_browser_prerequisite(backend, scope):
             browser = browser_prerequisite(target, environment, backend)
             argv += ['--browser-prerequisite', '{root}/build/prerequisites/' + check_id + '/browser.json',
@@ -583,6 +608,10 @@ def qualification_plan(candidate, profile, output, policy=None, *, runners=None)
             argv += ['--firefox', 'C:/Program Files/Mozilla Firefox/firefox.exe']
         checks.append(dict(item, id=check_id, required=True, argv=argv, timeout_seconds=5400,
                            warning_seconds=4500, expected_tests=[], qualification='qualification.json'))
+        if scope == 'source':
+            entry = next(row for row in manifest['artifacts'] if row['target'] == target)
+            needs_group_flag = target == 'windows-x86_64' or len(module('release').dependency_recipes(entry)) > 1
+            checks[-1]['sdk_payload'] = 'binary' if not needs_group_flag or binary_groups else 'complete'
         matrix.append(qualification_row(checks[-1], runners))
     # Logical requirements remain intact; group only identical whole-artifact work.
     groups = {}
@@ -1002,7 +1031,7 @@ def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphi
     if output.exists(): raise ValueError('prepared check output must be new')
     before = verify_group(group, recipe); output.mkdir(parents=True)
     command = [sys.executable, str(ROOT / 'tools/build.py'), 'test', 'release', '--portable',
-               '--jobs', str(jobs), '--build-dir', str(output / 'build'), '--junit', str(output / 'source.junit.xml')]
+               '--build-jobs', str(jobs), '--test-jobs', '2', '--build-dir', str(output / 'build'), '--junit', str(output / 'source.junit.xml')]
     if target == 'windows-x86_64':
         version = module('windows_toolchain').inspect_selected_linker()['version']
         metadata = module('sdk_windows').install(group, recipe, output / 'dependencies', version)

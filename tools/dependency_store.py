@@ -48,6 +48,39 @@ def verify_group(directory, recipe):
     return {name: digest(directory / name) for name in sorted(expected)}
 
 
+def verify_binary_group(directory, recipe, expected_files=None):
+    """Verify a compiler input without replaying its retained supplier sources.
+
+    Release qualification supplies the complete map from its frozen manifest.
+    The default is useful for a local installed SDK consumer; it still verifies
+    the complete pair checksum and the binary's recipe/source-manifest binding.
+    """
+    directory = Path(directory); binary, source, checksum = names(recipe)
+    if directory.is_symlink() or not directory.is_dir() or {p.name for p in directory.iterdir()} != {binary, checksum}:
+        raise ValueError('binary dependency group must contain exactly binary and checksum files')
+    for name in (binary, checksum):
+        if (directory / name).is_symlink() or not (directory / name).is_file():
+            raise ValueError('dependency group must contain ordinary files')
+    values = {}
+    for line in (directory / checksum).read_text().splitlines():
+        fields = line.split('  ')
+        if len(fields) != 2 or fields[1] in values or not re.fullmatch(r'[0-9a-f]{64}', fields[0]):
+            raise ValueError('invalid or duplicate dependency checksum entry')
+        relative(fields[1]); values[fields[1]] = fields[0]
+    if set(values) != {binary, source} or digest(directory / binary) != values[binary]:
+        raise ValueError('binary dependency checksum differs from complete pair')
+    if expected_files is not None:
+        if (not isinstance(expected_files, dict) or set(expected_files) != {binary, source, checksum} or
+                any(not isinstance(v, str) or not re.fullmatch(r'[0-9a-f]{64}', v) for v in expected_files.values()) or
+                expected_files[binary] != values[binary] or expected_files[source] != values[source] or
+                expected_files[checksum] != digest(directory / checksum)):
+            raise ValueError('binary dependency group differs from frozen complete inventory')
+    metadata, _ = inspect_manifest_archive(directory / binary, 'sdk.json', sdk_archive=True)
+    if metadata.get('recipe_id') != recipe or not re.fullmatch(r'[0-9a-f]{64}', metadata.get('sources_sha256', '')):
+        raise ValueError('binary archive lacks exact recipe and source manifest identity')
+    return {binary: values[binary], source: values[source], checksum: digest(directory / checksum)}
+
+
 def create_sums(directory, recipe):
     binary, source, checksum = names(recipe)
     path = Path(directory) / checksum

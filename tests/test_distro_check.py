@@ -35,6 +35,30 @@ class NativeCheckTests(unittest.TestCase):
             altered=copy.deepcopy(self.records);altered[0][key]=value
             with self.subTest(key=key),self.assertRaises(ValueError):check.qualification(self.selected,altered,self.env)
 
+    def test_focused_frontends_are_diagnostic_and_cannot_accept_partial_coverage(self):
+        self.assertEqual(['gentoo'], [row['id'] for row in check.matrix('linux-x86_64', 'gentoo')['include']])
+        self.assertEqual(['arch'], [row['id'] for row in check.matrix('linux-x86_64', 'arch')['include']])
+        self.assertEqual(3, len(check.matrix('linux-x86_64', 'apt')['include']))
+        self.assertEqual(5, len(check.matrix('linux-x86_64', 'all', accept=True)['include']))
+        for selection in ('apt', 'arch', 'gentoo'):
+            with self.assertRaisesRegex(ValueError, 'focused native diagnosis'):
+                check.matrix('linux-x86_64', selection, accept=True)
+        for selection in ('arch', 'gentoo', 'invalid'):
+            with self.assertRaises(ValueError): check.matrix('linux-aarch64', selection)
+        subset = [record for record in self.records if record['kind'] == 'gentoo']
+        with self.assertRaisesRegex(ValueError, 'missing or foreign'):
+            check.qualification(self.selected, subset, self.env)
+
+    def test_gentoo_merge_parallelism_requires_disposable_host_and_cpu_memory_budget(self):
+        from unittest.mock import patch
+        import build_capacity
+        with patch.object(check, 'require_disposable') as permitted, \
+                patch.object(build_capacity, 'default_jobs', return_value=3):
+            self.assertEqual(['--jobs=3'], check.gentoo_install_options())
+            permitted.assert_called_once_with()
+        with patch.dict(os.environ, {'FOUNDATION_DISPOSABLE_CHECK': '0'}):
+            with self.assertRaises(ValueError): check.gentoo_install_options()
+
     def test_gentoo_accepts_each_selected_exact_license_without_broadening_scope(self):
         backends = sorted(check.release.distro.BACKENDS)
         config = check.gentoo_license_config(backends)

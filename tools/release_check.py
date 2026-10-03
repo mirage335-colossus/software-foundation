@@ -240,11 +240,14 @@ def run_source(candidate, manifest, entry, work, evidence, jobs, recovery=False,
     if source_tree(work / "source") != expected:
         raise ValueError("extracted source differs from complete archived inventory")
     group = candidate / "dependencies" / entry["sdk_recipe"]
+    group_files = next(x["files"] for x in manifest["dependencies"] if x["recipe_id"] == entry["sdk_recipe"])
+    binary_only = not recovery and not any((group / name).exists() for name in group_files if name.endswith("-sources.tar.gz"))
+    expected_files = group_files if binary_only else None
     command = [sys.executable, str(work / "source/tools/build.py"), "test", "release", "--full",
-               "--portable", "--jobs", str(jobs), "--build-dir", str(work / "build"),
+               "--portable", "--build-jobs", str(jobs), "--test-jobs", "2", "--build-dir", str(work / "build"),
                "--junit", str(evidence / "source.junit.xml")]
     if entry["target"].startswith("linux-") or browser_target:
-        sdk.install(group, entry["sdk_recipe"], work / "sdk", production=True)
+        sdk.install(group, entry["sdk_recipe"], work / "sdk", production=True, **({"expected_files": expected_files} if expected_files is not None else {}))
         command += ["--sdk", str(work / "sdk")]
     else:
         import sdk_windows
@@ -252,11 +255,11 @@ def run_source(candidate, manifest, entry, work, evidence, jobs, recovery=False,
         # used the repository's Windows selector. No compiler media is fetched.
         from windows_toolchain import inspect_selected_linker
         version = inspect_selected_linker()['version']
-        sdk_windows.install(group, entry["sdk_recipe"], work / "windows-dependencies", version)
-        command += ["--dependency-group", str(group), "--windows-dependencies", str(work / "windows-dependencies")]
+        sdk_windows.install(group, entry["sdk_recipe"], work / "windows-dependencies", version, **({"expected_files": expected_files} if expected_files is not None else {}))
+        command += ["--binary-dependency-group" if binary_only else "--dependency-group", str(group), "--windows-dependencies", str(work / "windows-dependencies")]
     for recipe in entry.get("dependency_recipes", [entry["sdk_recipe"]]):
         if recipe != entry["sdk_recipe"]:
-            command += ["--dependency-group", str(candidate / "dependencies" / recipe)]
+            command += ["--binary-dependency-group" if binary_only else "--dependency-group", str(candidate / "dependencies" / recipe)]
     if entry["backends"] and entry["backends"] != ["core"]:
         gui = work / "source/third_party/retained/gui"
         if not gui.is_dir():
@@ -567,7 +570,7 @@ def check(candidate, target, backend, scope, evidence, jobs=2, browser_options=N
     if scope not in ("source", "archive", "recovery", "abi", "apt") or jobs < 1:
         raise ValueError("unsupported qualification operation")
     candidate = candidate.resolve(strict=True)
-    manifest = release.verify_release(candidate)
+    manifest = release.verify_selection(candidate, target, backend, scope)
     before = digest(candidate / "release.json")
     entry = select(manifest, target, backend)
     if execution is not None:
@@ -599,7 +602,12 @@ def check(candidate, target, backend, scope, evidence, jobs=2, browser_options=N
         if scope in ("source", "recovery"):
             inputs = candidate
             if scope == "recovery":
-                release.recover(candidate, work / "recovered")
+                # Recover only this target's complete source/dependency closure.
+                recovered = work / 'recovered'; recovered.mkdir()
+                shutil.copyfile(candidate / manifest['source']['archive'], recovered / manifest['source']['archive'])
+                from dependency_store import copy_group
+                for recipe in release.dependency_recipes(entry):
+                    copy_group(candidate / 'dependencies' / recipe, recovered / 'dependencies' / recipe, recipe)
                 # Recovery outputs deliberately omit application binaries. Rebuild
                 # from only the retained source and groups, not from the base.
                 inputs = work / "recovered"
@@ -643,7 +651,7 @@ def check(candidate, target, backend, scope, evidence, jobs=2, browser_options=N
                 raise ValueError("ELF audit is a Linux qualification scope")
             details = audit(root, target.split("-", 1)[1])
     bind_browser_prerequisite(prerequisite, details, evidence)
-    release.verify_release(candidate)
+    release.verify_selection(candidate, target, backend, scope)
     if digest(candidate / "release.json") != before:
         raise ValueError("candidate changed during qualification")
     result = {"schema_version": 1, "source_sha256": manifest["source"]["sha256"],
@@ -675,7 +683,7 @@ def main():
     p.add_argument("--target", required=True)
     p.add_argument("--backend", required=True)
     p.add_argument("--evidence", type=Path, required=True)
-    p.add_argument("--jobs", type=int, default=2)
+    p.add_argument("--jobs", default="auto")
     p.add_argument("--execution-plan", type=Path)
     p.add_argument("--execution-id")
     p.add_argument("--run-id")
@@ -701,7 +709,7 @@ def main():
         if (leader["target"], leader["backend"], leader["scope"], leader["qualification"]) != (a.target, a.backend, a.scope, a.receipt):
             raise ValueError("execution command differs from frozen leader")
         execution = c.execution_identity(plan, leader, a.run_id, a.attempt, c.host_identity())
-    check(a.release, a.target, a.backend, a.scope, a.evidence, a.jobs,
+    check(a.release, a.target, a.backend, a.scope, a.evidence, __import__("build_capacity").compile_jobs(a.jobs),
           {key: getattr(a, key) for key in ("browser", "firefox", "browser_executable", "driver", "browser_prerequisite", "browser_prerequisite_plan", "windows_graphics_archive")}, execution=execution, receipt_name=a.receipt)
 
 

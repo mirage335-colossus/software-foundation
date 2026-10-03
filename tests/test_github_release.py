@@ -153,6 +153,25 @@ class DeliveryTests(unittest.TestCase):
         values.update(changes)
         return G.promote(**values,transport=self.remote)
 
+    def test_metadata_only_certificate_and_promotion_reproduce_complete_evidence_without_payload_transfers(self):
+        self.publish(); cert = self.cert()
+        metadata = self.root / 'metadata'; metadata.mkdir()
+        import shutil
+        shutil.copyfile(self.directory / 'release.json', metadata / 'release.json')
+        cert['directory'] = str(metadata)
+        self.remote.calls.clear()
+        G.attach_certificate(**cert, execute=True, transport=self.remote, metadata_only=True)
+        promoted = self.promotion(cert, execute=True, metadata_only=True)
+        self.assertTrue(promoted['latest'])
+        names = {row['id']: row['name'] for row in self.remote.releases[0]['assets']}
+        transferred = {names[call[1]] for call in self.remote.calls if call[0] == 'download'}
+        self.assertTrue(all(name == 'delivery.json' or name.startswith('certification-') for name in transferred))
+        self.assertTrue(any(name.endswith('.tar.gz') for name in transferred))
+        altered = copy.deepcopy(self.delivery); altered['files']['application.tar.gz']['size'] += 1
+        with self.assertRaisesRegex(ValueError, 'remote asset differs'):
+            G.verified_remote(G.Remote('example/project', self.remote), altered, metadata,
+                readback=False, metadata_only=True)
+
     def test_mutations_are_offline_plans_by_default(self):
         self.assertFalse(G.publish_candidate(**self.args,transport=self.remote)['execute'])
         self.assertFalse(self.base()['execute'])

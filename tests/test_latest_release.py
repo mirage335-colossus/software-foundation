@@ -151,9 +151,9 @@ L.main()
         value['certification']['outputs'].update(inventory_sha256=app['inventory_sha256'],
             certificate_sha256=L.delivery.archive.digest(cert['certificate']), certification_run='qualification-run')
         real_verify = L.delivery.verify_certificate
-        def verify(*args):
+        def verify(*args, **kwargs):
             args = list(args); args[4] = cert['policy']
-            return real_verify(*args)
+            return real_verify(*args, **kwargs)
         with mock.patch.object(L.delivery, 'verify_certificate', side_effect=verify):
             checked = L.verify_latest(req, value, transport=fixture.remote)
             self.assertTrue(checked['qualified']); self.assertEqual(checked['assets'].keys(),

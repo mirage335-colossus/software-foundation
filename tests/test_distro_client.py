@@ -526,6 +526,34 @@ class SignedClientTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'derived channel changed'):client.refresh(self.value,self.f.policy,prepared=self.f.prepared)
         self.assertEqual(current,client.current(self.root/'state'))
 
+    def test_projected_refresh_downloads_only_native_assets_then_small_controls(self):
+        remote = self.f.f.remote
+        # Fixture publication is preserved; each test has its own public copy.
+        transport = fixtures.fixtures.FakeGitHub()
+        transport.releases = copy.deepcopy(remote.releases)
+        transport.refs = copy.deepcopy(remote.refs)
+        transport.data = copy.deepcopy(remote.data)
+        transport.next_asset = remote.next_asset
+        transport.next_id = remote.next_id
+        client.release.publish(self.f.prepared, self.f.policy, self.f.trusted, execute=True, transport=transport)
+        transport.calls.clear()
+        first = client.refresh(self.value, self.f.policy, transport=transport)
+        self.assertTrue(first['changed'])
+        active = client.current(self.root/'state')
+        self.assertEqual(client.release.NATIVE_ASSETS, {p.name for p in (active/'assets').iterdir()})
+        observed = {call[1] for call in transport.calls if call[0] == 'download'}
+        rows = {row['id']: row['name'] for row in transport.releases[-1]['assets']}
+        self.assertEqual(client.release.NATIVE_ASSETS, {rows[name] for name in observed})
+        transport.calls.clear()
+        self.assertFalse(client.refresh(self.value, self.f.policy, transport=transport)['changed'])
+        observed = {rows[call[1]] for call in transport.calls if call[0] == 'download'}
+        self.assertEqual(client.release.NATIVE_ASSETS - {'channels.tar.gz'}, observed)
+        # A damaged private recipe cannot be hidden by an unchanged remote tag.
+        foreign = active/'channels/native/gentoo/foreign'; foreign.write_bytes(b'foreign'); foreign.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, 'derived channel changed'):
+            client.refresh(self.value, self.f.policy, transport=transport)
+        self.assertEqual(active, client.current(self.root/'state'))
+
     def test_public_asset_refresh_replays_signed_inventory_and_preserves_active_generation_on_bad_bytes(self):
         tag = self.f.frozen['tag']; bodies = {}; rows = []
         for identity, path in enumerate(sorted(self.f.prepared.iterdir()), 1):
@@ -547,7 +575,7 @@ class SignedClientTests(unittest.TestCase):
             bodies[manifest_url] += b'changed'
             with self.assertRaises(ValueError): client.refresh(self.value, self.f.policy, transport=transport)
             self.assertEqual(current, client.current(self.root/'state'))
-            self.assertEqual(client.release.verify(current/'assets', self.f.policy, self.f.trusted), self.f.frozen)
+            self.assertEqual(client.release.verify_native(current/'assets', self.f.policy, self.f.trusted), self.f.frozen)
 
     def test_transient_public_asset_refresh_recovers_then_exhausts_preserving_signed_generation(self):
         client.refresh(self.value, self.f.policy, prepared=self.f.prepared)
@@ -584,7 +612,7 @@ class SignedClientTests(unittest.TestCase):
             self.assertEqual(build.return_value.open.call_count, 3)
         self.assertTrue(all(error.closed for error in errors))
         self.assertEqual(client.current(self.root / 'state'), current)
-        self.assertEqual(client.release.verify(current / 'assets', self.f.policy, self.f.trusted), self.f.frozen)
+        self.assertEqual(client.release.verify_native(current / 'assets', self.f.policy, self.f.trusted), self.f.frozen)
         self.assertEqual(list((self.root / 'state').glob('.refresh-*')), [])
         self.assertEqual(list((self.root / 'state/generations').iterdir()), [current])
 
@@ -598,7 +626,7 @@ class SignedClientTests(unittest.TestCase):
                 client.refresh(self.value, self.f.policy)
         self.assertEqual(request.call_count, 1); download.assert_not_called()
         self.assertEqual(client.current(self.root/'state'), current)
-        self.assertEqual(client.release.verify(current/'assets', self.f.policy, self.f.trusted), self.f.frozen)
+        self.assertEqual(client.release.verify_native(current/'assets', self.f.policy, self.f.trusted), self.f.frozen)
         self.assertEqual(list((self.root/'state').glob('.refresh-*')), [])
 
     def test_payload_sync_failure_cannot_publish_generation_or_pointer(self):

@@ -301,6 +301,10 @@ class SignedDistributionTests(unittest.TestCase):
             prepared = d.prepare(req, f.directory, f.delivery, paths['policy'], self.packaging, output,
                                  self.private, transport=f.remote, packaging_checkout=self.checkout)
             verified = d.verify(output, paths['policy'], self.trusted)
+            projection = self.work/'combined-native'
+            projection.mkdir()
+            for name in d.NATIVE_ASSETS: shutil.copy2(output/name, projection/name)
+            self.assertEqual(verified, d.verify_native(projection, paths['policy'], self.trusted))
         self.assertEqual(prepared, verified)
         self.assertEqual(['core', 'terminal'], verified['backends'])
         self.assertEqual({'core', 'terminal'}, set(verified['specifications']))
@@ -364,6 +368,51 @@ class SignedDistributionTests(unittest.TestCase):
         uploads = len([x for x in self.remote.calls if x[0] == 'upload'])
         d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
         self.assertEqual(uploads, len([x for x in self.remote.calls if x[0] == 'upload']))
+
+    def test_native_projection_keeps_signed_complete_inventory_without_sdk_downloads(self):
+        d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
+        self.remote.calls.clear()
+        output = self.work/'native-projection'
+        digest = d.archive.digest(self.prepared/'distribution.json')
+        self.assertEqual(self.frozen, d.fetch('example/project', d.tag_for(self.req), digest,
+            output, self.policy, self.trusted, transport=self.remote, native_only=True))
+        self.assertEqual(d.NATIVE_ASSETS, {p.name for p in output.iterdir()})
+        assets = {row['id']: row['name'] for row in self.remote.releases[-1]['assets']}
+        downloaded = {assets[call[1]] for call in self.remote.calls if call[0] == 'download'}
+        self.assertEqual(d.NATIVE_ASSETS, downloaded)
+        with self.assertRaises(ValueError): d.verify(output, self.policy, self.trusted)
+        self.assertEqual(self.frozen, d.verify_native(output, self.policy, self.trusted))
+        self.remote.calls.clear()
+        again = self.work/'native-reuse'
+        self.assertEqual(self.frozen, d.fetch('example/project', d.tag_for(self.req), digest,
+            again, self.policy, self.trusted, transport=self.remote, native_only=True, reuse=output))
+        downloaded = {assets[call[1]] for call in self.remote.calls if call[0] == 'download'}
+        self.assertEqual(d.NATIVE_ASSETS - {'channels.tar.gz'}, downloaded)
+        self.assertNotEqual((output/'channels.tar.gz').stat().st_ino, (again/'channels.tar.gz').stat().st_ino)
+        (again/'channels.tar.gz').write_bytes(b'tampered')
+        with self.assertRaisesRegex(ValueError, 'channel archive bytes'):
+            d.verify_native(again, self.policy, self.trusted)
+
+    def test_native_projection_rejects_signed_map_mismatch_and_inventory_changes(self):
+        d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
+        channel = self.remote.releases[-1]; original = copy.deepcopy(channel['assets'])
+        digest = d.archive.digest(self.prepared/'distribution.json')
+        for case in ('digest', 'absent_digest', 'size', 'missing', 'extra'):
+            with self.subTest(case=case):
+                channel['assets'] = copy.deepcopy(original)
+                row = next(item for item in channel['assets'] if item['name'].startswith('sha256-'))
+                if case == 'digest': row['digest'] = 'sha256:'+'e'*64
+                elif case == 'absent_digest': row.pop('digest')
+                elif case == 'size': row['size'] += 1
+                elif case == 'missing': channel['assets'].remove(row)
+                else:
+                    extra = dict(row, id=999999, name='foreign'); channel['assets'].append(extra)
+                output = self.work/('bad-native-'+case)
+                with self.assertRaises(ValueError):
+                    d.fetch('example/project', d.tag_for(self.req), digest, output,
+                        self.policy, self.trusted, transport=self.remote, native_only=True)
+                self.assertFalse(output.exists())
+        channel['assets'] = original
 
     def test_native_acceptance_checks_payload_then_preserves_qualified_retry(self):
         import distro_check
@@ -447,6 +496,9 @@ class SignedDistributionTests(unittest.TestCase):
         value = copy.deepcopy(self.frozen); value['files']['Packages'] = d.asset_info(stage / 'Packages')
         self.resign(stage, value)
         with self.assertRaisesRegex(ValueError, 'flat channel'): d.verify(stage, self.policy, self.trusted)
+        projected = self.work/'changed-native'; projected.mkdir()
+        for name in d.NATIVE_ASSETS: shutil.copy2(stage/name, projected/name)
+        with self.assertRaisesRegex(ValueError, 'flat channel'): d.verify_native(projected, self.policy, self.trusted)
 
     def test_application_change_during_upload_preserves_private_failure(self):
         original = self.remote.upload; replaced = False
@@ -461,12 +513,16 @@ class SignedDistributionTests(unittest.TestCase):
 
     def test_fetch_rejects_replaced_asset_identity_without_exposing_output(self):
         d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
-        self.remote.change_download = lambda: self.remote.replace_asset('Packages')
-        output = self.work / 'changed'
-        with self.assertRaises(ValueError):
-            d.fetch('example/project', d.tag_for(self.req), d.archive.digest(self.prepared / 'distribution.json'),
-                    output, self.policy, self.trusted, transport=self.remote)
-        self.assertFalse(output.exists())
+        original = copy.deepcopy(self.remote)
+        for native_only in (False, True):
+            with self.subTest(native_only=native_only):
+                self.remote = copy.deepcopy(original)
+                self.remote.change_download = lambda: self.remote.replace_asset('Packages')
+                output = self.work / ('changed-native' if native_only else 'changed')
+                with self.assertRaises(ValueError):
+                    d.fetch('example/project', d.tag_for(self.req), d.archive.digest(self.prepared / 'distribution.json'),
+                            output, self.policy, self.trusted, transport=self.remote, native_only=native_only)
+                self.assertFalse(output.exists())
 
     def test_asset_limit_preflight_prevents_a_remote_partial_channel(self):
         with patch.object(d, 'MAX_ASSET', 1), self.assertRaisesRegex(ValueError, 'limits'):

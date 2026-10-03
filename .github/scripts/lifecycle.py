@@ -279,14 +279,67 @@ def retained_request(target, profile, *, producer_host=False):
     return ci.retained_sdk_request(request, value('GITHUB_REPOSITORY'), target, profile, identity)
 
 
+def selected_runners():
+    return ci.runner_selection(os.environ.get('LINUX_POOL', 'standard'),
+        os.environ.get('FOUNDATION_FASTER_LINUX_RUNNER', ''), os.environ.get('FOUNDATION_FASTER_ARM_RUNNER', ''),
+        os.environ.get('FOUNDATION_FASTER_WINDOWS_RUNNER', ''))
+
+
+def compile_jobs():
+    from build_capacity import compile_jobs as resolve
+    return resolve(os.environ.get('JOBS', 'auto'))
+
+
+def qualification_payloads():
+    """Publish each immutable source, target and dependency payload once."""
+    import ci_transport
+    candidate = ROOT / 'build/candidate'; manifest = ci.module('release').verify_metadata(candidate)
+    plan = evidence.validate(evidence.load(ROOT / 'build/check-plan.json'))
+    evidence.check_inputs(plan, ROOT)
+    context = storage_context(); attempt = value('GITHUB_RUN_ATTEMPT')
+    def publish(label, names):
+        ci_transport.publish_bundle(**context, name='qualification-' + label + '-' + attempt,
+            root=ROOT / 'build', paths=['candidate/' + name for name in names], runner_name=value('RUNNER_NAME'))
+    publish('source', [manifest['source']['archive']])
+    for entry in manifest['artifacts']:
+        publish(entry['target'], [entry['archive'], entry['manifest']])
+    for index, group in enumerate(manifest['dependencies']):
+        publish('sdk-' + str(index), ['dependencies/' + group['recipe_id'] + '/' + name for name in group['files'] if not name.endswith('-sources.tar.gz')])
+        publish('sdk-source-' + str(index), ['dependencies/' + group['recipe_id'] + '/' + name for name in group['files'] if name.endswith('-sources.tar.gz')])
+
+
+def fetch_check_payloads():
+    plan = evidence.validate(evidence.load(ROOT / 'build/check-plan.json'))
+    evidence.check_inputs(plan, ROOT, metadata_only=True)
+    batches = [row for row in ci.qualification_batches(plan, runners=selected_runners())['include'] if row['id'] == value('BATCH')]
+    if len(batches) != 1: raise ValueError('unknown physical qualification batch')
+    items = [item for item in evidence.executions(plan) if item['id'] in batches[0]['checks']]
+    if not items or len({(item['target'], item['scope']) for item in items}) != 1:
+        raise ValueError('one independent qualification scope required')
+    item = items[0]; attempt = value('GITHUB_RUN_ATTEMPT')
+    manifest = ci.module('release').verify_metadata(ROOT / 'build/candidate')
+    entry = next(row for row in manifest['artifacts'] if row['target'] == item['target'])
+    fetch_bundle('qualification-' + item['target'] + '-' + attempt, ROOT / 'build')
+    if item['scope'] in ('source', 'recovery') or item['scope'] == 'archive' and any(row['backend'] in ('wasm', 'hosted-web') for row in items):
+        fetch_bundle('qualification-source-' + attempt, ROOT / 'build')
+    if item['scope'] in ('source', 'recovery'):
+        for index, group in enumerate(manifest['dependencies']):
+            if group['recipe_id'] in ci.module('release').dependency_recipes(entry):
+                fetch_bundle('qualification-sdk-' + str(index) + '-' + attempt, ROOT / 'build')
+                if item['scope'] == 'recovery' or item.get('sdk_payload') != 'binary':
+                    fetch_bundle('qualification-sdk-source-' + str(index) + '-' + attempt, ROOT / 'build')
+    evidence.check_inputs(plan, ROOT, check_ids=[row['id'] for row in items])
+
+
 def check_batch():
     """Run independent frozen executions, retaining failed and later outcomes."""
     plan = evidence.load(ROOT / 'build/check-plan.json')
-    evidence.validate(plan); evidence.check_inputs(plan, ROOT)
-    selected = [batch for batch in ci.qualification_batches(plan)['include'] if batch['id'] == value('BATCH')]
+    evidence.validate(plan)
+    selected = [batch for batch in ci.qualification_batches(plan, runners=selected_runners())['include'] if batch['id'] == value('BATCH')]
     if len(selected) != 1 or os.environ.get('CHECK_IMAGE') != selected[0]['image']:
         raise ValueError('batch or execution image differs from frozen inventory')
     batch = selected[0]
+    evidence.check_inputs(plan, ROOT, check_ids=batch['checks'])
     expected_system = 'Windows' if batch['target'].startswith('windows-') else 'Linux'
     if ci.platform.system() != expected_system:
         raise ValueError('batch requires its selected native host')
@@ -320,6 +373,10 @@ def main(command):
     elif command == 'bundle-fetch':
         fetch_bundle(value('BUNDLE_NAME'),value('BUNDLE_OUTPUT'),
                      allow_failed=os.environ.get('BUNDLE_ALLOW_FAILED')=='true')
+    elif command == 'qualification-payloads':
+        qualification_payloads()
+    elif command == 'fetch-check-payloads':
+        fetch_check_payloads()
     elif command == 'fetch-sdk-bundles':
         targets=[*ci.STANDARD,'browser-wasm32'] if value('SDK_TARGET')=='all' else [value('SDK_TARGET')]
         if any(target not in (*ci.STANDARD,'browser-wasm32') for target in targets): raise ValueError('unknown SDK target')
@@ -330,8 +387,8 @@ def main(command):
             fetch_bundle('application-'+target+'-'+value('GITHUB_RUN_ATTEMPT'),'build/packages/'+target)
     elif command == 'fetch-evidence-bundles':
         plan = evidence.load(Path('build/check-plan.json'))
-        evidence.check_inputs(evidence.validate(plan), ROOT)
-        for batch in ci.qualification_batches(plan)['include']:
+        evidence.check_inputs(evidence.validate(plan), ROOT, metadata_only=True)
+        for batch in ci.qualification_batches(plan, runners=selected_runners())['include']:
             fetch_bundle('evidence-'+batch['id']+'-'+value('GITHUB_RUN_ATTEMPT'),
                          'build/evidence',allow_failed=True)
     elif command == 'candidate-aggregate':
@@ -418,7 +475,7 @@ def main(command):
                    retained_graphics(value('GRAPHICS_ARCHIVE_URL'), archive))
         write('build/host-graphics/acquisition.json', receipt)
     elif command == 'sdk-produce':
-        target = value('TARGET'); recipe = sdk_recipe(target, value('SDK_PROFILE'));  jobs = int(value('JOBS'))
+        target = value('TARGET'); recipe = sdk_recipe(target, value('SDK_PROFILE'));  jobs = compile_jobs()
         if target != 'browser-wasm32': ci.assert_host(target)
         origin = evidence.load(Path('build/sdk-origin.json'))
         if origin['origin'] in ('base', 'retained'):
@@ -510,13 +567,13 @@ def main(command):
         if os.environ.get('GITHUB_OUTPUT'): output('redistributable', plan['redistributable'])
     elif command == 'native-gui-check':
         ci.prepared_check(value('TARGET'), value('RECIPE'), ROOT / 'build/base' / value('RECIPE'),
-                          ROOT / 'build/native-gui', int(value('JOBS')), ROOT / 'build/gui-group',
+                          ROOT / 'build/native-gui', compile_jobs(), ROOT / 'build/gui-group',
                           graphics_archive=ROOT / 'build/host-graphics/mesa-windows.7z' if value('TARGET') == 'windows-x86_64' else None)
     elif command == 'publish-gui':
         write('build/receipts/gui-publication.json', ci.publish_gui_group(value('GITHUB_REPOSITORY'), Path('build/gui-group'), value('GITHUB_SHA'), execute=True))
     elif command == 'application-plan':
         recipes = delivery.parse(value('RECIPES').encode())
-        matrix = ci.release_matrix(recipes, value('PROFILE'))
+        matrix = ci.release_matrix(recipes, value('PROFILE'), runners=selected_runners())
         write('build/recipes.json', recipes)
         output('matrix', matrix)
         gui = None
@@ -529,7 +586,7 @@ def main(command):
         delivery.fetch_base(value('GITHUB_REPOSITORY'), value('RECIPE'), Path('build/base') / value('RECIPE'))
     elif command == 'application-build':
         ci.prepared_package(value('TARGET'), value('RECIPE'), (ROOT / 'build/base' / value('RECIPE')),
-                            ROOT / 'build/source/source.tar.gz', ROOT / 'build/produced', int(value('JOBS')),
+                            ROOT / 'build/source/source.tar.gz', ROOT / 'build/produced', compile_jobs(),
                             graphics_archive=ROOT / 'build/host-graphics/mesa-windows.7z'
                             if value('TARGET') == 'windows-x86_64' and value('PROFILE') == 'all-gui' else None)
     elif command == 'assemble':
@@ -559,13 +616,13 @@ def main(command):
         ci.fetch_candidate(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'), Path('build/fetched'))
         shutil.move('build/fetched/candidate', 'build/candidate')
         shutil.move('build/fetched/delivery.json', 'build/delivery.json')
-        ci.qualification_plan(ROOT / 'build/candidate', value('PROFILE'), ROOT / 'build/check-plan.json')
-        output('matrix', ci.qualification_batches(evidence.load(ROOT / 'build/check-plan.json')))
+        ci.qualification_plan(ROOT / 'build/candidate', value('PROFILE'), ROOT / 'build/check-plan.json', runners=selected_runners())
+        output('matrix', ci.qualification_batches(evidence.load(ROOT / 'build/check-plan.json'), runners=selected_runners()))
     elif command == 'check-batch':
         check_batch()
     elif command in ('check-prerequisites', 'check'):
         plan = evidence.load(Path('build/check-plan.json'))
-        evidence.validate(plan); evidence.check_inputs(plan, ROOT)
+        evidence.validate(plan); evidence.check_inputs(plan, ROOT, check_ids=[value('CHECK')])
         matches = [item for item in plan['checks'] if item['id'] == value('CHECK')]
         if len(matches) != 1: raise ValueError('check not in frozen inventory')
         item = matches[0]
@@ -591,7 +648,7 @@ def main(command):
         policy = ROOT / 'docs/release-policy.json'; directory = ROOT / 'build/candidate'
         if command == 'certificate':
             import certify_release
-            result = certify_release.certify(directory, ci.module('release').verify_release(directory), plan, reports,
+            result = certify_release.certify(directory, ci.module('release').verify_metadata(directory), plan, reports,
                        evidence.load(policy), value('PROFILE'), identity['experiment'])
             write('build/certificate.json', result)
             for name,item in dict(certificate_sha256=evidence.sha(Path('build/certificate.json')),
@@ -600,20 +657,20 @@ def main(command):
                 scalar_output(name,item)
             write('build/attachment-plan.json', delivery.attach_certificate(value('GITHUB_REPOSITORY'), value('TAG'), directory,
                     identity, Path('build/certificate.json'), Path('build/check-plan.json'), policy, value('PROFILE'),
-                    reports, int(value('GITHUB_RUN_ATTEMPT'))))
+                    reports, int(value('GITHUB_RUN_ATTEMPT')), metadata_only=True))
         else:
             write('build/receipts/attachment.json', delivery.attach_certificate(value('GITHUB_REPOSITORY'), value('TAG'), directory,
                     identity, Path('build/certificate.json'), Path('build/check-plan.json'), policy, value('PROFILE'),
-                    reports, int(value('GITHUB_RUN_ATTEMPT')), execute=True))
+                    reports, int(value('GITHUB_RUN_ATTEMPT')), execute=True, metadata_only=True))
             scalar_output('attached',True)
     elif command in ('promotion-plan', 'promote'):
         if command == 'promotion-plan':
-            ci.fetch_candidate(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'), Path('build/fetched'))
+            ci.fetch_candidate(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'), Path('build/fetched'), metadata_only=True)
             shutil.move('build/fetched/candidate', 'build/candidate')
             shutil.move('build/fetched/delivery.json', 'build/delivery.json')
         request = dict(repository=value('GITHUB_REPOSITORY'), tag=value('TAG'), directory=Path('build/candidate'),
                        delivery=evidence.load(Path('build/delivery.json')), policy=Path('docs/release-policy.json'), profile=value('PROFILE'),
-                       run_id=value('CERTIFICATION_RUN'), attempt=int(value('CERTIFICATION_ATTEMPT')), certificate_sha256=value('CERTIFICATE'))
+                       run_id=value('CERTIFICATION_RUN'), attempt=int(value('CERTIFICATION_ATTEMPT')), certificate_sha256=value('CERTIFICATE'), metadata_only=True)
         write('build/receipts/' + command + '.json', delivery.promote(**request, execute=command == 'promote'))
         if command=='promote': scalar_output('promoted',True)
     else: raise ValueError('unknown workflow operation')
@@ -623,7 +680,7 @@ def cli(command):
     try: main(command)
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError,
             ProcessTreeError, subprocess.TimeoutExpired) as error:
-        uncertain = command in ('bundle-store', 'publish-bases', 'publish-gui', 'publish-candidate', 'attach-certificate', 'promote')
+        uncertain = command in ('bundle-store', 'qualification-payloads', 'publish-bases', 'publish-gui', 'publish-candidate', 'attach-certificate', 'promote')
         receipt = {'ok': False, 'uncertain': uncertain or bool(getattr(error, 'uncertain', False)),
                    'operation': command, 'error': str(error),
                    'action': 'reconcile remote state before retry' if uncertain else 'repair prerequisites and inspect retained evidence'}

@@ -128,4 +128,5 @@ jobs:
     with:
       channel: ${{ needs.publish.outputs.channel }}
       previous: ${{ inputs.previous }}
+      distro: all
       accept: true

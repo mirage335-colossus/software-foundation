@@ -412,11 +412,178 @@ def native_marker(value, target=None):
     return value
 
 
-def fetch(repository, tag, manifest_sha256, output, policy, trusted, *, transport=None):
+NATIVE_ASSETS = CONTROL | {'archive-keyring.gpg', 'channels.tar.gz'}
+
+
+def native_descriptor(directory, policy, trusted):
+    """Authenticate the complete signed descriptor without replaying SDK recovery.
+
+    A native installation consumes channel packages, while publication separately
+    verifies every retained source/SDK/certificate byte through ``verify``.
+    """
+    directory = Path(directory)
+    raw, _ = distro.ordinary(directory / 'distribution.json', 8 * 1024 * 1024)
+    value = delivery.parse(raw)
+    fields = {'schema_version', 'request', 'tag', 'application_release_id', 'delivery_sha256', 'certificate',
+              'policy_sha256', 'packaging_source_proof', 'backends', 'retained', 'apt_files', 'arch_files', 'specifications', 'files'}
+    if (not isinstance(value, dict) or set(value) != fields or type(value['schema_version']) is not int or
+            value['schema_version'] != 1 or not delivery.positive(value['application_release_id'])):
+        raise ValueError('complete signed distribution manifest required')
+    req = request(value['request'])
+    if req['trusted_fingerprint'] != apt.full_fingerprint(trusted) or value['tag'] != tag_for(req) or value['policy_sha256'] != archive.digest(policy):
+        raise ValueError('trusted policy or channel identity differs')
+    distro.verify_signature(raw, distro.ordinary(directory / 'distribution.json.sig')[0],
+                           distro.ordinary(directory / 'archive-keyring.gpg')[0], trusted)
+    files = value['files']
+    if not isinstance(files, dict) or not NATIVE_ASSETS - CONTROL <= files.keys() or len(files) > 998:
+        raise ValueError('complete signed asset inventory required')
+    for name, item in files.items():
+        delivery.valid_name(name)
+        if (not isinstance(item, dict) or set(item) != {'size', 'sha256'} or type(item['size']) is not int or
+                not 0 <= item['size'] <= MAX_ASSET or not delivery.SHA.fullmatch(str(item['sha256']))):
+            raise ValueError('invalid signed asset identity')
+    if asset_info(directory / 'archive-keyring.gpg') != files['archive-keyring.gpg']:
+        raise ValueError('signed keyring bytes differ')
+    if (not isinstance(value['backends'], list) or not value['backends'] or
+            len(value['backends']) != len(set(value['backends'])) or set(value['backends']) - distro.BACKENDS or
+            not isinstance(value['specifications'], dict) or set(value['specifications']) != set(value['backends'])):
+        raise ValueError('complete signed backend inventory required')
+    retained = value['retained']
+    if not isinstance(retained, dict): raise ValueError('retained application inventory missing')
+    for logical, name in retained.items():
+        archive.relative(logical)
+        if name not in files or not name.startswith('sha256-' + files[name]['sha256'] + '-'):
+            raise ValueError('content-addressed retained alias differs')
+    for names in (value['apt_files'], value['arch_files']):
+        if not isinstance(names, list) or len(names) != len(set(names)):
+            raise ValueError('complete signed package file inventory required')
+        for name in names: delivery.valid_name(name)
+    expected = set(retained.values()) | set(value['apt_files']) | set(value['arch_files']) | {'channels.tar.gz', 'INSTALL.md'}
+    if set(files) != expected: raise ValueError('unreferenced distribution asset')
+    for backend, spec in value['specifications'].items():
+        distro.validate_spec(spec)
+        if (spec['backend'] != backend or spec['architecture'] != TARGETS[req['target']][0] or
+                spec['version'] != req['version'] or spec['package_release'] != req['package_release'] or
+                spec['license_files'] != req['license_files'] or spec['runtime_dependencies'] != req['runtime_dependencies']):
+            raise ValueError('signed package specification differs from request')
+        for reference in [dict(url=spec['archive_url'], sha256=spec['archive_sha256']),
+                          spec['application_source'], spec['packaging_tool'], spec['sdk'], *spec['dependencies']]:
+            name = reference['url'].removeprefix(base_url(req))
+            if reference['url'] != base_url(req) + name or name not in retained.values() or files[name]['sha256'] != reference['sha256']:
+                raise ValueError('recipe does not resolve to signed retained assets')
+    return value
+
+
+def verify_native_channels(channels, value, trusted):
+    """Verify every installed package/recipe, including independent native signatures."""
+    channels = Path(channels); req = value['request']
+    if {p.name for p in channels.iterdir()} != {'apt', 'native'}:
+        raise ValueError('unexpected channel archive contents')
+    state = apt.verify_repository(channels / 'apt', trusted)
+    native = distro.verify(channels / 'native', trusted)
+    if state['sequence'] != req['sequence'] or native['sequence'] != req['sequence'] or native['architecture'] != TARGETS[req['target']][0]:
+        raise ValueError('channel target or sequence differs')
+    if {spec['backend']: spec for spec in native['packages'].values()} != value['specifications']:
+        raise ValueError('signed recipe provenance differs')
+    metadata = archive.read_json(channels / 'apt/repository.json')
+    if metadata['base_url'] != base_url(req): raise ValueError('APT immutable base URL differs')
+    seen = set()
+    for row in metadata['packages']:
+        receipt = archive.read_json(channels / 'apt' / row['receipt']); backend = receipt['backend']
+        if backend in seen or backend not in value['backends']:
+            raise ValueError('APT package backend differs')
+        spec = value['specifications'][backend]
+        retained_manifest = archive.read_json(channels / 'native/packages' / (spec['architecture'] + '-' + backend) / 'portable-manifest.json')
+        if (receipt['archive_sha256'] != spec['archive_sha256'] or receipt['archive_manifest'] != retained_manifest or
+                receipt['architecture'] != TARGETS[req['target']][1] or
+                receipt['version'] != req['version'] + '+r' + str(req['package_release'])):
+            raise ValueError('APT package differs from signed archive or selected version')
+        seen.add(backend)
+    if seen != set(value['backends']): raise ValueError('APT variants omit signed native backends')
+    for names, root in ((value['apt_files'], channels / 'apt'), (value['arch_files'], channels / 'native/arch')):
+        if not isinstance(names, list) or len(names) != len(set(names)) or set(names) != {p.name for p in root.iterdir()}:
+            raise ValueError('flat package channel inventory differs')
+        for name in names:
+            if asset_info(root / name) != value['files'].get(name): raise ValueError('flat channel payload differs')
+    return value
+
+
+def verify_native(directory, policy, trusted):
+    """Verify a native-consumer projection; full inputs retain full verification."""
+    directory = Path(directory).resolve(strict=True)
+    names = {p.name for p in directory.iterdir()}
+    if names != NATIVE_ASSETS:
+        # Preserve legacy complete prepared generations and their recovery checks.
+        return verify(directory, policy, trusted)
+    value = native_descriptor(directory, policy, trusted)
+    if asset_info(directory / 'channels.tar.gz') != value['files']['channels.tar.gz']:
+        raise ValueError('signed channel archive bytes differ')
+    with tempfile.TemporaryDirectory(prefix='native-channel-verify-') as temporary:
+        channels = archive.extract(directory / 'channels.tar.gz', Path(temporary) / 'channels', max_bytes=distro.MAX_BYTES * 2)
+        # Tar transports files only; normalize only fresh owned implicit directories.
+        channels.chmod(0o755)
+        for path in channels.rglob('*'):
+            if path.is_dir(): path.chmod(0o755)
+        verify_native_channels(channels, value, trusted)
+    return value
+
+
+def remote_native_descriptor(repository, tag, manifest_sha256, output, policy, trusted, transport=None):
+    """Fetch three small controls and reconcile the complete immutable remote inventory."""
+    delivery.location(repository, tag)
+    if not delivery.SHA.fullmatch(manifest_sha256): raise ValueError('exact distribution manifest digest required')
+    output = Path(output); output.mkdir()
+    remote = delivery.Remote(repository, transport); info = remote.find(tag); rows = remote.assets(info)
+    if info['draft']: raise ValueError('public non-Latest package channel required')
+    if len(rows) > 1000 or any(row['size'] > MAX_ASSET for row in rows.values()):
+        raise ValueError('remote distribution exceeds bounded asset limits')
+    if 'distribution.json' not in rows or rows['distribution.json']['size'] > 8 * 1024 * 1024:
+        raise ValueError('bounded distribution descriptor missing')
+    remote.download(rows['distribution.json'], output / 'distribution.json', manifest_sha256)
+    for name in ('distribution.json.sig', 'archive-keyring.gpg'):
+        if name not in rows or rows[name]['size'] > 8 * 1024 * 1024: raise ValueError('bounded signed channel control missing')
+        remote.download(rows[name], output / name)
+    value = native_descriptor(output, policy, trusted)
+    if value['request']['repository'] != repository or value['tag'] != tag: raise ValueError('remote distribution identity differs')
+    if set(rows) != set(value['files']) | CONTROL:
+        raise ValueError('remote channel inventory differs')
+    for name, item in value['files'].items():
+        if rows[name]['size'] != item['size'] or rows[name]['digest'] != 'sha256:' + item['sha256']:
+            raise ValueError('remote asset identity differs from signed inventory')
+    if not info['prerelease']:
+        body = delivery.parse(info.get('body', ''))
+        if body.get('kind') != 'signed-distribution' or body.get('manifest_sha256') != manifest_sha256:
+            raise ValueError('accepted channel requires its native qualification marker')
+        native_marker(body.get('native_qualification'), value['request']['target'])
+    remote.unchanged(tag, info, rows, value['request']['packager_commit']); remote.not_latest(info)
+    return value, remote, info, rows
+
+
+def fetch(repository, tag, manifest_sha256, output, policy, trusted, *, transport=None, native_only=False, reuse=None):
     delivery.location(repository, tag)
     if not delivery.SHA.fullmatch(manifest_sha256): raise ValueError('exact distribution manifest digest required')
     output = Path(output).absolute()
     if output.exists() or output.is_symlink(): raise ValueError('new fetched distribution output required')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if native_only:
+        with tempfile.TemporaryDirectory(prefix='.native-fetch-', dir=output.parent) as temporary:
+            stage = Path(temporary) / 'assets'
+            value, remote, info, rows = remote_native_descriptor(repository, tag, manifest_sha256, stage, policy, trusted, transport)
+            item = value['files']['channels.tar.gz']; cached = Path(reuse) / 'channels.tar.gz' if reuse else None
+            if cached is not None and cached.exists():
+                # Reuse only exact authenticated bytes, copied without mutable hard links.
+                if cached.is_symlink(): raise ValueError('linked reusable channel asset')
+                if asset_info(cached) == item:
+                    copy_new(cached, stage / 'channels.tar.gz')
+                    if asset_info(stage / 'channels.tar.gz') != item: raise ValueError('reused channel bytes changed during copy')
+                else:
+                    remote.download(rows['channels.tar.gz'], stage / 'channels.tar.gz', item['sha256'])
+            else:
+                remote.download(rows['channels.tar.gz'], stage / 'channels.tar.gz', item['sha256'])
+            value = verify_native(stage, policy, trusted)
+            remote.unchanged(tag, info, rows, value['request']['packager_commit']); remote.not_latest(info)
+            stage.rename(output)
+        return value
     remote = delivery.Remote(repository, transport); info = remote.find(tag); rows = remote.assets(info)
     if info['draft']: raise ValueError('public non-Latest package channel required')
     if not info['prerelease']:
@@ -427,7 +594,6 @@ def fetch(repository, tag, manifest_sha256, output, policy, trusted, *, transpor
         native_marker(body['native_qualification'])
     if len(rows) > 1000 or any(row['size'] > MAX_ASSET for row in rows.values()):
         raise ValueError('remote distribution exceeds bounded asset limits')
-    output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.distribution-fetch-', dir=output.parent) as temporary:
         stage = Path(temporary) / 'assets'; stage.mkdir()
         if 'distribution.json' not in rows or rows['distribution.json']['size'] > 8 * 1024 * 1024: raise ValueError('bounded distribution descriptor missing')

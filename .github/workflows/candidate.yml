@@ -60,7 +60,7 @@ jobs:
       run: |
         import os, subprocess, sys
         subprocess.run([sys.executable, 'tools/ci_plan.py', 'host', os.environ['TARGET']], check=True)
-        subprocess.run([sys.executable, 'tools/build.py', 'build', 'release'], check=True)
+        subprocess.run([sys.executable, 'tools/build.py', 'build', 'release', '--configure-only'], check=True)
         subprocess.run([sys.executable, 'tools/test_plan.py', 'candidate-run', '--build', 'build/release',
                         '--scope', os.environ['SCOPE'], '--jobs', os.environ.get('CTEST_PARALLEL_LEVEL', '2'),
                         '--output', 'build/release/candidate-' + os.environ['SCOPE'] + '.json'], check=True)
@@ -240,13 +240,14 @@ jobs:
         - faster
         default: standard
       build_jobs:
-        description: Compile concurrency; tests remain bounded independently
+        description: Auto uses available CPU and RAM; explicit positive compile limit; tests remain bounded independently
         type: choice
         options:
+        - auto
         - '2'
         - '4'
         - '8'
-        default: '2'
+        default: auto
       include_arm:
         description: Include native Linux ARM64 execution
         type: boolean
@@ -262,9 +263,9 @@ jobs:
         type: string
         default: standard
       build_jobs:
-        description: Compile concurrency; tests remain bounded independently
+        description: Auto uses available CPU and RAM; explicit positive compile limit; tests remain bounded independently
         type: string
-        default: '2'
+        default: auto
       include_arm:
         description: Include native Linux ARM64 execution
         type: boolean

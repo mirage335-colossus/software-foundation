@@ -687,6 +687,40 @@ Requested, running, cancelled and failed jobs never count as successful
 qualification. These observations do not approve GUI redistribution or authorize
 release publication.
 
+## Development speed validation
+
+The development-speed changes were checked from an isolated source snapshot on
+2026-10-03 with the installed Linux x86-64 compiler and distribution tools. All
+50 native CTest entries passed, including 1,138 applicable cases in the registered
+unit suites. Two explicitly native Windows cases were excluded on Linux. The
+first sandboxed build/check run took 32.77 seconds and passed 45 entries; its five
+signing suites could not start GPG's Unix sockets. Those same frozen fixtures
+passed in 10.57 seconds when local sockets were permitted. They use disposable
+keys and mocked remote services, with no package installation or publication.
+
+A real configure-only candidate followed by a scoped core build/check took
+1.88 seconds. Its complete plan identity remained unchanged after compilation.
+The tools prerequisite target built no application executables. A separately
+archived baseline release/fast build with two compile and two test jobs took
+6.29 seconds; these are different selected scopes, not a same-workload speedup
+ratio. Documentation validation, Python parsing, workflow lint and whitespace
+checks passed.
+
+Accounting against a retained signed x86-64 channel reduces native fetch from
+3,728,405,200 bytes across 70 assets to 165,787,187 bytes across four assets
+(95.55% less). An unchanged refresh transfers 209,337 bytes of signed controls
+and revalidates its stored channel. This is an inventory-derived transfer count,
+not a hosted elapsed-time measurement. Full publication/recovery retains the
+complete inputs. Complete all-GUI certification still requires 106 logical
+checks and 66 physical operations, scheduled as 23 scope-separated batches with
+up to eight running concurrently.
+
+The updated workflows have not yet been timed or qualified on hosted Windows,
+ARM64 or browser runners. Their local validators and fixture coverage do not
+replace those execution environments. The archived-builder compatibility path,
+missing remote digests, tampered selected payloads, failed refresh preservation
+and rejection of partial native acceptance were exercised locally.
+
 ## Reproduce the integrated checks
 
 ```sh

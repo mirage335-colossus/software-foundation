@@ -86,7 +86,7 @@ jobs:
       env:
         BUNDLE_NAME: promotion-inputs-${{ github.run_attempt }}
         BUNDLE_PATHS: |-
-          build/candidate/
+          build/candidate/release.json
           build/delivery.json
           build/receipts/
     permissions:

@@ -27,10 +27,14 @@ IMAGES = {'apt-bookworm': ('apt', 'debian:bookworm'), 'apt-trixie': ('apt', 'deb
           'gentoo': ('gentoo', 'gentoo/stage3:latest')}
 
 
-def matrix(target):
+def matrix(target, distro="all", *, accept=False):
     if target not in release.TARGETS: raise ValueError('unsupported distribution target')
+    if distro not in ('all', 'apt', 'arch', 'gentoo'): raise ValueError('unknown native distro selection')
+    if accept and distro != 'all': raise ValueError('focused native diagnosis cannot accept a channel')
     # Official Arch Linux and the example Portage image are qualified on x86-64.
     names = list(IMAGES) if target == 'linux-x86_64' else ['apt-bookworm', 'apt-trixie', 'apt-ubuntu']
+    if distro != 'all': names = [name for name in names if IMAGES[name][0] == distro]
+    if not names: raise ValueError('native distro selection is unsupported for target')
     return {'include': [dict(id=name, kind=IMAGES[name][0], image=IMAGES[name][1], target=target,
         runner='ubuntu-24.04' if target == 'linux-x86_64' else 'ubuntu-24.04-arm') for name in names]}
 
@@ -236,6 +240,15 @@ def gentoo_license_config(backends):
                    for backend in backends)
 
 
+def gentoo_install_options():
+    """Parallel native package merges only in an explicitly disposable check host."""
+    require_disposable()
+    from build_capacity import default_jobs
+    jobs = default_jobs()
+    if type(jobs) is not int or jobs < 1: raise ValueError('positive native package job budget required')
+    return ['--jobs=' + str(jobs)]
+
+
 def prepare_gentoo_runtime(value, root, run):
     """Configure only required host capabilities, then resolve binaries before refresh."""
     dependencies = sorted({atom for spec in value['specifications'].values()
@@ -253,7 +266,7 @@ def prepare_gentoo_runtime(value, root, run):
 def native(directory, policy, trusted, kind, evidence, *, previous=None):
     require_disposable()
     if kind not in ('apt', 'arch', 'gentoo'): raise ValueError('unknown package frontend')
-    manifest = release.verify(directory, policy, trusted)
+    manifest = release.verify_native(directory, policy, trusted)
     target = manifest['request']['target']
     machine = {'amd64': 'x86_64', 'arm64': 'aarch64'}.get(platform.machine().lower(), platform.machine().lower())
     if target != 'linux-'+machine: raise ValueError('native package target differs from execution processor')
@@ -277,7 +290,7 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
     with qualification_work(evidence) as work:
         rounds = []
         if previous:
-            old = release.verify(previous, policy, trusted); require_version_upgrade(old, manifest)
+            old = release.verify_native(previous, policy, trusted); require_version_upgrade(old, manifest)
             rounds.append((Path(previous), old))
         rounds.append((Path(directory), manifest)); installed = []; package_versions = []
         for index, (assets, value) in enumerate(rounds):
@@ -324,13 +337,18 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
                 Path('/etc/portage/package.accept_keywords/software-foundation').write_text('app-misc/software-foundation-* ~amd64\n')
                 Path('/etc/portage/package.license/software-foundation').write_text(gentoo_license_config(backends))
                 # Disable only package-byte transformations in this disposable host.
-                os.environ['FEATURES'] = subprocess.check_output(['portageq', 'envvar', 'FEATURES'], text=True).strip()+' -compressdebug'
+                os.environ['FEATURES'] = subprocess.check_output(['portageq', 'envvar', 'FEATURES'], text=True).strip()+' -compressdebug parallel-install -merge-sync'
+                atoms = []
                 for backend in backends:
                     files = list((overlay/'app-misc'/('software-foundation-'+backend+'-bin')).glob('*.ebuild'))
                     if len(files) != 1: raise ValueError('one exact binary ebuild required')
                     run('ebuild', files[0], 'package')
-                    run('emerge', '--getbinpkgonly', '--usepkgonly', '--binpkg-respect-use=y', '--oneshot', '--with-bdeps=n', '='+ 'app-misc/'+files[0].stem)
-                    run('portageq', 'has_version', '/', '=app-misc/'+files[0].stem)
+                    atoms.append('=app-misc/'+files[0].stem)
+                # All binary wrappers exist before one dependency-resolution/merge
+                # operation. Every backend/version is still checked individually.
+                run('emerge', '--getbinpkgonly', '--usepkgonly', '--binpkg-respect-use=y',
+                    '--oneshot', '--with-bdeps=n', *gentoo_install_options(), *atoms)
+                for atom in atoms: run('portageq', 'has_version', '/', atom)
                 run('emaint', 'sync', '-r', 'software-foundation-bin')
             installed = []
             for backend in backends:
@@ -418,7 +436,7 @@ def container_with_display(root, check_id, environment, display):
     commands = {
         'apt': 'apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 gnupg gpgv dpkg-dev binutils',
         'arch': 'pacman -Syu --noconfirm --needed python gnupg binutils dpkg',
-        'gentoo': 'emerge --getbinpkgonly --usepkgonly --binpkg-respect-use=y --oneshot --with-bdeps=n app-crypt/gnupg app-arch/dpkg'
+        'gentoo': 'export FEATURES="$(portageq envvar FEATURES) parallel-install -merge-sync"\nemerge --getbinpkgonly --usepkgonly --binpkg-respect-use=y --oneshot --with-bdeps=n --jobs="$(python3 -B tools/build_capacity.py)" app-crypt/gnupg app-arch/dpkg'
     }
     snapshot = None
     try:
@@ -496,7 +514,7 @@ def accept(selected, records, environment, output):
     """Called after verified successful workflow bundles, under publication ownership."""
     marker = qualification(selected, records, environment)
     value = release.fetch(environment['GITHUB_REPOSITORY'], selected['tag'], selected['manifest_sha256'],
-        output, release.ROOT/'docs/release-policy.json', environment['TRUSTED_FINGERPRINT'])
+        output, release.ROOT/'docs/release-policy.json', environment['TRUSTED_FINGERPRINT'], native_only=True)
     if value['request']['target'] != selected['target']: raise ValueError('qualified channel target differs')
     with tempfile.TemporaryDirectory(prefix='foundation-accept-') as temporary:
         channels = extract_channels(output, Path(temporary)/'channels')
@@ -509,7 +527,8 @@ def accept(selected, records, environment, output):
         base = {'kind': 'signed-distribution', 'manifest_sha256': selected['manifest_sha256']}
         desired = dict(base, native_qualification=marker)
         if info['draft'] or body not in (base, desired): raise ValueError('unexpected channel lifecycle; preserve it')
-        expected = {p.name: release.asset_info(p) for p in Path(output).iterdir()}
+        expected = dict(value['files'])
+        expected.update({name: release.asset_info(Path(output)/name) for name in release.CONTROL})
         if set(assets) != set(expected) or any(assets[name]['digest'] != 'sha256:'+item['sha256'] or assets[name]['size'] != item['size'] for name,item in expected.items()):
             raise ValueError('native checked remote assets changed')
         remote.unchanged(selected['tag'], info, assets, value['request']['packager_commit'])
@@ -526,10 +545,11 @@ def accept(selected, records, environment, output):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__); p.add_argument('operation', choices=('plan', 'native', 'arch-keyring'))
+    p.add_argument('--distro', choices=('all', 'apt', 'arch', 'gentoo'), default='all'); p.add_argument('--accept', action='store_true')
     p.add_argument('--target'); p.add_argument('--directory', type=Path); p.add_argument('--previous', type=Path)
     p.add_argument('--policy', type=Path); p.add_argument('--trusted-fingerprint'); p.add_argument('--kind'); p.add_argument('--evidence', type=Path)
     a = p.parse_args(argv)
-    if a.operation == 'plan': result = matrix(a.target)
+    if a.operation == 'plan': result = matrix(a.target, a.distro, accept=a.accept)
     elif a.operation == 'arch-keyring':
         if not all((a.directory, a.trusted_fingerprint)): p.error('complete Arch keyring inputs required')
         result = prepare_arch_keyring(a.directory/'archive-keyring.gpg', a.trusted_fingerprint)

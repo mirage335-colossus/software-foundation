@@ -180,8 +180,12 @@ advertising support. Public service behavior requires hosted execution.
 ## Native acceptance and normal updates
 
 The [native client workflow](../.github/workflows/distro-check.yml) fetches the exact
-published assets and reproduces their signature, package, source, SDK and application
-certificate checks before installation. Debian Bookworm, Debian Trixie and Ubuntu
+signed native channel and reproduces its complete signature, policy, expiry,
+package inventory and package-byte checks before installation. It reconciles the
+complete remote release asset identities and digests, while transferring only
+`distribution.json`, its signature, the keyring and `channels.tar.gz`. Full source,
+SDK and application certificate closure remains mandatory during publication and
+separate recovery qualification. Debian Bookworm, Debian Trixie and Ubuntu
 24.04 run natively on x86-64 and ARM64. Official Arch Linux and the current Gentoo
 example image run on x86-64. Generating an ARM64 Arch/Gentoo recipe does not establish
 native client support on those systems. Every backend in the selected archive must
@@ -192,13 +196,19 @@ Every previously present backend must have a strictly newer application version 
 `package_release`; a sequence increase alone cannot qualify as a package upgrade.
 Omitting it reports `upgrade_from: null`; repeated installation is not a version-upgrade claim.
 
-Gentoo performs complete retained-release replay and public overlay refreshes in
-each revision round. A two-revision Gentoo check therefore has a bounded
-150-minute container lifetime within a 180-minute job. Single-revision Gentoo and
-all APT/Arch checks retain 75-minute container and 90-minute job limits. Individual
-commands issued by the native verification helper still have 15-minute limits,
-and timeout cleanup still joins the owned container and display service. Extra
-time does not waive any verification or count an incomplete run as successful.
+An unchanged managed refresh fetches only the small signed controls, revalidates
+the active native channel and derived repository bytes, and avoids extraction or
+payload downloads. Changed selections may reuse only assets with matching exact
+hashes. A failed refresh preserves the previous active generation.
+
+Disposable Gentoo verification builds each binary wrapper, then resolves and merges
+all selected backend atoms together with CPU/RAM-bounded `--jobs`. Its temporary
+Portage environment uses `parallel-install -merge-sync`; ordinary client
+configuration is unaffected. Two-revision Gentoo checks retain a 150-minute
+container safety bound within a 180-minute job. Other checks retain 75-minute
+container and 90-minute job bounds. Individual commands retain 15-minute limits.
+These are failure ceilings, not predicted durations; cleanup still joins owned
+containers and display services, and incomplete checks fail.
 
 For this publication workflow, renewing expiring metadata requires increasing both
 `sequence` and `package_release`, even when the application archive is unchanged.
@@ -222,7 +232,9 @@ For manual qualification, dispatch `distro-check.yml` with `channel` set to:
 {"tag":"distro-1.2.3-x86_64-r1-s1","manifest_sha256":"EXACT_DISTRIBUTION_JSON_SHA256","target":"linux-x86_64"}
 ```
 
-Use `accept=false` for observation, or `accept=true` after reviewing the publication
+The optional `distro` input selects `apt`, `arch` or `gentoo` for focused diagnosis;
+its default `all` runs every required client. A partial selection cannot use
+`accept=true`. Use `accept=false` for observation, or `accept=true` with `all` after reviewing the publication
 operation. The latter uses the protected publisher environment. A retry must match
 the recorded exact identity; different accepted evidence needs an explicit reviewed
 lifecycle transition, not replacement in place.

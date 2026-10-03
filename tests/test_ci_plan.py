@@ -376,6 +376,144 @@ class CandidateFetchTests(unittest.TestCase):
                          ci.module('release').verify_release(self.fixture.directory))
         self.assertEqual(len(self.remote.mutations), count)
 
+    def test_metadata_fetch_transfers_no_sdk_or_application_payload_but_checks_every_digest(self):
+        self.remote.calls.clear()
+        result = self.fetch(metadata_only=True)
+        self.assertEqual(result, self.fixture.delivery)
+        files = list((self.root / 'fetched/candidate').iterdir())
+        self.assertEqual([path.name for path in files], ['release.json'])
+        ids = {row['id']: row['name'] for row in self.remote.releases[0]['assets']}
+        transferred = [ids[call[1]] for call in self.remote.calls if call[0] == 'download']
+        self.assertEqual(set(transferred), {'delivery.json', 'release.json'})
+        self.assertFalse(self.remote.mutations)
+        sdk = next(row for row in self.remote.releases[0]['assets'] if row['name'].endswith('-binary.tar.gz'))
+        sdk['digest'] = 'sha256:' + '0'*64
+        with self.assertRaisesRegex(ValueError, 'remote asset differs'):
+            self.fetch(metadata_only=True, output=self.root / 'tampered')
+        self.assertFalse((self.root / 'tampered').exists())
+
+    def test_complete_fetch_downloads_each_payload_once(self):
+        self.remote.calls.clear(); self.fetch()
+        counts = {}
+        for call in self.remote.calls:
+            if call[0] == 'download': counts[call[1]] = counts.get(call[1], 0) + 1
+        for row in self.remote.releases[0]['assets']:
+            if row['name'] != 'delivery.json': self.assertEqual(counts[row['id']], 1, row['name'])
+
+    def test_retained_builder_capability_is_explicit_and_legacy_groups_remain_complete(self):
+        import ast
+        import source_identity
+        root = self.root / 'builder-source'; (root / 'tools').mkdir(parents=True)
+        builder = root / 'tools/build.py'
+        builder.write_text("parser.add_argument('--dependency-group')\n")
+        legacy = self.root / 'legacy-builder.tar.gz'; source_identity.archive_source(root, legacy)
+        self.assertFalse(ci.archived_binary_group_support(self.root, {'source': {'archive': legacy.name}}))
+        builder.write_text("parser.add_argument('--binary-dependency-group', action='append')\n")
+        modern = self.root / 'modern-builder.tar.gz'; source_identity.archive_source(root, modern)
+        self.assertTrue(ci.archived_binary_group_support(self.root, {'source': {'archive': modern.name}}))
+        builder.write_text("# --binary-dependency-group\nparser.add_argument('--dependency-group')\n")
+        comment = self.root / 'comment-builder.tar.gz'; source_identity.archive_source(root, comment)
+        self.assertFalse(ci.archived_binary_group_support(self.root, {'source': {'archive': comment.name}}))
+        release = ci.module('release'); metadata = release.verify_release(self.fixture.directory)
+        names = release.required_files(metadata, self.fixture.target, 'core', 'source', binary_source=False)
+        self.assertTrue(any(name.endswith('-sources.tar.gz') for name in names))
+
+    def test_scope_payload_selection_omits_sdk_sources_except_recovery(self):
+        import shutil
+        release = ci.module('release'); archive = ci.module('dependency_archive')
+        manifest = release.verify_release(self.fixture.directory)
+        scope_files = {scope: release.required_files(manifest, self.fixture.target, 'core', scope)
+                       for scope in ('archive', 'source', 'recovery')}
+        self.assertEqual(set(scope_files['archive']), {manifest['artifacts'][0]['archive'], manifest['artifacts'][0]['manifest']})
+        self.assertFalse(any(name.endswith('-sources.tar.gz') for name in scope_files['source']))
+        self.assertTrue(any(name.endswith('-sources.tar.gz') for name in scope_files['recovery']))
+        for scope, names in scope_files.items():
+            destination = self.root / ('sparse-' + scope); destination.mkdir()
+            for name in ['release.json', *names]:
+                target = destination / name; target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(self.fixture.directory / name, target)
+            self.assertEqual(release.verify_selection(destination, self.fixture.target, 'core', scope), manifest)
+            required = destination / manifest['artifacts'][0]['archive']; required.unlink()
+            with self.assertRaisesRegex(ValueError, 'missing'):
+                release.verify_selection(destination, self.fixture.target, 'core', scope)
+
+    def test_transport_projects_each_scope_without_repeating_sources_into_binary_bundle(self):
+        import shutil, ci_transport
+        c = ci.module('coverage'); release = ci.module('release')
+        policy = {'schema_version': 1, 'profiles': {'fixture': {'description': 'transport fixture',
+            'targets': {self.fixture.target: ['core']}, 'checks': [dict(target=self.fixture.target,
+                backend='core', environment='debian-12', scope=scope) for scope in ('source', 'archive', 'recovery')]}}}
+        plan_path = self.root / 'projection-plan.json'
+        ci.qualification_plan(self.fixture.directory, 'fixture', plan_path, policy)
+        plan = c.load(plan_path); destination = self.root / 'transport-checkout'
+        for name in plan['inputs']:
+            if name.startswith('build/candidate/'): continue
+            target = destination / name; target.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(ci.ROOT / name, target)
+        shutil.copytree(self.fixture.directory, destination / 'build/candidate')
+        (destination / 'build/check-plan.json').write_text(json.dumps(plan))
+        spec = importlib.util.spec_from_file_location('projected_lifecycle', ci.ROOT / '.github/scripts/lifecycle.py')
+        helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+        payloads = {}
+        def publish(**options):
+            payloads[options['name']] = {name: (options['root'] / name).read_bytes() for name in options['paths']}
+        with patch.object(helper, 'ROOT', destination), patch.object(helper, 'storage_context', return_value={}), \
+                patch.dict(helper.os.environ, GITHUB_RUN_ATTEMPT='1', RUNNER_NAME='fixture-runner'), \
+                patch.object(ci_transport, 'publish_bundle', side_effect=publish):
+            helper.qualification_payloads()
+        self.assertEqual(len(payloads), 4)  # source, target, SDK binary pair, SDK sources
+        binary = payloads['qualification-sdk-0-1']; sources = payloads['qualification-sdk-source-0-1']
+        self.assertEqual(len(binary), 2); self.assertEqual(len(sources), 1)
+        self.assertFalse(any(name.endswith('-sources.tar.gz') for name in binary))
+        self.assertTrue(all(name.endswith('-sources.tar.gz') for name in sources))
+        manifest = release.verify_release(destination / 'build/candidate')
+        for scope in ('archive', 'source', 'recovery'):
+            for name in manifest['files']: (destination / 'build/candidate' / name).unlink(missing_ok=True)
+            for directory in sorted((destination / 'build/candidate').rglob('*'), reverse=True):
+                if directory.is_dir(): directory.rmdir()
+            batch = next(row for row in ci.qualification_batches(plan)['include'] if
+                         next(item for item in c.executions(plan) if item['id'] in row['checks'])['scope'] == scope)
+            fetched = []
+            def restore(name, output, **options):
+                fetched.append(name)
+                for relative, content in payloads[name].items():
+                    path = Path(output) / relative; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
+            with patch.object(helper, 'ROOT', destination), \
+                    patch.dict(helper.os.environ, GITHUB_RUN_ATTEMPT='1', BATCH=batch['id']), \
+                    patch.object(helper, 'fetch_bundle', side_effect=restore):
+                helper.fetch_check_payloads()
+            actual = {path.relative_to(destination / 'build/candidate').as_posix() for path in (destination / 'build/candidate').rglob('*') if path.is_file()}
+            expected = {'release.json', *release.required_files(manifest, self.fixture.target, 'core', scope)}
+            self.assertEqual(actual, expected)
+            self.assertEqual('qualification-sdk-source-0-1' in fetched, scope == 'recovery')
+            self.assertEqual('qualification-sdk-0-1' in fetched, scope != 'archive')
+
+    def test_sparse_execution_inputs_reject_omitted_inventory_and_changed_selected_bytes(self):
+        import shutil
+        c = ci.module('coverage'); release = ci.module('release')
+        policy = {'schema_version': 1, 'profiles': {'fixture': {'description': 'scope fixture',
+            'targets': {self.fixture.target: ['core']},
+            'checks': [dict(target=self.fixture.target, backend='core', environment='debian-12', scope=scope) for scope in ('source', 'archive', 'recovery')]}}}
+        frozen_path = self.root / 'scope-plan.json'
+        ci.qualification_plan(self.fixture.directory, 'fixture', frozen_path, policy)
+        plan = c.load(frozen_path); item = next(row for row in c.executions(plan) if row['scope'] == 'archive')
+        destination = self.root / 'scoped-checkout'
+        for name in plan['inputs']:
+            if name.startswith('build/candidate/'): continue
+            target = destination / name; target.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(ci.ROOT / name, target)
+        manifest = release.verify_release(self.fixture.directory)
+        for name in ['release.json', *release.required_files(manifest, item['target'], item['backend'], item['scope'])]:
+            target = destination / 'build/candidate' / name; target.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(self.fixture.directory / name, target)
+        c.check_inputs(plan, destination, check_ids=[item['id']])
+        c.check_inputs(plan, destination, metadata_only=True)
+        broken = copy.deepcopy(plan); broken.pop('id'); omitted = next(name for name in broken['inputs'] if name.endswith('-sources.tar.gz')); broken['inputs'].pop(omitted)
+        with self.assertRaisesRegex(ValueError, 'inventory differs'):
+            c.check_inputs(c.freeze(broken), destination, check_ids=[item['id']])
+        with self.assertRaisesRegex(ValueError, 'unknown'):
+            c.check_inputs(plan, destination, check_ids=['absent'])
+        (destination / 'build/candidate' / manifest['artifacts'][0]['archive']).write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError, 'check input changed'):
+            c.check_inputs(plan, destination, check_ids=[item['id']])
+
     def test_wrong_inventory_does_not_publish_local_destination(self):
         with self.assertRaisesRegex(ValueError, 'identity'): self.fetch(inventory='b' * 64)
         self.assertFalse((self.root / 'fetched').exists())
@@ -449,6 +587,7 @@ class CandidateFetchTests(unittest.TestCase):
                   environment='ubuntu-24.04', scope=scope) for scope in ('source', 'archive', 'recovery')]}}}
         original = ci.module
         release = Mock(verify_release=Mock(return_value=dict(original('release').verify_release(self.fixture.directory))))
+        release.dependency_recipes = original('release').dependency_recipes
         release.verify_release.return_value['artifacts'][0]['target'] = target
         release.verify_release.return_value['artifacts'][0]['backends'] = ['hosted-web']
         with patch.object(ci, 'module', side_effect=lambda name: release if name == 'release' else original(name)):
@@ -473,16 +612,18 @@ class CandidateFetchTests(unittest.TestCase):
         policy=json.loads((ci.ROOT/'docs/release-policy.json').read_text())
         manifest['artifacts']=[dict(manifest['artifacts'][0],target=target,backends=backends) for target,backends in policy['profiles']['all-gui']['targets'].items()]
         release=Mock(verify_release=Mock(return_value=manifest))
+        release.dependency_recipes = original('release').dependency_recipes
         with patch.object(ci,'module',side_effect=lambda name:release if name=='release' else original(name)):
             output=self.root/'all-gui-plan.json';matrix=ci.qualification_plan(self.fixture.directory,'all-gui',output,policy)
         frozen=json.loads(output.read_text());self.assertEqual(len(frozen['checks']),106);self.assertEqual(len(matrix['include']),66)
         batches = ci.qualification_batches(frozen)['include']
-        self.assertEqual(len(batches), 11)
+        self.assertEqual(len(batches), 23)
         self.assertEqual(sorted(check for batch in batches for check in batch['checks']),
                          sorted(row['id'] for row in matrix['include']))
-        self.assertEqual(sorted(len(batch['checks']) for batch in batches), [1, 1, 1, 3, 5, 5, 6, 6, 8, 15, 15])
-        self.assertEqual(sum(batch['browser'] for batch in batches), 8)
-        self.assertEqual(sum(batch['graphics'] for batch in batches), 1)
+        self.assertTrue(all(len({by['scope'] for by in original('coverage').executions(frozen) if by['id'] in batch['checks']}) == 1 for batch in batches))
+        self.assertTrue(all(len(batch['checks']) <= 16 for batch in batches))
+        self.assertEqual(sum(batch['browser'] for batch in batches), 10)
+        self.assertEqual(sum(batch['graphics'] for batch in batches), 3)
         by_id = {row['id']: row for row in matrix['include']}
         for batch in batches:
             for check in batch['checks']:
@@ -493,8 +634,9 @@ class CandidateFetchTests(unittest.TestCase):
             self.assertEqual({batch['image'] for batch in ubuntu}, {'', 'ubuntu:24.04'})
             self.assertEqual(next(batch for batch in ubuntu if not batch['image'])['checks'],
                              [target + '-hosted-web-ubuntu-24.04-archive'])
-        windows = next(batch for batch in batches if batch['target'] == 'windows-x86_64')
-        self.assertTrue(windows['graphics']); self.assertFalse(windows['browser'])
+        windows = [batch for batch in batches if batch['target'] == 'windows-x86_64']
+        self.assertEqual(len(windows), 3)
+        self.assertTrue(all(batch['graphics'] and not batch['browser'] for batch in windows))
         changed = copy.deepcopy(frozen); changed['checks'][0]['environment'] = 'debian-13'
         with self.assertRaises(ValueError): ci.qualification_batches(changed)
         chromium = next(row for row in matrix['include'] if row['id']=='browser-wasm32-wasm-chromium-archive')
@@ -521,6 +663,7 @@ class CandidateFetchTests(unittest.TestCase):
                 manifest['artifacts'] = [dict(source['artifacts'][0], target=target, backends=backends)
                     for target, backends in policy['profiles'][profile]['targets'].items()]
                 release = Mock(verify_release=Mock(return_value=manifest))
+                release.dependency_recipes = original('release').dependency_recipes
                 output = self.root / (profile + '-bundle-names.json')
                 with patch.object(ci, 'module', side_effect=lambda name: release if name == 'release' else original(name)):
                     matrix = ci.qualification_plan(self.fixture.directory, profile, output, policy)
@@ -545,6 +688,7 @@ class CandidateFetchTests(unittest.TestCase):
                   environment='windows-2022', scope=scope) for scope in ('source', 'archive', 'recovery')]}}}
         original = ci.module
         release = Mock(verify_release=Mock(return_value=dict(original('release').verify_release(self.fixture.directory))))
+        release.dependency_recipes = original('release').dependency_recipes
         release.verify_release.return_value['artifacts'][0].update(target=target, backends=['rev'])
         with patch.object(ci, 'module', side_effect=lambda name: release if name == 'release' else original(name)):
             output = self.root / 'graphics-plan.json'
@@ -556,6 +700,12 @@ class CandidateFetchTests(unittest.TestCase):
             self.assertNotIn('--browser-prerequisite', item['argv'])
         self.assertIn('tools/windows_gl_probe.cpp', frozen['inputs'])
         self.assertIn('third_party/host-graphics/mesa-windows.json', frozen['inputs'])
+        self.assertTrue(all(item.get('sdk_payload') == 'complete' for item in frozen['checks'] if item['scope'] == 'source'))
+        with patch.object(ci, 'module', side_effect=lambda name: release if name == 'release' else original(name)), \
+                patch.object(ci, 'archived_binary_group_support', return_value=True):
+            ci.qualification_plan(self.fixture.directory, 'fixture', self.root / 'modern-graphics-plan.json', policy)
+        modern = json.loads((self.root / 'modern-graphics-plan.json').read_text())
+        self.assertTrue(all(item.get('sdk_payload') == 'binary' for item in modern['checks'] if item['scope'] == 'source'))
 
 
 

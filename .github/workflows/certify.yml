@@ -21,6 +21,11 @@ name: Certify exact published candidate
         description: Operator-retained HTTPS host graphics archive; required for Windows GUI checks
         type: string
         default: ''
+      linux_pool:
+        description: Authorized runner pool
+        type: choice
+        options: [standard, faster]
+        default: standard
       execute:
         description: Append this immutable certificate attempt to the candidate
         type: boolean
@@ -43,6 +48,10 @@ name: Certify exact published candidate
         description: Operator-retained HTTPS host graphics archive; required for Windows GUI checks
         type: string
         default: ''
+      linux_pool:
+        description: Authorized runner pool
+        type: string
+        default: standard
       execute:
         description: Append this immutable certificate attempt to the candidate
         type: boolean
@@ -83,12 +92,14 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'certification-plan'], check=True)
       id: plan
+    - name: Retain each immutable qualification payload once
+      run: python .github/scripts/lifecycle.py qualification-payloads
     - name: Retain verified qualification-inputs-${{ github.run_attempt }}
       run: python .github/scripts/lifecycle.py bundle-store
       env:
         BUNDLE_NAME: qualification-inputs-${{ github.run_attempt }}
         BUNDLE_PATHS: |-
-          build/candidate/
+          build/candidate/release.json
           build/delivery.json
           build/check-plan.json
     permissions:
@@ -99,6 +110,7 @@ jobs:
     needs: prepare
     strategy:
       fail-fast: false
+      max-parallel: 8
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     # Includes bounded shared GitHub quota waits as well as execution.
@@ -117,6 +129,11 @@ jobs:
       env:
         BUNDLE_NAME: qualification-inputs-${{ github.run_attempt }}
         BUNDLE_OUTPUT: build
+    - name: Fetch only frozen inputs required by this physical execution
+      shell: python
+      run: |
+        import subprocess,sys
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-check-payloads'],check=True)
     - name: Verify the explicitly supplied retained Windows graphics input
       if: runner.os == 'Windows' && matrix.graphics
       run: python .github/scripts/lifecycle.py graphics-input
@@ -175,7 +192,7 @@ jobs:
       env:
         BUNDLE_NAME: certificate-${{ github.run_attempt }}
         BUNDLE_PATHS: |-
-          build/candidate/
+          build/candidate/release.json
           build/delivery.json
           build/check-plan.json
           build/evidence/
@@ -250,4 +267,8 @@ env:
   TAG: ${{ inputs.tag }}
   INVENTORY: ${{ inputs.inventory }}
   PROFILE: ${{ inputs.profile }}
+  LINUX_POOL: ${{ inputs.linux_pool }}
+  FOUNDATION_FASTER_LINUX_RUNNER: ${{ vars.FOUNDATION_FAST_LINUX_RUNNER }}
+  FOUNDATION_FASTER_ARM_RUNNER: ${{ vars.FOUNDATION_FAST_ARM_RUNNER }}
+  FOUNDATION_FASTER_WINDOWS_RUNNER: ${{ vars.FOUNDATION_FAST_WINDOWS_RUNNER }}
   GRAPHICS_ARCHIVE_URL: ${{ inputs.graphics_archive_url }}

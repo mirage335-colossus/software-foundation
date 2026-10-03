@@ -14,6 +14,22 @@ spec.loader.exec_module(builder)
 
 
 class BuildTests(unittest.TestCase):
+    def test_configure_only_keeps_identity_guards_without_compiling(self):
+        from unittest.mock import patch
+        import source_identity
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run, \
+                    patch.object(builder, 'cache_identity', return_value={}), \
+                    patch.object(source_identity, 'source_tree', return_value={}):
+                self.assertEqual(builder.main(['build', 'release', '--configure-only']), 0)
+            self.assertEqual(run.call_count, 1)
+            self.assertIn('--preset', run.call_args.args[0])
+            self.assertTrue((root / 'build/release/configured-identity.json').is_file())
+        for action in ('test', 'package'):
+            with self.subTest(action=action), self.assertRaises(SystemExit):
+                builder.main([action, 'release', '--configure-only'])
+
     def test_supported_build_regions_use_explicit_compiler_owner(self):
         from unittest.mock import patch
         for command in (['cmake', '--preset', 'release'], ['cmake', '--build', 'tree'],
@@ -33,7 +49,7 @@ class BuildTests(unittest.TestCase):
         hooks = {'-DVCPKG_MANIFEST_MODE=OFF', '-DVCPKG_APPLOCAL_DEPS=OFF',
                  '-DX_VCPKG_APPLOCAL_DEPS_INSTALL=OFF'}
         for action in ('build', 'test', 'package'):
-            for retained in (False, True):
+            for retained in (False, "complete", "binary"):
                 with self.subTest(action=action, retained=retained), tempfile.TemporaryDirectory() as temporary:
                     root = Path(temporary).resolve(strict=True)
                     dependencies = root / 'dependencies'
@@ -56,17 +72,22 @@ class BuildTests(unittest.TestCase):
                     baseline = dict(environment)
                     args = [action, 'release', '--jobs', '2', '--portable']
                     if retained:
-                        args += ['--windows-dependencies', str(dependencies), '--dependency-group', str(group)]
+                        args += ['--windows-dependencies', str(dependencies),
+                                 '--binary-dependency-group' if retained == 'binary' else '--dependency-group', str(group)]
                     with patch.object(builder, 'ROOT', root), \
                             patch.object(builder, 'os', SimpleNamespace(name='nt', environ=environment)), \
                             patch.object(builder, 'run') as run, \
                             patch.object(builder, 'cache_identity', return_value={}), \
                             patch.object(builder, 'verify_windows_linker'), \
                             patch.object(dependency_store, 'verify_group', return_value={}), \
+                            patch.object(dependency_store, 'verify_binary_group', return_value={}), \
                             patch.object(dependency_archive, 'inspect_manifest_archive', return_value=(metadata, None)), \
                             patch.object(sdk_manifest, 'verify_sdk'), \
                             patch.object(source_identity, 'source_tree', return_value={}):
                         self.assertEqual(builder.main(args), 0)
+                    if retained:
+                        receipt = json.loads((root / 'build/release-portable/wrapper-identity.json').read_text())
+                        self.assertEqual(receipt['dependencies'][0].get('payload'), 'binary' if retained == 'binary' else None)
                     self.assertEqual(environment, baseline)
                     configure = run.call_args_list[0].args[0]
                     self.assertEqual(hooks.intersection(configure), hooks if retained else set())
@@ -90,6 +111,7 @@ class BuildTests(unittest.TestCase):
                                     patch.object(builder, 'os', SimpleNamespace(name='nt', environ=environment)), \
                                     patch.object(builder, 'run') as rejected, \
                                     patch.object(dependency_store, 'verify_group', return_value={}), \
+                                    patch.object(dependency_store, 'verify_binary_group', return_value={}), \
                                     patch.object(dependency_archive, 'inspect_manifest_archive', return_value=(changed, None)), \
                                     patch.object(sdk_manifest, 'verify_sdk'):
                                 with self.assertRaisesRegex(ValueError, 'incompatible Windows dependency ABI'):

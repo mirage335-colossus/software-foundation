@@ -7,6 +7,11 @@ must not become an independent build system. Read [testing](testing.md) for
 test selection and [portability](portability.md) before promising that a
 package runs on another computer.
 
+Use [development speed](development-speed.md) to select the smallest useful check
+and keep independent release work parallel. Leaving compile jobs unspecified uses
+the available CPU and RAM detector; `--build-jobs` overrides compilation separately
+from `--test-jobs`.
+
 ## Prerequisites and working commands
 
 Install Git, CMake 3.24 or newer, Ninja, Python 3.9 or newer, and a compiler with
@@ -16,20 +21,20 @@ third-party application runtime dependencies. Compiler and operating-system
 runtimes still apply. GUI integration is optional and has separate prerequisites.
 
 ```sh
-./build.sh build dev --jobs 2
-./build.sh test dev --label core --jobs 2
-./build.sh test dev --full --jobs 2
-./build.sh test asan --jobs 2
-./build.sh package release --jobs 2
+./build.sh build dev
+./build.sh test dev --label core
+./build.sh test dev --full
+./build.sh test asan
+./build.sh package release
 ```
 
 On Windows, start a terminal with the intended compiler environment initialized
 and invoke the same helper directly:
 
 ```powershell
-python tools/build.py build dev --jobs 2
-python tools/build.py test dev --full --jobs 2
-python tools/build.py package release --jobs 2
+python tools/build.py build dev
+python tools/build.py test dev --full
+python tools/build.py package release
 ```
 
 The sanitizer preset requires a supported compiler/runtime combination; do not
@@ -59,7 +64,7 @@ Direct CMake remains supported:
 
 ```sh
 cmake --preset dev
-cmake --build --preset dev --target foundation-tests --parallel 2
+cmake --build --preset dev --target foundation-tests --parallel "$(python3 tools/build_capacity.py)"
 ctest --preset dev --output-on-failure --no-tests=error --parallel 2
 cmake --install build/dev --prefix "$PWD/build/install"
 ```
@@ -316,9 +321,9 @@ run it only where the corresponding display/browser prerequisites are available.
 reduce development work without claiming omitted coverage as successful.
 
 ```sh
-./build.sh test dev --build-dir /owned/session-build --label core --jobs 2
-./build.sh test release --build-dir /owned/release-build --sdk /owned/sdk --portable --full --jobs 2
-./build.sh package release --build-dir /owned/release-build --sdk /owned/sdk --portable --jobs 2
+./build.sh test dev --build-dir /owned/session-build --label core
+./build.sh test release --build-dir /owned/release-build --sdk /owned/sdk --portable --full
+./build.sh package release --build-dir /owned/release-build --sdk /owned/sdk --portable
 ```
 
 Native Windows dependency groups are separate from compiler/sysroot SDKs. Use

@@ -10,6 +10,17 @@ import build as b
 
 
 class Capacity(unittest.TestCase):
+    def test_auto_and_explicit_compile_limits(self):
+        with patch.object(c, 'default_jobs', return_value=7) as automatic:
+            for value in (None, '', 'auto'):
+                self.assertEqual(c.compile_jobs(value), 7)
+            for value in (1, '2', 9):
+                self.assertEqual(c.compile_jobs(value), int(value))
+            self.assertEqual(automatic.call_count, 3)
+        for value in (0, '0', '-1', '1.5', 'many', True):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                c.compile_jobs(value)
+
     def test_memory_reserve_and_cpu_headroom_are_independent(self):
         self.assertEqual(c.select_jobs(16, c.MEMORY_PER_JOB * 3), 2)
         self.assertEqual(c.select_jobs(2, 32 * 1024**3), 1)
@@ -43,6 +54,8 @@ class Capacity(unittest.TestCase):
             self.assertEqual(b.job_limits(args),(7,2))
             with patch.dict(b.os.environ,{'CMAKE_BUILD_PARALLEL_LEVEL':'5','CTEST_PARALLEL_LEVEL':'3'}):
                 self.assertEqual(b.job_limits(args),(5,3))
+                with patch.dict(b.os.environ,{'CMAKE_BUILD_PARALLEL_LEVEL':'auto'}), patch.object(c,'default_jobs',return_value=9):
+                    self.assertEqual(b.job_limits(args),(9,3))
                 args.jobs=4;self.assertEqual(b.job_limits(args),(4,4))
                 args.build_jobs=8;args.test_jobs=1;self.assertEqual(b.job_limits(args),(8,1))
 

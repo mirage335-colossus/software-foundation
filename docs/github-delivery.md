@@ -299,8 +299,12 @@ candidate identity. Published candidates are immutable and remain outside Latest
 Certify a published candidate by its exact tag and release-inventory digest.
 The prepare job captures complete paged remote assets, downloads the descriptor
 and mapped files, verifies the complete local release, and rereads remote IDs
-and the direct tag before publishing the local download. Independent checks use
-the same transported candidate and frozen plan. The recording job rejects
+and the direct tag. It retains a control bundle and separate exact source, target
+archive and SDK component bundles. Independent checks use the same frozen inventory
+and plan while fetching only their consumed components. Initial publication keeps
+its complete byte readback; recording, attachment and promotion reconcile the
+complete remote inventory and SHA-256 digests while downloading only their
+controls and certificate evidence. Missing remote digests fail closed. The recording job rejects
 missing, stale, mixed-run or altered evidence. A failed full report may be
 attached as a new attempt, preserving previous reports and binaries.
 

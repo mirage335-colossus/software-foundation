@@ -33,8 +33,9 @@ A coverage specification contains:
 - `subject.source_sha256`: the recorded source archive digest.
 - `subject.inventory_sha256`: the SHA-256 of the exact `release.json` bytes.
 - `subject.configuration_sha256`: `coverage.digest({"policy": POLICY, "profile": NAME})`.
-- `inputs`: relative input filenames and exact digests to recheck before and after
-  each command. Include the actual source/test/recipe inputs the command consumes.
+- `inputs`: the complete frozen release input inventory and exact digests. Each
+  command rechecks its declared consumed subset before and after execution; unknown
+  scopes, incomplete inventories and altered selected bytes fail.
 - Each check has unique `id`, `scope`, `target`, `environment`, `backend`, boolean
   `required`, argument-array `argv`, positive `timeout_seconds` and
   `warning_seconds`, and `expected_tests`. A nonempty expected test list requires
@@ -70,7 +71,7 @@ its actual attempt and logs remain visible.
 ## Authoritative check adapters
 
 [`release_check.py`](../tools/release_check.py) implements `source`,
-`archive`, `recovery`, native `abi` and disposable-container `apt` scopes. It verifies the candidate before and after
+`archive`, `recovery`, native `abi` and disposable-container `apt` scopes. It verifies the complete candidate metadata and each scope's consumed payloads before and after
 execution, checks actual target identity, and writes the receipt only after the
 operation completes. For example, the argument array for a native archive check is:
 
@@ -80,8 +81,11 @@ operation completes. For example, the argument array for a native archive check 
 
 Source qualification also builds a consumer against the exact delivered library
 and CMake export, so success from a newly rebuilt SDK cannot hide a damaged shipped
-SDK. Source and recovery scopes restore the exact source archive and matching retained
-dependency groups, build the complete enabled source scope and preserve its JUnit
+SDK. Source checks restore the exact source archive and matching compiled SDK
+with its full checksum binding. Recovery restores the complete retained
+binary/source/checksum group. The frozen source row records `sdk_payload`; older
+archived builders retain complete groups when their interface requires them. Both
+build the complete enabled source scope and preserve its JUnit
 plus individual unit-case reports. Unexpected inner skips, missing prerequisites,
 failed subtests and expected failures cannot be hidden inside a green CTest case.
 Platform exclusions are explicit named cases in `run_tests.py` and stay visible

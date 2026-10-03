@@ -145,9 +145,12 @@ def smoke(root, work):
     return report
 
 
-def install(group, recipe, output, production=True):
+def install(group, recipe, output, production=True, *, expected_files=None):
     group, output = Path(group), Path(output).absolute()
-    verify_group(group, recipe)
+    if expected_files is None: verify_group(group, recipe)
+    else:
+        from dependency_store import verify_binary_group
+        verify_binary_group(group, recipe, expected_files)
     if output.exists() or output.is_symlink(): raise ValueError('SDK installation destination must be new')
     output.parent.mkdir(parents=True, exist_ok=True)
     with sdk_temporary_directory(dir=output.parent, prefix='.sdk-install-') as temporary:

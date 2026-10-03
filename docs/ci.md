@@ -231,32 +231,27 @@ complete archive once. Native archive execution and package-manager checks remai
 separate for each backend. Browser source and recovery operations remain distinct
 for each required engine.
 
-The workflow places those unchanged operations into **11 CI batches**, selected
-by runner, container image, target and environment. Each batch downloads the exact
-input bundle once, then runs each original case with its own identity and evidence
-directory. Transport batch names use a bounded, collision-checked identifier
-validated against the actual evidence-store contract; logical and execution IDs
-remain unchanged. Container cases still launch separate disposable systems, preserving
-package-manager isolation and per-case privilege rules. Native Ubuntu browser
-checks stay separate from Ubuntu container checks. Windows setup and the retained
-graphics download are shared only where required. A failed case does not suppress
-independent later cases, but any failure makes the batch fail.
+The workflow places those unchanged operations into **23 CI batches**, selected
+by runner, container image, target, environment and scope, with up to eight batches
+running concurrently. Source and recovery can therefore run independently. Each
+batch downloads the frozen control bundle once and only the source, archive or SDK
+components consumed by its checks. Recovery receives complete retained SDK groups;
+ordinary source checks receive the compiled SDK and its complete checksum binding.
+Transport names remain bounded and collision-checked. Each case keeps its original
+identity, evidence directory and disposable environment. A failed case does not
+suppress independent later cases, but any failure makes the batch fail.
 
 Transport retains the complete tree of case directories in one evidence bundle
-per batch. Aggregation restores each disjoint batch once and still requires every
-original logical result. This batches transfer and runner setup; it neither merges
-archive assertions nor changes the stricter whole-artifact execution contract below.
-The initial one-page/one-evidence-chunk estimate falls from roughly 3,900 to 754
-requests for check inputs, evidence publication and aggregation. This is a planning
-estimate: extra pages, chunks, fixed stages, retries and other repository activity
-still consume quota and need bounded rate handling.
+per batch. Aggregation restores each disjoint batch once and requires every
+original logical result. The full frozen input map is retained even where a job
+fetches only selected payloads; those actual bytes are checked before and after
+execution. Scope separation increases the number of transport bundles while
+reducing elapsed serialization and repeated large downloads. Measure API requests,
+bytes and runner setup separately when tuning grouping.
 
-The workflow gives each batch a 240-minute job allowance, including quota waits.
-Each case retains its separate 90-minute safety cap. These are independent
-upper bounds, not a promise that every case can consume its entire allowance in
-one batch. When adding long checks, split the deterministic batches and budget
-setup, execution, evidence retention and API waits within the hosting service's
-job limit. Exhausting a batch deadline leaves incomplete qualification and must fail.
+The workflow gives each batch a 240-minute safety allowance, including quota waits.
+Each case retains its separate 90-minute cap. These limits are failure bounds,
+not expected durations. Exhausting a deadline leaves qualification incomplete.
 
 A frozen `execution` group may share only identical source, release inventory,
 dependency bytes, command, configuration, target, actual environment and scope.

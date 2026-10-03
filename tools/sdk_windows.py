@@ -301,8 +301,11 @@ def build(recipe_path, provenance_path, cache, output, jobs=2):
         return assemble(recipe_path, export, sources, work / 'provenance.json', output)
 
 
-def install(group, recipe, output, consumer_linker_version):
-    verify_group(group, recipe)
+def install(group, recipe, output, consumer_linker_version, *, expected_files=None):
+    if expected_files is None: verify_group(group, recipe)
+    else:
+        from dependency_store import verify_binary_group
+        verify_binary_group(group, recipe, expected_files)
     output = Path(output).absolute()
     if output.exists(): raise ValueError('dependency installation destination must be new')
     output.parent.mkdir(parents=True, exist_ok=True)

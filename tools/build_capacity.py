@@ -195,5 +195,16 @@ def default_jobs():
         return 1
 
 
+def compile_jobs(value=None):
+    """Resolve a hosted/local compile limit; automatic selection is per machine."""
+    if value is None or value in ("", "auto"):
+        return default_jobs()
+    if isinstance(value, bool) or not re.fullmatch(r"[0-9]+", str(value)) or int(value) < 1:
+        raise ValueError("compile jobs must be auto or a positive integer")
+    return int(value)
+
+
 if __name__ == '__main__':
-    print(default_jobs())
+    if len(sys.argv) > 2:
+        raise SystemExit("usage: build_capacity.py [auto|POSITIVE_JOBS]")
+    print(compile_jobs(sys.argv[1] if len(sys.argv) == 2 else None))

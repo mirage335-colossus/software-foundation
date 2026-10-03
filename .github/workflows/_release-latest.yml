@@ -16,11 +16,16 @@ run-name: Latest preparation from ${{ github.ref_name }} (${{ inputs.profile }})
         description: JSON target-to-exact-existing-SDK-recipe map; never cold-builds
         type: string
         required: true
-      jobs:
-        description: Parallel compile jobs per producer
+      linux_pool:
+        description: Standard or explicitly configured faster runners for all stages
         type: choice
-        options: ['2', '4', '8']
-        default: '2'
+        options: [standard, faster]
+        default: standard
+      jobs:
+        description: Auto uses producer CPU and RAM; explicit compile override
+        type: choice
+        options: [auto, '2', '4', '8']
+        default: auto
       gui_group:
         description: Exact retained GUI group SHA-256 for all-gui; empty for core
         type: string
@@ -74,7 +79,7 @@ jobs:
     with:
       devfast: false
       include_arm: true
-      linux_pool: standard
+      linux_pool: ${{ inputs.linux_pool }}
       build_jobs: ${{ inputs.jobs }}
   application:
     name: Consume exact SDKs and publish the complete ordinary candidate
@@ -86,6 +91,7 @@ jobs:
     with:
       profile: ${{ inputs.profile }}
       recipes: ${{ inputs.recipes }}
+      linux_pool: ${{ inputs.linux_pool }}
       tag: ${{ needs.prepare.outputs.tag }}
       experiment: false
       jobs: ${{ inputs.jobs }}
@@ -104,6 +110,7 @@ jobs:
       tag: ${{ needs.application.outputs.tag }}
       inventory: ${{ needs.application.outputs.inventory_sha256 }}
       profile: ${{ inputs.profile }}
+      linux_pool: ${{ inputs.linux_pool }}
       graphics_archive_url: ${{ inputs.graphics_archive_url }}
       execute: true
   promotion:

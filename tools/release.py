@@ -53,6 +53,100 @@ def validate_package(archive, entry, source_identity):
             raise ValueError('packaged dependency list differs from release specification')
 
 
+def verify_metadata(directory):
+    """Validate the complete frozen inventory without reading absent payloads.
+
+    This is for evidence aggregation and authenticated remote reconciliation;
+    producer publication and physical qualification still verify payload bytes.
+    """
+    directory = Path(directory).resolve(strict=True)
+    data = read_json(directory / 'release.json')
+    if data.get('schema_version') != 1 or data.get('qualification') != 'candidate':
+        raise ValueError('unsupported local release manifest')
+    files = data.get('files')
+    if not isinstance(files, dict) or not files or any(not isinstance(v, str) or not re.fullmatch(r'[0-9a-f]{64}', v) for v in files.values()):
+        raise ValueError('invalid complete release inventory')
+    source = data['source']; safe_name(source['archive'])
+    if files.get(source['archive']) != source['sha256'] or not re.fullmatch(r'[0-9a-f]{64}', source.get('tree_sha256', '')):
+        raise ValueError('release source identity mismatch')
+    referenced = {source['archive']}; wanted = set(); targets = set()
+    if not data['artifacts']: raise ValueError('release needs application artifacts')
+    for entry in data['artifacts']:
+        if entry['target'] in targets: raise ValueError('duplicate release target')
+        targets.add(entry['target'])
+        for key, checksum in (('archive', 'sha256'), ('manifest', 'manifest_sha256')):
+            safe_name(entry[key])
+            if entry[key] in referenced or files.get(entry[key]) != entry[checksum]:
+                raise ValueError('release application identity mismatch')
+            referenced.add(entry[key])
+        wanted.update(dependency_recipes(entry))
+        backends = entry.get('backends', [])
+        if not isinstance(backends, list) or len(backends) != len(set(backends)):
+            raise ValueError('duplicate release backend')
+    observed = set()
+    from dependency_store import names
+    for entry in data['dependencies']:
+        recipe = entry['recipe_id']
+        if recipe in observed or set(entry['files']) != set(names(recipe)):
+            raise ValueError('duplicate or incomplete dependency group')
+        observed.add(recipe)
+        for name, value in entry['files'].items():
+            path = 'dependencies/' + recipe + '/' + name
+            if files.get(path) != value: raise ValueError('release dependency identity mismatch')
+            referenced.add(path)
+    if not wanted or wanted != observed or set(files) != referenced:
+        raise ValueError('unexpected or omitted release asset')
+    scopes = data['required_scopes']
+    if not scopes or len(scopes) != len(set(scopes)):
+        raise ValueError('release scopes must be nonempty and unique')
+    return data
+
+
+def required_files(metadata, target, backend, scope, *, binary_source=True):
+    """Derive physical-check inputs from the complete target/backend inventory."""
+    if scope not in ('source', 'recovery', 'archive', 'abi', 'apt'):
+        raise ValueError('unsupported qualification operation')
+    choices = [item for item in metadata['artifacts'] if item['target'] == target and backend in (item['backends'] or ['core'])]
+    if len(choices) != 1: raise ValueError('unknown or ambiguous target/backend')
+    entry = choices[0]; selected = {entry['archive'], entry['manifest']}
+    if scope in ('source', 'recovery') or scope == 'archive' and backend in ('wasm', 'hosted-web'):
+        selected.add(metadata['source']['archive'])
+    if scope in ('source', 'recovery'):
+        recipes = dependency_recipes(entry)
+        for group in metadata['dependencies']:
+            if group['recipe_id'] in recipes:
+                selected.update('dependencies/' + group['recipe_id'] + '/' + name for name in group['files']
+                    if scope == 'recovery' or not binary_source or not name.endswith('-sources.tar.gz'))
+    return sorted(selected)
+
+
+def verify_selection(directory, target, backend, scope):
+    """Verify every selected byte; reject additional or missing scope payloads."""
+    directory = Path(directory).resolve(strict=True); data = verify_metadata(directory)
+    names = required_files(data, target, backend, scope)
+    actual = file_inventory(directory, exclude=('release.json',))
+    if not set(names) <= set(actual) or not set(actual) <= set(data['files']):
+        raise ValueError('missing or unexpected physical qualification input')
+    verify_inventory(directory, {name: data['files'][name] for name in actual}, exclude=('release.json',))
+    entry = next(item for item in data['artifacts'] if item['target'] == target)
+    if data['source']['archive'] in names:
+        source = verify_source_archive(directory / data['source']['archive'])
+        if source['tree_sha256'] != data['source']['tree_sha256']:
+            raise ValueError('release source tree binding mismatch')
+    if artifact.describe(directory / entry['archive']) != read_json(directory / entry['manifest']):
+        raise ValueError('release application archive inventory mismatch')
+    validate_package(directory / entry['archive'], entry, data['source']['tree_sha256'])
+    if scope in ('source', 'recovery'):
+        for group in data['dependencies']:
+            if group['recipe_id'] in dependency_recipes(entry):
+                if scope == 'source' and not any((directory / 'dependencies' / group['recipe_id'] / name).exists() for name in group['files'] if name.endswith('-sources.tar.gz')):
+                    from dependency_store import verify_binary_group
+                    verify_binary_group(directory / 'dependencies' / group['recipe_id'], group['recipe_id'], group['files'])
+                elif verify_group(directory / 'dependencies' / group['recipe_id'], group['recipe_id']) != group['files']:
+                    raise ValueError('release dependency identity mismatch')
+    return data
+
+
 def verify_release(directory):
     directory = Path(directory).resolve(strict=True)
     metadata = read_json(directory / 'release.json')

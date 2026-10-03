@@ -9,6 +9,24 @@ spec.loader.exec_module(plan)
 
 
 class CoverageTests(unittest.TestCase):
+    def test_declared_commands_include_subdirectories_but_not_fixture_builds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            build = Path(directory)
+            child = build / 'gui'; child.mkdir()
+            (build / 'CTestTestfile.cmake').write_text('subdirs("gui")\n')
+            declarations = child / 'CTestTestfile.cmake'
+            declarations.write_text('add_test(example "old-command")\n')
+            unrelated = build / 'consumer'; unrelated.mkdir()
+            (unrelated / 'CTestTestfile.cmake').write_text('add_test(unrelated "ignored")\n')
+            actual = plan.ctest_declarations(build)
+            self.assertEqual(set(actual), {'CTestTestfile.cmake', 'gui/CTestTestfile.cmake'})
+            first = plan.digest(plan.normalize_locations(actual, build))
+            declarations.write_text('add_test(example "changed-command")\n')
+            self.assertNotEqual(first, plan.digest(plan.normalize_locations(plan.ctest_declarations(build), build)))
+            declarations.write_text('subdirs("..")\n')
+            with self.assertRaisesRegex(ValueError, 'duplicated'):
+                plan.ctest_declarations(build)
+
     def test_partition_and_complete_merge(self):
         recipe = plan.make_plan(["c", "a", "b"], 2, "source")
         reports = [{"plan": recipe["id"], "shard": index, "exit_code": 0,
@@ -157,6 +175,22 @@ class InputIdentityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'checksum'):
             plan.build_inputs(self.build)
 
+    def test_binary_group_scope_is_explicit_and_reverified(self):
+        from test_sdk import fixture
+        from dependency_store import names, verify_binary_group
+        recipe, _, _, group = fixture(self.root / 'binary-dependency')
+        (group / names(recipe)[1]).unlink()
+        self.cache['FOUNDATION_DEPENDENCY_RECIPES'] = recipe; self.write_cache()
+        entry = {'root': str(group.resolve(strict=True)), 'recipe': recipe,
+                 'payload': 'binary', 'files': verify_binary_group(group, recipe)}
+        self.wrapper(dependencies=[entry]); self.freeze()
+        without_scope = {key:value for key,value in entry.items() if key != 'payload'}
+        self.wrapper(dependencies=[without_scope])
+        with self.assertRaises(ValueError): self.freeze()
+        self.wrapper(dependencies=[entry])
+        (group / names(recipe)[0]).write_bytes(b'changed binary payload')
+        with self.assertRaisesRegex(ValueError, 'checksum'): self.freeze()
+
     def test_native_search_environment_change_invalidates_plan(self):
         import os
         from unittest.mock import patch
@@ -263,7 +297,7 @@ class InputIdentityTests(unittest.TestCase):
                         junit.write_text('<testsuite><testcase name="core.store"><failure/></testcase></testsuite>')
                         raise subprocess.CalledProcessError(8, argv)
                     self.assertEqual(argv[0], programs['cmake'])
-                    self.assertIn('foundation-tests', argv)
+                    self.assertIn('foundation-tests-core' if route == 'candidate' else 'foundation-tests', argv)
                     return subprocess.CompletedProcess(argv, 0)
                 with patch.object(plan, 'execution_context', return_value=(programs, environment)), \
                         patch.object(plan.windows_compiler, 'run', side_effect=owned), \
@@ -334,7 +368,7 @@ class CandidateInventoryTests(unittest.TestCase):
             script=source/'fixture.py'
             script.write_text("import json,sys\nfrom pathlib import Path\np=Path(sys.argv[1]);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps({'schema_version':1,'system':'fixture','status':'passed','inventory':['one'],'excluded':{},'results':{'one':{'status':'passed'}}}))\n")
             (source/'main.cpp').write_text('#include <fstream>\nint main(int argc, char** argv) { if (argc != 2) return 1; std::ofstream out(argv[1]); out << \"ran\"; return out ? 0 : 1; }\n')
-            cmake='cmake_minimum_required(VERSION 3.24)\nproject(CandidateProbe LANGUAGES CXX)\nenable_testing()\nadd_executable(probe EXCLUDE_FROM_ALL main.cpp)\nadd_custom_target(foundation-tests DEPENDS probe)\n'
+            cmake='cmake_minimum_required(VERSION 3.24)\nproject(CandidateProbe LANGUAGES CXX)\nenable_testing()\nadd_executable(probe EXCLUDE_FROM_ALL main.cpp)\nadd_custom_target(foundation-tests DEPENDS probe)\nadd_custom_target(foundation-tests-core DEPENDS probe)\nadd_custom_target(foundation-tests-tools)\nadd_custom_target(foundation-tests-integration)\n'
             cmake+='add_test(NAME newly_unlabelled COMMAND probe "${CMAKE_BINARY_DIR}/unlabelled-ran")\n'
             cmake+='add_test(NAME tools.fixture COMMAND "'+sys.executable.replace('\\','/')+'" "${CMAKE_SOURCE_DIR}/fixture.py" "${CMAKE_BINARY_DIR}/test-reports/fixture.json")\nset_tests_properties(tools.fixture PROPERTIES LABELS tools)\n'
             cmake+='add_test(NAME integration.fixture COMMAND "${CMAKE_COMMAND}" -E true)\nset_tests_properties(integration.fixture PROPERTIES LABELS integration)\n'
@@ -348,10 +382,28 @@ class CandidateInventoryTests(unittest.TestCase):
                 self.assertNotIn('command',unresolved)
                 frozen=plan.candidate_plan(build)
                 self.assertEqual(frozen['scopes']['core'],['newly_unlabelled'])
+                # Compile no unrelated executables in the tools scope, but keep
+                # its complete frozen inventory identical to the eventual core.
+                tools_first=root/'tools-first.json'
+                plan.candidate_run(build,'tools',tools_first)
+                self.assertFalse((build/'probe').exists() or (build/'probe.exe').exists())
+                self.assertEqual(plan.candidate_plan(build),frozen)
+                consumer=build/'unrelated-consumer';consumer.mkdir()
+                (consumer/'CTestTestfile.cmake').write_text('add_test(unrelated ignored)\n')
+                self.assertEqual(plan.candidate_plan(build),frozen)
                 for scope in plan.CANDIDATE_SCOPES:
                     output=root/(scope+'.json');plan.candidate_run(build,scope,output);paths.append(output)
                 self.assertTrue((build/'unlabelled-ran').is_file())
                 merged=plan.candidate_merge(paths)
+                # Separate runners compile disjoint prerequisites in distinct
+                # trees. Both trees must bind exactly the same complete plan.
+                twin=root/'independent-build'
+                subprocess.run(['cmake','-S',str(source),'-B',str(twin),'-G','Ninja','-DCMAKE_BUILD_TYPE=Release'],check=True,capture_output=True)
+                (twin/'test-platform.json').write_bytes((build/'test-platform.json').read_bytes())
+                twin_tools=root/'independent-tools.json'
+                plan.candidate_run(twin,'tools',twin_tools)
+                self.assertFalse((twin/'probe').exists() or (twin/'probe.exe').exists())
+                self.assertEqual(plan.candidate_merge([paths[0],twin_tools,paths[2]])['plan'],merged['plan'])
                 self.assertEqual(merged['mode'],'candidate');self.assertEqual(merged['plan']['platform_exclusions'],frozen['platform_exclusions'])
                 for changed in (paths[:2],paths+paths[:1]):
                     with self.assertRaises(ValueError):plan.candidate_merge(changed)

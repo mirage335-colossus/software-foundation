@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate one complete Latest workflow and independently verify its final bytes."""
+"""Validate one complete Latest workflow, promoted inventory and retained evidence."""
 import argparse
 import json
 import os
@@ -24,7 +24,7 @@ def preflight(request, *, transport=None, remote=True):
     delivery.location(request['repository']); ci.exact_commit(request['source_commit'])
     if (not re.fullmatch(r'[1-9][0-9]*', str(request['run_id'])) or
             type(request['attempt']) is not int or request['attempt'] < 1 or
-            type(request['execute']) is not bool or request['jobs'] not in ('2', '4', '8')):
+            type(request['execute']) is not bool or request['jobs'] not in ('auto', '2', '4', '8')):
         raise ValueError('invalid run, attempt, execution or concurrency selection')
     tag = request['tag'] or f'release-{request["run_id"]}-attempt-{request["attempt"]}'
     delivery.valid_name(tag)
@@ -91,15 +91,15 @@ def verify_latest(request, results, *, transport=None):
     with tempfile.TemporaryDirectory(prefix='latest-review-') as temporary:
         output = Path(temporary) / 'fetched'
         identity = ci.fetch_candidate(request['repository'], request['tag'], app['inventory_sha256'],
-                                      output, transport=transport)
+                                      output, transport=transport, metadata_only=True)
         if (identity['source_commit'] != request['source_commit'] or
                 identity['packager_commit'] != request['source_commit'] or identity['experiment'] is not False or
                 delivery.sha(delivery.archive.encoded(identity)) != app['delivery_sha256']):
             raise ValueError('published source, packager or delivery differs from this workflow')
-        info, assets = delivery.verified_remote(api, identity, output / 'candidate', prerelease=False)
+        info, assets = delivery.verified_remote(api, identity, output / 'candidate', prerelease=False, readback=False, metadata_only=True)
         checked = delivery.verify_certificate(api, assets, identity, output / 'candidate',
             ROOT / 'docs/release-policy.json', request['profile'], cert['certification_run'],
-            int(cert['certification_attempt']), cert['certificate_sha256'])
+            int(cert['certification_attempt']), cert['certificate_sha256'], metadata_only=True)
         latest = api.transport.json(api.base + '/releases/latest')
         delivery.Remote.info(latest, request['tag'])
         if latest['id'] != info['id'] or latest['draft'] or latest['prerelease']:
