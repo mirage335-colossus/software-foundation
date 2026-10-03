@@ -122,7 +122,7 @@ class PublicDownloadTests(unittest.TestCase):
         self.bind([asset_row(1, 'payload', b'exact')]); destination = self.root / 'payload'
         response = asset_response(b'exact'); response.read1 = Mock(side_effect=[b'e', b'x', b'a', b'c', b't', b''])
         with patch.object(client, 'build_opener') as build, patch.object(client, 'MAX_DOWNLOAD_SECONDS', 3), \
-                patch.object(client.time, 'monotonic', side_effect=[0, 1, 2, 3]):
+                patch.object(client.time, 'monotonic', side_effect=[0, 0, 0, 1, 3]):
             build.return_value.open.return_value = response
             with self.assertRaisesRegex(ValueError, 'deadline'): self.transport.download(1, destination)
         self.assertEqual(response.read1.call_count, 1)
@@ -283,6 +283,155 @@ class PublicRateTests(unittest.TestCase):
             request.assert_not_called()
 
 
+class PublicTransientTests(unittest.TestCase):
+    def setUp(self):
+        PublicRateTests.setUp(self)
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.row = asset_row(1, 'payload', b'exact')
+        self.transport.remember(self.endpoint, [dict(id=1, tag_name='distro-1.2.3-x86_64-r1-s7')])
+        self.assets_endpoint = 'repos/example/project/releases/1/assets?per_page=100'
+        self.transport.remember(self.assets_endpoint, [self.row])
+
+    failure = PublicRateTests.failure
+    response = PublicRateTests.response
+
+    def test_each_transient_metadata_status_recovers_and_closes_response(self):
+        for status in (500, 502, 503, 504):
+            with self.subTest(status=status):
+                failure = self.failure(status)
+                with patch.object(self.transport, 'request', side_effect=[failure, self.response([])]) as request:
+                    self.assertEqual(self.transport.json(self.endpoint), [])
+                self.assertEqual(request.call_count, 2); self.assertTrue(failure.closed)
+        self.assertEqual(self.sleeps, [2] * 4)
+
+    def test_each_transient_metadata_status_exhausts_three_attempts(self):
+        for status in (500, 502, 503, 504):
+            errors = [self.failure(status) for _ in range(3)]
+            with self.subTest(status=status), patch.object(self.transport, 'request', side_effect=errors) as request:
+                with self.assertRaisesRegex(ValueError, 'endpoint=.*attempt limit exhausted.*HTTP ' + str(status)):
+                    self.transport.json(self.endpoint)
+            self.assertEqual(request.call_count, 3); self.assertTrue(all(error.closed for error in errors))
+        self.assertEqual(self.sleeps, [2, 4] * 4)
+
+    def test_late_transient_page_restarts_complete_asset_inventory(self):
+        self.transport.assets.clear()
+        stale = [asset_row(i + 1, 'stale-' + str(i), b'x') for i in range(100)]
+        fresh = [asset_row(201, 'fresh', b'y')]
+        with patch.object(self.transport, 'request', side_effect=[self.response(stale),
+                self.failure(503), self.response(fresh)]) as request:
+            self.assertEqual(self.transport.pages(self.assets_endpoint), fresh)
+        self.assertEqual([call.args[0] for call in request.call_args_list],
+            [self.assets_endpoint + '&page=1', self.assets_endpoint + '&page=2', self.assets_endpoint + '&page=1'])
+        self.assertEqual(set(self.transport.assets), {201})
+
+    def test_each_transient_asset_status_recovers_using_bound_public_url(self):
+        for status in (500, 502, 503, 504):
+            error = self.failure(status)
+            with self.subTest(status=status), patch.object(client, 'build_opener') as build, \
+                    patch.object(client, 'urlopen', side_effect=AssertionError('no asset REST request')), \
+                    patch.dict(client.os.environ, {'GH_TOKEN': 'unused', 'GITHUB_TOKEN': 'unused'}):
+                build.return_value.open.side_effect = [error, asset_response(b'exact')]
+                self.transport.download(1, self.root / str(status))
+                self.assertEqual(build.call_count, 2)
+                self.assertIsNot(build.call_args_list[0].args[0], build.call_args_list[1].args[0])
+                for call in build.return_value.open.call_args_list:
+                    self.assertEqual(call.args[0].full_url, self.row['browser_download_url'])
+                    self.assertEqual(call.args[0].get_method(), 'GET')
+                    self.assertFalse(call.args[0].has_header('Authorization'))
+                    self.assertLessEqual(call.kwargs['timeout'], 60)
+            self.assertTrue(error.closed); self.assertEqual((self.root / str(status)).read_bytes(), b'exact')
+        self.assertEqual(self.sleeps, [2] * 4)
+
+    def test_each_transient_asset_status_exhausts_without_destination_or_response_leaks(self):
+        for status in (500, 502, 503, 504):
+            errors = [self.failure(status, message='private error body') for _ in range(3)]
+            for error in errors: error.url = 'https://release-assets.githubusercontent.com/private?signature=do-not-log'
+            with self.subTest(status=status), patch.object(client, 'build_opener') as build:
+                build.return_value.open.side_effect = errors
+                with self.assertRaisesRegex(ValueError, 'public asset id=1:.*attempt limit exhausted.*HTTP ' + str(status)) as caught:
+                    self.transport.download(1, self.root / 'payload')
+                self.assertEqual(build.return_value.open.call_count, 3)
+            self.assertTrue(all(error.closed for error in errors)); self.assertEqual(list(self.root.iterdir()), [])
+            for private in ('signature', 'do-not-log', 'private error body', 'untrusted reason'):
+                self.assertNotIn(private, str(caught.exception))
+
+    def test_failed_partial_attempt_is_closed_and_removed_before_retry(self):
+        error = self.failure(503); first = asset_response(b'')
+        first.read1 = Mock(side_effect=[b'e', error])
+        sleep = client.time.sleep
+        def checked_sleep(seconds):
+            self.assertTrue(first.closed); self.assertTrue(error.closed)
+            self.assertEqual(list(self.root.iterdir()), [])
+            sleep(seconds)
+        with patch.object(client, 'build_opener') as build, patch.object(client.time, 'sleep', side_effect=checked_sleep):
+            build.return_value.open.side_effect = [first, asset_response(b'exact')]
+            self.transport.download(1, self.root / 'payload')
+        self.assertEqual((self.root / 'payload').read_bytes(), b'exact')
+        self.assertEqual([path.name for path in self.root.iterdir()], ['payload'])
+
+    def test_asset_and_metadata_share_retry_wait_budget(self):
+        with patch.object(self.transport, 'request', side_effect=[self.failure(503, {'retry-after': '70'}), self.response([])]):
+            self.transport.json(self.endpoint)
+        error = self.failure(503, {'retry-after': '51'})
+        with patch.object(client, 'build_opener') as build:
+            build.return_value.open.side_effect = error
+            with self.assertRaisesRegex(ValueError, 'public asset id=1:.*wait budget exhausted.*retry-delay=51.000s'):
+                self.transport.download(1, self.root / 'payload')
+        self.assertEqual(build.return_value.open.call_count, 1)
+        self.assertTrue(error.closed); self.assertEqual(sum(self.sleeps), 70)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_asset_deadline_spans_failed_transfer_wait_and_new_attempt(self):
+        error = self.failure(503); first = asset_response(b'')
+        def failed_read(size):
+            self.elapsed += 598
+            raise error
+        first.read1 = Mock(side_effect=failed_read)
+        with patch.object(client, 'build_opener') as build:
+            build.return_value.open.side_effect = [first, asset_response(b'exact')]
+            with self.assertRaisesRegex(ValueError, 'deadline exhausted'):
+                self.transport.download(1, self.root / 'payload')
+        self.assertEqual(build.return_value.open.call_count, 1); self.assertEqual(self.sleeps, [])
+        self.assertTrue(first.closed); self.assertTrue(error.closed)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_remaining_asset_deadline_limits_retry_socket_and_body(self):
+        error = self.failure(503); first = asset_response(b''); second = asset_response(b'exact')
+        def failed_read(size):
+            self.elapsed += 596
+            raise error
+        def late_read(size):
+            self.elapsed += 3
+            return b'e'
+        first.read1 = Mock(side_effect=failed_read); second.read1 = Mock(side_effect=late_read)
+        with patch.object(client, 'build_opener') as build:
+            build.return_value.open.side_effect = [first, second]
+            with self.assertRaisesRegex(ValueError, 'deadline exhausted'):
+                self.transport.download(1, self.root / 'payload')
+        self.assertEqual([call.kwargs['timeout'] for call in build.return_value.open.call_args_list], [60, 2])
+        self.assertEqual(self.sleeps, [2]); self.assertTrue(second.closed)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_asset_validation_errors_and_unclassified_http_failures_never_retry(self):
+        for status in (400, 403, 404, 501):
+            error = self.failure(status, message='Forbidden')
+            with self.subTest(status=status), patch.object(client, 'build_opener') as build:
+                build.return_value.open.side_effect = error
+                with self.assertRaisesRegex(ValueError, 'HTTP ' + str(status)):
+                    self.transport.download(1, self.root / 'payload')
+                self.assertEqual(build.return_value.open.call_count, 1)
+            self.assertTrue(error.closed)
+        for response in (asset_response(b'wrong'), asset_response(b'exac'), asset_response(b'exact!'),
+                         asset_response(b'exact', 'https://foreign.invalid/payload')):
+            with patch.object(client, 'build_opener') as build:
+                build.return_value.open.return_value = response
+                with self.assertRaises(ValueError): self.transport.download(1, self.root / 'payload')
+                self.assertEqual(build.return_value.open.call_count, 1)
+            self.assertTrue(response.closed)
+        self.assertEqual(self.sleeps, []); self.assertEqual(list(self.root.iterdir()), [])
+
+
 class ClientTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
@@ -290,7 +439,7 @@ class ClientTests(unittest.TestCase):
 
     def test_only_explicit_missing_404_is_absence(self):
         transport = client.PublicGitHub('example/project')
-        for status, missing in ((404,True),(404,False),(403,True),(500,True)):
+        for status, missing in ((404,True),(404,False),(403,True),(501,True)):
             error = client.HTTPError('https://api.github.com/repos/example/project/releases/latest',status,'fixture',{},None)
             with self.subTest(status=status,missing=missing), patch.object(transport,'request',side_effect=error):
                 if status == 404 and missing:
@@ -399,6 +548,45 @@ class SignedClientTests(unittest.TestCase):
             with self.assertRaises(ValueError): client.refresh(self.value, self.f.policy, transport=transport)
             self.assertEqual(current, client.current(self.root/'state'))
             self.assertEqual(client.release.verify(current/'assets', self.f.policy, self.f.trusted), self.f.frozen)
+
+    def test_transient_public_asset_refresh_recovers_then_exhausts_preserving_signed_generation(self):
+        client.refresh(self.value, self.f.policy, prepared=self.f.prepared)
+        current = client.current(self.root / 'state'); tag = self.f.frozen['tag']
+        rows = [asset_row(i, path.name, path.read_bytes(), tag)
+                for i, path in enumerate(sorted(self.f.prepared.iterdir()), 1)]
+        bodies = {row['browser_download_url']: (self.f.prepared / row['name']).read_bytes() for row in rows}
+        info = dict(id=1, tag_name=tag, name=tag, draft=False, prerelease=True)
+        def metadata(endpoint, **options):
+            if '/releases/1/assets?' in endpoint: return rows
+            if '/releases?' in endpoint: return [info]
+            if '/git/ref/tags/' in endpoint: return {'object': {'type': 'commit', 'sha': self.f.req['packager_commit']}}
+            if endpoint.endswith('/releases/latest'): return None
+            self.fail('unexpected REST request: ' + endpoint)
+        errors = []
+        def failure():
+            error = client.HTTPError('https://release-assets.githubusercontent.com/object?signature=private',
+                500, 'private reason', {}, io.BytesIO(b'private body'))
+            errors.append(error); return error
+        def recovering(request, **options):
+            if not errors: raise failure()
+            return asset_response(bodies[request.full_url])
+        transport = client.PublicGitHub('example/project')
+        with patch.object(transport, 'json', side_effect=metadata), patch.object(client, 'build_opener') as build, \
+                patch.object(client.time, 'sleep'), patch.object(client.release.delivery.random, 'uniform', return_value=0):
+            build.return_value.open.side_effect = recovering
+            self.assertFalse(client.refresh(self.value, self.f.policy, transport=transport)['changed'])
+            self.assertEqual(len(errors), 1); self.assertTrue(errors[0].closed)
+            self.assertEqual(client.current(self.root / 'state'), current)
+            def rejected(*args, **kwargs): raise failure()
+            build.return_value.open.side_effect = rejected; build.return_value.open.reset_mock()
+            with self.assertRaisesRegex(ValueError, 'public asset id=.*attempt limit exhausted.*HTTP 500'):
+                client.refresh(self.value, self.f.policy, transport=transport)
+            self.assertEqual(build.return_value.open.call_count, 3)
+        self.assertTrue(all(error.closed for error in errors))
+        self.assertEqual(client.current(self.root / 'state'), current)
+        self.assertEqual(client.release.verify(current / 'assets', self.f.policy, self.f.trusted), self.f.frozen)
+        self.assertEqual(list((self.root / 'state').glob('.refresh-*')), [])
+        self.assertEqual(list((self.root / 'state/generations').iterdir()), [current])
 
     def test_public_rate_exhaustion_preserves_verified_active_generation(self):
         client.refresh(self.value, self.f.policy, prepared=self.f.prepared)

@@ -51,12 +51,12 @@ class ReleaseRedirects(HTTPRedirectHandler):
 
 
 class _PublicReadBudget(release.delivery.GitHub):
-    """Reuse read-only rate classification, with limits below native sync's cap."""
+    """Reuse GET-only rate/transient classification below native sync's cap."""
     WAIT_BUDGET = 120
     REQUEST_DEADLINE = 180
     COMMAND_TIMEOUT = 60
     MAX_ATTEMPTS = 3
-    TRANSIENT_STATUS = frozenset()
+    TRANSIENT_STATUS = frozenset((500, 502, 503, 504))
 
 
 class PublicGitHub:
@@ -89,6 +89,21 @@ class PublicGitHub:
             data.extend(chunk)
         return bytes(data)
 
+    def _http_failure(self, error, deadline):
+        # Close even rejected/error responses before retrying. Only bounded rate
+        # fields enter diagnostics; signed redirect URLs and bodies stay private.
+        with error:
+            headers = {}
+            for name in release.delivery.RATE_HEADERS:
+                values = (error.headers.get_all(name, []) if hasattr(error.headers, 'get_all')
+                          else [v for k, v in error.headers.items() if k.lower() == name])
+                if len(values) > 1: raise ValueError('ambiguous public rate-limit headers')
+                if values: headers[name] = values[0]
+            payload = self._body(error, 4096, deadline) if error.fp is not None else b''
+            failure = release.delivery.HTTPFailure(error.code, headers, payload)
+            self._retry_delay = self._reads._retry_delay(failure, 1)
+            return failure
+
     def _json_once(self, endpoint, missing, deadline):
         # Log only a bounded repository-relative route, never response bodies or
         # arbitrary query text. These routes carry no authentication material.
@@ -105,18 +120,9 @@ class PublicGitHub:
             with self.request(endpoint, deadline=deadline) as response:
                 data = self._body(response, MAX_JSON, deadline)
         except HTTPError as error:
-            with error:
-                if error.code == 404 and missing: return None
-                headers = {}
-                for name in release.delivery.RATE_HEADERS:
-                    values = (error.headers.get_all(name, []) if hasattr(error.headers, 'get_all')
-                              else [v for k, v in error.headers.items() if k.lower() == name])
-                    if len(values) > 1: raise ValueError('ambiguous public rate-limit headers')
-                    if values: headers[name] = values[0]
-                payload = self._body(error, 4096, deadline) if error.fp is not None else b''
-                failure = release.delivery.HTTPFailure(error.code, headers, payload)
-                self._retry_delay = self._reads._retry_delay(failure, 1)
-                raise failure from None
+            if error.code == 404 and missing:
+                error.close(); return None
+            raise self._http_failure(error, deadline) from None
         if len(data) > MAX_JSON: raise ValueError('public JSON exceeds bound')
         return release.delivery.parse(data)
 
@@ -194,29 +200,39 @@ class PublicGitHub:
             raise ValueError('download requires an observed complete public asset inventory')
         item = self.assets[asset_id]; path = Path(path)
         if path.exists() or path.is_symlink(): raise ValueError('public download destination must be new')
-        redirects = ReleaseRedirects(item['url'])
-        request = Request(redirects.validate(item['url']), headers={'User-Agent': 'software-foundation-channel/1'})
         deadline = time.monotonic() + MAX_DOWNLOAD_SECONDS
-        # Stage only this response. A timeout or truncated body never becomes a
-        # destination, and the caller publishes its generation only after replay.
-        with tempfile.TemporaryDirectory(prefix='.public-asset-', dir=path.parent) as temporary:
-            staged = Path(temporary) / 'payload'
-            with build_opener(redirects).open(request, timeout=60) as response, staged.open('xb') as output:
-                redirects.validate(response.url)
-                total = 0; hashed = hashlib.sha256()
-                while True:
-                    if time.monotonic() >= deadline: raise ValueError('public asset transfer deadline exceeded')
-                    # read1 performs one bounded socket read; read(n) can wait for
-                    # n bytes indefinitely while a peer keeps trickling data.
-                    data = response.read1(min(1024 * 1024, item['size'] - total + 1))
-                    if time.monotonic() >= deadline: raise ValueError('public asset transfer deadline exceeded')
-                    if not data: break
-                    total += len(data)
-                    if total > item['size']: raise ValueError('public asset exceeds declared size')
-                    hashed.update(data); output.write(data)
-            if total != item['size'] or hashed.hexdigest() != item['sha256']:
-                raise ValueError('public asset bytes differ from complete inventory')
-            release.copy_new(staged, path)
+        def attempt(end):
+            # Restart from the verified canonical URL with a fresh redirect budget
+            # and response file. Close/delete failed bytes before any retry wait.
+            redirects = ReleaseRedirects(item['url'])
+            request = Request(redirects.validate(item['url']), headers={'User-Agent': 'software-foundation-channel/1'})
+            self._retry_delay = None
+            with tempfile.TemporaryDirectory(prefix='.public-asset-', dir=path.parent) as temporary:
+                staged = Path(temporary) / 'payload'
+                try:
+                    with build_opener(redirects).open(request, timeout=self._reads._timeout(end)) as response, staged.open('xb') as output:
+                        redirects.validate(response.url)
+                        total = 0; hashed = hashlib.sha256()
+                        while True:
+                            self._reads._timeout(end)
+                            # read1 makes one bounded socket read; a trickling peer
+                            # cannot renew this complete download/retry deadline.
+                            data = response.read1(min(1024 * 1024, item['size'] - total + 1))
+                            self._reads._timeout(end)
+                            if not data: break
+                            total += len(data)
+                            if total > item['size']: raise ValueError('public asset exceeds declared size')
+                            hashed.update(data); output.write(data)
+                except HTTPError as error:
+                    raise self._http_failure(error, end) from None
+                if total != item['size'] or hashed.hexdigest() != item['sha256']:
+                    raise ValueError('public asset bytes differ from complete inventory')
+                release.copy_new(staged, path)
+        try:
+            return self._reads._read(attempt, deadline=deadline)
+        except release.delivery.DeliveryError as error:
+            delay = '' if self._retry_delay is None else '; retry-delay=' + format(self._retry_delay, '.3f') + 's'
+            raise ValueError('public asset id=' + str(asset_id) + ': ' + str(error) + delay) from None
 
 
 def configuration(value):

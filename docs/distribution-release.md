@@ -257,14 +257,24 @@ URL exactly with metadata rather than decoding arbitrary URLs or relaxing origin
 path, query or digest checks. Metadata calls
 still share the public API budget, so bound refresh frequency across clients and
 preserve the last verified generation when retrieval fails. Explicit rate-limit
-responses use at most three read attempts, a 120-second wait budget shared across
-metadata operations and a 180-second deadline per complete metadata operation.
-The client respects the later applicable retry/reset delay; a reset outside its
-budget fails with a sanitized route, numeric quota fields and retry-delay guidance.
-It does not inject credentials, retry ordinary permission failures or accept a
-partial inventory. A rate response on a later page restarts the complete inventory.
-These bounds improve short transient recovery but cannot guarantee availability
-when a shared public-IP quota remains exhausted.
+responses and HTTP 500/502/503/504 responses use at most three read attempts.
+Metadata and asset operations share a 120-second wait budget. Each complete
+metadata operation has a 180-second deadline; each asset has one 600-second deadline
+covering all attempts, transfers and waits, with socket waits capped at 60 seconds.
+The client respects the later applicable retry/reset delay and uses bounded
+backoff for transient server errors. Exhaustion reports a sanitized metadata route
+or bound asset ID, numeric rate fields and retry-delay guidance; it never prints
+redirect query credentials or response bodies.
+
+Every asset attempt restarts at the verified canonical URL with fresh redirect
+state and a private response file. Failed responses and partial files close and
+are removed before waiting; successful bytes still require the exact size and
+digest before publication. A retry on a later metadata page restarts the complete
+inventory. The client does not inject credentials or retry ordinary permission,
+origin, size, digest or truncated-response failures. These bounds improve short
+transient recovery but cannot guarantee availability during a prolonged outage
+or exhausted shared public-IP quota. Follow [GitHub's retry guidance](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api)
+within the local attempt, wait and whole-operation budgets.
 
 Create a root-owned configuration outside the tool tree:
 

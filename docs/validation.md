@@ -248,6 +248,33 @@ revision; all 16 checker cases passed without exclusions. Workflow lint and
 Python 3.9 syntax checks passed. No timeout failure is claimed for the completed
 initial run, and a larger limit does not qualify an unexecuted upgrade.
 
+The x64 r3 publication and upgrade run
+[37112267197](https://github.com/mirage335-colossus/software-foundation/actions/runs/37112267197)
+at `d8295ec1724ee1a8da26b4d07a22d9c5ed564cac` published the signed revision
+`distro-0.1.0-x86_64-r3-s3`, manifest
+`383f1bc7e510bc2a375d86ab3364adc7af6507e85d1a8af1bb6ddea170816a32`.
+All three APT environments and Arch passed the actual r2-to-r3 upgrade. Gentoo
+installed all seven variants at both native versions (`0.1.0-r1` then `0.1.0-r2`,
+corresponding to channel package releases 2 and 3). Its fourth and final repository
+sync returned HTTP 500 before the second round's payload/self-check verification
+and removal. No complete Gentoo receipt was produced and acceptance was skipped.
+This was a failed public read, not an execution-budget timeout. The exact failing
+URL was not retained; the raw error shape is consistent with the public asset
+retrieval path. Independent evidence review rehashed the complete failed bundle,
+and remote readback confirmed the original r3 and accepted r2 inventories of 70
+assets each were unchanged.
+
+The public client now applies its bounded GET retry policy to transient server
+responses on metadata and asset reads. An identical HTTP-500-then-valid-body
+comparison failed with the old client after one GET and no destination; the
+corrected client returned exact bytes after two GETs and closed the failed
+response. The focused suite passed all 43 cases with
+no exclusions: recovery and exhaustion for each selected HTTP status, full-page
+restart, shared wait limits, whole-transfer deadlines, closed partial responses,
+unchanged permission/origin/content checks and preservation of a real signed active
+generation. These controlled cases do not qualify the incomplete native upgrade;
+that requires a subsequent complete run against the unchanged signed revision.
+
 The initial ARM64 signed channel
 [`distro-0.1.0-aarch64-r1-s1`](https://github.com/mirage335-colossus/software-foundation/releases/tag/distro-0.1.0-aarch64-r1-s1)
 was accepted by
@@ -456,8 +483,9 @@ The complete report and every receipt were fetched and bound to manifest asset
 `604516921`, SHA-256 `94234661c4c45a96404f8115360cd5528d4df9d2216d833f4e6bcaef9a32feb4`.
 After rechecking all original identities, a separately reviewed manual operation
 deleted exactly those 35 originals and independently confirmed their absence.
-The remaining API inventory contains 225 artifacts totaling 18,809,636 bytes,
-with none at or above 1,000,000 bytes. The private preservation release retains
+A fresh API inventory on 2026-10-03 at 11:11 UTC confirmed 225 artifacts totaling
+18,809,636 bytes; the largest was 461,803 bytes, with none at or above 1,000,000
+bytes. The private preservation release retains
 manual audit asset `604540708` (`cleanup-receipt.json`), SHA-256
 `d834b495d696aa3ae42ad43ddc780d9a6d5f328d4cfe00789d57b03bf1a3f5f4`;
 its complete uploaded bytes were independently read back. No workflow run,
@@ -662,11 +690,12 @@ scope. The fixtures use disposable keys and never install or publish packages.
 - At that baseline, GUI redistribution was blocked by unresolved upstream terms;
   the subsequently reviewed permission scope is recorded in [the GUI audit](gui-audit.md).
   Local compilation and tests do not approve binary redistribution.
-- Signed-channel initial installation passed on ARM64 Debian Bookworm, Debian
-  Trixie and Ubuntu 24.04 as recorded above. Arch/Gentoo native checks are scoped
+- Signed-channel initial installation passed on x64 Debian Bookworm, Debian
+  Trixie, Ubuntu 24.04, Arch and Gentoo, and on ARM64 Debian Bookworm, Debian
+  Trixie and Ubuntu 24.04. The ARM64 APT version upgrade passed; the x64 upgrade
+  remains pending a complete native result. Arch/Gentoo native checks are scoped
   to x64; generating their ARM64 recipes does not qualify those frontends.
-  Corrected x64 acceptance and real cross-revision upgrades remain pending.
-- SDK, gallery and ARM64 signed-channel publication credentials were exercised
+- SDK, gallery and signed-channel publication credentials were exercised
   as recorded above. An adopted repository must qualify its own permissions,
   signing trust and external services.
 - Shared-source coordination requires the stated filesystem primitives and
