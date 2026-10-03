@@ -108,30 +108,42 @@ class NativeCheckTests(unittest.TestCase):
     def test_container_executes_inspected_image_and_cleans_after_timeout(self):
         import subprocess
         from unittest.mock import patch
-        calls=[];identity='sha256:'+'e'*64
-        def execute(argv,stream,**kwargs):
-            calls.append(list(argv))
-            if argv[:2]==['docker','start']:raise subprocess.TimeoutExpired(argv,1)
-        def cleanup(name,token):calls.append(['cleanup',name,token])
-        def run(argv,**kwargs):calls.append(list(argv))
         from contextlib import contextmanager
-        @contextmanager
-        def display(directory):
-            calls.append(['display-start'])
-            try:yield {'DISPLAY':':17','XAUTHORITY':'/owned/authority'}
-            finally:calls.append(['display-joined'])
-        with tempfile.TemporaryDirectory() as temp:
-            env=dict(CHANNEL=json.dumps(self.selected),CHECK_IMAGE='debian:bookworm',CHECK_KIND='apt')
-            with patch.object(check,'private_display',side_effect=display),patch.object(check.subprocess,'run',side_effect=run),patch.object(check.subprocess,'check_output',return_value=json.dumps([{'Id':identity}])),patch.object(check,'supervised',side_effect=execute),patch.object(check,'remove_owned_container',side_effect=cleanup):
-                with self.assertRaises(subprocess.TimeoutExpired):check.container(temp,'apt-bookworm',env)
-        created=next(c for c in calls if c[:2]==['docker','create'])
-        self.assertIn(identity,created);self.assertNotIn('debian:bookworm',created)
-        self.assertIn('DISPLAY=:17',created)
-        self.assertIn('type=bind,source=/owned/authority,target=/run/foundation-Xauthority,readonly',created)
-        self.assertEqual(['display-joined'],calls[-1])
-        cleanup_indices=[i for i,c in enumerate(calls) if c[0]=='cleanup']
-        self.assertEqual(2,len(cleanup_indices));self.assertLess(max(cleanup_indices),next(i for i,c in enumerate(calls) if c[:2]==['sudo','chown']))
-        self.assertEqual(calls[cleanup_indices[0]][2],calls[cleanup_indices[1]][2])
+        identity='sha256:'+'e'*64
+        prior=dict(self.selected,tag='distro-1.2.2-x86_64-r1-s1',manifest_sha256='f'*64)
+        for kind,check_id,image in (('apt','apt-bookworm','debian:bookworm'),
+                                    ('arch','arch','archlinux:base'),
+                                    ('gentoo','gentoo','gentoo/stage3:latest')):
+            for previous in ('',json.dumps(prior)):
+                with self.subTest(kind=kind,upgrade=bool(previous)), tempfile.TemporaryDirectory() as temp:
+                    calls=[];deadlines=[]
+                    def execute(argv,stream,**kwargs):
+                        calls.append(list(argv));deadlines.append((argv[:2],kwargs['timeout']))
+                        if argv[:2]==['docker','start']:raise subprocess.TimeoutExpired(argv,1)
+                    def cleanup(name,token):calls.append(['cleanup',name,token])
+                    def run(argv,**kwargs):calls.append(list(argv))
+                    def inspect(argv,**kwargs):
+                        if argv[:2]==['docker','create']:return 'abc123'
+                        return json.dumps([{'Id':identity}])
+                    @contextmanager
+                    def display(directory):
+                        calls.append(['display-start'])
+                        try:yield {'DISPLAY':':17','XAUTHORITY':'/owned/authority'}
+                        finally:calls.append(['display-joined'])
+                    env=dict(CHANNEL=json.dumps(self.selected),CHECK_IMAGE=image,CHECK_KIND=kind,PREVIOUS=previous)
+                    with patch.object(check,'private_display',side_effect=display),patch.object(check.subprocess,'run',side_effect=run),patch.object(check.subprocess,'check_output',side_effect=inspect),patch.object(check,'supervised',side_effect=execute),patch.object(check,'remove_owned_container',side_effect=cleanup):
+                        with self.assertRaises(subprocess.TimeoutExpired):check.container(temp,check_id,env)
+                    created=next(c for c in calls if c[:2]==['docker','create'])
+                    self.assertIn(identity,created);self.assertNotIn(image,created)
+                    self.assertIn('DISPLAY=:17',created)
+                    self.assertIn('type=bind,source=/owned/authority,target=/run/foundation-Xauthority,readonly',created)
+                    self.assertEqual(bool(previous),' --previous /source/build/channels/previous' in created[-1])
+                    expected=9000 if kind=='gentoo' and previous else 4500
+                    self.assertEqual([(['docker','create'],120),(['docker','start'],expected)],deadlines)
+                    self.assertEqual(['display-joined'],calls[-1])
+                    cleanup_indices=[i for i,c in enumerate(calls) if c[0]=='cleanup']
+                    self.assertEqual(2,len(cleanup_indices));self.assertLess(max(cleanup_indices),next(i for i,c in enumerate(calls) if c[:2]==['sudo','chown']))
+                    self.assertEqual(calls[cleanup_indices[0]][2],calls[cleanup_indices[1]][2])
 
     def test_container_cleanup_refuses_foreign_ownership(self):
         from unittest.mock import patch

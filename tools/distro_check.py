@@ -438,7 +438,10 @@ def container_with_display(root, check_id, environment, display):
         if environment.get('PREVIOUS'): script += ' --previous /source/build/channels/previous'
         with (output/'container.log').open('wb') as stream:
             supervised([*args, image_id, 'bash', '-euc', script], stream, timeout=120)
-            supervised(['docker', 'start', '--attach', name], stream, timeout=4500)
+            # A Gentoo upgrade executes two complete verified channel rounds.
+            # Keep individual command limits and every other native scope unchanged.
+            duration = 9000 if row['kind'] == 'gentoo' and environment.get('PREVIOUS') else 4500
+            supervised(['docker', 'start', '--attach', name], stream, timeout=duration)
     finally:
         errors = []
         for owned in (name, snapshot_name):

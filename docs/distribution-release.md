@@ -192,6 +192,14 @@ Every previously present backend must have a strictly newer application version 
 `package_release`; a sequence increase alone cannot qualify as a package upgrade.
 Omitting it reports `upgrade_from: null`; repeated installation is not a version-upgrade claim.
 
+Gentoo performs complete retained-release replay and public overlay refreshes in
+each revision round. A two-revision Gentoo check therefore has a bounded
+150-minute container lifetime within a 180-minute job. Single-revision Gentoo and
+all APT/Arch checks retain 75-minute container and 90-minute job limits. Individual
+commands issued by the native verification helper still have 15-minute limits,
+and timeout cleanup still joins the owned container and display service. Extra
+time does not waive any verification or count an incomplete run as successful.
+
 For this publication workflow, renewing expiring metadata requires increasing both
 `sequence` and `package_release`, even when the application archive is unchanged.
 Each immutable distribution tag changes retained source/SDK URLs embedded in native

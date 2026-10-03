@@ -64,7 +64,8 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+    # Budget Gentoo's two complete channel replay rounds separately.
+    timeout-minutes: ${{ matrix.kind == 'gentoo' && inputs.previous != '' && 180 || 90 }}
     permissions:
       contents: write
       actions: read

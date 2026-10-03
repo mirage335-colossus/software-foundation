@@ -205,8 +205,7 @@ successfully prepared, installed into the staging tree and created the schema-4
 core binary package. Its first native `emerge` then rejected Mesa's dependency on
 `libglvnd[X]` because the minimal host's provider lacked that USE selection.
 Acceptance was skipped; successful recipe preparation is not completed native
-installation. The signed revision remains unchanged and unaccepted while the
-scoped host configuration and strict binary dependency preflight are qualified.
+installation. This run left the signed revision unchanged and unaccepted.
 
 A resolver-only comparison used the exact failed job's retained Gentoo stage3
 and Portage image identities, the same five signed runtime atoms and strict
@@ -220,6 +219,34 @@ compiled; this probe establishes dependency resolution, not native acceptance.
 The focused checker suite passed all 16 cases with no exclusions, including
 configuration ordering, preservation of unrelated settings and propagation of a
 missing-binary failure.
+
+Requalification
+[37108497393](https://github.com/mirage335-colossus/software-foundation/actions/runs/37108497393)
+at `cb2072c9384d9a3abdfd5081e2a1ccc4fdcd159a` subsequently passed all seven jobs
+and accepted the same
+[`distro-0.1.0-x86_64-r2-s2`](https://github.com/mirage335-colossus/software-foundation/releases/tag/distro-0.1.0-x86_64-r2-s2).
+All three APT environments, Arch and Gentoo installed every selected variant,
+verified exact payloads and self-checks, repeated the native update/refresh, and
+removed the packages. Independent readback verified the signature, all five
+native receipts and the exact acceptance marker. Comparison with the original
+pre-qualification snapshot confirmed release ID `402367320` and all 70 asset IDs,
+names, sizes and digests were unchanged. Packaging remains bound to
+`a3a214a88d61db2cf0e534830fccbad7ff9df4e0`; qualification uses the later corrected
+helper. Latest remains `402199557`. This is the first accepted x64 installation;
+its receipts record `upgrade_from: null`, so a newer revision is still required
+to establish an actual x64 version upgrade.
+
+The corrected Gentoo native step in
+[run 37108497393](https://github.com/mirage335-colossus/software-foundation/actions/runs/37108497393)
+passed in 48 minutes 23 seconds. Its two-revision path repeats the complete channel
+verification and installation sequence. The upgrade-only Gentoo budget therefore
+allows 150 minutes inside a 180-minute job; other scopes and individual native
+verification command deadlines remain unchanged. A focused negative control with
+the previous fixed deadline rejected the Gentoo upgrade case. The updated fixture
+exercises timeout cleanup for all three frontend kinds, with and without a prior
+revision; all 16 checker cases passed without exclusions. Workflow lint and
+Python 3.9 syntax checks passed. No timeout failure is claimed for the completed
+initial run, and a larger limit does not qualify an unexecuted upgrade.
 
 The initial ARM64 signed channel
 [`distro-0.1.0-aarch64-r1-s1`](https://github.com/mirage335-colossus/software-foundation/releases/tag/distro-0.1.0-aarch64-r1-s1)
@@ -236,8 +263,23 @@ the application's Latest release remained `402199557`. Hosted jobs replayed the
 complete payload; the independent readback checked signed controls and retained
 native evidence. This initial installation records `upgrade_from: null` and does
 not establish a version upgrade. ARM64 Arch/Gentoo frontends remain outside the
-native matrix. The corrected x64 initial revision and both cross-revision upgrade
-qualifications remain pending their completed evidence.
+native matrix.
+
+The subsequent ARM64 channel
+[`distro-0.1.0-aarch64-r2-s2`](https://github.com/mirage335-colossus/software-foundation/releases/tag/distro-0.1.0-aarch64-r2-s2)
+passed all seven jobs in
+[run 37103102371](https://github.com/mirage335-colossus/software-foundation/actions/runs/37103102371)
+at `a3a214a88d61db2cf0e534830fccbad7ff9df4e0`. Its signed manifest is
+`57d7632206b6a329d386a1b954d08a396acc2949291b578e19c5506d04966544`.
+Every APT environment installed and checked all seven variants at `0.1.0+r1`,
+upgraded them to `0.1.0+r2`, repeated the refresh/install operation, checked exact
+payloads and self-checks, then removed them. The exact accepted r1 tag and manifest
+are recorded in every upgrade receipt. Independent readback and peer review
+reconciled both 70-asset inventories, signatures and native receipt identities;
+application/SDK input identities were unchanged, and Latest remained `402199557`.
+This establishes the observed ARM64 APT version upgrade. The x64 initial
+installation is accepted as recorded above; its later cross-revision upgrade
+remains pending completed evidence.
 
 Earlier application runs remain useful failure evidence; none are relabeled as
 successful qualification. Run
