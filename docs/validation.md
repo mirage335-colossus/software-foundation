@@ -13,7 +13,7 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
-## Current public delivery evidence (2026-10-02)
+## Current public delivery evidence (2026-10-03)
 
 The four SDK base qualification and public publication runs completed successfully:
 [Linux x64](https://github.com/mirage335-colossus/software-foundation/actions/runs/36979799032),
@@ -46,8 +46,52 @@ SDK and application payload. The gallery separately verified the browser's
 namespace and seccomp sandbox; that evidence does not imply that every other
 browser test performs the same sandbox-status probe.
 
+The [complete Latest workflow](https://github.com/mirage335-colossus/software-foundation/actions/runs/37070391587)
+passed all 45 jobs at `4787098055de7190da730a577d6e0946c8849f2d` and
+published [the certified application release](https://github.com/mirage335-colossus/software-foundation/releases/tag/release-37070391587-attempt-1).
+All eleven certification batches passed: 106 logical checks across 66 physical
+executions, with no warnings or omitted requirements. The policy covers Linux
+x64 and ARM64, Windows x64, and Wasm; its recorded environments include Debian
+12 and 13, Ubuntu 24.04, Windows Server 2022, Chromium and Firefox. The 106 checks
+comprise 44 archive, 19 source, 19 recovery, 12 ABI and 12 APT results.
+
+| Exact delivery identity | SHA-256 |
+| --- | --- |
+| Release inventory | `b386888b83f234662662c22683c72de3b93824a7aa789569411e0d2061fa2c4e` |
+| Certificate | `273aa9762ea2b474125d568eec57cf75ace01729c08f90b593fa2dc87af1291d` |
+| Final Latest receipt | `a6a15a755f94e2a11d34c61f3015f83372a205e29f6e916fdc93d3e4dc7cab0d` |
+
+The final receipt was independently fetched from successful job `111096703678`;
+the remote Latest endpoint identified ordinary public release `402199557`, with
+25 assets. Independent certificate readback reproduced all 106 results, rehashed
+2,761 evidence files and confirmed the original 23 asset identities were unchanged.
+It rehashed 55 source inputs and checked 22 payload input identities against retained
+metadata; the hosted jobs performed the full payload download and execution.
+This bounded independent audit is not a second local replay of all payloads or
+evidence of a separately network-disabled recovery run.
+
+The [focused Windows GUI run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37069286298),
+release producer and published-release certification all passed. The producer and
+each source/recovery execution passed 68 CTest entries and 721 tool cases, with 60
+explicit platform exclusions. Certification passed all 18 Windows logical checks,
+including six archive backends and installed consumers. The verified static SDK
+configuration, graphics cleanup and private compiler-owner completion all passed;
+no incomplete cleanup was observed. These results qualify the recorded toolset and
+runner, not every older Windows client or an exhaustive process/network trace.
+
 Application delivery, full release certification and signed package-channel
-installation are separate qualifications. Run
+installation are separate qualifications. The first live signed-channel run
+[37087057851](https://github.com/mirage335-colossus/software-foundation/actions/runs/37087057851)
+failed during preparation when a per-reference loop replaced the callable needed
+for the next backend. It created no channel release or tag, and the application
+Latest was unchanged. Native signed-channel acceptance remains pending its own
+completed client evidence. A real signed two-backend fixture reproduced the exact
+failure before the correction and passed afterward; the complete affected suite
+passed all 30 cases without exclusions. Signature, retained-reference and package
+validation remain intact.
+
+Earlier application runs remain useful failure evidence; none are relabeled as
+successful qualification. Run
 [36994657303](https://github.com/mirage335-colossus/software-foundation/actions/runs/36994657303)
 passed the complete source gates, four application producers and assembly, then
 stopped when its first normal candidate was observed as Latest despite the false
@@ -61,9 +105,9 @@ passed source gates, all four producers, assembly and public candidate readback.
 Seven of eleven certification batches passed; four correctly failed on the source
 fixture and Windows lifetime defects described below. Its failed certificate was
 attached immutably, promotion was skipped and the final verdict failed. These
-results are preserved, not counted as successful release qualification. Latest
-and native signed channels remain pending until exact successful final receipts
-and client outcomes are recorded.
+results are preserved, not counted as successful release qualification. The later
+successful Latest evidence is recorded above; native signed channels have their
+own distinct client requirements.
 
 The subsequent candidate
 [37045706923](https://github.com/mirage335-colossus/software-foundation/actions/runs/37045706923)
@@ -97,8 +141,9 @@ found its default post-build `z-applocal` hook. The observed temporary executabl
 path also matches the supplier's background metrics implementation; the child
 command line and any completed network request were not captured. This is a
 failed producer, with no candidate assembled or promoted. Static SDK consumers
-now explicitly disable the unnecessary deployment hooks and metrics, subject to
-new native verification.
+now explicitly disable the unnecessary deployment hooks and metrics. The later
+native producer, source and recovery verification recorded above passed with
+those settings.
 
 ## Native process cleanup evidence
 
@@ -421,7 +466,7 @@ scope. The fixtures use disposable keys and never install or publish packages.
   combinations still need their own actual environments; mocked checks cannot
   replace them.
 - Native source production used actual Debian 12 Bookworm containers on hosted
-  kernels. Browser SDK tools are retained upstream binaries; their native source
+  kernels. The WebAssembly toolchain uses retained upstream binaries; its native source
   rebuild is not supplied by that recipe. Source availability is documented separately.
 - At that baseline, GUI redistribution was blocked by unresolved upstream terms;
   the subsequently reviewed permission scope is recorded in [the GUI audit](gui-audit.md).

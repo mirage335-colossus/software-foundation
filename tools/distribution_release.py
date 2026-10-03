@@ -386,9 +386,9 @@ def verify(directory, policy, trusted):
             if (spec['backend'] != backend or spec['archive_sha256'] != item['sha256'] or spec['version'] != req['version'] or
                     spec['package_release'] != req['package_release'] or spec['architecture'] != TARGETS[req['target']][0]):
                 raise ValueError('signed package differs from selected certified archive')
-            for ref in [dict(url=spec['archive_url'], sha256=spec['archive_sha256']), spec['application_source'], spec['packaging_tool'], spec['sdk'], *spec['dependencies']]:
-                name = ref['url'].removeprefix(base_url(req))
-                if ref['url'] != base_url(req) + name or name not in retained.values() or files[name]['sha256'] != ref['sha256']:
+            for reference in [dict(url=spec['archive_url'], sha256=spec['archive_sha256']), spec['application_source'], spec['packaging_tool'], spec['sdk'], *spec['dependencies']]:
+                name = reference['url'].removeprefix(base_url(req))
+                if reference['url'] != base_url(req) + name or name not in retained.values() or files[name]['sha256'] != reference['sha256']:
                     raise ValueError('recipe does not resolve to retained content-addressed bytes')
         if (directory / 'INSTALL.md').read_bytes() != instructions(req, backends): raise ValueError('installation instructions differ')
     expected_files = set(retained.values()) | set(value['apt_files']) | set(value['arch_files']) | {'channels.tar.gz', 'INSTALL.md'}

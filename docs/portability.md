@@ -14,9 +14,9 @@ as proposed, even if the source appears portable.
 
 | Target identity | Architecture aliases | Normal release form | Status in this example |
 | --- | --- | --- | --- |
-| Linux `x86_64` | `amd64`, `x64` | TGZ; optionally Debian `amd64` | Bookworm baseline selected; all-GUI source SDK production and fresh native consumers passed; oldest-runtime qualification remains separate |
-| Linux `aarch64` | `arm64`, `ARM64` | TGZ; optionally Debian `arm64` | All-GUI Bookworm source SDK production and native ARM64 consumers passed; other recipes and oldest-runtime qualification remain separate |
-| Windows `x86_64` | `AMD64`, `x64` | ZIP; optionally a separately maintained installer | Native core/tool/package CI passed; exact prepared-SDK and GUI observations are recorded separately below |
+| Linux `x86_64` | `amd64`, `x64` | TGZ; optionally Debian `amd64` | All-GUI SDK production and application certification passed on the recorded Debian 12 baseline; other kernels and devices need separate checks |
+| Linux `aarch64` | `arm64`, `ARM64` | TGZ; optionally Debian `arm64` | All-GUI Bookworm SDK production and native ARM64 application certification passed; other recipes and environments need separate checks |
+| Windows `x86_64` | `AMD64`, `x64` | ZIP; optionally a separately maintained installer | Prepared-SDK producer, six archive backends and source/recovery certification passed on Windows Server 2022; oldest client floor remains separate |
 | macOS or another target | Platform-specific naming | Platform-specific package | Extension requiring an explicit support decision |
 
 Aliases identify an architecture, not an interchangeable operating-system ABI.
@@ -25,10 +25,10 @@ capable. A Linux `aarch64` archive is not a Windows ARM64 archive. Normalize nam
 once when generating filenames and translate to a package manager's vocabulary
 at the packaging boundary.
 
-This repository supplies example code and executed checks; it has not yet qualified
-a multi-platform application release as Latest. The [current validation record](validation.md) identifies
-exact revisions, recipes and environments. All-GUI recipe results do not qualify
-different core-only recipes, every older operating system or a release publication.
+The [current validation record](validation.md) identifies a successfully certified
+multi-platform application release published as Latest, with its exact revision,
+recipes and environments. All-GUI recipe results do not qualify different core-only
+recipes, every older operating system, or independent signed package channels.
 Use the [validation template](templates/validation.md) to record adopted targets.
 
 ## Linux runtime baseline

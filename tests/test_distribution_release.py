@@ -222,6 +222,88 @@ class SignedDistributionTests(unittest.TestCase):
         self.assertTrue((self.prepared / filename).is_file())
         self.assertNotIn(self.private.read_bytes(), b''.join(p.read_bytes() for p in self.prepared.iterdir()))
 
+    def test_real_signed_combined_archive_verifies_every_backend(self):
+        f = fixtures.DeliveryTests(); f.setUp(); self.addCleanup(f.doCleanups)
+        app = f.root / 'application'
+        for name in ('foundation-cli', 'foundation-gui-terminal'):
+            shutil.copy2(self.root / 'application/bin/foundation-cli', app / 'bin' / name)
+        info = app / 'build-info.txt'
+        info.write_text(info.read_text().replace('gui_backends=\n', 'gui_backends=terminal\n'))
+        docs = app / 'share/doc/Foundation'; (docs / 'gui-boundary').mkdir(parents=True)
+        (docs / 'LICENSE').write_bytes(b'Fixture redistribution terms\n')
+        terms = b'Fixture GUI redistribution terms\n'
+        (docs / 'gui-boundary/LICENSE').write_bytes(terms)
+        gui_lock = dict(license='MIT', redistribution=dict(approved=True, license_files=['LICENSE']),
+                        files={'LICENSE': d.apt.byte_record(terms, 0o644)['sha256']})
+        d.archive.write_json(docs / 'gui-boundary/gui-boundary.lock.json', gui_lock)
+        (docs / 'dependency-notices').mkdir()
+        d.archive.write_json(docs / 'dependency-notices/index.json', dict(schema_version=1, providers=[], files={}))
+        wrapper = f.root / 'wrapper'; wrapper.mkdir(); shutil.copytree(app, wrapper / 'prefix')
+        package = f.root / 'application.tar.gz'; package.unlink(); d.archive.archive_tree(wrapper, package)
+        d.archive.write_json(f.root / 'application.tar.gz.json', d.release.artifact.describe(package))
+        f.fixture.spec['artifacts'][0].update(sha256=d.archive.digest(package), backends=['terminal'])
+        d.archive.write_json(f.fixture.spec_path, f.fixture.spec)
+        shutil.rmtree(f.directory); d.release.assemble(f.fixture.spec_path, f.fixture.base, f.directory)
+        f.delivery = f.publish()['delivery']
+
+        # Run the existing real certificate adapter for the combined archive's
+        # terminal backend, retaining independent source/archive/recovery reports.
+        c = d.delivery.coverage; policy = copy.deepcopy(c.load(self.policy))
+        policy['profiles']['fixture']['targets'][f.target] = ['terminal']
+        for row in policy['profiles']['fixture']['checks']: row['backend'] = 'terminal'
+        template = c.load(self.cert['check_plan'])
+        subject = dict(source_sha256=f.delivery['source_sha256'], inventory_sha256=f.delivery['inventory_sha256'],
+                       configuration_sha256=c.digest({'policy': policy, 'profile': 'fixture'}))
+        checks = copy.deepcopy(template['checks'])
+        for check in checks:
+            check['backend'] = 'terminal'
+            receipt = json.loads(check['argv'][-1]); receipt.update(backend='terminal', **{
+                key: subject[key] for key in ('source_sha256', 'inventory_sha256')})
+            check['argv'][-1] = json.dumps(receipt)
+        plan = c.freeze(dict(schema_version=1, mode='release', subject=subject, inputs=template['inputs'], checks=checks))
+        evidence = self.work / 'certificate'; evidence.mkdir(); reports = []
+        for check in checks:
+            result = c.run_case(plan, check['id'], self.cert['check_plan'].parent,
+                                evidence / check['id'], 'qualification-run', 1)
+            self.assertEqual('passed', result['status'])
+            reports.append(evidence / check['id'] / 'result.json')
+        certificate = d.delivery.certification.certify(f.directory, d.release.verify_release(f.directory),
+                                                       plan, reports, policy, 'fixture')
+        paths = {}
+        for key, value in (('certificate', certificate), ('check_plan', plan), ('policy', policy)):
+            paths[key] = evidence / (key + '.json'); c.write_new(paths[key], value)
+        cert = dict(repository='example/project', tag='v1', directory=str(f.directory), delivery=f.delivery,
+                    profile='fixture', reports=reports, attempt=1, **paths)
+        d.delivery.attach_certificate(**cert, execute=True, transport=f.remote); f.promotion(cert, execute=True)
+        req = dict(self.req, inventory_sha256=f.delivery['inventory_sha256'],
+                   certificate_sha256=c.sha(paths['certificate']),
+                   license_files=[*self.req['license_files'], 'share/doc/Foundation/gui-boundary/LICENSE',
+                                  'share/doc/Foundation/gui-boundary/gui-boundary.lock.json',
+                                  'share/doc/Foundation/dependency-notices/index.json'])
+        load = d.apt.c.load
+        def fixture_terms(path):
+            if Path(path) == ROOT / 'third_party/gui-boundary.lock.json':
+                return gui_lock
+            return load(path)
+        # Supplier approval is explicit fixture input; signing, certificate replay,
+        # both native package formats and every retained reference are verified.
+        output = self.work / 'combined-distribution'
+        with patch.object(d.distro, 'require_gui_terms'), patch.object(d.apt.c, 'load', side_effect=fixture_terms):
+            prepared = d.prepare(req, f.directory, f.delivery, paths['policy'], self.packaging, output,
+                                 self.private, transport=f.remote, packaging_checkout=self.checkout)
+            verified = d.verify(output, paths['policy'], self.trusted)
+        self.assertEqual(prepared, verified)
+        self.assertEqual(['core', 'terminal'], verified['backends'])
+        self.assertEqual({'core', 'terminal'}, set(verified['specifications']))
+        for backend, spec in verified['specifications'].items():
+            self.assertEqual(backend, spec['backend'])
+            self.assertEqual(d.archive.digest(package), spec['archive_sha256'])
+        for backend in verified['backends']:
+            self.assertTrue(any(name.startswith('software-foundation-' + backend + '_') and name.endswith('.deb')
+                                for name in verified['apt_files']))
+            self.assertTrue(any(name.startswith('software-foundation-' + backend + '-') and name.endswith('.pkg.tar.gz')
+                                for name in verified['arch_files']))
+
     def test_complete_retained_delivery_requires_terms_even_for_selected_core_target(self):
         manifest = copy.deepcopy(d.release.verify_release(self.f.directory))
         manifest['artifacts'].append(dict(manifest['artifacts'][0], target='windows-x86_64', backends=['fltk']))
