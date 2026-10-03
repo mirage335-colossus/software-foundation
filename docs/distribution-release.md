@@ -401,6 +401,20 @@ therefore install their distribution-provided `dpkg` verifier alongside signing
 tools before running client checks. Gentoo obtains these prerequisites from its
 configured binary repository with source-build fallback disabled.
 
+Before channel refresh or package installation, resolve the complete signed runtime
+atom set with `emerge --pretend --getbinpkgonly --usepkgonly
+--binpkg-respect-use=y --oneshot --with-bdeps=n`. Host USE settings must satisfy
+the actual binary dependency graph. The minimal Gentoo example host explicitly
+sets `media-libs/libglvnd X` in its dedicated
+`/etc/portage/package.use/software-foundation` file when the signed runtime atoms
+require `media-libs/mesa[X,opengl]`. Other package settings remain unchanged.
+Use the [per-package USE configuration](https://raw.githubusercontent.com/gentoo/portage/master/man/portage.5)
+and preserve the [binary matching options](https://raw.githubusercontent.com/gentoo/portage/master/man/emerge.1);
+do not replace a missing binary capability with source compilation or disabled
+USE matching. A failed resolver check stops the disposable qualification before
+its slower channel refresh. A changed profile or binary repository needs its own
+recorded resolution and installation evidence.
+
 Minimal distribution images may suppress manual-page installation globally. The
 disposable native checks explicitly restore man-page extraction through the
 package manager configuration before installation; they still compare every

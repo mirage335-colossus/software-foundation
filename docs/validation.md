@@ -195,6 +195,32 @@ do not make the historical x64 r1 recipe installable: it remains unqualified for
 Gentoo. A new immutable revision must establish the first successful installation,
 followed by a newer revision for actual cross-frontend upgrade qualification.
 
+Corrected x64 publication
+[37100870828](https://github.com/mirage335-colossus/software-foundation/actions/runs/37100870828)
+at `a3a214a88d61db2cf0e534830fccbad7ff9df4e0` published
+`distro-0.1.0-x86_64-r2-s2`, with manifest
+`d309a5902bac556b17f9a8e46ca5e40518dc4ca1bbcbf505a6d8537c53e587ee`.
+All three APT checks and Arch passed. Gentoo synced the signed channel and
+successfully prepared, installed into the staging tree and created the schema-4
+core binary package. Its first native `emerge` then rejected Mesa's dependency on
+`libglvnd[X]` because the minimal host's provider lacked that USE selection.
+Acceptance was skipped; successful recipe preparation is not completed native
+installation. The signed revision remains unchanged and unaccepted while the
+scoped host configuration and strict binary dependency preflight are qualified.
+
+A resolver-only comparison used the exact failed job's retained Gentoo stage3
+and Portage image identities, the same five signed runtime atoms and strict
+binary-only options. The baseline reproduced the `libglvnd[X]` refusal; adding
+only `media-libs/libglvnd X` resolved 30 binary packages. The observed binary
+index digest was
+`9c00a3191248fbbf8308900031b784fd7ec34c8d7cd85acfa4eb891ac328df13`.
+Both comparisons used the same private namespace root user/group accommodation
+and joined all descendants. No dependency or application was installed or
+compiled; this probe establishes dependency resolution, not native acceptance.
+The focused checker suite passed all 16 cases with no exclusions, including
+configuration ordering, preservation of unrelated settings and propagation of a
+missing-binary failure.
+
 The initial ARM64 signed channel
 [`distro-0.1.0-aarch64-r1-s1`](https://github.com/mirage335-colossus/software-foundation/releases/tag/distro-0.1.0-aarch64-r1-s1)
 was accepted by

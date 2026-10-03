@@ -236,6 +236,20 @@ def gentoo_license_config(backends):
                    for backend in backends)
 
 
+def prepare_gentoo_runtime(value, root, run):
+    """Configure only required host capabilities, then resolve binaries before refresh."""
+    dependencies = sorted({atom for spec in value['specifications'].values()
+                           for atom in spec['runtime_dependencies']['gentoo']})
+    directory = Path(root)/'etc/portage/package.use'
+    directory.mkdir(parents=True, exist_ok=True)
+    # Mesa's X dependency is conditional on the host's libglvnd USE selection.
+    # Keep it per-package; a global X flag changes unrelated binary choices.
+    flags = 'media-libs/libglvnd X\n' if 'media-libs/mesa[X,opengl]' in dependencies else ''
+    (directory/'software-foundation').write_text(flags)
+    run('emerge', '--pretend', '--getbinpkgonly', '--usepkgonly',
+        '--binpkg-respect-use=y', '--oneshot', '--with-bdeps=n', *dependencies)
+
+
 def native(directory, policy, trusted, kind, evidence, *, previous=None):
     require_disposable()
     if kind not in ('apt', 'arch', 'gentoo'): raise ValueError('unknown package frontend')
@@ -295,6 +309,7 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
             else:
                 # The signed recipes only wrap the retained archive; missing host
                 # prerequisites must come from binary repositories, never compilation.
+                prepare_gentoo_runtime(value, '/', run)
                 config = dict(schema_version=1, repository=value['request']['repository'], target=target,
                     trusted_fingerprint=trusted, policy_sha256=release.archive.digest(policy),
                     selection={'tag': value['tag'], 'manifest_sha256': release.archive.digest(assets/'distribution.json')},

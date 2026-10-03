@@ -54,6 +54,34 @@ class NativeCheckTests(unittest.TestCase):
             check.gentoo_license_config(['core', 'hosted-web']))
         self.assertEqual('', check.gentoo_license_config([]))
 
+    def test_gentoo_runtime_preflight_configures_only_its_required_provider(self):
+        value = {'specifications': {
+            'core': {'runtime_dependencies': {'gentoo': ['>=sys-libs/glibc-2.36']}},
+            'rev': {'runtime_dependencies': {'gentoo': ['>=sys-libs/glibc-2.36', 'media-libs/mesa[X,opengl]']}}}}
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); directory = root/'etc/portage/package.use'
+            directory.mkdir(parents=True)
+            unrelated = directory/'site-settings'; unrelated.write_text('app-misc/other feature\n')
+            calls = []
+            def resolve(*args):
+                # Host flags must be present before strict binary resolution.
+                self.assertEqual('media-libs/libglvnd X\n', (directory/'software-foundation').read_text())
+                calls.append(args)
+            check.prepare_gentoo_runtime(value, root, resolve)
+            self.assertEqual([('emerge', '--pretend', '--getbinpkgonly', '--usepkgonly',
+                '--binpkg-respect-use=y', '--oneshot', '--with-bdeps=n',
+                '>=sys-libs/glibc-2.36', 'media-libs/mesa[X,opengl]')], calls)
+            self.assertEqual('app-misc/other feature\n', unrelated.read_text())
+            del value['specifications']['rev']
+            check.prepare_gentoo_runtime(value, root, lambda *args: calls.append(args))
+            self.assertEqual('', (directory/'software-foundation').read_text())
+            self.assertNotIn('media-libs/mesa[X,opengl]', calls[-1])
+            self.assertEqual('app-misc/other feature\n', unrelated.read_text())
+            def missing_binary(*args):
+                raise subprocess.CalledProcessError(1, args)
+            with self.assertRaises(subprocess.CalledProcessError):
+                check.prepare_gentoo_runtime(value, root, missing_binary)
+
     def test_installed_file_bytes_modes_and_extra_files_are_checked(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);private=root/'opt/software-foundation/core';private.mkdir(parents=True)
