@@ -154,16 +154,18 @@ The wrapper budgets compilation and testing independently:
 For compilation, `--build-jobs` takes precedence over `--jobs`, then
 `CMAKE_BUILD_PARALLEL_LEVEL`, then the resource detector. For tests,
 `--test-jobs` takes precedence over `--jobs`, then `CTEST_PARALLEL_LEVEL`, then
-an independent default of two. Every explicit limit must be positive. These
-scheduling choices do not change the compiled configuration or require a new
+an independent resource-aware default capped at four. Every explicit limit must
+be positive. These scheduling choices do not change the compiled configuration or require a new
 build directory.
 
 The detector combines available processors, Linux CPU affinity and container
 quotas, and available host/container memory. It reserves one processor when
 possible, reserves at least 256 MiB or ten percent of available memory, and
-budgets 768 MiB per compile job. Unknown memory limits cap automatic compilation
-at two; failed detection falls back to one. These are conservative estimates,
-not a guarantee: large links, instrumented builds and simultaneous sessions can
+budgets 768 MiB per automatic compile or test worker. Tests additionally cap the
+automatic allowance at four, independently of an explicit compile limit. Unknown
+memory limits cap automatic concurrency at two; failed detection falls back to
+one. CTest still honors declared resource locks and serial tests. These are
+conservative estimates, not a guarantee: large links, instrumented builds and simultaneous sessions can
 need lower explicit limits. Measure and adjust for the actual machine.
 
 CMake automatically uses an available `ccache` with Ninja or Makefiles when no

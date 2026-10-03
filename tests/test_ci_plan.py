@@ -6,7 +6,7 @@ import json
 import sys
 import copy
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location("ci_plan", Path(__file__).resolve().parents[1] / "tools/ci_plan.py")
 ci = importlib.util.module_from_spec(spec)
@@ -368,6 +368,103 @@ class CandidateFetchTests(unittest.TestCase):
                     output=self.root / 'fetched', transport=self.remote)
         args.update(changes)
         return ci.fetch_candidate(**args)
+
+    def direct_plan(self, *, scopes=('archive', 'source', 'recovery')):
+        c = ci.module('coverage')
+        self.fetch(metadata_only=True, planning=True)
+        root = self.root / 'fetched'
+        policy = {'schema_version': 1, 'profiles': {'fixture': {'description': 'direct asset qualification',
+            'targets': {self.fixture.target: ['core']}, 'checks': [dict(target=self.fixture.target,
+                backend='core', environment='debian-12', scope=scope) for scope in scopes]}}}
+        ci.qualification_plan(root / 'candidate', 'fixture', root / 'check-plan.json', policy, metadata_only=True)
+        return c.load(root / 'check-plan.json'), c.load(root / 'candidate-remote.json')
+
+    def direct_fetch(self, plan, frozen, scope, *, directory=None):
+        import shutil
+        candidate = directory or self.root / ('direct-' + scope)
+        candidate.mkdir()
+        shutil.copyfile(self.fixture.directory / 'release.json', candidate / 'release.json')
+        item = next(row for row in ci.module('coverage').executions(plan) if row['scope'] == scope)
+        result = ci.fetch_candidate_payloads('example/project', 'v1', self.inventory, candidate,
+            self.fixture.delivery, frozen, plan, [item['id']], transport=self.remote)
+        return candidate, result
+
+    def test_direct_plan_downloads_only_source_and_controls_and_freezes_every_payload_digest(self):
+        self.remote.calls.clear(); plan, frozen = self.direct_plan()
+        ids = {row['id']: row['name'] for row in self.remote.releases[0]['assets']}
+        transferred = [ids[call[1]] for call in self.remote.calls if call[0] == 'download']
+        metadata = ci.module('release').verify_metadata(self.fixture.directory)
+        self.assertEqual(set(transferred), {'delivery.json', 'release.json', metadata['source']['archive']})
+        self.assertEqual(sum(name == metadata['source']['archive'] for name in transferred), 1)
+        self.assertEqual(set(frozen['assets']), set(ids.values()))
+        self.assertIn('build/delivery.json', plan['inputs'])
+        self.assertIn('build/candidate-remote.json', plan['inputs'])
+        self.assertEqual({name.removeprefix('build/candidate/'): digest for name, digest in plan['inputs'].items()
+            if name.startswith('build/candidate/') and name != 'build/candidate/release.json'}, metadata['files'])
+        self.assertFalse(self.remote.mutations)
+
+    def test_direct_scope_downloads_only_consumed_original_assets_with_bounded_shared_reads(self):
+        plan, frozen = self.direct_plan(); release = ci.module('release')
+        metadata = release.verify_metadata(self.fixture.directory)
+        for scope in ('archive', 'source', 'recovery'):
+            self.remote.calls.clear()
+            candidate, receipt = self.direct_fetch(plan, frozen, scope)
+            names = release.required_files(metadata, self.fixture.target, 'core', scope)
+            self.assertEqual(set(receipt['files']), set(names))
+            self.assertEqual(release.verify_selection(candidate, self.fixture.target, 'core', scope), metadata)
+            self.assertEqual(sum(call[0] == 'download' for call in self.remote.calls), len(names))
+            self.assertEqual(sum(call[0] != 'download' for call in self.remote.calls), 7)
+        self.assertFalse(self.remote.mutations)
+
+    def test_direct_snapshot_rejects_unselected_asset_replacement_before_transferring(self):
+        plan, frozen = self.direct_plan()
+        source_sdk = next(row['name'] for row in self.remote.releases[0]['assets'] if row['name'].endswith('-sources.tar.gz'))
+        self.remote.replace_asset(source_sdk); self.remote.calls.clear()
+        with self.assertRaisesRegex(ValueError, 'identities changed'):
+            self.direct_fetch(plan, frozen, 'archive')
+        self.assertFalse(any(call[0] == 'download' for call in self.remote.calls))
+        self.assertEqual([p.name for p in (self.root / 'direct-archive').iterdir()], ['release.json'])
+
+    def test_direct_download_mutation_and_corruption_publish_no_payload(self):
+        plan, frozen = self.direct_plan()
+        self.remote.change_download = lambda: self.remote.replace_asset('delivery.json')
+        with self.assertRaisesRegex(ValueError, 'identities changed'):
+            self.direct_fetch(plan, frozen, 'archive')
+        self.assertEqual([p.name for p in (self.root / 'direct-archive').iterdir()], ['release.json'])
+        # Restore the remote snapshot, then change bytes without changing its advertised digest.
+        self.remote.releases[0]['assets'] = list(copy.deepcopy(frozen['assets']).values())
+        entry = ci.module('release').verify_metadata(self.fixture.directory)['artifacts'][0]
+        row = frozen['assets'][entry['archive']]; self.remote.data[row['id']] = b'corrupt'
+        with self.assertRaisesRegex(ValueError, 'downloaded asset bytes differ'):
+            self.direct_fetch(plan, frozen, 'archive', directory=self.root / 'corrupt-archive')
+        self.assertEqual([p.name for p in (self.root / 'corrupt-archive').iterdir()], ['release.json'])
+
+    def test_direct_download_collision_and_parent_link_never_replace_foreign_outputs(self):
+        plan, frozen = self.direct_plan(); metadata = ci.module('release').verify_metadata(self.fixture.directory)
+        candidate = self.root / 'direct-archive'; archive = metadata['artifacts'][0]['archive']
+        self.remote.change_download = lambda: (candidate / archive).write_bytes(b'foreign writer')
+        with self.assertRaisesRegex(ValueError, 'existing file'):
+            self.direct_fetch(plan, frozen, 'archive')
+        self.assertEqual((candidate / archive).read_bytes(), b'foreign writer')
+        self.assertEqual({p.name for p in candidate.iterdir()}, {'release.json',archive})
+        outside = self.root / 'foreign-output'; outside.mkdir(); linked = self.root / 'direct-source'
+        def link_parent():
+            (linked / 'dependencies').symlink_to(outside, target_is_directory=True)
+        self.remote.change_download = link_parent
+        with self.assertRaisesRegex(ValueError, 'ordinary directories'):
+            self.direct_fetch(plan, frozen, 'source')
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertEqual({p.name for p in linked.iterdir()}, {'release.json','dependencies'})
+
+    def test_direct_inputs_reject_omitted_scope_inventory_and_foreign_snapshot(self):
+        plan, frozen = self.direct_plan()
+        broken = copy.deepcopy(plan); broken.pop('id')
+        broken['inputs'].pop(next(name for name in broken['inputs'] if name.endswith('-sources.tar.gz')))
+        with self.assertRaisesRegex(ValueError, 'inventory is incomplete'):
+            self.direct_fetch(ci.module('coverage').freeze(broken), frozen, 'archive')
+        frozen = dict(frozen, repository='other/project')
+        with self.assertRaisesRegex(ValueError, 'differ from frozen candidate'):
+            self.direct_fetch(plan, frozen, 'source')
 
     def test_fetch_reconstructs_complete_tree_and_never_mutates_remote(self):
         count = len(self.remote.mutations)
@@ -826,6 +923,61 @@ class QualificationBatchTests(unittest.TestCase):
         output.assert_called_once_with('runner','foundation-arm-fast')
         with patch.dict(self.helper.os.environ, TARGET='linux-aarch64', LINUX_POOL='faster', FOUNDATION_FASTER_ARM_RUNNER='unapproved-runner'):
             with self.assertRaisesRegex(ValueError,'authorized'): self.helper.selected_runners()
+
+    def test_direct_metadata_fetch_authenticates_and_rederives_before_any_public_payload(self):
+        names = ['qualification-inputs-2', 'qualification-linux-x86_64-2']
+        plan = {'id':'a'*64}; batch = {'checks':['one']}; events = []
+        with patch.object(self.helper, 'ROOT', self.root), \
+                patch.object(self.helper, 'fetch_bundle', side_effect=lambda *args: events.append('authenticated-controls')), \
+                patch.object(self.helper.evidence, 'load', return_value=plan), \
+                patch.object(self.helper.evidence, 'validate', return_value=plan), \
+                patch.object(self.helper.evidence, 'check_inputs', side_effect=lambda *args, **kw: events.append(kw)), \
+                patch.object(self.helper, 'check_payload_selection', return_value=(batch,names)), \
+                patch.object(self.helper.ci, 'fetch_candidate_payloads', return_value={'files':{}}) as payloads, \
+                patch.dict(self.helper.os.environ, GITHUB_RUN_ATTEMPT='2', CHECK_PAYLOADS=json.dumps(names),
+                    GITHUB_REPOSITORY='example/project', TAG='v1', INVENTORY='b'*64):
+            self.helper.fetch_published_check_inputs()
+            self.assertEqual(events, ['authenticated-controls', {'metadata_only':True}, {'check_ids':['one']}])
+            payloads.assert_called_once()
+            payloads.reset_mock()
+            with patch.dict(self.helper.os.environ, CHECK_PAYLOADS=json.dumps(names+['qualification-source-2'])), \
+                    self.assertRaisesRegex(ValueError, 'differs from complete frozen'):
+                self.helper.fetch_published_check_inputs()
+            payloads.assert_not_called()
+
+    def test_metadata_publication_never_includes_source_or_sdk_payloads(self):
+        import ci_transport
+        with patch.object(self.helper, 'ROOT', self.root), \
+                patch.object(self.helper, 'storage_context', return_value={}), \
+                patch.object(self.helper.evidence, 'load', return_value={}), \
+                patch.object(self.helper.evidence, 'validate', return_value={}), \
+                patch.object(self.helper.evidence, 'check_inputs') as check, \
+                patch.object(ci_transport, 'publish_bundle') as publish, \
+                patch.dict(self.helper.os.environ, GITHUB_RUN_ATTEMPT='2', RUNNER_NAME='fixture-runner'):
+            self.helper.qualification_metadata()
+        self.assertEqual(publish.call_args.kwargs['paths'],
+            ['candidate/release.json','delivery.json','candidate-remote.json','check-plan.json'])
+        self.assertEqual([call.kwargs for call in check.call_args_list], [{'metadata_only':True}]*2)
+
+    def test_evidence_controls_and_every_failed_outcome_restore_together_then_reconcile(self):
+        plan = self.plan(); matrix = ci.qualification_batches(plan)
+        with patch.object(self.helper, 'ROOT', self.root), \
+                patch.object(self.helper, 'fetch_bundles') as fetch, \
+                patch.object(self.helper.evidence, 'check_inputs'), \
+                patch.object(self.helper.ci, 'module', return_value=Mock(verify_metadata=Mock(return_value={}))), \
+                patch.object(self.helper.ci, 'qualification_batches', return_value=matrix), \
+                patch.dict(self.helper.os.environ, GITHUB_RUN_ATTEMPT='2', CHECK_BATCHES=json.dumps(matrix)):
+            self.helper.fetch_certification_evidence()
+            fetch.assert_called_once()
+            requests = fetch.call_args.args[0]
+            self.assertEqual(requests[0]['name'], 'qualification-inputs-2')
+            self.assertNotIn('allow_failed', requests[0])
+            self.assertEqual([row['name'] for row in requests[1:]], ['evidence-'+row['id']+'-2' for row in matrix['include']])
+            self.assertTrue(all(row['allow_failed'] for row in requests[1:]))
+            altered = {'include':[dict(row, runner='foreign-runner') for row in matrix['include']]}
+            with patch.dict(self.helper.os.environ, CHECK_BATCHES=json.dumps(altered)), \
+                    self.assertRaisesRegex(ValueError, 'differ from complete frozen'):
+                self.helper.fetch_certification_evidence()
 
     def test_check_input_fetch_rederives_exact_scope_before_executing_any_case(self):
         names=['qualification-inputs-2','qualification-linux-x86_64-2']

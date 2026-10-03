@@ -259,6 +259,25 @@ class BuildTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'source changed during the operation'):
                     builder.main(['package', 'release'])
 
+    def test_mutation_during_compilation_or_validation_invalidates_result(self):
+        import source_identity
+        from unittest.mock import patch
+        for phase, message in [('--build', 'source changed during compilation'),
+                               ('ctest', 'source changed during the operation')]:
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                revision = [0]
+                def run(command, **kwargs):
+                    if phase in command:
+                        revision[0] += 1
+                def identity(*args):
+                    return {'revision': revision[0]}
+                with patch.object(builder, 'ROOT', root), patch.object(builder, 'run', side_effect=run), \
+                        patch.object(builder, 'cache_identity', return_value={}), \
+                        patch.object(source_identity, 'source_tree', side_effect=identity):
+                    with self.assertRaisesRegex(ValueError, message):
+                        builder.main(['test', 'dev', '--jobs', '2'])
+
     def test_normal_variable_compiler_is_read_from_active_cmake_record(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

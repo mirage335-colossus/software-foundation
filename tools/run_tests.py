@@ -42,6 +42,8 @@ def inapplicable(case, system):
             return 'ELF runtime qualification belongs to Linux runners; PE checks remain required.'
         if name == 'test_source_identity.SourceIdentityTests.test_executable_mode_changes_identity':
             return 'POSIX executable metadata belongs to POSIX runners.'
+        if name == 'test_source_identity.SourceIdentityTests.test_source_links_rejected_in_plain_and_restored_trees':
+            return 'POSIX source symlink fixture; portable source inventory checks remain required.'
     return None
 
 

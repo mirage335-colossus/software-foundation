@@ -35,6 +35,20 @@ class Capacity(unittest.TestCase):
         with patch.object(c, 'usable_cpus', side_effect=ValueError('unavailable')):
             self.assertEqual(c.default_jobs(),1)
 
+    def test_automatic_test_workers_observe_resources_and_four_worker_cap(self):
+        for cpus, memory, expected in [(16, 32 * 1024**3, 4),
+                                      (3, 32 * 1024**3, 2),
+                                      (16, c.MEMORY_PER_JOB * 3, 2),
+                                      (16, None, 2), (1, 0, 1)]:
+            with self.subTest(cpus=cpus, memory=memory), \
+                    patch.object(c.sys, 'platform', 'linux'), \
+                    patch.object(c, 'usable_cpus', return_value=cpus), \
+                    patch.object(c, 'available_memory', return_value=memory), \
+                    patch.object(c, 'linux_limits', return_value=([], [])):
+                self.assertEqual(c.default_test_jobs(), expected)
+        with patch.object(c, 'usable_cpus', side_effect=OSError('unavailable')):
+            self.assertEqual(c.default_test_jobs(), 1)
+
     def test_parent_cgroup_memory_and_quota_are_observed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);proc=root/'proc';(proc/'self').mkdir(parents=True)
@@ -50,14 +64,18 @@ class Capacity(unittest.TestCase):
 
     def test_explicit_scope_flags_then_shared_then_environment_then_defaults(self):
         args=argparse.Namespace(build_jobs=None,test_jobs=None,jobs=None)
-        with patch.dict(b.os.environ,{},clear=True),patch.object(b,'default_jobs',return_value=7):
-            self.assertEqual(b.job_limits(args),(7,2))
+        with patch.dict(b.os.environ,{},clear=True),patch.object(b,'default_jobs',return_value=7), \
+                patch.object(c,'default_test_jobs',return_value=4) as automatic_tests:
+            self.assertEqual(b.job_limits(args),(7,4))
             with patch.dict(b.os.environ,{'CMAKE_BUILD_PARALLEL_LEVEL':'5','CTEST_PARALLEL_LEVEL':'3'}):
                 self.assertEqual(b.job_limits(args),(5,3))
                 with patch.dict(b.os.environ,{'CMAKE_BUILD_PARALLEL_LEVEL':'auto'}), patch.object(c,'default_jobs',return_value=9):
                     self.assertEqual(b.job_limits(args),(9,3))
                 args.jobs=4;self.assertEqual(b.job_limits(args),(4,4))
                 args.build_jobs=8;args.test_jobs=1;self.assertEqual(b.job_limits(args),(8,1))
+                self.assertEqual(automatic_tests.call_count,1)
+            args.jobs=None;args.test_jobs=None
+            self.assertEqual(b.job_limits(args),(8,4))
 
 
 if __name__=='__main__':unittest.main()

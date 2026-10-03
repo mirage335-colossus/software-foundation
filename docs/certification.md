@@ -183,3 +183,28 @@ Untrusted branch code cannot safely receive publication credentials or execute o
 privileged workers. Preserve reports and logs durably beside the release while
 keeping the immutable application inventory separate from appended certification
 attempts. A failed later attempt stays visible alongside earlier evidence.
+
+## Direct hosted input acquisition
+
+Hosted preparation downloads the complete release metadata and its exact source
+archive, which identifies the retained builder's supported SDK interface. It
+freezes the original release ID, lifecycle fields, tag commit, complete asset IDs,
+sizes and hashes in `candidate-remote.json`. The frozen coverage plan includes
+all candidate payload hashes, plus the delivery and remote-descriptor hashes.
+Preparation publishes only these controls through the authenticated CI transport;
+it does not download and republish every SDK and application archive.
+
+Each qualification batch first authenticates those controls against the exact
+workflow run and attempt. It derives its consumed files from the frozen logical
+checks, then downloads those original published assets directly. Complete release,
+asset and tag snapshots must still match before and after the bounded downloads.
+No selected payload is exposed until the complete download transaction passes;
+each check rechecks its selected bytes before and after execution. Recovery keeps
+complete SDK binary/source/checksum groups. Older archived builders receive their
+required complete groups for source checks as well.
+
+The evidence collector restores the controls and every expected batch outcome in
+one grouped transaction, then reconciles the supplied matrix against the frozen
+plan. Independent source, recovery, archive and client batches remain parallel.
+These changes remove an intermediate full-candidate transfer and repeated metadata
+reads without reducing the logical coverage or accepting incomplete certificates.

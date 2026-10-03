@@ -792,3 +792,57 @@ scope. The fixtures use disposable keys and never install or publish packages.
 - Real devices, assistive technology, every desktop/window-manager combination,
   long-duration operation and workload performance need separately specified checks.
   Passing this record is not a guarantee for every future feature or environment.
+
+## October 2026 development iteration and direct certification inputs
+
+The next optimization pass was qualified from an isolated copy of the working
+source based on `5cda8ec5cd887d73b387243668f317aa7f4093b5`. All **52 CTest
+entries passed**, including **1,235 applicable unit cases** and two explicitly
+inapplicable native Windows cases on the Linux host. The complete case inventory
+and exclusions were identical in the two-worker and four-worker runs.
+
+| Native Release scope with distribution fixtures | Two test workers | Four test workers |
+| --- | ---: | ---: |
+| CTest elapsed time | 42.16 seconds | 24.67 seconds |
+| Configure/build/test wrapper | 43.516 seconds | 25.131 seconds |
+
+CTest used approximately **41.5 percent less elapsed time**, or **1.71 times the
+throughput**, in this single comparison. Compilation used eight jobs; the second
+run reused the configured build. Comparing CTest separately excludes that build
+warmup difference. The resource detector selected four automatic test workers on
+this host; smaller CPU/memory budgets still select fewer. These are local native
+measurements, not hosted, GUI SDK or cross-platform release timing.
+
+The first four-worker run exposed a new aggregation fixture that mocked away its
+working-directory change and left output outside its temporary tree. Only the
+fixture was corrected: it now uses its real temporary directory, restores the
+caller directory, and checks all three written summaries. Its complete 26-case
+suite passed twice from the same working directory, then the complete four-worker
+run passed. Production behavior and test inventory were unchanged by that repair.
+Signed fixtures required permission to create disposable local GnuPG sockets;
+the sandbox denied that prerequisite before signed assertions in the first
+focused attempt. The permitted local run passed using fake GitHub transport.
+
+Focused transport, release, distribution, source-identity, build-capacity, change
+selection and direct-input tests cover hashes, remote mutation, missing scopes,
+failed uploads, late destination collisions and fresh consumer boundaries.
+All workflow files passed the retained validator; documentation, Python syntax,
+whitespace and generic-name checks passed.
+No commit, push, hosted dispatch, real package installation or public release was
+performed during this pass.
+
+Certification now retains authenticated controls and fetches selected original
+published inputs directly. For the retained roughly 3.5 GB candidate this avoids
+approximately 7 GB of intermediate download/reupload traffic. The request model
+estimates about 70 fewer metadata/bundle requests plus roughly 20 preparation
+payload downloads, rather than assuming every saved byte removes an API request.
+Each batch still independently verifies complete public release identity. Quota
+stalls remain possible; the next hosted run can account for actual responses,
+transferred bytes and waits through sanitized process metrics.
+
+Exact source identities, test reports, fixture correction, request-model references
+and measurement limits are retained in
+`build/agents/development-speed-v3/final-validation.json`. Full hosted duration
+remains unmeasured. Target-specific signed distribution recovery inventories,
+per-format signed projections and a new private transport trust protocol were
+not introduced; their compatibility and identity contracts require separate work.

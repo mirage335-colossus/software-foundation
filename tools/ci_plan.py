@@ -320,11 +320,13 @@ def assemble_release(source, packages, base, output, profile):
     return module('release').assemble(spec_path, base, output)
 
 
-def fetch_candidate(repository, tag, inventory, output, transport=None, *, metadata_only=False):
+def fetch_candidate(repository, tag, inventory, output, transport=None, *, metadata_only=False, planning=False):
     import tempfile
     g = module('github_release')
     c = module('coverage')
     g.location(repository, tag)
+    if type(planning) is not bool or planning and not metadata_only:
+        raise ValueError('planning requires metadata-only acquisition')
     if not re.fullmatch(r'[0-9a-f]{64}', inventory) or output.exists() or output.is_symlink():
         raise ValueError('exact inventory digest and new candidate destination required')
     remote = g.Remote(repository, transport)
@@ -349,12 +351,101 @@ def fetch_candidate(repository, tag, inventory, output, transport=None, *, metad
             path = c.local(candidate, name); path.parent.mkdir(parents=True, exist_ok=True)
             selections.append((entry['asset'], path, entry['sha256']))
         g.download_files(remote, assets, selections)
-        g.verified_remote(remote, delivery, candidate, readback=False, metadata_only=metadata_only)
+        info, verified_assets = g.verified_remote(remote, delivery, candidate, readback=False, metadata_only=metadata_only)
+        if planning:
+            manifest = module('release').verify_metadata(candidate)
+            source = manifest['source']['archive']; item = delivery['files'][source]
+            remote.download(verified_assets[item['asset']], candidate / source, item['sha256'])
+            retained = module('source_identity').verify_source_archive(candidate / source)
+            if retained['tree_sha256'] != manifest['source']['tree_sha256']:
+                raise ValueError('retained source tree differs from frozen inventory')
+            c.write_new(staged / 'candidate-remote.json', dict(schema_version=1, repository=repository, tag=tag,
+                inventory_sha256=inventory, delivery_sha256=g.sha(module('dependency_archive').encoded(delivery)),
+                release={key: info[key] for key in ('id', 'tag_name', 'name', 'draft', 'prerelease')}, assets=verified_assets))
         remote.unchanged(tag, before, assets, delivery['tag_commit'])
         staged.rename(output)
     return delivery
 
 
+
+
+def fetch_candidate_payloads(repository, tag, inventory, candidate, identity, frozen, plan, check_ids, *, transport=None):
+    """Read exact published inputs directly, with complete before/after identity checks."""
+    import tempfile
+    g = module('github_release'); c = module('coverage'); a = module('dependency_archive')
+    candidate = Path(candidate).absolute()
+    g.location(repository, tag); g.validate_delivery(identity, candidate, metadata_only=True)
+    c.fields(frozen, {'schema_version', 'repository', 'tag', 'inventory_sha256', 'delivery_sha256', 'release', 'assets'})
+    if (frozen['schema_version'] != 1 or frozen['repository'] != repository or frozen['tag'] != tag or
+            frozen['inventory_sha256'] != inventory or identity['repository'] != repository or
+            identity['tag'] != tag or identity['inventory_sha256'] != inventory or
+            frozen['delivery_sha256'] != g.sha(a.encoded(identity)) or
+            plan['subject']['inventory_sha256'] != inventory):
+        raise ValueError('published qualification inputs differ from frozen candidate')
+    c.validate(plan)
+    g.Remote.info(frozen['release'], tag)
+    if frozen['release']['draft'] or frozen['release']['name'] != ('experiment' if identity['experiment'] else tag):
+        raise ValueError('qualification requires the frozen published candidate')
+    manifest = module('release').verify_metadata(candidate)
+    declared = {'build/candidate/' + name: digest for name, digest in manifest['files'].items()}
+    if (any(plan['inputs'].get(name) != digest for name, digest in declared.items()) or
+            {name for name in plan['inputs'] if name.startswith('build/candidate/')} != set(declared) | {'build/candidate/release.json'} or
+            plan['inputs']['build/candidate/release.json'] != inventory):
+        raise ValueError('frozen qualification inventory is incomplete')
+    checks = {item['id']: item for item in c.executions(plan)}
+    if not check_ids or len(set(check_ids)) != len(check_ids) or any(name not in checks for name in check_ids):
+        raise ValueError('unknown or duplicate qualification execution')
+    names = sorted({name for check in check_ids for name in module('release').required_files(manifest,
+        checks[check]['target'], checks[check]['backend'], checks[check]['scope'],
+        binary_source=checks[check].get('sdk_payload') == 'binary')})
+    assets = frozen['assets']
+    expected = {item['asset'] for item in identity['files'].values()} | {'delivery.json'}
+    if not isinstance(assets, dict) or not expected <= assets.keys():
+        raise ValueError('frozen candidate asset inventory is incomplete')
+    g.evidence_pairs(set(assets) - expected)
+    for item in identity['files'].values():
+        row = assets[item['asset']]
+        if row['digest'] != 'sha256:' + item['sha256'] or row['size'] != item['size']:
+            raise ValueError('frozen asset differs from complete delivery')
+    if assets['delivery.json']['digest'] != 'sha256:' + frozen['delivery_sha256']:
+        raise ValueError('frozen delivery asset differs')
+    for name in names:
+        destination = candidate / a.relative(name)
+        if destination.exists() or destination.is_symlink():
+            raise ValueError('candidate payload restore refuses an existing file: ' + name)
+        for parent in destination.parents:
+            _bundle_directory(parent)
+            if parent == candidate.parent: break
+    remote = g.Remote(repository, transport); remote.visible()
+    remote.unchanged(tag, frozen['release'], assets, identity['tag_commit'])
+    with tempfile.TemporaryDirectory(prefix='.qualification-payload-', dir=candidate.parent) as temporary:
+        staged = Path(temporary); selections = []
+        for name in names:
+            path = staged / a.relative(name); path.parent.mkdir(parents=True, exist_ok=True)
+            item = identity['files'][name]
+            selections.append((item['asset'], path, item['sha256']))
+        g.download_files(remote, assets, selections)
+        remote.unchanged(tag, frozen['release'], assets, identity['tag_commit'])
+        # Recheck all outputs after network work, then use exclusive creation so
+        # an intervening writer cannot be replaced by a POSIX rename.
+        for name in names:
+            destination = candidate / a.relative(name)
+            if destination.exists() or destination.is_symlink():
+                raise ValueError('candidate payload restore refuses an existing file: ' + name)
+            for parent in destination.parents:
+                _bundle_directory(parent)
+                if parent == candidate.parent: break
+        # Publish no payload before all downloads and both complete remote snapshots pass.
+        import shutil
+        for name in names:
+            destination = candidate / a.relative(name); destination.parent.mkdir(parents=True, exist_ok=True)
+            for parent in destination.parents:
+                _bundle_directory(parent)
+                if parent == candidate.parent: break
+            with (staged / a.relative(name)).open('rb') as incoming, destination.open('xb') as outgoing:
+                shutil.copyfileobj(incoming, outgoing)
+    return {'schema_version': 1, 'repository': repository, 'tag': tag, 'inventory_sha256': inventory,
+            'release_id': frozen['release']['id'], 'files': {name: identity['files'][name] for name in names}}
 
 
 def needs_browser_prerequisite(backend, scope):
@@ -618,11 +709,15 @@ def archived_binary_group_support(candidate, manifest):
                arg.value == '--binary-dependency-group' for arg in node.args) for node in ast.walk(tree))
 
 
-def qualification_plan(candidate, profile, output, policy=None, *, runners=None):
+def qualification_plan(candidate, profile, output, policy=None, *, runners=None, metadata_only=False):
     c = module('coverage')
     policy = policy or c.load(ROOT / 'docs/release-policy.json')
     selected, _ = module('certify_release').requirements(policy, profile)
-    manifest = module('release').verify_release(candidate)
+    manifest = (module('release').verify_metadata(candidate) if metadata_only else module('release').verify_release(candidate))
+    if metadata_only:
+        source = candidate / manifest['source']['archive']
+        if c.sha(source) != manifest['source']['sha256'] or module('source_identity').verify_source_archive(source)['tree_sha256'] != manifest['source']['tree_sha256']:
+            raise ValueError('retained source differs from frozen inventory')
     actual = {x['target']: x['backends'] or ['core'] for x in manifest['artifacts']}
     if len(actual) != len(manifest['artifacts']) or actual != selected['targets']:
         raise ValueError('candidate does not match complete support profile')
@@ -675,8 +770,11 @@ def qualification_plan(candidate, profile, output, policy=None, *, runners=None)
     if any(item['graphics'] for item in matrix):
         for name in ('tools/windows_gl_probe.cpp', 'third_party/host-graphics/mesa-windows.json'):
             inputs[name] = c.sha(ROOT / name)
-    for name in [*manifest['files'], 'release.json']:
-        inputs['build/candidate/' + name] = c.sha(candidate / name)
+    inputs.update({'build/candidate/' + name: digest for name, digest in manifest['files'].items()})
+    inputs['build/candidate/release.json'] = c.sha(candidate / 'release.json')
+    if metadata_only:
+        for name in ('delivery.json', 'candidate-remote.json'):
+            inputs['build/' + name] = c.sha(candidate.parent / name)
     value = c.freeze({'schema_version': 1, 'mode': 'release',
                       'subject': {'source_sha256': manifest['source']['sha256'], 'inventory_sha256': c.sha(candidate / 'release.json'),
                                   'configuration_sha256': c.digest({'policy': policy, 'profile': profile})},

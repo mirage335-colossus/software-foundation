@@ -48,6 +48,59 @@ class SourceIdentityTests(unittest.TestCase):
         (self.source / 'build/output').write_text('generated')
         self.assertEqual(before, source_tree(self.source))
 
+    def test_generated_subtrees_are_not_traversed_with_or_without_manifest(self):
+        (self.source / 'module/build').mkdir(parents=True)
+        (self.source / 'module/build/retained.cpp').write_text('nested build is source')
+        (self.source / 'cache.pyc').mkdir()
+        (self.source / 'cache.pyc/retained.cpp').write_text('only pyc files are excluded')
+        before = source_tree(self.source)
+        excluded = [self.source / 'build', self.source / '.agent-work',
+                    self.source / 'module/__pycache__']
+        for directory in excluded:
+            directory.mkdir()
+            (directory / 'large-output').write_text('generated')
+        (self.source / 'module/generated.pyc').write_text('generated')
+        scan = os.scandir
+        def checked_scan(path):
+            self.assertNotIn(Path(path), excluded, 'excluded subtree was traversed')
+            return scan(path)
+        for manifest in (False, True):
+            with self.subTest(restored=manifest):
+                if manifest:
+                    (self.source / 'source.json').write_text(json.dumps(before))
+                with patch.object(source_module.os, 'scandir', side_effect=checked_scan):
+                    self.assertEqual(before, source_tree(self.source))
+
+    @unittest.skipIf(os.name == 'nt', 'source symlink fixture needs POSIX')
+    def test_source_links_rejected_in_plain_and_restored_trees(self):
+        before = source_tree(self.source)
+        for manifest in (False, True):
+            with self.subTest(restored=manifest):
+                if manifest:
+                    (self.source / 'source.json').write_text(json.dumps(before))
+                for name, target in [('extra.cpp', self.source / 'main.cpp'),
+                                     ('linked-directory', self.root),
+                                     ('broken.cpp', self.root / 'absent')]:
+                    link = self.source / name
+                    link.symlink_to(target, target_is_directory=target.is_dir())
+                    try:
+                        with self.assertRaises(ValueError):
+                            source_tree(self.source)
+                    finally:
+                        link.unlink()
+
+    def test_source_scan_errors_do_not_hide_inputs(self):
+        (self.source / 'include').mkdir()
+        (self.source / 'include/api.hpp').write_text('retained')
+        scan = os.scandir
+        def failed_scan(path):
+            if Path(path).name == 'include':
+                raise PermissionError('injected inaccessible source')
+            return scan(path)
+        with patch.object(source_module.os, 'scandir', side_effect=failed_scan):
+            with self.assertRaisesRegex(PermissionError, 'inaccessible source'):
+                source_tree(self.source)
+
     def test_supplement_retained_and_not_double_counted(self):
         extra = self.root / 'gui'
         extra.mkdir()

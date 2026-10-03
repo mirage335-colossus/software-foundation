@@ -124,8 +124,11 @@ a draft. A new recipe group uploads its binary and source archives before the
 checksum manifest. The caller obtains no valid reusable group until all three
 exist, download correctly and pass `dependency_store.verify_group`.
 
-An existing complete group is reused only after exact comparison with the supplied
-local group. A partial group, changed bytes or incompatible release state fails
+An existing complete published group is reused only after verifying the supplied
+local group and comparing every remote asset size and SHA-256. This reuse does not
+download unchanged bytes again; the original publication still requires full
+readback. Binary/source uploads and readback are bounded parallel operations, with
+the checksum uploaded after both payloads finish. A partial group, changed bytes or incompatible release state fails
 without overwrite. Existing groups and their remote IDs remain unchanged while
 a new group is appended. The base tag's current commit is frozen and rechecked;
 adding a later group does not move that tag to the new recipe's source commit.
@@ -239,6 +242,14 @@ independent cases while retaining their distinct results; see
 share a process-wide limit of four, including nested transfer callers. Waiting
 cannot guarantee service availability or replace a missing required result.
 
+Lifecycle and transport entry points report sanitized per-process metrics on stderr.
+They count observed API response pages separately from quota probes, actual CLI
+calls, completed upload/download bytes and accumulated request/retry wait time.
+They retain only numeric quota headers and add no API calls. Parallel operation
+seconds are accumulated work, not elapsed job time; lost responses and legacy
+upload commands may leave API request counts incomplete. Complete release quota
+use still needs hosted measurement, including other simultaneous repository jobs.
+
 ## Failure, uncertainty and recovery
 
 An API or CLI success is not sufficient evidence of publication. Every mutation
@@ -301,11 +312,14 @@ application workflow with the complete recipe map. Review its retained candidate
 candidate identity. Published candidates are immutable and remain outside Latest.
 
 Certify a published candidate by its exact tag and release-inventory digest.
-The prepare job captures complete paged remote assets, downloads the descriptor
-and mapped files, verifies the complete local release, and rereads remote IDs
-and the direct tag. It retains a control bundle and separate exact source, target
-archive and SDK component bundles. Independent checks use the same frozen inventory
-and plan while fetching only their consumed components. Initial publication keeps
+The prepare job captures complete paged remote assets, verifies the inventory and
+delivery descriptor, downloads the source for archived-builder compatibility,
+and rereads remote IDs and the direct tag. It retains an authenticated control
+bundle containing the frozen complete public asset snapshot and plan. Each check
+fetches its required original source, archive or SDK assets directly, verifying
+that complete snapshot before and after transfer and hashing selected bytes in
+quarantine. This removes the complete-candidate private relay. Recovery still
+receives complete retained inputs and every logical result remains required. Initial publication keeps
 its complete byte readback; recording, attachment and promotion reconcile the
 complete remote inventory and SHA-256 digests while downloading only their
 controls and certificate evidence. Missing remote digests fail closed. The recording job rejects

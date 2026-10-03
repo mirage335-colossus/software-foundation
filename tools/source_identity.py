@@ -16,6 +16,33 @@ WINDOWS = os.name == 'nt'
 SUPPLEMENT_PREFIX = 'third_party/retained/gui/'
 
 
+def ignored_source_path(name):
+    parts = Path(name).parts
+    return (name == 'source.json' or parts[0] in ('build', '.agent-work', '.git') or
+            '__pycache__' in parts or name.endswith('.pyc'))
+
+
+def source_files_without_git(root):
+    """Prune generated trees before enumeration; never follow source links."""
+    def failed(error):
+        raise error
+
+    for directory, directories, filenames in os.walk(root, topdown=True, onerror=failed, followlinks=False):
+        parent = Path(directory).relative_to(root)
+        # File-only exclusions do not exclude directories named source.json or
+        # *.pyc: their descendants remain ordinary source inputs.
+        directories[:] = [name for name in directories
+                          if '__pycache__' not in (parent / name).parts and
+                          (parent / name).parts[0] not in ('build', '.agent-work', '.git')]
+        for name in [*directories, *filenames]:
+            relative_name = (parent / name).as_posix()
+            if ignored_source_path(relative_name):
+                continue
+            path = Path(directory) / name
+            if path.is_file() or path.is_symlink():
+                yield relative_name
+
+
 def selected_files(root):
     root = Path(root).resolve(strict=True)
     if (root / '.git').exists():
@@ -24,15 +51,14 @@ def selected_files(root):
     elif (root / 'source.json').is_file():
         names = set(read_json(root / 'source.json')['files'])
         # Extra source files cannot silently disappear from a restored snapshot.
-        actual = {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file() and not p.is_symlink()}
-        ignored = lambda name: name == 'source.json' or name.split('/')[0] in ('build', '.agent-work', '.git') or '__pycache__' in Path(name).parts or name.endswith('.pyc')
-        if names != {name for name in actual if not ignored(name)}:
+        actual = set(source_files_without_git(root))
+        if names != actual:
             raise ValueError('restored source inventory changed')
     else:
-        names = {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file() or p.is_symlink()}
+        names = set(source_files_without_git(root))
     result = {}
     for name in sorted(names):
-        if name == 'source.json' or name.split('/')[0] in ('build', '.git', '.agent-work') or '__pycache__' in Path(name).parts or name.endswith('.pyc'):
+        if ignored_source_path(name):
             continue
         path = root.joinpath(*relative(name).parts)
         if path.is_symlink() or root not in path.resolve().parents:

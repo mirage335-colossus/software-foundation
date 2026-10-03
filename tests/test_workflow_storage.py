@@ -97,6 +97,49 @@ class StorageLayoutTests(unittest.TestCase):
                 self.assertEqual(set(ci_transport._inventory(root, paths, False)), {relative})
         self.assertFalse((self.root / 'build/receipts/failure.json').exists())
 
+    def test_successful_application_and_evidence_share_one_publication(self):
+        self.file('build/produced/application.tar.gz'); self.file('build/produced/artifact.json')
+        self.file('build/produced/source.junit.xml', b'<testsuite/>')
+        pointers = [{'manifest': {'id': 1}}, {'manifest': {'id': 2}}]
+        with patch.dict(os.environ, APPLICATION_SUCCEEDED='true', TARGET='linux-x86_64',
+                BUNDLE_NAME='application-evidence-linux-x86_64-2', BUNDLE_PATHS=self.diagnostic_paths('sdk-application', False)), \
+                patch.object(ci_transport, 'publish_bundles', return_value=pointers) as publish:
+            lifecycle.store_application_bundles()
+        requests = publish.call_args.kwargs['requests']
+        self.assertEqual([row['name'] for row in requests], ['application-linux-x86_64-2','application-evidence-linux-x86_64-2'])
+        self.assertEqual(set(requests[0]['paths']), {'application.tar.gz','artifact.json'})
+        self.assertEqual(requests[1]['paths'], ['source.junit.xml'])
+        self.assertTrue(requests[1]['compress'])
+        self.assertEqual(json.loads((self.root/'build/transport-pointers/application-linux-x86_64-2.json').read_text()), pointers[0])
+
+    def test_failed_application_still_retains_diagnostics_without_publishing_partial_application(self):
+        self.failure_receipt(); self.file('build/produced/partial.tar.gz')
+        with patch.dict(os.environ, APPLICATION_SUCCEEDED='false', TARGET='linux-x86_64',
+                BUNDLE_NAME='application-evidence-linux-x86_64-2', BUNDLE_PATHS=self.diagnostic_paths('sdk-application', True)), \
+                patch.object(ci_transport, 'publish_bundle', return_value={}) as publish, \
+                patch.object(ci_transport, 'publish_bundles') as batch:
+            lifecycle.store_application_bundles()
+        batch.assert_not_called()
+        self.assertEqual(publish.call_args.kwargs['paths'], ['receipts/failure.json'])
+
+    def test_candidate_aggregation_fetches_all_nine_receipts_in_one_complete_batch(self):
+        import test_plan
+        selected = {'include': [dict(target=target, runner=runner) for target,runner in ci.STANDARD.items()]}
+        previous = Path.cwd()
+        try:
+            with patch.dict(os.environ, CANDIDATE_TARGETS=json.dumps(selected), DEVFAST='false'), \
+                    patch.object(lifecycle,'fetch_bundles') as fetch, \
+                    patch.object(test_plan,'candidate_merge',return_value={'status':'passed'}) as merge:
+                lifecycle.main('candidate-aggregate')
+        finally:
+            os.chdir(previous)
+        for target in ci.STANDARD:
+            self.assertEqual(json.loads((self.root/'build/candidate-results'/target/'coverage.json').read_text()),
+                             {'status':'passed'})
+        fetch.assert_called_once(); self.assertEqual(len(fetch.call_args.args[0]), 9)
+        self.assertEqual(merge.call_count, 3)
+        self.assertTrue(all(len(call.args[0]) == 3 and call.kwargs == {'diagnostic':False} for call in merge.call_args_list))
+
     def test_single_directory_selects_contents_without_invalid_dot_path(self):
         self.file('build/group/a.json');self.file('build/group/nested/b.txt')
         root,paths=lifecycle.bundle_inputs('build/group/')

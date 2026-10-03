@@ -127,6 +127,14 @@ class TransportTests(unittest.TestCase):
         self.assertEqual('false', self.remote.releases[0]['make_latest'])
         self.assertFalse(any('/actions/artifacts' in str(c) for c in self.remote.calls))
 
+    def test_single_part_preserves_archive_hash_and_rejects_wrong_whole_identity(self):
+        self.publish(chunk_bytes=t.CHUNK_BYTES); self.remote.complete()
+        _, manifest = self.manifest(); self.assertEqual(len(manifest['archive']['parts']), 1)
+        self.mutate_manifest(lambda value: value['archive'].update(sha256='0' * 64))
+        with self.assertRaisesRegex(ValueError, 'reconstructed archive bytes differ'):
+            self.fetch()
+        self.assertFalse((self.root / 'restored').exists())
+
     def test_compressed_evidence_is_smaller_and_retry_identical(self):
         (self.source / 'log.txt').write_text('Repeated diagnostic text\n' * 10000)
         pointer = self.publish(paths=['log.txt'], compress=True)

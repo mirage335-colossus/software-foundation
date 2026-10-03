@@ -27,10 +27,11 @@ def default_jobs():
 
 
 def job_limits(args):
-    from build_capacity import compile_jobs
+    from build_capacity import compile_jobs, default_test_jobs
     environment = os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL")
     build = args.build_jobs or args.jobs or (compile_jobs(environment) if environment else default_jobs())
-    tests = args.test_jobs or args.jobs or positive(os.environ.get("CTEST_PARALLEL_LEVEL") or "2")
+    test_environment = os.environ.get("CTEST_PARALLEL_LEVEL")
+    tests = args.test_jobs or args.jobs or (positive(test_environment) if test_environment else default_test_jobs())
     return build, tests
 
 
@@ -322,8 +323,6 @@ def main(argv=None):
         if args.label:
             command += ["-L", "^" + args.label + "$"]
         run(command, env=child_environment)
-        if source_tree(ROOT, args.gui_source) != source_before:
-            raise ValueError("source changed during validation; results are not qualification")
     elif args.action == "package":
         run([programs["cpack"], "--config", str(build / "CPackConfig.cmake"), "-C", "Release"], env=child_environment)
     if source_tree(ROOT, args.gui_source) != source_before:

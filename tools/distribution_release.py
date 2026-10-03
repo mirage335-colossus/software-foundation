@@ -674,7 +674,7 @@ def initialize_channel(remote, tag, commit, body):
     return existing
 
 
-def upload_files(remote, tag, directory, names):
+def upload_files(remote, tag, directory, names, *, release_info=None):
     """Four independent writes at most; join a failed batch before returning."""
     names = list(names)
     if len(names) != len(set(names)):
@@ -685,7 +685,9 @@ def upload_files(remote, tag, directory, names):
     with ThreadPoolExecutor(max_workers=4) as pool:
         for group in groups:
             for start in range(0, len(group), 4):
-                futures = [pool.submit(remote.upload, tag, Path(directory) / name)
+                futures = [pool.submit(remote.upload_to, release_info, Path(directory) / name)
+                           if release_info is not None else
+                           pool.submit(remote.upload, tag, Path(directory) / name)
                            for name in group[start:start + 4]]
                 for future in futures:
                     future.result()
@@ -728,7 +730,7 @@ def publish(directory, policy, trusted, *, execute=False, transport=None):
             for name in rows:
                 if rows[name]['digest'] != 'sha256:' + expected[name]['sha256'] or rows[name]['size'] != expected[name]['size']:
                     raise ValueError('existing immutable channel bytes differ; never overwrite')
-            upload_files(remote, tag, directory, sorted(set(expected) - set(rows)))
+            upload_files(remote, tag, directory, sorted(set(expected) - set(rows)), release_info=existing)
             rows = remote.assets(existing)
             if set(rows) != set(expected) or any(rows[name]['size'] != record['size'] or
                     rows[name]['digest'] != 'sha256:' + record['sha256'] for name, record in expected.items()):
@@ -791,6 +793,7 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    delivery.enable_metrics()
     try: main()
     except (ValueError, OSError, delivery.DeliveryError, subprocess.CalledProcessError) as error:
         raise SystemExit('distribution-release: ' + str(error) + '; retain outputs and remote state for reconciliation')

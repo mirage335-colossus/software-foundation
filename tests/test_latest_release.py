@@ -175,11 +175,12 @@ class WorkflowOverlapTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         workflow = (root/'.github/workflows/certify.yml').read_text()
         prepare = workflow.split('  prepare:\n', 1)[1].split('  check:\n', 1)[0]
-        self.assertIn('qualification-payloads', prepare)
+        self.assertIn('qualification-metadata', prepare)
+        self.assertNotIn('qualification-payloads', prepare)
         self.assertNotIn('qualification-inputs-', prepare)
         self.assertNotIn('bundle-store', prepare)
         check = workflow.split('  check:\n', 1)[1].split('  record:\n', 1)[0]
-        self.assertEqual(check.count("'fetch-check-inputs'"), 1)
+        self.assertEqual(check.count("'fetch-published-check-inputs'"), 1)
         self.assertIn('CHECK_PAYLOADS: ${{ toJSON(matrix.payloads) }}', check)
         self.assertNotIn("'bundle-fetch'", check)
         self.assertNotIn("'fetch-check-payloads'", check)
@@ -188,6 +189,11 @@ class WorkflowOverlapTests(unittest.TestCase):
         self.assertNotIn('browser-prerequisite-', check)
         self.assertIn('      fail-fast: false', check)
         self.assertIn("'check-batch'", check)
+        record = workflow.split('  record:\n',1)[1].split('  attach:\n',1)[0]
+        self.assertIn("if: always() && needs.prepare.result == 'success'", record)
+        self.assertEqual(record.count("'fetch-certification-evidence'"),1)
+        self.assertIn('CHECK_BATCHES: ${{ needs.prepare.outputs.matrix }}',record)
+        self.assertIn('build/candidate-remote.json',record)
 
     def test_nested_regression_receipt_fails_closed_and_does_not_repeat_work(self):
         root = Path(__file__).resolve().parents[1]

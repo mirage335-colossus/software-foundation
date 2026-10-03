@@ -92,8 +92,8 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'certification-plan'], check=True)
       id: plan
-    - name: Retain frozen metadata and immutable payloads in one verified publication
-      run: python .github/scripts/lifecycle.py qualification-payloads
+    - name: Retain the frozen complete inventory and exact original asset identities
+      run: python .github/scripts/lifecycle.py qualification-metadata
     permissions:
       contents: write
       actions: read
@@ -114,13 +114,13 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
-    - name: Restore frozen metadata and required payloads in one verified transaction
+    - name: Restore frozen metadata and only required original published assets
       shell: python
       env:
         CHECK_PAYLOADS: ${{ toJSON(matrix.payloads) }}
       run: |
         import subprocess,sys
-        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-check-inputs'],check=True)
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-published-check-inputs'],check=True)
     - name: Verify the explicitly supplied retained Windows graphics input
       if: runner.os == 'Windows' && matrix.graphics
       run: python .github/scripts/lifecycle.py graphics-input
@@ -153,17 +153,13 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
-    - shell: python
-      run: |
-        import subprocess,sys
-        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
+    - name: Restore frozen controls and every batch outcome together
+      shell: python
       env:
-        BUNDLE_NAME: qualification-inputs-${{ github.run_attempt }}
-        BUNDLE_OUTPUT: build
-    - shell: python
+        CHECK_BATCHES: ${{ needs.prepare.outputs.matrix }}
       run: |
         import subprocess,sys
-        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-evidence-bundles'],check=True)
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-certification-evidence'],check=True)
     - shell: python
       run: |-
         import subprocess, sys
@@ -177,6 +173,7 @@ jobs:
         BUNDLE_PATHS: |-
           build/candidate/release.json
           build/delivery.json
+          build/candidate-remote.json
           build/check-plan.json
           build/evidence/
           build/certificate.json

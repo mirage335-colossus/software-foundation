@@ -146,6 +146,17 @@ class ParallelUploadTests(unittest.TestCase):
             d.upload_files(Remote(), 'tag', '/unused', [f'payload-{i}' for i in range(8)] + sorted(d.CONTROL))
         self.assertEqual({f'payload-{i}' for i in range(4)}, completed)
 
+    def test_known_release_id_avoids_tag_lookup_and_keeps_controls_last(self):
+        calls = []; info = {'id': 37}; owner = self
+        class Remote:
+            def upload_to(self, actual, path):
+                owner.assertIs(actual, info); calls.append(path.name)
+            def upload(self, *args):
+                raise AssertionError('unexpected tag lookup')
+        d.upload_files(Remote(), 'tag', '/unused', ['payload', *sorted(d.CONTROL)], release_info=info)
+        self.assertEqual(calls[0], 'payload')
+        self.assertEqual(set(calls[1:]), d.CONTROL)
+
     def test_duplicate_assets_fail_before_upload(self):
         with patch.object(d.delivery.Remote, 'upload') as upload:
             with self.assertRaisesRegex(ValueError, 'distinct'):

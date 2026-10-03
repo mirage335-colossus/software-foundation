@@ -200,18 +200,11 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/container_job.py', 'application-build'], check=True)
       if: runner.os == 'Linux'
-    - name: Retain verified application-${{ matrix.target }}-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: application-${{ matrix.target }}-${{ github.run_attempt }}
-        BUNDLE_PATHS: |-
-          build/produced/*.tar.gz
-          build/produced/*.zip
-          build/produced/*.json
     - if: always()
-      name: Retain verified application-evidence-${{ matrix.target }}-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
+      name: Retain application and evidence with shared identity verification
+      run: python .github/scripts/lifecycle.py application-bundles
       env:
+        APPLICATION_SUCCEEDED: ${{ job.status == 'success' }}
         BUNDLE_NAME: application-evidence-${{ matrix.target }}-${{ github.run_attempt }}
         BUNDLE_PATHS: |-
           ${{ job.status == 'failure' && 'build/receipts/failure.json' || '' }}
@@ -243,17 +236,13 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
-    - shell: python
-      run: |
-        import subprocess,sys
-        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
+    - name: Restore source and all required application producers together
+      shell: python
       env:
-        BUNDLE_NAME: source-${{ github.run_attempt }}
-        BUNDLE_OUTPUT: build/source
-    - shell: python
+        RECIPES: ${{ inputs.recipes }}
       run: |
         import subprocess,sys
-        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-application-bundles'],check=True)
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-assembly-inputs'],check=True)
     - shell: python
       run: |-
         import subprocess, sys

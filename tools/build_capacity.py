@@ -4,7 +4,7 @@
 Reserve one usable logical CPU and some available RAM. This is an admission
 heuristic, not a per-process memory limit or a prediction of compiler RSS.
 Only callers with no explicit job count should use this policy.
-Testing uses an independent bounded default in the build wrapper.
+Testing uses the same resource admission limits with an independent four-job cap.
 """
 import ctypes
 import os
@@ -193,6 +193,11 @@ def default_jobs():
         # Advisory detection must never prevent a build on an unfamiliar OS.
         # Explicit --jobs/--build-jobs remain available for such environments.
         return 1
+
+
+def default_test_jobs():
+    """Bound independent test workers without bypassing CPU or memory limits."""
+    return min(4, default_jobs())
 
 
 def compile_jobs(value=None):

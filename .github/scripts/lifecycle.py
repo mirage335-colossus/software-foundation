@@ -309,6 +309,80 @@ def parallel_operations(operations):
         return [future.result() for future in futures]
 
 
+def store_application_bundles():
+    """Publish a successful producer and its diagnostics with shared identity reads."""
+    if not boolean('APPLICATION_SUCCEEDED'):
+        store_bundle()
+        return
+    import ci_transport
+    target = value('TARGET')
+    if target not in (*ci.STANDARD, 'browser-wasm32'): raise ValueError('unknown application target')
+    base, paths = bundle_inputs('build/produced/*.tar.gz\nbuild/produced/*.zip\nbuild/produced/*.json')
+    proof_base, proof_paths = bundle_inputs(value('BUNDLE_PATHS'))
+    if not paths or not proof_paths: raise ValueError('application and evidence must both be nonempty')
+    names = ['application-' + target + '-' + value('GITHUB_RUN_ATTEMPT'), value('BUNDLE_NAME')]
+    expected = 'application-evidence-' + target + '-' + value('GITHUB_RUN_ATTEMPT')
+    if names[1] != expected: raise ValueError('application evidence bundle differs from producer')
+    requests = [dict(name=names[0], root=base, paths=paths),
+                dict(name=names[1], root=proof_base, paths=proof_paths, compress=True)]
+    pointers = ci_transport.publish_bundles(**storage_context(), requests=requests, runner_name=value('RUNNER_NAME'))
+    for name, pointer in zip(names, pointers):
+        write(ROOT/'build/transport-pointers'/(name+'.json'), pointer)
+
+
+def qualification_metadata():
+    """Retain controls only; selected consumers read the original published assets."""
+    import ci_transport
+    plan = evidence.validate(evidence.load(ROOT / 'build/check-plan.json'))
+    evidence.check_inputs(plan, ROOT, metadata_only=True)
+    names = ['candidate/release.json', 'delivery.json', 'candidate-remote.json', 'check-plan.json']
+    ci_transport.publish_bundle(**storage_context(), name='qualification-inputs-' + value('GITHUB_RUN_ATTEMPT'),
+        root=ROOT / 'build', paths=names, runner_name=value('RUNNER_NAME'), compress=True)
+    evidence.check_inputs(plan, ROOT, metadata_only=True)
+
+
+def fetch_published_check_inputs():
+    """Authenticate frozen controls before deriving the exact original-asset subset."""
+    raw = value('CHECK_PAYLOADS')
+    if len(raw) > 8192: raise ValueError('qualification payload selector exceeds bound')
+    names = delivery.parse(raw); attempt = value('GITHUB_RUN_ATTEMPT')
+    if not isinstance(names, list) or not 2 <= len(names) <= 20 or names[0] != 'qualification-inputs-' + attempt:
+        raise ValueError('bounded qualification input names required')
+    fetch_bundle(names[0], ROOT / 'build')
+    plan = evidence.validate(evidence.load(ROOT / 'build/check-plan.json'))
+    evidence.check_inputs(plan, ROOT, metadata_only=True)
+    batch, expected = check_payload_selection(plan)
+    if names != expected: raise ValueError('payload selector differs from complete frozen qualification scope')
+    result = ci.fetch_candidate_payloads(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'),
+        ROOT / 'build/candidate', evidence.load(ROOT / 'build/delivery.json'),
+        evidence.load(ROOT / 'build/candidate-remote.json'), plan, batch['checks'])
+    evidence.check_inputs(plan, ROOT, check_ids=batch['checks'])
+    write(ROOT / 'build/transport-receipts/candidate-payloads.json', result)
+
+
+def fetch_certification_evidence():
+    """Share metadata reads across the frozen controls and every batch outcome."""
+    raw = value('CHECK_BATCHES')
+    if len(raw) > 131072: raise ValueError('qualification batch selector exceeds bound')
+    matrix = delivery.parse(raw)
+    if not isinstance(matrix, dict) or set(matrix) != {'include'} or not isinstance(matrix['include'], list):
+        raise ValueError('complete qualification batch matrix required')
+    rows = matrix['include']
+    if not 1 <= len(rows) <= 256 or any(not isinstance(row, dict) or not isinstance(row.get('id'), str) or
+            not ci.re.fullmatch(r'batch-[a-z0-9_-]{1,20}-[0-9a-f]{12}', row['id']) for row in rows):
+        raise ValueError('bounded exact qualification batches required')
+    ids = [row['id'] for row in rows]
+    if len(ids) != len(set(ids)): raise ValueError('duplicate qualification batch')
+    attempt = value('GITHUB_RUN_ATTEMPT')
+    fetch_bundles([dict(name='qualification-inputs-' + attempt, output=ROOT / 'build')] +
+        [dict(name='evidence-' + name + '-' + attempt, output=ROOT / 'build', allow_failed=True) for name in ids])
+    plan = evidence.validate(evidence.load(ROOT / 'build/check-plan.json'))
+    evidence.check_inputs(plan, ROOT, metadata_only=True)
+    expected = ci.qualification_batches(plan, runners=selected_runners(),
+        manifest=ci.module('release').verify_metadata(ROOT / 'build/candidate'), attempt=attempt)
+    if matrix != expected: raise ValueError('evidence batches differ from complete frozen qualification scope')
+
+
 def qualification_payloads():
     """Publish each immutable source, target and dependency payload once."""
     import ci_transport
@@ -417,6 +491,14 @@ def main(command):
     elif command == 'bundle-fetch':
         fetch_bundle(value('BUNDLE_NAME'),value('BUNDLE_OUTPUT'),
                      allow_failed=os.environ.get('BUNDLE_ALLOW_FAILED')=='true')
+    elif command == 'application-bundles':
+        store_application_bundles()
+    elif command == 'qualification-metadata':
+        qualification_metadata()
+    elif command == 'fetch-published-check-inputs':
+        fetch_published_check_inputs()
+    elif command == 'fetch-certification-evidence':
+        fetch_certification_evidence()
     elif command == 'qualification-payloads':
         qualification_payloads()
     elif command == 'fetch-check-payloads':
@@ -427,6 +509,13 @@ def main(command):
         targets=[*ci.STANDARD,'browser-wasm32'] if value('SDK_TARGET')=='all' else [value('SDK_TARGET')]
         if any(target not in (*ci.STANDARD,'browser-wasm32') for target in targets): raise ValueError('unknown SDK target')
         fetch_bundles([dict(name='sdk-group-'+target+'-'+value('GITHUB_RUN_ATTEMPT'), output='build/sdk-groups/'+target) for target in targets])
+    elif command == 'fetch-assembly-inputs':
+        recipes = delivery.parse(value('RECIPES'))
+        ci.release_matrix(recipes, value('PROFILE'))
+        fetch_bundles([dict(name='source-' + value('GITHUB_RUN_ATTEMPT'), output='build/source')] +
+            [dict(name='application-' + target + '-' + value('GITHUB_RUN_ATTEMPT'), output='build/packages/' + target) for target in recipes])
+        if evidence.load(Path('build/source/recipes.json')) != recipes:
+            raise ValueError('assembly recipe selection differs from frozen source')
     elif command == 'fetch-application-bundles':
         fetch_bundles([dict(name='application-'+target+'-'+value('GITHUB_RUN_ATTEMPT'), output='build/packages/'+target) for target in evidence.load(Path('build/source/recipes.json'))])
     elif command == 'fetch-evidence-bundles':
@@ -447,12 +536,10 @@ def main(command):
             raise ValueError('missing or duplicate candidate targets')
         diagnostic = boolean('DEVFAST')
         scopes = ['core'] if diagnostic else ['core', 'tools', 'integration']
+        fetch_bundles([dict(name='source-' + target + '-' + scope + '-' + value('GITHUB_RUN_ATTEMPT'),
+            output=Path('build/candidate-results') / target / scope) for target in targets for scope in scopes])
         for target in targets:
-            reports = []
-            for scope in scopes:
-                destination = Path('build/candidate-results') / target / scope
-                fetch_bundle('source-' + target + '-' + scope + '-' + value('GITHUB_RUN_ATTEMPT'), destination)
-                reports.append(destination / ('candidate-' + scope + '.json'))
+            reports = [Path('build/candidate-results') / target / scope / ('candidate-' + scope + '.json') for scope in scopes]
             write(Path('build/candidate-results') / target / 'coverage.json',
                   test_plan.candidate_merge(reports, diagnostic=diagnostic))
     elif command == 'sdk-import-legacy':
@@ -666,10 +753,11 @@ def main(command):
         write('build/receipts/publication.json', delivery.publish_candidate(**request, execute=True))
         scalar_output('published',True)
     elif command == 'certification-plan':
-        ci.fetch_candidate(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'), Path('build/fetched'))
+        ci.fetch_candidate(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'), Path('build/fetched'), metadata_only=True, planning=True)
         shutil.move('build/fetched/candidate', 'build/candidate')
         shutil.move('build/fetched/delivery.json', 'build/delivery.json')
-        ci.qualification_plan(ROOT / 'build/candidate', value('PROFILE'), ROOT / 'build/check-plan.json', runners=selected_runners())
+        shutil.move('build/fetched/candidate-remote.json', 'build/candidate-remote.json')
+        ci.qualification_plan(ROOT / 'build/candidate', value('PROFILE'), ROOT / 'build/check-plan.json', runners=selected_runners(), metadata_only=True)
         output('matrix', ci.qualification_batches(evidence.load(ROOT / 'build/check-plan.json'), runners=selected_runners(),
             manifest=ci.module('release').verify_metadata(ROOT / 'build/candidate'), attempt=value('GITHUB_RUN_ATTEMPT')))
     elif command == 'check-batch':
@@ -734,7 +822,7 @@ def cli(command):
     try: main(command)
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError,
             ProcessTreeError, subprocess.TimeoutExpired) as error:
-        uncertain = command in ('bundle-store', 'qualification-payloads', 'publish-bases', 'publish-gui', 'publish-candidate', 'attach-certificate', 'promote')
+        uncertain = command in ('bundle-store', 'application-bundles', 'qualification-metadata', 'qualification-payloads', 'publish-bases', 'publish-gui', 'publish-candidate', 'attach-certificate', 'promote')
         receipt = {'ok': False, 'uncertain': uncertain or bool(getattr(error, 'uncertain', False)),
                    'operation': command, 'error': str(error),
                    'action': 'reconcile remote state before retry' if uncertain else 'repair prerequisites and inspect retained evidence'}
@@ -747,4 +835,5 @@ def cli(command):
 
 
 if __name__ == '__main__':
+    delivery.enable_metrics()
     cli(sys.argv[1])

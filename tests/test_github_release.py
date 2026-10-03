@@ -293,11 +293,44 @@ class DeliveryTests(unittest.TestCase):
         self.base(execute=True)
         self.assertTrue(self.remote.releases[0]['prerelease']);self.assertIsNone(self.remote.latest)
         uploads=[x[2] for x in self.remote.calls if x[0]=='upload']
-        self.assertEqual(uploads,list(G.store.names(self.fixture.recipe)))
+        self.assertCountEqual(uploads,list(G.store.names(self.fixture.recipe)))
+        self.assertEqual(uploads[-1],G.store.names(self.fixture.recipe)[2])
         result=G.fetch_base('example/project',self.fixture.recipe,self.root/'fetched',transport=self.remote)
         self.assertEqual(result['files'],G.store.verify_group(self.root/'group',self.fixture.recipe))
         count=len(self.remote.mutations);self.assertTrue(self.base(execute=True)['reused'])
         self.assertEqual(len(self.remote.mutations),count)
+
+    def test_base_payload_failure_prevents_checksum_commit_marker(self):
+        binary, source, checksum = G.store.names(self.fixture.recipe)
+        self.remote.fail_upload = binary
+        with self.assertRaises(G.DeliveryError): self.base(execute=True)
+        self.assertNotIn(checksum, [call[2] for call in self.remote.calls if call[0] == 'upload'])
+        self.assertTrue(self.remote.releases[0]['draft'])
+
+    def test_base_reuse_checks_all_remote_identities_without_downloading(self):
+        self.base(execute=True); self.remote.calls.clear()
+        self.assertTrue(self.base(execute=True)['reused'])
+        self.assertFalse(any(call[0] in ('download', 'upload') for call in self.remote.calls))
+        source = G.store.names(self.fixture.recipe)[1]
+        self.remote.replace_asset(source, b'changed source')
+        with self.assertRaisesRegex(ValueError, 'immutable group conflicts'):
+            self.base(execute=True)
+
+    def test_base_reuse_rejects_changed_size_or_identity_during_reconciliation(self):
+        self.base(execute=True)
+        row = self.remote.releases[0]['assets'][0]; original = row['size']; row['size'] += 1
+        with self.assertRaisesRegex(ValueError, 'immutable group conflicts'):
+            self.base(execute=True)
+        row['size'] = original
+        original_pages = self.remote.pages; reads = 0
+        def pages(endpoint):
+            nonlocal reads
+            if '/assets?' in endpoint:
+                reads += 1
+                if reads == 2: self.remote.releases[0]['assets'][0]['id'] += 1000
+            return original_pages(endpoint)
+        with mock.patch.object(self.remote, 'pages', side_effect=pages), self.assertRaises(ValueError):
+            self.base(execute=True)
 
     def test_binary_base_fetch_reconciles_complete_triplet_without_source_download(self):
         self.base(execute=True); self.remote.calls.clear()
@@ -603,6 +636,33 @@ class TransportTests(unittest.TestCase):
 
     def quota(self,remaining=1000,limit=1000,reset=4600):
         return self.response(payload=json.dumps({'resources':{'core':dict(limit=limit,remaining=remaining,reset=reset)}}).encode())
+
+    def test_accounting_counts_paginated_responses_and_quota_probes_without_extra_requests(self):
+        metrics = G.RequestMetrics(); transport = G.GitHub('example/project', metrics=metrics)
+        headers = {'X-RateLimit-Limit': '1000', 'X-RateLimit-Remaining': '800', 'X-RateLimit-Reset': '4600'}
+        first = self.response(payload=b'[{"id":1}]', headers=headers).stdout
+        second = self.response(payload=b'[{"id":2}]', headers=dict(headers, **{'X-RateLimit-Remaining':'799'})).stdout
+        with mock.patch.object(transport, '_run', side_effect=[subprocess.CompletedProcess([], 0, first+b'\n'+second, b''), self.quota()]) as run:
+            self.assertEqual(transport.pages('private-endpoint'), [{'id':1}, {'id':2}])
+            transport._headroom()
+        self.assertEqual(run.call_count, 2)
+        value = metrics.snapshot()
+        self.assertEqual(value['api_responses'], 2); self.assertEqual(value['quota_probes'], 1)
+        self.assertEqual(value['observed_quota'], {'limit':1000, 'remaining':799, 'reset':4600})
+        self.assertNotIn('private', json.dumps(value))
+        metrics.observe(dict(headers, **{'X-RateLimit-Remaining':'900'}))
+        self.assertEqual(metrics.snapshot()['observed_quota']['remaining'], 799)
+        metrics.observe({'x-ratelimit-limit':'secret', 'authorization':'secret'})
+        self.assertNotIn('secret', json.dumps(metrics.snapshot()))
+
+    def test_accounting_separates_actual_retry_wait_from_requests(self):
+        metrics = G.RequestMetrics(); transport = G.GitHub('example/project', metrics=metrics)
+        with mock.patch.object(transport, '_run', side_effect=[self.response(503, code=1), self.response()]):
+            transport.json('private-endpoint')
+        value = metrics.snapshot()
+        self.assertEqual(value['api_responses'], 2)
+        self.assertEqual(value['retry_wait_seconds'], 3.)
+        self.assertEqual(value['cli_seconds'], 0.)
 
     def test_primary_rate_limit_waits_for_reset_and_retries_only_get(self):
         transport=G.GitHub('example/project')

@@ -61,6 +61,18 @@ actual toolkit, display, browser or installed-package qualification. The ordinar
 candidate still builds the core application; dispatched GUI qualification executes
 the selected real backends with complete prepared inputs.
 
+The development feedback workflow always starts and keeps its focused and
+workflow-syntax check names conclusive. A local Git selector omits compilation,
+GUI input downloads and workflow lint only when every changed path belongs to
+its explicit list of non-installed narrative documents. It still checks document
+links and JSON. Installed instructions, manuals, release policy, build scripts,
+workflows, unknown paths, unavailable history and malformed events select full
+feedback. PR selection compares the tested merge against its verified base
+parent; moves include both old and new paths. No GitHub API listing or history
+fetch is needed. Each existing job repeats only the cheap local selector, so
+independent feedback jobs keep starting in parallel without a new setup barrier.
+Candidate regression and certification never use this selector.
+
 ## Workflow structure
 
 Use reusable workflows for repeated platform setup and a small explicit matrix
@@ -69,8 +81,10 @@ matrix comes from one checked inventory; do not maintain divergent lists in
 producer jobs, packaging helpers, verification, and documentation.
 
 Independent source test shards and package producers should start together.
-Copied-package tests depend on the package producer, not on an unrelated slow
-test suite. A final aggregation job must require all applicable results,
+Each target calls a reusable package workflow whose copied-package job depends
+only on that target's producer. Each consumer still starts on a fresh runner;
+it does not wait for other target packages or an unrelated slow test suite. A
+final aggregation job must require all applicable results,
 including failed or missing producer jobs. Guard against `needs`/`if` logic
 accidentally skipping the very job that detects incomplete coverage.
 

@@ -85,65 +85,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.packages) }}
-    runs-on: ${{ matrix.runner }}
-    name: Independent package ${{ matrix.target }}
-    timeout-minutes: 30
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-    - if: runner.os == 'Windows'
-      shell: pwsh
-      run: ./tools/ci_windows.ps1
-    - env:
-        JOBS: ${{ inputs.build_jobs }}
-        TARGET: ${{ matrix.target }}
-      shell: python
-      run: |
-        import os, subprocess, sys
-        subprocess.run([sys.executable, 'tools/ci_plan.py', 'host', os.environ['TARGET']], check=True)
-        subprocess.run([sys.executable, 'tools/ci_plan.py', 'package', '--build', 'build/package',
-                        '--jobs', os.environ['JOBS']], check=True)
-    - name: Retain verified package-${{ matrix.target }}-${{ github.run_attempt }}
-      run: python .github/scripts/lifecycle.py bundle-store
-      env:
-        BUNDLE_NAME: package-${{ matrix.target }}-${{ github.run_attempt }}
-        BUNDLE_PATHS: |
-          build/package/packages/*.tar.gz
-          build/package/packages/*.zip
-          build/package/packages/*.json
+    name: Native package and fresh consumer ${{ matrix.target }}
+    uses: ./.github/workflows/candidate-package.yml
+    with:
+      target: ${{ matrix.target }}
+      runner: ${{ matrix.runner }}
+      build_jobs: ${{ inputs.build_jobs }}
     permissions:
       contents: write
       actions: read
-  copied:
-    # Draft listings require push access even when this job only fetches bytes.
-    permissions:
-      contents: write
-      actions: read
-    if: ${{ !inputs.devfast }}
-    needs:
-    - plan
-    - package
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.packages) }}
-    runs-on: ${{ matrix.runner }}
-    name: Fresh copied archive ${{ matrix.target }}
-    timeout-minutes: 20
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-    - env:
-        GH_TOKEN: ${{ github.token }}
-        GH_REPO: ${{ github.repository }}
-        BUNDLE_NAME: package-${{ matrix.target }}-${{ github.run_attempt }}
-        BUNDLE_OUTPUT: build/copied
-      shell: python
-      run: |
-        import subprocess,sys
-        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
-        subprocess.run([sys.executable,'tools/ci_plan.py','check-archives','build/copied','--runtime-only'],check=True)
   sanitizer:
     if: ${{ !inputs.devfast }}
     runs-on: ubuntu-24.04
@@ -201,7 +151,6 @@ jobs:
     - plan
     - source
     - package
-    - copied
     - sanitizer
     - distribution
     runs-on: ubuntu-24.04

@@ -16,7 +16,9 @@ pass identifies its selected scope and cannot make a release eligible.
 
 Compilation automatically uses the available CPU and memory budget. Explicit
 `--build-jobs N` overrides it; `--test-jobs N` controls test concurrency separately.
-`--jobs N` remains an explicit override for both. Keep tests bounded for their
+`--jobs N` remains an explicit override for both. Without a test override, the
+resource detector admits up to four workers; smaller CPU/memory budgets reduce it.
+Keep tests bounded for their
 actual memory, process and real-time requirements. A faster machine alone does
 not justify changing an assertion or deadline.
 
@@ -31,6 +33,10 @@ only their declared prerequisites. The complete generated test declarations,
 configuration and source identity remain frozen so an unbuilt executable from a
 different scope does not hide a new test or change the aggregation identity.
 
+Source archives prune generated build, coordination and Python cache directories
+before walking the tree. The complete selected source inventory and before/after
+mutation checks still apply; only adjacent duplicate identity work is removed.
+
 ## Hosted scheduling
 
 Leave compile limits at `auto` unless the machine has an explicit workload budget.
@@ -38,6 +44,14 @@ The hosted entry points use the same CPU/RAM detector as local builds. Select an
 administrator-configured faster runner pool when available; platform-specific
 allowlists preserve target architecture and trust boundaries. Independent jobs
 have separate outputs and run concurrently within the configured job limit.
+
+Development feedback uses an explicit safe list of narrative documents to omit
+compile, GUI downloads and workflow syntax work for documentation-only changes.
+Each existing parallel job selects its scope from local Git without API calls or
+another serial runner. Missing history, changed policy/manuals and unknown paths
+select full feedback. Complete candidate and release workflows remain unchanged
+by this diagnostic selection. Each fresh copied-package check waits only for its
+own target producer, while retaining a separate fresh runner.
 
 Complete certification keeps every required logical result. Native source checks
 share one build across the selected backends in that target/environment; recovery
@@ -63,6 +77,13 @@ without the base release. Existing archived builders that require complete group
 retain that input contract; the frozen plan records `sdk_payload: complete`. Omitted
 payloads remain identified by the frozen metadata,
 and cannot be substituted or represented as executed coverage.
+
+Certification preparation retains only authenticated frozen controls. Checks
+fetch selected original candidate assets directly, verifying the complete frozen
+release inventory and tag before and after transfer and hashing all selected
+bytes before exposure. Preparation inspects the source archive for compatibility;
+it no longer downloads and republishes every SDK and application payload through
+private transport. Source and recovery still consume their complete declared inputs.
 
 Publication verifies uploaded bytes. Later lifecycle steps reconcile the complete
 remote asset inventory, immutable identities and SHA-256 digests, verify the
@@ -103,8 +124,10 @@ while already-compressed package and SDK archives retain their ordinary encoding
 Consumers fetch up to four independent chunks concurrently and reconstruct them
 in their authenticated order. Related bundles share complete run, producer and
 asset inventories at the start and end of one transfer transaction. Check jobs
-restore their controls and selected payloads together; preparation publishes its
-related bundles together. Downloads remain quarantined until the final checks
+authenticate their controls, then fetch selected published candidate assets.
+Candidate aggregation and certification evidence collection each fetch related
+bundles together; application producers publish their output and diagnostics
+together. Downloads remain quarantined until the final checks
 pass, and publication writes manifest commit markers after all payloads verify.
 This reduces repeated API reads as well as bytes. Source identities, completed
 producer checks and whole-file hashes still apply. Keep actual network operations
@@ -112,6 +135,13 @@ bounded across nested callers and join every worker before cleanup on failure. U
 validated release ID, avoiding another tag lookup for every asset. Even with
 these reductions, a complete all-platform release may cross a shared API quota
 window; grouped transfers do not create additional repository capacity.
+
+Single-part bundles use a private staging rename instead of another complete
+archive copy; whole-archive and member hash checks still run. Base SDK transfers
+run concurrently within the network bound, with checksum publication after both
+payload uploads finish. Reusing an unchanged published SDK reconciles the complete
+asset IDs, sizes and digests against the verified local group without downloading
+it again. First publication still downloads and validates the complete new group.
 
 The [APT bootstrap helper](../tools/ci-apt.sh) preserves signed distribution sources
 and uses bounded mirror/network recovery. Each installation refreshes strict
@@ -130,6 +160,17 @@ separate costs, not normal application iteration. Native package qualification
 writes `command-timings.json`, including failed commands, alongside its complete
 command log. This separates dependency setup, install, repeated refresh and removal
 costs instead of attributing the entire job to signing.
+
+The lifecycle and transport CLIs emit sanitized per-process request metrics to
+stderr: observed API responses (each pagination page), separate primary-unmetered
+quota probes, CLI calls, transferred bytes, request-slot wait and retry wait.
+These counters add no requests. CLI and wait seconds accumulate across workers;
+they are not end-to-end wall time. Lost responses and legacy CLI uploads can make
+observed response counts lower than actual API consumption. Use the accompanying
+observed quota headers and job timestamps when accounting for a hosted run.
+Direct candidate reads remove a large byte relay but still require independent
+identity observations in each job. The current protocol therefore does not promise
+a complete release within one repository quota window.
 
 A native refresh still verifies the unified package-channel archive. Splitting it
 into separately signed frontend projections would change the compatibility and

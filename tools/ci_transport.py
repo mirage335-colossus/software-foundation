@@ -317,6 +317,15 @@ def _stage_bundle(stage, context, root, paths, *, metadata=None, allow_missing=F
     if whole['size'] > MAX_BYTES + 32 * 1024**2: raise TransportError('bundle archive exceeds supported limit')
     if (whole['size'] + chunk_bytes - 1) // chunk_bytes > MAX_PARTS:
         raise TransportError('bundle needs too many bounded chunks')
+    if whole['size'] <= chunk_bytes:
+        # Small receipts and single-asset archives already have their final bytes.
+        # Rename within the private staging directory instead of copying them.
+        whole['sha256'] = archive.digest(bundle)
+        part = stage / (_prefix(context['name']) + '0000-' + whole['sha256'])
+        bundle.rename(part)
+        return dict(context=context, stage=stage, root=root, paths=paths, files=files,
+                    metadata=metadata, allow_missing=allow_missing, whole=whole,
+                    chunks=[(part, whole['sha256'])])
     chunks, hasher = [], hashlib.sha256()
     with bundle.open('rb') as stream:
         index = 0
@@ -554,11 +563,15 @@ def fetch_bundles(repository, run_id, attempt, source_commit, workflow, requests
         _parallel(downloads)
         for item in selections:
             manifest = item['manifest']; bundle = item['stage'] / 'payload.tar'
-            with bundle.open('xb') as stream:
-                for part in manifest['archive']['parts']:
-                    path = item['stage'] / part['name']
-                    with path.open('rb') as source: shutil.copyfileobj(source, stream)
-                    path.unlink()
+            parts = manifest['archive']['parts']
+            if len(parts) == 1:
+                (item['stage'] / parts[0]['name']).rename(bundle)
+            else:
+                with bundle.open('xb') as stream:
+                    for part in parts:
+                        path = item['stage'] / part['name']
+                        with path.open('rb') as source: shutil.copyfileobj(source, stream)
+                        path.unlink()
             if bundle.stat().st_size != manifest['archive']['size'] or archive.digest(bundle) != manifest['archive']['sha256']:
                 raise TransportError('reconstructed archive bytes differ')
             extracted = item['stage'] / 'payload'; extracted.mkdir(); _extract(bundle, extracted, manifest['files'])
@@ -622,6 +635,7 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    delivery.enable_metrics()
     try: main()
     except (ValueError, OSError, delivery.DeliveryError) as error:
         raise SystemExit('ci-transport: ' + str(error) + '; preserve remote state and reconcile before retry')

@@ -6,6 +6,7 @@ an operation. A failed mutation has an unknown remote outcome: reconcile exact
 IDs and bytes before a new attempt. This helper never deletes or replaces assets.
 """
 import argparse
+import atexit
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib.util
@@ -39,6 +40,53 @@ SHA = re.compile(r'[0-9a-f]{64}\Z')
 # process-wide gate so nested four-worker pools still run at most four CLI
 # requests at once; backoff and local hashing do not hold a request slot.
 REQUEST_SLOTS = sys.__dict__.setdefault('_foundation_github_request_slots', threading.BoundedSemaphore(4))
+
+class RequestMetrics:
+    """Process totals only: no endpoints, credentials or response bodies retained."""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.values = dict(cli_calls=0, api_responses=0, quota_probes=0,
+                           cli_seconds=0., capacity_wait_seconds=0., retry_wait_seconds=0.,
+                           downloaded_bytes=0, uploaded_bytes=0)
+        self.quota = None
+
+    def add(self, **values):
+        with self.lock:
+            for key, value in values.items(): self.values[key] += value
+
+    def observe(self, headers, *, quota_probe=False):
+        with self.lock:
+            self.values['quota_probes' if quota_probe else 'api_responses'] += 1
+            numbers = {key: rate_integer(headers.get('x-ratelimit-' + key))
+                       for key in ('limit', 'remaining', 'reset')}
+            if (all(value is not None for value in numbers.values()) and
+                    0 <= numbers['remaining'] <= numbers['limit']):
+                # Responses can arrive out of order. Keep the lowest observed
+                # allowance within the newest observed reset window.
+                if (self.quota is None or numbers['reset'] > self.quota['reset'] or
+                        numbers['reset'] == self.quota['reset'] and
+                        numbers['remaining'] < self.quota['remaining']):
+                    self.quota = numbers
+
+    def snapshot(self):
+        with self.lock:
+            return dict(schema_version=1, **{k: round(v, 3) if isinstance(v, float) else v
+                        for k, v in self.values.items()}, observed_quota=self.quota.copy() if self.quota else None)
+
+
+REQUEST_METRICS = sys.__dict__.setdefault('_foundation_github_request_metrics', RequestMetrics())
+
+
+def enable_metrics():
+    """Opt-in sanitized per-process CI accounting, with no additional API calls."""
+    if sys.__dict__.get('_foundation_github_metrics_reporter'): return
+    sys.__dict__['_foundation_github_metrics_reporter'] = True
+    def report():
+        value = REQUEST_METRICS.snapshot()
+        if value['cli_calls']:
+            print('GitHub transport metrics: ' + json.dumps(value, sort_keys=True), file=sys.stderr, flush=True)
+    atexit.register(report)
+
 
 CERT = re.compile(r'certification-([A-Za-z0-9][A-Za-z0-9_.-]*)-attempt-([1-9][0-9]*)\.(json|tar.gz)\Z')
 
@@ -158,7 +206,8 @@ class GitHub:
     WRITE_HEADROOM = 128
     TRANSIENT_STATUS = frozenset((500, 502, 503, 504))
 
-    def __init__(self, repository):
+    def __init__(self, repository, *, metrics=None):
+        self.metrics = metrics if metrics is not None else REQUEST_METRICS
         self.repository = location(repository)
         self.wait_remaining = float(self.WAIT_BUDGET)
         self._budget_lock = threading.Lock()
@@ -168,9 +217,14 @@ class GitHub:
         started = time.monotonic()
         if not REQUEST_SLOTS.acquire(timeout=budget):
             raise DeliveryError('GitHub request capacity wait exceeded its bounded deadline')
+        call_started = None
         try:
-            remaining = budget - (time.monotonic() - started)
+            acquired = time.monotonic()
+            self.metrics.add(capacity_wait_seconds=acquired - started)
+            remaining = budget - (acquired - started)
             if remaining <= 0: raise DeliveryError('GitHub CLI request exceeded its bounded deadline')
+            call_started = time.monotonic()
+            self.metrics.add(cli_calls=1)
             return subprocess.run(['gh', *arguments], input=body,
                 stdout=output if output is not None else subprocess.PIPE,
                 stderr=subprocess.PIPE, check=False, timeout=remaining)
@@ -179,6 +233,8 @@ class GitHub:
         except OSError:
             raise DeliveryError('GitHub CLI request could not complete') from None
         finally:
+            if call_started is not None:
+                self.metrics.add(cli_seconds=time.monotonic() - call_started)
             REQUEST_SLOTS.release()
 
     def _timeout(self, deadline):
@@ -197,12 +253,15 @@ class GitHub:
             remaining_budget = self.wait_remaining
         print(f'GitHub read retry ({diagnostic}); waiting {delay:.1f}s; '
               f'wait budget remaining {remaining_budget:.1f}s', file=sys.stderr, flush=True)
-        remaining = delay
-        while remaining > 0:
-            self._timeout(deadline)
-            step = min(60, remaining)
-            time.sleep(step)  # Interrupts/cancellation propagate; no detached sleeper.
-            remaining -= step
+        remaining = delay; started = time.monotonic()
+        try:
+            while remaining > 0:
+                self._timeout(deadline)
+                step = min(60, remaining)
+                time.sleep(step)  # Interrupts/cancellation propagate; no detached sleeper.
+                remaining -= step
+        finally:
+            self.metrics.add(retry_wait_seconds=time.monotonic() - started)
 
     def _retry_delay(self, failure, attempt):
         if failure.status not in (403, 429) and failure.status not in self.TRANSIENT_STATUS:return None
@@ -250,6 +309,7 @@ class GitHub:
             raise DeliveryError('remote JSON exceeds supported inventory limit')
         stream = io.BytesIO(result.stdout)
         status, headers = response_head(stream);payload = stream.read()
+        self.metrics.observe(headers, quota_probe=endpoint == 'rate_limit')
         if missing and status == 404 and result.returncode:return None
         if not 200 <= status < 300:raise HTTPFailure(status, headers, payload)
         if result.returncode:raise DeliveryError('GitHub API response was incomplete')
@@ -304,6 +364,7 @@ class GitHub:
                     while stream.tell() < len(raw) and raw[stream.tell()] in b' \r\n\t':stream.seek(1, 1)
                     if stream.tell() == len(raw):break
                     status, headers = response_head(stream)
+                    self.metrics.observe(headers)
                     if not 200 <= status < 300:raise HTTPFailure(status, headers, stream.read(4097))
                     # A later error body is opaque, even if it is not UTF-8.
                     # Strictly re-encode only this successful JSON page below.
@@ -341,7 +402,8 @@ class GitHub:
             result = self._run(['api', '--hostname', 'github.com', '--include', '--method', 'POST', endpoint,
                 '--input', str(path), '-H', 'Content-Type: application/octet-stream',
                 '-H', 'Content-Length: ' + str(before.st_size), '-H', 'Accept: application/vnd.github+json'])
-            response = io.BytesIO(result.stdout); status, _ = response_head(response)
+            response = io.BytesIO(result.stdout); status, headers = response_head(response)
+            self.metrics.observe(headers)
             if result.returncode or status != 201:
                 raise DeliveryError('asset upload failed; remote outcome requires reconciliation', True)
             body = response.read(HTTP_JSON_LIMIT + 1)
@@ -353,6 +415,7 @@ class GitHub:
                     (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
                     (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
                 raise DeliveryError('uploaded asset or local payload identity differs', True)
+            self.metrics.add(uploaded_bytes=before.st_size)
         except (DeliveryError, OSError, ValueError) as error:
             raise DeliveryError('asset upload could not be confirmed; remote outcome requires reconciliation', True) from error
 
@@ -370,10 +433,12 @@ class GitHub:
                         '-H', 'Accept:application/octet-stream'], output=stream, timeout=self._timeout(deadline))
                 with raw.open('rb') as stream:
                     status, headers = response_head(stream)
+                    self.metrics.observe(headers)
                     if not 200 <= status < 300:raise HTTPFailure(status, headers, stream.read(4097))
                     if result.returncode or status != 200:
                         raise DeliveryError('asset download failed; incomplete response must not be reused')
                     with path.open('xb') as destination:shutil.copyfileobj(stream, destination)
+                    self.metrics.add(downloaded_bytes=path.stat().st_size)
         return self._read(attempt)
 
 
@@ -677,8 +742,7 @@ def fetch_base(repository, recipe, output, *, transport=None, binary_only=False)
         stage = Path(temporary) / 'group'; stage.mkdir()
         binary, source, checksum = expected
         selected = (binary, checksum) if binary_only else expected
-        for name in selected:
-            remote.download(assets[name], stage / name)
+        download_files(remote, assets, [(name, stage / name, None) for name in selected])
         files = store.verify_binary_group(stage, recipe) if binary_only else store.verify_group(stage, recipe)
         # The checksum binds the untransferred supplier source too. Reconcile
         # every immutable API asset digest, not just the selected binary bytes.
@@ -707,9 +771,13 @@ def publish_base(repository, recipe, group, source_commit, *, execute=False, tra
         if info and (info['draft'] or not info['prerelease'] or info['name'] != 'base'):
             raise DeliveryError('existing base has incompatible lifecycle')
         if present:
-            with tempfile.TemporaryDirectory(prefix='base-compare-') as temporary:
-                for name in files:remote.download(before[name], Path(temporary) / name, files[name])
-                if store.verify_group(temporary, recipe) != files:raise DeliveryError('immutable group conflicts')
+            # The local complete group was verified above. Existing published
+            # immutable assets must match every exact size and SHA-256; their
+            # first publication already required complete byte readback.
+            if any(before[name]['digest'] != 'sha256:' + digest or
+                   before[name]['size'] != (Path(group) / name).stat().st_size
+                   for name, digest in files.items()):
+                raise DeliveryError('immutable group conflicts: remote asset differs')
             remote.unchanged('base', info, before, reference); remote.not_latest(info)
             return dict(result, execute=True, reused=True)
         if info is None:
@@ -721,14 +789,16 @@ def publish_base(repository, recipe, group, source_commit, *, execute=False, tra
             if not info['draft'] or not info['prerelease'] or info['name']!='base':
                 raise DeliveryError('created base does not match requested draft lifecycle')
             remote.wait_find('base', release_id=info['id'])
-        for name in store.names(recipe):remote.upload('base', Path(group) / name)
+        binary, source, checksum = store.names(recipe)
+        upload_files(remote, 'base', [Path(group) / name for name in (binary, source)], release_info=info)
+        remote.upload_to(info, Path(group) / checksum)  # Complete group marker follows joined payloads.
         current = remote.find('base'); assets = remote.assets(current)
         if any(current[key]!=info[key] for key in ('id','name','draft','prerelease')):
             raise DeliveryError('base release identity changed during upload')
         if set(assets) != set(before) | set(files) or any(assets[n] != v for n,v in before.items()):
             raise DeliveryError('base inventory changed unexpectedly')
         with tempfile.TemporaryDirectory(prefix='base-confirm-') as temporary:
-            for name in files:remote.download(assets[name], Path(temporary) / name, files[name])
+            download_files(remote, assets, [(name, Path(temporary) / name, files[name]) for name in files])
             if store.verify_group(temporary, recipe) != files:raise DeliveryError('uploaded group differs')
         if store.verify_group(group, recipe) != files:raise DeliveryError('local dependency group changed')
         remote.unchanged('base', current, assets, reference)
@@ -969,6 +1039,7 @@ def main(argv=None):
 
 
 if __name__=='__main__':
+    enable_metrics()
     try:sys.exit(main())
     except (OSError,ValueError,RuntimeError,KeyError,TypeError) as error:
         print(json.dumps({'ok':False,'uncertain':getattr(error,'uncertain',False),

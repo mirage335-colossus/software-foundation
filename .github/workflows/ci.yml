@@ -17,7 +17,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
+      - name: Select conservative feedback scope from local Git
+        id: changes
+        run: python3 -B tools/ci_changes.py
+      - name: Require an explicit selection
+        env:
+          SELECTED: ${{ steps.changes.outputs.build }}
+        run: test "$SELECTED" = true || test "$SELECTED" = false
+      - name: Validate narrative documents
+        if: steps.changes.outputs.build == 'false'
+        run: python3 -B tools/check_docs.py
       - name: Build and test inexpensive contracts
+        if: steps.changes.outputs.build == 'true'
         run: python3 tools/build.py test dev --label fast --test-jobs 2
       - name: Scope
         if: always()
@@ -30,7 +42,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
+      - name: Select conservative feedback scope from local Git
+        id: changes
+        run: python3 -B tools/ci_changes.py
+      - name: Require an explicit selection
+        env:
+          SELECTED: ${{ steps.changes.outputs.workflow_lint }}
+        run: test "$SELECTED" = true || test "$SELECTED" = false
       - name: Validate workflows with installed or exact retained validator
+        if: steps.changes.outputs.workflow_lint == 'true'
         run: python3 tools/ci_plan.py workflow-lint --retained-url "$RETAINED_URL" --executable "$VALIDATOR" --output build/workflow-lint
         env:
           RETAINED_URL: ${{ vars.FOUNDATION_ACTIONLINT_URL }}
@@ -45,10 +66,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 2
+      - name: Select conservative feedback scope from local Git
+        id: changes
+        run: python3 -B tools/ci_changes.py
+      - name: Require an explicit selection
+        env:
+          SELECTED: ${{ steps.changes.outputs.gui }}
+        run: test "$SELECTED" = true || test "$SELECTED" = false
       - name: Restore exact repository-retained GUI inputs
+        if: steps.changes.outputs.gui == 'true'
         run: python3 .github/scripts/lifecycle.py gui-input
         env:
           GH_TOKEN: ${{ github.token }}
           GUI_INPUT: '{"source":"base","manifest_sha256":"${{ vars.FOUNDATION_GUI_GROUP }}"}'
       - name: Compile shared application once and check generic hosts
+        if: steps.changes.outputs.gui == 'true'
         run: python3 -B tools/build.py test dev --gui-input-group build/gui-group --gui-backends terminal,framebuffer,hosted-web --host-tests --label gui --test-jobs 2
