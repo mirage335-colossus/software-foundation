@@ -136,10 +136,12 @@ jobs:
       include_arm: true
       linux_pool: ${{ inputs.linux_pool }}
       build_jobs: ${{ inputs.jobs }}
+      preserve_artifacts: ${{ inputs.preserve_artifacts }}
   prepare:
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      source_artifact_id: ${{ steps.source_bundle.outputs.artifact-id }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
@@ -155,7 +157,8 @@ jobs:
         FOUNDATION_FASTER_LINUX_RUNNER: ${{ vars.FOUNDATION_FAST_LINUX_RUNNER }}
         FOUNDATION_FASTER_ARM_RUNNER: ${{ vars.FOUNDATION_FAST_ARM_RUNNER }}
         FOUNDATION_FASTER_WINDOWS_RUNNER: ${{ vars.FOUNDATION_FAST_WINDOWS_RUNNER }}
-    - name: Retain source for the parallel application producers
+    - id: source_bundle
+      name: Retain source for the parallel application producers
       uses: ./.github/actions/ci-evidence-publish
       with:
         name: source-${{ github.run_attempt }}
@@ -167,6 +170,11 @@ jobs:
       actions: read
   application:
     needs: prepare
+    outputs:
+      linux_x86_64: ${{ matrix.target == 'linux-x86_64' && steps.application_bundle.outputs.artifact-id || '' }}
+      linux_aarch64: ${{ matrix.target == 'linux-aarch64' && steps.application_bundle.outputs.artifact-id || '' }}
+      windows_x86_64: ${{ matrix.target == 'windows-x86_64' && steps.application_bundle.outputs.artifact-id || '' }}
+      browser_wasm32: ${{ matrix.target == 'browser-wasm32' && steps.application_bundle.outputs.artifact-id || '' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
@@ -212,7 +220,8 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/container_job.py', 'application-build'], check=True)
       if: runner.os == 'Linux'
-    - name: Retain the successfully built application
+    - id: application_bundle
+      name: Retain the successfully built application
       uses: ./.github/actions/ci-evidence-publish
       with:
         name: application-${{ matrix.target }}-${{ github.run_attempt }}
@@ -291,9 +300,41 @@ jobs:
       with:
         name: candidate-delivery-${{ github.run_attempt }}
         paths: build/receipts/
+    - name: Select all consumed source and application artifact IDs
+      id: cleanup_inputs
+      if: success() && inputs.execute && !inputs.preserve_artifacts && steps.publication.outputs.published == 'true'
+      continue-on-error: true
+      shell: python
+      env:
+        APPLICATION_MATRIX: ${{ needs.prepare.outputs.matrix }}
+        APPLICATION_ARTIFACT_IDS: ${{ toJSON(needs.application.outputs) }}
+        SOURCE_ARTIFACT_ID: ${{ needs.prepare.outputs.source_artifact_id }}
+      run: |
+        import json, os, re
+        matrix = json.loads(os.environ['APPLICATION_MATRIX'])['include']
+        targets = [row['target'] for row in matrix]
+        allowed = {'linux-x86_64', 'linux-aarch64', 'windows-x86_64', 'browser-wasm32'}
+        if not targets or len(targets) != len(set(targets)) or not set(targets) <= allowed:
+            raise SystemExit('Invalid application matrix; preserve all temporary artifacts')
+        expected = {target.replace('-', '_') for target in targets}
+        ids = json.loads(os.environ['APPLICATION_ARTIFACT_IDS'])
+        if set(ids) != expected:
+            raise SystemExit('Incomplete application artifact IDs; preserve all temporary artifacts')
+        selected = [os.environ['SOURCE_ARTIFACT_ID']] + [ids[key] for key in sorted(expected)]
+        if len(selected) != len(set(selected)) or any(not isinstance(value, str) or not re.fullmatch(r'[1-9][0-9]{0,19}', value) for value in selected):
+            raise SystemExit('Invalid artifact IDs; preserve all temporary artifacts')
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            output.write('ids=' + json.dumps(selected) + '\n')
+    - name: Remove source and application handoffs after verified publication
+      if: success() && inputs.execute && !inputs.preserve_artifacts && steps.cleanup_inputs.outcome == 'success'
+      uses: ./.github/actions/ci-artifact-cleanup
+      continue-on-error: true
+      timeout-minutes: 1
+      with:
+        artifact-ids: ${{ steps.cleanup_inputs.outputs.ids }}
     permissions:
       contents: write
-      actions: read
+      actions: write
     outputs:
       regression_result: ${{ needs.regression.result }}
       published: ${{ steps.publication.outputs.published }}
@@ -302,22 +343,6 @@ jobs:
       source_commit: ${{ steps.result.outputs.source_commit }}
       delivery_sha256: ${{ steps.result.outputs.delivery_sha256 }}
 
-  cleanup:
-    name: Remove temporary handoffs after their final consumer
-    if: always() && needs.assemble.result == 'success' && !inputs.preserve_artifacts && startsWith(github.workflow_ref, format('{0}/.github/workflows/sdk-application.yml@', github.repository))
-    needs: [regression, prepare, application, assemble]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: write
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-    - uses: ./.github/actions/ci-artifact-cleanup
-      continue-on-error: true
-      timeout-minutes: 3
 
 env:
   GH_TOKEN: ${{ github.token }}

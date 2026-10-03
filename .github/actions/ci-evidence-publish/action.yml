@@ -19,6 +19,10 @@ inputs:
     description: Explicitly use legacy release transport on native size or service failure.
     required: false
     default: 'false'
+outputs:
+  artifact-id:
+    description: Exact immutable upload ID for deletion after its final consumer.
+    value: ${{ steps.upload.outputs.artifact-id }}
 runs:
   using: composite
   steps:

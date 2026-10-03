@@ -139,22 +139,7 @@ jobs:
         paths: build/receipts/
     outputs:
       promoted: ${{ steps.result.outputs.promoted }}
-  cleanup:
-    name: Remove temporary handoffs after their final consumer
-    if: always() && needs.plan.result == 'success' && (!inputs.execute || needs.promote.result == 'success') && !inputs.preserve_artifacts && startsWith(github.workflow_ref, format('{0}/.github/workflows/promote.yml@', github.repository))
-    needs: [plan, promote]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: write
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-    - uses: ./.github/actions/ci-artifact-cleanup
-      continue-on-error: true
-      timeout-minutes: 3
+
 env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'

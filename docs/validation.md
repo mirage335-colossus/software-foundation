@@ -940,3 +940,46 @@ repositories, retries, extra pages and cold publication cost more. Cleanup space
 its 53 deletions over at least 52 seconds, after the final consumer, and never
 waits for a quota reset. Failed runs keep one-day diagnostics.
 These are code-derived costs, not a newly measured hosted duration or quota result.
+
+
+## Delete larger handoffs at their last consumer
+
+The next 2026-10-03 pass replaces whole-attempt cleanup with direct upload IDs.
+Source and application archives are removed after verified candidate publication
+and its delivery receipt; the certificate is removed after verified attachment
+and its receipt. Each regression package is removed after its fresh-package check.
+Small receipts and diagnostics expire after one day. Preparation-only application
+outputs and failed-consumer handoffs remain available; `preserve_artifacts=true`
+reaches all nested consumers and disables early deletion.
+
+Cleanup performs one DELETE per unique supplied ID, with no inventory listing,
+quota probe, retry, or quota-headroom wait. Empty arrays perform no remote work;
+missing, malformed and partially invalid arrays fail before any mutation. Distinct
+matrix outputs preserve all target IDs; the assembly selector requires the exact
+core or all-GUI target set and rejects missing, duplicate or foreign IDs. Cleanup
+runs after the final receipt upload so a receipt failure preserves rerun inputs.
+Independent job scheduling and all qualification gates remain intact.
+
+All **68 affected offline tests passed in 1.801 seconds**. The isolated complete
+native regression, including all five optional distribution suites, then passed
+**54/54 CTest entries in 29.69 seconds**. After the final receipt/cleanup ordering
+adjustment, the three affected workflow suites passed again in **1.16 seconds**;
+unchanged suites were not repeated. Final receipts contain **1,303 passed Python
+cases**, with two explicitly inapplicable native-Windows cases on Linux.
+Workflow lint, documentation, whitespace, Python 3.9 grammar and generic-name
+checks passed. Independent read-only review found no actionable issue in matrix
+ID propagation, final-consumer barriers, preservation or permission inheritance.
+
+The complete public warm-SDK all-GUI request model is now **210 quota-counted
+operations**, including nine targeted deletions, compared with 255 including the
+previous 54-call cleanup. Explicit preservation remains 201. Approximately 29
+primary-unmetered quota probes and Actions/public-download network traffic remain.
+The five-item publication cleanup uses four seconds of deliberate mutation spacing;
+the three package deletions and certificate deletion are single-item operations.
+Small retained artifacts expire without cleanup API calls. These are code-derived
+costs, not newly measured hosted latency or quota consumption.
+
+The final source manifest, full-run manifest, receipts and logs are recorded in
+`build/agents/artifact-consumer-integration-v1/validation.json`. Only final validation
+documentation changed after the tested snapshot. No hosted workflow, actual remote
+artifact deletion, public upload, SDK rebuild, commit or push was performed.

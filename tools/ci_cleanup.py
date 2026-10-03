@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Delete only this attempt's temporary evidence after its final consumers.
+"""Delete explicit upload IDs supplied by their final workflow consumers.
 
-The caller owns the dependency barrier and preservation option. Cleanup never
-deletes workflow runs, release assets, SDKs or artifacts from another attempt.
+The caller must obtain IDs from this workflow's trusted upload outputs and own
+its final-consumer barrier and preservation option. No inventory is discovered.
 One-day artifact expiry remains the fallback if cleanup cannot finish.
 """
 import argparse
@@ -13,8 +13,9 @@ import time
 
 import github_release as delivery
 
-PAGE_SIZE = 100
-MAX_ARTIFACTS = 10000
+IDS_ENV = 'FOUNDATION_CI_CLEANUP_ARTIFACT_IDS'
+MAX_INPUT_BYTES = 32 * 1024
+MAX_ARTIFACT_ID = 10 ** 20 - 1
 MAX_DELETE = 512
 
 
@@ -46,54 +47,34 @@ def current_context(environment=None):
     return dict(repository=repository, source_commit=commit, **values)
 
 
-def selected_artifacts(transport, context):
-    """Freeze the complete paginated ID set before any deletion shifts its pages."""
-    rows, expected_total = [], None
-    ids, names = set(), set()
-    selected = []
-    prefix = f"foundation-evidence-{context['run_id']}-{context['attempt']}-"
-    base = f"repos/{context['repository']}/actions/runs/{context['run_id']}/artifacts"
-    for page in range(1, MAX_ARTIFACTS // PAGE_SIZE + 1):
-        response = transport.json(base + f'?per_page={PAGE_SIZE}&page={page}')
-        if (not isinstance(response, dict) or type(response.get('total_count')) is not int or
-                not 0 <= response['total_count'] <= MAX_ARTIFACTS or
-                not isinstance(response.get('artifacts'), list) or
-                expected_total not in (None, response['total_count'])):
-            raise CleanupError('artifact listing is incomplete, changed or oversized')
-        expected_total = response['total_count']
-        batch = response['artifacts']
-        if len(batch) != min(PAGE_SIZE, expected_total - len(rows)):
-            raise CleanupError('artifact page does not match the complete inventory')
-        for row in batch:
-            if (not isinstance(row, dict) or not delivery.positive(row.get('id')) or
-                    not isinstance(row.get('name'), str) or not 0 < len(row['name']) <= 255 or
-                    row['id'] in ids or row['name'] in names):
-                raise CleanupError('artifact inventory has duplicate or invalid identities')
-            ids.add(row['id']); names.add(row['name'])
-            run = row.get('workflow_run')
-            if (not isinstance(run, dict) or type(run.get('id')) is not int or
-                    run['id'] != context['run_id'] or
-                    type(run.get('repository_id')) is not int or
-                    run['repository_id'] != context['repository_id'] or
-                    type(run.get('head_repository_id')) is not int or
-                    run['head_repository_id'] != context['repository_id'] or
-                    run.get('head_sha') != context['source_commit']):
-                raise CleanupError('listed artifact belongs to a different run or source')
-            if row['name'].startswith(prefix):
-                slot = row['name'][len(prefix):]
-                if not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,159}', slot):
-                    raise CleanupError('reserved evidence artifact has an invalid slot')
-                selected.append(row['id'])
-        rows.extend(batch)
-        if len(rows) == expected_total:
-            if len(selected) > MAX_DELETE:
-                raise CleanupError('temporary artifact selection exceeds cleanup budget')
-            return selected
-    raise CleanupError('artifact listing exceeds supported pagination')
+def selected_artifacts(raw):
+    """Validate every explicit ID before returning a deduplicated immutable set."""
+    if not isinstance(raw, str) or not raw.strip() or len(raw.encode('utf-8')) > MAX_INPUT_BYTES:
+        raise CleanupError('cleanup requires a bounded explicit artifact-ids JSON array')
+    try:
+        values = delivery.parse(raw)
+    except (ValueError, RecursionError):
+        raise CleanupError('artifact-ids must be a complete JSON array') from None
+    if not isinstance(values, list) or len(values) > MAX_DELETE:
+        raise CleanupError('artifact-ids must be an array within the cleanup budget')
+    selected, seen = [], set()
+    for value in values:
+        if isinstance(value, str) and re.fullmatch(r'[1-9][0-9]{0,19}', value):
+            value = int(value)
+        if type(value) is not int or not 0 < value <= MAX_ARTIFACT_ID:
+            raise CleanupError('every artifact ID must be a canonical positive integer')
+        if value not in seen:
+            seen.add(value)
+            selected.append(value)
+    return tuple(selected)
 
 
 def cleanup(*, environment=None, transport=None, sleep=time.sleep):
+    environment = os.environ if environment is None else environment
     context = current_context(environment)
+    selected = selected_artifacts(environment.get(IDS_ENV))
+    if not selected:
+        return dict(run_id=context['run_id'], attempt=context['attempt'], selected=0, deleted=0)
     if transport is None:
         transport = delivery.GitHub(context['repository'])
         # Cleanup is optional: never wait for quota or retry a partial mutation.
@@ -103,7 +84,6 @@ def cleanup(*, environment=None, transport=None, sleep=time.sleep):
         transport.WAIT_BUDGET = 0
         transport.wait_remaining = 0.0
         transport.MAX_ATTEMPTS = 1
-    selected = selected_artifacts(transport, context)
     deleted = 0
     for artifact_id in selected:
         if deleted:

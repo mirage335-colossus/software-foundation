@@ -64,13 +64,16 @@ artifacts; the complete certificate fits its own larger slot. Preparation-only r
 application components already have separate handoffs. They do not upload duplicate
 SDK recovery archives. Native handoff failures do not silently activate a private relay.
 
-After successful final verification, cleanup removes only this attempt's temporary
-artifacts. Set `preserve_artifacts=true` to keep them for one day for investigation.
-Failed or cancelled runs keep their diagnostics for one day. Nested workflows defer
-cleanup to this outer caller. Cleanup failures are visible
-but cannot turn a completed release into an hour-long quota wait; expiration remains
-available. Workflow history and release assets are preserved. See the
-[storage contract](ci.md#storage-caches-and-sdk-reuse).
+Large handoffs are removed after their final successful consumer: source and
+application archives after verified candidate publication, certificate after
+verified public attachment, and each regression package after its fresh-package
+check. Exact upload IDs flow through the nested workflows; no final sweep is needed.
+Small receipts and diagnostics expire after one day. Preparation-only source and
+application outputs and failed-consumer handoffs also remain for one day.
+Set `preserve_artifacts=true` to disable early deletion throughout the nested calls.
+Cleanup failures are visible but cannot turn a completed release into an hour-long
+quota wait; one-day expiration remains available. Workflow history and public
+release assets are preserved. See the [storage contract](ci.md#storage-caches-and-sdk-reuse).
 
 `execute=true` requests the entire sequence. Public mutation jobs use the
 protected `release-publisher` environment and a shared publisher lock with

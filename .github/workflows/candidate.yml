@@ -91,9 +91,10 @@ jobs:
       target: ${{ matrix.target }}
       runner: ${{ matrix.runner }}
       build_jobs: ${{ inputs.build_jobs }}
+      preserve_artifacts: ${{ inputs.preserve_artifacts }}
     permissions:
-      contents: write
-      actions: read
+      contents: read
+      actions: write
   sanitizer:
     if: ${{ !inputs.devfast }}
     runs-on: ubuntu-24.04
@@ -145,7 +146,7 @@ jobs:
   verdict:
     permissions:
       contents: read
-      actions: write
+      actions: read
     if: always()
     needs:
     - plan
@@ -188,11 +189,6 @@ jobs:
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as report:
             report.write('Selected source scopes and applicable native package checks passed.\n')
             report.write('Prepared SDK, old-runtime, all-GUI and exact release certification remain separate required qualification scopes.\n')
-    - name: Remove this completed attempt's temporary handoffs
-      if: success() && !inputs.preserve_artifacts && startsWith(github.workflow_ref, format('{0}/.github/workflows/candidate.yml@', github.repository))
-      uses: ./.github/actions/ci-artifact-cleanup
-      continue-on-error: true
-      timeout-minutes: 3
 'on':
   workflow_dispatch:
     inputs:

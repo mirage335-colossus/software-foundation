@@ -99,6 +99,7 @@ jobs:
       actions: write
     uses: ./.github/workflows/sdk-application.yml
     with:
+      preserve_artifacts: ${{ inputs.preserve_artifacts }}
       profile: ${{ inputs.profile }}
       recipes: ${{ inputs.recipes }}
       linux_pool: ${{ inputs.linux_pool }}
@@ -118,6 +119,7 @@ jobs:
       actions: write
     uses: ./.github/workflows/certify.yml
     with:
+      preserve_artifacts: ${{ inputs.preserve_artifacts }}
       tag: ${{ needs.application.outputs.tag }}
       inventory: ${{ needs.application.outputs.inventory_sha256 }}
       profile: ${{ inputs.profile }}
@@ -130,7 +132,7 @@ jobs:
     needs: [application, certification]
     permissions:
       contents: write
-      actions: write
+      actions: read
     uses: ./.github/workflows/promote.yml
     with:
       tag: ${{ needs.application.outputs.tag }}
@@ -148,7 +150,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-      actions: write
+      actions: read
     env:
       STAGE_RESULTS: ${{ toJSON(needs) }}
     steps:
@@ -171,8 +173,3 @@ jobs:
               'Preparation passed. No public candidate, release certification or Latest change was requested.')
         with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
           out.write(text+'\n\nSource: `'+value['source_commit']+'`\n\nInventory: `'+value['inventory_sha256']+'`\n')
-    - name: Remove this completed attempt's temporary handoffs
-      if: success() && !inputs.preserve_artifacts && startsWith(github.workflow_ref, format('{0}/.github/workflows/_release-latest.yml@', github.repository))
-      uses: ./.github/actions/ci-artifact-cleanup
-      continue-on-error: true
-      timeout-minutes: 3

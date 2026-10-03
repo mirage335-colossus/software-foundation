@@ -192,6 +192,7 @@ jobs:
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'certificate'], check=True)
       id: result
     - if: always()
+      id: certificate_bundle
       name: Retain verified certificate-${{ github.run_attempt }}
       uses: ./.github/actions/ci-evidence-publish
       with:
@@ -208,6 +209,7 @@ jobs:
       contents: write
       actions: read
     outputs:
+      certificate_artifact_id: ${{ steps.certificate_bundle.outputs.artifact-id }}
       certificate_sha256: ${{ steps.result.outputs.certificate_sha256 }}
       certification_run: ${{ steps.result.outputs.certification_run }}
       certification_attempt: ${{ steps.result.outputs.certification_attempt }}
@@ -223,7 +225,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
-      actions: read
+      actions: write
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
@@ -250,12 +252,19 @@ jobs:
       with:
         name: certification-delivery-${{ github.run_attempt }}
         paths: build/receipts/
+    - name: Remove the certificate handoff after verified public attachment
+      if: success() && !inputs.preserve_artifacts && steps.result.outputs.attached == 'true'
+      uses: ./.github/actions/ci-artifact-cleanup
+      continue-on-error: true
+      timeout-minutes: 1
+      with:
+        artifact-ids: '[${{ toJSON(needs.record.outputs.certificate_artifact_id) }}]'
     outputs:
       attached: ${{ steps.result.outputs.attached }}
   verdict:
     permissions:
       contents: read
-      actions: write
+      actions: read
     if: always()
     needs:
     - prepare
@@ -273,15 +282,7 @@ jobs:
         results=json.loads(os.environ['RESULTS'])
         required=['prepare','check','record'] + (['attach'] if os.environ['EXECUTE']=='true' else [])
         if any(results[k]['result'] != 'success' for k in required): raise SystemExit('Incomplete or failed exact qualification; inspect retained evidence')
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      if: success() && !inputs.preserve_artifacts && startsWith(github.workflow_ref, format('{0}/.github/workflows/certify.yml@', github.repository))
-      with:
-        persist-credentials: false
-    - name: Remove this completed attempt's temporary handoffs
-      if: success() && !inputs.preserve_artifacts && startsWith(github.workflow_ref, format('{0}/.github/workflows/certify.yml@', github.repository))
-      uses: ./.github/actions/ci-artifact-cleanup
-      continue-on-error: true
-      timeout-minutes: 3
+
 env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'

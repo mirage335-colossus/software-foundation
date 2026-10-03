@@ -183,16 +183,31 @@ certificate collector explicitly accepts failed check evidence while the final
 qualification gate still rejects failed, skipped or incomplete required jobs.
 Parallel jobs and all required logical checks remain.
 
-Artifacts have **one-day retention**. The outer candidate, SDK application,
-certification, promotion or Latest workflow removes only its own current-attempt
-artifacts after successful final verification, unless `preserve_artifacts=true` is selected.
-Failed or cancelled runs retain diagnostics for their one-day expiration.
-Nested reusable workflows skip cleanup so they cannot erase a caller's inputs.
-Cleanup lists the run once (with pagination when needed), then deletes each selected
-artifact; it never deletes workflow history, unrelated artifacts or release assets.
-Cleanup is best-effort with a three-minute step limit and no quota-headroom wait;
-interruption or failure leaves automatic expiration as the fallback. Concurrent
-runs and preexisting artifacts still share the account allowance.
+Artifacts have **one-day retention**, GitHub's minimum automatic lifetime.
+Large handoffs are deleted sooner at their final successful consumer:
+
+| Handoff | Early deletion point |
+| --- | --- |
+| Source and application archives | Candidate publication and complete readback have succeeded; every producer and assembly consumer has finished |
+| Certificate bundle | Public certificate attachment and readback have succeeded |
+| Regression package archive | That target's fresh-package verification has succeeded; no release copy is required |
+
+Small controls, receipts and diagnostics expire automatically. Preparation-only
+source/application outputs and failed-consumer handoffs also keep their one-day
+lifetime. A later failure can occur after an earlier handoff has been removed;
+published copies and diagnostics remain available. `preserve_artifacts=true`
+disables early deletion and is forwarded through nested release, regression and
+package workflows. Promotion only produces small receipts, which always expire.
+
+Cleanup uses exact upload IDs passed through workflow outputs and `needs`, with
+no artifact listing. Distinct application matrix output names keep every target's
+ID; assembly validates a complete map for its actual core or all-GUI inventory
+before deletion. No missing ID causes a repository search or broader cleanup.
+The complete all-GUI release deletes nine archives, leaving its 44 smaller artifacts
+to expire. Each cleanup step is best-effort, limited to one minute, and never waits
+for quota headroom or retries a mutation. There is no final sweep or extra cleanup
+runner. Workflow history, unrelated artifacts and release assets remain intact.
+Concurrent runs and preexisting artifacts still share the account allowance.
 
 Unknown slots, oversize bundles and failed uploads fail visibly without silently
 starting the expensive release relay. The composite actions expose an explicit

@@ -131,12 +131,13 @@ queries are replaced by the exact executing Actions context, immutable names,
 workflow dependencies and explicit outcomes. Complete local hash and safe archive
 validation remain. SDK archives stay in release storage.
 
-The outer workflow cleans its current attempt after successful final verification.
-Failed or cancelled runs keep diagnostics for one day. Select
-`preserve_artifacts=true` for one-day diagnostic retention; interrupted cleanup also
-falls back to expiration. Cleanup is bounded and does not delay qualification for
-an hourly quota reset. Native failures are explicit; the costly private-release
-fallback now requires deliberate opt-in. See the [storage contract](ci.md#storage-caches-and-sdk-reuse).
+The final consumer deletes only larger handoffs after its verification succeeds;
+small receipts and diagnostics expire after one day. Published copies replace
+source/application and certificate handoffs; regression packages need only their
+fresh-package check. Select `preserve_artifacts=true` to disable early deletion,
+including nested workflows. Failed consumers and preparation-only source/application
+outputs keep one-day retention. Native failures are explicit; the costly private
+release fallback requires deliberate opt-in. See the [storage contract](ci.md#storage-caches-and-sdk-reuse).
 
 Historical cross-run and explicitly requested private release transport retain
 strict remote producer verification, bounded parallel downloads and deterministic
@@ -188,7 +189,7 @@ use public download URLs instead of authenticated REST requests when the reposit
 is public. File transfers and local verification still occur.
 
 The complete public all-GUI application release using already-published SDKs models
-**255 quota-counted REST operations**, or **201** with `preserve_artifacts=true`.
+**210 quota-counted REST operations**, or **201** with `preserve_artifacts=true`.
 The retained shape has 23 initial public assets and 53 temporary artifacts:
 
 | Stage | Modeled REST operations |
@@ -200,10 +201,10 @@ The retained shape has 23 initial public assets and 53 temporary artifacts:
 | Certification planning and certificate attachment | 22 |
 | Promotion planning and promotion | 22 |
 | Independent Latest verification | 19 |
-| Cleanup: one listing and 53 deletions | 54 |
-| **Total** | **255** |
+| Cleanup: nine direct-ID deletions, no listing | 9 |
+| **Total** | **210** |
 
-This is a code-derived estimate, about **66–78% below** the previous full-release
+This is a code-derived estimate, about **72–82% below** the previous full-release
 range, not a hosted measurement or guaranteed ceiling. It assumes public assets,
 one-page inventories and successful first attempts. There are also approximately
 29 quota-preflight HTTP requests, which do not consume the primary core quota.
@@ -211,21 +212,31 @@ Actions artifact-service calls and public file downloads remain network work.
 Four Windows graphics consumers add eight REST operations if configured with
 an authenticated release-asset URL instead of a direct public URL. Private
 repositories retain approximately 127 authenticated downloads, bringing the
-comparable total to about 382 before that graphics adjustment. Cold SDK publication,
+comparable total to about 337 before that graphics adjustment. Cold SDK publication,
 optional distribution workflows, additional assets, retries, visibility polling
 and pagination cost more.
 
-Cleanup introduces 52 seconds of deliberate spacing for 53 deletions, plus request
-latency. It does not serialize preceding build/test jobs and never waits for an
-hourly quota reset. Preserving artifacts avoids this cleanup cost and lets their
-one-day expiry reclaim storage. The maximum allowed content across all 79 slots
-is 370 MiB per attempt, plus small outer archive overhead; ordinary runs use fewer
-slots and fewer bytes. Concurrent attempts can still accumulate storage.
+Early deletion replaces the previous 54-call sweep with nine direct-ID calls:
+one source, four applications, three regression packages and one certificate.
+Small receipts and diagnostics (44 artifacts in this shape) simply expire. The
+five-item publication cleanup adds four seconds of deliberate mutation spacing,
+plus request latency. The other four deletions are single-item operations at their
+own final consumers. Independent jobs remain parallel, and the extra cleanup
+runners and final 52-second deletion sequence are gone. Preservation disables all
+nine deletions, reducing the estimate to 201. No cleanup waits for an hourly quota
+reset. This reduces cleanup calls by about 83% and the immediately preceding
+255-call release estimate by about 18%.
+
+One day is the [minimum automatic artifact retention](https://github.com/actions/upload-artifact/blob/v4.6.2/action.yml);
+shorter lifetimes require explicit deletion. The maximum allowed content across
+all 79 slots is 370 MiB per attempt, plus small outer archive overhead; ordinary
+runs use fewer slots and bytes. Early deletion shortens archive storage duration,
+but retained receipts and concurrent attempts can still accumulate storage.
 
 GitHub documents a normal `GITHUB_TOKEN` limit of
 [1,000 requests per hour per repository](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#primary-rate-limit-for-github_token-in-github-actions)
 and recommends [spacing mutations and avoiding unnecessary polling](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api).
-The new public release estimate uses about a quarter of that hourly allowance;
+The new public release estimate uses about a fifth of that hourly allowance;
 other runs share it. Record actual response counters and elapsed time on the next
 ordinary hosted run; do not launch duplicate releases merely to measure the
 optimization. See [validation](validation.md) for executed checks and limitations.

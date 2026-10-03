@@ -375,29 +375,89 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('build/candidate/release.json', preview)
         self.assertNotIn('build/candidate/\n', preview)
 
-    def test_cleanup_is_opt_out_once_after_all_consumers_and_never_inside_reusable_children(self):
-        for filename, final in [('candidate.yml', 'verdict'), ('certify.yml', 'verdict'),
-                                ('sdk-application.yml', 'cleanup'), ('promote.yml', 'cleanup'),
-                                ('_release-latest.yml', 'final')]:
+    def test_cleanup_uses_ids_after_successful_final_consumers_and_keeps_small_receipts(self):
+        publish = (ROOT/'.github/actions/ci-evidence-publish/action.yml').read_text()
+        self.assertIn('value: ${{ steps.upload.outputs.artifact-id }}', publish)
+        self.assertIn('retention-days: 1', publish)
+        for filename in ('candidate.yml', '_release-latest.yml', 'promote.yml'):
+            self.assertNotIn('uses: ./.github/actions/ci-artifact-cleanup',
+                             (ROOT/'.github/workflows'/filename).read_text())
+        for filename, barrier, identity in (
+                ('candidate-package.yml', "'--runtime-only'", 'needs.package.outputs.artifact_id'),
+                ('sdk-application.yml', 'id: publication', 'steps.cleanup_inputs.outputs.ids'),
+                ('certify.yml', "'attach-certificate'", 'needs.record.outputs.certificate_artifact_id')):
             text = (ROOT/'.github/workflows'/filename).read_text()
             with self.subTest(workflow=filename):
-                self.assertIn('preserve_artifacts:', text)
-                self.assertIn('!inputs.preserve_artifacts', text)
-                self.assertIn("format('{0}/.github/workflows/"+filename+"@', github.repository)", text)
                 self.assertEqual(text.count('uses: ./.github/actions/ci-artifact-cleanup'), 1)
-                tail = text.split('  '+final+':\n', 1)[1]
-                self.assertIn('actions: write', tail)
-                self.assertIn('needs:', tail)
-                self.assertIn('ci-artifact-cleanup', tail)
-                self.assertIn('continue-on-error: true', tail)
-                if final != 'cleanup':
-                    self.assertIn('if: success() && !inputs.preserve_artifacts', tail)
-                else:
-                    self.assertIn("result == 'success'", tail)
-        latest = (ROOT/'.github/workflows/_release-latest.yml').read_text()
-        self.assertLess(latest.index('tools/latest_release.py verify'), latest.index('ci-artifact-cleanup'))
-        candidate = (ROOT/'.github/workflows/candidate.yml').read_text()
-        self.assertLess(candidate.index('Required jobs failed'), candidate.index('ci-artifact-cleanup'))
+                self.assertLess(text.index(barrier), text.index('uses: ./.github/actions/ci-artifact-cleanup'))
+                cleanup = text.split('uses: ./.github/actions/ci-artifact-cleanup', 1)[1]
+                self.assertIn('artifact-ids:', cleanup)
+                self.assertIn(identity, cleanup)
+                self.assertIn('continue-on-error: true', cleanup)
+                self.assertIn('timeout-minutes: 1', cleanup)
+                gate = text[:text.index('uses: ./.github/actions/ci-artifact-cleanup')].rsplit('    - ', 1)[1]
+                self.assertIn('success() &&', gate)
+                self.assertIn('!inputs.preserve_artifacts', gate)
+                self.assertIn('actions: write', text)
+        application = (ROOT/'.github/workflows/sdk-application.yml').read_text()
+        self.assertIn("inputs.execute && !inputs.preserve_artifacts && steps.publication.outputs.published == 'true'", application)
+        self.assertIn("steps.cleanup_inputs.outcome == 'success'", application)
+        certificate = (ROOT/'.github/workflows/certify.yml').read_text()
+        self.assertIn("steps.result.outputs.attached == 'true'", certificate)
+        for text, receipt in ((application, 'name: Retain candidate publication receipt'),
+                              (certificate, 'name: Retain verified certification-delivery-')):
+            self.assertLess(text.index(receipt), text.index('uses: ./.github/actions/ci-artifact-cleanup'))
+        self.assertIn('source_artifact_id: ${{ steps.source_bundle.outputs.artifact-id }}', application)
+        self.assertIn('artifact_id: ${{ steps.package_bundle.outputs.artifact-id }}',
+                      (ROOT/'.github/workflows/candidate-package.yml').read_text())
+        self.assertIn('certificate_artifact_id: ${{ steps.certificate_bundle.outputs.artifact-id }}',
+                      (ROOT/'.github/workflows/certify.yml').read_text())
+
+    def test_preservation_reaches_nested_last_consumers_and_permissions_allow_only_needed_cleanup(self):
+        for filename, count in (('_release-latest.yml', 2), ('sdk-application.yml', 1), ('candidate.yml', 1)):
+            text = (ROOT/'.github/workflows'/filename).read_text()
+            self.assertEqual(text.count('preserve_artifacts: ${{ inputs.preserve_artifacts }}'), count)
+        package = (ROOT/'.github/workflows/candidate-package.yml').read_text()
+        self.assertIn('preserve_artifacts:\n        type: boolean\n        default: false', package)
+        self.assertIn('contents: read\n      actions: write', package.split('  copied:\n')[1])
+        candidate = (ROOT/'.github/workflows/candidate.yml').read_text().split('  package:\n')[1].split('  sanitizer:\n')[0]
+        self.assertIn('actions: write', candidate)
+        self.assertNotIn('  cleanup:\n', (ROOT/'.github/workflows/sdk-application.yml').read_text())
+        self.assertNotIn('  cleanup:\n', (ROOT/'.github/workflows/promote.yml').read_text())
+
+    def test_application_cleanup_collects_complete_unique_matrix_outputs_for_both_profiles(self):
+        import textwrap
+        application = (ROOT/'.github/workflows/sdk-application.yml').read_text()
+        block = application.split('      id: cleanup_inputs\n', 1)[1].split('    - name: Remove source', 1)[0]
+        code = compile(textwrap.dedent(block.split('      run: |\n', 1)[1]), 'cleanup-inputs', 'exec')
+        targets = ('linux-x86_64', 'linux-aarch64', 'windows-x86_64', 'browser-wasm32')
+        for target in targets:
+            self.assertIn(target.replace('-', '_')+": ${{ matrix.target == '"+target+"' && steps.application_bundle.outputs.artifact-id || '' }}", application)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)/'output'
+            def run(selected, ids, source='100'):
+                output.unlink(missing_ok=True)
+                environment = dict(APPLICATION_MATRIX=json.dumps({'include': [{'target': t} for t in selected]}),
+                                   APPLICATION_ARTIFACT_IDS=json.dumps(ids), SOURCE_ARTIFACT_ID=source,
+                                   GITHUB_OUTPUT=str(output))
+                with patch.dict(os.environ, environment): exec(code, {})
+                return json.loads(output.read_text().removeprefix('ids='))
+            for selected in (targets[:3], targets):
+                ids = {target.replace('-', '_'): str(i+200) for i,target in enumerate(reversed(selected))}
+                self.assertEqual(set(run(selected, ids)), {'100', *ids.values()})
+            complete = {target.replace('-', '_'): str(i+200) for i,target in enumerate(targets)}
+            for selected, ids, source in (
+                    (targets, {k:v for k,v in complete.items() if k!='browser_wasm32'}, '100'),
+                    (targets[:3], complete, '100'),
+                    (targets, dict(complete, foreign='900'), '100'),
+                    (targets, dict(complete, browser_wasm32=''), '100'),
+                    (targets, dict(complete, browser_wasm32='200'), '100'),
+                    (targets, complete, '200'), (targets, complete, ''),
+                    (targets, complete, '100\n200'), (targets+targets[:1], complete, '100'),
+                    (('foreign',), {'foreign':'200'}, '100')):
+                with self.subTest(targets=selected, ids=ids, source=source):
+                    with self.assertRaises(SystemExit): run(selected, ids, source)
+                    self.assertFalse(output.exists())
 
     def test_explicit_legacy_import_neither_builds_nor_publishes_a_base(self):
         text=(ROOT/'.github/workflows/sdk-import.yml').read_text()
