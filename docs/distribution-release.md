@@ -308,7 +308,7 @@ sudo emaint sync -r software-foundation-bin
 The adapter invokes the same authenticated refresh and activates the complete
 binary overlay. Ebuilds wrap retained application bytes with empty compilation
 phases; resolve host prerequisites through a configured binary package repository.
-Version-3 recipes exclude the private application and manual directories from
+Version-3 and later recipes exclude the private application and manual directories from
 Portage's compression transformations so installed-byte checks remain meaningful.
 Version-1/2 template verification remains unchanged. Keep Portage's generated caches
 outside the authenticated channel tree; modifications to a retained generation

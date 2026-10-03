@@ -84,8 +84,8 @@ installation are separate qualifications. The first live signed-channel run
 [37087057851](https://github.com/mirage335-colossus/software-foundation/actions/runs/37087057851)
 failed during preparation when a per-reference loop replaced the callable needed
 for the next backend. It created no channel release or tag, and the application
-Latest was unchanged. Native signed-channel acceptance remains pending its own
-completed client evidence. A real signed two-backend fixture reproduced the exact
+Latest was unchanged. Native signed-channel acceptance requires its own completed
+client evidence, recorded separately below. A real signed two-backend fixture reproduced the exact
 failure before the correction and passed afterward; the complete affected suite
 passed all 30 cases without exclusions. Signature, retained-reference and package
 validation remain intact.
@@ -102,7 +102,9 @@ Arch GnuPG 2.4.9-3 returned exactly one terminal LF fewer than the signed Releas
 this was reproduced with the distribution verifier and its published patch.
 Gentoo GnuPG 2.5.21 left the requested decoded filename absent, consistent with
 its deferred named-output finalization. The failed run did not accept the channel.
-Its immutable signed bytes are preserved for separate native requalification.
+Its immutable signed bytes are preserved. The later-discovered Gentoo recipe
+defect described below means this revision remains permanently unaccepted; a
+consumer-side correction cannot repair that signed payload.
 The correction captures checked verifier stdout and allows only the observed
 terminal framing LF difference while retaining both signatures and exact detached
 content authentication. Ten affected cases passed with stock GnuPG; 59 APT, native
@@ -150,7 +152,11 @@ exact downloaded size/digest before activation. One fixture attempt placed a
 private test key inside the checkout and correctly failed the key-location guard;
 the complete successful run used an owned temporary root outside the checkout.
 These local results do not relabel the failed native run or establish Gentoo
-installation until its corrected native workflow completes.
+installation. The subsequent native-only run
+[37099357741](https://github.com/mirage335-colossus/software-foundation/actions/runs/37099357741)
+at `ecbc3eba735ae343158cf5eb3a2136f1199b2dea` passed the three APT
+clients and Arch, then was cancelled before acceptance after the immutable
+recipe defect below was identified. Its cancellation is not a qualification pass.
 
 ARM publication
 [37095147094](https://github.com/mirage335-colossus/software-foundation/actions/runs/37095147094)
@@ -188,6 +194,24 @@ no exclusions. These fixes
 do not make the historical x64 r1 recipe installable: it remains unqualified for
 Gentoo. A new immutable revision must establish the first successful installation,
 followed by a newer revision for actual cross-frontend upgrade qualification.
+
+The initial ARM64 signed channel
+[`distro-0.1.0-aarch64-r1-s1`](https://github.com/mirage335-colossus/software-foundation/releases/tag/distro-0.1.0-aarch64-r1-s1)
+was accepted by
+[run 37098054299](https://github.com/mirage335-colossus/software-foundation/actions/runs/37098054299),
+with all seven jobs successful. Packaging and qualification both used
+`1d96a7c1e30966074af867c8c596456b1ecb51c3`; the signed manifest is
+`dac4345be2d503ace832a53972cd8f7d647131a3ce54ee8d607072f819694152`.
+Native Debian Bookworm, Debian Trixie and Ubuntu 24.04 each installed every selected
+backend, checked exact payloads and self-checks, refreshed repeatedly and removed
+the packages. Independent readback verified the trusted signature, all 70 remote
+asset identities, all three native receipts and their exact acceptance marker;
+the application's Latest release remained `402199557`. Hosted jobs replayed the
+complete payload; the independent readback checked signed controls and retained
+native evidence. This initial installation records `upgrade_from: null` and does
+not establish a version upgrade. ARM64 Arch/Gentoo frontends remain outside the
+native matrix. The corrected x64 initial revision and both cross-revision upgrade
+qualifications remain pending their completed evidence.
 
 Earlier application runs remain useful failure evidence; none are relabeled as
 successful qualification. Run
@@ -570,12 +594,13 @@ scope. The fixtures use disposable keys and never install or publish packages.
 - At that baseline, GUI redistribution was blocked by unresolved upstream terms;
   the subsequently reviewed permission scope is recorded in [the GUI audit](gui-audit.md).
   Local compilation and tests do not approve binary redistribution.
-- Arch and Gentoo client installation/update/removal require disposable native
-  package-manager environments; their signed-channel fixtures are distinct
-  evidence. The executed Debian client result is limited to its recorded host.
-- SDK and gallery publication credentials were exercised as recorded above.
-  Live signed package channels need their own native-client evidence. An adopted
-  repository must qualify its own permissions and external services.
+- Signed-channel initial installation passed on ARM64 Debian Bookworm, Debian
+  Trixie and Ubuntu 24.04 as recorded above. Arch/Gentoo native checks are scoped
+  to x64; generating their ARM64 recipes does not qualify those frontends.
+  Corrected x64 acceptance and real cross-revision upgrades remain pending.
+- SDK, gallery and ARM64 signed-channel publication credentials were exercised
+  as recorded above. An adopted repository must qualify its own permissions,
+  signing trust and external services.
 - Shared-source coordination requires the stated filesystem primitives and
   cooperative writers. Uncooperative participants need enforced private access.
 - Real devices, assistive technology, every desktop/window-manager combination,
