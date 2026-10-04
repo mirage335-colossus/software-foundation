@@ -81,6 +81,7 @@ class RustWorkflowTests(unittest.TestCase):
                 self.assertIn('--init', qualify[:qualify.index('sha256:' + 'a' * 64)])
                 self.assertEqual(qualify[qualify.index('--user') + 1], '1000:1000')
                 self.assertNotIn('--privileged', qualify)
+                self.assertEqual(qualify[qualify.index('--tmpfs') + 1], '/tmp:rw,exec,nosuid,nodev,mode=1777')
                 self.assertNotIn('--init', replay)
                 self.assertIn('--network=none', replay)
                 self.assertIn('--read-only', replay)

@@ -257,7 +257,7 @@ def linux():
             if not re.fullmatch(r'sha256:[0-9a-f]{64}', image): raise ValueError('invalid prepared Bookworm image identity')
         # Xvfb does not send its readiness signal to a PID1 xvfb-run parent.
         command = ['docker', 'run', '--init', '--rm', '--pull=never', '--user', f'{os.getuid()}:{os.getgid()}',
-                   '-v', str(ROOT) + ':/work', '-w', '/work', '--tmpfs', '/tmp:rw,mode=1777']
+                   '-v', str(ROOT) + ':/work', '-w', '/work', '--tmpfs', '/tmp:rw,exec,nosuid,nodev,mode=1777']
         for key in ('TARGET', 'RECIPE', 'FOUNDATION_OPTIONAL_PROVIDER_RECIPE', 'JOBS', 'GITHUB_SHA'):
             command += ['-e', key]
         command += ['-e', 'HOME=/tmp/rust-qualification-home', '-e', 'PYTHONDONTWRITEBYTECODE=1',
