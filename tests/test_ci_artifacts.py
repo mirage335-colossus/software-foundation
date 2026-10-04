@@ -35,6 +35,8 @@ class EvidenceArtifacts(unittest.TestCase):
         self.env = mock.patch.dict(os.environ, {
             'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'example/project', 'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2',
             'GITHUB_SHA': 'a' * 40, 'GITHUB_WORKFLOW_REF': 'example/project/.github/workflows/certify.yml@refs/heads/main',
+            # Each fixture chooses its transport policy independently of its CI caller.
+            artifacts.REQUIRED_ENV: 'false', artifacts.FALLBACK_ENV: 'false',
             artifacts.ROOT_ENV: str(self.downloads)})
         self.env.start(); self.addCleanup(self.env.stop)
 

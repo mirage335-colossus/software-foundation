@@ -43,7 +43,7 @@ class InitializationTests(unittest.TestCase):
         self.transport=fixtures.FakeGitHub()
         self.remote=d.delivery.Remote('example/project',self.transport)
         self.tag='distro-fixture';self.commit='a'*40;self.body='exact body'
-        self.sleep=patch.object(d.delivery.time,'sleep');self.sleep.start();self.addCleanup(self.sleep.stop)
+        self.sleep=patch.object(d.delivery.time,'sleep');self.sleeps=self.sleep.start();self.addCleanup(self.sleep.stop)
 
     def initialize(self):
         return d.initialize_channel(self.remote,self.tag,self.commit,self.body)
@@ -57,13 +57,19 @@ class InitializationTests(unittest.TestCase):
         self.assertEqual([],self.release_posts());self.assertFalse(self.transport.releases)
 
     def test_successful_creation_waits_for_exact_visible_id(self):
-        original=self.transport.pages;remaining=3
-        def delayed(endpoint):
+        original=self.transport.json;remaining=3;reads=[]
+        def delayed(endpoint,**kwargs):
             nonlocal remaining
-            if endpoint.endswith('/releases?per_page=100') and remaining:
-                remaining-=1;return []
-            return original(endpoint)
-        with patch.object(self.transport,'pages',side_effect=delayed):result=self.initialize()
+            result=original(endpoint,**kwargs)
+            if endpoint=='repos/example/project/releases/1':
+                reads.append(kwargs)
+                if remaining:remaining-=1;return None
+            return result
+        with patch.object(self.transport,'json',side_effect=delayed), \
+                patch.object(self.transport,'pages',side_effect=AssertionError('unrelated inventory')):
+            result=self.initialize()
+        self.assertEqual(0,remaining);self.assertEqual([{'missing':True}]*4,reads)
+        self.assertEqual([.25,.5,1],[c.args[0] for c in self.sleeps.call_args_list])
         self.assertEqual(1,result['id']);self.assertEqual(1,len(self.release_posts()))
 
     def test_uncertain_ref_response_grants_no_creation(self):
@@ -98,16 +104,49 @@ class InitializationTests(unittest.TestCase):
         with patch.object(self.remote,'change',side_effect=race):result=self.initialize()
         self.assertEqual(winner[0]['id'],result['id']);self.assertEqual(1,len(self.release_posts()))
 
-    def test_changed_response_id_or_duplicate_draft_is_rejected(self):
-        original=self.transport.json
+    def test_unknown_creation_response_id_exhausts_only_bounded_exact_reads(self):
+        original=self.transport.json;reads=[]
         def changed(endpoint,**kwargs):
+            if endpoint=='repos/example/project/releases/101':reads.append(kwargs)
             result=original(endpoint,**kwargs)
             if endpoint.endswith('/releases') and kwargs.get('method')=='POST':result['id']+=100
             return result
-        with patch.object(self.transport,'json',side_effect=changed),self.assertRaisesRegex(ValueError,'ID differs'):
+        with patch.object(self.transport,'json',side_effect=changed), \
+                patch.object(self.transport,'pages',side_effect=AssertionError('inventory fallback')), \
+                self.assertRaisesRegex(ValueError,'release is not visible; preserve initialization state'):
             self.initialize()
+        self.assertEqual([{'missing':True}]*7,reads)
+        self.assertEqual([.25,.5,1,2,4,8],[c.args[0] for c in self.sleeps.call_args_list])
+        self.assertEqual(1,len(self.release_posts()))
+        self.assertEqual([1],[r['id'] for r in self.transport.releases])
+        self.assertEqual(self.commit,self.transport.refs[self.tag])
+        self.assertTrue(self.transport.releases[0]['draft'])
+        self.assertEqual([],self.transport.releases[0]['assets'])
+        self.assertFalse(any(c[0]=='upload' for c in self.transport.calls))
+
+    def test_wrong_observed_id_is_rejected_without_retry_or_creation_replay(self):
+        original=self.transport.json;reads=[]
+        def changed(endpoint,**kwargs):
+            result=original(endpoint,**kwargs)
+            if endpoint=='repos/example/project/releases/1':
+                reads.append(kwargs);result['id']+=100
+            return result
+        with patch.object(self.transport,'json',side_effect=changed), \
+                patch.object(self.transport,'pages',side_effect=AssertionError('inventory fallback')), \
+                self.assertRaisesRegex(ValueError,'observed release ID differs from creation response'):
+            self.initialize()
+        self.assertEqual([{'missing':True}],reads);self.sleeps.assert_not_called()
+        self.assertEqual(1,len(self.release_posts()))
+        self.assertEqual([1],[r['id'] for r in self.transport.releases])
+        self.assertEqual([],self.transport.releases[0]['assets'])
+        self.assertFalse(any(c[0]=='upload' for c in self.transport.calls))
+
+    def test_duplicate_matching_tag_drafts_are_rejected_without_creation_replay(self):
+        self.initialize()
         self.transport.releases.append(dict(self.transport.releases[0],id=99))
         with self.assertRaisesRegex(ValueError,'duplicate release tags'):self.initialize()
+        self.assertEqual(1,len(self.release_posts()));self.sleeps.assert_not_called()
+        self.assertEqual([[],[]],[r['assets'] for r in self.transport.releases])
         self.assertFalse(any(c[0]=='upload' for c in self.transport.calls))
 
 

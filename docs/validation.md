@@ -122,8 +122,23 @@ checks. Lost responses and competing initialization retain strict discovery;
 uncertain creation is never repeated. All 111 release and 66 transport cases
 passed, including unstable unrelated pagination, identity/lifecycle mismatch,
 delayed visibility, access failure and lost-response controls. Two negative
-controls fail the earlier implementation. Actual final retention remains a
-separate hosted observation.
+controls fail the earlier implementation. The final [native import diagnostic](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174654721)
+on `51dd4fc` passed execution, strict compiler-helper completion and evidence
+retention. Subsequent complete-suite feedback exposed stale distribution fixtures
+that still delayed list discovery. Those fixtures now delay the exact ID GET and
+assert bounded reads, unchanged strict mismatch rejection and no mutation replay.
+The artifact-policy fixture also chooses its environment explicitly so its
+optional-path case cannot inherit a required-artifact setting from CI.
+
+The final complete local 366-file snapshot
+`ed3d9011d83747b15ca8e2422c014af8a1f0cfbb914a0242a9be0f17abb0f983`
+passed **62/62 CTest entries in 34.64 seconds**, including all optional distribution
+suites and real disposable GnuPG/loopback fixtures. Its 57 complete Python reports
+contain **1,517 passed cases**, two explicit native-Windows exclusions and no
+unexpected skips. The immediately preceding aggregate remains failed (61/62);
+its sole stale distribution-fixture failure is repaired by this final run.
+Exact report/log/source hashes are retained in
+`.agent-work/artifacts/completion-root-v1/complete-final2-validation.json`.
 
 The [implementation feedback run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171429379)
 passed all four jobs. The [GUI maintenance run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171470282)
@@ -134,11 +149,44 @@ explicit native-Windows exclusions. Both consumer receipts and all four producer
 isolation checkpoints passed; this producer result alone does not establish
 publication or success of the still-separate native producer jobs.
 
-Native GUI, hosted platform and refreshed SDK results are recorded separately
-when complete. This local evidence does not assert native Windows/ARM/Bookworm
-execution after the repairs, physical touch/bezel/VR hardware, Arduino, or an
-actual system package upgrade. Package-manager commands were intercepted while real signed-generation
-verification ran. The worker boundary limits socket authority, not general
+Repaired native Linux development runs on `ca255290` passed **103/103 CTests**
+for both [x64](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174256576)
+and [ARM64](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174260724),
+including all 51 GUI-labelled entries, without portable mode. Their workflows
+remain failed solely at the old evidence-retention inventory check before any
+payload upload; exact raw job logs retain all executed passing rows.
+
+Fresh SDK consumers, reusing the original complete compiler groups, passed:
+
+| Consumer / source | Core | Full GUI/tooling | Python cases / explicit platform exclusions |
+| --- | --- | --- | --- |
+| [ARM64](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174082162), `7040420` | 2/2 | 103/103 | 1,360 / 2 |
+| [Wasm](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174079259), `7040420` | 2/2 | 56/56 | 1,304 / 2 |
+| [Windows](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174326956), `ca255290` | 3/3 | 91/91 | 1,051 / 64 |
+
+All three have complete verified proof archives, passed qualification records and
+four passed isolation checkpoints with producer inputs absent. No unexpected
+skips occurred. Their workflows remain failed only during redundant SDK-group
+retention using the old inventory code; proof retention succeeded. The Windows
+Mesa probe and exact host-only graphics cleanup passed. The original cold x64
+SDK completed and was retained; its old consumer failed the already-repaired
+RPATH padding check. Its final retained consumer qualification is separate.
+No newly built SDK was publicly published.
+
+The first final [application archive run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174274156)
+on `ca255290` passed actual Linux x64/ARM and Wasm packages, strict runtime
+inventories, relocated CLI and installed-library consumers. Windows passed all
+48 GUI-labelled entries but stopped at the now-repaired artifact-policy fixture
+(90/91 CTests); it produced no package, and complete assembly was skipped. A new
+source-bound four-platform package run is required after that fixture repair;
+archives cannot be relabelled to another source revision. Packaged GUI executables
+are inventoried/audited but not individually launched after relocation. The
+native prebuilt-Wasm bridge and real browser execution have their separate local
+checks above; this workflow does not perform them.
+
+These observations do not establish physical touch/bezel/VR hardware, Arduino,
+or an actual system package upgrade. Package-manager commands were intercepted
+while real signed-generation verification ran. The worker boundary limits socket authority, not general
 filesystem/process authority. Forced native export termination can leave its
 exclusive temporary file and an uncertain commit outcome; the host guide documents
 that recovery limit.

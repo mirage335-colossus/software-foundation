@@ -53,6 +53,7 @@ class FakeGitHub:
             return copy.deepcopy(found)
         if path.startswith('/releases/') and path.removeprefix('/releases/').isdecimal() and method=='GET':
             found=next((r for r in self.releases if r['id']==int(path.rsplit('/',1)[1])),None)
+            if found is None and missing:return None
             if found is None:raise G.DeliveryError('release ID missing')
             return copy.deepcopy(found)
         if path=='/releases/latest':
@@ -1421,6 +1422,16 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(argv,['gh','release','upload','v1','--repo','github.com/example/project',str(Path('/owned/file.zip'))])
         self.assertNotIn('clobber',' '.join(argv));self.assertNotIn('private token',str(caught.exception))
         self.assertNotIn('shell',call.call_args.kwargs)
+
+    def test_fake_release_by_id_only_treats_missing_as_optional_when_requested(self):
+        transport=FakeGitHub();endpoint='repos/example/project/releases/7'
+        self.assertIsNone(transport.json(endpoint,missing=True))
+        with self.assertRaisesRegex(G.DeliveryError,'release ID missing'):transport.json(endpoint)
+        row=dict(id=7,tag_name='new',name='new',draft=True,prerelease=True)
+        transport.releases.append(row)
+        for missing in (False,True):
+            self.assertEqual(row,transport.json(endpoint,missing=missing))
+        self.assertFalse(transport.mutations)
 
     def test_created_release_visibility_waits_by_read_only_and_exact_id(self):
         remote=G.Remote('example/project',FakeGitHub())
