@@ -444,9 +444,12 @@ class RustOwnershipTests(unittest.TestCase):
         owner = Mock()
         owner.poll.return_value = 7
         owner.process.returncode = 7
-        with patch.object(rust_build.process_tree, 'launch', return_value=owner):
+        session = Mock(environment={})
+        with patch.object(rust_build.windows_compiler, 'BuildSession', return_value=session), \
+             patch.object(rust_build.process_tree, 'launch', return_value=owner):
             with self.assertRaisesRegex(ValueError, 'Rust command failed'):
                 rust_build._run(['cargo', 'build'], cwd=self.root, environment={}, compiler=True)
+        session.finish.assert_not_called()
         owner.finish.assert_called_once_with()
         owner.terminate.assert_called_once_with()
         owner.close.assert_called_once_with()

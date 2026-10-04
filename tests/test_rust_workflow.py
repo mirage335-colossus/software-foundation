@@ -62,7 +62,7 @@ class RustWorkflowTests(unittest.TestCase):
         names = ('foundation-cli', 'foundation_core_test', 'foundation_windows_arguments_test',
                  'foundation_rust_component_test', 'foundation_text_status_test')
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary); build = root / 'build'; build.mkdir()
+            root = Path(temporary).resolve(); build = root / 'build'; build.mkdir()
             probe = build / 'CMakeFiles/CompilerIdCXX/probe.exe'; probe.parent.mkdir(parents=True)
             probe.write_bytes(b'compiler fixture')
             paths = [*(build / (name + '.exe') for name in names), root / 'consumer.exe']

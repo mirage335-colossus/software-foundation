@@ -225,6 +225,10 @@ Initial discriminating checks passed during implementation:
 - Installed/relocated C++ consumer with Rust commands shadowed to fail.
 - Existing C++ runtime fixture's dynamic/export negative controls, protected
   runtime and changed-header rejection after extracting the validator.
+- Preliminary native Rust 1.63 Debug/Release and Multi-Config builds, six Rust
+  unit cases, relocated consumers and unchanged archive/executable mtimes on a
+  no-op build. These used evolving sources and a provisional SDK; their retained
+  evidence is not relabeled as final source/toolchain qualification.
 - Rust 1.63/Emscripten 6.0.10 mixed probe: 1,352 Node assertions, primitive ABI
   checks and intentional Rust panic reaching C++ abort.
 - Actual Rust source, C++ bridge and exhaustive boundary tests linked and ran
@@ -232,10 +236,53 @@ Initial discriminating checks passed during implementation:
 - Namespace/container adapter unit tests and a derived, verified Bookworm rootfs
   prepared without modifying the original boundary.
 
-These preliminary results do not establish the full Windows/Linux backend,
-browser UI, disconnected application/package or SDK replay matrix. Final
-qualification must name every executed gate and exact inputs. Unexecuted,
-skipped or compile-only targets are not runtime passes.
+### Executed application qualification
+
+The local frozen checkout is
+`e3ce53899b49915d466388fcdcafda71116f1b6686aaf4c264ff92a27347042e`.
+The same checkout plus its retained GUI-source supplement has identity
+`fc38ea4046a6cef53e00aae1e308b8de59e0bd0cc0d5429a6eb1efab69dbbfbf`.
+These are different inventory scopes, not interchangeable source identifiers.
+The snapshot records base commit `8854f4f` plus its exact implementation diff;
+later workflow-only repairs do not relabel that original evidence.
+
+| Scope | Observed result |
+| --- | --- |
+| Complete default C++ checks | 65 CTests passed on the host without Rust commands on PATH; 58 Python suites contain 1,498 passed cases. Three explicit Windows-only exclusions remain outside that host's inventory. |
+| Distribution regression checks | Five additional suites, 148 cases, passed with no exclusions. Temporary signing agents required execution outside the outer sandbox; no host package installation or keyring changes occurred. |
+| Disconnected native Bookworm | Rust 1.63 release/portable build of all six backends, four core tests, TGZ packaging, ELF runtime-floor audit, installed C++ consumer and all six installed backend smoke checks passed. |
+| Disconnected browser Wasm | Existing mixed application module built with the pinned pair; four core tests executed in Node; TGZ packaging and installed CMake/Node consumer passed. This is not a real-browser interaction claim. |
+| Actual Firefox application | Firefox 153.4.0esr on Debian 13 passed HTTP and direct-file Wasm, each standalone and isolated; all 30 renderer-security cases and six additional input-error cases passed. Ten screenshots and exact input hashes are retained. Browser sandboxing remained enabled. |
+| Actual distro payload projections | Seven core/backend projections through Debian, Arch and Gentoo preserved all Rust archive/notices; 21 extracted CLI checks and three linked C++ consumers passed. Arch install-body execution and modeled Gentoo helpers are not native package-manager transactions. |
+| Retained native toolchain recovery | Source-input recovery and offline regeneration from the original supplier archives reproduced all three retained-group hashes; restored compiler/Cargo executed successfully. Compiler reconstruction from source was not performed. |
+
+Both disconnected cases used fresh homes/caches/output, read-only source,
+retained groups and restored SDKs, loopback-only networking and zero effective
+and bounding capabilities. External connections failed and attempted writes to
+the Rust SDK failed with `EROFS`. Final rootfs and retained-input rechecks passed.
+The complete local acceptance receipt is
+`build/agents/rust-hybrid-root/offline-final/acceptance.json`, SHA256
+`6c6c3d1d12984ab00ab8ce329c3ee04f3c4042939a96560b19005d98446e1df8`.
+Per-target commands, compiler identities, recipes and package hashes are in its
+`linux-x86_64/execute.json` and `browser-wasm32/execute.json`.
+
+Firefox evidence is in
+`build/agents/rust-wasm-browser-local/qualification.json` (SHA256
+`4bc0d292e57ac9fd8577ad3f929fbdab49b17cd152b4bec657a1a791427984e5`).
+It covers a desktop Firefox window, not Chromium, mobile devices or whole-browser
+network isolation. Distro projection evidence is in
+`build/agents/rust-package-qualification/qualification.json` (SHA256
+`6e653c85b27f4500f033895f2bd80f099c8dc4a8e8e591f6b6147a19cbc1ee42`).
+No native package-manager install/upgrade/remove or repository activation ran.
+
+Full native GUI interaction/visual checks, Chromium and native Windows and
+ARM64 coverage remain separate gates. Hosted run
+[37200078067](https://github.com/mirage335-colossus/software-foundation/actions/runs/37200078067)
+at `85700f21c56d5fc56728094ac1716c179be13f55` is not yet a completed
+qualification. The previous run was cancelled after a workflow environment
+error before target qualification; its logs remain retained. See the canonical
+[validation record](validation.md) for detailed scopes. Unexecuted, skipped or
+compile-only targets are not runtime passes.
 
 ## Future portable logic
 

@@ -69,7 +69,7 @@ const CHAR: char = 'x';
 
     def test_rust_application_modules_are_checked_by_real_entry_point(self):
         with tempfile.TemporaryDirectory(prefix='Rust GUI boundary ') as temporary:
-            project = Path(temporary); root = project / 'gui'; root.mkdir()
+            project = Path(temporary).resolve(); root = project / 'gui'; root.mkdir()
             guard = root / 'check_boundary.py'
             guard.write_bytes((ROOT / 'gui/check_boundary.py').read_bytes())
             path = project / 'rust/component/src/nested/codec.rs'

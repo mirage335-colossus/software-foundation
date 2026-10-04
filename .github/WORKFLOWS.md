@@ -72,6 +72,16 @@ The manual lifecycle is executable, not only described:
   application into separately signed APT, Arch and Gentoo channels with exact retained inputs.
 - `gui-inputs.yml` and `native-gui.yml`: explicit supplier-input maintenance and
   native host qualification with separate Windows graphics prerequisites.
+- [`rust-qualification.yml`](workflows/rust-qualification.yml): four explicitly
+  selected Rust lanes for Linux x64/ARM64, Windows x64 and browser Wasm. Its
+  preparation step acquires pinned official Rust tools, sources and stage0 inputs;
+  application/replay/recovery steps consume retained groups. Run-scoped draft
+  bundles retain available packages, per-case results and diagnostics, plus exact
+  SDK/source inputs once the recovery kit exists. Earlier failures may retain
+  preparation inventories without a complete input kit.
+  Every planned lane must complete successfully; no stable application release,
+  base/Latest change or distro-channel promotion occurs. Compiler reconstruction
+  from source is not claimed. See [the qualification contract](../docs/ci.md#optional-rust-qualification).
 
 `execute=false` may write private CI transport drafts. It does not publish a
 public application/base/gallery or advance Latest. See the exact

@@ -50,14 +50,16 @@ target-library or final runtime contract.
 
 | Rust profile | Implemented boundary and qualification limit |
 | --- | --- |
-| GNU/Linux x86_64 | Retained official Rust 1.63.0 extension; native distribution tools are an optional `dev` route. Exact mixed build, installed consumer, runtime and disconnected results must be recorded separately |
+| GNU/Linux x86_64 | Actual Rust 1.63.0 passed the recorded disconnected Bookworm Release/portable build with all six native backends, four core tests, package ABI audit, relocated installed C++ consumer and six installed backend smoke checks; broader GUI and hosted qualification remain pending |
 | GNU/Linux aarch64 | Matching retained native extension; a native ARM64 environment is required for execution evidence, and x86_64 emulation cannot qualify it |
 | Windows x86_64 MSVC | Matching retained official extension plus the existing Microsoft host-tool and dependency-base closure; native build, CRT/linkage, packaging and GUI execution need separate evidence |
-| Browser wasm32 | Exact Rust 1.63.0 / Emscripten 6.0.10 pair using native Wasm objects, panic abort and no cross-language LTO; primitive ABI/link probe evidence is preliminary, and full application/browser execution remains pending until separately recorded |
+| Browser wasm32 | Exact Rust 1.63.0 / Emscripten 6.0.10 pair passed the recorded disconnected application build, four Node core tests, package and installed Node/CMake consumer. Local Firefox 153.4.0esr application/renderer checks passed; Chromium, mobile and hosted qualification remain pending. Native Wasm objects, panic abort and no cross-language LTO remain required |
 | Arduino and other targets | No implemented Rust profile or qualified board port; use the C++ route and the selective-porting policy below |
 
-See [the Rust implementation record](rust-hybrid-plan.md) for actual runs and
-remaining qualification. Stable Rust 1.63 and edition 2021 are the component
+See [the local Rust validation record](validation.md#optional-rust-local-qualification-2026-10-04)
+for exact source, recipe, package and receipt identities, and
+[the Rust implementation record](rust-hybrid-plan.md) for remaining qualification.
+Stable Rust 1.63 and edition 2021 are the component
 baseline. Native development may use a newer identified stable compiler; that
 does not establish Rust 1.63 execution or an older runtime floor. Retained
 compiler executable host requirements and the final application's target
@@ -74,9 +76,13 @@ The Wasm experiment does not qualify `std`, pthreads/shared memory, arbitrary
 callbacks, cross-language LTO or another Emscripten version. Matching target
 names alone cannot establish ABI compatibility across independently built
 compiler libraries. Inspect the actual archive, final imports and executable
-cases for the exact retained pair, then run the complete browser application
-against its existing backend contract. Preserve the current C++ browser route
-while these checks are pending.
+cases for the exact retained pair. The disconnected application and Node consumer
+results above establish their recorded build/core/package scope. The separate
+local Firefox receipt establishes its named desktop application/renderer cases,
+including HTTP and direct-file compositions. It is not whole-browser network
+denial or other-engine/platform qualification. Chromium and the complete hosted
+browser matrix remain pending. Preserve the current C++ browser route while
+these checks are pending.
 
 Offline restoration from retained official tools, recovery of retained source
 inputs, and compiler reconstruction from source are distinct promises. The last

@@ -21,6 +21,7 @@ distinct when assembling a kit:
 | Selected retained group | Binary archive, source/bootstrap archive and complete `SHA256SUMS`, all matching one exact recipe identity |
 | Native SDK contents | Matching native compiler/linker, target sysroot, selected toolkits, notices and every declared `sdk.json` host tool |
 | Wasm SDK contents | Emscripten, LLVM, Binaryen, Node, configuration, prepared frozen `EM_CACHE` and notices |
+| Explicit Rust provider | A separate complete Rust binary/source/checksum group matching the C++ target, including official tools/target libraries, source and stage0 inputs, licenses and `rust-sdk.json`; no Rust group is needed for the default C++ provider |
 | Distribution host tools | Shell, Python, Git, CMake and Ninja where not retained; native inspection/package tools and relocation utilities listed in the inventory |
 | Acceptance host | Prepared Bookworm image or root filesystem, plus the selected isolation adapter's setup tools and declared runtime/display prerequisites |
 | Separate validation/delivery tools | Browsers and drivers, JavaScript test tools when not already supplied, display services, and package/signing tools for the requested checks |
@@ -54,6 +55,14 @@ qualification for an unavailable architecture. Windows retains its separate
 including the complete Microsoft installer layout/component configuration,
 installed matching compiler/Windows SDK and retained graphics prerequisites.
 This contract adds no cross-host SDK support.
+
+Provider selection is independent of the target. An omitted `core_provider`
+means `cpp` and keeps existing schema-1 plans valid. A Rust case requires all
+three additional fields: `core_provider: "rust"`, `rust_group` naming a canonical
+absolute retained-group directory and `rust_recipe` containing its complete
+64-character lowercase recipe SHA-256. It still requires the existing C++
+`group` and `recipe`. A C++ case rejects Rust group/recipe fields; an explicitly
+selected incomplete or mismatched Rust case fails without provider fallback.
 
 ## Prepare the boundary, then run acceptance
 
@@ -104,6 +113,27 @@ The namespace alternative replaces only `isolation` with:
 }
 ```
 
+For Rust, add the provider fields to each selected case, using that target's
+separate extension group. For example, a native case becomes:
+
+```json
+{
+  "target": "linux-x86_64",
+  "group": "/owned/retained/native-gui-group",
+  "recipe": "REPLACE_WITH_EXACT_NATIVE_RECIPE_ID",
+  "core_provider": "rust",
+  "rust_group": "/owned/retained/rust-linux-group",
+  "rust_recipe": "REPLACE_WITH_EXACT_RUST_RECIPE_ID"
+}
+```
+
+The Wasm case uses its own Rust extension pinned to the exact selected Emscripten
+SDK recipe. Obtain missing supplier bytes only through explicit
+[Rust SDK preparation](sdk.md#optional-retained-rust-extension) before acceptance.
+Neither acceptance nor its build commands acquire Rust tools, crates or stage0
+inputs. Restore and verify the complete extension within the same boundary.
+Rebuilding the compiler from source remains a separate, unqualified operation.
+
 ```sh
 python3 -B tools/offline_acceptance.py run \
   --plan /owned/offline-plan.json --output /owned/new-offline-acceptance --jobs 2
@@ -118,6 +148,10 @@ Boundary probes run both in the application environment and a child process;
 non-loopback access, unexpected interfaces or application capabilities fail
 before compiling. Compiler caching is disabled. Wasm retains its prepared SDK
 cache through `EM_CACHE` and `EM_FROZEN_CACHE=1`.
+Rust cases additionally project their complete retained extension group
+read-only, restore it independently of the C++ SDK, and make the restored Rust
+SDK read-only for execution. Fresh Cargo and rustup homes and offline Cargo
+settings exclude undeclared host toolchain/registry caches.
 
 Within the same boundary, each case restores/verifies the group and runs release
 build, core tests and packaging through `tools/build.py`. Native cases use all
@@ -128,6 +162,9 @@ uses its distinct toolchain tree and package/consumer checks. A missing tool,
 wrong architecture/capability, changed source/SDK, stale build identity, missing
 Wasm cache or invalid imported Wasm package fails with a diagnostic. The runner
 never repairs inputs through a download or alternate SDK.
+Both providers execute `core.cli`, `core.store`, `core.text_status` and
+`core.text_validation`; the core-label selection does not claim native Rust unit
+or full GUI regression execution.
 
 For a focused diagnosis, append, for example, `--case linux-x86_64`. The summary
 then records incomplete host coverage when the Wasm case was omitted.
@@ -141,6 +178,10 @@ SDK manifest and Wasm cache identity, host-tool and package provenance, Bookworm
 OS, isolation configuration/probes, requested backends, commands/results and
 package hashes. Read phase results when the aggregate failed; an attempted or
 unexecuted phase is never a pass.
+Rust receipts also bind `core_provider`, Rust recipe/group hashes,
+`rust_sdk_manifest_sha256`, compiler/Cargo digests before and after use, the
+read-only extension mount and fresh Cargo/rustup directories. Provider identities
+remain distinct through installed-consumer and package recovery evidence.
 
 A successful receipt establishes the recorded application build, installed
 consumer, native ABI and smoke scope in its exact environment. Full regressions,

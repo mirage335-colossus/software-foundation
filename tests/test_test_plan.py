@@ -309,7 +309,7 @@ class InputIdentityTests(unittest.TestCase):
         from unittest.mock import patch
         from dependency_archive import digest
         import rust_sdk
-        rust = self.root / 'rust-sdk'; rust.mkdir()
+        rust = (self.root / 'rust-sdk').resolve(); rust.mkdir()
         (rust / 'rust-sdk.json').write_text('{"fixture":1}')
         metadata = {'recipe_id': 'a' * 64}
         self.cache.update(FOUNDATION_CORE_PROVIDER='rust', FOUNDATION_RUST_SDK_ROOT=str(rust),

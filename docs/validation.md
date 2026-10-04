@@ -13,6 +13,81 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
+## Optional Rust local qualification (2026-10-04)
+
+The optional [Rust validation component](rust-hybrid-plan.md) passed the local
+scopes below. These results do not extend earlier C++ release certification to
+new Rust bytes or establish the still-pending hosted/native/browser matrix.
+The default application provider remains C++.
+
+The disconnected runner froze a 434-file checkout with source identity
+`e3ce53899b49915d466388fcdcafda71116f1b6686aaf4c264ff92a27347042e`.
+The default C++ build records that same identity. Both Rust GUI build/package
+records instead identify
+`fc38ea4046a6cef53e00aae1e308b8de59e0bd0cc0d5429a6eb1efab69dbbfbf`:
+the same frozen checkout plus the verified retained GUI-source supplement.
+Recomputing that combined inventory with the frozen source helper reproduces
+the package identity. These hashes describe different inventory scopes, not
+different application source. Later documentation or workflow edits do not
+relabel these receipts as evidence for a newer complete source snapshot.
+
+| Scope | Observed result |
+| --- | --- |
+| Default C++ without a Rust application toolchain | All 65 enabled CTests passed. The 58 Python suite receipts contain 1,498 passed executed cases and exactly three explicit native-Windows platform exclusions: delete-pending directory semantics, Win32 linker file identity and Job Object containment. The configured provider is `cpp`; Rust SDK/compiler fields are `none`. |
+| Additional distribution helpers | Five CTests and 148 Python cases passed with no exclusions in a separate C++ development tree. Its configured source identity is `052118622e0d9f5ba7e63f1844ef5b8c50c603299cbac448f4a74da0309cf931`. These are helper regressions, not new signed-channel publication or package-manager transaction certification. |
+| Actual Rust package projections | Seven core/backend projections in each of Debian, Arch and Gentoo formats produced 21 projections on the Debian 13 host. Each preserved all 206 shared non-`bin` files, including the Rust archive and notices, byte for byte with matching modes; all 21 CLI version/self-check invocations passed. Three separately extracted C++ consumers linked the Rust provider, checked rejection/atomicity and confirmed Rust symbols with `nm`. A real `.deb` and ELF audit, Arch `package()` Bash execution and modeled Gentoo helpers passed. Native APT/pacman/Portage transactions, public `/opt` launchers, channel activation, signing and publication were not exercised. This is not additional Bookworm runtime evidence. |
+| Complete local disconnected x86_64 host inventory | `linux-x86_64` and `browser-wasm32`, both explicitly selecting Rust, passed fresh SDK restoration, builds, four core tests each, packaging and installed CMake consumers. The aggregate, retained-input rechecks and rootfs recheck passed. Source, both retained groups and restored execution SDKs were read-only; build, HOME, temporary, cache, Cargo home and rustup home were fresh. Parent/child probes recorded loopback only, denied external connections and zero capabilities. |
+| Native Bookworm Rust application | Actual Rust 1.63.0 compiled the Release/portable component into one native graph with terminal, framebuffer, FLTK, Rev, SDL and hosted-web. The package passed its explicit Bookworm ABI audit, relocated installed C++ consumer and all six installed backend smoke checks. This scope does not include full backend interaction or visual certification. |
+| Disconnected Rust Wasm application | The exact Rust 1.63.0 / Emscripten 6.0.10 tuple passed fresh application compilation, four Node core tests, packaging and the installed Node/CMake consumer using the retained frozen SDK cache. Real browser coverage has its separate local Firefox result below; Chromium and hosted/native browser scopes remain pending. |
+| Local Firefox Rust Wasm application | Firefox 153.4.0esr on the Debian 13 desktop host passed four application cases: HTTP and direct-file, each standalone and isolated. Editing, tasks, geometry, retained rows, atomic invalid-ASCII import, 65,537-byte file rejection and pagehide/navigation cleanup passed. The complete 30-case renderer-isolation inventory and six additional error-state cases passed, with ten desktop capture files retained. Browser/server owners joined and input bytes were rechecked. |
+| Native retained source-input replay | The complete Rust source group was recovered offline, its retained original supplier archives regenerated the extension, and its native toolchain probe passed against recipe `888eaacdca83ecc2d518a2062e13b65d43fdbe6188ee6daaf29713f2aabb13cd`. Input/rootfs rechecks passed. Compiler/Cargo reconstruction from source was not executed or qualified. |
+
+Both disconnected targets executed exactly `core.cli`, `core.store`,
+`core.text_status` and `core.text_validation`. Native Rust unit execution and
+broader GUI/regression coverage cannot be inferred from that four-test selection.
+The retained C++ recipes are
+`3e7438a4b5ee7a4baf5d7abacbdd320087aab42f24ea021f0f023b61db55bb33`
+for native Linux and
+`74f5153e31c23f899f01d8340ffa4aba7f5a8ed81b0db206e6da8a1b38ece541`
+for Wasm. Their Rust extension recipes are respectively
+`888eaacdca83ecc2d518a2062e13b65d43fdbe6188ee6daaf29713f2aabb13cd`
+and `f9e35b94f0f7c65b7f2c7fe6d8af2c93fee6056d572ed2943c2dc6ea81f609f4`.
+
+The native application archive SHA-256 is
+`edc1cef5a96a17300dd1fac86a013e3044ab743df48c50dff7a7a2228a649468`,
+with inventory manifest
+`da3c9a07ecd93a1f3cc2eee921d9fd9988010c88276090dc330145092faf5a71`.
+The Wasm archive SHA-256 is
+`d09acca2cf0fc8774f24088578966bcdb42a6d9718f9b4b770fba1fca1dbdd9d`,
+with inventory manifest
+`1f24f4b9fc781277dd185a9b575eccb74c7659ca81b85be196feab08b8ee70d4`.
+These are retained local outputs, not published application releases.
+
+Evidence remains under `build/agents/rust-hybrid-root/`: `cpp-default.junit.xml`
+and `cpp-default/test-reports/`, `distribution-final.junit.xml` and
+`distribution-final/test-reports/`, and `offline-final/acceptance.json` with
+per-target `stage.json`, `execute.json`, core JUnit, package inventories and
+configured `build-info.txt`. Source-input replay has its separate original
+receipt at
+`build/agents/rust-offline-adapters/native-source-replay-v2/qualification.json`.
+The actual projection evidence is
+`build/agents/rust-package-qualification/qualification.json`, SHA-256
+`6e653c85b27f4500f033895f2bd80f099c8dc4a8e8e591f6b6147a19cbc1ee42`,
+and its `validation-summary.json`, SHA-256
+`c13802cfbf99bc46ce767823cefb5fe5d744464ae144a5506b2ec63e8c184404`.
+The Firefox aggregate is
+`build/agents/rust-wasm-browser-local/qualification.json`, SHA-256
+`4bc0d292e57ac9fd8577ad3f929fbdab49b17cd152b4bec657a1a791427984e5`.
+It binds the unchanged Wasm package above and matching production child modules;
+application direct-file cases observed no HTTP/S resources. This is not
+whole-browser network denial, Chromium/native Windows, mobile or assistive-device
+qualification. The renderer's authority and navigation limits remain those
+documented in [browser embedding](browser-embedding.md).
+Native ARM64, native Windows, Chromium and the complete hosted matrix remain
+pending. Retained toolchain restoration, source-input recovery
+and a compiler rebuilt from source remain distinct claims; the last is
+**UNVERIFIED**. No stable application release or distro-channel promotion is claimed.
+
 ## Disconnected builds, stale actions and browser authority (2026-10-04)
 
 This implementation began from clean commit

@@ -579,6 +579,46 @@ and periodically review runner images, action pins, timeouts, cache size,
 retention, permissions, and obsolete matrix entries.
 
 
+## Optional Rust qualification
+
+[`rust-qualification.yml`](../.github/workflows/rust-qualification.yml) selects
+four explicit lanes: native Linux x86_64, native Linux aarch64, native Windows
+x86_64 and browser wasm32. It runs on `codex/rust-*` branch pushes and manual
+dispatches. Ordinary C++ feedback remains independent of Rust discovery and
+input preparation. The matrix binds an exact all-GUI C++ SDK recipe and matching
+Rust producer recipe for each target; every lane records the actual source
+commit, complete retained groups and selected configuration.
+
+Its explicit preparation step fetches existing retained C++ groups and acquires
+only recipe-pinned official Rust supplier archives before preparing the separate
+extension. Later application, source-input replay and recovery steps consume
+retained bytes. Ordinary application builds never fetch tools or crates.
+Missing inputs and mismatched recipe/target identities fail without a supplier
+or provider fallback. Compiler reconstruction from source is not a workflow gate
+or claimed result; replay reassembles original retained compiler packages.
+
+The planned gates include complete configured source tests, package/installed
+consumers, all applicable native backend checks, real browser checks and retained
+recovery evidence. Linux lanes use their matching Bookworm architecture for the
+application and a separate network-denied source-input replay and disconnected
+acceptance. Windows adds native Debug/static-CRT consumer checks and a bounded
+disconnected core/consumer/package check under an owned, disposable hosted
+firewall boundary; that latter scope does not claim full offline GUI regression.
+The Wasm lane uses the exact retained Rust/Emscripten tuple and separate real
+Firefox/Chromium evidence. Browsers remain validation host prerequisites.
+
+Always-run retention uses the existing run-scoped draft `bundle-store` transport
+for available application archives, receipts, case inventories, browser evidence
+and failure diagnostics. Once the recovery kit exists, the bundle also retains
+its exact SDK/source input bytes. An earlier failed run may retain preparation
+inventories and diagnostics without a complete input kit. A retained draft or
+preparation receipt is not a target pass. The final verdict requires every planned
+lane to succeed; cancelled, failed or incomplete jobs do not satisfy it. No stable
+application release, base/Latest change or distro-channel promotion is performed
+by this workflow.
+[Validation](validation.md#optional-rust-local-qualification-2026-10-04) records
+observed local results separately from any completed hosted run.
+
 ## Executable hosted lifecycle
 
 Use the workflow revision itself as the packaging revision. All mutation jobs

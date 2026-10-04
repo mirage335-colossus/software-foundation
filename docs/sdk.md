@@ -138,6 +138,14 @@ Rust distribution archives are an explicit supplier for this extension; a
 distribution-package-only policy cannot be inferred from the existing C++ SDK.
 No rustup installation or moving toolchain selection is used.
 
+The source group also retains official Rust 1.62.0 stage0 `rustc`, Cargo and
+native-host `std` archives dated 2022-06-30. Their exact hashes are checked against
+the Rust 1.63 compiler source's `src/stage0.json`, retained in the group as
+`bootstrap/stage0.json`. These are retained
+bootstrap inputs, not the active Rust 1.63 application tools. Their presence
+does not establish a complete source-build bootstrap closure or a rebuilt
+compiler.
+
 Only the explicit `fetch` action acquires missing recipe-pinned supplier bytes.
 `prepare` is offline and requires all declared files to be retained already:
 
@@ -156,9 +164,14 @@ python3 tools/rust_sdk.py verify --root /owned/new-rust-sdk --execute
 
 Use the complete recipe identity returned by `recipe-id` in place of
 `EXACT_RECIPE_SHA256`. Preparation and restoration destinations must be new.
+The identity binds the recipe and five retained producer helpers:
+`rust_sdk.py`, `dependency_archive.py`, `sdk_environment.py`, `sdk_manifest.py`
+and `verify_abi.py`.
 The same offline lifecycle applies to the other recipes. Add
 `--cpp-sdk /absolute/path/to/cpp-sdk` when pairing a retained C++ target SDK;
-Emscripten preparation requires that exact pair. `--execute` is a native host
+the supplied Emscripten recipe pins the exact C++ SDK recipe as well as version
+6.0.10 and its retained supplier version-file text `6.0.10-git`. Another SDK at
+the same nominal version is not interchangeable. `--execute` is a native host
 tool probe, not a foreign-target execution claim.
 
 The complete retained group is exactly
@@ -171,13 +184,22 @@ and Emscripten version. Missing or differing inputs fail instead of falling back
 to tools on PATH. The component build independently rechecks the selected tools,
 target libraries, notices and manifest before and after use.
 
+The extension records `host_requirements` separately from application target
+requirements. Linux host tools declare Debian 12/glibc 2.36 and ambient glibc
+and `libgcc-s1` prerequisites. Preparation on Linux also records a `host_audit`
+bound to retained executable/library bytes. This is static ELF/ABI inspection;
+runtime dependency resolution is not checked by that audit. Native execution
+probes and final application/runtime checks remain separate evidence. Windows
+host requirements name system DLLs and the Microsoft MSVC v143/Windows SDK final
+link prerequisites.
+
 Keep three recovery results separate:
 
 | Operation | Retained inputs and scope |
 | --- | --- |
 | Toolchain restoration | Restore the exact official compiler, Cargo and matched target-library binaries from the verified group, then probe on their declared native host |
-| Source-input recovery | `restore-sources --group GROUP --recipe RECIPE --output NEW_DIRECTORY` recovers official compiler/Cargo source with vendored dependencies, library sources, supplier components, release metadata, recipe and helper bytes |
-| Compiler reconstruction | A source compiler/Cargo build, complete bootstrap closure and executable rebuilt toolchain are **UNVERIFIED**; retaining source or `bootstrap/stage0.json` does not establish this result |
+| Source-input recovery | `restore-sources --group GROUP --recipe RECIPE --output NEW_DIRECTORY` recovers official compiler/Cargo source with vendored dependencies, library sources, supplier components, the exact stage0 archives and their source-metadata checksum binding, release metadata, recipe and helper bytes |
+| Compiler reconstruction | A source compiler/Cargo build, complete bootstrap closure and executable rebuilt toolchain are **UNVERIFIED**; retaining sources, stage0 binaries or `bootstrap/stage0.json` does not establish this result |
 
 `rust-src` also supplies retained library sources inside the binary extension for
 inspection. The source inventory records the bounded recovery contract and
