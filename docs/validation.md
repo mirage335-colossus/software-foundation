@@ -205,8 +205,9 @@ process or filesystem condition caused its transient denial. The optional comple
 `agent_board` diagnostic permits repeated native checks without another GUI build.
 Its source selector/helper tests pass, and the original eight-writer contribution
 assertions remain unchanged. The [old-source Windows baseline](https://github.com/mirage335-colossus/software-foundation/actions/runs/37175782630)
-completed 20 repetitions without reproducing the intermittent failure. This does
-not erase the original failure or establish its cause. The complete repaired
+completed 20 repetitions without reproducing the intermittent failure under
+Python 3.12.10. The original failure used Python 3.14.7, so this is a different
+interpreter sample and does not erase that failure or establish its cause. The complete repaired
 366-file local snapshot
 `64dad5afcca71d1a70495e1f644a03c54d92b88261c7322df71de0e32a8834d1`
 passed **62/62 CTests in 34.15 seconds**, with **1,522 passing Python cases**,
@@ -214,6 +215,23 @@ three explicit native-Windows exclusions and no unexpected skips. This includes
 all optional distribution suites. Native repair qualification is recorded
 separately. Exact reports are in
 `.agent-work/artifacts/completion-root-v1/complete-final3-validation.json`.
+
+The [repaired Windows diagnostic](https://github.com/mirage335-colossus/software-foundation/actions/runs/37176024270)
+used the exact Python 3.14.7 family from the original failure. In all 20 repetitions,
+50 cases passed, including the unchanged eight-writer test; only the new native
+probe failed. Its `RemoveDirectoryW` setup allowed immediate name reuse on this
+runner, so the assumed pending-deletion condition was not constructed and the
+production retry was never reached by that probe. This failed diagnostic is
+preserved as 1,000 passing case executions and 20 failures, with no exclusions.
+
+The fixture-only correction explicitly sets classic `FileDispositionInfo` on an
+owned DELETE-access directory handle and verifies `FileStandardInfo.DeletePending`
+before requiring the actual WinError 5. API structure sizes, exclusive-acquisition
+checks and handle cleanup were independently reviewed. The production helper is
+unchanged. All 50 Linux-applicable board cases and four runner cases passed again;
+only the native case remains explicitly excluded there. Unchanged scopes from the
+complete local run were not needlessly repeated. Corrected native execution is a
+separate required observation.
 
 These observations do not establish physical touch/bezel/VR hardware, Arduino,
 or an actual system package upgrade. Package-manager commands were intercepted

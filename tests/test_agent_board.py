@@ -380,18 +380,40 @@ class CoordinationTests(unittest.TestCase):
         kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
                                       ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
         kernel.CreateFileW.restype = wintypes.HANDLE
-        kernel.RemoveDirectoryW.argtypes = [wintypes.LPCWSTR]
-        kernel.RemoveDirectoryW.restype = wintypes.BOOL
+        kernel.SetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                                      ctypes.c_void_p, wintypes.DWORD]
+        kernel.SetFileInformationByHandle.restype = wintypes.BOOL
+        kernel.GetFileInformationByHandleEx.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                                       ctypes.c_void_p, wintypes.DWORD]
+        kernel.GetFileInformationByHandleEx.restype = wintypes.BOOL
+        class FileDispositionInfo(ctypes.Structure):
+            _fields_ = [("DeleteFile", ctypes.c_ubyte)]  # Win32 BOOLEAN, not BOOL.
+        class FileStandardInfo(ctypes.Structure):
+            _fields_ = [("AllocationSize", ctypes.c_longlong), ("EndOfFile", ctypes.c_longlong),
+                        ("NumberOfLinks", wintypes.DWORD), ("DeletePending", ctypes.c_ubyte),
+                        ("Directory", ctypes.c_ubyte)]
+        self.assertEqual(ctypes.sizeof(FileDispositionInfo), 1)
+        self.assertEqual(ctypes.sizeof(FileStandardInfo), 24)
         kernel.CloseHandle.argtypes = [wintypes.HANDLE]
         kernel.CloseHandle.restype = wintypes.BOOL
         before = self.board.state_path.read_bytes()
         self.board.lock.mkdir(mode=0o700)
-        # Zero requested access, read/write/delete sharing, OPEN_EXISTING and
-        # BACKUP_SEMANTICS obtain an ordinary directory handle without privilege.
-        handle = kernel.CreateFileW(str(self.board.lock), 0, 7, None, 3, 0x02000000, None)
+        # DELETE access, read/write/delete sharing, OPEN_EXISTING and
+        # BACKUP_SEMANTICS permit classic disposition on this owned directory.
+        handle = kernel.CreateFileW(str(self.board.lock), 0x10000, 7, None, 3, 0x02000000, None)
         self.assertNotEqual(handle, ctypes.c_void_p(-1).value, ctypes.get_last_error())
         try:
-            self.assertTrue(kernel.RemoveDirectoryW(str(self.board.lock)), ctypes.get_last_error())
+            # RemoveDirectoryW can unlink the name while a handle remains open.
+            # FileDispositionInfo (4) explicitly requests classic deletion on close.
+            # https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle
+            disposition = FileDispositionInfo(1)
+            self.assertTrue(kernel.SetFileInformationByHandle(
+                handle, 4, ctypes.byref(disposition), ctypes.sizeof(disposition)), ctypes.get_last_error())
+            standard = FileStandardInfo()
+            self.assertTrue(kernel.GetFileInformationByHandleEx(
+                handle, 1, ctypes.byref(standard), ctypes.sizeof(standard)), ctypes.get_last_error())
+            self.assertTrue(standard.Directory)
+            self.assertTrue(standard.DeletePending)
             with self.assertRaises(PermissionError) as caught:
                 self.board.lock.mkdir(mode=0o700)
             self.assertEqual(caught.exception.winerror, 5)
