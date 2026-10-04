@@ -8,6 +8,10 @@ Keep relative links valid both in a checkout and wherever the
 document subset is distributed; an installed README may require the matching
 source bundle for source-relative links.
 
+Keep the root `README.md` as the GitHub repository landing page. Store workflow
+guidance in [`.github/WORKFLOWS.md`](../.github/WORKFLOWS.md): a `.github/README.md`
+would [take precedence over the root README](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes).
+
 ## What to document
 
 - **Requirements:** observable behavior, compatibility constraints, input bounds,
