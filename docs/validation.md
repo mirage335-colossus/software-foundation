@@ -15,7 +15,7 @@ earlier private preparation and local fixtures.
 
 ## Rust-default selection (2026-10-04)
 
-The default-policy change was checked against base commit
+Local checks of the default-policy change used base commit
 `49a4f397b9c58c3c364bdce8af2d6b296f7c551b` plus its exact working changes,
 including the new native host-preparation script. The frozen 435-file source
 inventory is `a46f29084bf1c1c8f0890628b133903ac9b8fcf221756f6f8fc418d16a14bb2f`.
@@ -57,6 +57,36 @@ Its archived source, exact diff, individual commands, JUnit, planner results and
 input afterchecks retain the scope above. Its unequal six/five-test phase times
 are not the matched build comparison below.
 
+### Hosted development checks
+
+The committed default-policy implementation passed all four jobs in
+[development run 37226774800](https://github.com/mirage335-colossus/software-foundation/actions/runs/37226774800)
+at exact revision `1ad555fdd2eb05e5789cc89ee13a929e4777bed1`: 12 focused Rust
+CTests, four explicit C++ compatibility CTests, 43 shared GUI CTests, workflow
+syntax and all 60 selected complete infrastructure suites. The Ubuntu lane
+selected actual distro `/usr/bin/rustc` and `/usr/bin/cargo` 1.75.0 after explicit
+tool preparation. No runtime failure or skip markers occurred. Conditional
+omission of the docs-only step and the release-storage fallback after successful
+Actions artifact upload omitted no runtime tests.
+
+The preceding [run 37226479586](https://github.com/mirage335-colossus/software-foundation/actions/runs/37226479586)
+at `fefdd0cd094f005780457ffca632c4a176dc472f` failed one gallery test fixture:
+its mocked Git revision disagreed with inherited `GITHUB_SHA`. The follow-up
+commit bound the fixture environment to its mocked revision; production
+provenance checks were unchanged. All 40 gallery cases also passed locally with
+an intentionally conflicting inherited revision before the successful rerun.
+
+Complete console logs and authenticated completed-run metadata are retained in
+`build/agents/rust-default-ci/hosted/run37226774800/`, indexed by `inspection.md`.
+Their SHA-256 values are respectively
+`9e2aedb1344aec86381a28371274f9d285545338d1ec67c931c6b4c0c955e9f4` and
+`448bfd75cda26f946b5a3905f7ad1712e9d466a8d7307e421a9da550deb64270`.
+The uploaded tooling receipt artifact was not downloaded locally; these console
+and run outcomes do not assert an exact inner Python case count or local
+artifact-byte verification. This is native Linux development feedback, not new
+Windows, Wasm, complete-backend, release, SDK-maintenance or gallery execution
+qualification.
+
 ### Measured local build cost
 
 One fresh build tree per provider and three alternating warm no-op builds per
@@ -97,7 +127,8 @@ attempt 1, of
 All four producers and verdict job `111473327645` succeeded. This qualifies the
 declared configurations and executed gates, not every operating system, device
 or recovery claim. Subsequent documentation edits do not change those evidence
-identities. The default application provider remains C++.
+identities. The default application provider at that revision was C++; the later
+Rust-default policy and its separate checks are recorded above.
 
 | Final hosted target | Console-observed result |
 | --- | --- |
