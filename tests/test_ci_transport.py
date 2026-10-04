@@ -231,6 +231,34 @@ class TransportTests(unittest.TestCase):
                 self.remote.run[key] = prior
         self.assertFalse(self.remote.releases)
 
+    def test_explicit_rust_feature_push_preserves_complete_transport_binding(self):
+        self.remote.run.update(event='push', head_branch='codex/rust-hybrid-integration-20261004',
+                               path='.github/workflows/rust-qualification.yml')
+        self.context.update(workflow='rust-qualification.yml', name='rust-qualification-linux-aarch64-2')
+        pointer = self.publish(); self.remote.complete()
+        self.assertEqual(pointer, self.fetch()['pointer'])
+        self.assertTrue(self.remote.releases[0]['draft'])
+        self.assertEqual('false', self.remote.releases[0]['make_latest'])
+
+    def test_push_exception_rejects_other_workflows_branches_and_foreign_inputs(self):
+        self.remote.run.update(event='push', head_branch='codex/rust-hybrid',
+                               path='.github/workflows/rust-qualification.yml')
+        self.context.update(workflow='rust-qualification.yml')
+        cases = [('head_branch', 'main'), ('head_branch', 'codex/other'),
+                 ('head_branch', 'codex/rust-hybrid/nested'), ('head_branch', None),
+                 ('event', 'pull_request'), ('head_sha', 'b' * 40), ('run_attempt', 1),
+                 ('head_repository', dict(id=8, full_name='example/project')),
+                 ('path', '.github/workflows/sdk-maintenance.yml')]
+        for key, value in cases:
+            with self.subTest(field=key, value=value):
+                prior = self.remote.run[key]; self.remote.run[key] = value
+                with self.assertRaisesRegex(ValueError, 'producer repository'): self.publish()
+                self.remote.run[key] = prior
+        self.remote.run['path'] = '.github/workflows/sdk-maintenance.yml'
+        with self.assertRaisesRegex(ValueError, 'producer repository'):
+            self.publish(workflow='sdk-maintenance.yml')
+        self.assertFalse(self.remote.releases)
+
     def test_reusable_caller_workflow_and_unique_runner_resolution(self):
         self.remote.run['path'] = '.github/workflows/_release-latest.yml'
         self.remote.jobs[0]['name'] = 'SDK / produce (linux-aarch64)'

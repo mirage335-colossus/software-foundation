@@ -72,11 +72,14 @@ def _run(remote, context):
     repo = remote.transport.json(remote.base)
     run = remote.transport.json(remote.base + '/actions/runs/' + str(context['run_id']) +
                                 '/attempts/' + str(context['attempt']))
+    qualification_push = (context['workflow'] == 'rust-qualification.yml' and run.get('event') == 'push' and
+                          isinstance(run.get('head_branch'), str) and
+                          re.fullmatch(r'codex/rust-[A-Za-z0-9._-]+', run['head_branch']))
     if (not _positive(repo.get('id')) or repo.get('full_name', '').casefold() != remote.repository.casefold() or
             run.get('id') != context['run_id'] or run.get('run_attempt') != context['attempt'] or
             run.get('head_sha') != context['source_commit'] or
             run.get('path') != '.github/workflows/' + context['workflow'] or
-            run.get('event') not in ('workflow_dispatch', 'workflow_call') or
+            not (run.get('event') in ('workflow_dispatch', 'workflow_call') or qualification_push) or
             any(run.get(key, {}).get('id') != repo['id'] or
                 run.get(key, {}).get('full_name', '').casefold() != remote.repository.casefold()
                 for key in ('repository', 'head_repository'))):

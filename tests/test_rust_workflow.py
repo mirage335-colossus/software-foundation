@@ -37,6 +37,56 @@ class RustWorkflowTests(unittest.TestCase):
                                         and item.value.value is True for item in node.keywords))
         self.assertEqual(callers, ['prepare'])
 
+    def test_workflow_recipe_does_not_enter_controlled_rust_environment_namespace(self):
+        import rust_build
+        workflow = (ROOT / '.github/workflows/rust-qualification.yml').read_text()
+        self.assertIn('FOUNDATION_OPTIONAL_PROVIDER_RECIPE: ${{ matrix.rust_recipe }}', workflow)
+        self.assertNotIn('      RUST_RECIPE:', workflow)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = rust_build.child_environment(root, root / 'cargo', root / 'rustc', [],
+                environment={'FOUNDATION_OPTIONAL_PROVIDER_RECIPE': 'a' * 64})
+            self.assertEqual(environment['FOUNDATION_OPTIONAL_PROVIDER_RECIPE'], 'a' * 64)
+
+    def test_debug_windows_selects_only_registered_native_tests(self):
+        source = ast.parse(Path(qualification.__file__).read_text())
+        function = next(item for item in source.body if isinstance(item, ast.FunctionDef) and item.name == 'windows_debug')
+        names = next(ast.literal_eval(item.value) for item in function.body if isinstance(item, ast.Assign)
+                     and any(isinstance(target, ast.Name) and target.id == 'tests' for target in item.targets))
+        self.assertNotIn('integration.cxx_runtime', names)
+        self.assertEqual(set(names), {'core.store', 'core.cli', 'core.text_validation', 'core.text_status',
+                                     'core.windows_arguments', 'rust.unit', 'integration.install'})
+
+    def test_debug_pe_audit_excludes_compiler_probes_and_checks_exact_consumer(self):
+        import verify_pe
+        names = ('foundation-cli', 'foundation_core_test', 'foundation_windows_arguments_test',
+                 'foundation_rust_component_test', 'foundation_text_status_test')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); build = root / 'build'; build.mkdir()
+            probe = build / 'CMakeFiles/CompilerIdCXX/probe.exe'; probe.parent.mkdir(parents=True)
+            probe.write_bytes(b'compiler fixture')
+            paths = [*(build / (name + '.exe') for name in names), root / 'consumer.exe']
+            for path in paths: path.write_bytes(b'produced fixture')
+            def inspect(path):
+                return {'sha256': 'a' * 64, 'machine': 0x8664, 'minimum_os': [6, 0],
+                        'minimum_subsystem': [6, 0], 'imports': ['vcruntimed.dll'] if path == probe else ['kernel32.dll']}
+            with patch.object(verify_pe, 'inspect', side_effect=inspect) as examined:
+                with self.assertRaisesRegex(ValueError, 'shared compiler runtime'): verify_pe.audit(build)
+                examined.reset_mock()
+                result = qualification.windows_debug_pe(build, paths[-1])
+                self.assertEqual(set(result), {path.name for path in paths})
+                self.assertEqual({call.args[0] for call in examined.call_args_list}, set(paths))
+                def shared_consumer(path):
+                    result = inspect(path)
+                    if path == paths[-1]: result['imports'] = ['vcruntimed.dll']
+                    return result
+                examined.side_effect = shared_consumer
+                with self.assertRaisesRegex(ValueError, 'shared compiler runtime'):
+                    qualification.windows_debug_pe(build, paths[-1])
+                examined.side_effect = inspect
+                paths[-1].unlink()
+                with self.assertRaises(FileNotFoundError): qualification.windows_debug_pe(build, paths[-1])
+
     def test_boundary_probe_rejects_any_successful_external_connection(self):
         connection = Mock(); connection.__enter__ = Mock(return_value=connection); connection.__exit__ = Mock(return_value=False)
         with patch.object(qualification.socket, 'create_connection', return_value=connection):

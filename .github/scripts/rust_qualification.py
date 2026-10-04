@@ -39,7 +39,7 @@ def required(name):
 
 
 def selection():
-    target, recipe, rust_recipe = (required(name) for name in ('TARGET', 'RECIPE', 'RUST_RECIPE'))
+    target, recipe, rust_recipe = (required(name) for name in ('TARGET', 'RECIPE', 'FOUNDATION_OPTIONAL_PROVIDER_RECIPE'))
     if target not in ci_plan.RUST_RECIPES or not all(re.fullmatch(r'[0-9a-f]{64}', item) for item in (recipe, rust_recipe)):
         raise ValueError('qualification needs an exact native/browser and paired recipe selection')
     recipe_file = ROOT / ci_plan.RUST_RECIPES[target]
@@ -110,12 +110,20 @@ def replay(root, group, recipe, cpp):
             'compiler_reconstructed_from_source': False, 'files': rust_sdk.verify_group(rebuilt, recipe)}
 
 
+def windows_debug_pe(build, consumer):
+    from verify_pe import audit
+    names = ('foundation-cli', 'foundation_core_test', 'foundation_windows_arguments_test',
+             'foundation_rust_component_test', 'foundation_text_status_test')
+    paths = [*(build / (name + '.exe') for name in names), consumer]
+    # Compiler-ID and try-compile probes are not produced application binaries.
+    return {path.name: audit(path, static_crt=True) for path in paths}
+
+
 def windows_debug(group, recipe, cpp, rust, source):
     import windows_compiler
-    from verify_pe import audit
     output = ROOT / 'build/rust-windows-debug'; output.mkdir()
     tests = ('core.store', 'core.cli', 'core.text_validation', 'core.text_status',
-             'core.windows_arguments', 'rust.unit', 'integration.install', 'integration.cxx_runtime')
+             'core.windows_arguments', 'rust.unit', 'integration.install')
     command = [sys.executable, '-B', str(source / 'tools/build.py'), 'test', 'dev', '--portable',
         '--build-dir', str(output / 'build'), '--build-jobs', str(build_capacity.compile_jobs(required('JOBS'))),
         '--test-jobs', '2', '--windows-dependencies', str(cpp), '--dependency-group', str(group),
@@ -125,7 +133,19 @@ def windows_debug(group, recipe, cpp, rust, source):
     import test_plan
     results = test_plan.junit_results(output / 'source.junit.xml', list(tests))
     if set(results.values()) != {'passed'}: raise ValueError('Windows Debug core/Rust/consumer execution is incomplete')
-    pe = audit(output / 'build', static_crt=True)
+    prefix = output / 'original-prefix'
+    windows_compiler.run(['cmake', '--install', str(output / 'build'), '--config', 'Debug',
+                          '--prefix', str(prefix)], cwd=source)
+    relocated = output / 'relocated-prefix'; prefix.rename(relocated)
+    configurations = list(relocated.rglob('FoundationConfig.cmake'))
+    if len(configurations) != 1: raise ValueError('one relocated Debug Foundation configuration required')
+    consumer = output / 'consumer-build'
+    windows_compiler.run(['cmake', '-S', str(source / 'examples/consumer'), '-B', str(consumer), '-G', 'Ninja',
+        '-DCMAKE_BUILD_TYPE=Debug', '-DFoundation_DIR=' + str(configurations[0].parent),
+        '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF', '-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF'], cwd=source)
+    windows_compiler.run(['cmake', '--build', str(consumer), '--parallel', '2'], cwd=source)
+    windows_compiler.run([str(consumer / 'consumer.exe')], cwd=relocated)
+    pe = windows_debug_pe(output / 'build', consumer / 'consumer.exe')
     write_json(output / 'qualification.json', {'schema_version': 1, 'status': 'passed',
         'configuration': 'Debug', 'core_provider': 'rust', 'cpp_recipe': recipe,
         'source_tree_sha256': source_tree(source)['tree_sha256'], 'scope': 'core-rust-unit-installed-consumer-static-crt',
@@ -220,7 +240,7 @@ def linux():
         if not re.fullmatch(r'sha256:[0-9a-f]{64}', image): raise ValueError('invalid prepared Bookworm image identity')
         command = ['docker', 'run', '--rm', '--pull=never', '--user', f'{os.getuid()}:{os.getgid()}',
                    '-v', str(ROOT) + ':/work', '-w', '/work', '--tmpfs', '/tmp:rw,mode=1777']
-        for key in ('TARGET', 'RECIPE', 'RUST_RECIPE', 'JOBS', 'GITHUB_SHA'):
+        for key in ('TARGET', 'RECIPE', 'FOUNDATION_OPTIONAL_PROVIDER_RECIPE', 'JOBS', 'GITHUB_SHA'):
             command += ['-e', key]
         command += ['-e', 'HOME=/tmp/rust-qualification-home', '-e', 'PYTHONDONTWRITEBYTECODE=1',
                     '-e', 'LIBGL_ALWAYS_SOFTWARE=1', image, 'xvfb-run', '-a', 'python3', '-B',
@@ -232,7 +252,7 @@ def linux():
             '--cap-drop=ALL', '--security-opt=no-new-privileges', '--user', f'{os.getuid()}:{os.getgid()}',
             '--tmpfs', '/tmp:rw,mode=1777', '-v', str(ROOT) + ':/work:ro',
             '-v', str(replay_output) + ':/output', '-w', '/work']
-        for key in ('TARGET', 'RECIPE', 'RUST_RECIPE', 'JOBS', 'GITHUB_SHA'): replay_command += ['-e', key]
+        for key in ('TARGET', 'RECIPE', 'FOUNDATION_OPTIONAL_PROVIDER_RECIPE', 'JOBS', 'GITHUB_SHA'): replay_command += ['-e', key]
         replay_command += ['-e', 'HOME=/tmp/rust-replay-home', '-e', 'PYTHONDONTWRITEBYTECODE=1', image,
                           'python3', '-B', '.github/scripts/rust_qualification.py', 'linux-replay']
         subprocess.run(replay_command, cwd=ROOT, check=True)
