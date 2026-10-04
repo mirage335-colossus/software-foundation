@@ -243,7 +243,7 @@ def linux():
     spec = importlib.util.spec_from_file_location('rust_container', ROOT / '.github/scripts/container_job.py')
     container = importlib.util.module_from_spec(spec); spec.loader.exec_module(container)
     packages = tuple(dict.fromkeys((*container.COMMON, *container.BUILD, *container.GUI_RUNTIME,
-                                    'pkg-config', 'firefox-esr')))
+                                    'pkg-config', 'firefox-esr', 'iproute2')))
     name = 'foundation-rust-setup-' + uuid.uuid4().hex
     image = None
     try:

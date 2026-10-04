@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -489,6 +490,75 @@ class RustOwnershipTests(unittest.TestCase):
         owner.terminate.assert_called_once_with()
         owner.close.assert_called_once_with()
         owner.finish.assert_not_called()
+
+
+class RustUnitCMakeRegistrationTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='Rust unit registration ')
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.cmake = shutil.which('cmake')
+        self.ctest = shutil.which('ctest')
+        self.assertTrue(self.cmake, 'CMake is a required build prerequisite')
+        self.assertTrue(self.ctest, 'CTest is a required build prerequisite')
+        module = Path(__file__).resolve().parents[1] / 'cmake/RustComponent.cmake'
+        text = module.read_text(encoding='utf-8')
+        start = text.index('  if(BUILD_TESTING AND')
+        end = text.index('  endif()', start) + len('  endif()')
+        self.registration = text[start:end]
+
+    def inventory(self, name, *, host, target, cross=True, emscripten=False, testing=True):
+        source = self.root / name
+        build = source / 'build'
+        source.mkdir()
+        script = '\n'.join((
+            'cmake_minimum_required(VERSION 3.24)',
+            'project(RustUnitRegistration NONE)',
+            'enable_testing()',
+            'function(foundation_test_prerequisites name)',
+            '  if(NOT ARGN STREQUAL "foundation-rust")',
+            '    message(FATAL_ERROR "Rust unit test lost its build prerequisite")',
+            '  endif()',
+            'endfunction()',
+            'set(Python3_EXECUTABLE [==[' + Path(sys.executable).as_posix() + ']==])',
+            'set(selected_config "fixture-config.json")',
+            'set(BUILD_TESTING ' + ('TRUE' if testing else 'FALSE') + ')',
+            'set(CMAKE_CROSSCOMPILING ' + ('TRUE' if cross else 'FALSE') + ')',
+            'set(EMSCRIPTEN ' + ('TRUE' if emscripten else 'FALSE') + ')',
+            'set(compiler_host "' + host + '")',
+            'set(target "' + target + '")',
+            self.registration,
+        ))
+        (source / 'CMakeLists.txt').write_text(script + '\n', encoding='utf-8')
+        configured = subprocess.run([self.cmake, '-S', str(source), '-B', str(build), '-G', 'Ninja'],
+                                    capture_output=True, text=True, timeout=30)
+        self.assertEqual(configured.returncode, 0, configured.stdout + configured.stderr)
+        inventory = subprocess.run([self.ctest, '--test-dir', str(build), '--show-only=json-v1'],
+                                  capture_output=True, text=True, timeout=30)
+        self.assertEqual(inventory.returncode, 0, inventory.stdout + inventory.stderr)
+        return json.loads(inventory.stdout)['tests']
+
+    def test_matching_rust_host_registers_units_despite_cpp_sysroot_cross_flag(self):
+        for target in ('x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu'):
+            for cross in (True, False):
+                with self.subTest(target=target, cpp_cross=cross):
+                    tests = self.inventory(target + str(cross), host=target, target=target, cross=cross)
+                    self.assertEqual([test['name'] for test in tests], ['rust.unit'])
+                    properties = {value['name']: value['value'] for value in tests[0]['properties']}
+                    self.assertEqual(properties['LABELS'], ['rust', 'unit'])
+                    self.assertEqual(properties['RESOURCE_LOCK'], ['rust-build'])
+
+    def test_foreign_rust_targets_omit_units_independently_of_cpp_cross_flag(self):
+        for cross in (True, False):
+            with self.subTest(cpp_cross=cross):
+                tests = self.inventory('foreign' + str(cross), host='x86_64-unknown-linux-gnu',
+                                       target='aarch64-unknown-linux-gnu', cross=cross)
+                self.assertEqual(tests, [])
+
+    def test_emscripten_and_disabled_testing_omit_units(self):
+        target = 'x86_64-unknown-linux-gnu'
+        self.assertEqual(self.inventory('emscripten', host=target, target=target, emscripten=True), [])
+        self.assertEqual(self.inventory('disabled', host=target, target=target, testing=False), [])
 
 
 if __name__ == '__main__':

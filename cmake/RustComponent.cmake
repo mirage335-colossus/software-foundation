@@ -153,7 +153,7 @@ function(foundation_rust_component core)
     BYPRODUCTS ${byproducts}
     VERBATIM)
   add_dependencies(foundation::rust_component foundation-rust)
-  if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT EMSCRIPTEN AND compiler_host STREQUAL target)
+  if(BUILD_TESTING AND NOT EMSCRIPTEN AND compiler_host STREQUAL target)
     add_test(NAME rust.unit COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tools/rust_build.py"
       test --config "${selected_config}")
     set_tests_properties(rust.unit PROPERTIES LABELS "rust;unit" TIMEOUT 180 RESOURCE_LOCK rust-build)

@@ -329,9 +329,179 @@ class InputIdentityTests(unittest.TestCase):
 
     def test_cpp_configuration_does_not_discover_rust(self):
         from unittest.mock import patch
-        import rust_sdk
-        with patch.object(rust_sdk, 'verify_rust_sdk', side_effect=AssertionError('unexpected Rust tool discovery')):
+        import rust_build, rust_sdk
+        with patch.object(rust_sdk, 'verify_rust_sdk', side_effect=AssertionError('unexpected Rust SDK discovery')), \
+                patch.object(rust_build, 'native_tool_identity', side_effect=AssertionError('unexpected Rust tool discovery')):
             self.assertIsNone(plan.build_inputs(self.build)['rust_sdk'])
+
+    def native_rust(self):
+        from unittest.mock import patch
+        from test_rust_build import RustBuildTests
+        import hashlib
+        platform = patch.object(plan.sys, 'platform', 'linux'); platform.start()
+        self.addCleanup(platform.stop)
+        fixture = RustBuildTests('runTest'); fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        fixture.build = self.build / 'rust/Debug'
+        fixture.config_path = fixture.build / 'config.json'
+        description = fixture.configured()
+        self.source = fixture.source
+        self.root_patch.stop()
+        self.root_patch = patch.object(plan, 'ROOT', self.source); self.root_patch.start()
+        tools = {name: {key: row[key] for key in ('path', 'sha256', 'identity')}
+                 for name, row in description['tools'].items()}
+        identity = hashlib.sha256(';'.join((fixture.target, fixture.tools['rustc'], fixture.tools['cargo'],
+                                            tools['rustc']['sha256'], tools['cargo']['sha256'], 'none')).encode()).hexdigest()
+        self.cache.update(FOUNDATION_CORE_PROVIDER='rust', FOUNDATION_RUST_CARGO=fixture.tools['cargo'],
+                          FOUNDATION_RUST_RUSTC=fixture.tools['rustc'], CMAKE_BUILD_TYPE='Debug',
+                          FOUNDATION_CONFIGURED_RUST_IDENTITY=identity)
+        self.write_cache()
+        return fixture, tools
+
+    def test_native_rust_direct_and_wrapper_trees_verify_declared_inputs_without_discovery(self):
+        from unittest.mock import patch
+        import rust_build, rust_sdk
+        fixture, tools = self.native_rust()
+        with patch.object(rust_build, 'select_native_tools', side_effect=AssertionError('unexpected discovery')), \
+                patch.object(rust_build, '_run', side_effect=AssertionError('unexpected tool execution')), \
+                patch.object(rust_sdk, 'verify_rust_sdk', side_effect=AssertionError('unexpected retained SDK')):
+            direct = self.freeze(); plan.require_current(self.build, direct)
+            actual = plan.build_inputs(self.build)
+            self.assertIsNone(actual['rust_sdk']); self.assertEqual(actual['rust_tools'], tools)
+            self.assertEqual(actual['dependencies'], [])
+            self.assertEqual(set(actual['rust_configurations']), {'Debug'})
+            self.wrapper(core_provider='rust', rust_sdk=None, rust_tools=tools)
+            wrapped = self.freeze(); plan.require_current(self.build, wrapped)
+
+    def test_native_rust_tool_mutation_invalidates_plans_even_with_same_size_and_mtime(self):
+        import os
+        fixture, _ = self.native_rust()
+        frozen = self.freeze(); path = Path(fixture.tools['cargo']); before = path.stat()
+        path.write_bytes(b'other'); os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+        with self.assertRaisesRegex(ValueError, 'selected Rust tool changed'):
+            plan.require_current(self.build, frozen)
+
+    def test_native_rust_wrapper_tool_snapshots_are_not_trusted(self):
+        fixture, tools = self.native_rust()
+        self.wrapper(core_provider='rust', rust_sdk=None, rust_tools=tools)
+        self.freeze()
+        tools['rustc']['sha256'] = '0' * 64
+        self.wrapper(core_provider='rust', rust_sdk=None, rust_tools=tools)
+        with self.assertRaisesRegex(ValueError, 'native Rust tools differ'):
+            plan.build_inputs(self.build)
+
+    def test_native_rust_declared_tool_paths_and_configured_identity_must_match(self):
+        import shutil
+        fixture, _ = self.native_rust()
+        self.cache['FOUNDATION_CONFIGURED_RUST_IDENTITY'] = '0' * 64; self.write_cache()
+        with self.assertRaisesRegex(ValueError, 'configured identity'):
+            plan.build_inputs(self.build)
+        cargo = fixture.root / 'other-cargo'; shutil.copyfile(fixture.tools['cargo'], cargo); cargo.chmod(0o755)
+        self.cache['FOUNDATION_RUST_CARGO'] = str(cargo); self.write_cache()
+        with self.assertRaisesRegex(ValueError, 'configured CMake selection'):
+            plan.build_inputs(self.build)
+
+    def test_native_rust_library_mutation_invalidates_plans(self):
+        fixture, _ = self.native_rust()
+        frozen = self.freeze()
+        (fixture.libdir / 'libcore-identified.rlib').write_bytes(b'changed target input')
+        with self.assertRaisesRegex(ValueError, 'target library inputs changed'):
+            plan.require_current(self.build, frozen)
+
+    def test_native_rust_notice_mutation_invalidates_plans(self):
+        fixture, _ = self.native_rust()
+        frozen = self.freeze(); fixture.notice.write_text('changed notice')
+        with self.assertRaisesRegex(ValueError, 'notice inputs changed'):
+            plan.require_current(self.build, frozen)
+
+    def test_native_rust_config_changes_invalidate_plans_before_compilation(self):
+        import json
+        fixture, _ = self.native_rust()
+        frozen = self.freeze()
+        description = json.loads(fixture.config_path.read_text())
+        description['metadata']['package_id'] = 'changed configured metadata'
+        fixture.config_path.write_text(json.dumps(description))
+        with self.assertRaisesRegex(ValueError, 'configuration changed'):
+            plan.require_current(self.build, frozen)
+
+    def test_native_rust_requires_complete_configurations_and_selected_tools(self):
+        fixture, _ = self.native_rust()
+        del self.cache['FOUNDATION_RUST_CARGO']; self.write_cache()
+        with self.assertRaisesRegex(ValueError, 'missing its selected tools'):
+            plan.build_inputs(self.build)
+        self.cache['FOUNDATION_RUST_CARGO'] = fixture.tools['cargo']
+        self.cache['CMAKE_CONFIGURATION_TYPES'] = 'Debug;Release'; self.write_cache()
+        with self.assertRaises(FileNotFoundError):
+            plan.build_inputs(self.build)
+        self.cache['CMAKE_CONFIGURATION_TYPES'] = '../outside'; self.write_cache()
+        with self.assertRaisesRegex(ValueError, 'configuration names'):
+            plan.build_inputs(self.build)
+
+    def test_native_rust_foreign_targets_and_prepared_graphs_need_retained_sdk(self):
+        from unittest.mock import patch
+        fixture, _ = self.native_rust()
+        self.cache['FOUNDATION_RUST_TARGET'] = 'wasm32-unknown-emscripten'; self.write_cache()
+        with self.assertRaisesRegex(ValueError, 'configured identity'):
+            plan.build_inputs(self.build)
+        self.cache.pop('FOUNDATION_RUST_TARGET')
+        self.cache['FOUNDATION_WINDOWS_DEPENDENCIES'] = str(fixture.root); self.write_cache()
+        with self.assertRaisesRegex(ValueError, 'retained SDK'):
+            plan.build_inputs(self.build)
+        self.cache.pop('FOUNDATION_WINDOWS_DEPENDENCIES'); self.write_cache()
+        with patch.object(plan.sys, 'platform', 'win32'):
+            with self.assertRaisesRegex(ValueError, 'retained SDK'):
+                plan.build_inputs(self.build)
+
+    def test_native_rust_multiconfig_and_no_config_match_direct_cmake_profiles(self):
+        import os
+        from unittest.mock import patch
+        import rust_build
+        fixture, _ = self.native_rust()
+        for name in ('Release', 'NoConfig'):
+            directory = self.build / 'rust' / name
+            with patch.dict(os.environ, {}, clear=True), \
+                    patch.object(rust_build, '_run', side_effect=fixture.fake_run), \
+                    patch.object(rust_build.package_notices, 'distro_notice', return_value=({}, fixture.notice)):
+                description = rust_build.describe(str(fixture.source), str(directory), fixture.target,
+                                                  fixture.tools['cargo'], fixture.tools['rustc'], profile='release')
+            rust_build.save_config(directory / 'config.json', description)
+        self.cache['CMAKE_CONFIGURATION_TYPES'] = 'Debug;Release'; self.write_cache()
+        self.assertEqual(set(plan.build_inputs(self.build)['rust_configurations']), {'Debug', 'Release'})
+        del self.cache['CMAKE_CONFIGURATION_TYPES']; del self.cache['CMAKE_BUILD_TYPE']; self.write_cache()
+        frozen = self.freeze(); plan.require_current(self.build, frozen)
+        self.assertEqual(set(plan.build_inputs(self.build)['rust_configurations']), {'NoConfig'})
+
+    def test_native_rust_configuration_cannot_switch_source_or_host(self):
+        import json
+        fixture, _ = self.native_rust()
+        description = json.loads(fixture.config_path.read_text())
+        description['tools']['rustc']['host'] = 'aarch64-unknown-linux-gnu'
+        fixture.config_path.write_text(json.dumps(description))
+        with self.assertRaisesRegex(ValueError, 'configured CMake selection'):
+            plan.build_inputs(self.build)
+        description['tools']['rustc']['host'] = fixture.target
+        fixture.config_path.write_text(json.dumps(description))
+        from unittest.mock import patch
+        with patch.object(plan, 'ROOT', self.root):
+            with self.assertRaisesRegex(ValueError, 'configured CMake selection'):
+                plan.build_inputs(self.build)
+
+    def test_native_rust_configuration_identity_normalizes_independent_build_directories(self):
+        import os
+        from unittest.mock import patch
+        import rust_build
+        fixture, _ = self.native_rust()
+        first = plan.configuration_id(self.build)
+        other = self.root / 'other-build'; directory = other / 'rust/Debug'
+        with patch.dict(os.environ, {}, clear=True), \
+                patch.object(rust_build, '_run', side_effect=fixture.fake_run), \
+                patch.object(rust_build.package_notices, 'distro_notice', return_value=({}, fixture.notice)):
+            description = rust_build.describe(str(fixture.source), str(directory), fixture.target,
+                                              fixture.tools['cargo'], fixture.tools['rustc'])
+        rust_build.save_config(directory / 'config.json', description)
+        (other / 'CMakeCache.txt').write_text((self.build / 'CMakeCache.txt').read_text())
+        (other / 'build-info.txt').write_text((self.build / 'build-info.txt').read_text())
+        self.assertEqual(first, plan.configuration_id(other))
 
     def test_external_gui_bytes_change_source_identity(self):
         gui = self.root / 'gui-source'; gui.mkdir(); (gui / 'view.hpp').write_text('first input')

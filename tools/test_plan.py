@@ -63,6 +63,47 @@ def verify_gui_group(root):
     return json.loads(value)["group_sha256"]
 
 
+def native_rust_inputs(build, cache):
+    """Verify CMake's selected native tools without discovery or execution."""
+    if (not sys.platform.startswith("linux") or cache.get("FOUNDATION_SDK_ROOT")
+            or cache.get("FOUNDATION_WINDOWS_DEPENDENCIES")):
+        raise ValueError("this Rust target requires its configured retained SDK")
+    from rust_build import _load_config, native_tool_identity
+    cargo, rustc = cache.get("FOUNDATION_RUST_CARGO"), cache.get("FOUNDATION_RUST_RUSTC")
+    if not cargo or not rustc:
+        raise ValueError("native Rust configuration is missing its selected tools")
+    tools = native_tool_identity(cargo, rustc)
+    configurations = (cache["CMAKE_CONFIGURATION_TYPES"].split(";") if cache.get("CMAKE_CONFIGURATION_TYPES")
+                      else [cache.get("CMAKE_BUILD_TYPE") or "NoConfig"])
+    if (len(set(configurations)) != len(configurations)
+            or any(not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.+-]*", name) for name in configurations)):
+        raise ValueError("invalid native Rust configuration names")
+    descriptions = {}
+    target = None
+    for name in configurations:
+        path = build / "rust" / name / "config.json"
+        path.resolve(strict=True).relative_to(build.resolve(strict=True))
+        description, _ = _load_config(str(path.absolute()))
+        described_tools = {tool: {key: row[key] for key in ("path", "sha256", "identity")}
+                           for tool, row in description["tools"].items()}
+        if (description["source_root"] != str(ROOT.resolve(strict=True))
+                or description["build_dir"] != str(path.parent.resolve(strict=True))
+                or description["system"] != "Linux" or description["sdk_root"]
+                or description["cpp_sdk_root"] or description["cpp_sdk_manifest"] or described_tools != tools
+                or description["tools"]["rustc"]["host"] != description["target"]
+                or description["profile"] != ("debug" if name.lower() == "debug" else "release")
+                or (target is not None and target != description["target"])):
+            raise ValueError("native Rust inputs differ from the configured CMake selection")
+        target = description["target"]
+        descriptions[name] = digest(normalize_locations(description, build))
+    expected = hashlib.sha256(";".join((target, rustc, cargo, tools["rustc"]["sha256"],
+                                      tools["cargo"]["sha256"], "none")).encode()).hexdigest()
+    if (cache.get("FOUNDATION_CONFIGURED_RUST_IDENTITY") != expected
+            or (cache.get("FOUNDATION_RUST_TARGET") and cache["FOUNDATION_RUST_TARGET"] != target)):
+        raise ValueError("native Rust toolchain differs from its configured identity")
+    return tools, descriptions
+
+
 def build_inputs(build):
     """Recompute bytes, never trust a saved wrapper receipt as verification."""
     cache = builder.cache_identity(build)
@@ -97,21 +138,24 @@ def build_inputs(build):
         recipe_ids.append(read_json(sdk / "sdk.json")["recipe_id"])
     rust_root = cache.get("FOUNDATION_RUST_SDK_ROOT")
     if provider == "rust":
-        if not rust_root:
-            raise ValueError("Rust provider requires its configured retained SDK")
-        from rust_sdk import verify_rust_sdk
-        from dependency_archive import digest as file_digest
-        rust = Path(rust_root).resolve(strict=True)
-        metadata = verify_rust_sdk(rust, cpp_sdk=Path(sdk_root) if sdk_root else
-                                   Path(cache["FOUNDATION_WINDOWS_DEPENDENCIES"]) if cache.get("FOUNDATION_WINDOWS_DEPENDENCIES") else None,
-                                   target=cache.get("FOUNDATION_RUST_TARGET") or None, execute=True)
-        result["rust_sdk"] = {"root": str(rust), "sha256": file_digest(rust / "rust-sdk.json")}
-        recipe_ids.append(metadata["recipe_id"])
+        if rust_root:
+            from rust_sdk import verify_rust_sdk
+            from dependency_archive import digest as file_digest
+            rust = Path(rust_root).resolve(strict=True)
+            metadata = verify_rust_sdk(rust, cpp_sdk=Path(sdk_root) if sdk_root else
+                                       Path(cache["FOUNDATION_WINDOWS_DEPENDENCIES"]) if cache.get("FOUNDATION_WINDOWS_DEPENDENCIES") else None,
+                                       target=cache.get("FOUNDATION_RUST_TARGET") or None, execute=True)
+            result["rust_sdk"] = {"root": str(rust), "sha256": file_digest(rust / "rust-sdk.json")}
+            recipe_ids.append(metadata["recipe_id"])
+        else:
+            result["rust_tools"], result["rust_configurations"] = native_rust_inputs(build, cache)
     elif rust_root:
         raise ValueError("C++ provider cannot retain a configured Rust SDK")
     if wrapper is not None:
         if wrapper.get("core_provider", "cpp") != provider or wrapper.get("rust_sdk") != result["rust_sdk"]:
             raise ValueError("core provider or Rust SDK differs from configured wrapper identity")
+        if wrapper.get("rust_tools") != result.get("rust_tools"):
+            raise ValueError("native Rust tools differ from configured wrapper identity")
         if wrapper.get("dependency_prefix") != result["dependency_prefix"]:
             raise ValueError("native dependency prefix differs from configured wrapper identity")
         if prefix_root and wrapper.get("windows_dependencies"):

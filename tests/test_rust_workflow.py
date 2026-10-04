@@ -77,6 +77,7 @@ class RustWorkflowTests(unittest.TestCase):
                 self.assertEqual(messages, [message for name in names for message in
                     ('Rust qualification phase start: ' + name, 'Rust qualification phase end: ' + name)])
                 commands = [item.args[0] for item in run.call_args_list]
+                self.assertIn('iproute2', commands[0][-1])
                 qualify, replay = commands[2:4]
                 self.assertIn('--init', qualify[:qualify.index('sha256:' + 'a' * 64)])
                 self.assertEqual(qualify[qualify.index('--user') + 1], '1000:1000')
@@ -85,6 +86,12 @@ class RustWorkflowTests(unittest.TestCase):
                 self.assertNotIn('--init', replay)
                 self.assertIn('--network=none', replay)
                 self.assertIn('--read-only', replay)
+                self.assertIn('--cap-drop=ALL', replay)
+                self.assertIn('--security-opt=no-new-privileges', replay)
+                self.assertEqual(replay[replay.index('--user') + 1], '1000:1000')
+                self.assertEqual(replay[replay.index('--tmpfs') + 1], '/tmp:rw,mode=1777')
+                mounts = [replay[index + 1] for index, argument in enumerate(replay) if argument == '-v']
+                self.assertEqual(mounts, [str(root) + ':/work:ro', str(root / 'build/rust-replay') + ':/output'])
                 for command in (qualify, replay):
                     index = command.index('python3')
                     self.assertEqual(command[index:index + 3], ['python3', '-u', '-B'])
