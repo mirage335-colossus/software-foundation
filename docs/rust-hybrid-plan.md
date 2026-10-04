@@ -246,6 +246,19 @@ These are different inventory scopes, not interchangeable source identifiers.
 The snapshot records base commit `8854f4f` plus its exact implementation diff;
 later workflow-only repairs do not relabel that original evidence.
 
+A subsequent fresh local check used committed
+`6455ee46d3eaa505f6935b4b9c2ad3efd65d3b0e`, source inventory
+`a7be2688618648eb63225cb5064fef09b21c2d48b079d18ceead5f4d82213c4d`.
+Its complete default C++ run passed 65 CTests and 1,503 Python cases in 58
+suites, with the same three explicit native-Windows exclusions and no skipped
+cases. The host had no `rustc`, `cargo` or `rustup` on PATH. A separate explicit
+Rust 1.63 Debug run passed four core CTests, the six-case Rust unit harness and
+the relocated C++ consumer with Rust tools shadowed to fail. Its no-op wrapper
+build retained identical archive, receipt and executable timestamps and sizes;
+the measured wrapper time was 8.372 seconds, including input verification, not
+a claimed improvement over C++. These are host-development checks, not new
+Bookworm or hosted-platform qualification.
+
 | Scope | Observed result |
 | --- | --- |
 | Complete default C++ checks | 65 CTests passed on the host without Rust commands on PATH; 58 Python suites contain 1,498 passed cases. Three explicit Windows-only exclusions remain outside that host's inventory. |
@@ -254,6 +267,7 @@ later workflow-only repairs do not relabel that original evidence.
 | Disconnected browser Wasm | Existing mixed application module built with the pinned pair; four core tests executed in Node; TGZ packaging and installed CMake/Node consumer passed. This is not a real-browser interaction claim. |
 | Actual Firefox application | Firefox 153.4.0esr on Debian 13 passed HTTP and direct-file Wasm, each standalone and isolated; all 30 renderer-security cases and six additional input-error cases passed. Ten screenshots and exact input hashes are retained. Browser sandboxing remained enabled. |
 | Actual distro payload projections | Seven core/backend projections through Debian, Arch and Gentoo preserved all Rust archive/notices; 21 extracted CLI checks and three linked C++ consumers passed. Arch install-body execution and modeled Gentoo helpers are not native package-manager transactions. |
+| Actual Debian transactions | In a fresh disconnected Bookworm rootfs, all seven packages installed/configured, their complete payloads matched, 28 CLI checks and six public backend smoke checks passed, and removal/purge restored the original package inventory. An additional GCC 12 C++ consumer passed with explicit `-no-pie`; default-PIE consumption with that different compiler is not qualified. No Rust tools were installed. |
 | Retained native toolchain recovery | Source-input recovery and offline regeneration from the original supplier archives reproduced all three retained-group hashes; restored compiler/Cargo executed successfully. Compiler reconstruction from source was not performed. |
 
 Both disconnected cases used fresh homes/caches/output, read-only source,
@@ -273,14 +287,30 @@ It covers a desktop Firefox window, not Chromium, mobile devices or whole-browse
 network isolation. Distro projection evidence is in
 `build/agents/rust-package-qualification/qualification.json` (SHA256
 `6e653c85b27f4500f033895f2bd80f099c8dc4a8e8e591f6b6147a19cbc1ee42`).
-No native package-manager install/upgrade/remove or repository activation ran.
+Separate Debian transaction evidence is in
+`build/agents/rust-debian-transaction/evidence-v3/qualification.json` (SHA256
+`def97e27464050846f09a9d42525f05d1179764db4672729629eb6bf8fc96abe`).
+Its disposable rootfs used an explicit manpage path-include to override the
+Debian slim-image exclusion, preserving complete payload assertions. The
+additional distro-compiler consumer does not broaden the existing matching-SDK
+C++ consumer contract; no `-no-pie` requirement is exported to consumers. Native
+Arch/Gentoo transactions, APT repository retrieval, upgrades, signing and
+repository activation were not performed.
 
 Full native GUI interaction/visual checks, Chromium and native Windows and
 ARM64 coverage remain separate gates. Hosted run
 [37200078067](https://github.com/mirage335-colossus/software-foundation/actions/runs/37200078067)
-at `85700f21c56d5fc56728094ac1716c179be13f55` is not yet a completed
-qualification. The previous run was cancelled after a workflow environment
-error before target qualification; its logs remain retained. See the canonical
+at `85700f21c56d5fc56728094ac1716c179be13f55` is not a completed
+qualification. Its Windows source run passed 98 of 102 CTests, including actual
+Rust execution, the installed consumer and all 52 GUI cases. Four test-fixture
+failures were repaired in `6455ee4`; later packaging, Debug and disconnected
+Windows checks were not reached. Corrected full-matrix run
+[37201305850](https://github.com/mirage335-colossus/software-foundation/actions/runs/37201305850)
+was cancelled while queued. The preceding run's three Linux-hosted lanes showed
+no output beyond package bootstrap after more than 80 minutes and were stopped
+for phase diagnostics; they are incomplete, not application runtime passes.
+The initial run was cancelled after a workflow environment error before target
+qualification; its logs remain retained. See the canonical
 [validation record](validation.md) for detailed scopes. Unexecuted, skipped or
 compile-only targets are not runtime passes.
 

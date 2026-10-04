@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Explicit optional-provider qualification; never publishes an application release."""
 import argparse
+from contextlib import contextmanager
+import faulthandler
 import importlib.util
 import json
 import os
@@ -36,6 +38,18 @@ def required(name):
     value = os.environ.get(name)
     if not value: raise ValueError('missing explicit qualification input: ' + name)
     return value
+
+
+@contextmanager
+def phase(name):
+    print('Rust qualification phase start: ' + name, flush=True)
+    try:
+        yield
+    except BaseException:
+        print('Rust qualification phase failed: ' + name, flush=True)
+        raise
+    else:
+        print('Rust qualification phase end: ' + name, flush=True)
 
 
 def selection():
@@ -233,19 +247,23 @@ def linux():
     name = 'foundation-rust-setup-' + uuid.uuid4().hex
     image = None
     try:
-        subprocess.run(['docker', 'create', '--name', name, '-v', str(ROOT) + ':/work:ro', '-w', '/work',
-            'debian:bookworm', 'bash', '-euc', container.bootstrap_script(packages)], check=True)
-        subprocess.run(['docker', 'start', '--attach', name], check=True)
-        image = subprocess.check_output(['docker', 'commit', name], text=True).strip()
-        if not re.fullmatch(r'sha256:[0-9a-f]{64}', image): raise ValueError('invalid prepared Bookworm image identity')
+        with phase('linux.docker-create'):
+            subprocess.run(['docker', 'create', '--name', name, '-v', str(ROOT) + ':/work:ro', '-w', '/work',
+                'debian:bookworm', 'bash', '-euc', container.bootstrap_script(packages)], check=True)
+        with phase('linux.docker-start-attach'):
+            subprocess.run(['docker', 'start', '--attach', name], check=True)
+        with phase('linux.docker-commit'):
+            image = subprocess.check_output(['docker', 'commit', name], text=True).strip()
+            if not re.fullmatch(r'sha256:[0-9a-f]{64}', image): raise ValueError('invalid prepared Bookworm image identity')
         command = ['docker', 'run', '--rm', '--pull=never', '--user', f'{os.getuid()}:{os.getgid()}',
                    '-v', str(ROOT) + ':/work', '-w', '/work', '--tmpfs', '/tmp:rw,mode=1777']
         for key in ('TARGET', 'RECIPE', 'FOUNDATION_OPTIONAL_PROVIDER_RECIPE', 'JOBS', 'GITHUB_SHA'):
             command += ['-e', key]
         command += ['-e', 'HOME=/tmp/rust-qualification-home', '-e', 'PYTHONDONTWRITEBYTECODE=1',
-                    '-e', 'LIBGL_ALWAYS_SOFTWARE=1', image, 'xvfb-run', '-a', 'python3', '-B',
+                    '-e', 'LIBGL_ALWAYS_SOFTWARE=1', image, 'xvfb-run', '-a', 'python3', '-u', '-B',
                     '.github/scripts/rust_qualification.py', 'qualify']
-        subprocess.run(command, cwd=ROOT, check=True)
+        with phase('linux.docker-qualify'):
+            subprocess.run(command, cwd=ROOT, check=True)
         if selection()[0] == 'browser-wasm32': host_chromium()
         replay_output = ROOT / 'build/rust-replay'; replay_output.mkdir()
         replay_command = ['docker', 'run', '--rm', '--pull=never', '--network=none', '--read-only',
@@ -254,9 +272,11 @@ def linux():
             '-v', str(replay_output) + ':/output', '-w', '/work']
         for key in ('TARGET', 'RECIPE', 'FOUNDATION_OPTIONAL_PROVIDER_RECIPE', 'JOBS', 'GITHUB_SHA'): replay_command += ['-e', key]
         replay_command += ['-e', 'HOME=/tmp/rust-replay-home', '-e', 'PYTHONDONTWRITEBYTECODE=1', image,
-                          'python3', '-B', '.github/scripts/rust_qualification.py', 'linux-replay']
-        subprocess.run(replay_command, cwd=ROOT, check=True)
-        offline(image)
+                          'python3', '-u', '-B', '.github/scripts/rust_qualification.py', 'linux-replay']
+        with phase('linux.docker-replay'):
+            subprocess.run(replay_command, cwd=ROOT, check=True)
+        with phase('linux.offline'):
+            offline(image)
     finally:
         subprocess.run(['docker', 'rm', '-f', name], check=True)
         if image and re.fullmatch(r'sha256:[0-9a-f]{64}', image):
@@ -401,7 +421,17 @@ def main():
     parser.add_argument('action', choices=('plan', 'prepare', 'qualify', 'linux', 'linux-replay', 'windows-online-probe',
                                          'windows-offline', 'supervise-windows-offline'))
     args = parser.parse_args()
-    globals()[args.action.replace('-', '_')]()
+    action = globals()[args.action.replace('-', '_')]
+    if platform.system() == 'Linux' and args.action in ('linux', 'qualify', 'linux-replay'):
+        print('Rust qualification diagnostic snapshots every 300 seconds: faulthandler timer dumps '
+              'are observations, not command timeouts or qualification failures.', flush=True)
+        faulthandler.dump_traceback_later(300, repeat=True)
+        try:
+            action()
+        finally:
+            faulthandler.cancel_dump_traceback_later()
+    else:
+        action()
 
 
 if __name__ == '__main__':

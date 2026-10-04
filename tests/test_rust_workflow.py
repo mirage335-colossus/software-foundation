@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('rust_qualification', ROOT / '.github/scripts/rust_qualification.py')
@@ -14,6 +14,76 @@ qualification = importlib.util.module_from_spec(spec); spec.loader.exec_module(q
 
 
 class RustWorkflowTests(unittest.TestCase):
+    def test_phase_markers_flush_and_preserve_failures(self):
+        with patch('builtins.print') as output:
+            with qualification.phase('fixture-success'):
+                pass
+            with self.assertRaisesRegex(ValueError, 'fixture failure'):
+                with qualification.phase('fixture-failure'):
+                    raise ValueError('fixture failure')
+        self.assertEqual(output.call_args_list, [
+            call('Rust qualification phase start: fixture-success', flush=True),
+            call('Rust qualification phase end: fixture-success', flush=True),
+            call('Rust qualification phase start: fixture-failure', flush=True),
+            call('Rust qualification phase failed: fixture-failure', flush=True)])
+
+    def test_linux_tracebacks_repeat_and_cancel_after_success_or_failure(self):
+        for action in ('linux', 'qualify', 'linux-replay'):
+            for error in (None, ValueError('fixture failure')):
+                with self.subTest(action=action, error=error), \
+                        patch.object(qualification.sys, 'argv', ['qualification', action]), \
+                        patch.object(qualification.platform, 'system', return_value='Linux'), \
+                        patch.object(qualification, action.replace('-', '_'), side_effect=error) as selected, \
+                        patch.object(qualification.faulthandler, 'dump_traceback_later') as start, \
+                        patch.object(qualification.faulthandler, 'cancel_dump_traceback_later') as cancel:
+                    if error:
+                        with self.assertRaisesRegex(ValueError, 'fixture failure'): qualification.main()
+                    else:
+                        qualification.main()
+                    selected.assert_called_once_with()
+                    start.assert_called_once_with(300, repeat=True)
+                    cancel.assert_called_once_with()
+
+    def test_windows_qualification_does_not_enable_linux_tracebacks(self):
+        with patch.object(qualification.sys, 'argv', ['qualification', 'qualify']), \
+                patch.object(qualification.platform, 'system', return_value='Windows'), \
+                patch.object(qualification, 'qualify') as selected, \
+                patch.object(qualification.faulthandler, 'dump_traceback_later') as start, \
+                patch.object(qualification.faulthandler, 'cancel_dump_traceback_later') as cancel:
+            qualification.main()
+        selected.assert_called_once_with()
+        start.assert_not_called()
+        cancel.assert_not_called()
+
+    def test_linux_phase_markers_keep_isolation_and_unbuffered_child_logs(self):
+        names = ('linux.docker-create', 'linux.docker-start-attach', 'linux.docker-commit',
+                 'linux.docker-qualify', 'linux.docker-replay', 'linux.offline')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root / 'build').mkdir()
+            with patch.object(qualification, 'ROOT', root), \
+                    patch.object(qualification.platform, 'system', return_value='Linux'), \
+                    patch.object(qualification.os, 'getuid', return_value=1000, create=True), \
+                    patch.object(qualification.os, 'getgid', return_value=1000, create=True), \
+                    patch.object(qualification, 'selection', return_value=('linux-x86_64',)), \
+                    patch.object(qualification, 'offline') as offline, \
+                    patch.object(qualification.subprocess, 'run') as run, \
+                    patch.object(qualification.subprocess, 'check_output', return_value='sha256:' + 'a' * 64), \
+                    patch('builtins.print') as output:
+                module_spec = importlib.util.spec_from_file_location('rust_container_fixture', ROOT / '.github/scripts/container_job.py')
+                with patch.object(qualification.importlib.util, 'spec_from_file_location', return_value=module_spec):
+                    qualification.linux()
+                offline.assert_called_once_with('sha256:' + 'a' * 64)
+                messages = [item.args[0] for item in output.call_args_list]
+                self.assertEqual(messages, [message for name in names for message in
+                    ('Rust qualification phase start: ' + name, 'Rust qualification phase end: ' + name)])
+                commands = [item.args[0] for item in run.call_args_list]
+                qualify, replay = commands[2:4]
+                self.assertIn('--network=none', replay)
+                self.assertIn('--read-only', replay)
+                for command in (qualify, replay):
+                    index = command.index('python3')
+                    self.assertEqual(command[index:index + 3], ['python3', '-u', '-B'])
+
     def test_explicit_lane_uses_four_native_hosts_and_exact_paired_recipes(self):
         ci = qualification.ci_plan
         recipes = {target: 'a' * 64 for target in ci.RUST_RECIPES}
