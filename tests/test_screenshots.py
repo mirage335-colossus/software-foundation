@@ -292,7 +292,8 @@ class ScreenshotTests(unittest.TestCase):
         def run(argv, *args, **kwargs):
             commands.append(argv)
             if len(commands) == 3: raise ValueError('stop before surfaces')
-        with mock.patch.object(S.ci, 'assert_host'), \
+        with mock.patch.dict(S.os.environ, {'GITHUB_SHA': 'a'*40}), \
+             mock.patch.object(S.ci, 'assert_host'), \
              mock.patch.object(S.ci, 'gui_group_module') as gui, \
              mock.patch.object(S.delivery.store, 'verify_group', return_value={}), \
              mock.patch.object(S.ci, 'rust_selection', return_value={}), \
