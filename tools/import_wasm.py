@@ -36,7 +36,7 @@ def verify_input(package_dir, expected_manifest_sha256, source_root):
     if hashlib.sha256(read_file(root / 'web-manifest.json')).hexdigest() != expected_manifest_sha256:
         raise ValueError('Prebuilt Wasm manifest identity differs')
     manifest = verify(root)
-    if manifest.get('schema') != 2 or manifest.get('source_tree_sha256') != source_tree(source_root)['tree_sha256']:
+    if manifest.get('schema') not in (2, 3) or manifest.get('source_tree_sha256') != source_tree(source_root)['tree_sha256']:
         raise ValueError('Prebuilt Wasm and native application source identities differ; rebuild from the same source snapshot')
     return manifest
 

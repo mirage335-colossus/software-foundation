@@ -1,14 +1,19 @@
 import importlib.util
+import base64
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('package_wasm', ROOT / 'tools/package_wasm.py')
 package_wasm = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(package_wasm)
+sys.path.insert(0, str(ROOT / 'tests'))
+from test_browser_bundle import fixture_blobs
 
 
 class PackageWasmTests(unittest.TestCase):
@@ -21,8 +26,13 @@ class PackageWasmTests(unittest.TestCase):
         for name in package_wasm.ASSETS:
             (self.assets / name).write_text('// local fixture\n')
         (self.assets / 'gui_web_wasm.wasm').write_bytes(b'\0asm\x01\0\0\0')
-        (self.assets / 'boot.mjs').write_text("import './renderer.mjs';import './browser_lifecycle.mjs';import './browser_presenter.mjs';import './wasm_transport.mjs';")
-        (self.assets / 'renderer.mjs').write_text("import './file_services.mjs';")
+        (self.assets / 'wasm_worker.mjs').write_bytes((ROOT / 'gui/host/wasm_worker.mjs').read_bytes())
+        for name, data in fixture_blobs().items():
+            (self.assets / name).write_bytes(data)
+        for name, dependencies in package_wasm.IMPORTS.items():
+            if name not in package_wasm.browser_bundle.CHILD_MODULES:
+                (self.assets / name).write_text(''.join("import './" + dependency + "';" for dependency in dependencies))
+        package_wasm.browser_bundle.generate(self.assets, self.assets / package_wasm.browser_bundle.BUNDLE_NAME)
         (self.assets / 'index.html').write_text('<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/style.css"><div id="status"></div><script type="module" src="/boot.mjs"></script>')
         self.notice = self.root / 'LICENSE'
         self.notice.write_text('Example notice <safe> </script>')
@@ -31,8 +41,38 @@ class PackageWasmTests(unittest.TestCase):
     def make(self):
         return package_wasm.package(self.assets, self.output, [self.notice])
 
+    def make_legacy(self, schema=1, source_root=None):
+        blobs = {name: (self.assets / name).read_bytes() for name in package_wasm.LEGACY_ASSETS}
+        blobs['boot.mjs'] = b"import './renderer.mjs';import './browser_lifecycle.mjs';import './browser_presenter.mjs';import './wasm_transport.mjs';"
+        blobs['renderer.mjs'] = b"import './file_services.mjs';"
+        notices = {'LICENSE': self.notice.read_bytes()}
+        html = package_wasm.make_legacy_html(blobs, notices)
+        manifest = dict(schema=schema, runtime='dedicated-worker', transport='ordered-local-messages',
+                        network='disabled-by-csp', csp=package_wasm.LEGACY_CSP,
+                        inputs={name: package_wasm.digest(data) for name, data in blobs.items()},
+                        notices={name: package_wasm.digest(data) for name, data in notices.items()},
+                        html_sha256=package_wasm.digest(html))
+        if source_root is not None:
+            from source_identity import source_tree
+            manifest['source_tree_sha256'] = source_tree(source_root)['tree_sha256']
+        self.output.mkdir(exist_ok=True)
+        (self.output / package_wasm.HTML_NAME).write_bytes(html)
+        (self.output / 'web-manifest.json').write_bytes((json.dumps(manifest) + '\n').encode())
+        self.rewrite_checksums()
+        return manifest
+
+    def rewrite_checksums(self):
+        (self.output / 'manifest.sha256').write_bytes(''.join(package_wasm.digest((self.output / name).read_bytes()) + '  ' + name + '\n'
+                    for name in sorted((package_wasm.HTML_NAME, 'web-manifest.json'))).encode())
+
     def test_offline_inventory_notice_and_deterministic_output(self):
         expected = self.make()
+        self.assertEqual(expected['schema'], 3)
+        self.assertEqual(expected['renderer_modes'], ['standalone', 'isolated'])
+        self.assertEqual(expected['child']['sandbox'], 'allow-scripts')
+        self.assertNotIn('allow-same-origin', expected['child']['sandbox'])
+        self.assertNotIn("'sha256-", expected['csp'])
+        self.assertIn("'sha256-", expected['child']['csp'])
         html = (self.output / package_wasm.HTML_NAME).read_text()
         self.assertIn("connect-src &#x27;none&#x27;", html)
         self.assertNotIn('src="/boot.mjs"', html)
@@ -87,12 +127,99 @@ class PackageWasmTests(unittest.TestCase):
     def test_nested_renderer_dependency_is_required_and_embedded(self):
         self.make()
         html = (self.output / package_wasm.HTML_NAME).read_text()
-        self.assertIn('"renderer.mjs":["file_services.mjs"]', html)
+        self.assertIn('"renderer.mjs":["renderer_dom.mjs","browser_client.mjs","browser_services.mjs"]', html)
         self.assertIn('JSON.stringify(moduleURL(dependency))', html)
         self.assertIn("await import(moduleURL('boot.mjs'))", html)
         (self.assets / 'renderer.mjs').write_text('// missing dependency')
-        with self.assertRaisesRegex(ValueError, 'renderer.mjs -> file_services.mjs'):
+        with self.assertRaisesRegex(ValueError, 'renderer.mjs'):
             self.make()
+
+    def test_legacy_schemas_preserve_original_inventory_and_policy(self):
+        for schema in (1, 2):
+            with self.subTest(schema=schema):
+                source = self.root / 'legacy-source'
+                source.mkdir(exist_ok=True)
+                (source / 'main.cpp').write_text('int main(){}')
+                manifest = self.make_legacy(schema, source if schema == 2 else None)
+                self.assertEqual(package_wasm.verify(self.output), manifest)
+                self.assertEqual(set(manifest['inputs']), set(package_wasm.LEGACY_ASSETS))
+                self.assertNotIn('child', manifest)
+                changed = dict(manifest, csp=package_wasm.CSP)
+                (self.output / 'web-manifest.json').write_text(json.dumps(changed))
+                self.rewrite_checksums()
+                with self.assertRaisesRegex(ValueError, 'manifest mismatch'):
+                    package_wasm.verify(self.output)
+
+    def test_schema3_child_policy_and_canonical_document_bound(self):
+        self.make()
+        manifest_path = self.output / 'web-manifest.json'
+        manifest = json.loads(manifest_path.read_text())
+        for field in ('protocol', 'sandbox', 'csp', 'script_sha256', 'script_csp_sha256', 'inputs'):
+            with self.subTest(field=field):
+                original = json.loads(json.dumps(manifest))
+                original['child'][field] = {} if field == 'inputs' else 'changed'
+                manifest_path.write_text(json.dumps(original))
+                self.rewrite_checksums()
+                with self.assertRaisesRegex(ValueError, 'child isolation'):
+                    package_wasm.verify(self.output)
+        self.make()
+        html_path = self.output / package_wasm.HTML_NAME
+        html_path.write_bytes(html_path.read_bytes().replace(b"await import(moduleURL('boot.mjs'))", b"globalThis.unreviewed=true;await import(moduleURL('boot.mjs'))"))
+        manifest = json.loads(manifest_path.read_text())
+        manifest['html_sha256'] = package_wasm.digest(html_path.read_bytes())
+        manifest_path.write_text(json.dumps(manifest))
+        self.rewrite_checksums()
+        with self.assertRaisesRegex(ValueError, 'canonical'):
+            package_wasm.verify(self.output)
+
+    def test_generated_child_data_matches_exact_inputs(self):
+        (self.assets / 'renderer_dom.mjs').write_bytes((self.assets / 'renderer_dom.mjs').read_bytes() + b'\n// changed supplier input\n')
+        with self.assertRaisesRegex(ValueError, 'child bundle differs'):
+            self.make()
+        package_wasm.browser_bundle.generate(self.assets, self.assets / package_wasm.browser_bundle.BUNDLE_NAME)
+        self.make()
+        (self.assets / package_wasm.browser_bundle.BUNDLE_NAME).write_text('export const CHILD_SCRIPT="unreviewed";')
+        with self.assertRaisesRegex(ValueError, 'child bundle differs'):
+            self.make()
+
+    def test_classic_offline_worker_keeps_original_input_and_unchanged_policy(self):
+        original = (self.assets / 'wasm_worker.mjs').read_bytes()
+        converted = package_wasm.classic_worker_source(original)
+        self.assertNotIn('export function installWasmWorker', converted)
+        self.assertIn('function installWasmWorker(scope,loadModule=url=>import(url))', converted)
+        self.assertIn('installWasmWorker(globalThis)', converted)
+        self.assertEqual(converted.encode(), b'"use strict";\n' + original.replace(b'export function installWasmWorker', b'function installWasmWorker', 1))
+        manifest = self.make()
+        self.assertEqual(manifest['inputs']['wasm_worker.mjs'], package_wasm.digest(original))
+        self.assertEqual(manifest['csp'], package_wasm.CSP)
+        self.assertNotIn('unsafe-eval', manifest['csp'].replace('wasm-unsafe-eval', ''))
+        html = (self.output / package_wasm.HTML_NAME).read_text()
+        self.assertIn("workerFactory:url=>new Worker(url,{type:'classic'})", html)
+        payload = json.loads(re.search(r'<script type="application/json" id="foundation-assets">([^<]*)</script>', html)[1])
+        self.assertEqual(base64.b64decode(payload['wasm_worker.mjs']), original)
+        self.assertIn(base64.b64encode(converted.encode()).decode(), html)
+        # HTTP composition still uses the existing module Worker default.
+        self.assertIn("workerFactory=url=>new Worker(url,{type:'module'})", (ROOT / 'gui/host/wasm_transport.mjs').read_text())
+        self.assertEqual(package_wasm.verify(self.output), manifest)
+        legacy = self.make_legacy()
+        legacy_html = (self.output / package_wasm.HTML_NAME).read_text()
+        self.assertNotIn('workerFactory', legacy_html)
+        self.assertIn("workerURL:local(text('wasm_worker.mjs'))", legacy_html)
+        self.assertEqual(package_wasm.verify(self.output), legacy)
+
+    def test_classic_worker_conversion_fails_closed_on_unexpected_module_syntax(self):
+        original = (self.assets / 'wasm_worker.mjs').read_bytes()
+        changes = (original.replace(b'export function installWasmWorker', b'export async function installWasmWorker'),
+                   original + b"\nimport {unexpected} from './unexpected.mjs';",
+                   original + b'\nexport const unexpected=1;',
+                   original + b'\nconst unexpected=import.meta.url;',
+                   original + b"\nconst unexpected=import('unexpected');",
+                   original.replace(b'loadModule=url=>import(url)', b'loadModule=url=>import /* drift */ (url)'))
+        for source in changes:
+            with self.subTest(source=source[-90:]):
+                (self.assets / 'wasm_worker.mjs').write_bytes(source)
+                with self.assertRaisesRegex(ValueError, 'Worker module syntax'):
+                    self.make()
 
     def test_unsafe_css_and_bad_wasm_rejected(self):
         (self.assets / 'style.css').write_text('</style><script>bad()</script>')

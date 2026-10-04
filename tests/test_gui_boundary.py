@@ -741,10 +741,11 @@ class BrowserOwnerTests(unittest.TestCase):
                     self.assertTrue(streams[0].closed)
                     return real_copy(source, destination)
                 with mock.patch.object(self.browser.process_tree, 'launch', side_effect=launch), \
-                     mock.patch.object(self.browser.socket, 'socket'), \
+                     mock.patch.object(self.browser.socket, 'socket') as reserve_socket, \
                      mock.patch.object(self.browser.socket, 'create_connection', side_effect=OSError('offline')), \
                      mock.patch.object(self.browser.ChromiumBrowser, 'request', side_effect=OSError('offline')), \
                      mock.patch.object(self.browser.shutil, 'copyfile', side_effect=copy):
+                    reserve_socket.return_value.__enter__.return_value.getsockname.return_value = ('127.0.0.1', 32100)
                     with self.assertRaisesRegex(RuntimeError, 'exited during startup'):
                         with self.browser.browser_workspace(output) as work:
                             if chromium: self.browser.ChromiumBrowser('chrome', 'driver', work, [])

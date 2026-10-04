@@ -93,7 +93,7 @@ install anything into the host or establish other-platform qualification.
 
 A native package may include a browser build produced earlier from the same
 complete source tree. Build the Wasm target using its own SDK tree first, then
-create a schema-2 browser package with `tools/package_wasm.py --source-root PATH`.
+create a schema-3 browser package with `tools/package_wasm.py --source-root PATH`.
 Pass its directory and the exact SHA256 of `web-manifest.json` to the native build:
 
 ```sh
@@ -107,10 +107,12 @@ self-contained document and complete source identity before and after the native
 operation; CMake stages an owned copy and checks it again at installation. The
 pair becomes part of the build-tree identity. Changing or removing it requires a
 fresh tree. No Emscripten rebuild, SDK download or browser server is introduced in
-the native graph. Older schema-1 browser packages still verify independently but
-lack the source binding needed for native import. See [installed launches](installed.md)
-for the offline document command and [distribution channels](distro-channels.md)
-for native package inclusion.
+the native graph. Source-bound schema-2 packages remain eligible for native import;
+schema-1 packages verify independently but lack that source binding. Legacy
+schemas retain their original validation rules and make no renderer-isolation
+claim. See [browser embedding and package policies](browser-embedding.md),
+[installed launches](installed.md) for the offline document command and
+[distribution channels](distro-channels.md) for native package inclusion.
 
 `test` builds prerequisites before invoking CTest. Its default runs the complete
 enabled local test suite. `--label fast`, `core`, `tools`, `integration`, or
@@ -256,6 +258,13 @@ packages, modify a prepared SDK, or require administrator access. Preparation
 is an explicit operation with documented inputs and checksum verification.
 Missing inputs produce an actionable error. See [dependencies](dependencies.md)
 and [SDKs](sdk.md).
+
+[Disconnected application acceptance](offline-builds.md) names the complete
+input categories and the supported Bookworm runner. It restores retained SDK
+bytes and invokes this same wrapper inside a verified network boundary, with a
+fresh output tree and compiler caching disabled. Compiler reconstruction is a
+separate SDK-maintenance operation. Ordinary native development through declared
+distribution packages remains supported.
 
 Build a copied checkout and an installed consumer from paths containing spaces.
 Avoid hard-coded home directories, `/tmp` include aliases, absolute development

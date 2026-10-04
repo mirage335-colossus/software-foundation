@@ -1,7 +1,10 @@
 import copy
+from html import escape
 import importlib.util
+import json
 from pathlib import Path
 import platform
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -12,6 +15,183 @@ spec.loader.exec_module(check)
 
 
 class ReleaseCheckTests(unittest.TestCase):
+    def test_isolated_interaction_receipt_cannot_omit_an_existing_application_feature(self):
+        receipt = dict(composition='both', executed_compositions=['standalone', 'isolated'],
+                       executed_cases=[dict(transport='hosted', composition=name) for name in ('standalone', 'isolated')],
+                       checks=sorted(check.BROWSER_INTERACTION_CHECKS),
+                       frame_policies={'hosted-isolated': dict(sandbox='allow-scripts', srcdoc=True)})
+        check.browser_isolated_interactions(receipt, ['hosted'])
+        for name in check.BROWSER_INTERACTION_CHECKS:
+            broken = copy.deepcopy(receipt); broken['checks'].remove(name)
+            with self.subTest(check=name), self.assertRaisesRegex(ValueError, 'feature inventory'):
+                check.browser_isolated_interactions(broken, ['hosted'])
+        for field, value in [('executed_cases', receipt['executed_cases'][:1]),
+                             ('executed_compositions', ['isolated']), ('frame_policies', {})]:
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                check.browser_isolated_interactions(dict(receipt, **{field: value}), ['hosted'])
+
+    def test_renderer_qualification_retains_complete_hostile_fixture_and_observation_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = Path(temporary)
+            for name in ('browser/qualification.json', 'browser/frame.png',
+                         'browser-isolation/qualification.json', 'browser-isolation/authority.json',
+                         'browser-isolation/fixtures/authority/renderer_child_bundle.mjs'):
+                path = evidence / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('observed\n')
+            legacy = check.browser_evidence_paths(evidence, {})
+            self.assertEqual(legacy, ['browser/frame.png', 'browser/qualification.json'])
+            retained = check.browser_evidence_paths(evidence, {'renderer_security': {'path': 'browser-isolation/qualification.json'}})
+            self.assertIn('browser-isolation/authority.json', retained)
+            self.assertIn('browser-isolation/fixtures/authority/renderer_child_bundle.mjs', retained)
+            (evidence / 'browser-isolation/linked').symlink_to(evidence / 'browser/qualification.json')
+            with self.assertRaisesRegex(ValueError, 'linked'):
+                check.browser_evidence_paths(evidence, {'renderer_security': True})
+
+    def test_isolated_browser_wasm_qualification_requires_schema_three_and_exact_source(self):
+        import package_wasm
+        manifest = dict(schema=3, source_tree_sha256='a' * 64)
+        with patch.object(package_wasm, 'verify', return_value=manifest), \
+                patch.object(check, 'source_tree', return_value=dict(tree_sha256='a' * 64)):
+            self.assertEqual(manifest, check.browser_wasm_manifest(Path('/package'), Path('/source')))
+            for broken in (dict(schema=2, source_tree_sha256='a' * 64), dict(schema=3),
+                           dict(schema=3, source_tree_sha256='b' * 64)):
+                with patch.object(package_wasm, 'verify', return_value=broken), self.assertRaises(ValueError):
+                    check.browser_wasm_manifest(Path('/package'), Path('/source'))
+
+    def renderer_fixture(self, root):
+        import browser_bundle
+        source = root / 'source'; assets = root / 'web'
+        assets.mkdir()
+        for name in check.BROWSER_SECURITY_ASSETS:
+            (assets / name).write_text('// fixture ' + name + '\n')
+        for name in ('browser_isolation_test.py', 'browser_isolation_attack.mjs', 'browser_test.py'):
+            path = source / 'gui/tests' / name; path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('# fixture\n')
+        for name in ('browser_bundle.py', 'package_wasm.py', 'process_tree.py'):
+            path = source / 'tools' / name; path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('# fixture\n')
+        for name in browser_bundle.CHILD_MODULES:
+            imports = ''.join("import {" + browser_bundle.CHILD_EXPORTS[dependency][0] + " as input" + str(index) + "} from './" + dependency + "';\n"
+                              for index, dependency in enumerate(browser_bundle.CHILD_GRAPH[name]))
+            exports = ''.join('export const ' + export + '=' + str(index) + ';\n'
+                              for index, export in enumerate(browser_bundle.CHILD_EXPORTS[name]))
+            (assets / name).write_text(imports + exports)
+        metadata = browser_bundle.assemble({name: (assets / name).read_bytes()
+                                           for name in browser_bundle.CHILD_MODULES + ('style.css',)})
+        (assets / 'renderer_child_bundle.mjs').write_bytes(browser_bundle.module_bytes(metadata))
+        evidence = root / 'browser-isolation'; fixtures = evidence / 'fixtures'
+        fixture_policies = {}
+        parent_csp = "default-src 'none'; script-src 'self' 'sha256-" + metadata['CHILD_SCRIPT_SHA256'] + "'"
+        for case in check.BROWSER_SECURITY_CASES:
+            directory = fixtures / case; directory.mkdir(parents=True)
+            for name in check.BROWSER_SECURITY_ASSETS:
+                shutil.copyfile(assets / name, directory / name)
+            (directory / 'harness.mjs').write_text('// retained harness\n')
+            (directory / 'index.html').write_text('<meta http-equiv="Content-Security-Policy" content="' + escape(parent_csp, quote=True) + '">')
+            fixture_policies[case] = dict(child_script_sha256=metadata['CHILD_SCRIPT_SHA256'], child_csp=metadata['CHILD_CSP'],
+                sandbox=metadata['CHILD_SANDBOX'], protocol=metadata['CHILD_PROTOCOL'], child_inputs=metadata['CHILD_INPUTS'],
+                parent_csp=parent_csp, fixture_inputs={path.name: check.digest(path) for path in directory.iterdir()})
+        paths = [*source.rglob('*'), *assets.iterdir()]
+        receipt = dict(schema_version=1, status='passed', engine='firefox', browser_version='153.4.0',
+                       complete_security_inventory=True, executed_cases=sorted(check.BROWSER_SECURITY_CASES),
+                       checks=sorted(check.BROWSER_SECURITY_CHECKS),
+                       fixture_policies=fixture_policies,
+                       inputs={str(path.resolve()): check.digest(path) for path in paths if path.is_file()},
+                       production_child=dict(script_sha256=metadata['CHILD_SCRIPT_SHA256'], csp=metadata['CHILD_CSP'],
+                                             sandbox=metadata['CHILD_SANDBOX'], protocol=metadata['CHILD_PROTOCOL'],
+                                             inputs=metadata['CHILD_INPUTS']))
+        return source, assets, receipt, evidence
+
+    def test_browser_authority_receipt_requires_complete_current_byte_bound_proof(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source, assets, receipt, evidence = self.renderer_fixture(Path(temporary))
+            self.assertEqual(receipt, check.browser_security_receipt(receipt, source, assets, 'firefox', '153.4.0', fixture_evidence=evidence))
+            for field, value in [('schema_version', 0), ('status', 'failed'), ('engine', 'chromium'),
+                                 ('browser_version', 'other'), ('complete_security_inventory', False),
+                                 ('executed_cases', ['authority']), ('checks', []), ('fixture_policies', {})]:
+                with self.subTest(field=field), self.assertRaises(ValueError):
+                    check.browser_security_receipt(dict(receipt, **{field: value}), source, assets, 'firefox', '153.4.0', fixture_evidence=evidence)
+            for field in ('script_sha256', 'csp', 'sandbox', 'protocol', 'inputs'):
+                broken = copy.deepcopy(receipt); broken['production_child'][field] = 'wrong'
+                with self.subTest(policy=field), self.assertRaisesRegex(ValueError, 'another bundle'):
+                    check.browser_security_receipt(broken, source, assets, 'firefox', '153.4.0', fixture_evidence=evidence)
+            for name in check.BROWSER_SECURITY_ASSETS:
+                broken = copy.deepcopy(receipt); broken['inputs'].pop(str((assets / name).resolve()))
+                with self.subTest(asset=name), self.assertRaisesRegex(ValueError, 'missing or stale'):
+                    check.browser_security_receipt(broken, source, assets, 'firefox', '153.4.0', fixture_evidence=evidence)
+            (assets / 'browser_client.mjs').write_text('// changed after qualification\n')
+            with self.assertRaisesRegex(ValueError, 'missing or stale'):
+                check.browser_security_receipt(receipt, source, assets, 'firefox', '153.4.0', fixture_evidence=evidence)
+
+    def test_browser_authority_receipt_requires_complete_retained_fixture_fields_and_policies(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source, assets, receipt, evidence = self.renderer_fixture(Path(temporary))
+            qualify = lambda value: check.browser_security_receipt(value, source, assets, 'firefox', '153.4.0', fixture_evidence=evidence)
+            with self.assertRaisesRegex(ValueError, 'retained fixtures'):
+                check.browser_security_receipt(receipt, source, assets, 'firefox', '153.4.0')
+            broken = copy.deepcopy(receipt); broken['fixture_policies']['authority'] = {}
+            with self.assertRaisesRegex(ValueError, 'policy fields'):
+                qualify(broken)
+            for field in receipt['fixture_policies']['authority']:
+                broken = copy.deepcopy(receipt); broken['fixture_policies']['authority'].pop(field)
+                with self.subTest(missing=field), self.assertRaisesRegex(ValueError, 'policy fields'):
+                    qualify(broken)
+                broken = copy.deepcopy(receipt); broken['fixture_policies']['authority'][field] = 'wrong'
+                with self.subTest(changed=field), self.assertRaises(ValueError):
+                    qualify(broken)
+
+    def test_browser_authority_receipt_rejects_changed_extra_missing_and_linked_fixture_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source, assets, receipt, evidence = self.renderer_fixture(Path(temporary))
+            directory = evidence / 'fixtures/authority'
+            qualify = lambda: check.browser_security_receipt(receipt, source, assets, 'firefox', '153.4.0', fixture_evidence=evidence)
+            for name in check.BROWSER_SECURITY_FIXTURE_FILES:
+                path = directory / name; original = path.read_bytes()
+                path.write_bytes(original + b'\nchanged after browser execution\n')
+                with self.subTest(changed=name), self.assertRaisesRegex(ValueError, 'missing or stale'):
+                    qualify()
+                path.write_bytes(original)
+            path = directory / 'unexpected.mjs'; path.write_text('// not executed\n')
+            with self.assertRaisesRegex(ValueError, 'inventory differs'):
+                qualify()
+            path.unlink()
+            path = directory / 'harness.mjs'; original = path.read_bytes(); path.unlink()
+            with self.assertRaisesRegex(ValueError, 'inventory differs'):
+                qualify()
+            path.symlink_to(assets / 'browser_client.mjs')
+            with self.assertRaisesRegex(ValueError, 'ordinary bounded'):
+                qualify()
+            path.unlink(); path.write_bytes(original)
+            self.assertEqual(receipt, qualify())
+
+    def test_browser_authority_receipt_reassembles_child_and_reads_actual_parent_policy(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source, assets, receipt, evidence = self.renderer_fixture(Path(temporary))
+            directory = evidence / 'fixtures/authority'
+            qualify = lambda value: check.browser_security_receipt(value, source, assets, 'firefox', '153.4.0', fixture_evidence=evidence)
+            path = directory / 'renderer_dom.mjs'; original = path.read_bytes()
+            path.write_bytes(original + b'\nconst hiddenChange=true;\n')
+            broken = copy.deepcopy(receipt); broken['fixture_policies']['authority']['fixture_inputs'][path.name] = check.digest(path)
+            with self.assertRaisesRegex(ValueError, 'not canonical'):
+                qualify(broken)
+            path.write_bytes(original)
+            path = directory / 'index.html'
+            path.write_text('<meta http-equiv="Content-Security-Policy" content="default-src \'none\'">')
+            broken = copy.deepcopy(receipt); broken['fixture_policies']['authority']['fixture_inputs'][path.name] = check.digest(path)
+            with self.assertRaisesRegex(ValueError, 'parent policy differs'):
+                qualify(broken)
+
+    def test_new_browser_source_cannot_be_qualified_by_legacy_interaction_receipt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); marker = root / 'source/gui/host/browser_embedding.mjs'
+            marker.parent.mkdir(parents=True); marker.write_text('// isolated composition\n')
+            receipt = dict(schema_version=1, status='passed', engine='firefox', browser_version='153.4.0',
+                           mode='hosted', checks=['editing', 'accessible-names', 'shared-geometry', 'prompt-cancel', 'capture', 'cleanup'])
+            with patch.object(check.subprocess, 'run') as run, patch.object(check.c, 'load', return_value=receipt), \
+                    self.assertRaisesRegex(ValueError, 'interaction inventory'):
+                check.browser_check(root / 'source', root / 'web/serve.py', root / 'evidence', {}, executable=root / 'app')
+            self.assertIn('--composition', run.call_args.args[0])
+            self.assertIn('both', run.call_args.args[0])
+
     def test_browser_requires_offline_build_and_installed_packages(self):
         for installed in (False, True):
             with self.subTest(installed=installed), tempfile.TemporaryDirectory() as temporary:

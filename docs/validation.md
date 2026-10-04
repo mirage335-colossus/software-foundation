@@ -13,6 +13,80 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
+## Disconnected builds, stale actions and browser authority (2026-10-04)
+
+This implementation began from clean commit
+`2cc4ea9fddddcb2ea963a56de6b9b375a09a83fd`. The reference repositories remained
+unchanged. It preserves the existing hosts, application features, build entry
+point, SDKs, distro projections and release workflows. Application changes add a
+generic semantic input epoch; backend details remain in adapters and composition.
+Bezel activation now requires the exact successfully displayed presentation.
+Privileged browser embedding uses an opaque renderer frame and host-owned
+transport, services and lifecycle. See [disconnected builds](offline-builds.md),
+[browser embedding](browser-embedding.md) and [GUI contracts](gui-boundary.md).
+
+The complete initial disconnected x86_64 host acceptance used immutable source
+`a1153bfdb09856ee6fc8d54d7eb3a00bd4adb9bd6b2f2de84aa4a56dfd08cb8f`.
+The final 394-file source snapshot, after a Chromium offline Worker correction
+and qualification/test refinements, is
+`6ef7a6acded51e94b12953ca7c4e663d9cf37d830c25e746b12230104ab2a2cd`.
+All native application C++ sources, renderer/host modules, CMake definitions and
+maintained supplier patches are identical between these snapshots. The delta is
+the offline packager, release-evidence gate, their tests, two hostile-browser
+fixtures, documentation and the native-platform pending record. Native evidence
+retains its original identity; it is not relabeled as a full rebuild of the later
+snapshot. Only this validation entry changed after the final snapshot.
+
+| Scope | Observed result |
+| --- | --- |
+| Bookworm isolation | Prepared Debian 12 amd64 rootfs, 395 configured distro packages and exact file/link/mode inventory. Application and child probes saw loopback only, external connection refusal, no capabilities, read-only source/groups/SDK and fresh application build/HOME/temp/cache directories. Host HOME, supplier checkouts and unrelated caches were absent. Rootfs and retained inputs passed final rechecks. Setup ran on the Debian 13 host; application compilation, linking, packaging and consumer checks ran inside Bookworm. |
+| Complete initial host inventory | Both `linux-x86_64` and `browser-wasm32` passed SDK restoration, fresh builds, exactly two core tests each, packaging and installed CMake consumers. Native Linux passed the explicit Bookworm ABI audit and installed smoke checks for terminal, framebuffer, FLTK, Rev, SDL and hosted-web. One native graph built all six backends; Wasm used its necessary separate toolchain graph. |
+| Final corrected Wasm | A new disconnected run of the final snapshot passed fresh Wasm compilation, two core tests, packaging and installed Node/CMake consumer verification using the retained read-only SDK and frozen prepared cache. Its `--case browser-wasm32` receipt explicitly records focused coverage, not a second complete native host inventory. |
+| Shared GUI regressions | All 41 registered GUI-label CTests passed inside disconnected Bookworm, with zero skipped/failed cases. The same native build, wrapper identity and six application binary hashes were preserved. This configuration has toolkit host/supplier/visual qualification disabled; the separate six installed package smoke checks above are not substitutes for those broader tests. |
+| Actual browser interactions | Firefox 153.4.0 and Chromium 154.0.8037.92 each passed six cases: hosted native, HTTP Wasm and direct-file Wasm, each with standalone and isolated compositions. Tests covered editing, accessibility, geometry, retained rows, bounded/atomic import, export offering, task/prompt behavior, navigation and cleanup. Direct-file execution observed no HTTP resources. Browser owners joined. |
+| Renderer boundary | Each engine passed the complete 30-case hostile-renderer inventory. Correctly hashed malicious child code, including top-level code, executed before independent parent/token/service/storage/network/URL/lifetime checks. Actual retained fixtures, canonical bundles, input hashes and policies passed the tightened release gate; the twelve security assets exactly match final delivered Wasm assets. |
+| Native Wasm import | The final source-bound schema-3 document passed verification/staging and fresh core-only native portable assembly in Bookworm. Its installed consumer passed. All three imported document files matched the Wasm package byte for byte, and both installed offline launchers were present. Original six-backend native binaries stayed unchanged. This is separate from rebuilding all six backends with an imported document. |
+| Focused tooling | The final packager/bundle/import suites passed 27 methods; the final release gate passed 33 methods. The initial tools-label aggregate passed 55 of 56 CTests: the failing mock serialized a socket `MagicMock` into Firefox preferences. Giving it an explicit loopback address repaired that fixture; both affected GUI-boundary/release-check CTests passed. The failed aggregate is retained. Offline helpers/container tests and documentation/boundary/whitespace checks passed. |
+
+Chromium initially rejected the direct-file module Blob Worker entry with
+`Refused to cross-origin redirects of the top-level worker script.` Under the
+unchanged package CSP, a discriminating probe established classic Worker entry,
+Worker-owned Blob ES module import and Wasm compilation. Schema 3 now derives a
+narrowly validated classic entry with explicit strict mode from the same retained
+Worker source. HTTP keeps its module Worker; ordering, bounds, cancellation,
+close acknowledgements and CSP remain unchanged. Both engines then passed the
+complete corrected Wasm matrix. The original failure and probes remain retained.
+An independent review also found and repaired missing retained-fixture validation
+in the release gate; missing fields or changed fixture bytes now fail qualification.
+
+Evidence is under these ignored local directories, with original source/group/SDK
+identities, commands, phase receipts, JUnit results, package hashes and failures:
+
+- `.agent-work/artifacts/sol-ultra-implementation-v1/offline-bookworm-final/`
+  (`acceptance.json`, native `reentry-gui.json` and
+  `reentry-wasm-import-6ef7a6acded51e94.json`).
+- `.agent-work/artifacts/sol-ultra-implementation-v1/offline-bookworm-wasm-packagefix/`
+  (`acceptance.json` and final Wasm `execute.json`).
+- `.agent-work/artifacts/sol-ultra-browser-tests-v1/final-browser-matrix.json`
+  and its exact positive/security receipts, fixtures, policies and captures.
+- `.agent-work/artifacts/sol-ultra-implementation-v1/` contains the original and
+  repaired tooling JUnit reports and native-import log; the local re-entry launcher
+  is retained as evidence, not a new supported build API.
+
+The renderer can forge currently eligible delegated UI intents; this is not proof
+of a human gesture. Own-frame navigation may issue a request before channel
+revocation. Message limits apply after browser delivery, not to sender allocation
+or CPU use. An operation first dispatched while authorized may finish after
+revocation; subsequent dispatch and late parent completion effects are rejected.
+Worker computation, native process isolation and disconnected build networking
+remain distinct boundaries.
+
+No native aarch64/Windows offline execution, new hosted CI run, distro-channel
+transaction or release publication is claimed. Applicable unavailable environments
+are recorded in [pending native qualification](../.agent-pending/offline-platform-qualification.md).
+Support is preserved; those remaining platform claims require their native
+environments and exact retained inputs.
+
 ## Remaining transfer implementation (2026-10-04)
 
 Final hosted qualification at `3a3b7626161a8069cfa4f3729e1a51c0dbf4bfdb`

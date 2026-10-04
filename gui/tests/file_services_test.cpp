@@ -57,9 +57,16 @@ int main(){try{
     native_selector.template operator()<gui::FramebufferAdapter>();
     host::NativeFramebufferHost<ui::Application> embedded;
     embedded.application().handle(gui::WidgetEvent{{"entries.options",1},gui::ChooseOption{"import"}});
-    struct Sink {void present(const gui::Frame&) {}} sink;
+    struct Sink {
+        std::vector<std::string> labels;
+        void present(const gui::Frame&) {}
+        void present(const gui::Frame&,const std::vector<std::string>& shown){labels=shown;}
+    } sink;
     embedded.present(sink);check(bool(embedded.adapter().prompt()),"Native framebuffer embedding lacks file selector");
-    embedded.bezel_button(1);check(!embedded.adapter().prompt(),"Bezel cannot cancel native file selection");
+    const auto selector=embedded.prepare_bezel();check(bool(selector),"Native file selector preparation missing");
+    sink.present(selector.frame(),selector.labels());
+    check(sink.labels[0]=="Cancel"&&embedded.commit_bezel(selector.token()),"Native selector display commit missing");
+    embedded.bezel_button(selector.token(),1);check(!embedded.adapter().prompt(),"Bezel cannot cancel native file selection");
     std::atomic_bool stop{true};
     gui::ServiceRequest request{71,gui::ServiceKind::write_text,"Export","cancelled",32};
     check(host::file_detail::transfer(request,path,stop).status==gui::ServiceStatus::cancelled,"Export cancellation lost");

@@ -19,6 +19,11 @@ group; it does not prepare an SDK. Wasm and Windows instead use the checkout plu
 retained complete SDK/dependency groups and their declared host prerequisites.
 Keep these groups outside Git. See the [independence boundary](dependencies.md#bootstrap-without-recurring-supplier-access).
 
+Use [offline application builds](offline-builds.md) for the complete retained-input
+contract and disconnected Bookworm acceptance commands. That operation restores
+an already prepared group; it does not reconstruct a compiler. Source URLs and
+checksums describe provenance but do not replace retained archive contents.
+
 ## Ordinary SDK development qualification
 
 The explicit `native-gui.yml` workflow accepts `development: true` on Linux.
@@ -446,6 +451,11 @@ add browsers to a compiler recipe merely to run GUI tests. Preparation consumes 
 inputs, warms the declared C++ library/exception configuration, and verifies a
 second compile using a frozen cache. Ordinary compiles fail when a new library
 variant is needed; change and prepare the recipe deliberately.
+
+Disconnected acceptance keeps `EM_CACHE` on the installed SDK's prepared cache
+and sets `EM_FROZEN_CACHE=1`. An empty writable cache outside the SDK is not an
+equivalent input: missing variants must fail rather than trigger preparation or
+downloads during an application build.
 
 ```sh
 python3 tools/sdk_wasm.py fetch --inputs /owned/browser-inputs

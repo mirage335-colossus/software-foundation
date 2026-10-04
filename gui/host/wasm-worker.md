@@ -33,8 +33,13 @@ included, along with separate `web-manifest.json` and `manifest.sha256` evidence
 Installation places these three files in `share/software-foundation/wasm`.
 The ordinary multi-file debugging mode remains available under `web`.
 
-The package preloads Wasm bytes, uses Blob modules and a dedicated module Worker,
-and applies a Content Security Policy with `connect-src 'none'`. The module
+The package preloads Wasm bytes, uses Blob modules and a dedicated Worker,
+and applies a Content Security Policy with `connect-src 'none'`. HTTP mode uses
+a module Worker. The direct-file package uses a classic Blob Worker entry made
+from the reviewed `wasm_worker.mjs` declaration; its factory still loads as an
+ES module inside that Worker. This avoids Chromium's file-origin module-Worker
+entry restriction without changing CSP, transport ordering, limits or shutdown.
+Packaging rejects unreviewed module syntax in the converted entry. The module
 factory receives a Blob-safe `locateFile` callback even when Wasm bytes are
 supplied: Emscripten may compute the filename before checking those bytes.
 Packaging rejects changes to the reviewed boot import edges and HTML shell,

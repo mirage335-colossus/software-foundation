@@ -47,6 +47,7 @@ gui::Widget& Application::lookup(gui::Snapshot& view, std::string_view id) {
 }
 
 void Application::append_entry() {
+    advance_input_epoch();
     const auto& text = get("entries.editor").state.text;
     try {
         // Core owns collection validation, capacity, identity and mutation.
@@ -63,6 +64,13 @@ void Application::append_entry() {
     }
 }
 
+void Application::advance_input_epoch() {
+    if (input_epoch_ == std::numeric_limits<std::uint64_t>::max()) {
+        throw std::overflow_error("Input epoch exhausted");
+    }
+    ++input_epoch_;
+}
+
 void Application::handle(gui::Event event) {
     if (adapter_.closed()) return;
     // Closing must remain possible even if measurement or painting fails.
@@ -72,6 +80,7 @@ void Application::handle(gui::Event event) {
         adapter_.close();
         return;
     }
+    if (shutdown_) return;
     // Reject queued stale edits against authoritative state, not old pixels.
     if (!gui::normalize_event(view_, event, [this](const gui::WidgetKey& key) {
             return adapter_.scroll_offset(key);
@@ -84,21 +93,28 @@ void Application::handle(gui::Event event) {
         std::visit([&](const auto& input) {
             using T = std::decay_t<decltype(input)>;
             if constexpr (std::is_same_v<T, gui::EditText>) {
+                advance_input_epoch();
                 current.state.text = input.value;
                 status_ = "Ready";
                 status_error_ = false;
             } else if constexpr (std::is_same_v<T, gui::Activate>) {
                 if (widget->target.id == "entries.add") append_entry();
                 else if (widget->target.id == "entries.task.start") {
+                    if (task_running_) return;
                     std::vector<std::string> input;
                     for (const auto& entry : entries_.snapshot()) input.push_back(entry.text);
+                    advance_input_epoch();
                     task_progress_ = task_->start(std::move(input));
                     task_running_ = true;
                     task_status_ = "Processed 0 / " + std::to_string(task_progress_.total) + " bytes";
                 } else if (widget->target.id == "entries.task.cancel") {
+                    if (!task_running_) return;
+                    advance_input_epoch();
                     task_->cancel(); task_running_ = false; task_status_ = "Task cancelled";
                 } else if (widget->target.id == "entries.remove") {
                     auto& list = get("entries.list").state;
+                    if (!list.selected) return;
+                    advance_input_epoch();
                     for (const auto& record : entries_.snapshot())
                         if (list.selected == std::to_string(record.id)) entries_.erase(record.id);
                     list.selected.reset();
@@ -109,6 +125,7 @@ void Application::handle(gui::Event event) {
                 append_entry();
             } else if constexpr (std::is_same_v<T, gui::ChooseOption>) {
                 if (input.id == "clear") {
+                    advance_input_epoch();
                     for (const auto& record : entries_.snapshot()) entries_.erase(record.id);
                     get("entries.list").state.selected.reset();
                     status_ = "Entries cleared";
@@ -126,16 +143,22 @@ void Application::handle(gui::Event event) {
                     if (input.id == "export") {
                         for (const auto& record : entries_.snapshot()) request.value += record.text + "\n";
                         if (request.value.size() > request.byte_limit) {
+                            advance_input_epoch();
                             status_ = "Export exceeds the 64 KiB limit"; status_error_ = true; return;
                         }
                     }
+                    advance_input_epoch();
                     if (!services_.enqueue(std::move(request)))
                         throw std::logic_error("Service request rejected");
+                    ++pending_services_;
                     ++next_service_;
                 }
             } else if constexpr (std::is_same_v<T, gui::SelectRecord>) {
                 for (const auto& record : entries_.snapshot())
-                    if (input.id == std::to_string(record.id)) current.state.selected = input.id;
+                    if (input.id == std::to_string(record.id) && current.state.selected != input.id) {
+                        advance_input_epoch();
+                        current.state.selected = input.id;
+                    }
             }
         }, widget->input);
     }
@@ -143,7 +166,8 @@ void Application::handle(gui::Event event) {
 }
 
 void Application::enable_remove_feature() {
-    if (remove_feature_ || adapter_.closed()) return;
+    if (remove_feature_ || adapter_.closed() || shutdown_) return;
+    advance_input_epoch();
     for (const auto& definition : view_definition)
         if (definition.remove_extension) add(definition);
     remove_feature_ = true;
@@ -197,11 +221,19 @@ void Application::qualify(const std::function<void()>& present) {
 }
 
 std::optional<gui::ServiceRequest> Application::next_service() {
-    return services_.begin_next();
+    if (shutdown_ || adapter_.closed() || !pending_services_ || services_.current()) return std::nullopt;
+    advance_input_epoch();
+    auto request = services_.begin_next();
+    if (!request) throw std::logic_error("Pending service missing");
+    --pending_services_;
+    return request;
 }
 
 bool Application::complete_service(gui::ServiceResult result) {
+    if (shutdown_ || adapter_.closed()) return false;
     const auto request = services_.current();
+    if (!request || request->id != result.id) return false;
+    advance_input_epoch();
     if (!services_.complete(result)) return false;
     status_error_ = result.status == gui::ServiceStatus::error;
     if (status_error_) status_ = std::move(result.error);
@@ -232,21 +264,27 @@ bool Application::complete_service(gui::ServiceResult result) {
 }
 
 void Application::shutdown() noexcept {
+    if (shutdown_) return;
+    if (input_epoch_ != std::numeric_limits<std::uint64_t>::max()) ++input_epoch_;
+    shutdown_ = true;
+    pending_services_ = 0;
     task_->shutdown(); task_running_ = false; services_.shutdown();
 }
 
 void Application::tick() {
     if (adapter_.closed()) { shutdown(); return; }
+    if (shutdown_) return;
     if (const auto update = task_->advance()) complete_task(*update);
     retry_presentation();
 }
 
 bool Application::complete_task(const TaskUpdate& update) {
     // Value-only completion identity survives cancellation and replacement.
-    if (adapter_.closed() || !task_running_ || update.generation != task_progress_.generation ||
+    if (adapter_.closed() || shutdown_ || !task_running_ || update.generation != task_progress_.generation ||
         update.total != task_progress_.total || update.processed < task_progress_.processed ||
         update.processed > update.total || update.result > update.processed ||
         update.result < task_progress_.result || update.complete != (update.processed == update.total)) return false;
+    if (update.complete) advance_input_epoch();
     task_progress_ = update;
     task_running_ = !update.complete;
     task_status_ = update.complete ? "Counted " + std::to_string(update.result) + " non-space bytes" :

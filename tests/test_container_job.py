@@ -224,6 +224,52 @@ class ContainerJobs(unittest.TestCase):
         self.assertIn("runner.os == 'Windows' && inputs.profile == 'all-gui'",text)
 
 
+class OfflineContainers(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(); self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name).resolve()
+        self.source, self.output, self.group = [self.root / name for name in ('source with spaces', 'output', 'group')]
+        for path in (self.source, self.output, self.group): path.mkdir()
+        (self.output / 'sdk').mkdir(); (self.output / 'sdk/sdk.json').write_text('{}')
+        self.image = 'sha256:' + 'a' * 64
+
+    def command(self, phase='execute', target='linux-x86_64'):
+        return job.offline_command(self.source, self.output, self.group, 1001, 1002, self.image, phase, target=target)
+
+    def test_offline_launch_is_disconnected_readonly_and_has_only_declared_mounts(self):
+        command = self.command()
+        for value in ('--network=none', '--pull=never', '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges'):
+            self.assertIn(value, command)
+        self.assertEqual(command[command.index('--user') + 1], '1001:1002')
+        mounts = [command[index + 1] for index, value in enumerate(command) if value == '--mount']
+        self.assertEqual(mounts, [f'type=bind,source={self.source},target=/work,readonly',
+                                 f'type=bind,source={self.output},target=/output',
+                                 f'type=bind,source={self.group},target=/inputs/group,readonly',
+                                 f'type=bind,source={self.output / "sdk"},target=/output/sdk,readonly'])
+        self.assertNotIn('GH_TOKEN', command); self.assertNotIn('apt-get', command)
+        self.assertNotIn('ci-apt.sh', command); self.assertNotIn('/var/run/docker.sock', command)
+        self.assertIn('CCACHE_DISABLE=1', command); self.assertIn('HOME=/output/home', command)
+        self.assertIn('xvfb-run', command)
+
+    def test_stage_and_wasm_do_not_require_a_display_or_mount_an_unrestored_sdk(self):
+        stage = self.command('stage')
+        self.assertNotIn('xvfb-run', stage)
+        self.assertEqual(sum(value == '--mount' for value in stage), 3)
+        wasm = self.command(target='browser-wasm32')
+        self.assertNotIn('xvfb-run', wasm)
+        (self.output / 'sdk/sdk.json').unlink()
+        with self.assertRaisesRegex(ValueError, 'completed SDK restoration'): self.command()
+        self.command('stage')
+
+    def test_unpinned_images_root_identity_and_mount_separator_fail_closed(self):
+        for image, uid, gid in (('debian:bookworm', 1001, 1002), (self.image, 0, 1002), (self.image, 1001, 0)):
+            with self.subTest(image=image, uid=uid, gid=gid), self.assertRaises(ValueError):
+                job.offline_command(self.source, self.output, self.group, uid, gid, image, 'stage', target='linux-x86_64')
+        comma = self.root / 'source,with-comma'; comma.mkdir()
+        with self.assertRaisesRegex(ValueError, 'bind mount'):
+            job.offline_command(comma, self.output, self.group, 1001, 1002, self.image, 'stage', target='linux-x86_64')
+
+
 class BrowserPrivilegeSplit(unittest.TestCase):
     def test_setup_receipt_is_frozen_and_check_does_not_reinstall_packages(self):
         with tempfile.TemporaryDirectory() as temporary:

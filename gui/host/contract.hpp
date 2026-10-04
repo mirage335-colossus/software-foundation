@@ -19,6 +19,13 @@ template<class T> concept Application = requires(T& app, gui::Event event, gui::
     { app.qualify(present) } -> std::same_as<void>;
 };
 
+// Only physical-key presentation needs authoritative semantic freshness. An
+// ordinary embedding/runner remains compatible with the original contract.
+template<class T> concept BezelApplication = Application<T> && requires(const T& app) {
+    { app.input_epoch() } -> std::same_as<std::uint64_t>;
+    { app.presentation_pending() } -> std::same_as<bool>;
+};
+
 // Generic event loops need no filesystem or native threading headers. A host
 // may inject additional content services without naming application features.
 struct AdapterServices {

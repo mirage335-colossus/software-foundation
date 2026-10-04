@@ -17,7 +17,7 @@
     "gui/patches/web-ordering-test.patch: retained renderer tests use the patched module and verify delayed edit/action ordering",
     "gui/patches/web-tick.patch: authenticated ordered poll invokes bounded application work on the owning thread",
     "gui/patches/web-lifecycle.patch: bounded single outstanding poll and owned session/dialog/timer teardown",
-    "gui/patches/web-assets.patch: allow only the additional retained lifecycle module in the local static asset map",
+    "gui/patches/web-assets.patch: explicit retained asset routes and exact child script hash in inherited hosted CSP",
     "gui/patches/rev-conformance-scale.patch: supplier bitmap assertions map logical sample points to actual capture pixels without changing expected colors",
     "gui/patches/rev-clipboard-ownership.patch: synchronize fixture selection ownership across native connections and require a malformed reply without weakening rejection assertions",
     "gui/patches/touch-contract.patch: contact identity, move/release/cancel phases and bounded pointer validation",
@@ -27,7 +27,9 @@
     "gui/patches/web-file-services.patch: browser-owned file selection and download capability",
     "gui/patches/web-responsiveness.patch: bounded measurement scheduling and retained keyed rows",
     "gui/patches/web-presentation.patch: ordered state acceptance with coalesced visual presentation",
-    "gui/patches/web-file-transfer.patch: bounded ordered browser content chunks with service ownership and explicit abort"
+    "gui/patches/web-file-transfer.patch: bounded ordered browser content chunks with service ownership and explicit abort",
+    "gui/patches/web-split.patch: separate renderer DOM implementation from trusted transport and services; compatibility exports retained",
+    "gui/patches/web-embedding.patch: select isolated or standalone browser composition before loading renderer code"
   ],
   "files": {
     "LICENSE": "1b3b788174fca1e8879d5d714528f22732f03925621b4e3484ee88ae6b4ef5f0",

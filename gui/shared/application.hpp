@@ -22,6 +22,9 @@ public:
     bool task_running() const noexcept { return task_running_; }
     ~Application() { shutdown(); }
     bool presentation_pending() const noexcept { return presentation_pending_; }
+    // Authoritative input meaning, independent of painting/revision retries.
+    // UINT64_MAX is permanently invalid for retained input tokens.
+    std::uint64_t input_epoch() const noexcept { return input_epoch_; }
     std::optional<gui::ServiceRequest> next_service();
     bool complete_service(gui::ServiceResult result);
 
@@ -38,6 +41,9 @@ private:
     static constexpr std::size_t entry_limit_ = 1000;
     foundation::Store entries_{entry_limit_};
     std::uint64_t next_service_ = 1;
+    std::uint64_t input_epoch_ = 1;
+    std::size_t pending_services_ = 0;
+    bool shutdown_ = false;
     bool presentation_pending_ = false;
     bool remove_feature_ = false;
     std::string status_ = "Ready";
@@ -51,6 +57,7 @@ private:
     static gui::Widget& lookup(gui::Snapshot& view, std::string_view id);
     gui::Widget& get(std::string_view id) { return lookup(view_, id); }
     void append_entry();
+    void advance_input_epoch();
     void publish();
 };
 

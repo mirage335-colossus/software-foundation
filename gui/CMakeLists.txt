@@ -216,13 +216,20 @@ foundation_gui_patch(include/gui/web.hpp web-tick.patch patch-inputs/web-ticked.
 foundation_gui_repatch(patch-inputs/web-ticked.hpp web-file-transfer.patch include/gui/web.hpp)
 foundation_gui_patch(backends/web/renderer.mjs web-ordering.patch patch-inputs/renderer-ordered.mjs)
 foundation_gui_repatch(patch-inputs/renderer-ordered.mjs web-responsiveness.patch patch-inputs/renderer-responsive.mjs)
-foundation_gui_repatch(patch-inputs/renderer-responsive.mjs web-file-services.patch web/renderer.mjs)
+foundation_gui_repatch(patch-inputs/renderer-responsive.mjs web-file-services.patch patch-inputs/renderer-services.mjs)
+foundation_gui_repatch(patch-inputs/renderer-services.mjs web-split.patch web/renderer_dom.mjs)
+configure_file(host/renderer_compat.mjs "${CMAKE_CURRENT_BINARY_DIR}/web/renderer.mjs" COPYONLY)
 foundation_gui_patch(backends/web/boot.mjs web-lifecycle.patch patch-inputs/boot-lifecycle.mjs)
-foundation_gui_repatch(patch-inputs/boot-lifecycle.mjs web-presentation.patch web/boot.mjs)
+foundation_gui_repatch(patch-inputs/boot-lifecycle.mjs web-presentation.patch patch-inputs/boot-presentation.mjs)
+foundation_gui_repatch(patch-inputs/boot-presentation.mjs web-embedding.patch web/boot.mjs)
 foundation_gui_patch(backends/web/host.py web-assets.patch web/host.py)
-configure_file(host/browser_lifecycle.mjs "${CMAKE_CURRENT_BINARY_DIR}/web/browser_lifecycle.mjs" COPYONLY)
-foreach(module wasm_transport wasm_worker browser_presenter file_services)
+set(foundation_web_modules browser_lifecycle wasm_transport wasm_worker browser_presenter file_services
+    browser_client browser_services browser_limits browser_composition renderer_channel renderer_frame browser_embedding)
+set(foundation_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web/boot.mjs"
+    "${CMAKE_CURRENT_BINARY_DIR}/web/renderer.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/renderer_dom.mjs")
+foreach(module IN LISTS foundation_web_modules)
     configure_file("host/${module}.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/${module}.mjs" COPYONLY)
+    list(APPEND foundation_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web/${module}.mjs")
 endforeach()
 if(BUILD_TESTING AND FOUNDATION_NODE_EXECUTABLE)
     add_test(NAME foundation.gui.worker COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
@@ -239,7 +246,16 @@ if(BUILD_TESTING AND FOUNDATION_NODE_EXECUTABLE)
         "${CMAKE_CURRENT_BINARY_DIR}/web/boot.mjs")
     add_test(NAME foundation.gui.file-browser COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/file_services_test.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/file_services.mjs")
-    foreach(name browser-responsiveness browser-presenter file-browser)
+    add_test(NAME foundation.gui.browser-channel COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/renderer_channel_test.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web/renderer_channel.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/browser_client.mjs")
+    add_test(NAME foundation.gui.browser-embedding COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_embedding_test.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web/browser_embedding.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/browser_composition.mjs")
+    add_test(NAME foundation.gui.browser-services COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_services_test.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web/browser_services.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/browser_client.mjs")
+    foreach(name browser-responsiveness browser-presenter file-browser browser-channel browser-embedding browser-services)
         foundation_test_prerequisites(foundation.gui.${name})
         set_tests_properties(foundation.gui.${name} PROPERTIES LABELS "gui;focused" TIMEOUT 30)
     endforeach()
@@ -252,6 +268,16 @@ if(BUILD_TESTING AND FOUNDATION_NODE_EXECUTABLE)
 endif()
 file(COPY "${FOUNDATION_GUI_SOURCE}/backends/web/style.css"
     "${FOUNDATION_GUI_SOURCE}/backends/web/index.html" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/web")
+list(APPEND foundation_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web/style.css"
+    "${CMAKE_CURRENT_BINARY_DIR}/web/index.html" "${CMAKE_CURRENT_BINARY_DIR}/web/renderer_child_bundle.mjs")
+# Generate only the reviewed renderer graph. This output is pure data when
+# imported by the privileged parent; child code runs exclusively in its frame.
+execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tools/browser_bundle.py"
+    --assets "${CMAKE_CURRENT_BINARY_DIR}/web"
+    --output "${CMAKE_CURRENT_BINARY_DIR}/web/renderer_child_bundle.mjs"
+    COMMAND_ERROR_IS_FATAL ANY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/tools/browser_bundle.py")
 configure_file(hosts/web_host.py "${CMAKE_CURRENT_BINARY_DIR}/web/serve.py" COPYONLY)
 if(FOUNDATION_GUI_DISTRIBUTABLE)
     foreach(notice third_party/rev-deps/glew-LICENSE.txt third_party/rev-deps/freetype-LICENSE.TXT
@@ -262,9 +288,11 @@ if(FOUNDATION_GUI_DISTRIBUTABLE)
         third_party/rev/README.md third_party/rev/PATCHES.md third_party/rev-deps/UPSTREAM.json)
         foundation_notice_file("${FOUNDATION_GUI_SOURCE}/${notice}")
     endforeach()
-    install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/web/"
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/software-foundation/web"
-        PATTERN "__pycache__" EXCLUDE PATTERN "*.pyc" EXCLUDE)
+    # Admit only the reviewed production closure. A test asset or stale output
+    # placed beside these files must never enter an application package.
+    install(FILES ${foundation_web_assets} "${CMAKE_CURRENT_BINARY_DIR}/web/host.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/web/serve.py"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/software-foundation/web")
     install(FILES "${lock_path}" DESTINATION "${CMAKE_INSTALL_DOCDIR}/gui-boundary")
     foreach(index RANGE 0 ${license_last})
         string(JSON license_file GET "${lock}" redistribution license_files ${index})
@@ -309,13 +337,7 @@ if(EMSCRIPTEN)
         DEPENDS foundation-gui-web-wasm "${CMAKE_CURRENT_BINARY_DIR}/wasm-package-source.txt"
             "${CMAKE_SOURCE_DIR}/tools/source_identity.py" "${CMAKE_SOURCE_DIR}/tools/package_wasm.py"
             "${CMAKE_SOURCE_DIR}/tools/package_notices.py" "${CMAKE_SOURCE_DIR}/tools/sdk_manifest.py"
-            "${CMAKE_CURRENT_BINARY_DIR}/web/boot.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/renderer.mjs"
-            "${CMAKE_CURRENT_BINARY_DIR}/web/browser_lifecycle.mjs"
-            "${CMAKE_CURRENT_BINARY_DIR}/web/browser_presenter.mjs"
-            "${CMAKE_CURRENT_BINARY_DIR}/web/file_services.mjs"
-            "${CMAKE_CURRENT_BINARY_DIR}/web/wasm_transport.mjs"
-            "${CMAKE_CURRENT_BINARY_DIR}/web/wasm_worker.mjs"
-            "${CMAKE_CURRENT_BINARY_DIR}/web/index.html" "${CMAKE_CURRENT_BINARY_DIR}/web/style.css"
+            "${CMAKE_SOURCE_DIR}/tools/browser_bundle.py" ${foundation_web_assets}
             ${wasm_notices} VERBATIM)
     add_custom_target(foundation-wasm-package ALL DEPENDS "${wasm_html}" "${wasm_manifest}" "${wasm_checksums}")
     if(FOUNDATION_GUI_DISTRIBUTABLE)

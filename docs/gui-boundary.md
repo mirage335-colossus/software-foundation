@@ -58,7 +58,7 @@ same view table as the other controls. `Application` copies authoritative record
 into [TextTask](../gui/shared/task.hpp), then applies owned progress values on the
 UI thread. The value-only `TaskExecutor` interface selects native background
 execution or cooperative stepping once per target platform; features and layout
-are identical. Wasm uses cooperative work inside its existing module Worker.
+are identical. Wasm uses cooperative work inside its existing dedicated Worker.
 Native applications use one persistent producer and a one-slot latest-progress
 mailbox. A native work chunk covers at most 4096 bytes; cancellation/replacement
 invalidates its generation without waiting in the event handler. Shutdown joins
@@ -132,16 +132,22 @@ or hardware touchscreen qualification.
 
 ## Worker execution and an offline browser application
 
-The Wasm host creates one dedicated module Worker for each application session.
+The Wasm host creates one dedicated Worker for each application session. HTTP
+mode uses a module entry; direct-file packaging uses a reviewed classic Blob
+entry that loads the ES module factory inside the Worker. This accommodates
+Chromium's file-origin entry restrictions under the same content policy and
+preserves the transport and lifecycle implementation.
 The existing ordered Client envelopes cross a bounded message boundary; only one
 request is outstanding. The client snapshots each accepted operation and bounds
 it to 1 MiB, with an 8 MiB total including the in-flight operation. Adjacent
 compatible edits coalesce without crossing action barriers; rejected work cannot
 consume a sequence number or silently drop an earlier accepted action. C++
 callbacks and ordinary application work execute away
-from the browser UI thread. DOM rendering, user input and dialogs stay in the
-browser thread. This complements bounded application work without adding pthreads,
-SharedArrayBuffer, Asyncify or an audio loop.
+from the browser UI thread. DOM rendering and user input stay in the browser;
+trusted host code owns dialogs and file services. [Browser embedding](browser-embedding.md)
+places the renderer in an opaque sandboxed iframe while keeping transport,
+Worker, service and lifecycle authority in its parent. This complements bounded
+application work without adding pthreads, SharedArrayBuffer, Asyncify or an audio loop.
 
 Close waits for acknowledgment after C++ destruction. A bounded timeout or Worker
 failure terminates the Worker, rejects pending work and requires a new session
@@ -162,7 +168,11 @@ module Blob URLs are owned and revoked by their creating lifetimes. Build it wit
 
 The ordinary graph builds the package as `foundation-wasm-package`; it reuses the
 same application target and prepared SDK. The package manifest binds every input
-and the final HTML. Packaging does not download a runtime or a browser. Actual
+and the final HTML. Schema 3 also binds the isolated child bundle and policy; the
+same HTML offers standalone and isolated compositions. Legacy schemas retain
+their original policies and make no isolation claim. See
+[browser package compatibility](browser-embedding.md#offline-package-and-legacy-compatibility).
+Packaging does not download a runtime or a browser. Actual
 browser checks remain necessary when changing a compiler, Worker lifecycle or
 content policy; Node fixtures alone cannot qualify browser behavior.
 
@@ -200,7 +210,12 @@ Browsers offer an explicit file input and Download button. The host bounds bytes
 before decoding, rejects invalid UTF-8, preserves a leading BOM as content just
 as the native reader does, aborts withdrawn dialogs and ignores late reads. Export success means a download was offered, not that the user saved it.
 The shared status deliberately says “Export handed to host”. Both hosted and
-single-file Wasm paths use the same helper with no network dependency.
+single-file Wasm paths use the same helper with no network dependency. In isolated
+composition these dialogs, File/Blob objects, download URLs and completion
+operations belong to the trusted parent. A renderer can request only eligible
+UI input; it cannot send file or service protocol operations. The
+[embedding service contract](browser-embedding.md#service-ownership-and-revocation)
+describes descriptor replacement, cancellation and late-effect checks.
 
 Browser imports use `fileBegin` (service ID and declared byte length), ordered
 `fileChunk` operations (exact byte offset and at most 4096 bytes encoded as hex),
@@ -220,28 +235,74 @@ storage. The same C++ framing and JavaScript helper run in hosted and Wasm modes
 
 [`Bezel`](../gui/host/bezel.hpp) projects eligible declared buttons, toggles, menu
 options and bitmap actions into three or five debounced physical keys. It contains
-no application IDs. `FramebufferHost` exposes `bezel_labels()` and
-`bezel_button(number)`: a display driver paints the returned labels beside its
-screen, and GPIO/VR/touch bindings deliver one logical press per activation.
+no application IDs. `FramebufferHost` prepares an owned frame/labels/token value;
+a driver displays that exact frame and those labels, then commits its token.
+GPIO/VR/touch bindings deliver one logical press with the committed token.
 Keys 1 and 2 select previous/next action; key 3 dispatches the displayed action
 through the shared interaction policy. Five-key devices additionally expose Back
-and Next page. A modal prompt offers only Cancel/Accept, and an open popup owns Previous/Next/Choose; disabled, invisible and
-out-of-modal actions never appear. A newly unavailable selection falls back to
-an eligible action. Ordinary touchscreen contacts retain their separate valid
-release/cancellation semantics; raw repeating contacts must not call this
-already-debounced key interface.
+and Next page. A modal prompt offers only Cancel/Accept, and an open popup owns
+Previous/Next/Choose. Disabled, invisible and out-of-modal actions never appear.
+Preparation may select a currently eligible fallback; activation never falls back
+from a stale displayed action. Ordinary touchscreen contacts retain their
+separate release/cancellation semantics; raw repeating contacts must not call
+this already-debounced key interface.
 
 ```cpp
-// App implements the ordinary generic application contract.
+// App also supplies input_epoch() and presentation_pending().
 foundation::host::NativeFramebufferHost<App> host(3);
-for (const auto& label : host.bezel_labels()) driver.paint_key_label(label);
-host.bezel_button(2); // Select the next declared action, without knowing its ID.
-host.bezel_button(3); // Invoke that action through the shared policy.
-host.present(driver); // The driver receives the usual immutable frame.
+auto shown = host.prepare_bezel();
+if (shown) {
+    driver.present(shown.frame(), shown.labels());
+    if (host.commit_bezel(shown.token())) {
+        // Deliver a later debounced physical press using this displayed token.
+        host.bezel_button(shown.token(), 3);
+    }
+}
 ```
 
-[`bezel_test.cpp`](../gui/tests/bezel_test.cpp) exercises both key counts,
-declared menu choices, disabled actions, modal cancellation and closed adapters.
+`prepare_bezel()` ticks the application/services and returns a false-valued
+presentation when closed, publication remains pending or the app epoch cannot arm
+input (zero or the exhausted maximum value). Its immutable token owns
+the frame, labels, generic action/context descriptor and application semantic
+input epoch. Call `commit_bezel(token)` only after both the frame and labels have
+successfully become interactive. An asynchronous driver may acknowledge later;
+an obsolete candidate, changed frame/context or stale epoch cannot commit. A
+driver failure must not commit or advance the displayed frame revision.
+`present_bezel(driver)` is the synchronous convenience for a driver supplying
+`present(frame, labels)`; it also displays label changes when pixel damage is zero.
+`bezel_labels()` remains an observation and cannot arm input. There is no
+labels-only or single-argument `bezel_button(number)` activation overload.
+
+`bezel_button(token, number)` consumes the latest committed opportunity before
+canceling touch and ticking/pumping services. It then checks the authoritative
+epoch, pending publication and current descriptor before dispatching through the
+shared policy. Missing, foreign, uncommitted, consumed and stale tokens return
+false without an action. Reentrant or repeated presses cannot reuse the
+opportunity, and exceptions consume it before propagating. Previous/Next selection
+also consumes the token: redisplay and commit before Execute.
+
+Only bezel methods require [`BezelApplication`](../gui/host/contract.hpp), which
+adds const `input_epoch() -> std::uint64_t` and `presentation_pending() -> bool`
+to the ordinary application contract. Ordinary `present(driver)` and its
+one-argument display API retain their contract. The app owns a nonzero monotonic
+epoch that never reuses an identity. Advance it before an accepted semantic
+mutation, including changes that affect an action's meaning without changing its
+widget key or label, and retain that advancement if publication fails. Counter
+exhaustion must fail before mutation. Snapshot revisions are informational and
+cannot substitute for this epoch. Measurement, layout-only resize, publication
+retry and incomplete progress for the same task do not advance semantic meaning.
+
+The owned descriptor checks ordered eligible targets/generations, operation and
+operands, labels, option/action values, desired toggle value, page/order/modal and
+Escape bindings, complete prompt identity/value/limits, and popup options/selection
+with current declaration agreement. Feature meaning remains in shared application
+code; a backend never interprets a product command. Thus selecting record B after
+displaying Remove for record A invalidates that display even when the button key
+and label are unchanged.
+
+[`bezel_test.cpp`](../gui/tests/bezel_test.cpp) contains prepare/display/commit
+scenarios for semantic replacement, selection followed by activation, services,
+failed/obsolete commits and reentrant input in addition to both key counts.
 This is a generic device integration example, not physical Arduino or VR device
 qualification. Bare-device embeddings may supply their own content provider.
 

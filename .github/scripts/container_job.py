@@ -101,6 +101,41 @@ def command(action, root, uid, gid, environment, *, prepared_image=None):
     return argv
 
 
+def offline_command(source, output, group, uid, gid, image, phase, *, target):
+    """Consume a locally prepared immutable image without package setup/pulling.
+
+    Restoration and execution use separate fresh containers with identical
+    disconnected policy. The restored SDK becomes a read-only input to execution.
+    Only the source snapshot, exact retained group and owned output are exposed.
+    """
+    uid, gid = account_id(uid), account_id(gid)
+    if (not re.fullmatch(r'sha256:[0-9a-f]{64}', image) or phase not in ('stage', 'execute')
+            or target not in ('linux-x86_64', 'linux-aarch64', 'browser-wasm32')):
+        raise ValueError('offline acceptance needs an immutable image and explicit phase')
+    paths = [Path(path).resolve(strict=True) for path in (source, output, group)]
+    if any(any(character in str(path) for character in (',', '\n', '\0')) for path in paths):
+        raise ValueError('unsupported offline bind mount path')
+    source, output, group = paths
+    argv = ['docker', 'run', '--rm', '--pull=never', '--network=none', '--read-only',
+            '--cap-drop=ALL', '--security-opt=no-new-privileges', '--user', f'{uid}:{gid}',
+            '--tmpfs', '/tmp:rw,nosuid,nodev,mode=1777', '-w', '/work']
+    prefix = 'stage-' if phase == 'stage' else ''
+    display = phase == 'execute' and target.startswith('linux-')
+    for name, value in {'HOME': '/output/' + prefix + 'home', 'TMPDIR': '/output/' + prefix + 'tmp', 'XDG_CACHE_HOME': '/output/' + prefix + 'cache',
+                        'PATH': '/usr/bin:/bin', 'LC_ALL': 'C', 'PYTHONUTF8': '1', 'PYTHONDONTWRITEBYTECODE': '1',
+                        'CCACHE_DISABLE': '1', 'CCACHE_DIR': '/output/' + prefix + 'cache/ccache', 'LIBGL_ALWAYS_SOFTWARE': '1'}.items():
+        argv += ['-e', name + '=' + ('/tmp' if name == 'TMPDIR' and display else value)]
+    for path, destination, readonly in ((source, '/work', True), (output, '/output', False), (group, '/inputs/group', True)):
+        argv += ['--mount', f'type=bind,source={path},target={destination}' + (',readonly' if readonly else '')]
+    if phase == 'execute':
+        if not (output / 'sdk/sdk.json').is_file():
+            raise ValueError('offline execution requires a completed SDK restoration')
+        argv += ['--mount', f'type=bind,source={output / "sdk"},target=/output/sdk,readonly']
+    inner = ['python3', '-B', '/work/tools/offline_acceptance.py', '--inside', phase, '--request', '/output/request.json']
+    argv += [image, *(['xvfb-run', '-a', 'env', 'TMPDIR=/output/tmp'] if display else []), *inner]
+    return argv
+
+
 def create_account(uid, gid):
     # Conflicting preexisting users fail; never change an unrelated account.
     for identity in (str(uid), 'sdkbuilder'):

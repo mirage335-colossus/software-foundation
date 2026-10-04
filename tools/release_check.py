@@ -150,6 +150,180 @@ def bind_browser_prerequisite(state, details, evidence):
                                        "attempt": expected["attempt"]}
 
 
+BROWSER_SECURITY_CASES = {
+    "authority", "sibling", "wrong-nonce", "extra-ports", "duplicate-ready", "duplicate-bound",
+    "duplicate-request", "oversized-request", "stale-message-generation", "stale-key-generation",
+    "queue-bounds", "forbidden-service", "forbidden-file", "forbidden-poll", "forbidden-resize",
+    "forbidden-close", "forbidden-transport", "provider-replacement", "provider-dispose",
+    "provider-pagehide", "file-read-replacement", "file-read-dispose", "file-read-pagehide",
+    "file-import-replacement", "file-import-dispose", "download-revocation", "download-valid-cleanup",
+    "own-navigation", "initial-navigation", "concurrent-frontends",
+}
+BROWSER_SECURITY_CHECKS = {
+    "actual-browser", "production-assembly", "correct-hash-malicious-child", "malicious-top-level-ran",
+    "malicious-payload-ran", "opaque-origin-parent-canaries", "transport-token-insulation",
+    "parent-service-file-url-insulation", "canary-positive-controls", "browser-process-tree-joined",
+    "canary-server-joined", "child-resource-network-denials", "storage-cookie-dom-denials",
+    "popup-top-navigation-download-denials", "wrong-sibling-correct-nonce",
+    "self-navigation-observed-and-channel-revoked", "initial-navigation-no-rebinding",
+    "concurrent-frontends-isolated-lifetimes",
+}
+BROWSER_SECURITY_ASSETS = (
+    "browser_embedding.mjs", "browser_client.mjs", "browser_services.mjs", "browser_lifecycle.mjs",
+    "browser_limits.mjs", "browser_presenter.mjs", "renderer_channel.mjs", "renderer_dom.mjs",
+    "renderer_frame.mjs", "renderer_child_bundle.mjs", "file_services.mjs", "style.css",
+)
+BROWSER_SECURITY_FIXTURE_FILES = set(BROWSER_SECURITY_ASSETS) | {"harness.mjs", "index.html"}
+BROWSER_INTERACTION_CHECKS = {
+    "editing", "accessible-names", "shared-geometry", "prompt-cancel", "bounded-task", "capture", "cleanup",
+    "retained-record-dom", "bounded-file-import", "atomic-invalid-import", "export-offered",
+    "pagehide-prompt-cancel", "navigation", "opaque-frame-policy", "parent-owned-services",
+}
+
+
+def browser_isolated_interactions(receipt, modes):
+    cases = [{"transport": transport, "composition": composition}
+             for transport in modes for composition in ("standalone", "isolated")]
+    policies = receipt.get("frame_policies", {})
+    if (receipt.get("composition") != "both" or receipt.get("executed_compositions") != ["standalone", "isolated"] or
+            receipt.get("executed_cases") != cases or
+            not BROWSER_INTERACTION_CHECKS <= set(receipt.get("checks", [])) or
+            set(policies) != {transport + "-isolated" for transport in modes} or
+            any(policy.get("sandbox") != "allow-scripts" or policy.get("srcdoc") is not True
+                for policy in policies.values())):
+        raise ValueError("real browser did not exercise both renderer compositions and their feature inventory")
+
+
+
+def browser_receipt_inputs(receipt, paths):
+    """A passed assertion inventory must describe the bytes actually delivered."""
+    inputs = receipt.get("inputs")
+    if not isinstance(inputs, dict):
+        raise ValueError("browser receipt lacks its executed input inventory")
+    for path in paths:
+        path = Path(path)
+        if path.is_symlink() or not path.is_file() or inputs.get(str(path.resolve())) != digest(path):
+            raise ValueError("browser evidence is missing or stale for " + str(path))
+
+
+def browser_wasm_manifest(directory, source_root):
+    import package_wasm
+    manifest = package_wasm.verify(directory)
+    if (manifest.get("schema") != 3 or
+            manifest.get("source_tree_sha256") != source_tree(source_root)["tree_sha256"]):
+        raise ValueError("isolated browser release needs a source-bound schema-3 Wasm package")
+    return manifest
+
+
+def browser_evidence_paths(evidence, details):
+    directories = ["browser"]
+    if details.get("renderer_security"):
+        directories.append("browser-isolation")
+    paths = []
+    for name in directories:
+        for path in sorted((evidence / name).rglob("*")):
+            if path.is_symlink():
+                raise ValueError("browser evidence cannot contain linked inputs")
+            if path.is_file():
+                paths.append(path.relative_to(evidence).as_posix())
+    return paths
+
+
+def browser_child_metadata(assets):
+    """Bind canonical inert bundle data to the actual reviewed child inputs."""
+    import browser_bundle
+    blobs = {}
+    for name in (*browser_bundle.CHILD_MODULES, "style.css", browser_bundle.BUNDLE_NAME):
+        path = Path(assets) / name
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 64 * 1024 * 1024:
+            raise ValueError("browser child needs ordinary bounded inputs: " + str(path))
+        blobs[name] = path.read_bytes()
+    metadata = browser_bundle.parse_module(blobs.pop(browser_bundle.BUNDLE_NAME))
+    if metadata != browser_bundle.assemble(blobs):
+        raise ValueError("browser child bundle is not canonical for its retained inputs")
+    return metadata
+
+
+def browser_security_fixtures(fixtures, evidence):
+    """Verify the retained bytes that were served for every hostile case."""
+    from html.parser import HTMLParser
+
+    class Policies(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.values = []
+
+        def handle_starttag(self, tag, attributes):
+            attributes = dict(attributes)
+            if tag == "meta" and attributes.get("http-equiv", "").lower() == "content-security-policy":
+                self.values.append(attributes.get("content"))
+
+    if evidence is None:
+        raise ValueError("renderer security evidence requires its retained fixtures")
+    evidence = Path(evidence)
+    root = evidence / "fixtures"
+    if (evidence.is_symlink() or root.is_symlink() or not root.is_dir() or
+            {path.name for path in root.iterdir()} != BROWSER_SECURITY_CASES):
+        raise ValueError("renderer security retained fixture inventory differs")
+    fields = {"child_script_sha256", "child_csp", "sandbox", "protocol", "child_inputs", "parent_csp", "fixture_inputs"}
+    for name in sorted(BROWSER_SECURITY_CASES):
+        policy = fixtures[name]
+        directory = root / name
+        if not isinstance(policy, dict) or set(policy) != fields:
+            raise ValueError("renderer security fixture policy fields are incomplete: " + name)
+        if not isinstance(policy["parent_csp"], str):
+            raise ValueError("renderer security fixture parent policy differs: " + name)
+        if (directory.is_symlink() or not directory.is_dir() or
+                {path.name for path in directory.iterdir()} != BROWSER_SECURITY_FIXTURE_FILES):
+            raise ValueError("renderer security retained fixture inventory differs: " + name)
+        actual = {}
+        for filename in sorted(BROWSER_SECURITY_FIXTURE_FILES):
+            path = directory / filename
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > 64 * 1024 * 1024:
+                raise ValueError("renderer security fixture needs ordinary bounded files: " + str(path))
+            actual[filename] = digest(path)
+        if policy["fixture_inputs"] != actual:
+            raise ValueError("renderer security fixture bytes are missing or stale: " + name)
+        metadata = browser_child_metadata(directory)
+        expected = {"child_script_sha256": metadata["CHILD_SCRIPT_SHA256"], "child_csp": metadata["CHILD_CSP"],
+                    "sandbox": metadata["CHILD_SANDBOX"], "protocol": metadata["CHILD_PROTOCOL"],
+                    "child_inputs": metadata["CHILD_INPUTS"]}
+        if any(policy[field] != value for field, value in expected.items()):
+            raise ValueError("renderer security fixture describes another bundle or policy: " + name)
+        policies = Policies()
+        policies.feed((directory / "index.html").read_text(encoding="utf-8"))
+        policies.close()
+        if policies.values != [policy["parent_csp"]] or "'sha256-" + metadata["CHILD_SCRIPT_SHA256"] + "'" not in policy["parent_csp"]:
+            raise ValueError("renderer security fixture parent policy differs: " + name)
+
+
+def browser_security_receipt(receipt, source_root, assets, engine, browser_version, *, fixture_evidence=None):
+    if (receipt.get("schema_version") != 1 or receipt.get("status") != "passed" or
+            receipt.get("engine") != engine or receipt.get("browser_version") != browser_version or
+            receipt.get("complete_security_inventory") is not True or
+            set(receipt.get("executed_cases", [])) != BROWSER_SECURITY_CASES or
+            not BROWSER_SECURITY_CHECKS <= set(receipt.get("checks", []))):
+        raise ValueError("real browser did not complete the renderer authority inventory")
+    metadata = browser_child_metadata(assets)
+    expected = {"script_sha256": metadata["CHILD_SCRIPT_SHA256"], "csp": metadata["CHILD_CSP"],
+                "sandbox": metadata["CHILD_SANDBOX"], "protocol": metadata["CHILD_PROTOCOL"],
+                "inputs": metadata["CHILD_INPUTS"]}
+    if receipt.get("production_child") != expected:
+        raise ValueError("renderer security evidence describes another bundle or policy")
+    fixtures = receipt.get("fixture_policies")
+    if not isinstance(fixtures, dict) or set(fixtures) != BROWSER_SECURITY_CASES:
+        raise ValueError("renderer security evidence omitted its exact hostile fixtures")
+    browser_security_fixtures(fixtures, fixture_evidence)
+    browser_receipt_inputs(receipt, [source_root / "gui/tests/browser_isolation_test.py",
+                                   source_root / "gui/tests/browser_isolation_attack.mjs",
+                                   source_root / "gui/tests/browser_test.py",
+                                   source_root / "tools/browser_bundle.py",
+                                   source_root / "tools/package_wasm.py",
+                                   source_root / "tools/process_tree.py",
+                                   *(assets / name for name in BROWSER_SECURITY_ASSETS)])
+    return receipt
+
+
 def browser_check(source_root, server, evidence, options, executable=None, wasm=None):
     engine = options.get("browser") or "firefox"
     offline = bool(wasm and (source_root / "tools/package_wasm.py").is_file())
@@ -164,9 +338,12 @@ def browser_check(source_root, server, evidence, options, executable=None, wasm=
         if len(present) != 1:
             raise ValueError("required offline Wasm HTML missing or ambiguous")
         offline_html = present[0]
+    isolated = (source_root / "gui/host/browser_embedding.mjs").is_file()
     command = [sys.executable, "-B", str(source_root / "gui/tests/browser_test.py"), "--browser", engine,
                "--mode", mode, "--server", str(server),
                "--output", str(evidence / "browser")]
+    if isolated:
+        command += ["--composition", "both"]
     if wasm:
         command += ["--wasm-dir", str(wasm)]
         if offline:
@@ -174,15 +351,16 @@ def browser_check(source_root, server, evidence, options, executable=None, wasm=
     else:
         command += ["--executable", str(executable)]
     if engine == "firefox":
-        command += ["--firefox", options.get("firefox") or "firefox"]
+        browser_arguments = ["--firefox", options.get("firefox") or "firefox"]
     else:
         if not options.get("browser_executable"):
             raise ValueError("Chromium qualification needs its explicit executable and matching driver")
-        command += ["--browser-executable", options["browser_executable"], "--driver", options.get("driver") or "chromedriver"]
+        browser_arguments = ["--browser-executable", options["browser_executable"], "--driver", options.get("driver") or "chromedriver"]
+    command += browser_arguments
     subprocess.run(command, check=True)
     receipt = c.load(evidence / "browser/qualification.json")
     required = {"editing", "accessible-names", "shared-geometry", "prompt-cancel", "capture", "cleanup"}
-    if (receipt.get("schema_version") != 1 or receipt.get("status") != "passed" or receipt.get("engine") != engine or
+    if (receipt.get("schema_version") != (2 if isolated else 1) or receipt.get("status") != "passed" or receipt.get("engine") != engine or
             not receipt.get("browser_version") or receipt.get("mode") != mode or
             not required <= set(receipt.get("checks", []))):
         raise ValueError("real browser did not complete the required interaction inventory")
@@ -190,6 +368,29 @@ def browser_check(source_root, server, evidence, options, executable=None, wasm=
                     "offline-no-network" not in receipt.get("checks", []) or
                     receipt.get("offline_network_resources") is not False):
         raise ValueError("real browser did not complete both Wasm modes without offline network resources")
+    if isolated:
+        modes = ["wasm", "offline"] if offline else [mode]
+        browser_isolated_interactions(receipt, modes)
+        delivered = [source_root / "gui/tests/browser_test.py", server, server.parent / "host.py",
+                     server.parent / "boot.mjs", server.parent / "browser_composition.mjs",
+                     server.parent / "renderer.mjs", server.parent / "index.html",
+                     *(server.parent / name for name in BROWSER_SECURITY_ASSETS)]
+        delivered += [Path(wasm) / "gui_web_wasm.js", Path(wasm) / "gui_web_wasm.wasm"] if wasm else [Path(executable)]
+        if offline:
+            delivered.append(offline_html)
+        browser_receipt_inputs(receipt, delivered)
+        if offline:
+            browser_wasm_manifest(offline_html.parent, source_root)
+        security = [sys.executable, "-B", str(source_root / "gui/tests/browser_isolation_test.py"),
+                    "--browser", engine, "--assets", str(server.parent),
+                    "--output", str(evidence / "browser-isolation"), *browser_arguments]
+        subprocess.run(security, check=True)
+        proof = c.load(evidence / "browser-isolation/qualification.json")
+        browser_security_receipt(proof, source_root, server.parent, engine, receipt["browser_version"],
+                                 fixture_evidence=evidence / "browser-isolation")
+        receipt["renderer_security"] = {"path": "browser-isolation/qualification.json",
+                                        "sha256": digest(evidence / "browser-isolation/qualification.json"),
+                                        "production_child": proof["production_child"]}
     return receipt
 
 
@@ -685,7 +886,7 @@ def check(candidate, target, backend, scope, evidence, jobs=2, browser_options=N
     if scope == "apt":
         retained += ["apt.log"]
     if "browser" in details:
-        retained += [p.relative_to(evidence).as_posix() for p in (evidence / "browser").rglob("*") if p.is_file()]
+        retained += browser_evidence_paths(evidence, details["browser"])
     if "windows_graphics" in details:
         retained += [p.relative_to(evidence).as_posix() for p in (evidence / "windows-graphics").rglob("*") if p.is_file()]
     retained += list(details.get("native_visual", {}))

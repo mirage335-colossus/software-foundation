@@ -17,6 +17,8 @@ import test_package_wasm as fixtures
 class ImportWasmTests(unittest.TestCase):
     setUp = fixtures.PackageWasmTests.setUp
     make = fixtures.PackageWasmTests.make
+    make_legacy = fixtures.PackageWasmTests.make_legacy
+    rewrite_checksums = fixtures.PackageWasmTests.rewrite_checksums
     def fixture(self):
         source = self.root / 'source'
         source.mkdir()
@@ -25,6 +27,17 @@ class ImportWasmTests(unittest.TestCase):
         import_wasm_package.package(self.assets, self.output, [self.notice], source_root=source)
         identity = hashlib.sha256((self.output / 'web-manifest.json').read_bytes()).hexdigest()
         return source, identity
+
+    def test_explicit_source_bound_schema2_and_schema3_import_compatibility(self):
+        source, identity = self.fixture()
+        self.assertEqual(import_wasm.verify_input(self.output, identity, source)['schema'], 3)
+        self.make_legacy(schema=2, source_root=source)
+        identity = hashlib.sha256((self.output / 'web-manifest.json').read_bytes()).hexdigest()
+        self.assertEqual(import_wasm.verify_input(self.output, identity, source)['schema'], 2)
+        self.make_legacy(schema=1)
+        identity = hashlib.sha256((self.output / 'web-manifest.json').read_bytes()).hexdigest()
+        with self.assertRaisesRegex(ValueError, 'source identities differ'):
+            import_wasm.verify_input(self.output, identity, source)
 
     @unittest.skipIf(os.name == "nt", "POSIX desktop-opener fixture; Windows launcher uses native file association")
     def test_pinned_same_source_staging_and_relocated_exact_document_launch(self):

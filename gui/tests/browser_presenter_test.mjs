@@ -4,6 +4,8 @@ import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
 const {createBrowserPresenter}=await import(pathToFileURL(resolve(process.argv[2])));
 const {Client}=await import(pathToFileURL(resolve(process.argv[3])));
+const {createBrowserServices}=await import(new URL('./browser_services.mjs',pathToFileURL(resolve(process.argv[3]))));
+const {browserComposition}=await import(new URL('./browser_composition.mjs',pathToFileURL(resolve(process.argv[3]))));
 let next=0;const frames=new Map();
 const scheduler={requestAnimationFrame(run){frames.set(++next,run);return next;},cancelAnimationFrame(id){frames.delete(id);}};
 const runFrame=()=>{assert.equal(frames.size,1);const [id,run]=frames.entries().next().value;frames.delete(id);run();};
@@ -21,7 +23,8 @@ client.accept(state(10,10));client.accept(state(11,11,null,'',true));assert.equa
 // Exercise the actual generated boot path with deterministic browser primitives.
 const bootSource=await readFile(process.argv[4],'utf8');
 for(const newline of ['\n','\r\n']) {
-const source=bootSource.replace(/\r?\n/g,newline).replace(/^import .*;\r?\n/gm,'');
+const source=bootSource.replace(/\r?\n/g,newline).replace(/^import .*;\r?\n/gm,'')
+  .replace("await import('./renderer.mjs')","await standaloneModules()");
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 let bootClient,closed=0,stopped=0,disconnected=0,abortedResult;
 const paints=[],services=[],timers=new Map(),events=new Map();
@@ -31,8 +34,10 @@ const status={textContent:'',hidden:true,addEventListener(){}},viewport={clientW
 const document={querySelector:selector=>selector==='#viewport'?viewport:status};
 const window={devicePixelRatio:1,addEventListener(name,run){events.set(name,run);}};
 const executeService=(request,options)=>{services.push({request,signal:options.signal});return new Promise(resolve=>{abortedResult=resolve;});};
-const boot=new AsyncFunction('Client','Renderer','executeService','startPolling','createWasmTransport','createBrowserPresenter','document','window','location','fetch','ResizeObserver','setTimeout','clearTimeout','AbortController','globalThis',source);
-await boot(BootClient,BootRenderer,executeService,()=>()=>++stopped,()=>{throw Error('unexpected Wasm branch');},render=>createBrowserPresenter(render,scheduler),document,window,{href:'http://fixture/',reload(){}},async()=>({ok:true,json:async()=>({state:state(0,0,{id:'withdraw-before-open'}),token:'fixture'})}),class {observe(){}disconnect(){++disconnected;}},run=>{timers.set(++next,run);return next;},id=>timers.delete(id),AbortController,{});
+const setTimer=run=>{timers.set(++next,run);return next;},clearTimer=id=>timers.delete(id);
+const servicesFactory=options=>createBrowserServices({...options,host:{document,executeService,AbortController},scheduler:{setTimeout:setTimer,clearTimeout:clearTimer}});
+const boot=new AsyncFunction('standaloneModules','executeService','startPolling','createWasmTransport','createBrowserPresenter','createBrowserServices','createEmbeddedFrontend','browserComposition','document','window','location','fetch','ResizeObserver','setTimeout','clearTimeout','AbortController','globalThis',source);
+await boot(async()=>({Client:BootClient,Renderer:BootRenderer}),executeService,()=>()=>++stopped,()=>{throw Error('unexpected Wasm branch');},render=>createBrowserPresenter(render,scheduler),servicesFactory,()=>{throw Error('unexpected isolated branch');},browserComposition,document,window,{href:'http://fixture/',reload(){}},async()=>({ok:true,json:async()=>({state:state(0,0,{id:'withdraw-before-open'}),token:'fixture'})}),class {observe(){}disconnect(){++disconnected;}},setTimer,clearTimer,AbortController,{});
 const runTimer=async()=>{assert.equal(timers.size,1);const [id,run]=timers.entries().next().value;timers.delete(id);return run();};
 bootClient.accept(state(1,1));assert.equal(timers.size,0);assert.equal(services.length,0,'withdrawn deferred prompt must never open');
 bootClient.accept(state(2,2,{id:'opened'}));const pending=runTimer();assert.equal(services.length,1);assert.equal(services[0].signal.aborted,false);

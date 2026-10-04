@@ -29,6 +29,13 @@ Different target architectures, SDK identities and sanitizer configurations use
 separate trees. Optional compiler caching remains an optimization, not a required
 supplier or a substitute for verifying the selected source and toolchain.
 
+Use [offline acceptance](offline-builds.md) when the question is whether complete
+retained inputs can build and package the application with networking disabled.
+It uses fresh output trees and disables compiler caching. A repeated `--case`
+selection can focus a diagnosis; its receipt identifies the omitted host targets
+and cannot stand in for the complete host inventory. Browser security requires
+the separate real-browser checks described in [browser embedding](browser-embedding.md).
+
 The build wrapper can configure without compiling. Candidate scopes then compile
 only their declared prerequisites. The per-test prerequisite registry also makes
 ordinary local shards selective: planning requires no compilation, and running a
