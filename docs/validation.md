@@ -15,6 +15,14 @@ earlier private preparation and local fixtures.
 
 ## Remaining transfer implementation (2026-10-04)
 
+Final hosted qualification at `3a3b7626161a8069cfa4f3729e1a51c0dbf4bfdb`
+passed all four platform package producers and combined assembly: **353 CTests
+and 5,132 Python cases**, plus **1,020 native Windows diagnostic executions**.
+The exact source identities, SDK consumer proofs, local checks, historical failures
+and limits are recorded below. All four newly qualified SDK groups are published
+in the [base prerelease](https://github.com/mirage335-colossus/software-foundation/releases/tag/base),
+with existing SDK assets and application Latest preserved.
+
 The follow-up implements the previously omitted general-purpose examples:
 Windows GUI subsystem entry/UTF-8 manifests; source-matched prebuilt Wasm import
 into native packages; exact installed offline-document launchers and versioned
@@ -171,15 +179,17 @@ retention using the old inventory code; proof retention succeeded. The Windows
 Mesa probe and exact host-only graphics cleanup passed. The original cold x64
 SDK completed and was retained; its old consumer failed the already-repaired
 RPATH padding check. Its final retained consumer qualification is separate.
-No newly built SDK was publicly published.
+At that checkpoint no newly built SDK had been publicly published. The final
+x64 qualification and approved publication are recorded below.
 
 The first final [application archive run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174274156)
 on `ca255290` passed actual Linux x64/ARM and Wasm packages, strict runtime
 inventories, relocated CLI and installed-library consumers. Windows passed all
 48 GUI-labelled entries but stopped at the now-repaired artifact-policy fixture
 (90/91 CTests); it produced no package, and complete assembly was skipped. A new
-source-bound four-platform package run is required after that fixture repair;
-archives cannot be relabelled to another source revision. Packaged GUI executables
+source-bound four-platform package run was required after that fixture repair;
+archives cannot be relabelled to another source revision. That required rerun is
+recorded below. Packaged GUI executables
 are inventoried/audited but not individually launched after relocation. The
 native prebuilt-Wasm bridge and real browser execution have their separate local
 checks above; this workflow does not perform them.
@@ -230,8 +240,110 @@ before requiring the actual WinError 5. API structure sizes, exclusive-acquisiti
 checks and handle cleanup were independently reviewed. The production helper is
 unchanged. All 50 Linux-applicable board cases and four runner cases passed again;
 only the native case remains explicitly excluded there. Unchanged scopes from the
-complete local run were not needlessly repeated. Corrected native execution is a
-separate required observation.
+complete local run were not needlessly repeated.
+
+The corrected [single native probe](https://github.com/mirage335-colossus/software-foundation/actions/runs/37176646295)
+passed all 51 cases at `3a3b7626161a8069cfa4f3729e1a51c0dbf4bfdb`.
+The final [20-repetition Windows diagnostic](https://github.com/mirage335-colossus/software-foundation/actions/runs/37176741520)
+then passed **1,020/1,020 cases**, with zero exclusions, failures or skips under
+Python 3.14.7, optimization disabled. Every repetition checked the actual
+`Directory` and `DeletePending` state, observed native `WinError 5`, acquired the
+mutex exclusively after handle closure, and passed the unchanged eight-writer
+case. All 41 retained members and six exact source hashes were verified; all
+writers stopped. The proof manifest SHA-256 is
+`4f8cd56f88ebbb7ba687feec7be7d1b0d6960c6bd848acc4e4a456c3c184e5ed`.
+This tests the repair under a constructed native condition; it does not establish
+the cause of the original intermittent error. The [final feedback run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37176646150)
+at the same implementation revision passed all four jobs.
+
+The final [x64 SDK consumer run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37176095244)
+at `324b1b4484cafb4175aaaaf1f967c29f04ac04b5` passed its entire workflow:
+core **2/2**, GUI/tooling **103/103**, and **1,374 Python cases**, with three
+explicit Windows-only exclusions and zero unexpected skips. Its 86 proof members,
+exact SDK triplet, both consumer receipts and all four producer-isolation
+checkpoints were verified. The retained proof manifest SHA-256 is
+`ce7621b97f92627e61f99afeeb040d7b7bb96fc329f746ebb9cc8811f741c37c`.
+The preceding x64 consumer run had also passed those consumer scopes but failed
+retention with HTTP 403 before any payload upload. Its complete inventory and
+absent tag were reconciled; the cause was not established. It remains failed and
+is not substituted for this successfully retained final proof.
+
+The approved x64 SDK publication initially stopped with an uncertain upload
+under the normal 600-second CLI-command limit. Complete raw reconciliation found
+one exact uploaded source asset and one incomplete binary `starter`, with no
+checksum marker. All 21 pre-existing asset identities/digests, the base tag and
+Latest were unchanged. Reviewed administrative recovery removed only that failed
+starter, preserved the valid source asset, and uploaded the missing binary once
+with an explicitly bounded 3,600-second transport configuration. It published the
+checksum last and verified all three downloaded files and their inner inventories.
+The standard publisher's refusal of partial groups was preserved; no blind replay
+or overwrite of an earlier group occurred. The first operation remains failed;
+the successful recovery has its own receipt. The underlying transport error was
+not established beyond the retained uncertainty and observed remote state.
+
+All four approved all-GUI SDK groups are now published in the public
+[base prerelease](https://github.com/mirage335-colossus/software-foundation/releases/tag/base).
+Each contains the exact qualified binary archive, complete supplier-source archive
+and checksum file. Publication reused the verified retained bytes without rebuilding
+the compilers; every complete group passed downloaded-byte and inner-inventory
+verification. The recipe links below provide the binary/source checksums.
+
+| Target | Published recipe / checksums | Successful consumer proof |
+| --- | --- | --- |
+| Linux x64 | [3e7438a4b5ee7a4baf5d7abacbdd320087aab42f24ea021f0f023b61db55bb33](https://github.com/mirage335-colossus/software-foundation/releases/download/base/sdk-3e7438a4b5ee7a4baf5d7abacbdd320087aab42f24ea021f0f023b61db55bb33-SHA256SUMS) | [37176095244](https://github.com/mirage335-colossus/software-foundation/actions/runs/37176095244) |
+| Linux ARM64 | [afe8d1ba004206fcf234376a2110e69c4e9e1ef6b373e7afe23afe8497f8e4de](https://github.com/mirage335-colossus/software-foundation/releases/download/base/sdk-afe8d1ba004206fcf234376a2110e69c4e9e1ef6b373e7afe23afe8497f8e4de-SHA256SUMS) | [37174082162](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174082162) |
+| Windows x64 | [da0aa41ad58536497e23503b4ca778521e47cbd412c5b944490aa3c4d535bf0a](https://github.com/mirage335-colossus/software-foundation/releases/download/base/sdk-da0aa41ad58536497e23503b4ca778521e47cbd412c5b944490aa3c4d535bf0a-SHA256SUMS) | [37174326956](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174326956) |
+| Browser Wasm | [74f5153e31c23f899f01d8340ffa4aba7f5a8ed81b0db206e6da8a1b38ece541](https://github.com/mirage335-colossus/software-foundation/releases/download/base/sdk-74f5153e31c23f899f01d8340ffa4aba7f5a8ed81b0db206e6da8a1b38ece541-SHA256SUMS) | [37174079259](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174079259) |
+
+The final complete public inventory contains **33 assets**: all **21 earlier
+assets retain their exact IDs, sizes and digests**, and the only additions are the
+**12 approved SDK assets**. Base release ID `401599028` remains a public prerelease;
+its tag still identifies `3df32968cdae5894635938db10825008dcfcc808`. Application
+Latest remains [release-37070391587-attempt-1](https://github.com/mirage335-colossus/software-foundation/releases/tag/release-37070391587-attempt-1)
+(ID `402199557`). No application release was replaced or promoted.
+The complete receipt-to-public-inventory audit is
+`.agent-work/artifacts/completion-root-v1/sdk-publication-final-audit.json`, SHA-256
+`5905f8406ebeaa3c6213b29103335f73bed71170f441d39afdc1a9a488b60d39`.
+
+The final [application package run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37176743158)
+at `3a3b7626161a8069cfa4f3729e1a51c0dbf4bfdb` passed all four producers and
+combined assembly. It consumed the previously published SDK recipes
+`bdd39974a891e6161d667bbaa0ff2c1894fe9f188ed76d47d1ad6c896972c9f8`
+(x64), `88c7d871f5cf6210cb4dac6874e666a275dd5f359d42439369a7206b39dbe109`
+(ARM64), `cd16aeb6bd2dff13115d456ffbea2d166db37427106a5e03961926f840f10feb`
+(Windows), and `783adcbd828ccd3dce72fefa575755d0d94f4eec528634bd4a9bdce7341356d5`
+(Wasm). The new SDK groups have their separate consumer qualifications above.
+Its exact source-bound package archives were independently checked against their
+complete descriptors:
+
+| Target | CTests | Python cases | Explicit platform exclusions | Verified package members |
+| --- | --- | --- | --- | --- |
+| Linux x64 | 103/103 | 1,374 | 3 | 196 |
+| Linux ARM64 | 103/103 | 1,374 | 3 | 195 |
+| Windows x64 | 91/91 | 1,066 | 64 | 78 |
+| Browser Wasm | 56/56 | 1,318 | 3 | 72 |
+
+There were no failures or unexpected skips. Each producer completed the separate
+installed-library consumer compilation and execution; native packages also passed
+relocated CLI checks. All six native GUI hosts are present in each native package.
+All fourteen packaged Linux executables have exactly `$ORIGIN/../lib/runtime` as
+their runtime path. Windows FLTK/Rev/SDL executables use GUI subsystem 2 and contain
+parsed manifest resource ID 1 with UTF-8 and supported-OS declarations; CLI and
+terminal executables use console subsystem 3. The graphics probe passed and its
+temporary Mesa DLLs are absent from the package. GUI runtime tests execute build
+outputs; packaged GUI binaries were audited rather than separately launched after
+relocation. Native prebuilt-Wasm import and actual DOM-browser operation retain
+their separate local evidence above. This run selected `execute=false` and
+`require_regression=false`: it qualifies package production and assembly, not a
+public application release or a complete release certificate. The assembled
+21-file release inventory has SHA-256
+`7a6dbd000bca181a719d10485e33bc78b76b0e7e7ad69c15cec1eeb3889ed7e6`;
+its 22-file delivery map matches all four package descriptors and their four
+complete SDK triplets. The source archive SHA-256 is
+`fefd48689a77e19f07e9bbec87264a778a39bd499c1db0133268616484d90918`.
+The independently verified retained-control record is
+`.agent-work/artifacts/final-app-proof-v2/qualification.json`, SHA-256
+`87817da0567db9afa0dda7404814216eaae0ee2d8fe4b49261c5b9bbd242fb33`.
 
 These observations do not establish physical touch/bezel/VR hardware, Arduino,
 or an actual system package upgrade. Package-manager commands were intercepted
