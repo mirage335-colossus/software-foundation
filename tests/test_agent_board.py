@@ -290,6 +290,129 @@ class CoordinationTests(unittest.TestCase):
                 with self.board.mutex():
                     self.fail("mutex reentered")
 
+    def test_transient_windows_mkdir_denial_never_grants_ownership_before_creation(self):
+        denied = PermissionError("injected Windows access denial")
+        denied.winerror = 5
+        original = Path.mkdir
+        attempts = []
+        before = self.board.state_path.read_bytes()
+        def create(path, *args, **kwargs):
+            if path == self.board.lock:
+                self.assertIsNone(self.board.token)
+                attempts.append(path)
+                if len(attempts) == 1:
+                    raise denied
+            return original(path, *args, **kwargs)
+        def wait(delay):
+            self.assertIsNone(self.board.token)
+            self.assertFalse(self.board.lock.exists())
+            self.assertEqual(before, self.board.state_path.read_bytes())
+        with mock.patch.object(Path, "mkdir", create), mock.patch.object(MODULE.time, "sleep", side_effect=wait) as sleep:
+            with self.board.mutex():
+                self.assertEqual(len(attempts), 2)
+                self.assertIsNotNone(self.board.token)
+                self.board.check_mutex()
+        sleep.assert_called_once_with(.005)
+        self.assertEqual(before, self.board.state_path.read_bytes())
+        self.assertFalse(self.board.lock.exists())
+
+    def test_persistent_windows_mkdir_denial_is_bounded_and_preserves_original_error(self):
+        errors = [PermissionError("denied attempt " + str(i)) for i in range(7)]
+        for error in errors:
+            error.winerror = 5
+        before = self.board.state_path.read_bytes()
+        with mock.patch.object(Path, "mkdir", side_effect=errors) as create, \
+                mock.patch.object(MODULE.time, "sleep") as sleep:
+            with self.assertRaises(PermissionError) as caught:
+                with self.board.mutex():
+                    self.fail("denied acquisition entered the body")
+        self.assertIs(caught.exception, errors[0])
+        self.assertEqual(create.call_count, 7)
+        self.assertTrue(all(call.args == () and call.kwargs == {"mode": 0o700} for call in create.call_args_list))
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [.005, .01, .02, .04, .08, .16])
+        self.assertIsNone(self.board.token)
+        self.assertFalse(self.board.lock.exists())
+        self.assertEqual(before, self.board.state_path.read_bytes())
+
+    def test_other_mkdir_failures_are_immediate_and_never_reclassified(self):
+        denied = PermissionError("ordinary access denial")
+        other = PermissionError("different Windows failure"); other.winerror = 32
+        for error in (denied, other, OSError("unknown filesystem failure")):
+            with self.subTest(error=error), mock.patch.object(Path, "mkdir", side_effect=error) as create, \
+                    mock.patch.object(MODULE.time, "sleep") as sleep:
+                with self.assertRaises(type(error)) as caught:
+                    with self.board.mutex():
+                        self.fail("failed acquisition entered the body")
+                self.assertIs(caught.exception, error)
+                self.assertEqual(create.call_count, 1)
+                sleep.assert_not_called()
+                self.assertIsNone(self.board.token)
+                self.assertFalse(self.board.lock.exists())
+
+    def test_windows_mkdir_retry_cannot_steal_a_subsequently_occupied_lock(self):
+        denied = PermissionError("injected Windows access denial"); denied.winerror = 5
+        original = Path.mkdir
+        attempts = []
+        def create(path, *args, **kwargs):
+            if path == self.board.lock:
+                attempts.append(path)
+                if len(attempts) == 1:
+                    original(path, *args, **kwargs)
+                    (path / "foreign").write_bytes(b"preserve")
+                    raise denied
+            return original(path, *args, **kwargs)
+        with mock.patch.object(Path, "mkdir", create), mock.patch.object(MODULE.time, "sleep") as sleep:
+            with self.assertRaises(Rejected) as caught:
+                with self.board.mutex():
+                    self.fail("occupied acquisition entered the body")
+        self.assertEqual(caught.exception.code, "busy")
+        self.assertFalse(caught.exception.uncertain)
+        self.assertEqual(len(attempts), 2); sleep.assert_called_once_with(.005)
+        self.assertIsNone(self.board.token)
+        self.assertEqual((self.board.lock / "foreign").read_bytes(), b"preserve")
+        self.assertEqual([p.name for p in self.board.lock.iterdir()], ["foreign"])
+
+    @unittest.skipUnless(os.name == "nt", "Native Windows delete-pending directory semantics")
+    def test_windows_delete_pending_mutex_requires_new_exclusive_creation(self):
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                      ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        kernel.CreateFileW.restype = wintypes.HANDLE
+        kernel.RemoveDirectoryW.argtypes = [wintypes.LPCWSTR]
+        kernel.RemoveDirectoryW.restype = wintypes.BOOL
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        before = self.board.state_path.read_bytes()
+        self.board.lock.mkdir(mode=0o700)
+        # Zero requested access, read/write/delete sharing, OPEN_EXISTING and
+        # BACKUP_SEMANTICS obtain an ordinary directory handle without privilege.
+        handle = kernel.CreateFileW(str(self.board.lock), 0, 7, None, 3, 0x02000000, None)
+        self.assertNotEqual(handle, ctypes.c_void_p(-1).value, ctypes.get_last_error())
+        try:
+            self.assertTrue(kernel.RemoveDirectoryW(str(self.board.lock)), ctypes.get_last_error())
+            with self.assertRaises(PermissionError) as caught:
+                self.board.lock.mkdir(mode=0o700)
+            self.assertEqual(caught.exception.winerror, 5)
+            def release_handle(delay):
+                nonlocal handle
+                self.assertIsNone(self.board.token)
+                self.assertEqual(before, self.board.state_path.read_bytes())
+                self.assertTrue(kernel.CloseHandle(handle), ctypes.get_last_error())
+                handle = None
+            with mock.patch.object(MODULE.time, "sleep", side_effect=release_handle) as sleep:
+                with self.board.mutex():
+                    self.assertIsNone(handle)
+                    self.assertIsNotNone(self.board.token)
+                    self.board.check_mutex()
+            sleep.assert_called_once_with(.005)
+        finally:
+            if handle is not None:
+                self.assertTrue(kernel.CloseHandle(handle), ctypes.get_last_error())
+        self.assertFalse(self.board.lock.exists())
+        self.assertEqual(before, self.board.state_path.read_bytes())
+
     def test_cleanup_failure_is_uncertain_even_after_successful_publication(self):
         original_rmdir = Path.rmdir
         def deny_lock(path):

@@ -184,6 +184,37 @@ are inventoried/audited but not individually launched after relocation. The
 native prebuilt-Wasm bridge and real browser execution have their separate local
 checks above; this workflow does not perform them.
 
+The next [application run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37175187646)
+on `6d85914` passed Linux x64/ARM **103/103 CTests and 1,369 Python cases** each,
+and Wasm **56/56 and 1,313 cases**. Complete package inventories and relocated
+CLI/installed consumers passed. Windows passed every one of its 48 GUI-labelled
+entries and the repaired artifact-policy fixture, but failed one compatibility
+coordination case (90/91 CTests; 1,059 passed Python cases and one failure).
+One of eight writers received `WinError 5` from exclusive mutex-directory creation
+before acquiring ownership. This aggregate remains failed and assembly was skipped.
+The retained complete evidence is in
+`.agent-work/artifacts/final-app-proof-v1/qualification.json`.
+
+The narrow repair retries only that Windows creation error, with seven exclusive
+creation attempts and at most 315 ms of deliberate backoff. Persistent denial
+raises the original error; an occupied directory still rejects as busy; no lock
+is removed and protected work cannot replay. Four portable controls preserve
+those distinctions. A native held-handle fixture separately tests Windows
+pending-deletion behavior; the original traceback alone does not prove which
+process or filesystem condition caused its transient denial. The optional complete
+`agent_board` diagnostic permits repeated native checks without another GUI build.
+Its source selector/helper tests pass, and the original eight-writer contribution
+assertions remain unchanged. The [old-source Windows baseline](https://github.com/mirage335-colossus/software-foundation/actions/runs/37175782630)
+completed 20 repetitions without reproducing the intermittent failure. This does
+not erase the original failure or establish its cause. The complete repaired
+366-file local snapshot
+`64dad5afcca71d1a70495e1f644a03c54d92b88261c7322df71de0e32a8834d1`
+passed **62/62 CTests in 34.15 seconds**, with **1,522 passing Python cases**,
+three explicit native-Windows exclusions and no unexpected skips. This includes
+all optional distribution suites. Native repair qualification is recorded
+separately. Exact reports are in
+`.agent-work/artifacts/completion-root-v1/complete-final3-validation.json`.
+
 These observations do not establish physical touch/bezel/VR hardware, Arduino,
 or an actual system package upgrade. Package-manager commands were intercepted
 while real signed-generation verification ran. The worker boundary limits socket authority, not general

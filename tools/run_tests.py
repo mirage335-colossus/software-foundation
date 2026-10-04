@@ -25,6 +25,8 @@ def flatten(suite):
 def inapplicable(case, system):
     """Only platform facts exclude cases; missing tools/permissions are failures."""
     name = case.id()
+    if system != 'Windows' and name == 'test_agent_board.CoordinationTests.test_windows_delete_pending_mutex_requires_new_exclusive_creation':
+        return 'Native Windows delete-pending directory handle semantics belong to Windows runners.'
     if system != 'Windows' and name == 'test_build.BuildTests.test_native_windows_selected_linker_file_identity':
         return 'Native Win32 linker file identity inspection belongs to Windows runners.'
     if system != 'Linux' and name.startswith('test_sdk.NativeLinuxToolchainTests.'):

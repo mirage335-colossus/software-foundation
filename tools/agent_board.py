@@ -18,6 +18,7 @@ import stat
 import subprocess
 import sys
 import threading
+import time
 import unicodedata
 import uuid
 
@@ -234,10 +235,27 @@ class Board:
     def mutex(self):
         safe_path(self.path)
         root_identity = identity(self.path.stat())
-        try:
-            self.lock.mkdir(mode=0o700)
-        except FileExistsError as error:
-            raise Rejected("registry mutex is occupied; never steal it", "busy") from error
+        denied = None
+        # Windows can deny creation while the previous directory is still
+        # delete-pending. Retry only exclusive creation, for at most 315 ms of
+        # backoff. Nothing owns the mutex until mkdir succeeds; persistent ACL
+        # denial remains the original PermissionError, never clean contention.
+        for delay in (0, .005, .01, .02, .04, .08, .16):
+            if delay:
+                time.sleep(delay)
+            try:
+                self.lock.mkdir(mode=0o700)
+            except FileExistsError as error:
+                raise Rejected("registry mutex is occupied; never steal it", "busy") from error
+            except PermissionError as error:
+                if getattr(error, "winerror", None) != 5:
+                    raise
+                if denied is None:
+                    denied = error
+            else:
+                break
+        else:
+            raise denied
         lock_identity = identity(self.lock.stat())
         token = uuid.uuid4().hex
         owner = {"token": token, "host": socket.gethostname(), "pid": os.getpid(),
