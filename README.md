@@ -7,6 +7,28 @@ The engineering mechanisms are comprehensive: application size does not reduce
 coordination, supply, recovery or qualification requirements. C++20 and CMake make the build and binary compatibility examples concrete;
 the ownership, testing, documentation and delivery rules apply across languages.
 
+## One application, seven backends
+
+Each host presents the same shared **Entry list** application. The six graphical
+captures show the 2026-10-02 source snapshot; the TUI uses the corrected
+2026-10-04 local capture. Select an image to view it at full size.
+
+| FLTK native window | Rev native window |
+| --- | --- |
+| [<img src="docs/screenshots/fltk.png" alt="FLTK Entry list application" width="400">](docs/screenshots/fltk.png) | [<img src="docs/screenshots/rev.png" alt="Rev Entry list application" width="400">](docs/screenshots/rev.png) |
+| **SDL window** | **Framebuffer** |
+| [<img src="docs/screenshots/sdl.png" alt="SDL window displaying the Entry list framebuffer" width="400">](docs/screenshots/sdl.png) | [<img src="docs/screenshots/framebuffer.png" alt="Entry list rendered to the software framebuffer" width="400">](docs/screenshots/framebuffer.png) |
+| **Hosted browser** | **Browser Wasm** |
+| [<img src="docs/screenshots/hosted-web.png" alt="Entry list in a browser backed by native C++" width="400">](docs/screenshots/hosted-web.png) | [<img src="docs/screenshots/wasm.png" alt="Entry list running as WebAssembly in a browser" width="400">](docs/screenshots/wasm.png) |
+
+**Terminal UI**
+
+[<img src="docs/terminal-caret/terminal.png" alt="Terminal Entry list application showing the complete Type an entry placeholder and inverse-color caret" width="640">](docs/terminal-caret/terminal.png)
+
+[Capture details and provenance](docs/screenshots.md#view-screenshots) identify
+the exact source and image bytes. [SCREENSHOTS](SCREENSHOTS) points to the
+capture job and refresh instructions. All images are included in the checkout.
+
 Start with the [engineering contract](docs/engineering-contract.md),
 [requirements and practice map](docs/requirements.md), [repository map](docs/architecture.md),
 and [documentation index](docs/README.md). Contributors and automated assistants
@@ -59,12 +81,6 @@ held in memory; **Actions → Export entries** saves them to a file.
 the native build prerequisites and a browser; it also documents the optional
 prepared-SDK Wasm route. Each recipe uses a separate build directory and the
 GUI sources already retained in this checkout.
-
-![Historical FLTK capture of the Entry list application](docs/screenshots/fltk.png)
-
-This historical snapshot comes from the published screenshot gallery.
-[View all seven backends and the capture provenance](docs/screenshots.md#view-screenshots).
-[SCREENSHOTS](SCREENSHOTS) points to the existing capture job and refresh instructions.
 
 ## What is executable here
 
