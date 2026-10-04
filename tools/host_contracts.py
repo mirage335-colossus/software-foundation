@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {'windows-x86_64': ('Windows', 'x64'), 'linux-x86_64': ('Linux', 'x64'),
            'linux-aarch64': ('Linux', 'arm64')}
 BUILD_SUITES = ('test_plan', 'ci_retry', 'package_wasm', 'import_wasm')
-SUITES = ('process_tree', 'windows_graphics', 'ci_plan', 'github_release', 'ci_transport', 'windows_hosts') + BUILD_SUITES
+SUITES = ('process_tree', 'windows_graphics', 'ci_plan', 'github_release', 'ci_transport', 'windows_hosts', 'agent_board') + BUILD_SUITES
 INTERPRETERS = ('runner-default', '3.12', '3.14')
 REPETITIONS = (1, 5, 20)
 CASE_SECONDS = 120
@@ -150,6 +150,8 @@ def source_files(suite, target):
         return sorted(source_identity.snapshot_paths(ROOT))
     paths = ['tools/host_contracts.py', 'tools/run_tests.py', 'tools/process_tree.py',
              case_file.relative_to(ROOT).as_posix()]
+    if suite == 'agent_board':
+        paths += ['tools/agent_board.py', '.github/workflows/host-contracts.yml']
     if suite == 'windows_hosts':
         paths += ['tools/windows_graphics.py', 'tools/windows_gl_probe.cpp', 'tools/windows_toolchain.py',
                   'tools/windows_compiler.py',
