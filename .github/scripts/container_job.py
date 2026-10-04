@@ -17,7 +17,8 @@ ENVIRONMENT = ('SDK_PROFILE', 'PROFILE', 'JOBS', 'TARGET', 'RECIPE', 'GITHUB_REP
                'CHECK', 'CHECK_IMAGE', 'CHECK_BROWSER', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'SDK_DEVELOPMENT',
                'CORE_PROVIDER', 'FOUNDATION_PROVIDER_RECIPE')
 COMMON = 'ca-certificates python3 git file binutils gnupg openssl curl xz-utils unzip xvfb xauth fonts-dejavu-core'.split()
-BUILD = 'build-essential cmake ninja-build cpio rsync wget patch bc bzip2 perl gawk libncurses-dev dpkg-dev apt-utils nodejs'.split()
+# Full source suites verify the offline namespace adapter against the real ip tool.
+BUILD = 'build-essential cmake ninja-build cpio rsync wget patch bc bzip2 perl gawk libncurses-dev dpkg-dev apt-utils nodejs iproute2'.split()
 GUI_RUNTIME = ('libgl1 libopengl0 libgl1-mesa-dri libegl1 libx11-6 libxext6 libxft2 libxinerama1 '
                'libxcursor1 libxrender1 libxfixes3 libxrandr2 libice6 libsm6 libxdamage1 libxxf86vm1 '
                'libwayland-client0 libwayland-cursor0 libwayland-egl1 libxkbcommon0 libdbus-1-3 libibus-1.0-5').split()

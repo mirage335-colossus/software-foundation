@@ -56,6 +56,18 @@ class ContainerJobs(unittest.TestCase):
         self.assertNotIn('build-essential', runtime)
         self.assertIn('build-essential', job.packages('check', {}, {'scope':'recovery','backend':'core'}))
         self.assertIn('sh tools/ci-apt.sh install', job.command('sdk-produce', self.root, 1001, 1002, {})[-3])
+        # These lanes execute tools.offline_namespace, whose trusted PATH must
+        # resolve the real ip command supplied by iproute2 before assertions run.
+        for action in ('sdk-produce', 'application-build', 'native-gui-check'):
+            with self.subTest(action=action):
+                selected = job.packages(action, {})
+                self.assertIn('iproute2', selected)
+                self.assertEqual(job.bootstrap_script(selected).split().count('iproute2'), 1)
+        for scope in ('source', 'recovery'):
+            with self.subTest(scope=scope):
+                selected = job.packages('check', {}, {'scope':scope, 'backend':'core'})
+                self.assertIn('iproute2', selected)
+                self.assertEqual(job.bootstrap_script(selected).split().count('iproute2'), 1)
 
     def test_batch_setup_is_committed_once_and_each_case_uses_a_fresh_run(self):
         calls=[]; identity='sha256:'+'d'*64
