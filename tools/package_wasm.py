@@ -158,9 +158,11 @@ def package(assets, output, notice_paths, module_dir=None, sdk=None, source_root
     if any(p.name not in expected or not p.is_file() or p.is_symlink() for p in output.iterdir()):
         raise ValueError('Output contains unexpected entries')
     (output / HTML_NAME).write_bytes(html)
-    (output / 'web-manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8')
-    (output / 'manifest.sha256').write_text(''.join(digest(read_file(output / name, 256 * 1024 * 1024)) + '  ' + name + '\n'
-                                                for name in sorted(expected - {'manifest.sha256'})), encoding='utf-8')
+    # These files have byte identities; host text-mode newline translation must
+    # not change either the metadata or the portable checksum grammar.
+    (output / 'web-manifest.json').write_bytes((json.dumps(manifest, indent=2, sort_keys=True) + '\n').encode('utf-8'))
+    (output / 'manifest.sha256').write_bytes(''.join(digest(read_file(output / name, 256 * 1024 * 1024)) + '  ' + name + '\n'
+                                                for name in sorted(expected - {'manifest.sha256'})).encode('utf-8'))
     verify(output)
     return manifest
 

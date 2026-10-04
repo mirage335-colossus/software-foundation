@@ -20,7 +20,7 @@ class BuildTests(unittest.TestCase):
         import subprocess
         for fail in (False, True):
             with self.subTest(fail=fail), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory); output = root / 'timings.json'; calls = []
+                root = Path(directory).resolve(); output = root / 'timings.json'; calls = []
                 def execute(command, **kwargs):
                     calls.append(command)
                     if fail and command[0] == 'ctest' and '--show-only=json-v1' not in command:
@@ -51,7 +51,7 @@ class BuildTests(unittest.TestCase):
         from unittest.mock import patch
         import source_identity
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); sdk = root/'sdk'; sdk.mkdir(); output = root/'timings.json'
+            root = Path(directory).resolve(); sdk = root/'sdk'; sdk.mkdir(); output = root/'timings.json'
             (sdk/'sdk.json').write_text(json.dumps({'target':{'system':'Linux'}, 'recipe_id':'a'*64}))
             with patch.object(builder, 'ROOT', root), patch.object(builder, 'run'), \
                     patch.object(builder, 'cache_identity', return_value={}), \
@@ -70,7 +70,7 @@ class BuildTests(unittest.TestCase):
         from unittest.mock import patch
         import import_wasm, source_identity
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); package = root / 'wasm'; package.mkdir(); digest = 'a'*64
+            root = Path(directory).resolve(); package = root / 'wasm'; package.mkdir(); digest = 'a'*64
             args = ['build', '--wasm-package', str(package), '--wasm-package-sha256', digest]
             with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run, \
                     patch.object(builder, 'cache_identity', return_value={}), \
@@ -97,7 +97,7 @@ class BuildTests(unittest.TestCase):
         from unittest.mock import patch
         import source_identity
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             calls = []
             def execute(command, **kwargs):
                 calls.append(command)
@@ -122,7 +122,7 @@ class BuildTests(unittest.TestCase):
         import shutil, subprocess
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             module = Path(__file__).resolve().parents[1] / 'cmake/TestPrerequisites.cmake'
             shutil.copyfile(module, root / module.name)
             (root / 'ok.cpp').write_text('int main(){return 0;}\n')
@@ -175,7 +175,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
         import source_identity
         for action in ('build', 'test', 'package'):
             with self.subTest(action=action), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
+                root = Path(directory).resolve()
                 phases = []
                 def execute(command, **kwargs):
                     phases.append('configure' if '--preset' in command else
@@ -197,7 +197,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
         for selector in ([], ['--gui'], ['--gui-source', 'selected'],
                          ['--gui-input-group', 'selected-group']):
             with self.subTest(selector=selector), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
+                root = Path(directory).resolve()
                 source = root / 'selected'
                 source.mkdir()
                 bundled = root / 'third_party/gui-inputs'
@@ -231,7 +231,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
         from io import StringIO
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run:
                 with self.assertRaises(FileNotFoundError):
                     builder.main(['build', '--gui'])
@@ -246,7 +246,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
         from unittest.mock import patch
         import source_identity
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run, \
                     patch.object(builder, 'cache_identity', return_value={}), \
                     patch.object(source_identity, 'source_tree', return_value={}):
@@ -278,7 +278,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
         ctest = shutil.which('ctest')
         self.assertIsNotNone(ctest, 'CTest is required for build wrapper tests')
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             tree = root / 'build/dev'
             tree.mkdir(parents=True)
             (tree / 'fail.py').write_text('raise SystemExit(1)\n')
@@ -430,7 +430,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
 
     def test_retained_host_tools_are_selected_and_cannot_escape(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             (root / "tools").mkdir()
             (root / "tools/cmake").write_text("fixture")
             (root / "sdk.json").write_text(json.dumps({"host_tools": {"cmake": "tools/cmake"}}))
@@ -442,7 +442,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
 
     def test_sdk_inventory_is_complete(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             (root / "bin").mkdir()
             (root / "sysroot").mkdir()
             (root / "bin/cxx").write_bytes(b"compiler fixture")
@@ -479,7 +479,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
         cmake = shutil.which('cmake')
         self.assertIsNotNone(cmake, 'CMake is required for build policy tests')
         with tempfile.TemporaryDirectory(prefix='runtime install ') as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             (root / 'tools').mkdir()
             output = root / 'arguments.json'
             (root / 'tools/package_runtime.py').write_text(
@@ -530,7 +530,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
         import source_identity
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary); build = root / 'output'
+            root = Path(temporary).resolve(); build = root / 'output'
             calls = []
             def run(command, **kwargs):
                 calls.append([str(value) for value in command])
@@ -557,7 +557,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
         from unittest.mock import patch
         for system, processor in [('Linux', 'aarch64'), ('Emscripten', 'wasm32')]:
             with self.subTest(system=system), tempfile.TemporaryDirectory() as temporary:
-                root = Path(temporary); build = root / 'output'; sdk = root / 'sdk'; sdk.mkdir()
+                root = Path(temporary).resolve(); build = root / 'output'; sdk = root / 'sdk'; sdk.mkdir()
                 (sdk / 'node/bin').mkdir(parents=True)
                 (sdk / 'node/bin/node').write_text('executor')
                 (sdk / 'sdk.json').write_text(json.dumps({'target': {'system': system, 'processor': processor},
@@ -590,7 +590,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
         from unittest.mock import patch
         for missing in (True, False):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temporary:
-                root = Path(temporary); build = root / 'output'
+                root = Path(temporary).resolve(); build = root / 'output'
                 def run(command, **kwargs):
                     if command[0] == 'cpack' and not missing:
                         (build / 'packages').mkdir()
@@ -612,7 +612,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
         sys.path.insert(0, str(Path(builder.__file__).parent))
         import source_identity
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             count = 0
             def run(command, **kwargs):
                 nonlocal count
@@ -630,7 +630,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
         for phase, message in [('--build', 'source changed during compilation'),
                                ('ctest', 'source changed during the operation')]:
             with self.subTest(phase=phase), tempfile.TemporaryDirectory() as temporary:
-                root = Path(temporary)
+                root = Path(temporary).resolve()
                 revision = [0]
                 def run(command, **kwargs):
                     if phase in command:
@@ -645,7 +645,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
 
     def test_normal_variable_compiler_is_read_from_active_cmake_record(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             compiler = root / 'compiler with spaces'
             compiler.write_text('fixture compiler')
             (root / 'CMakeCache.txt').write_text('CMAKE_CACHE_MAJOR_VERSION:INTERNAL=3\nCMAKE_CACHE_MINOR_VERSION:INTERNAL=31\nCMAKE_CACHE_PATCH_VERSION:INTERNAL=6\n')
@@ -660,7 +660,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
     def test_unstamped_tree_is_not_silently_adopted(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             tree = root / 'build/dev'
             tree.mkdir(parents=True)
             (tree / 'CMakeCache.txt').write_text('CMAKE_BUILD_TYPE:STRING=Release\n')
@@ -671,7 +671,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
 
     def test_link_runtime_launcher_and_dependency_cache_edits_change_identity(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             compiler = root / 'compiler'
             compiler.write_text('fixture compiler')
             cache = root / 'CMakeCache.txt'
@@ -700,7 +700,7 @@ class WindowsLinkerTests(unittest.TestCase):
         from unittest.mock import patch
         import copy
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary); expected = self.executable(root / 'toolset/bin/Hostx64/x64/link.exe')
+            root = Path(temporary).resolve(); expected = self.executable(root / 'toolset/bin/Hostx64/x64/link.exe')
             info = {'version':'14.44.35207.0','identities':[{'company':'Microsoft Corporation','original_filename':'LINK.EXE'}]}
             with patch.object(toolchain.platform, 'system', return_value='Windows'), \
                  patch.dict(toolchain.os.environ, {'VCToolsInstallDir':str(root/'toolset')}), \

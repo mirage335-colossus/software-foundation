@@ -485,7 +485,9 @@ class CandidateFetchTests(unittest.TestCase):
         for scope in ('archive', 'source', 'recovery'):
             self.remote.calls.clear()
             candidate, receipt = self.direct_fetch(plan, frozen, scope)
-            names = release.required_files(metadata, self.fixture.target, 'core', scope)
+            check = next(row for row in ci.module('coverage').executions(plan) if row['scope'] == scope)
+            binary_source = check.get('sdk_payload') == 'binary'
+            names = release.required_files(metadata, self.fixture.target, 'core', scope, binary_source=binary_source)
             self.assertEqual(set(receipt['files']), set(names))
             self.assertEqual(release.verify_selection(candidate, self.fixture.target, 'core', scope), metadata)
             self.assertEqual(sum(call[0] == 'download' for call in self.remote.calls), len(names))
@@ -661,9 +663,12 @@ class CandidateFetchTests(unittest.TestCase):
                     patch.object(helper, 'fetch_bundles', side_effect=lambda requests: [restore(request['name'], request['output']) for request in requests]):
                 helper.fetch_check_payloads()
             actual = {path.relative_to(destination / 'build/candidate').as_posix() for path in (destination / 'build/candidate').rglob('*') if path.is_file()}
-            expected = {'release.json', *release.required_files(manifest, self.fixture.target, 'core', scope)}
+            check = next(row for row in c.executions(plan) if row['id'] in batch['checks'])
+            binary_source = check.get('sdk_payload') == 'binary'
+            expected = {'release.json', *release.required_files(manifest, self.fixture.target, 'core', scope, binary_source=binary_source)}
             self.assertEqual(actual, expected)
-            self.assertEqual('qualification-sdk-source-0-1' in fetched, scope == 'recovery')
+            self.assertEqual('qualification-sdk-source-0-1' in fetched,
+                             scope == 'recovery' or scope == 'source' and not binary_source)
             self.assertEqual('qualification-sdk-0-1' in fetched, scope != 'archive')
 
     def test_frozen_batch_payload_list_includes_inputs_and_exact_recovery_closure(self):
@@ -676,9 +681,11 @@ class CandidateFetchTests(unittest.TestCase):
         frozen=ci.qualification_batches(plan,manifest=manifest,attempt='2')['include']
         self.assertEqual([row['id'] for row in plain],[row['id'] for row in frozen])
         for batch in frozen:
-            scope=next(row['scope'] for row in c.executions(plan) if row['id']==batch['checks'][0])
+            check=next(row for row in c.executions(plan) if row['id']==batch['checks'][0])
+            scope=check['scope']
             self.assertEqual(batch['payloads'][0],'qualification-inputs-2')
-            self.assertEqual(any(name.startswith('qualification-sdk-source-') for name in batch['payloads']),scope=='recovery')
+            self.assertEqual(any(name.startswith('qualification-sdk-source-') for name in batch['payloads']),
+                             scope=='recovery' or scope=='source' and check.get('sdk_payload')!='binary')
             self.assertEqual(any(name.startswith('qualification-sdk-0-') for name in batch['payloads']),scope!='archive')
         altered=copy.deepcopy(manifest);altered['dependencies']=[]
         recovery=next(batch for batch in plain if next(row['scope'] for row in c.executions(plan) if row['id']==batch['checks'][0])=='recovery')
@@ -1237,7 +1244,10 @@ class QualificationBatchTests(unittest.TestCase):
         with patch.object(ci,'module',side_effect=lambda name:transport if name=='ci_transport' else original(name)):
             results=ci.restore_run_bundles('example/project',1,2,'a'*40,'certify.yml',requests)
             self.assertEqual(len(results),2);self.assertEqual((output/'case-0/result.json').read_bytes(),b'proof0')
-            self.assertEqual((output/'case-1/result.json').stat().st_mode & 0o777,0o600)
+            mode=(output/'case-1/result.json').stat().st_mode
+            self.assertTrue(mode & 0o200)
+            if sys.platform != 'win32':
+                self.assertEqual(mode & 0o777,0o600)
             collision[0]=True;other=self.root/'collision';requests=[dict(request,output=other) for request in requests]
             with self.assertRaisesRegex(ValueError,'colliding'):
                 ci.restore_run_bundles('example/project',1,2,'a'*40,'certify.yml',requests)

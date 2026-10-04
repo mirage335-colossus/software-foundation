@@ -248,7 +248,7 @@ class RetryTests(unittest.TestCase):
         original = self.root / 'original'; current = self.root / 'current'
         coverage.run_case(plan, 'earlier', self.root, original / 'evidence/earlier', '123', 2)
         coverage.run_case(plan, 'current', self.root, current / 'evidence/current', '123', 3)
-        files = {str(path.relative_to(original)): path.read_text() for path in original.rglob('*') if path.is_file()}
+        files = {path.relative_to(original).as_posix(): path.read_text() for path in original.rglob('*') if path.is_file()}
         self.artifact(files=files)
         other = 'batch-linux-source-abcdef012345'
         prepared = artifacts.prepare(**self.context, name='evidence-' + other + '-3', root=current,

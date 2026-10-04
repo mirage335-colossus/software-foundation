@@ -23,7 +23,7 @@ class SourceGroupTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.source = self.root / 'source'; self.source.mkdir()
         self.foundation = self.root / 'foundation'
         (self.foundation / 'third_party').mkdir(parents=True)

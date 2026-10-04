@@ -64,6 +64,19 @@ its separate notice/provenance and portable-package audits. Current project
 libraries are static; a future project-owned shared library needs explicit provider
 registration rather than an arbitrary build-directory search.
 
+Linux SDK builds link the exact private runtime path without CMake colon padding,
+which would add the working directory to the loader search. After target install
+rules, the install helper rewrites only executable copies recorded by that install
+invocation to their intended installed path. Portable copies use
+`$ORIGIN/../lib/runtime`; ordinary copies retain their configured install policy
+and require their shared GUI providers on the destination system. Use
+`portable-package` when those providers must travel with the application.
+This does not rewrite build executables or add work to warm links. The helper
+supports `CMAKE_INSTALL_BINDIR`, components, prefixes and `DESTDIR`; ambiguous
+installed executable names, generated/metacharacter paths, and an installed path
+longer than the linked path fail explicitly. Installed private-provider collection
+and final ABI audits still run separately for portable packages.
+
 The shared [`sdk_environment.py`](../tools/sdk_environment.py) policy rejects
 ambient compiler/include/library/loader overrides before consuming an SDK, and
 clears them during explicit SDK production. This includes `GCC_EXEC_PREFIX`,

@@ -22,13 +22,13 @@ class QualificationTasksTests(unittest.TestCase):
         self.root.joinpath('build').mkdir()
 
     def plan(self, code="print('checked')", *, backend='core', grouped=False):
-        check = dict(id='abi-first', scope='abi', target=coverage.host_identity()['system'].lower()+'-'+{'amd64':'x86_64','arm64':'aarch64'}.get(coverage.host_identity()['machine'].lower(),coverage.host_identity()['machine'].lower()), environment='fixture',
+        check = dict(id='source-first', scope='source', target=coverage.host_identity()['system'].lower()+'-'+{'amd64':'x86_64','arm64':'aarch64'}.get(coverage.host_identity()['machine'].lower(),coverage.host_identity()['machine'].lower()), environment='fixture',
                      backend=backend, required=True, argv=['{python}', '-c', code],
                      timeout_seconds=5, warning_seconds=4, expected_tests=[])
         rows = [check]
         if grouped:
             check.update(execution=check['id'], qualification=check['id'] + '.qualification.json')
-            rows.append(dict(check, id='abi-second', backend='sdl', qualification='abi-second.qualification.json'))
+            rows.append(dict(check, id='source-second', backend='sdl', qualification='source-second.qualification.json'))
         self.root.joinpath('input.txt').write_text('original')
         plan = coverage.freeze(dict(schema_version=1, mode='release',
             subject=dict(source_sha256='a'*64, inventory_sha256='b'*64, configuration_sha256='c'*64),
@@ -49,30 +49,30 @@ class QualificationTasksTests(unittest.TestCase):
         plan = self.plan("import os,json; print(json.dumps({k:v for k,v in os.environ.items() if k.startswith('FOUNDATION_')}))")
         listed = self.cli('list')
         self.assertEqual(listed.returncode, 0, listed.stderr)
-        result = self.cli('run', '--check', 'abi-first', '--run-id', 'local-job', '--attempt', '2')
+        result = self.cli('run', '--check', 'source-first', '--run-id', 'local-job', '--attempt', '2')
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(result.stdout)
         self.assertEqual(report['status'], 'passed')
-        output = self.root / 'build/evidence/abi-first'
+        output = self.root / 'build/evidence/source-first'
         self.assertEqual(json.loads((output / 'console.log').read_text()),
-            dict(FOUNDATION_PLAN_ID=plan['id'], FOUNDATION_CHECK_ID='abi-first',
+            dict(FOUNDATION_PLAN_ID=plan['id'], FOUNDATION_CHECK_ID='source-first',
                  FOUNDATION_RUN_ID='local-job', FOUNDATION_RUN_ATTEMPT='2'))
         self.assertEqual(coverage.load(output / 'result.json'), report)
         self.assertEqual(json.loads(listed.stdout)['executions'][0]['reports'],
-                         ['build/evidence/abi-first/result.json'])
+                         ['build/evidence/source-first/result.json'])
         self.assertEqual(coverage.merge(plan, [output / 'result.json'])['status'], 'passed')
 
 
     def test_cli_adopts_explicit_prior_result_without_launch_or_overwrite(self):
         plan = self.plan()
         old = self.root / 'prior'
-        coverage.run_case(plan, 'abi-first', self.root, old, 'same-run', 1)
+        coverage.run_case(plan, 'source-first', self.root, old, 'same-run', 1)
         output = self.root / 'adoption.json'
         args = ('--run-id', 'same-run', '--attempt', '2', '--output', str(output), str(old / 'result.json'))
         result = self.cli('adopt', *args)
         self.assertEqual(result.returncode, 0, result.stderr)
         selected = coverage.load(output)
-        self.assertEqual(selected['results']['abi-first']['attempt'], 1)
+        self.assertEqual(selected['results']['source-first']['attempt'], 1)
         self.assertFalse((self.root / 'build/evidence').exists())
         self.assertEqual(coverage.merge(plan, [old/'result.json'], adoption=selected)['status'], 'passed')
         original = output.read_bytes()
@@ -83,7 +83,7 @@ class QualificationTasksTests(unittest.TestCase):
 
     def test_cli_adoption_failure_leaves_no_output(self):
         plan = self.plan(); old = self.root / 'prior'
-        coverage.run_case(plan, 'abi-first', self.root, old, 'same-run', 1)
+        coverage.run_case(plan, 'source-first', self.root, old, 'same-run', 1)
         (self.root / 'input.txt').write_text('changed')
         output = self.root / 'adoption.json'
         result = self.cli('adopt', '--run-id', 'same-run', '--attempt', '2', '--output', str(output), str(old / 'result.json'))
@@ -93,29 +93,29 @@ class QualificationTasksTests(unittest.TestCase):
 
     def test_failed_child_is_nonzero_with_retained_failure_log(self):
         self.plan("print('compiler detail'); raise SystemExit(7)")
-        result = self.cli('run', '--check', 'abi-first', '--run-id', 'local-job', '--attempt', '1')
+        result = self.cli('run', '--check', 'source-first', '--run-id', 'local-job', '--attempt', '1')
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertEqual(json.loads(result.stdout)['status'], 'failed')
-        self.assertIn('compiler detail', self.root.joinpath('build/evidence/abi-first/console.log').read_text())
+        self.assertIn('compiler detail', self.root.joinpath('build/evidence/source-first/console.log').read_text())
 
     def test_grouped_inventory_lists_one_launch_and_every_logical_report(self):
         self.plan(backend='fltk', grouped=True)
         listing = tasks.executions(self.root)
         self.assertEqual(len(listing['executions']), 1)
         execution = listing['executions'][0]
-        self.assertEqual(execution['checks'], ['abi-first', 'abi-second'])
+        self.assertEqual(execution['checks'], ['source-first', 'source-second'])
         self.assertEqual(execution['backends'], ['fltk', 'sdl'])
-        self.assertEqual(execution['reports'], ['build/evidence/abi-first/abi-first.result.json',
-                                               'build/evidence/abi-first/abi-second.result.json'])
+        self.assertEqual(execution['reports'], ['build/evidence/source-first/source-first.result.json',
+                                               'build/evidence/source-first/source-second.result.json'])
         self.assertNotIn('runner', execution)
         with self.assertRaisesRegex(ValueError, 'leader'):
-            tasks.run(self.root, 'abi-second', 'local', 1)
+            tasks.run(self.root, 'source-second', 'local', 1)
         self.assertFalse(self.root.joinpath('build/evidence').exists())
 
     def test_invalid_identity_or_check_cannot_launch(self):
         self.plan()
-        for check, run, attempt in [('missing', 'local', 1), ('abi-first', '../unsafe', 1),
-                                     ('abi-first', 'local', 0), ('abi-first', 'local', True)]:
+        for check, run, attempt in [('missing', 'local', 1), ('source-first', '../unsafe', 1),
+                                     ('source-first', 'local', 0), ('source-first', 'local', True)]:
             with self.subTest(check=check, run=run, attempt=attempt), self.assertRaises(ValueError):
                 tasks.run(self.root, check, run, attempt)
         self.assertFalse(self.root.joinpath('build/evidence').exists())
@@ -123,7 +123,7 @@ class QualificationTasksTests(unittest.TestCase):
     def test_changed_input_fails_before_launch(self):
         self.plan()
         self.root.joinpath('input.txt').write_text('changed')
-        result = self.cli('run', '--check', 'abi-first', '--run-id', 'local', '--attempt', '1')
+        result = self.cli('run', '--check', 'source-first', '--run-id', 'local', '--attempt', '1')
         self.assertEqual(result.returncode, 1)
         self.assertIn('input changed', json.loads(result.stderr)['error'])
         self.assertFalse(self.root.joinpath('build/evidence').exists())
@@ -137,7 +137,7 @@ class QualificationTasksTests(unittest.TestCase):
     def test_prepare_without_browser_has_no_prerequisite_or_evidence_side_effects(self):
         self.plan()
         with patch.object(tasks.ci_plan, 'install_browser_prerequisite') as install:
-            self.assertEqual(tasks.prepare(self.root, 'abi-first', 'local', 1)['status'], 'not_required')
+            self.assertEqual(tasks.prepare(self.root, 'source-first', 'local', 1)['status'], 'not_required')
         install.assert_not_called()
         self.assertFalse(self.root.joinpath('build/prerequisites').exists())
         self.assertFalse(self.root.joinpath('build/evidence').exists())
@@ -149,17 +149,17 @@ class QualificationTasksTests(unittest.TestCase):
         with patch.object(tasks, '_needs_browser', return_value=True), \
                 patch.object(tasks.ci_plan, 'install_browser_prerequisite', side_effect=install) as setup:
             with self.assertRaisesRegex(ValueError, 'explicit browser prerequisite'):
-                tasks.run(self.root, 'abi-first', 'local', 2)
+                tasks.run(self.root, 'source-first', 'local', 2)
             setup.assert_not_called()
-            prepared = tasks.prepare(self.root, 'abi-first', 'local', 2)
+            prepared = tasks.prepare(self.root, 'source-first', 'local', 2)
             receipt = coverage.load(Path(prepared['receipt']))
             self.assertEqual({key: receipt[key] for key in ('plan', 'check', 'run_id', 'attempt')},
-                             dict(plan=plan['id'], check='abi-first', run_id='local', attempt=2))
+                             dict(plan=plan['id'], check='source-first', run_id='local', attempt=2))
             self.assertFalse(self.root.joinpath('build/evidence').exists())
             with patch.object(coverage, 'run_execution', return_value={'status': 'passed'}) as execute:
-                tasks.run(self.root, 'abi-first', 'local', 2)
+                tasks.run(self.root, 'source-first', 'local', 2)
             self.assertEqual(setup.call_count, 1)
-            self.assertEqual(execute.call_args.args[3], self.root / 'build/evidence/abi-first')
+            self.assertEqual(execute.call_args.args[3], self.root / 'build/evidence/source-first')
 
 
 if __name__ == '__main__':

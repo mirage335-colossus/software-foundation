@@ -145,13 +145,28 @@ def build_inputs(build):
 
 
 def normalize_locations(value, build):
-    """Normalize before JSON escaping, including Windows path spellings."""
-    replacements = [(str(Path(build).resolve()), "<BUILD>"), (str(ROOT), "<SOURCE>")]
+    """Normalize declared and physical roots before JSON escaping.
+
+    Windows tools may retain an 8.3 spelling while Path.resolve expands it.
+    Both supplied and resolved root spellings represent the same input; leave
+    unrelated compiler/dependency paths intact rather than resolving every value.
+    """
+    replacements = [(str(ROOT), "<SOURCE>")]
+    for root, marker in ((build, "<BUILD>"), (ROOT, "<SOURCE>")):
+        path = Path(root)
+        spellings = {str(path.absolute()), str(path.resolve())}
+        if path.is_absolute():
+            spellings.add(str(path))
+        replacements.extend((spelling, marker) for spelling in spellings)
     replacements = sorted(set((spelling, marker) for path, marker in replacements
                              for spelling in (path, path.replace("\\", "/"))), key=lambda item:len(item[0]), reverse=True)
+    # A root must end at a path component or a generated CMake delimiter.
+    # Prefix siblings such as source-cache or "source cache" are external inputs.
+    replacements = [(re.compile(re.escape(path) + r"""(?=$|[/\\;"')\]\r\n])"""), marker)
+                    for path, marker in replacements]
     def visit(item):
         if isinstance(item, str):
-            for path, marker in replacements: item = item.replace(path, marker)
+            for pattern, marker in replacements: item = pattern.sub(marker, item)
             return item
         if isinstance(item, list): return [visit(row) for row in item]
         if isinstance(item, dict): return {visit(key):visit(row) for key,row in item.items()}
@@ -185,7 +200,7 @@ def ctest_declarations(build):
     while pending:
         path = pending.pop().resolve(strict=True)
         path.relative_to(root)
-        relative = str(path.relative_to(root))
+        relative = path.relative_to(root).as_posix()
         if relative in result:
             raise ValueError("recursive or duplicated CTest declaration directory")
         text = path.read_text(encoding="utf-8")
@@ -280,11 +295,12 @@ def configuration_id(build, *, declared_commands=False):
 def _configuration_id(build, tests, mapping, *, declared_commands=False):
     # Reuse one complete CTest observation only inside this verification phase.
     # Callers take a fresh observation after compilation and after execution.
+    declared_build = build
     build = build.resolve()
     inputs = build_inputs(build)
     # Normalize checkout/build locations while preserving actual compiler and
     # retained-input digests, complete cache values and external locations.
-    normalized = normalize_locations(inputs, build)
+    normalized = normalize_locations(inputs, declared_build)
     info = (build / "build-info.txt").read_text()
     identity = {"inputs": normalized, "build_info": info, "tests": tests}
     if mapping is not None:
@@ -297,7 +313,7 @@ def _configuration_id(build, tests, mapping, *, declared_commands=False):
         if not declarations:
             raise ValueError("candidate needs complete generated CTest declarations")
         identity["tests"] = [{key:value for key,value in item.items() if key != "command"} for item in tests]
-        identity["declarations"] = normalize_locations(declarations, build)
+        identity["declarations"] = normalize_locations(declarations, declared_build)
     return digest(identity)
 
 
@@ -486,7 +502,7 @@ def candidate_prerequisite_inputs(build):
     paths.update(build/name for name in ('build-info.txt', 'test-platform.json'))
     if (build / "test-prerequisites.json").exists():
         paths.add(build / "test-prerequisites.json")
-    declarations = {str(path.relative_to(build)): hashlib.sha256(path.read_bytes()).hexdigest()
+    declarations = {path.relative_to(build).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
                     for path in sorted(paths)}
     return source_id(build), build_inputs(build), declarations
 

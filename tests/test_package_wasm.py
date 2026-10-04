@@ -42,6 +42,23 @@ class PackageWasmTests(unittest.TestCase):
         self.assertEqual({p.name: p.read_bytes() for p in self.output.iterdir()}, before)
         self.assertEqual(package_wasm.verify(self.output), expected)
 
+    def test_canonical_metadata_survives_windows_text_translation(self):
+        # Exercise Windows text-mode translation on every test host. Binary
+        # package output must still verify and remain byte-identical.
+        write_text = Path.write_text
+        def windows_text(path, data, *args, **kwargs):
+            if kwargs.get('newline') is None:
+                data = data.replace('\n', '\r\n')
+            return write_text(path, data, *args, **kwargs)
+        expected = self.make()
+        before = {p.name: p.read_bytes() for p in self.output.iterdir()}
+        with patch.object(Path, 'write_text', windows_text):
+            self.assertEqual(self.make(), expected)
+        self.assertEqual({p.name: p.read_bytes() for p in self.output.iterdir()}, before)
+        for name in ('web-manifest.json', 'manifest.sha256'):
+            self.assertNotIn(b'\r', before[name])
+        self.assertEqual(package_wasm.verify(self.output), expected)
+
     def test_tampering_and_extra_files_fail(self):
         self.make()
         html = self.output / package_wasm.HTML_NAME

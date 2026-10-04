@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -22,7 +23,7 @@ class EvidenceArtifacts(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.source = self.root / 'source'; self.source.mkdir()
         (self.source / 'nested').mkdir()
         (self.source / 'nested/test.log').write_text('complete evidence\n' * 100)
@@ -246,14 +247,34 @@ class EvidenceArtifacts(unittest.TestCase):
             with mock.patch.dict(os.environ, {artifacts.FALLBACK_ENV: 'true'}): artifacts.main(['fallback'])
         lifecycle.store_bundle.assert_called_once_with()
 
-    @unittest.skipIf(os.name == 'nt', 'symlink creation needs native Windows privilege qualification')
     def test_symlink_inputs_and_download_parents_are_rejected(self):
-        (self.source / 'nested/link').symlink_to(self.source / 'result.json')
-        with self.assertRaisesRegex(ValueError, 'ordinary'): self.prepare()
-        (self.source / 'nested/link').unlink(); self.stage()
-        alias = self.root / 'alias'; alias.symlink_to(self.downloads, target_is_directory=True)
-        with mock.patch.dict(os.environ, {artifacts.ROOT_ENV: str(alias)}):
-            with self.assertRaisesRegex(ValueError, 'ordinary directories'): self.fetch()
+        link = self.source / 'nested/link'
+        alias = self.root / 'alias'
+        if os.name == 'nt':
+            # Directory junctions exercise the same reparse-point rejection
+            # without requiring Developer Mode or the symlink privilege.
+            def junction(path, target):
+                result = subprocess.run(['cmd', '/d', '/c', 'mklink', '/J', str(path), str(target)],
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertTrue(path.lstat().st_file_attributes & 0x400)
+            junction(link, self.downloads)
+        else:
+            link.symlink_to(self.source / 'result.json')
+        try:
+            with self.assertRaisesRegex(ValueError, 'ordinary'): self.prepare()
+        finally:
+            link.rmdir() if os.name == 'nt' else link.unlink()
+        self.stage()
+        if os.name == 'nt':
+            junction(alias, self.downloads)
+        else:
+            alias.symlink_to(self.downloads, target_is_directory=True)
+        try:
+            with mock.patch.dict(os.environ, {artifacts.ROOT_ENV: str(alias)}):
+                with self.assertRaisesRegex(ValueError, 'ordinary directories'): self.fetch()
+        finally:
+            alias.rmdir() if os.name == 'nt' else alias.unlink()
 
 
 if __name__ == '__main__':

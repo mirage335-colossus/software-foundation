@@ -23,7 +23,7 @@ int main(){try{
     std::filesystem::create_directory(directory);
     struct Cleanup {std::filesystem::path path;~Cleanup(){std::filesystem::remove_all(path);}} cleanup{directory};
     const auto path=directory/"entries.txt";
-    {std::ofstream file(path);file<<"first\r\nsecond\n";}
+    {std::ofstream file(path,std::ios::binary);file<<"first\r\nsecond\n";}
     host::NativeSession<ui::Application,Selector> session;session.adapter.selected=path.string();
     const auto option=[&](const char* id){session.application.handle(gui::WidgetEvent{{"entries.options",1},gui::ChooseOption{id}});session.services();};
     const auto status=[&]{return gui::find_widget(session.application.view(),{"entries.status",1})->state.text;};
@@ -34,12 +34,12 @@ int main(){try{
     auto rows=gui::find_widget(session.application.view(),{"entries.list",1})->state.records;
     check(rows.size()==2&&rows[0].accessible_text=="first","Content import differs");
     option("export");wait("Export handed to host");
-    std::ifstream exported(path);std::string bytes((std::istreambuf_iterator<char>(exported)),{});
+    std::ifstream exported(path,std::ios::binary);std::string bytes((std::istreambuf_iterator<char>(exported)),{});
     check(bytes=="first\nsecond\n","Atomic native export differs");exported.close();
     {std::ofstream file(path,std::ios::binary);file<<"\xef\xbb\xbf" "first\n";}
     option("import");wait("text must contain printable ASCII only");
     check(gui::find_widget(session.application.view(),{"entries.list",1})->state.records==rows,"BOM import silently changed content");
-    {std::ofstream file(path);file<<"valid\n\ninvalid";}
+    {std::ofstream file(path,std::ios::binary);file<<"valid\n\ninvalid";}
     option("import");wait("text must contain 1..256 bytes");
     check(gui::find_widget(session.application.view(),{"entries.list",1})->state.records==rows,"Invalid import partially changed records");
     const auto native_selector=[&]<class Adapter>() {
@@ -63,7 +63,7 @@ int main(){try{
     std::atomic_bool stop{true};
     gui::ServiceRequest request{71,gui::ServiceKind::write_text,"Export","cancelled",32};
     check(host::file_detail::transfer(request,path,stop).status==gui::ServiceStatus::cancelled,"Export cancellation lost");
-    std::ifstream unchanged(path);bytes.assign(std::istreambuf_iterator<char>(unchanged),{});check(bytes=="valid\n\ninvalid","Cancelled export replaced destination");
+    std::ifstream unchanged(path,std::ios::binary);bytes.assign(std::istreambuf_iterator<char>(unchanged),{});check(bytes=="valid\n\ninvalid","Cancelled export replaced destination");
     for(const auto& entry:std::filesystem::directory_iterator(directory))check(entry.path()==path,"Temporary export file leaked");
     stop=false;request.kind=gui::ServiceKind::read_text;request.value.clear();request.byte_limit=2;
     bool rejected=false;try{host::file_detail::transfer(request,path,stop);}catch(const std::length_error&){rejected=true;}check(rejected,"Oversized import accepted");

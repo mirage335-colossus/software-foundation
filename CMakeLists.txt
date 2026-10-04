@@ -310,6 +310,8 @@ set(_build_info "source_tree_sha256=${_source_identity}\ntarget=${_target_os}-${
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/build-info.txt" CONTENT "${_build_info}" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/build-info.txt" DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
+foundation_install_sdk_runtime()
+
 if(FOUNDATION_PORTABLE AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _portable_processor)
   if(_portable_processor STREQUAL "amd64")

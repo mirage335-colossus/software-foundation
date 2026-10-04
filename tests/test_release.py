@@ -210,7 +210,7 @@ class ReleaseTests(unittest.TestCase):
                 copy = shutil.copyfile
                 def corrupt(source, destination, *args, **kwargs):
                     result = copy(source, destination, *args, **kwargs)
-                    if Path(source) == original / member:
+                    if Path(source).resolve() == (original / member).resolve():
                         Path(destination).write_bytes(b'corrupted while copying')
                     return result
                 with patch.object(release.shutil, 'copyfile', side_effect=corrupt):

@@ -1,4 +1,5 @@
 import importlib.util
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -20,6 +21,14 @@ class CoverageTests(unittest.TestCase):
             (unrelated / 'CTestTestfile.cmake').write_text('add_test(unrelated "ignored")\n')
             actual = plan.ctest_declarations(build)
             self.assertEqual(set(actual), {'CTestTestfile.cmake', 'gui/CTestTestfile.cmake'})
+            from unittest.mock import patch
+            for name in ('build-info.txt', 'test-platform.json'):
+                (build / name).write_text('fixture')
+            with patch.object(plan, 'source_id', return_value='source'), \
+                    patch.object(plan, 'build_inputs', return_value={}):
+                _, _, inputs = plan.candidate_prerequisite_inputs(build)
+            self.assertEqual(set(inputs), {'CTestTestfile.cmake', 'gui/CTestTestfile.cmake',
+                                           'build-info.txt', 'test-platform.json'})
             first = plan.digest(plan.normalize_locations(actual, build))
             declarations.write_text('add_test(example "changed-command")\n')
             self.assertNotEqual(first, plan.digest(plan.normalize_locations(plan.ctest_declarations(build), build)))
@@ -95,6 +104,66 @@ class CoverageTests(unittest.TestCase):
         with patch.object(plan,'ROOT',r'C:\work\source'):
             normalized=plan.normalize_locations(value,Path.cwd()/'build')
         self.assertEqual(normalized,{'path':r'<SOURCE>\main.cpp','command':['<SOURCE>/test.py',r'C:\external\compiler.exe']})
+
+    def test_location_normalization_includes_supplied_and_resolved_roots(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            physical = Path(temporary).resolve()
+            source = physical / 'source'; source.mkdir()
+            build = physical / 'build'; build.mkdir()
+            declared_source = source / '..' / 'source'
+            declared_build = build / '..' / 'build'
+            value = [str(declared_source / 'main.cpp'), str(source / 'main.cpp'),
+                     str(declared_build / 'probe'), str(build / 'probe'),
+                     str(physical / 'external/compiler')]
+            with patch.object(plan, 'ROOT', declared_source):
+                normalized = plan.normalize_locations(value, declared_build)
+            self.assertEqual(normalized[:2], ['<SOURCE>' + os.sep + 'main.cpp'] * 2)
+            self.assertEqual(normalized[2:4], ['<BUILD>' + os.sep + 'probe'] * 2)
+            self.assertEqual(normalized[4], value[4])
+
+    def test_relative_build_name_is_not_replaced_in_ordinary_text(self):
+        from unittest.mock import patch
+        with patch.object(plan, 'ROOT', Path.cwd() / 'source'):
+            value = {'command': ['build', 'rebuild', str(Path.cwd() / 'build/probe')]}
+            actual = plan.normalize_locations(value, Path('build'))
+        self.assertEqual(actual['command'][:2], ['build', 'rebuild'])
+        self.assertEqual(actual['command'][2], '<BUILD>' + os.sep + 'probe')
+
+    def test_location_prefix_siblings_stay_external_in_commands_and_paths(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve(); source = root / 'source'; build = root / 'build'
+            external = [str(root / name / 'compiler') for name in
+                        ('source-cache', 'source cache', 'build-tools', 'build tools')]
+            command = 'add_test(example "' + build.as_posix() + '/probe" "' + source.as_posix() + '")'
+            command += '\n# Source directory: ' + source.as_posix() + '\n# Build directory: ' + build.as_posix() + '\n'
+            with patch.object(plan, 'ROOT', source):
+                result = plan.normalize_locations({'external': external, 'command': command}, build)
+            self.assertEqual(result['external'], external)
+            self.assertEqual(result['command'], 'add_test(example "<BUILD>/probe" "<SOURCE>")\n'
+                             '# Source directory: <SOURCE>\n# Build directory: <BUILD>\n')
+
+    def test_configuration_identity_preserves_declared_build_root_for_normalization(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve(); source = root / 'source'; source.mkdir()
+            build = root / 'build'; build.mkdir(); (build / 'build-info.txt').write_text('fixture')
+            declared = build / '..' / 'build'
+            commands = {'CTestTestfile.cmake': 'add_test(probe "' + declared.as_posix() + '/probe")'}
+            inputs = {'cache': {'CMAKE_CACHEFILE_DIR': str(declared),
+                                'EXTERNAL_TOOL': str(root / 'build-tools/compiler')}}
+            with patch.object(plan, 'ROOT', source), \
+                    patch.object(plan, 'test_definitions', return_value=[{'name':'probe'}]), \
+                    patch.object(plan, '_prerequisites', return_value=None), \
+                    patch.object(plan, 'build_inputs', return_value=inputs) as observed, \
+                    patch.object(plan, 'ctest_declarations', return_value=commands), \
+                    patch.object(plan, 'digest', side_effect=lambda value:value):
+                identity = plan.configuration_id(declared, declared_commands=True)
+            observed.assert_called_once_with(build)
+            self.assertEqual(identity['inputs']['cache']['CMAKE_CACHEFILE_DIR'], '<BUILD>')
+            self.assertEqual(identity['inputs']['cache']['EXTERNAL_TOOL'], inputs['cache']['EXTERNAL_TOOL'])
+            self.assertEqual(identity['declarations']['CTestTestfile.cmake'], 'add_test(probe "<BUILD>/probe")')
 
     def test_tampered_and_empty_inventory_rejected(self):
         with self.assertRaises(ValueError):
@@ -386,7 +455,7 @@ class NativeExecutionTests(unittest.TestCase):
         import json, subprocess, sys
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary); source = root / 'source'; source.mkdir(); build = root / 'build'
+            root = Path(temporary).resolve(); source = root / 'source'; source.mkdir(); build = root / 'build'
             (source / 'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.24)\nproject(PlanProbe LANGUAGES CXX)\nenable_testing()\nadd_executable(probe main.cpp)\nadd_custom_target(foundation-tests DEPENDS probe)\nadd_test(NAME core.probe COMMAND probe)\nfile(WRITE "${CMAKE_BINARY_DIR}/build-info.txt" "fixture\\n")\n')
             (source / 'main.cpp').write_text('int main() { return 0; }\n')
             subprocess.run(['cmake','-S',str(source),'-B',str(build),'-G','Ninja','-DCMAKE_BUILD_TYPE=Release'],check=True,capture_output=True)
@@ -405,7 +474,7 @@ class CandidateInventoryTests(unittest.TestCase):
         import json,subprocess,sys,copy
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary);source=root/'source';source.mkdir();build=root/'build'
+            root=Path(temporary).resolve();source=root/'source';source.mkdir();build=root/'build'
             script=source/'fixture.py'
             script.write_text("import json,sys\nfrom pathlib import Path\np=Path(sys.argv[1]);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps({'schema_version':1,'system':'fixture','status':'passed','inventory':['one'],'excluded':{},'results':{'one':{'status':'passed'}}}))\n")
             (source/'main.cpp').write_text('#include <fstream>\nint main(int argc, char** argv) { if (argc != 2) return 1; std::ofstream out(argv[1]); out << \"ran\"; return out ? 0 : 1; }\n')

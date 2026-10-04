@@ -36,8 +36,9 @@ Local integration used a complete 366-file snapshot
 `d7d9062deb03ce56d7c2369f70fa4674c99abcc6b92f9c919b65b73f5e286ff1`.
 The final helper/documentation corrections were checked in snapshot
 `5c48879ffcd4a20ac23142863a7061f167a5829379af9182e4e7dce9eb0d9d1d`.
-The GUI/browser/native-import/sanitizer inputs are unchanged between these copies.
-Only this validation entry is added after those snapshots.
+The GUI/browser/native-import/sanitizer implementation files are unchanged between
+these copies. The imported Wasm package is bound to the complete first snapshot;
+the second snapshot is separate evidence for the helper/documentation corrections.
 
 | Scope | Observed result |
 | --- | --- |
@@ -51,10 +52,44 @@ Only this validation entry is added after those snapshots.
 | Platform test declarations | The two Unix-only opener/compiler fixtures are explicitly inapplicable on Windows; portable import/source-identity checks remain required there. Missing tools or unexpected skips still fail. |
 | Static/checkout qualification | Python 3.9 grammar for 137 files, documentation, GUI boundary and whitespace checks passed. The actual checkout-GUI lifecycle command verified/copied/reverified the exact retained group. |
 
+Follow-up portability repairs were checked in the complete 366-file snapshot
+`afa4c373a5332a16a91805679be4ff0caabcdb5c05e24db10d4e0328dc7c8678`.
+All 62 CTest suites passed across the full invocation and a focused rerun: the
+first invocation passed 57/62, with five signed-package suites failing GnuPG
+fixture startup inside the restricted sandbox. Those exact five suites passed
+outside the sandbox with temporary local daemon support. Their final reports
+contain 1,499 passing Python cases, two explicit native-Windows exclusions and
+no unexpected skips; the original failed aggregate is retained as failed.
+Python 3.9 grammar and whitespace checks passed.
+
+Native qualification of `850c4a74f21ec1f2ee0274c7d9d78a3d667710f0` exposed
+CMake's trailing-colon build-RPATH padding on both Linux architectures, correctly
+rejected by the runtime audit. Exact link paths and install-only normalization
+replace that padding without weakening the audit or rewriting warm build outputs.
+The 98 affected SDK/runtime/portability cases passed; real generator fixtures
+passed CMake 3.31.6 and retained 4.4.0, including relocation, components, repeated
+installation and untouched no-op outputs. Windows compiled all application and
+GUI-test targets and passed all six installed hosts, native visual and clipboard
+checks, then failed 13 regression suites. Repairs cover canonical Wasm checksum
+bytes, binary/LF/CRLF fixtures, portable declaration keys, declared/physical path
+normalization, exact source-payload expectations and native junction rejection.
+The latter exercises actual reparse protection rather than skipping Windows.
+Independent review added prefix-sibling and caller-preserved alias regressions.
+These changes preserve application/backend insulation and SDK recipe identities.
+
+The [implementation feedback run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171429379)
+passed all four jobs. The [GUI maintenance run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171470282)
+published the exact three-file retained GUI group. The Wasm producer in
+[SDK maintenance](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171568881)
+passed core 2/2, full GUI/tooling 56/56 and 1,291 Python cases, with only two
+explicit native-Windows exclusions. Both consumer receipts and all four producer
+isolation checkpoints passed; this producer result alone does not establish
+publication or success of the still-separate native producer jobs.
+
 Native GUI, hosted platform and refreshed SDK results are recorded separately
 when complete. This local evidence does not assert native Windows/ARM/Bookworm
-execution, physical touch/bezel/VR hardware, Arduino, or an actual system package
-upgrade. Package-manager commands were intercepted while real signed-generation
+execution after the repairs, physical touch/bezel/VR hardware, Arduino, or an
+actual system package upgrade. Package-manager commands were intercepted while real signed-generation
 verification ran. The worker boundary limits socket authority, not general
 filesystem/process authority. Forced native export termination can leave its
 exclusive temporary file and an uncertain commit outcome; the host guide documents

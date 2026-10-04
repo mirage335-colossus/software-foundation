@@ -837,6 +837,116 @@ class NativeLinuxToolchainTests(unittest.TestCase):
             self.assertEqual(outside.read_bytes(), b'not a supplier input')
 
 
+
+    def test_sdk_runtime_cmake_build_and_install_paths_are_exact(self):
+        import os, platform, shutil, subprocess
+        from verify_abi import audit, inspect
+        project = Path(__file__).resolve().parents[1]
+        processor = platform.machine()
+        for portable in (False, True):
+            with self.subTest(portable=portable), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); source = root / 'source'; source.mkdir()
+                sdk_root = root / 'sdk'; (sdk_root / 'sysroot/usr/lib').mkdir(parents=True)
+                library = sdk_root / 'sysroot/usr/lib/libfixture.so.1'
+                result = subprocess.run(['cc', '-shared', '-fPIC', '-x', 'c', '-',
+                    '-Wl,-soname,libfixture.so.1', '-o', str(library)],
+                    input='int value(void){return 7;}\n', text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                write_json(sdk_root / 'sdk.json', {'target': {'system': 'Linux',
+                    'processor': processor, 'sysroot': 'sysroot'}, 'files': file_inventory(sdk_root)})
+                (source / 'main.cpp').write_text('int main(){return 0;}\n')
+                (source / 'gui').mkdir()
+                (source / 'gui/main.cpp').write_text(
+                    'extern "C" int value(); int main(){return value()==7 ? 0 : 1;}\n' if portable else
+                    'int main(){return 0;}\n')
+                common = 'set_target_properties({target} PROPERTIES INSTALL_RPATH "$ORIGIN/../lib/runtime")\n' if portable else ''
+                (source / 'gui/CMakeLists.txt').write_text(
+                    'add_executable(gui_probe main.cpp)\nfoundation_sdk_runtime(gui_probe)\n' +
+                    common.format(target='gui_probe') +
+                    ('foundation_link_static_gnu_runtime(gui_probe PRIVATE)\n' if portable else '') +
+                    ('target_link_libraries(gui_probe PRIVATE "' + str(library) + '")\n' if portable else '') +
+                    'install(TARGETS gui_probe RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Runtime)\n')
+                (source / 'CMakeLists.txt').write_text(
+                    'cmake_minimum_required(VERSION 3.24)\nproject(RuntimeProbe LANGUAGES CXX)\n'
+                    'include(GNUInstallDirs)\nfind_package(Python3 REQUIRED COMPONENTS Interpreter)\n'
+                    'set(FOUNDATION_PORTABLE ' + ('ON' if portable else 'OFF') + ')\n'
+                    'set(FOUNDATION_SDK_ROOT "' + str(sdk_root) + '")\n'
+                    'include("' + str(project / 'cmake/StaticCxxRuntime.cmake') + '")\n'
+                    'include("' + str(project / 'cmake/SdkBuildRuntime.cmake') + '")\n'
+                    'add_executable(x main.cpp)\nfoundation_sdk_runtime(x)\n' + common.format(target='x') +
+                    ('foundation_link_static_gnu_runtime(x PRIVATE)\n' if portable else '') +
+                    'install(TARGETS x RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Runtime)\n'
+                    'add_subdirectory(gui)\nfoundation_install_sdk_runtime()\n')
+                build = root / 'build'
+                def run(*command, **kwargs):
+                    result = subprocess.run(list(map(str, command)), capture_output=True, text=True, **kwargs)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    return result
+                run('cmake', '-S', source, '-B', build, '-G', 'Ninja',
+                    '-DCMAKE_BUILD_TYPE=Debug', '-DCMAKE_INSTALL_BINDIR=custom-bin')
+                run('cmake', '--build', build, '--parallel', '2')
+                outputs = (build / 'x', build / 'gui/gui_probe')
+                before = {}
+                for executable, target in zip(outputs, ('x', 'gui_probe')):
+                    self.assertEqual(inspect(executable)['rpath'], ['$ORIGIN/.sdk-runtime/' + target])
+                    self.assertEqual(inspect(executable)['runpath'], [])
+                    self.assertEqual(audit(executable.parent, processor)['status'], 'passed')
+                    run(executable)
+                    before[executable] = (digest(executable), executable.stat().st_mtime_ns)
+                run('cmake', '--build', build, '--parallel', '2')
+                self.assertEqual(before, {p: (digest(p), p.stat().st_mtime_ns) for p in outputs})
+                staged = root / 'destdir'; prefix = '/requested-prefix'
+                environment = dict(os.environ, DESTDIR=str(staged))
+                # An absent component must not normalize a same-named foreign file.
+                unrelated = staged / 'requested-prefix/custom-bin/x'
+                unrelated.parent.mkdir(parents=True); unrelated.write_bytes(b'leave untouched')
+                run('cmake', '--install', build, '--prefix', prefix, '--component', 'Unused', env=environment)
+                self.assertEqual(unrelated.read_bytes(), b'leave untouched'); unrelated.unlink()
+                run('cmake', '--install', build, '--prefix', prefix, '--component', 'Runtime', env=environment)
+                run('cmake', '--install', build, '--prefix', prefix, '--component', 'Runtime', env=environment)
+                installed = staged / 'requested-prefix'
+                for name in ('x', 'gui_probe'):
+                    expected = ['$ORIGIN/../lib/runtime'] if portable else []
+                    self.assertEqual(inspect(installed / 'custom-bin' / name)['rpath'], expected)
+                if portable:
+                    from stage_runtime import stage
+                    stage([installed / 'custom-bin/gui_probe'], [library.parent], installed / 'lib/runtime', processor)
+                self.assertEqual(audit(installed, processor)['status'], 'passed')
+                cmake_file = source / 'CMakeLists.txt'
+                clean_source = cmake_file.read_text()
+                cmake_file.write_text(clean_source.replace('foundation_install_sdk_runtime()',
+                    'add_executable(uninstalled EXCLUDE_FROM_ALL main.cpp)\n'
+                    'set_target_properties(uninstalled PROPERTIES OUTPUT_NAME x RUNTIME_OUTPUT_DIRECTORY unused)\n'
+                    'foundation_sdk_runtime(uninstalled)\nfoundation_install_sdk_runtime()'))
+                run('cmake', '-S', source, '-B', build)
+                ambiguous = subprocess.run(['cmake', '--install', str(build), '--prefix', prefix,
+                    '--component', 'Runtime'], env=dict(environment, DESTDIR=str(root / 'ambiguous-stage')),
+                    capture_output=True, text=True)
+                self.assertNotEqual(ambiguous.returncode, 0)
+                self.assertIn('Ambiguous installed SDK executable destination', ambiguous.stdout + ambiguous.stderr)
+                # All mappings are checked before any normalization occurs.
+                self.assertEqual(inspect(root / 'ambiguous-stage/requested-prefix/custom-bin/x')['rpath'],
+                    ['$ORIGIN/.sdk-runtime/x'])
+                cmake_file.write_text(clean_source)
+                run('cmake', '-S', source, '-B', build)
+                run('cmake', '--install', build, '--prefix', prefix, '--component', 'Runtime', env=environment)
+                sdk_root.rename(root / 'hidden-sdk'); build.rename(root / 'hidden-build')
+                for name in ('x', 'gui_probe'): run(installed / 'custom-bin' / name)
+                # The path length restriction is explicit, never truncation.
+                sdk_root = root / 'hidden-sdk'
+                cmake_file = source / 'CMakeLists.txt'
+                cmake_file.write_text(cmake_file.read_text().replace(str(root / 'sdk'), str(sdk_root)).replace(
+                    'add_subdirectory(gui)', 'set_target_properties(x PROPERTIES INSTALL_RPATH "$ORIGIN/' + 'long' * 40 + '")\nadd_subdirectory(gui)'))
+                result = subprocess.run(['cmake', '-S', str(source), '-B', str(root / 'long-build'), '-G', 'Ninja'],
+                    capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('must be a literal no longer', result.stdout + result.stderr)
+                cmake_file.write_text(clean_source.replace(str(root / 'sdk'), str(sdk_root)))
+                result = subprocess.run(['cmake', '-S', str(source), '-B', str(root / 'quoted-build'), '-G', 'Ninja',
+                    '-DCMAKE_INSTALL_BINDIR=bad"directory'], capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Unsupported metacharacter in SDK installation directory', result.stdout + result.stderr)
+
     def make_sdk(self, root, c=True):
         import platform, shlex, shutil
         tree = root / 'sdk'; (tree / 'bin').mkdir(parents=True); (tree / 'sysroot').mkdir()
