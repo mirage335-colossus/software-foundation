@@ -47,7 +47,7 @@ jobs:
     name: Source ${{ matrix.target }} / ${{ matrix.scope }}
     timeout-minutes: 30
     env:
-      CMAKE_BUILD_PARALLEL_LEVEL: ${{ inputs.build_jobs }}
+      BUILD_JOBS: ${{ inputs.build_jobs }}
       CTEST_PARALLEL_LEVEL: '2'
       TARGET: ${{ matrix.target }}
       SCOPE: ${{ matrix.scope }}
@@ -56,6 +56,15 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+    - name: Resolve compile capacity
+      shell: python
+      run: |
+        import os, sys
+        sys.path.insert(0, 'tools')
+        from build_capacity import compile_jobs
+        jobs = compile_jobs(os.environ['BUILD_JOBS'])
+        with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as output:
+            output.write('CMAKE_BUILD_PARALLEL_LEVEL=' + str(jobs) + '\n')
     - if: runner.os == 'Windows'
       shell: pwsh
       run: ./tools/ci_windows.ps1
@@ -64,8 +73,13 @@ jobs:
       shell: python
       run: |
         import os, subprocess, sys
+        from pathlib import Path
         subprocess.run([sys.executable, '-B', '.github/scripts/rust_host_prepare.py',
                         '--target', os.environ['TARGET']], check=True)
+        retained = Path('build/release/native-rust-preparation.json')
+        retained.parent.mkdir(parents=True, exist_ok=True)
+        with retained.open('xb') as output:
+            output.write(Path('build/native-rust-preparation.json').read_bytes())
     - name: Verify host and execute disjoint scope
       shell: python
       run: |
@@ -90,7 +104,7 @@ jobs:
           build/release/test-reports/
           build/release/candidate-${{ matrix.scope }}.json
           build/release/candidate-${{ matrix.scope }}.junit.xml
-          build/native-rust-preparation.json
+          build/release/native-rust-preparation.json
     permissions:
       contents: write
       actions: read
@@ -115,17 +129,27 @@ jobs:
     if: ${{ !inputs.devfast }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      BUILD_JOBS: ${{ inputs.build_jobs }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+    - name: Resolve compile capacity
+      shell: python
+      run: |
+        import os, sys
+        sys.path.insert(0, 'tools')
+        from build_capacity import compile_jobs
+        jobs = compile_jobs(os.environ['BUILD_JOBS'])
+        with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as output:
+            output.write('CMAKE_BUILD_PARALLEL_LEVEL=' + str(jobs) + '\n')
     - name: Explicit pinned Rust host preparation
       if: inputs.core_provider == 'rust'
       run: python3 -B .github/scripts/rust_host_prepare.py --target linux-x86_64
     - shell: python
       env:
         CORE_PROVIDER: ${{ inputs.core_provider }}
-        CMAKE_BUILD_PARALLEL_LEVEL: ${{ inputs.build_jobs }}
       run: |
         import os, subprocess, sys
         command = [sys.executable, 'tools/build.py', 'test', 'asan', '--label', 'core', '--test-jobs', '2',

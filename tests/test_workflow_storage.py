@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import Mock, patch
 
@@ -196,6 +197,90 @@ class StorageLayoutTests(unittest.TestCase):
         fetch.assert_called_once(); self.assertEqual(len(fetch.call_args.args[0]), 9)
         self.assertEqual(merge.call_count, 3)
         self.assertTrue(all(len(call.args[0]) == 3 and call.kwargs == {'diagnostic':False} for call in merge.call_args_list))
+
+    def test_rust_and_cpp_source_bundles_restore_flat_reports_for_real_candidate_merge(self):
+        import ci_artifacts
+        import test_plan
+        workflow = (ROOT / '.github/workflows/candidate.yml').read_text()
+        source = workflow.split('  source:\n', 1)[1].split('  package:\n', 1)[0]
+        preparation = source.split('    - name: Explicit pinned native Rust host preparation\n', 1)[1].split('    - name:', 1)[0]
+        self.assertIn("if: inputs.core_provider == 'rust'", preparation)
+        preparation_script = textwrap.dedent(preparation.split('      run: |\n', 1)[1])
+        declarations = source.split('        paths: |\n', 1)[1].split('    permissions:', 1)[0]
+        scopes = {'core': ['core.fixture'], 'tools': ['tools.fixture'], 'integration': ['integration.fixture']}
+        inner = dict(schema_version=1, system='fixture', status='passed', inventory=['one'],
+                     excluded={}, results={'one': {'status': 'passed'}})
+        target = 'linux-x86_64'
+        selected = {'include': [dict(target=target, runner=ci.STANDARD[target])]}
+        previous = Path.cwd()
+        try:
+            for provider in ('cpp', 'rust'):
+                with self.subTest(provider=provider):
+                    checkout = self.root / provider; checkout.mkdir()
+                    release = checkout / 'build/release'; release.mkdir(parents=True)
+                    artifacts = checkout / 'downloaded'; artifacts.mkdir()
+                    plan = dict(schema_version=1, source='b' * 64, configuration=hashlib.sha256(provider.encode()).hexdigest(),
+                                tests=sorted(name for names in scopes.values() for name in names), scopes=scopes,
+                                platform_exclusions={}, timeouts={name: 30 for names in scopes.values() for name in names})
+                    plan['id'] = test_plan.digest(plan)
+                    original_receipt = archive.encoded(dict(schema_version=1, target=target, recipe='c' * 64,
+                        scope='explicit-native-host-preparation', files={'rust-sdk.tar.gz': 'd' * 64}))
+                    with patch.object(lifecycle, 'ROOT', checkout), patch.dict(os.environ, TARGET=target,
+                            CORE_PROVIDER=provider, GITHUB_ACTIONS='true', CANDIDATE_TARGETS=json.dumps(selected),
+                            DEVFAST='false', FOUNDATION_CI_ARTIFACTS_DIR=str(artifacts),
+                            FOUNDATION_CI_ARTIFACTS_REQUIRED='true', FOUNDATION_CI_ARTIFACT_RELEASE_FALLBACK='false'):
+                        os.chdir(checkout)
+                        if provider == 'rust':
+                            def prepare(command, **kwargs):
+                                self.assertEqual(command, [sys.executable, '-B', '.github/scripts/rust_host_prepare.py',
+                                                           '--target', target])
+                                self.assertEqual(kwargs, {'check': True})
+                                (checkout / 'build/native-rust-preparation.json').write_bytes(original_receipt)
+                            with patch('subprocess.run', side_effect=prepare):
+                                exec(compile(preparation_script, 'candidate-rust-preparation', 'exec'), {})
+                            self.assertEqual((release / 'native-rust-preparation.json').read_bytes(), original_receipt)
+                        else:
+                            self.assertFalse((release / 'native-rust-preparation.json').exists())
+                        (release / 'build-info.txt').write_text('provider=' + provider)
+                        (release / 'test-reports').mkdir()
+                        archive.write_json(release / 'test-reports/fixture.json', inner)
+                        for scope, names in scopes.items():
+                            report = release / ('candidate-' + scope + '.json')
+                            junit = report.with_suffix('.junit.xml')
+                            junit.write_text('<testsuite><testcase name="' + names[0] + '" status="run" time="0.1"/></testsuite>')
+                            archive.write_json(report, dict(schema_version=1, plan=plan, scope=scope,
+                                results={name: 'passed' for name in names}, tool_reports={'tools.fixture': inner} if scope == 'tools' else {},
+                                exit_code=0, junit_sha256=archive.digest(junit), timing=dict(
+                                    tests=test_plan.junit_timings(junit, names, plan['timeouts']),
+                                    phase_seconds={'build': 0.1, 'test': 0.1, 'total': 0.2})))
+                            base, paths = lifecycle.bundle_inputs(declarations.replace('${{ matrix.scope }}', scope))
+                            self.assertEqual(base, release)
+                            slot = 'source-' + target + '-' + scope
+                            output = artifacts / ci_artifacts.artifact_name(self.context, slot)
+                            ci_artifacts.prepare(**self.context, name=slot + '-2', root=base, paths=paths,
+                                output=output, runner_name='runner-a', job_key='source', outcome='success')
+                            manifest = json.loads((output / 'manifest.json').read_text())
+                            self.assertIn(report.name, manifest['files'])
+                            self.assertIn(junit.name, manifest['files'])
+                            self.assertFalse(any(name.startswith('release/') for name in manifest['files']))
+                            self.assertEqual('native-rust-preparation.json' in manifest['files'], provider == 'rust')
+                            if provider == 'rust':
+                                self.assertEqual(manifest['files']['native-rust-preparation.json']['sha256'],
+                                                 hashlib.sha256(original_receipt).hexdigest())
+                        # Exercise actual native archive verification, restored paths,
+                        # JSON/JUnit identities and candidate_merge; only network is forbidden.
+                        with patch.object(lifecycle.delivery, 'Remote', side_effect=AssertionError('unexpected network')):
+                            lifecycle.main('candidate-aggregate')
+                        coverage = json.loads((checkout / 'build/candidate-results' / target / 'coverage.json').read_text())
+                        self.assertEqual(coverage['status'], 'passed')
+                        self.assertEqual(coverage['executed_scopes'], ['core', 'integration', 'tools'])
+                        self.assertEqual(coverage['omitted_scopes'], [])
+                        if provider == 'rust':
+                            for scope in scopes:
+                                self.assertEqual((checkout / 'build/candidate-results' / target / scope /
+                                    'native-rust-preparation.json').read_bytes(), original_receipt)
+        finally:
+            os.chdir(previous)
 
     def test_assembly_fetches_one_unique_sdk_batch_before_building_candidate(self):
         recipes = {'linux-x86_64': 'b' * 64, 'windows-x86_64': 'a' * 64, 'linux-aarch64': 'b' * 64}
