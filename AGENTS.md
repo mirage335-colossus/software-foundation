@@ -5,6 +5,26 @@ change. Build through [the supported entry point](docs/building.md). Keep public
 interfaces, compatibility promises and tests consistent with the implementation.
 User instructions and the harness's governing rules remain authoritative.
 
+## Parallel subagents
+
+For substantial tasks, identify useful independent workstreams and delegate them
+concurrently. Use up to 24 concurrently open spawned subagents, excluding the
+primary agent, when the runtime permits and there is enough independent work.
+Parallelize investigation, implementation, focused validation, documentation and
+review as useful; avoid serializing independent work merely to conserve slots.
+Partition edits by non-overlapping files/components and coordinate shared resources
+and invariants under the project's applicable coordination requirements. The
+primary agent integrates results, resolves conflicts and performs final validation.
+
+Default subagents to `gpt-6.1-sol` with `ultra` reasoning effort, as configured in
+`.codex/config.toml`. Never configure a lower model or effort as the default, or
+automatically reduce below these settings to save time or tokens. A stronger
+parent's settings may be preserved when appropriate. If the user explicitly
+selects a lower model or effort in the desktop GUI, honor that choice with an
+explicit spawn override for the selected setting; it does not change the project
+defaults. If the GUI selection or model support is uncertain, do not silently
+substitute a lower setting. Apply this policy to nested subagents as well.
+
 ## Development checks and manual qualification
 
 During implementation, run inexpensive, meaningful checks that discriminate the
