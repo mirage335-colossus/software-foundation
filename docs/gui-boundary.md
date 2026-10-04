@@ -237,6 +237,12 @@ storage. The same C++ framing and JavaScript helper run in hosted and Wasm modes
 
 ## Few-button framebuffer controls
 
+These controls provide an example starting point for MFD (multifunction display)
+menus in selected application ports, consistent with
+[Arduino's intended role](portability.md#arduino-as-a-selective-porting-target).
+Preserve useful commonality in menu behavior and interaction patterns as a
+derivative adapts the needed functionality to its hardware.
+
 [`Bezel`](../gui/host/bezel.hpp) projects eligible declared buttons, toggles, menu
 options and bitmap actions into three or five debounced physical keys. It contains
 no application IDs. `FramebufferHost` prepares an owned frame/labels/token value;

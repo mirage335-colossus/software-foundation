@@ -31,6 +31,21 @@ recipes and environments. All-GUI recipe results do not qualify different core-o
 recipes, every older operating system, or independent signed package channels.
 Use the [validation template](templates/validation.md) to record adopted targets.
 
+## Arduino as a selective porting target
+
+Arduino's longstanding role is an environment to which selected application
+functionality can be ported. Maintain useful commonality with Arduino derivatives
+so this example remains a practical starting point for those ports, including
+multifunction display (MFD) menus and
+[few-button interaction patterns](gui-boundary.md#few-button-framebuffer-controls).
+Each derivative selects and adapts the functionality it needs to its board's
+resources and services.
+
+The scope is selective application porting, with reusable behavior and interface
+patterns as the starting point. A concrete board port establishes its own build,
+memory, driver and hardware qualification; this design intent alone does not
+establish Arduino support for the complete desktop application or GUI stack.
+
 ## Linux runtime baseline
 
 Choose the oldest maintained target runtime that the product intends to support.
