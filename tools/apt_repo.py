@@ -158,6 +158,34 @@ def desktop_files(backend, retained):
     return result
 
 
+
+def offline_desktop_files(backend, retained):
+    """Schema 4 addition; older projections never gain files retroactively."""
+    base = 'share/software-foundation/'
+    prefix = base + 'wasm/'
+    required = {prefix + name for name in ('software-foundation-wasm.html', 'web-manifest.json', 'manifest.sha256')}
+    required.update(base + name for name in ('open-offline.sh', 'open-offline.cmd'))
+    present = {name for name in retained if name.startswith(prefix) or name in required}
+    if not present:
+        return {}
+    if present != required:
+        raise ValueError('Incomplete installed offline Wasm package')
+    public = 'foundation-gui-offline-' + backend
+    script = ('#!/bin/sh\nexec /opt/software-foundation/' + backend + '/' + base + 'open-offline.sh "$@"\n').encode()
+    entry = (f'[Desktop Entry]\nType=Application\nName=Software Foundation (offline browser, {backend})\n'
+             f'Comment=Run the installed application document without a server\nExec={public}\nTryExec={public}\n'
+             'Terminal=false\nCategories=Utility;\nStartupNotify=false\n').encode()
+    return {'usr/bin/' + public: (script, 0o755),
+            'usr/share/applications/software-foundation-offline-' + backend + '.desktop': (entry, 0o644)}
+
+
+def installed_entries(backend, retained, schema):
+    result = desktop_files(backend, retained) if schema >= 3 else {}
+    if schema >= 4:
+        result.update(offline_desktop_files(backend, retained))
+    return result
+
+
 def manual_paths(backend, files):
     suffix = "-" + backend if backend != "core" else ""
     mapping = {"share/man/man1/foundation-cli.1": "usr/share/man/man1/foundation-cli" + suffix + ".1",
@@ -167,7 +195,7 @@ def manual_paths(backend, files):
     return {source: destination for source, destination in mapping.items() if source in files}
 
 
-def projected_payload(chosen, schema=3):
+def projected_payload(chosen, schema=4):
     backend = chosen["backend"]
     private = "opt/software-foundation/" + backend + "/"
     result = {private + name: value for name, value in chosen["retained_files"].items()}
@@ -176,7 +204,7 @@ def projected_payload(chosen, schema=3):
     result.update({destination: chosen["retained_files"][source]
                    for source, destination in manual_paths(backend, chosen["retained_files"]).items()})
     if schema >= 3:
-        result.update({name: byte_record(data, mode) for name, (data, mode) in desktop_files(backend, chosen["retained_files"]).items()})
+        result.update({name: byte_record(data, mode) for name, (data, mode) in installed_entries(backend, chosen["retained_files"], schema).items()})
     return result
 
 
@@ -315,7 +343,7 @@ def package(archive, manifest, version, arch, backend, output):
             manual.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source / source_name, manual)
             manual.chmod(chosen["retained_files"][source_name]["mode"])
-        for relative, (data, mode) in desktop_files(backend, chosen["retained_files"]).items():
+        for relative, (data, mode) in installed_entries(backend, chosen["retained_files"], 4).items():
             entry = stage / relative
             entry.parent.mkdir(parents=True, exist_ok=True)
             entry.write_bytes(data)
@@ -334,7 +362,7 @@ def package(archive, manifest, version, arch, backend, output):
         if expected_payload != projected_payload(chosen):
             raise ValueError("staged payload differs from exact backend projection")
         run("dpkg-deb", "--build", "--root-owner-group", stage, deb)
-        receipt = {"schema_version": 3, "archive": archive.name, "archive_sha256": expected["sha256"],
+        receipt = {"schema_version": 4, "archive": archive.name, "archive_sha256": expected["sha256"],
                    "archive_manifest": expected, "selection": chosen,
                    "package": deb.name, "sha256": c.sha(deb), "architecture": arch, "backend": backend,
                    "version": version, "control": text, "payload": expected_payload}
@@ -349,7 +377,7 @@ def package(archive, manifest, version, arch, backend, output):
 def verify_package(path, receipt):
     fields_required = {"schema_version", "archive", "archive_sha256", "archive_manifest", "selection", "package",
                        "sha256", "architecture", "backend", "version", "control", "payload"}
-    if (set(receipt) != fields_required or type(receipt["schema_version"]) is not int or receipt["schema_version"] not in (2, 3) or receipt["package"] != path.name or c.sha(path) != receipt["sha256"] or
+    if (set(receipt) != fields_required or type(receipt["schema_version"]) is not int or receipt["schema_version"] not in (2, 3, 4) or receipt["package"] != path.name or c.sha(path) != receipt["sha256"] or
             deb_contents(path) != receipt["payload"] or set(deb_contents(path, True)) != {"control"} or
             run("dpkg-deb", "--field", path).decode() != receipt["control"]):
         raise ValueError("Debian package differs from its verified source payload")

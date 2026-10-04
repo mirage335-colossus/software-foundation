@@ -114,6 +114,24 @@ endfunction()
 add_custom_target(foundation-gui-hosts)
 function(foundation_gui_executable target source)
     add_executable(${target} "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+    if(WIN32 AND target MATCHES "^foundation-gui-(fltk|rev|sdl)$")
+        # Composition-only entry adaptation: shared application code keeps main's
+        # ordinary argc/argv contract and knows nothing about the Windows host.
+        set_target_properties(${target} PROPERTIES WIN32_EXECUTABLE TRUE)
+        target_compile_definitions(${target} PRIVATE main=foundation_gui_main SDL_MAIN_HANDLED)
+        if(target STREQUAL "foundation-gui-sdl")
+            target_compile_definitions(${target} PRIVATE FOUNDATION_GUI_SDL_ENTRY)
+        endif()
+        target_sources(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/hosts/windows_gui_entry.cpp")
+        if(MSVC)
+            target_link_options(${target} PRIVATE /MANIFEST:EMBED
+                "/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/hosts/windows_gui.manifest")
+        else()
+            enable_language(RC)
+            target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/hosts")
+            target_sources(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/hosts/windows_gui.rc")
+        endif()
+    endif()
     target_link_libraries(${target} PRIVATE foundation_gui_application)
     target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
     foundation_options(${target})
@@ -194,7 +212,8 @@ foundation_gui_patch(include/gui/contract.hpp touch-contract.patch include/gui/c
 foundation_gui_patch(include/gui/memory_adapter.hpp touch-memory.patch include/gui/memory_adapter.hpp)
 foundation_gui_patch(include/gui/interaction.hpp touch-interaction.patch include/gui/interaction.hpp)
 # Keep the browser asset names stable; both transport modes use the same renderer.
-foundation_gui_patch(include/gui/web.hpp web-tick.patch include/gui/web.hpp)
+foundation_gui_patch(include/gui/web.hpp web-tick.patch patch-inputs/web-ticked.hpp)
+foundation_gui_repatch(patch-inputs/web-ticked.hpp web-file-transfer.patch include/gui/web.hpp)
 foundation_gui_patch(backends/web/renderer.mjs web-ordering.patch patch-inputs/renderer-ordered.mjs)
 foundation_gui_repatch(patch-inputs/renderer-ordered.mjs web-responsiveness.patch patch-inputs/renderer-responsive.mjs)
 foundation_gui_repatch(patch-inputs/renderer-responsive.mjs web-file-services.patch web/renderer.mjs)
@@ -277,12 +296,18 @@ if(EMSCRIPTEN)
     set(wasm_html "${wasm_package}/software-foundation-wasm.html")
     set(wasm_manifest "${wasm_package}/web-manifest.json")
     set(wasm_checksums "${wasm_package}/manifest.sha256")
+    execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tools/source_identity.py"
+        digest --root "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE wasm_source_identity
+        OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+    file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/wasm-package-source.txt"
+        CONTENT "${wasm_source_identity}\n" @ONLY)
     add_custom_command(OUTPUT "${wasm_html}" "${wasm_manifest}" "${wasm_checksums}"
         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tools/package_wasm.py"
             --assets "${CMAKE_CURRENT_BINARY_DIR}/web"
             --module-dir "$<TARGET_FILE_DIR:foundation-gui-web-wasm>"
-            --output "${wasm_package}" ${wasm_notice_args}
-        DEPENDS foundation-gui-web-wasm "${CMAKE_SOURCE_DIR}/tools/package_wasm.py"
+            --output "${wasm_package}" --source-root "${CMAKE_SOURCE_DIR}" ${wasm_notice_args}
+        DEPENDS foundation-gui-web-wasm "${CMAKE_CURRENT_BINARY_DIR}/wasm-package-source.txt"
+            "${CMAKE_SOURCE_DIR}/tools/source_identity.py" "${CMAKE_SOURCE_DIR}/tools/package_wasm.py"
             "${CMAKE_SOURCE_DIR}/tools/package_notices.py" "${CMAKE_SOURCE_DIR}/tools/sdk_manifest.py"
             "${CMAKE_CURRENT_BINARY_DIR}/web/boot.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/renderer.mjs"
             "${CMAKE_CURRENT_BINARY_DIR}/web/browser_lifecycle.mjs"
@@ -416,6 +441,21 @@ if(BUILD_TESTING)
         foundation_gui_check(task-native foundation_gui_task_native_test focused)
         foundation_gui_executable(foundation_gui_file_test tests/file_services_test.cpp)
         foundation_gui_check(file-content foundation_gui_file_test focused)
+    endif()
+    foundation_gui_executable(foundation_gui_bezel_test tests/bezel_test.cpp)
+    foundation_gui_check(bezel foundation_gui_bezel_test focused)
+    foundation_gui_executable(foundation_gui_file_transfer_test tests/file_transfer_test.cpp)
+    foundation_gui_check(file-transfer foundation_gui_file_transfer_test focused)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        foundation_gui_executable(foundation_gui_no_socket_test tests/no_socket_test.cpp)
+        foundation_gui_check(no-socket foundation_gui_no_socket_test focused)
+        if(FOUNDATION_GUI_WEB)
+            add_test(NAME foundation.gui.worker-isolation COMMAND "${Python3_EXECUTABLE}" -B
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/worker_isolation_test.py"
+                $<TARGET_FILE:foundation-gui-web> "${CMAKE_CURRENT_BINARY_DIR}/web/serve.py")
+            foundation_test_prerequisites(foundation.gui.worker-isolation foundation-gui-web)
+            set_tests_properties(foundation.gui.worker-isolation PROPERTIES LABELS "gui;focused" TIMEOUT 30)
+        endif()
     endif()
     foundation_gui_executable(foundation_gui_parity_test tests/parity_test.cpp)
     foundation_gui_check(parity foundation_gui_parity_test focused)

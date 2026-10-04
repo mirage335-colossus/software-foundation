@@ -1,8 +1,8 @@
 --- backends/framebuffer/main_sdl.cpp
-+++ backends/framebuffer/main_sdl.cpp
++++ sdl_runner.hpp
 @@ -1,4 +1,7 @@
 -#include "host.hpp"
-+#include "host/contract.hpp"
++#include "host/native_session.hpp"
 +#include "host/framebuffer_touch.hpp"
 +#include "host/event_budget.hpp"
 +#include <gui/framebuffer.hpp>
@@ -110,7 +110,7 @@
 -        Sdl sdl;framebuffer_example::Session session;
 +        if (argc != 1) throw std::invalid_argument("This host accepts no arguments");
 +        constexpr bool self_test = Observer::testing;
-+        Sdl sdl; Session<App, gui::FramebufferAdapter> session;
++        Sdl sdl; NativeSession<App, gui::FramebufferAdapter> session;
          const auto initial=session.adapter.frame();
          Window window(SDL_CreateWindow(session.adapter.snapshot().title.c_str(),SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
              int(initial.width),int(initial.height),SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI|(self_test?SDL_WINDOW_HIDDEN:0)),SDL_DestroyWindow);

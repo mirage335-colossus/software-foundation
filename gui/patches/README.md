@@ -83,3 +83,12 @@ identity or progress calculation appears in any runner, adapter or browser asset
   retains keyed row/cell DOM nodes. It follows the ordering patch exactly.
 - `web-presentation.patch` accepts authoritative state immediately and coalesces
   visual snapshots with explicit service/error/close boundaries and owned teardown.
+
+- `web-file-transfer.patch` extends the tick-enabled session with bounded ordered
+  import chunks, bounded export reads and a native-only completion seam. Existing
+  epoch/sequence retries remain authoritative, service identity/byte bounds gate
+  every chunk, and only complete UTF-8 content reaches application callbacks.
+  The composition root alone exposes selected native paths through a distinct
+  anonymous pipe; browser messages cannot acquire that authority.
+- Terminal and SDL runner patches compose the common native content provider.
+  Selectors remain generic host prompts; feature code receives owned contents.

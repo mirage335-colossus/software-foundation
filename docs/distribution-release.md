@@ -352,6 +352,31 @@ Ordinary package updates can continue using an unexpired retained generation whe
 network access is unavailable. This service is opt-in; application installation
 never adds a timer or modifies package-manager configuration on its own.
 
+For an explicit refresh followed by a normal interactive system upgrade, use the
+single-operation entry point after installing that native configuration:
+
+```sh
+sudo python3 -B /opt/foundation-tools/tools/distro_client.py upgrade \
+  --config /etc/foundation-channel.json --kind apt
+# On a qualified x86_64 Arch host instead:
+sudo python3 -B /opt/foundation-tools/tools/distro_client.py upgrade \
+  --config /etc/foundation-channel.json --kind arch
+```
+
+This command upgrades the host's configured packages, not only Foundation. APT runs
+`apt-get update -o APT::Update::Error-Mode=any` followed by `apt-get upgrade`; Arch
+runs `pacman -Syu` to avoid a partial system upgrade. The native confirmation
+prompts remain; the helper never supplies `-y` or `--noconfirm`. It requires root,
+uses fixed native executable paths, and installs no hooks, configuration or timers.
+
+A failed signed refresh, policy check, channel check or APT metadata update stops
+the operation before upgrade. The helper reacquires the channel lock, rejects an
+intervening generation change, and revalidates the signed assets/derived channel
+before holding that lock through the native commands. A later native failure does
+not roll back installed packages or discard the verified generation; inspect the
+native error before an explicit retry. This convenience adds no new trust source,
+freshness exception, rollback permission or automatic network fallback.
+
 For Gentoo, the installed source tree must remain at its trusted path:
 
 ```sh

@@ -3,6 +3,7 @@ from contextlib import nullcontext
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import tempfile
 import json
+import subprocess
 import sys
 import copy
 import unittest
@@ -1092,6 +1093,13 @@ class QualificationBatchTests(unittest.TestCase):
             self.helper.parallel_operations([lambda index=index: task(index) for index in range(4)])
         self.assertEqual(set(completed),{1,2,3})
 
+    def test_development_runner_plan_rejects_non_linux_before_selection(self):
+        with patch.dict(self.helper.os.environ, TARGET='windows-x86_64', SDK_DEVELOPMENT='true'), \
+                patch.object(self.helper, 'selected_runners') as select:
+            with self.assertRaisesRegex(ValueError, 'requires a Linux target'):
+                self.helper.main('runner-plan')
+            select.assert_not_called()
+
     def test_runner_plan_uses_complete_allowlisted_selection(self):
         with patch.object(self.helper, 'ROOT', self.root), patch.object(self.helper.os, 'chdir'), \
                 patch.dict(self.helper.os.environ, TARGET='linux-aarch64', LINUX_POOL='faster', FOUNDATION_FASTER_ARM_RUNNER='foundation-arm-fast'), \
@@ -1425,6 +1433,41 @@ class SdkMaintenanceTests(unittest.TestCase):
         self.assertIn('--label', commands[0]); self.assertNotIn('--label', commands[1])
         self.assertEqual(result['target'], 'browser-wasm32')
         self.assertEqual(verifier.verify.call_args.kwargs['sdk'], output / 'sdk')
+
+    def test_development_sdk_checks_both_ordinary_commands_without_portable(self):
+        from unittest.mock import Mock
+        original = ci.module; sdk = Mock()
+        sdk.install.return_value = {'capabilities': ['terminal', 'framebuffer', 'fltk', 'rev', 'sdl', 'hosted-web']}
+        def selected(name): return sdk if name == 'sdk' else original(name)
+        group = self.root / 'group'; output = self.root / 'development-check'
+        with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run') as run:
+            result = ci.prepared_check('linux-x86_64', self.recipe, group, output, gui_group=group, development=True)
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertEqual([row[2:4] for row in commands], [['build', 'dev'], ['test', 'dev']])
+        for command in commands:
+            self.assertIn('--sdk', command); self.assertIn('--host-tests', command)
+            self.assertNotIn('--portable', command); self.assertNotIn('--label', command)
+        self.assertNotIn('--full', commands[0]); self.assertNotIn('--junit', commands[0])
+        self.assertIn('--full', commands[1]); self.assertIn('--junit', commands[1])
+        self.assertEqual(result['configuration'], 'dev'); self.assertFalse(result['redistribution'])
+        self.assertIn('without-portable-mode', result['checks'])
+        with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), \
+                patch.object(ci.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, ['build'])):
+            failed = self.root / 'development-failed'
+            with self.assertRaises(subprocess.CalledProcessError):
+                ci.prepared_check('linux-x86_64', self.recipe, group, failed, gui_group=group, development=True)
+            self.assertFalse((failed / 'qualification.json').exists())
+
+    def test_development_sdk_scope_rejects_unsupported_targets_before_install(self):
+        group = self.root / 'group'
+        with patch.object(ci, 'assert_host') as host:
+            for target, gui, mode in [('windows-x86_64', group, True), ('browser-wasm32', group, True),
+                                      ('linux-x86_64', None, True), ('linux-x86_64', group, 'true')]:
+                output = self.root / 'not-created'
+                with self.assertRaisesRegex(ValueError, 'development qualification'):
+                    ci.prepared_check(target, self.recipe, group, output, gui_group=gui, development=mode)
+                self.assertFalse(output.exists())
+            host.assert_not_called()
 
     def test_gui_qualification_never_packages_or_uploads_inputs(self):
         from unittest.mock import Mock

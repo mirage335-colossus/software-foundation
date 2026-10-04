@@ -84,7 +84,7 @@ class AptTests(unittest.TestCase):
                     package = output / receipt['package']
                     fields = apt.verify_package(package, receipt)
                     self.assertEqual(fields['Package'], 'software-foundation-' + backend)
-                    self.assertEqual(receipt['schema_version'], 3)
+                    self.assertEqual(receipt['schema_version'], 4)
                     extracted = root / ('installed-' + backend)
                     apt.run('dpkg-deb', '--extract', package, extracted)
                     private = extracted / 'opt/software-foundation' / backend
@@ -166,6 +166,29 @@ class AptTests(unittest.TestCase):
             receipt['schema_version'] = 3
             with self.assertRaisesRegex(ValueError, 'projection'):
                 apt.verify_package(package, receipt)
+
+    def test_offline_document_is_retained_and_launch_projection_is_versioned(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix = 'share/software-foundation/wasm/'
+            extra = {(prefix if not name.startswith('open-') else 'share/software-foundation/') + name:
+                     (b'fixture ' + name.encode(), 0o755 if name.endswith('.sh') else 0o644)
+                     for name in ('software-foundation-wasm.html', 'web-manifest.json', 'manifest.sha256',
+                                  'open-offline.sh', 'open-offline.cmd')}
+            archive, manifest = self.archive(root, extra=extra)
+            receipt = apt.package(archive, manifest, '1.0.0', 'amd64', 'core', root/'current')
+            apt.verify_package(root/'current'/receipt['package'], receipt)
+            self.assertIn('usr/bin/foundation-gui-offline-core', receipt['payload'])
+            self.assertIn('usr/share/applications/software-foundation-offline-core.desktop', receipt['payload'])
+            for name in extra:
+                self.assertEqual(receipt['payload']['opt/software-foundation/core/' + name], receipt['selection']['retained_files'][name])
+            with patch.object(apt, 'offline_desktop_files', return_value={}):
+                old = apt.package(archive, manifest, '1.0.0', 'amd64', 'core', root/'historical')
+            old['schema_version'] = 3
+            apt.verify_package(root/'historical'/old['package'], old)
+            for missing in extra:
+                with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, 'Incomplete'):
+                    apt.offline_desktop_files('core', {name: value for name, value in extra.items() if name != missing})
 
     def test_core_projection_cannot_bypass_combined_gui_terms(self):
         with tempfile.TemporaryDirectory() as temporary:

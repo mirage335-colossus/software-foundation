@@ -38,7 +38,7 @@
          let result;
 -        try{if(lifetime.signal.aborted)return;result=await executeService(state.service,{document,signal:lifetime.signal});}catch(error){result={type:'service',id:state.service.id,status:'error',value:'',error:error.message||'Prompt failed'};}
 -        if(lifetime.signal.aborted)return;
-+        try{if(requestLifetime.signal.aborted)return;result=await executeService(state.service,{document,signal:requestLifetime.signal});}catch(error){result={type:'service',id:state.service.id,status:'error',value:'',error:error.message||'Prompt failed'};}
++        try{if(requestLifetime.signal.aborted)return;result=await executeService(state.service,{document,signal:requestLifetime.signal,exchange:operation=>client.send(operation)});}catch(error){result={type:'service',id:state.service.id,status:'error',value:'',error:error.message||'Prompt failed'};}
 +        finally{lifetime.signal.removeEventListener('abort',abort);}
 +        if(requestLifetime.signal.aborted)return;
          client.send(result).catch(error=>setStatus(error.message));

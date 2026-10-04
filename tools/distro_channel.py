@@ -203,14 +203,14 @@ def runtime_policy(backend):
     return result
 
 
-CURRENT_SCHEMA = 5
+CURRENT_SCHEMA = 6
 
 
 def validate_spec(spec):
     fields = {'schema_version', 'version', 'package_release', 'architecture', 'backend',
               'archive_url', 'archive_sha256', 'license_files', 'redistribution_approved',
               'application_source', 'packaging_tool', 'sdk', 'dependencies', 'runtime_dependencies'}
-    if not isinstance(spec, dict) or set(spec) != fields or type(spec['schema_version']) is not int or spec['schema_version'] not in (1, 2, 3, 4, 5):
+    if not isinstance(spec, dict) or set(spec) != fields or type(spec['schema_version']) is not int or spec['schema_version'] not in (1, 2, 3, 4, 5, 6):
         raise ValueError('invalid complete package specification')
     version_key(spec)
     if spec['architecture'] not in ARCHES or spec['backend'] not in BACKENDS or spec['redistribution_approved'] is not True:
@@ -379,6 +379,8 @@ def recipe_files(spec, root_name, payload, archive_name):
         public = binary + ('-' + backend if binary == 'foundation-cli' and backend != 'core' else '')
         launchers[public] = (f'#!/bin/sh\nexec /{private}/bin/{binary} "$@"\n'.encode(), 0o755)
     desktop = apt.desktop_files(backend, payload) if spec['schema_version'] >= 5 else {}
+    if spec['schema_version'] >= 6:
+        desktop.update(apt.offline_desktop_files(backend, payload))
     for path, value in desktop.items():
         if path.startswith('usr/bin/'):
             launchers[Path(path).name] = value

@@ -200,6 +200,12 @@ class ContainerJobs(unittest.TestCase):
         self.assertIn('evidence handoff failed', message)
         self.assertIn('exit status 7', message)
 
+    def test_development_sdk_mode_crosses_container_boundary_without_credentials(self):
+        command = job.command('native-gui-check', self.root, 1001, 1002,
+                              {'SDK_DEVELOPMENT': 'true', 'GH_TOKEN': 'not-forwarded'})
+        self.assertIn('SDK_DEVELOPMENT', command)
+        self.assertNotIn('GH_TOKEN', command); self.assertNotIn('not-forwarded', command)
+
     def test_all_workflow_callers_use_common_host_identity_adapter(self):
         actions = {'sdk-maintenance':'sdk-produce','sdk-application':'application-build',
                    'native-gui':'native-gui-check','candidate':'apt-native-smoke'}

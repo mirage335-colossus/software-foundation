@@ -19,6 +19,23 @@ group; it does not prepare an SDK. Wasm and Windows instead use the checkout plu
 retained complete SDK/dependency groups and their declared host prerequisites.
 Keep these groups outside Git. See the [independence boundary](dependencies.md#bootstrap-without-recurring-supplier-access).
 
+## Ordinary SDK development qualification
+
+The explicit `native-gui.yml` workflow accepts `development: true` on Linux.
+It consumes the exact retained SDK recipe on its native architecture in Debian
+Bookworm, then runs both `build dev --sdk` and `test dev --sdk --full` in one
+build tree with all native GUI hosts and no `--portable` flag. It records these
+checks separately in the qualification receipt and never produces an application
+release. A failure in either command prevents a passed receipt. This opt-in check
+adds no work to ordinary builds or automatic development feedback.
+
+An empty `gui_input` in this workflow explicitly uses the verified source group
+from the selected checkout. A supplied remote selector must succeed on its own;
+there is no fallback to different bytes. Windows GUI qualification continues to
+use its retained graphics prerequisite and Release configuration. Existing SDK
+recipes can qualify new consumer code without relabeling or rebuilding their bytes;
+SDK producer changes require their own new maintenance and publication evidence.
+
 ## SDK versus installed developer package
 
 The installed `Foundation` CMake package contains the application library,

@@ -36,6 +36,10 @@ def inapplicable(case, system):
     if system != 'Windows' and name == 'test_process_tree.NativeProcessTree.test_windows_child_cannot_break_out_of_its_job':
         return 'Native Windows Job Object check belongs to the Windows runner.'
     if system == 'Windows':
+        if name in {
+                'test_import_wasm.ImportWasmTests.test_pinned_same_source_staging_and_relocated_exact_document_launch',
+                'test_import_wasm.ImportWasmTests.test_windows_gui_entry_preserves_arguments_and_console_target_kind'}:
+            return 'Unix opener/compiler fixtures; portable import identity checks and native Windows GUI linking remain required.'
         if name == 'test_coverage.CoverageTests.test_parent_success_with_inherited_log_child_is_rejected':
             return 'POSIX process-group fixture; Windows Job Object cases remain required.'
         if name.startswith('test_portability.Portability.') or name.startswith('test_portability.PortabilityTests.'):

@@ -1,5 +1,5 @@
 #include "shared/application.hpp"
-#include "host/contract.hpp"
+#include "host/native_session.hpp"
 #include "host/qualification.hpp"
 #include <gui/framebuffer.hpp>
 
@@ -9,7 +9,7 @@
 // The host owns output and lifecycle; application identities never appear here.
 int main(int argc, char** argv) {
     if (foundation::host::smoke_requested(argc, argv)) try {
-        foundation::host::Session<foundation::ui::Application, gui::FramebufferAdapter> session;
+        foundation::host::NativeSession<foundation::ui::Application, gui::FramebufferAdapter> session;
         session.application.qualify([&] {
             session.tick(); const auto frame = session.adapter.frame();
             if (!frame.pixels || frame.pixels->empty() || !frame.width || !frame.height)

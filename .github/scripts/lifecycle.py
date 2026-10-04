@@ -657,6 +657,8 @@ def main(command):
         output('matrix', {'include': [{'target': t, 'runner': runners.get(t, runners['linux-x86_64'])} for t in targets]})
     elif command == 'runner-plan':
         target = os.environ.get('TARGET', 'linux-x86_64')
+        if 'SDK_DEVELOPMENT' in os.environ and boolean('SDK_DEVELOPMENT') and not target.startswith('linux-'):
+            raise ValueError('ordinary SDK development qualification requires a Linux target')
         runners = selected_runners()
         if target not in (*ci.STANDARD, 'browser-wasm32'): raise ValueError('unknown runner target')
         scalar_output('runner', runners.get(target, runners['linux-x86_64']))
@@ -752,6 +754,16 @@ def main(command):
         entry = dict(archive=archive.name, manifest=manifest.name, sha256=evidence.sha(archive), target='linux-x86_64')
         result = release_check.run_apt(packages, entry, 'core', ROOT / 'build/apt-smoke/work', ROOT / 'build/apt-evidence')
         write('build/apt-evidence/result.json', result)
+    elif command == 'checkout-gui-input':
+        # Explicit checkout source, never a fallback after a failed remote selector.
+        source, destination = ROOT / 'third_party/gui-inputs', ROOT / 'build/gui-group'
+        verifier = ci.gui_group_module()
+        before = verifier.verify(source)
+        shutil.copytree(source, destination)
+        if verifier.verify(destination) != before or verifier.verify(source) != before:
+            raise ValueError('checkout GUI input changed during copying')
+        write(ROOT / 'build/gui-origin.json', {'origin': 'checkout',
+              'group_sha256': evidence.sha(destination / 'manifest.json')})
     elif command == 'gui-input':
         import screenshots
         raw = value('GUI_INPUT')
@@ -772,7 +784,8 @@ def main(command):
     elif command == 'native-gui-check':
         ci.prepared_check(value('TARGET'), value('RECIPE'), ROOT / 'build/base' / value('RECIPE'),
                           ROOT / 'build/native-gui', compile_jobs(), ROOT / 'build/gui-group',
-                          graphics_archive=ROOT / 'build/host-graphics/mesa-windows.7z' if value('TARGET') == 'windows-x86_64' else None)
+                          graphics_archive=ROOT / 'build/host-graphics/mesa-windows.7z' if value('TARGET') == 'windows-x86_64' else None,
+                          development=boolean('SDK_DEVELOPMENT') if 'SDK_DEVELOPMENT' in os.environ else False)
     elif command == 'publish-gui':
         write('build/receipts/gui-publication.json', ci.publish_gui_group(value('GITHUB_REPOSITORY'), Path('build/gui-group'), value('GITHUB_SHA'), execute=True))
     elif command == 'application-plan':

@@ -54,6 +54,75 @@ observation; file identity/version reconciliation still rejects inputs changed
 during verification. Restore also checks the complete existing output inventory
 before reuse. There is no persistent trust cache or bypass for a warm checkout.
 
+## Measure warm iterations
+
+Use the same source, SDK, selected tests, compiler/test job limits and build tree
+for a cold preparation and several warm repetitions. Keep other compilation or
+heavy tests off the measurement host. The optional receipt identifies the source
+and SDK digest, output tree, concurrency and whether a CMake cache existed at the
+start. A pre-existing cache alone does not prove all outputs were already built.
+
+```sh
+./build.sh test dev --label core --build-dir build/timing-core \
+  --build-jobs 2 --test-jobs 2 --timings build/timing-core/cold.json
+./build.sh test dev --label core --build-dir build/timing-core \
+  --build-jobs 2 --test-jobs 2 --timings build/timing-core/warm-1.json
+./build.sh test dev --label core --build-dir build/timing-core \
+  --build-jobs 2 --test-jobs 2 --timings build/timing-core/warm-2.json
+```
+
+Apply the same recipe with `--sdk PATH` to measure retained-SDK verification,
+or `--gui` and the relevant label to measure source restoration and GUI work.
+Preserve each receipt, its console log, source/configuration, host/tool versions
+and cold/warm condition. Compare the phase seconds over several repetitions;
+report the observed range/median rather than promising a universal duration.
+Different environments and a concurrent workload are separate observations.
+
+The JSON phase map includes only operations actually reached:
+
+| Phase | Observed wall time |
+| --- | --- |
+| `source_verification` | Complete source observations, retained GUI restore/verification and any prebuilt browser package validation |
+| `sdk_verification` | Explicit wrapper SDK inventory and Windows dependency-export checks |
+| `dependency_verification` | Selected development-prefix or retained dependency-group checks |
+| `configuration_verification` | Cached compiler/options identity checks |
+| `configure` | CMake configure/generate, including checks invoked inside CMake |
+| `compile` | Selected graph/prerequisite build, including any build-time guards |
+| `test_selection` | Exact-name declaration and prerequisite-closure lookup/recheck |
+| `test_startup_probe` | A separate bounded CTest discovery-only invocation with the same name/label selection; runs no tests |
+| `test_execution` | Real CTest invocation, including its own startup, scheduling and joined child execution |
+| `package`, `package_verification` | CPack and the selected relocation/installed-consumer checks |
+
+Each entry aggregates calls and wall seconds. The startup probe approximates the
+cost of starting CTest and discovering tests; it is not instrumentation inside the
+real invocation. Do not subtract it to invent a pure test-execution duration.
+Configure/build may repeat verification internally, and parallel test durations
+are not additive CPU time. The total starts after argument parsing and includes subsequent Python
+orchestration and unclassified setup. Interpreter/import startup is outside it. Failed operations write `status: failed` with reached phases;
+missing phases are unexecuted, not zero-cost successes. Abrupt process termination
+can prevent the final receipt. Without `--timings`, no receipt or extra CTest
+probe is produced. Ordinary verification and mutation guards stay enabled.
+
+An illustrative local measurement on 2026-10-04 used a complete 366-file source
+snapshot `f46b4c51d7e5d672c6bc306b29a662b6814c01429de7f920e27d0b1896e9a611`,
+Linux x86_64/glibc 2.41, GCC 14.2, CMake 3.31.6, Python 3.13.5 and two compile/test
+workers. The two core CTests passed on every invocation; both warm Ninja builds
+reported no work. No SDK was selected. These are diagnostic observations on this
+host, not a performance target or Bookworm/SDK qualification:
+
+| Wall seconds (rounded) | Cold | Warm 1 | Warm 2 |
+| --- | ---: | ---: | ---: |
+| Source verification | 0.179 | 0.172 | 0.168 |
+| Configure | 0.510 | 0.329 | 0.336 |
+| Compile/build invocation | 0.972 | 0.017 | 0.017 |
+| CTest startup/discovery probe | 0.014 | 0.012 | 0.013 |
+| CTest execution, inclusive | 0.053 | 0.051 | 0.051 |
+| Total | 1.738 | 0.588 | 0.591 |
+
+Use the result to choose the next optimization. A verification-bound warm build
+needs an integrity-preserving algorithm improvement, not unchecked timestamp reuse;
+a compilation-bound build needs appropriate target selection or parallelism.
+
 ## Hosted scheduling
 
 Leave compile limits at `auto` unless the machine has an explicit workload budget.

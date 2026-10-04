@@ -3,7 +3,7 @@
 #include "host/qualification.hpp"
 int main(int argc, char** argv) {
     if (foundation::host::smoke_requested(argc, argv)) try {
-        foundation::host::Session<foundation::ui::Application, gui::TerminalAdapter> session;
+        foundation::host::NativeSession<foundation::ui::Application, gui::TerminalAdapter> session;
         session.application.qualify([&] {
             session.tick();
             if (session.adapter.ansi_rows().empty()) throw std::runtime_error("Terminal produced no rows");

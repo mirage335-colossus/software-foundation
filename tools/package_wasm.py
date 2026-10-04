@@ -119,7 +119,7 @@ def sdk_notices(root):
         'manifest_sha256': digest(read_file(root / 'sdk.json')), 'recipe_id': manifest['recipe_id']}
 
 
-def package(assets, output, notice_paths, module_dir=None, sdk=None):
+def package(assets, output, notice_paths, module_dir=None, sdk=None, source_root=None):
     assets, output = Path(assets), Path(output)
     if not notice_paths:
         raise ValueError('At least one applicable license notice is required')
@@ -145,6 +145,10 @@ def package(assets, output, notice_paths, module_dir=None, sdk=None):
                 'inputs': {name: digest(data) for name, data in sorted(blobs.items())},
                 'notices': {name: digest(data) for name, data in sorted(notices.items())},
                 'html_sha256': digest(html)}
+    if source_root is not None:
+        from source_identity import source_tree
+        manifest['schema'] = 2
+        manifest['source_tree_sha256'] = source_tree(source_root)['tree_sha256']
     if sdk_identity is not None:
         manifest['sdk'] = sdk_identity
     if output.is_symlink():
@@ -167,8 +171,10 @@ def verify(output):
         raise ValueError('Incomplete or unexpected package inventory')
     html = read_file(output / HTML_NAME, 256 * 1024 * 1024)
     manifest = json.loads(read_file(output / 'web-manifest.json'))
-    if manifest.get('schema') != 1 or manifest.get('csp') != CSP or manifest.get('html_sha256') != digest(html):
+    if manifest.get('schema') not in (1, 2) or manifest.get('csp') != CSP or manifest.get('html_sha256') != digest(html):
         raise ValueError('Package manifest mismatch')
+    if manifest['schema'] == 2 and not re.fullmatch(r'[0-9a-f]{64}', manifest.get('source_tree_sha256', '')):
+        raise ValueError('Package source identity missing or invalid')
     expected = ''.join(digest(read_file(output / name, 256 * 1024 * 1024)) + '  ' + name + '\n' for name in sorted((HTML_NAME, 'web-manifest.json')))
     if read_file(output / 'manifest.sha256').decode('utf-8') != expected:
         raise ValueError('Package checksum mismatch')
@@ -221,11 +227,12 @@ def main(argv=None):
     parser.add_argument('--module-dir', type=Path, help='Directory containing compiled gui_web_wasm.js/.wasm')
     parser.add_argument('--sdk', type=Path, help='Verified retained Emscripten SDK including complete runtime notices')
     parser.add_argument('--verify', action='store_true')
+    parser.add_argument('--source-root', type=Path, help='Bind the package to the complete application source tree')
     args = parser.parse_args(argv)
     if args.verify:
         verify(args.output)
     elif args.assets:
-        package(args.assets, args.output, args.notice, args.module_dir, args.sdk)
+        package(args.assets, args.output, args.notice, args.module_dir, args.sdk, args.source_root)
     else:
         parser.error('--assets is required for packaging')
 

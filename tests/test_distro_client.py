@@ -498,6 +498,83 @@ class ClientTests(unittest.TestCase):
             with self.assertRaises(ValueError):client.advance(previous,changed)
 
 
+@unittest.skipUnless(sys.platform.startswith('linux'), 'native Linux upgrade orchestration')
+class NativeUpgradeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name); self.value = config(self.root/'channel')
+        self.generation = self.root/'channel/generations'/('7-'+'c'*64)
+        self.result = {'changed':True, 'tag':self.value['selection']['tag'], 'sequence':7, 'manifest_sha256':'c'*64}
+        self.manifest = {'tag':self.result['tag'], 'request':{'sequence':7}}
+
+    def enter(self, stack, *, kind='apt'):
+        from contextlib import nullcontext
+        patches = [(client.os, 'geteuid', {'return_value':0}), (client.os, 'access', {'return_value':True}),
+            (client, 'locked', {'side_effect':lambda path:nullcontext()}),
+            (client, 'current', {'return_value':self.generation}),
+            (client, 'previous_identity', {'return_value':self.manifest}),
+            (client.release.archive, 'digest', {'return_value':'b'*64}),
+            (client.release, 'verify_native', {'return_value':self.manifest}),
+            (client.release, 'verify_native_channels', {})]
+        for obj, name, options in patches: stack.enter_context(patch.object(obj, name, create=(name == 'geteuid'), **options))
+        refresh = stack.enter_context(patch.object(client, 'refresh', return_value=self.result))
+        run = stack.enter_context(patch.object(client.subprocess, 'run'))
+        return refresh, run
+
+    def test_verified_refresh_precedes_interactive_native_commands(self):
+        from contextlib import ExitStack
+        for kind in ('apt','arch'):
+            with self.subTest(kind=kind), ExitStack() as stack:
+                refresh, run = self.enter(stack); events = []
+                refresh.side_effect = lambda *args: events.append('verified-refresh') or self.result
+                run.side_effect = lambda command, **kwargs: events.append(command)
+                self.assertEqual(client.native_upgrade(self.value, self.root/'policy', kind)['native_upgrade'], 'completed')
+                self.assertEqual(events[0], 'verified-refresh')
+                expected = ([['/usr/bin/apt-get','update','-o','APT::Update::Error-Mode=any'],
+                             ['/usr/bin/apt-get','upgrade']] if kind == 'apt' else [['/usr/bin/pacman','-Syu']])
+                self.assertEqual(events[1:], expected)
+                self.assertTrue(all(call.kwargs == {'check':True} for call in run.call_args_list))
+
+    def test_refresh_verification_or_native_update_failure_stops_upgrade(self):
+        from contextlib import ExitStack
+        import subprocess
+        for stage in ('refresh','signature','channel','update'):
+            with self.subTest(stage=stage), ExitStack() as stack:
+                refresh, run = self.enter(stack)
+                if stage == 'refresh': refresh.side_effect = ValueError('refresh rejected')
+                elif stage == 'signature': client.release.verify_native.side_effect = ValueError('signature rejected')
+                elif stage == 'channel': client.release.verify_native_channels.side_effect = ValueError('channel changed')
+                else: run.side_effect = subprocess.CalledProcessError(1, ['apt-get','update'])
+                with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                    client.native_upgrade(self.value, self.root/'policy', 'apt')
+                self.assertEqual(run.call_count, 1 if stage == 'update' else 0)
+
+    def test_generation_race_and_missing_tools_fail_before_native_command(self):
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            refresh, run = self.enter(stack)
+            client.previous_identity.return_value = {'tag':'changed','request':{'sequence':8}}
+            with self.assertRaisesRegex(ValueError, 'generation changed'):
+                client.native_upgrade(self.value, self.root/'policy', 'apt')
+            run.assert_not_called()
+        with ExitStack() as stack:
+            refresh, run = self.enter(stack); client.os.access.return_value = False
+            with self.assertRaisesRegex(ValueError, 'unavailable'):
+                client.native_upgrade(self.value, self.root/'policy', 'apt')
+            refresh.assert_not_called(); run.assert_not_called()
+
+    def test_unsupported_scope_and_unprivileged_operation_do_not_refresh(self):
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            refresh, run = self.enter(stack)
+            for kind in ('gentoo','custom;command'):
+                with self.assertRaises(ValueError): client.native_upgrade(self.value, self.root/'policy', kind)
+            client.os.geteuid.return_value = 1000
+            with self.assertRaisesRegex(ValueError, 'requires root'):
+                client.native_upgrade(self.value, self.root/'policy', 'apt')
+            refresh.assert_not_called(); run.assert_not_called()
+
+
 @unittest.skipUnless(sys.platform.startswith('linux') and all(shutil.which(x) for x in ('cc','dpkg-deb','gpg','gpgv','gpgconf','git')),
                      'actual Linux ELF and signing prerequisites required')
 class SignedClientTests(unittest.TestCase):
@@ -512,6 +589,30 @@ class SignedClientTests(unittest.TestCase):
         self.value=dict(config(self.root/'state'),target=self.f.req['target'],trusted_fingerprint=self.f.trusted,
             policy_sha256=client.release.archive.digest(self.f.policy),selection={'tag':self.f.frozen['tag'],
                 'manifest_sha256':client.release.archive.digest(self.f.prepared/'distribution.json')})
+
+    def test_native_upgrade_consumes_real_signed_generation_and_refuses_changed_payload(self):
+        original_refresh = client.refresh; original_run = client.subprocess.run; commands = []
+        def execute(command, **kwargs):
+            if str(command[0]) == '/usr/bin/apt-get':
+                commands.append(command)
+                return client.subprocess.CompletedProcess(command, 0)
+            return original_run(command, **kwargs)
+        def refresh(value, policy):
+            return original_refresh(value, policy, prepared=self.f.prepared)
+        with patch.object(client.os, 'geteuid', return_value=0), \
+                patch.object(client.os, 'access', return_value=True), \
+                patch.object(client, 'refresh', side_effect=refresh), \
+                patch.object(client.subprocess, 'run', side_effect=execute):
+            result = client.native_upgrade(self.value, self.f.policy, 'apt')
+            self.assertEqual(result['manifest_sha256'], self.value['selection']['manifest_sha256'])
+            self.assertEqual(len(commands), 2)
+            generation = client.current(self.value['location'])
+            (generation/'channels/unexpected').write_bytes(b'changed')
+            commands.clear()
+            with self.assertRaisesRegex(ValueError, 'derived channel changed'):
+                client.native_upgrade(self.value, self.f.policy, 'apt')
+            self.assertEqual(commands, [])
+            self.assertEqual(client.current(self.value['location']), generation)
 
     def test_prepared_verified_generation_refresh_is_idempotent_and_preserves_old_state_on_tampering(self):
         first=client.refresh(self.value,self.f.policy,prepared=self.f.prepared)

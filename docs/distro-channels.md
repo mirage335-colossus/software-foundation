@@ -35,7 +35,7 @@ Every specification contains exactly these fields:
 
 | Field | Required meaning |
 | --- | --- |
-| `schema_version` | Integer `5` for new packages: desktop/browser launch files, combined-archive selection, enforced host services, complete retained notices and the mandatory Gentoo preparation hook. Versions `1`–`4` remain readable with their exact historical templates. |
+| `schema_version` | Integer `6` for new packages: optional offline-browser and native desktop/browser launch files, combined-archive selection, enforced host services, complete retained notices and the mandatory Gentoo preparation hook. Versions `1`–`5` remain readable with their exact historical templates. |
 | `version` | Three canonical numeric components, such as `1.2.3`. |
 | `package_release` | Integer `1` through `999999`; increase for a packaging-only change. |
 | `architecture`, `backend` | One of the explicit identities above. |
@@ -79,7 +79,7 @@ archive = reference('application.tar.gz')
 _, payload = channel.archive_payload(root / 'application.tar.gz',
     json.loads((root / 'application.tar.gz.json').read_text()))
 spec = {
-    'schema_version': 5, 'version': '0.1.0', 'package_release': 1,
+    'schema_version': 6, 'version': '0.1.0', 'package_release': 1,
     'architecture': 'x86_64', 'backend': 'core',
     'archive_url': archive['url'], 'archive_sha256': archive['sha256'],
     'license_files': channel.required_license_files(payload),
@@ -105,16 +105,16 @@ required system library. They are not inferred from this example's tiny CLI.
 ## One build, several native packages
 
 A normal CMake package contains the CLI and every selected native GUI backend.
-Use specification version `4` to wrap that same qualified archive for each desired
+Use specification version `6` to wrap that same qualified archive for each desired
 backend. Select its required runtime services and new output directory; retain the same
 `archive_url`, digest, inventory, application source, SDK and dependency references.
 Generate one group per backend, then pass all groups to `assemble`. No application
 or SDK rebuild, archive rewrite or manual deletion is needed. A single-backend
-archive is also valid under version `4`. Existing version-`1` through version-`3`
+archive is also valid under version `6`. Existing version-`1` through version-`5`
 specifications retain their original verification semantics; version `1` still
-rejects combined archives. Use version `4` for new publications. Historical
-schemas can still be authenticated, but their no-op Gentoo preparation phase does
-not meet EAPI 8 and must not be counted as native installation qualification.
+rejects combined archives. Use version `6` for new publications. Historical
+schemas can still be authenticated, but versions `1`–`3` have a no-op Gentoo
+preparation phase that does not meet EAPI 8 and must not be counted as native installation qualification.
 
 For an archive whose reviewed native selection includes `terminal` and `fltk`,
 the concrete producer sequence after terms approval is:
@@ -131,7 +131,7 @@ for backend in ('core', 'terminal', 'fltk'):
     specification = root / ('spec-' + backend + '.json')
     runtime = {manager: sorted(set(base['runtime_dependencies'][manager]) | set(required))
                for manager, required in channel.runtime_policy(backend).items()}
-    current = dict(base, schema_version=5, backend=backend, runtime_dependencies=runtime)
+    current = dict(base, schema_version=6, backend=backend, runtime_dependencies=runtime)
     specification.write_text(json.dumps(current, indent=2) + '\n')
     subprocess.run([sys.executable, 'tools/distro_channel.py', 'package',
                     '--archive', str(root / 'application.tar.gz'),
@@ -185,7 +185,7 @@ files, public launchers and combined retained notices. Each backend lives under
 `/opt/software-foundation/BACKEND`. The core launcher is `foundation-cli`; another
 variant gets `foundation-cli-BACKEND` plus its distinct `foundation-gui-*` launcher.
 No private library enters a system library directory. The launcher executes the
-private binary directly and preserves its arguments. New schema-5 recipes also
+private binary directly and preserves its arguments. New schema-6 recipes also
 install desktop entries for FLTK, Rev, SDL and the TUI. A complete hosted-web
 payload gets `foundation-gui-browser` and a terminal-owned browser desktop entry;
 it binds loopback to an ephemeral port and closes with Ctrl+C. Core and the
@@ -323,7 +323,20 @@ filesystems and crash/power-loss behavior require their own qualification.
 See [native acceptance and normal updates](distribution-release.md#native-acceptance-and-normal-updates)
 for the complete public fetch client, Portage sync adapter, APT/pacman configuration,
 qualified-channel tracking and actual native client workflow. New distribution
-releases generate version-4 recipes: combined-backend selection, complete notices,
+releases generate version-6 recipes: combined-backend selection, complete notices,
 required host services, preservation of installed bytes and the mandatory Gentoo
 preparation hook. Old schemas retain their original exact templates. Local assembly and native client execution remain distinct
 evidence scopes.
+
+## Offline browser assembly
+
+A native archive may additionally retain the verified prebuilt Wasm closure under
+`share/software-foundation/wasm/`; see [building](building.md) and
+[installed launchers](installed.md). Schema `6` adds a distinct
+`foundation-gui-offline-BACKEND` command and desktop entry for every selected
+backend carrying that complete closure. Native Arch binaries, PKGBUILDs and
+Gentoo ebuilds project the same exact private files and generated public launch
+bytes. Wasm is compiled once in its own target graph, then imported with an
+explicit manifest digest and matching complete source identity. The local file
+launcher uses the installed self-contained HTML; it does not run the hosted-web
+server. Historical schemas `1`–`5` retain their exact previous templates.

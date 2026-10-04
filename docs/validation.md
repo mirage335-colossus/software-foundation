@@ -13,13 +13,63 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
+## Remaining transfer implementation (2026-10-04)
+
+The follow-up implements the previously omitted general-purpose examples:
+Windows GUI subsystem entry/UTF-8 manifests; source-matched prebuilt Wasm import
+into native packages; exact installed offline-document launchers and versioned
+APT/Arch/Gentoo projections; opt-in phase timings; verified interactive native
+upgrade convenience; optional agent evaluation guidance; generic three/five-key
+bezel navigation; terminal/SDL/embedded file-provider composition; bounded ordered
+browser content chunks; and an optional Linux no-socket worker with a separate
+trusted native-file pipe. Shared application code is unchanged. Ordinary builds
+add no dependency download or mandatory timing/qualification work.
+
+Native GUI qualification can explicitly consume the verified checkout GUI group.
+Its optional Linux development mode executes ordinary `build dev` and full
+`test dev` without portable mode; Windows keeps native Release qualification.
+The supplier stays at `7a704f73e563a167ea335dd23ccd9f383ebec274`; the refreshed
+retained group is
+`b04e85cc9fb8aabe48888efe9fc0ae2f24d074fb49b6111805fee9afe73f8554`.
+
+Local integration used a complete 366-file snapshot
+`d7d9062deb03ce56d7c2369f70fa4674c99abcc6b92f9c919b65b73f5e286ff1`.
+The final helper/documentation corrections were checked in snapshot
+`5c48879ffcd4a20ac23142863a7061f167a5829379af9182e4e7dce9eb0d9d1d`.
+The GUI/browser/native-import/sanitizer inputs are unchanged between these copies.
+Only this validation entry is added after those snapshots.
+
+| Scope | Observed result |
+| --- | --- |
+| Full native core/tooling/distribution | 61/62 CTests initially passed; 1,491 Python cases passed, two failed and two were explicitly inapplicable on Linux. A local `shutil` import in the new lifecycle branch shadowed the module in certification commands. Removing that import repaired the existing regression tests. All four affected/final CI-plan, workflow-storage, runner-policy and documentation CTests then passed; the original aggregate remains recorded as failed. |
+| Retained Wasm SDK | Release build and offline package completed from the retained SDK with no preparation/download. All ten selected GUI/Worker/browser/source-boundary CTests passed. |
+| Actual Firefox | Hosted, Wasm and direct offline-file modes passed editing, accessibility, geometry, retained rows, bounded import, atomic invalid-input rejection, export offering, navigation/pagehide and cleanup. Offline mode recorded no network resources. |
+| Native prebuilt-Wasm assembly | The wrapper built and verified a native TGZ, relocated the CLI and installed CMake consumer, and directly installed the exact previously built HTML. The pinned web manifest was `97a1bad0b90ac725756f300aedb29a404864834c8019b4d40465a62452764892`. |
+| Native GUI | All 51 CTests passed with no skips, including six public hosts, FLTK/Rev/SDL visual and clipboard checks, bezel, file chunks and actual worker isolation. The later GUI archive attempt stopped before creation because the extracted distro prefix lacks `dpkg-query` ownership for `libSDL2.a`; notice verification was not bypassed. SDK-backed package qualification is separate. |
+| Development and sanitizers | Five native Debug checks passed for bezel, file chunks, no-socket policy, real isolated worker and file content. Three address/undefined/leak-sanitized bezel, file-transfer and file-content checks passed. |
+| Focused contributor coverage | All 92 import/Wasm/APT/distro/distribution cases passed. Build iteration: 29 applicable cases and one explicit native-Windows exclusion; distro client: 49 cases passed. Actual cold/warm core runs each passed 2/2; phase measurements are in the development-speed guide. |
+| Platform test declarations | The two Unix-only opener/compiler fixtures are explicitly inapplicable on Windows; portable import/source-identity checks remain required there. Missing tools or unexpected skips still fail. |
+| Static/checkout qualification | Python 3.9 grammar for 137 files, documentation, GUI boundary and whitespace checks passed. The actual checkout-GUI lifecycle command verified/copied/reverified the exact retained group. |
+
+Native GUI, hosted platform and refreshed SDK results are recorded separately
+when complete. This local evidence does not assert native Windows/ARM/Bookworm
+execution, physical touch/bezel/VR hardware, Arduino, or an actual system package
+upgrade. Package-manager commands were intercepted while real signed-generation
+verification ran. The worker boundary limits socket authority, not general
+filesystem/process authority. Forced native export termination can leave its
+exclusive temporary file and an uncertain commit outcome; the host guide documents
+that recovery limit.
+
 ## General-purpose transfer implementation (2026-10-04)
 
 The final implementation before this validation entry has source-tree SHA-256
 `f70de93b8e941a7dbc028e70cd0f1c2154ffb1919dc2a6e61b32856de7a2a6da`
-(350 files, including new untracked source). Changes remain local; they do not
-supersede the earlier public delivery evidence below. The pinned GUI supplier
-revision is unchanged. The checked-in retained group was regenerated to include
+(350 files, including then-untracked source). This pre-commit validation snapshot
+was subsequently committed and pushed as `d8e712c8893ed411ba4b1a7f95ec25c441f12578`.
+Its [development feedback run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37169878041)
+passed all four jobs, including focused application, shared GUI, workflow syntax
+and selected complete tooling suites. This feedback does not replace the separate
+platform qualifications below. The pinned GUI supplier revision is unchanged. The checked-in retained group was regenerated to include
 the reviewed service and browser patches; normal native configuration still
 requires no supplier checkout or download.
 
@@ -69,8 +119,9 @@ and unrestricted sanitizer repeats passed without disabling checks; failures are
 retained separately. All launched browser, display, compiler and test children
 were joined before releasing their owners.
 
-Limits: this change has no new hosted GitHub run, stock Bookworm execution,
-native Windows/ARM run, or native Debian/Arch/Gentoo installation qualification.
+Limits at that revision: no new stock Bookworm execution, native Windows/ARM run,
+or native Debian/Arch/Gentoo installation qualification was performed. The hosted
+development feedback result above was obtained after the local validation snapshot.
 The retained Wasm consumer was exercised; new SDK producer identities were not
 built or published. Real native toolkit controls/prompts and the host file service
 with a fake selector/real files were tested separately; actual FLTK/Rev file

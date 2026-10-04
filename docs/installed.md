@@ -63,5 +63,30 @@ windows and the terminal UI. The hosted-web package also supplies
 `foundation-gui-browser` when its complete asset closure is present. This starts
 a private loopback server on an available port, opens the system browser and
 prints the URL. Keep its terminal open; Ctrl+C closes the server and sessions.
-Core and the framebuffer PPM-output example have no desktop entry. These wrapper
+Core and the framebuffer PPM-output example have no native-window desktop entry. These wrapper
 files are verified package contents; they reuse the selected compiled payload.
+
+## Optional offline browser application
+
+A native archive assembled with `--wasm-package` also contains
+`share/software-foundation/wasm/software-foundation-wasm.html`. Run
+`share/software-foundation/open-offline.sh` on Linux or the adjacent
+`open-offline.cmd` on Windows, or open that exact HTML
+file in a browser. The scripts find the document in their adjacent `wasm` directory after archive
+relocation; they do not start a server or select another installed version. Linux
+automatic opening uses the desktop's `xdg-open` or `gio`; a browser remains a host
+prerequisite. The HTML contains its Wasm, scripts, styles and license notices and
+runs its application in a dedicated Worker with networking disabled by CSP.
+
+New Debian/Arch/Gentoo package projections add the coinstallable
+`foundation-gui-offline-BACKEND` command and an offline-browser desktop entry when
+this complete payload is present. Even core/framebuffer variants can carry it.
+The retained `web-manifest.json` and `manifest.sha256` identify the exact browser
+bytes; native assembly requires an explicit manifest digest and the same complete
+source snapshot. Separate native and Wasm compiler graphs reuse their finished
+outputs. See [building](building.md) for the import flags.
+
+On Windows, FLTK, Rev and SDL graphical executables use the Windows GUI subsystem
+and a UTF-8 application manifest. Their composition-layer entry shim forwards the
+CRT argument vector (and initializes SDL's main-ready state). The CLI, terminal,
+framebuffer file-output and hosted-web process retain console entry points.

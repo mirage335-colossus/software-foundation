@@ -41,8 +41,8 @@ requires its GUI redistribution terms, because shared resources remain present.
 The complete original archive receives the ABI/loader audit; selection only removes
 known application executables and preserves every runtime-provider path.
 
-New Debian payload receipts use schema version `3`, adding desktop/browser
-launch files to the exact generated public inventory. Schema `2` remains readable
+New Debian payload receipts use schema version `4`, adding optional offline-browser
+launch files to the exact generated public inventory. Schemas `2` and `3` remain readable
 with its unchanged historical template. They bind the original archive
 manifest and digest, its complete source-file inventory, selected and omitted
 executable identities, and every retained file. An installed
@@ -157,3 +157,18 @@ It must reject missing, modified and unlisted files. Check all native executable
 shared libraries and required browser assets from the final archived bytes; do not
 substitute checks on an unarchived staging tree. See [portability](portability.md)
 and [certification](certification.md) for target/runtime qualification.
+
+## Prebuilt offline browser payload
+
+Native archive assembly can import a separately built, verified Wasm package from
+the exact same source snapshot, without recompiling Wasm for each native target.
+The [build wrapper](building.md) requires the package directory and exact
+`web-manifest.json` SHA-256. Configure, selected application builds, direct install
+and CPack recheck that identity and the complete embedded asset/notice inventory.
+
+When the installed `share/software-foundation/wasm/` closure is present, schema-4
+Debian projections retain every browser byte and generate
+`foundation-gui-offline-BACKEND` plus its desktop entry. The command opens that
+private installation's document through its adjacent relocatable launcher.
+Incomplete closures fail packaging. Hosted-web launch behavior remains separately
+available, and earlier schema projections reproduce their original bytes.

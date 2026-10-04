@@ -43,6 +43,11 @@ messages, and the [lifecycle procedures](agent-lifecycle.md) when their
 triggers apply. The [coverage map](agent-recipes.md#invariant-and-scenario-coverage)
 connects requirements to executable checks.
 
+For optional studies of actual model cooperation, see
+[agent evaluation](agent-evaluation.md). That guide is for an evaluator conducting
+a requested exercise; it adds no reporting or benchmarking requirement to normal
+development. Protocol stress tests and model-following behavior are separate evidence.
+
 ## Routine checkpoints
 
 | When | Action, then return to useful work |

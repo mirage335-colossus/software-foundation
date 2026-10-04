@@ -12,6 +12,12 @@ and keep independent release work parallel. Leaving compile jobs unspecified use
 the available CPU and RAM detector; `--build-jobs` overrides compilation separately
 from `--test-jobs`.
 
+`--timings build/timings.json` writes optional monotonic wall times for source and
+SDK verification, configuration, compilation, test discovery/startup and test
+execution. It does not change test selection or bypass checks. See the
+[repeatable warm measurement recipe](development-speed.md#measure-warm-iterations)
+for interpreting inclusive subprocess times and recording failed runs.
+
 ## Prerequisites and working commands
 
 Install Git, CMake 3.24 or newer, Ninja, Python 3.9 or newer, and a compiler with
@@ -84,6 +90,27 @@ verification together. Ordinary `package release` retains its existing explicit
 portability choice. This is an opt-in local package check; hosted release producers
 already perform these checks through their existing delivery path. It does not
 install anything into the host or establish other-platform qualification.
+
+A native package may include a browser build produced earlier from the same
+complete source tree. Build the Wasm target using its own SDK tree first, then
+create a schema-2 browser package with `tools/package_wasm.py --source-root PATH`.
+Pass its directory and the exact SHA256 of `web-manifest.json` to the native build:
+
+```sh
+./build.sh portable-package --build-dir build/native-with-browser \
+  --wasm-package /absolute/path/to/verified-browser-package \
+  --wasm-package-sha256 EXACT_WEB_MANIFEST_SHA256
+```
+
+Both options are required together. The wrapper verifies the pinned manifest,
+self-contained document and complete source identity before and after the native
+operation; CMake stages an owned copy and checks it again at installation. The
+pair becomes part of the build-tree identity. Changing or removing it requires a
+fresh tree. No Emscripten rebuild, SDK download or browser server is introduced in
+the native graph. Older schema-1 browser packages still verify independently but
+lack the source binding needed for native import. See [installed launches](installed.md)
+for the offline document command and [distribution channels](distro-channels.md)
+for native package inclusion.
 
 `test` builds prerequisites before invoking CTest. Its default runs the complete
 enabled local test suite. `--label fast`, `core`, `tools`, `integration`, or

@@ -26,7 +26,8 @@
     "gui/patches/file-services.patch: bounded owned text import/export capabilities",
     "gui/patches/web-file-services.patch: browser-owned file selection and download capability",
     "gui/patches/web-responsiveness.patch: bounded measurement scheduling and retained keyed rows",
-    "gui/patches/web-presentation.patch: ordered state acceptance with coalesced visual presentation"
+    "gui/patches/web-presentation.patch: ordered state acceptance with coalesced visual presentation",
+    "gui/patches/web-file-transfer.patch: bounded ordered browser content chunks with service ownership and explicit abort"
   ],
   "files": {
     "LICENSE": "1b3b788174fca1e8879d5d714528f22732f03925621b4e3484ee88ae6b4ef5f0",

@@ -28,7 +28,7 @@ def unresolved_lock(path, *args, **kwargs):
 ORIGINAL_ORDINARY=d.ordinary
 
 
-def source_group(root, version='1.0.0', release=1, backends=(), backend='core', schema=1):
+def source_group(root, version='1.0.0', release=1, backends=(), backend='core', schema=1, offline=False):
     root.mkdir()
     archive = root / 'application.tar.gz'
     data = {
@@ -57,6 +57,11 @@ def source_group(root, version='1.0.0', release=1, backends=(), backend='core', 
         data[gui + 'gui-boundary.lock.json'] = (d.encoded({'redistribution': {'approved': True, 'license_files': ['LICENSE']},
             'files': {'LICENSE': d.digest(terms)}}), 0o644)
         data['prefix/share/doc/Foundation/dependency-notices/index.json'] = (d.encoded({'schema_version': 1, 'providers': [], 'files': {}}), 0o644)
+    if offline:
+        data.update({'prefix/share/software-foundation/' + ('wasm/' if not name.startswith('open-') else '') + name:
+                     (b'offline fixture ' + name.encode(), 0o755 if name.endswith('.sh') else 0o644)
+                     for name in ('software-foundation-wasm.html', 'web-manifest.json', 'manifest.sha256',
+                                  'open-offline.sh', 'open-offline.cmd')})
     archive.write_bytes(d.tar_bytes(data))
     manifest = root / 'archive.json'
     manifest.write_bytes(d.encoded(d.artifact.describe(archive)))
@@ -93,6 +98,29 @@ class RecipeTests(unittest.TestCase):
                 with self.subTest(schema=schema):
                     group = source_group(Path(temporary)/str(schema), schema=schema)
                     self.assertEqual(d.digest(d.encoded(d.inventory(d.tree(group)))), digest)
+
+    def test_offline_launchers_preserve_payload_and_historical_recipe_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            group = source_group(Path(temporary)/'offline', schema=d.CURRENT_SCHEMA, offline=True)
+            generated, _ = d.expected_package(d.tree(group))
+            archive = next(v[0] for n,v in generated.items() if n.endswith('.pkg.tar.gz'))
+            with tarfile.open(fileobj=io.BytesIO(archive),mode='r:gz') as bundle:
+                contents = {p.name:bundle.extractfile(p).read() for p in bundle if p.isfile()}
+            self.assertIn('usr/bin/foundation-gui-offline-core', contents)
+            self.assertIn(b'/opt/software-foundation/core/share/software-foundation/open-offline.sh',
+                          contents['usr/bin/foundation-gui-offline-core'])
+            self.assertEqual(contents['opt/software-foundation/core/share/software-foundation/wasm/software-foundation-wasm.html'],
+                             b'offline fixture software-foundation-wasm.html')
+            for path in ('recipes/arch/software-foundation-core-bin/PKGBUILD',
+                         'gentoo/app-misc/software-foundation-core-bin/software-foundation-core-bin-1.0.0.ebuild'):
+                self.assertIn(b'foundation-gui-offline-core', generated[path][0])
+            old_spec = dict(d.document((group/'spec.json').read_bytes()), schema_version=5)
+            archive_name = 'application.tar.gz'
+            original = group/'retained'/archive_name
+            root_name, payload = d.archive_payload(original, d.document((group/'portable-manifest.json').read_bytes()))
+            old_spec.update(archive_size=original.stat().st_size, archive_sha512=d.hashlib.sha512(original.read_bytes()).hexdigest())
+            old = d.recipe_files(old_spec, root_name, payload, archive_name)
+            self.assertFalse(any('/foundation-gui-offline-' in path for path in old))
 
     def test_current_gentoo_prepare_honors_eapi_phase_contract(self):
         with tempfile.TemporaryDirectory() as temporary:

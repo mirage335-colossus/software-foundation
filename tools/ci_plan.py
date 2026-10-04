@@ -1178,11 +1178,13 @@ def windows_gui_qualification(command, archive, build, output, jobs, *, protecte
             for p in [output / 'graphics.json', output / 'graphics-probe.json', *files]}
 
 
-def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphics_archive=None, *, defer_qualification=False):
+def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphics_archive=None, *, defer_qualification=False, development=False):
     """Consume a relocated SDK; GUI qualification retains no distributable output."""
     from dependency_store import verify_group
     if target not in (*STANDARD, 'browser-wasm32') or jobs < 1:
         raise ValueError('supported target and positive concurrency required')
+    if type(development) is not bool or development and (not target.startswith('linux-') or gui_group is None):
+        raise ValueError('development qualification requires a native Linux all-GUI SDK')
     graphics_needed = target == 'windows-x86_64' and gui_group is not None
     if graphics_needed != (graphics_archive is not None):
         raise ValueError('Windows GUI qualification requires one explicit retained host graphics archive; other probes must omit it')
@@ -1193,7 +1195,8 @@ def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphi
     output = Path(output).absolute(); group = Path(group).resolve(strict=True)
     if output.exists(): raise ValueError('prepared check output must be new')
     before = verify_group(group, recipe); output.mkdir(parents=True)
-    command = [sys.executable, str(ROOT / 'tools/build.py'), 'test', 'release', '--portable',
+    command = [sys.executable, str(ROOT / 'tools/build.py'), 'test',
+               'dev' if development else 'release', *([] if development else ['--portable']),
                '--build-jobs', str(jobs), '--test-jobs', '2', '--build-dir', str(output / 'build'), '--junit', str(output / 'source.junit.xml')]
     if target == 'windows-x86_64':
         version = module('windows_toolchain').inspect_selected_linker()['version']
@@ -1211,6 +1214,12 @@ def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphi
     if gui_group is None:
         command += ['--label', 'core']
         if target == 'browser-wasm32': command += ['--gui-backends', 'wasm']
+    if development:
+        # Exercise both documented commands in one graph. This opt-in qualification
+        # is separate from ordinary development and does not create a release.
+        prepare = command.copy(); prepare[2] = 'build'; prepare.remove('--full')
+        index = prepare.index('--junit'); del prepare[index:index + 2]
+        subprocess.run(prepare, cwd=ROOT, check=True)
     graphics_evidence = None
     if graphics_needed:
         graphics_evidence = windows_gui_qualification(command, Path(graphics_archive), output / 'build', output, jobs,
@@ -1233,6 +1242,9 @@ def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphi
                'checks': ['relocated-sdk', 'compile', 'execute', 'installed-consumer'] if gui_group is None
                          else ['relocated-sdk', 'all-native-gui' if target != 'browser-wasm32' else 'wasm-gui', 'full-source-tests'],
                'redistribution': False, 'source_junit': 'source.junit.xml'}
+    if development:
+        receipt['checks'] += ['ordinary-dev-build', 'ordinary-dev-test', 'without-portable-mode']
+        receipt['configuration'] = 'dev'
     if graphics_evidence is not None: receipt['graphics_evidence'] = graphics_evidence
     if not defer_qualification: module('coverage').write_new(output / 'qualification.json', receipt)
     return receipt

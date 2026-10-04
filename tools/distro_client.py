@@ -387,7 +387,8 @@ def refresh(value, policy, *, transport=None, prepared=None):
                     release.verify_native_channels(prior/'channels', manifest, value['trusted_fingerprint'])
                 except (ValueError, OSError) as error:
                     raise ValueError('derived channel changed; preserve state for inspection') from error
-                return {'changed': False, 'tag': selected['tag'], 'sequence': manifest['request']['sequence']}
+                return {'changed': False, 'tag': selected['tag'], 'sequence': manifest['request']['sequence'],
+                        'manifest_sha256': selected['manifest_sha256']}
             if prepared is None:
                 manifest = release.fetch(value['repository'], selected['tag'], selected['manifest_sha256'],
                     stage/'assets', policy, value['trusted_fingerprint'], transport=transport,
@@ -425,14 +426,56 @@ def refresh(value, policy, *, transport=None, prepared=None):
                 sync_tree(stage)
                 stage.rename(destination)
                 release.distro.sync_directory(generations)
-            if prior == destination: return {'changed': False, 'tag': selected['tag'], 'sequence': manifest['request']['sequence']}
+            if prior == destination:
+                return {'changed': False, 'tag': selected['tag'], 'sequence': manifest['request']['sequence'],
+                        'manifest_sha256': selected['manifest_sha256']}
             pointer = Path(temporary)/'current'; pointer.symlink_to('generations/'+identity)
             if current(location) != prior: raise ValueError('active pointer changed during refresh')
             os.replace(pointer, location/'current')
             try: release.distro.sync_directory(location)
             except OSError as error:
                 raise release.distro.CommitUncertain('active channel changed; inspect current before retry') from error
-        return {'changed': True, 'tag': selected['tag'], 'sequence': manifest['request']['sequence']}
+        return {'changed': True, 'tag': selected['tag'], 'sequence': manifest['request']['sequence'],
+                'manifest_sha256': selected['manifest_sha256']}
+
+
+def native_upgrade(value, policy, kind):
+    """Explicit interactive system upgrade, only after a verified channel refresh."""
+    value = configuration(value)
+    if kind not in ('apt', 'arch'):
+        raise ValueError('native upgrade requires apt or arch; Gentoo uses its installed sync adapter')
+    if not hasattr(os, 'geteuid') or os.geteuid() != 0:
+        raise ValueError('native upgrade requires root')
+    if kind == 'arch' and value['target'] != 'linux-x86_64':
+        raise ValueError('the qualified Arch channel requires linux-x86_64')
+    # No caller-selected executable, shell fragments, noninteractive approval or
+    # partial Arch upgrade. Operators install the generated native configuration.
+    commands = ([['/usr/bin/apt-get', 'update', '-o', 'APT::Update::Error-Mode=any'],
+                 ['/usr/bin/apt-get', 'upgrade']] if kind == 'apt' else
+                [['/usr/bin/pacman', '-Syu']])
+    for command in commands:
+        if not os.access(command[0], os.X_OK):
+            raise ValueError('native package manager unavailable: ' + command[0])
+    result = refresh(value, policy)
+    # Refresh owns its own transaction. Reacquire before consuming the result;
+    # concurrent refresh to another generation invalidates this operation.
+    with locked(Path(value['location'])):
+        generation = current(value['location'])
+        if generation is None:
+            raise ValueError('verified generation disappeared before native upgrade')
+        manifest = previous_identity(generation, value)
+        if (manifest['tag'] != result['tag'] or manifest['request']['sequence'] != result['sequence'] or
+                generation.name != str(result['sequence']) + '-' + result['manifest_sha256']):
+            raise ValueError('verified generation changed before native upgrade; retry explicitly')
+        if release.archive.digest(Path(policy)) != value['policy_sha256']:
+            raise ValueError('trusted policy bytes changed before native upgrade')
+        if release.verify_native(generation/'assets', policy, value['trusted_fingerprint']) != manifest:
+            raise ValueError('verified assets changed before native upgrade')
+        release.verify_native_channels(generation/'channels', manifest, value['trusted_fingerprint'])
+        for command in commands:
+            # A failed update must never fall through to installation/upgrade.
+            subprocess.run(command, check=True)
+    return {**result, 'native_kind': kind, 'native_upgrade': 'completed'}
 
 
 def native_config(value, kind, helper, config_path):
@@ -499,12 +542,15 @@ def install_portage(config, helper=Path(__file__)):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('refresh', 'config', 'install-portage'))
+    parser.add_argument('operation', choices=('refresh', 'upgrade', 'config', 'install-portage'))
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--policy', type=Path, default=Path(__file__).resolve().parents[1]/'docs/release-policy.json')
     parser.add_argument('--kind', choices=('apt', 'arch', 'gentoo'))
     args = parser.parse_args(argv); value = configuration(release.archive.read_json(args.config))
     if args.operation == 'refresh': result = refresh(value, args.policy)
+    elif args.operation == 'upgrade':
+        if args.kind not in ('apt', 'arch'): parser.error('upgrade requires --kind apt or arch')
+        result = native_upgrade(value, args.policy, args.kind)
     elif args.operation == 'install-portage': result = install_portage(args.config)
     else:
         if not args.kind: parser.error('--kind required')

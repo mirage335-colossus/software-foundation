@@ -316,7 +316,7 @@ class SignedDistributionTests(unittest.TestCase):
     def test_real_signatures_packages_and_source_closure_verify(self):
         value = d.verify(self.prepared, self.policy, self.trusted)
         self.assertEqual(value, self.frozen); self.assertEqual(['core'], value['backends'])
-        self.assertEqual({5}, {spec['schema_version'] for spec in value['specifications'].values()})
+        self.assertEqual({6}, {spec['schema_version'] for spec in value['specifications'].values()})
         self.assertTrue((self.prepared / 'Packages').is_file()); self.assertTrue((self.prepared / 'software-foundation.db').is_file())
         self.assertEqual(set(value['retained']), {'application/' + name for name in self.f.delivery['files']} |
             {'delivery.json', 'policy.json', 'packaging-source.tar.gz', 'certification-qualification-run-attempt-1.json', 'certification-qualification-run-attempt-1.tar.gz'})

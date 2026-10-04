@@ -19,9 +19,13 @@ name: Explicit native GUI qualification
         type: string
         default: ''
       gui_input:
-        description: Exact existing base or retained GUI selector JSON; acquisition is a separate maintenance workflow
+        description: Optional exact existing base or retained GUI selector JSON; empty uses verified checkout inputs
         type: string
-        required: true
+        default: ''
+      development:
+        description: Qualify ordinary build dev and test dev without portable mode (Linux only)
+        type: boolean
+        default: false
       linux_pool:
         description: Standard or explicitly configured faster native runners
         type: choice
@@ -48,6 +52,7 @@ env:
   GUI_INPUT: ${{ inputs.gui_input }}
   JOBS: ${{ inputs.jobs }}
   GRAPHICS_ARCHIVE_URL: ${{ inputs.graphics_archive_url }}
+  SDK_DEVELOPMENT: ${{ inputs.development }}
 jobs:
   plan:
     name: Validate and freeze the selected native runner
@@ -73,7 +78,11 @@ jobs:
       run: python .github/scripts/lifecycle.py graphics-input
     - run: python .github/scripts/lifecycle.py fetch-sdk
     - name: Restore and verify the exact retained GUI group
+      if: inputs.gui_input != ''
       run: python .github/scripts/lifecycle.py gui-input
+    - name: Verify and use checkout-contained GUI inputs
+      if: inputs.gui_input == ''
+      run: python .github/scripts/lifecycle.py checkout-gui-input
     - if: runner.os == 'Windows'
       shell: pwsh
       run: ./tools/ci_windows.ps1 -Output 'build/windows-toolchain.json'

@@ -55,6 +55,14 @@ class RunnerTests(unittest.TestCase):
         self.assertIsNone(runner.inapplicable(apt, 'Linux'))
         self.assertIsNotNone(runner.inapplicable(apt, 'Windows'))
         self.assertIsNone(runner.inapplicable(Named('test_release_check.ReleaseCheckTests.test_apt_refuses_ordinary_host_before_any_package_command'), 'Windows'))
+        for name in ('test_pinned_same_source_staging_and_relocated_exact_document_launch',
+                     'test_windows_gui_entry_preserves_arguments_and_console_target_kind'):
+            case = Named('test_import_wasm.ImportWasmTests.' + name)
+            self.assertIsNotNone(runner.inapplicable(case, 'Windows'))
+            self.assertIsNone(runner.inapplicable(case, 'Linux'))
+        for name in ('test_cmake_selected_build_and_direct_install_revalidate_identity',
+                     'test_wrong_pin_changed_source_legacy_group_and_tampered_stage_fail'):
+            self.assertIsNone(runner.inapplicable(Named('test_import_wasm.ImportWasmTests.' + name), 'Windows'))
 
 
 if __name__ == '__main__':

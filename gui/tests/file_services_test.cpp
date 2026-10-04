@@ -1,6 +1,8 @@
 #include "host/native_session.hpp"
 #include "shared/application.hpp"
 #include <gui/retained_adapter.hpp>
+#include <gui/terminal.hpp>
+#include "host/native_framebuffer.hpp"
 #include <fstream>
 #include <iostream>
 using namespace foundation;
@@ -40,6 +42,24 @@ int main(){try{
     {std::ofstream file(path);file<<"valid\n\ninvalid";}
     option("import");wait("text must contain 1..256 bytes");
     check(gui::find_widget(session.application.view(),{"entries.list",1})->state.records==rows,"Invalid import partially changed records");
+    const auto native_selector=[&]<class Adapter>() {
+        host::NativeSession<ui::Application,Adapter> owner;
+        owner.application.handle(gui::WidgetEvent{{"entries.options",1},gui::ChooseOption{"import"}});owner.services();
+        check(bool(owner.adapter.prompt()),"Native content request did not reach generic selector");
+        owner.adapter.text(path.string());owner.adapter.key(gui::Key::enter);
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(3);
+        while(gui::find_widget(owner.application.view(),{"entries.status",1})->state.text!="text must contain 1..256 bytes"&&std::chrono::steady_clock::now()<deadline) {
+            owner.tick();std::this_thread::yield();
+        }
+        check(gui::find_widget(owner.application.view(),{"entries.status",1})->state.text=="text must contain 1..256 bytes","Selector did not deliver bounded content to shared validation");
+    };
+    native_selector.template operator()<gui::TerminalAdapter>();
+    native_selector.template operator()<gui::FramebufferAdapter>();
+    host::NativeFramebufferHost<ui::Application> embedded;
+    embedded.application().handle(gui::WidgetEvent{{"entries.options",1},gui::ChooseOption{"import"}});
+    struct Sink {void present(const gui::Frame&) {}} sink;
+    embedded.present(sink);check(bool(embedded.adapter().prompt()),"Native framebuffer embedding lacks file selector");
+    embedded.bezel_button(1);check(!embedded.adapter().prompt(),"Bezel cannot cancel native file selection");
     std::atomic_bool stop{true};
     gui::ServiceRequest request{71,gui::ServiceKind::write_text,"Export","cancelled",32};
     check(host::file_detail::transfer(request,path,stop).status==gui::ServiceStatus::cancelled,"Export cancellation lost");

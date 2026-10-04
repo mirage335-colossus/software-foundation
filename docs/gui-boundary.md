@@ -178,7 +178,7 @@ validation. Existing record IDs are not reused. A malformed/oversized import
 leaves the collection unchanged; service IDs reject duplicate or stale replies.
 Export uses the same core records and rejects content exceeding the service limit.
 
-FLTK and Rev composition roots inject [`FileServices`](../gui/host/file_services.hpp)
+Terminal, SDL, FLTK and Rev composition roots inject [`FileServices`](../gui/host/file_services.hpp)
 through `NativeSession`. Their generic modal path prompt keeps paths on the host
 side. One worker owns the selected path/content; the UI polls a value-only result.
 Export exclusively creates a sibling temporary file and replaces the destination
@@ -188,15 +188,102 @@ cannot undo it or report it as unperformed. This is not a crash-durability promi
 Byte bounds and cancellation checks do not bound a stalled filesystem call;
 shutdown deliberately joins it instead of detaching a writer. Applications needing
 hard deadlines for hostile filesystems require a separately owned process or a
-platform-specific cancellable I/O service. The generic embedding `Session` imports
-no filesystem provider; terminal/framebuffer/SDL adapters report unavailable file
-content services unless the embedding supplies one.
+platform-specific cancellable I/O service. `NativeFramebufferHost<App>` from
+[`native_framebuffer.hpp`](../gui/host/native_framebuffer.hpp) supplies the same
+provider for OS-backed display/touch embeddings. The filesystem-free
+`FramebufferHost<App, Services>` retains an injectable provider for embedded boards;
+its default `AdapterServices` explicitly reports unsupported file capabilities.
+The standalone framebuffer image command has no interactive event loop. A device
+with no filesystem need not import threading or filesystem headers.
 
 Browsers offer an explicit file input and Download button. The host bounds bytes
 before decoding, rejects invalid UTF-8, preserves a leading BOM as content just
 as the native reader does, aborts withdrawn dialogs and ignores late reads. Export success means a download was offered, not that the user saved it.
 The shared status deliberately says “Export handed to host”. Both hosted and
 single-file Wasm paths use the same helper with no network dependency.
+
+Browser imports use `fileBegin` (service ID and declared byte length), ordered
+`fileChunk` operations (exact byte offset and at most 4096 bytes encoded as hex),
+and `fileFinish`. Only finish commits a fully received valid UTF-8 document.
+The browser awaits each receipt before producing the next chunk; arbitrary UTF-8
+boundaries are decoded incrementally, and truncated/changed providers fail.
+An operation retry retains the existing session epoch/sequence, so a lost reply
+cannot append a chunk twice. Cancellation discards partial content, and a stale
+service ID cannot complete a replacement. Export snapshots carry only size and
+identity; bounded `fileRead` replies supply content in chunks. The host validates
+each reply and enables Download only after its complete bounded Blob is ready,
+preserving the explicit user's click as the download gesture. The maximum owned
+content remains 64 KiB; chunking bounds transfer/queue work, not total document
+storage. The same C++ framing and JavaScript helper run in hosted and Wasm modes.
+
+## Few-button framebuffer controls
+
+[`Bezel`](../gui/host/bezel.hpp) projects eligible declared buttons, toggles, menu
+options and bitmap actions into three or five debounced physical keys. It contains
+no application IDs. `FramebufferHost` exposes `bezel_labels()` and
+`bezel_button(number)`: a display driver paints the returned labels beside its
+screen, and GPIO/VR/touch bindings deliver one logical press per activation.
+Keys 1 and 2 select previous/next action; key 3 dispatches the displayed action
+through the shared interaction policy. Five-key devices additionally expose Back
+and Next page. A modal prompt offers only Cancel/Accept, and an open popup owns Previous/Next/Choose; disabled, invisible and
+out-of-modal actions never appear. A newly unavailable selection falls back to
+an eligible action. Ordinary touchscreen contacts retain their separate valid
+release/cancellation semantics; raw repeating contacts must not call this
+already-debounced key interface.
+
+```cpp
+// App implements the ordinary generic application contract.
+foundation::host::NativeFramebufferHost<App> host(3);
+for (const auto& label : host.bezel_labels()) driver.paint_key_label(label);
+host.bezel_button(2); // Select the next declared action, without knowing its ID.
+host.bezel_button(3); // Invoke that action through the shared policy.
+host.present(driver); // The driver receives the usual immutable frame.
+```
+
+[`bezel_test.cpp`](../gui/tests/bezel_test.cpp) exercises both key counts,
+declared menu choices, disabled actions, modal cancellation and closed adapters.
+This is a generic device integration example, not physical Arduino or VR device
+qualification. Bare-device embeddings may supply their own content provider.
+
+## Optional Linux worker boundary and native file authority
+
+`FOUNDATION_WEB_ISOLATE=1 python3 build/gui/gui/web/serve.py --executable
+build/gui/gui/foundation-gui-web` requests the no-socket worker boundary for the
+existing loopback host. Normal native desktop builds do not require Linux
+isolation. The worker verifies actual anonymous stdin/stdout pipes, closes all
+unwanted inherited descriptors, rejects retained sockets, then installs
+`no_new_privs` and its seccomp filter **before** constructing the application or
+starting its executor. Unsupported operating systems/architectures, missing
+`/proc/self/fd`, wrong pipe modes and filter installation failures fail closed.
+The policy denies socket families, socketpair, multiplexed socket syscalls, x32
+on x86-64, io_uring, ptrace, BPF and pidfd descriptor acquisition. Ordinary pipe
+I/O and worker threads remain available. This narrows network authority; it is
+not a filesystem, process-execution or full hostile-code sandbox. See the
+[Linux seccomp semantics](https://docs.kernel.org/userspace-api/seccomp_filter.html).
+
+A trusted native embedding can instantiate `serve.Session(executable,
+native_files=True)` and call `session.complete_file(service_id, selected_path)`
+after its native chooser succeeds. This enables isolation and passes one extra
+anonymous read pipe using an explicit descriptor allowlist. `complete_file`
+writes only to that pipe; browser/HTTP data always uses stdin. The worker checks
+the current service ID/kind before interpreting a pathname, performs bounded
+regular-file I/O or atomic replacement, and returns only an owned content result
+to the application. No HTTP endpoint accepts native paths; a browser `filePath`
+message has no authority. Embeddings must never forward browser-provided paths
+into `complete_file`. Paths do not enter shared application declarations.
+
+Each worker is a host-owned process. The host bounds response time, terminates
+and waits for stalled workers, then joins its pipe thread before closing handles.
+Unlike native in-process file threads, this permits recovery from a stuck
+filesystem by ending the entire session. Forced termination may leave the
+exclusively created sibling temporary file because destructors cannot run;
+unconfirmed export commit outcomes must not be retried as known failures. Normal browser imports/exports
+continue to use chunked owned content, without native path authority.
+[`worker_isolation_test.py`](../gui/tests/worker_isolation_test.py) exercises the
+actual pipe worker, trusted import/export, denied browser pathname authority,
+ordinary content chunks and joined shutdown. The low-level policy test also
+proves inherited socket closure and denied socket/alternative syscalls in a child.
+
 
 ## Browser presentation scheduling
 

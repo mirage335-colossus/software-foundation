@@ -14,6 +14,85 @@ spec.loader.exec_module(builder)
 
 
 class BuildTests(unittest.TestCase):
+    def test_opt_in_timings_distinguish_probe_execution_and_failure(self):
+        from unittest.mock import patch
+        import source_identity
+        import subprocess
+        for fail in (False, True):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); output = root / 'timings.json'; calls = []
+                def execute(command, **kwargs):
+                    calls.append(command)
+                    if fail and command[0] == 'ctest' and '--show-only=json-v1' not in command:
+                        raise subprocess.CalledProcessError(1, command)
+                with patch.object(builder, 'ROOT', root), patch.object(builder, 'run', side_effect=execute), \
+                        patch.object(builder, 'cache_identity', return_value={}), \
+                        patch.object(builder.subprocess, 'check_output', side_effect=execute), \
+                        patch.object(source_identity, 'source_tree', return_value={'tree_sha256':'a'*64}):
+                    arguments = ['test', 'dev', '--label', 'core', '--timings', str(output)]
+                    if fail:
+                        with self.assertRaises(subprocess.CalledProcessError): builder.main(arguments)
+                    else:
+                        self.assertEqual(builder.main(arguments), 0)
+                report = json.loads(output.read_text())
+                self.assertEqual(report['status'], 'failed' if fail else 'passed')
+                self.assertFalse(report['context']['warm_tree_at_start'])
+                self.assertEqual(set(report['phases']), {'configure', 'compile', 'source_verification',
+                    'configuration_verification', 'test_startup_probe', 'test_execution'})
+                self.assertEqual(report['phases']['source_verification']['calls'], 2 if fail else 3)
+                self.assertTrue(all(row['seconds'] >= 0 for row in report['phases'].values()))
+                tests = [c for c in calls if c[0] == 'ctest']
+                self.assertEqual(len(tests), 2)
+                self.assertIn('--show-only=json-v1', tests[0]); self.assertNotIn('--show-only=json-v1', tests[1])
+                self.assertIn('^core$', tests[0]); self.assertIn('^core$', tests[1])
+                self.assertIn('includes its own startup', report['interpretation'])
+
+    def test_timing_receipt_separates_sdk_checks_and_binds_its_identity(self):
+        from unittest.mock import patch
+        import source_identity
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); sdk = root/'sdk'; sdk.mkdir(); output = root/'timings.json'
+            (sdk/'sdk.json').write_text(json.dumps({'target':{'system':'Linux'}, 'recipe_id':'a'*64}))
+            with patch.object(builder, 'ROOT', root), patch.object(builder, 'run'), \
+                    patch.object(builder, 'cache_identity', return_value={}), \
+                    patch.object(builder, 'sdk_identity', return_value='b'*64) as verify, \
+                    patch.object(builder, 'require_clean'), \
+                    patch.object(source_identity, 'source_tree', return_value={'tree_sha256':'c'*64}):
+                self.assertEqual(builder.main(['build', '--sdk', str(sdk), '--timings', str(output)]), 0)
+            report = json.loads(output.read_text())
+            self.assertEqual(report['phases']['sdk_verification']['calls'], 2)
+            self.assertEqual(verify.call_count, 2)
+            self.assertEqual(report['context']['sdk_sha256'], 'b'*64)
+            self.assertEqual(report['context']['source_tree_sha256'], 'c'*64)
+            self.assertNotIn('test_startup_probe', report['phases'])
+
+    def test_prebuilt_wasm_input_is_pinned_reverified_and_part_of_tree_identity(self):
+        from unittest.mock import patch
+        import import_wasm, source_identity
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); package = root / 'wasm'; package.mkdir(); digest = 'a'*64
+            args = ['build', '--wasm-package', str(package), '--wasm-package-sha256', digest]
+            with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run, \
+                    patch.object(builder, 'cache_identity', return_value={}), \
+                    patch.object(source_identity, 'source_tree', return_value={}), \
+                    patch.object(import_wasm, 'verify_input') as verify:
+                self.assertEqual(builder.main(args), 0)
+                self.assertEqual(verify.call_count, 2)
+                verify.assert_called_with(package, digest, root)
+                configure = run.call_args_list[0].args[0]
+                self.assertIn('-DFOUNDATION_WASM_PACKAGE=' + str(package), configure)
+                self.assertIn('-DFOUNDATION_WASM_PACKAGE_SHA256=' + digest, configure)
+                identity = json.loads((root/'build/dev/wrapper-identity.json').read_text())
+                self.assertEqual(identity['wasm_package'], {'root':str(package), 'sha256':digest})
+                with self.assertRaisesRegex(ValueError, 'configuration changed'):
+                    builder.main(['build'])
+            with patch.object(builder, 'run') as run:
+                for invalid in (['build', '--wasm-package', str(package)],
+                                ['build', '--wasm-package-sha256', digest],
+                                [*args[:-1], 'bad']):
+                    with self.subTest(invalid=invalid), self.assertRaises(SystemExit): builder.main(invalid)
+                run.assert_not_called()
+
     def test_portable_package_is_explicit_release_and_verifies_both_archive_formats(self):
         from unittest.mock import patch
         import source_identity

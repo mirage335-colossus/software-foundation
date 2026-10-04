@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 import windows_compiler
 from sdk_environment import require_clean
@@ -110,6 +111,53 @@ def run(command, **kwargs):
     windows_compiler.run(command, cwd=ROOT, **kwargs)
 
 
+class PhaseTimings:
+    """Opt-in monotonic wall times; nested subprocess work remains inclusive."""
+    def __init__(self, destination):
+        self.destination = destination
+        self.started = time.perf_counter()
+        self.phases = {}
+        self.context = {}
+
+    def call(self, name, function, *args, **kwargs):
+        if self.destination is None:
+            return function(*args, **kwargs)
+        started = time.perf_counter()
+        try:
+            return function(*args, **kwargs)
+        finally:
+            phase = self.phases.setdefault(name, {"seconds": 0.0, "calls": 0})
+            phase["seconds"] += time.perf_counter() - started
+            phase["calls"] += 1
+
+    def finish(self, status):
+        if self.destination is None:
+            return
+        document = {"schema_version": 1, "clock": "perf_counter", "status": status,
+                    "total_seconds": time.perf_counter() - self.started,
+                    "context": self.context, "phases": self.phases,
+                    "interpretation": "Total starts after argument parsing. Inclusive subprocess wall times. "
+                    "test_startup_probe is a separate "
+                    "CTest discovery-only invocation; test_execution includes its own startup, scheduling "
+                    "and child processes. Configure/build may repeat verification internally. "
+                    "Do not subtract the probe or sum these as exclusive CPU costs."}
+        destination = self.destination.resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        # Unique staging file also prevents a failed write leaving a valid-looking receipt.
+        import tempfile
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=destination.parent,
+                                             prefix=".timings-", delete=False) as stream:
+                temporary = Path(stream.name)
+                json.dump(document, stream, indent=2)
+                stream.write("\n")
+            temporary.replace(destination)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", nargs="?", choices=("build", "test", "package", "portable-package"), default="build")
@@ -144,7 +192,26 @@ def main(argv=None):
     parser.add_argument("--build-dir", type=Path, help="owned per-session output tree")
     parser.add_argument("--distribution-tests", action="store_true")
     parser.add_argument("--junit", type=Path, help="machine-readable outcomes for this test invocation")
+    parser.add_argument("--timings", type=Path,
+                        help="write opt-in phase wall times and a separate CTest startup/discovery probe")
+    parser.add_argument("--wasm-package", type=Path, help="verified prebuilt offline Wasm package directory for native installation")
+    parser.add_argument("--wasm-package-sha256", help="exact SHA256 of the prebuilt web-manifest.json")
     args = parser.parse_args(argv)
+    timings = PhaseTimings(args.timings)
+    status = "failed"
+    try:
+        result = execute(args, parser, timings)
+        status = "passed"
+        return result
+    finally:
+        timings.finish(status)
+
+
+def execute(args, parser, timings):
+    if bool(args.wasm_package) != bool(args.wasm_package_sha256):
+        parser.error("--wasm-package and --wasm-package-sha256 must be supplied together")
+    if args.wasm_package_sha256 and not re.fullmatch(r"[0-9a-f]{64}", args.wasm_package_sha256):
+        parser.error("--wasm-package-sha256 must be a lowercase SHA256")
     if args.action == "portable-package":
         args.action = "package"
         args.portable = True
@@ -174,11 +241,14 @@ def main(argv=None):
     jobs, test_jobs = job_limits(args)
     suffix = ("-sdk" if args.sdk else "") + ("-gui" if has_gui else "")
     build = args.build_dir.resolve() if args.build_dir else ROOT / "build" / (preset + suffix + ("-portable" if args.portable else ""))
+    timings.context = {"action": args.action, "preset": preset, "build_directory": str(build),
+                       "warm_tree_at_start": (build / "CMakeCache.txt").is_file(),
+                       "build_jobs": jobs, "test_jobs": test_jobs}
     gui_group_identity = None
     if args.gui_input_group:
         gui_group = args.gui_input_group.resolve(strict=True)
         helper = ROOT / "gui/source_group.py"
-        restored = json.loads(subprocess.check_output(
+        restored = json.loads(timings.call("source_verification", subprocess.check_output,
             [sys.executable, "-B", str(helper), "restore", str(gui_group), "--output", str(build / "inputs/gui")],
             text=True, encoding="utf-8"))
         args.gui_source = Path(restored["source"]).resolve(strict=True)
@@ -205,7 +275,7 @@ def main(argv=None):
             parser.error("native development prefix cannot be combined with a prepared SDK")
         from prepare_dependencies import verify
         prefix_root = args.dependency_prefix.resolve(strict=True)
-        identity["dependency_prefix"] = {"root": str(prefix_root), **verify(prefix_root)}
+        identity["dependency_prefix"] = {"root": str(prefix_root), **timings.call("dependency_verification", verify, prefix_root)}
         configure += ["-DFOUNDATION_DEPENDENCY_PREFIX=" + str(prefix_root)]
     programs = host_programs()
     child_environment = os.environ.copy()
@@ -215,7 +285,7 @@ def main(argv=None):
             require_clean()
         except ValueError as error:
             parser.error(str(error))
-        identity["sdk"] = {"root": str(sdk), "sha256": sdk_identity(sdk)}
+        identity["sdk"] = {"root": str(sdk), "sha256": timings.call("sdk_verification", sdk_identity, sdk)}
         is_browser = json.loads((sdk / "sdk.json").read_text(encoding="utf-8"))["target"]["system"] == "Emscripten"
         if is_browser != (backends == ["wasm"]):
             raise ValueError("prepared SDK target and selected GUI backend disagree")
@@ -232,7 +302,7 @@ def main(argv=None):
             configure += ["-DPython3_EXECUTABLE=" + programs["python"]]
         if args.action == "package":
             from sdk_manifest import verify_sdk
-            verify_sdk(sdk, release=True)
+            timings.call("sdk_verification", verify_sdk, sdk, release=True)
         configure += ["-DCMAKE_TOOLCHAIN_FILE=" + str(ROOT / "cmake/toolchains/sdk.cmake"),
                       "-DFOUNDATION_SDK_ROOT=" + str(sdk)]
     dependency_ids = []
@@ -254,9 +324,9 @@ def main(argv=None):
             recipe = match[1]
             if binary:
                 from dependency_store import verify_binary_group
-                hashes = verify_binary_group(group, recipe)
+                hashes = timings.call("dependency_verification", verify_binary_group, group, recipe)
             else:
-                hashes = verify_group(group, recipe)
+                hashes = timings.call("dependency_verification", verify_group, group, recipe)
             if recipe in dependency_ids:
                 raise ValueError("duplicate prepared group")
             dependency_ids.append(recipe)
@@ -274,7 +344,7 @@ def main(argv=None):
         metadata = read_json(dependencies / "sdk.json")
         if metadata.get("kind") != "windows-dependencies" or metadata.get("recipe_id") not in dependency_ids:
             raise ValueError("Windows dependency export needs its complete matching retained group")
-        verify_sdk(dependencies, release=True)
+        timings.call("sdk_verification", verify_sdk, dependencies, release=True)
         retained = next(item for item in identity["dependencies"] if item["recipe"] == metadata["recipe_id"])
         archived, _ = inspect_manifest_archive(Path(retained["root"]) / names(metadata["recipe_id"])[0], "sdk.json")
         if archived != metadata:
@@ -285,7 +355,7 @@ def main(argv=None):
                 provenance.get("library_linkage") != "static" or provenance.get("lto") is not False):
             raise ValueError("incompatible Windows dependency ABI contract")
         verify_windows_linker(metadata["external_toolchain"]["minimum_linker"])
-        verify_inventory(dependencies, metadata["files"], exclude=("sdk.json",))
+        timings.call("sdk_verification", verify_inventory, dependencies, metadata["files"], exclude=("sdk.json",))
         identity["windows_dependencies"] = {"root": str(dependencies), "sha256": hashlib.sha256((dependencies / "sdk.json").read_bytes()).hexdigest()}
         installed = dependencies / "prefix/installed/x64-windows-static"
         prefix = installed if installed.is_dir() else dependencies / "prefix"
@@ -307,6 +377,17 @@ def main(argv=None):
         gui = args.gui_source.resolve(strict=True)
         identity["gui"] = str(gui)
         configure += ["-DFOUNDATION_BUILD_GUI=ON", "-DFOUNDATION_GUI_SOURCE=" + str(gui)]
+    if args.wasm_package:
+        if backends == ["wasm"]:
+            parser.error("a prebuilt Wasm package can only be imported into a native build")
+        from import_wasm import verify_input
+        package = args.wasm_package.resolve(strict=True)
+        timings.call("source_verification", verify_input, package, args.wasm_package_sha256, ROOT)
+        identity["wasm_package"] = {"root": str(package), "sha256": args.wasm_package_sha256}
+        configure += ["-DFOUNDATION_WASM_PACKAGE=" + str(package),
+                      "-DFOUNDATION_WASM_PACKAGE_SHA256=" + args.wasm_package_sha256]
+    else:
+        configure += ["-DFOUNDATION_WASM_PACKAGE=", "-DFOUNDATION_WASM_PACKAGE_SHA256="]
     build.mkdir(parents=True, exist_ok=True)
     stamp = build / "wrapper-identity.json"
     if (build / "CMakeCache.txt").exists() and not stamp.exists():
@@ -314,29 +395,31 @@ def main(argv=None):
     if stamp.exists() and json.loads(stamp.read_text(encoding="utf-8")) != identity:
         raise ValueError("toolchain/configuration changed; use a fresh build tree or move the old one aside")
     cache_stamp = build / "configured-identity.json"
-    if cache_stamp.exists() and json.loads(cache_stamp.read_text(encoding="utf-8")) != cache_identity(build):
+    if cache_stamp.exists() and json.loads(cache_stamp.read_text(encoding="utf-8")) != timings.call("configuration_verification", cache_identity, build):
         raise ValueError("configured compiler/options changed outside this wrapper; use a fresh tree or CMake directly")
     # Failed configuration must not leave a tree silently reusable with another SDK.
     stamp.write_text(json.dumps(identity, indent=2) + "\n")
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from source_identity import source_tree
-    source_before = source_tree(ROOT, args.gui_source)
-    run(configure, env=child_environment)
-    cache_stamp.write_text(json.dumps(cache_identity(build), indent=2) + "\n")
+    source_before = timings.call("source_verification", source_tree, ROOT, args.gui_source)
+    timings.context["source_tree_sha256"] = source_before.get("tree_sha256")
+    timings.context["sdk_sha256"] = identity["sdk"]["sha256"] if identity["sdk"] else None
+    timings.call("configure", run, configure, env=child_environment)
+    cache_stamp.write_text(json.dumps(timings.call("configuration_verification", cache_identity, build), indent=2) + "\n")
     targets = ["all"]
     exact_selection = None
     if args.action == "test":
         if args.tests:
             from test_plan import named_selection
-            exact_selection = named_selection(build, args.tests, programs, child_environment)
+            exact_selection = timings.call("test_selection", named_selection, build, args.tests, programs, child_environment)
             targets = exact_selection["targets"]
         else:
             targets = ["foundation-tests" + ("-" + args.label if args.label else "")]
     if not args.configure_only and targets:
-        run([programs["cmake"], "--build", str(build), "--parallel", str(jobs), "--target", *targets], env=child_environment)
-    if exact_selection is not None and named_selection(build, args.tests, programs, child_environment) != exact_selection:
+        timings.call("compile", run, [programs["cmake"], "--build", str(build), "--parallel", str(jobs), "--target", *targets], env=child_environment)
+    if exact_selection is not None and timings.call("test_selection", named_selection, build, args.tests, programs, child_environment) != exact_selection:
         raise ValueError("named test inventory or prerequisites changed during compilation")
-    if source_tree(ROOT, args.gui_source) != source_before:
+    if timings.call("source_verification", source_tree, ROOT, args.gui_source) != source_before:
         raise ValueError("source changed during compilation; rebuild a stable candidate")
     if args.action == "test":
         command = [programs["ctest"], "--test-dir", str(build), "--output-on-failure",
@@ -352,9 +435,18 @@ def main(argv=None):
             command += ["-R", exact_selection["pattern"]]
         if args.stop_on_failure:
             command.append("--stop-on-failure")
-        run(command, env=child_environment)
+        if timings.destination is not None:
+            probe = [programs["ctest"], "--test-dir", str(build), "--show-only=json-v1"]
+            if args.label:
+                probe += ["-L", "^" + args.label + "$"]
+            if exact_selection is not None:
+                probe += ["-R", exact_selection["pattern"]]
+            # Discovery runs no tests and never substitutes for the real execution.
+            timings.call("test_startup_probe", subprocess.check_output, probe, cwd=ROOT,
+                         env=child_environment, timeout=60)
+        timings.call("test_execution", run, command, env=child_environment)
     elif args.action == "package":
-        run([programs["cpack"], "--config", str(build / "CPackConfig.cmake"), "-C", "Release"], env=child_environment)
+        timings.call("package", run, [programs["cpack"], "--config", str(build / "CPackConfig.cmake"), "-C", "Release"], env=child_environment)
         if args.verify_package:
             archives = sorted([*(build / "packages").glob("*.tar.gz"), *(build / "packages").glob("*.zip")])
             if not archives:
@@ -368,25 +460,27 @@ def main(argv=None):
                         verification = ["--sdk", str(args.sdk.resolve())]
                         if target["system"] != "Emscripten":
                             verification += ["--processor", target["processor"]]
-                    run([sys.executable, "-B", str(ROOT / "tools/artifact.py"), operation,
+                    timings.call("package_verification", run, [sys.executable, "-B", str(ROOT / "tools/artifact.py"), operation,
                          str(archive), "--manifest", str(manifest), *verification], env=child_environment)
     # A plain build already checked its terminal source above. Tests and
     # packaging execute additional writers and require a fresh final observation.
-    if args.action != "build" and source_tree(ROOT, args.gui_source) != source_before:
+    if args.action != "build" and timings.call("source_verification", source_tree, ROOT, args.gui_source) != source_before:
         raise ValueError("source changed during the operation; outputs are not qualification")
     if gui_group_identity:
-        verified = json.loads(subprocess.check_output(
+        verified = json.loads(timings.call("source_verification", subprocess.check_output,
             [sys.executable, "-B", str(helper), "verify", str(gui_group)], text=True, encoding="utf-8"))
         if verified["group_sha256"] != gui_group_identity["sha256"]:
             raise ValueError("GUI input group changed during execution; evidence is invalid")
-    if args.sdk and sdk_identity(args.sdk.resolve()) != identity["sdk"]["sha256"]:
+    if args.sdk and timings.call("sdk_verification", sdk_identity, args.sdk.resolve()) != identity["sdk"]["sha256"]:
         raise ValueError("prepared SDK changed during execution; evidence is invalid")
     if args.windows_dependencies:
-        verify_inventory(dependencies, metadata["files"], exclude=("sdk.json",))
+        timings.call("sdk_verification", verify_inventory, dependencies, metadata["files"], exclude=("sdk.json",))
         if hashlib.sha256((dependencies / "sdk.json").read_bytes()).hexdigest() != identity["windows_dependencies"]["sha256"]:
             raise ValueError("Windows dependency identity changed during execution")
-    if args.dependency_prefix and verify(prefix_root) != {key: value for key, value in identity["dependency_prefix"].items() if key != "root"}:
+    if args.dependency_prefix and timings.call("dependency_verification", verify, prefix_root) != {key: value for key, value in identity["dependency_prefix"].items() if key != "root"}:
         raise ValueError("native development prefix changed during execution")
+    if args.wasm_package:
+        timings.call("source_verification", verify_input, package, args.wasm_package_sha256, ROOT)
     return 0
 
 
