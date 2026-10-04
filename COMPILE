@@ -1,6 +1,10 @@
 Software Foundation — command reference
 
-Native prerequisites: CMake >=3.24, Ninja, C++20 compiler, Python >=3.9.
+Build and open a desktop window: COMPILE-gui.
+Build and open the browser GUI: COMPILE-web.
+View or regenerate screenshots: SCREENSHOTS and docs/screenshots.md.
+
+Native prerequisites: Git, CMake >=3.24, Ninja, C++20 compiler, Python >=3.9.
 No configuration or normal build downloads or installs software.
 Compile concurrency adapts to available CPU/RAM; --build-jobs overrides it.
 Test concurrency is independently bounded with --test-jobs.

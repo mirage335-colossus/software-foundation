@@ -1,0 +1,7 @@
+Initial application view for seven actual backends.
+Source: b925598f3e57b034c83ac441c929ce900b283a53
+Run: 36977734580; attempt: 1
+Native: X11, 96 DPI, 640x480 client pixels, scale 1. Browser: 640x480 viewport.
+Terminal: 80x31 cells; status row and border retained. No content edits or image resampling.
+See screenshots.json for exact source, SDK inputs, binaries, runtime and image digests.
+These images do not establish release qualification or permission to redistribute dependencies.

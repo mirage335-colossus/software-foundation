@@ -1,5 +1,9 @@
 # Building and installing
 
+To build and open an example, start with [COMPILE-gui](../COMPILE-gui) for a
+desktop window or [COMPILE-web](../COMPILE-web) for a browser. [COMPILE](../COMPILE)
+retains the general command reference; this page explains the build options.
+
 The maintained entry point is `build.sh`, a small shell launcher for
 `tools/build.py`. CMake owns the dependency graph, compilation, installation,
 and packaging. The wrapper provides predictable defaults and validation; it

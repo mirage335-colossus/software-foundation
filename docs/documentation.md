@@ -1,9 +1,10 @@
 # Documentation requirements
 
 The README answers what the repository provides, how to run the smallest example,
-where to start changing it and what is actually supported. `COMPILE` and `RELEASE`
-are short command references. `docs/README.md` routes readers to one maintained
-home per topic. Keep relative links valid both in a checkout and wherever the
+where to start changing it and what is actually supported. `COMPILE`, `COMPILE-gui`,
+`COMPILE-web`, `SCREENSHOTS` and `RELEASE` are short command references.
+`docs/README.md` routes readers to one maintained home per topic.
+Keep relative links valid both in a checkout and wherever the
 document subset is distributed; an installed README may require the matching
 source bundle for source-relative links.
 

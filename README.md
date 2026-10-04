@@ -17,7 +17,7 @@ see [development speed](docs/development-speed.md).
 
 ## Run the example
 
-Requires CMake 3.24+, Ninja, a C++20 compiler, and Python 3.9+ for tooling/tests.
+Requires Git, CMake 3.24+, Ninja, a C++20 compiler, and Python 3.9+ for tooling/tests.
 On Windows, use a developer command prompt with MSVC and run the Python entry
 point shown below. Configuring the project never downloads dependencies.
 
@@ -38,6 +38,33 @@ The library installs as CMake package `Foundation`, target `foundation::core`.
 [The external consumer](examples/consumer/CMakeLists.txt) demonstrates finding it
 after installation. [COMPILE](COMPILE) is the short command reference;
 [building](docs/building.md) explains configuration, concurrency and SDK use.
+
+## Run the GUI
+
+On a Linux desktop, install the native build prerequisites above plus
+the FLTK development package (`libfltk1.3-dev` on Debian 12). From the repository
+root, build and open the application:
+
+```sh
+./build.sh build dev --gui --gui-backends fltk --build-dir build/demo-fltk
+./build/demo-fltk/gui/foundation-gui-fltk
+```
+
+The **Entry list** window starts empty. Type text in **New entry**, select
+**Add entry**, then try **Count text**. Close the window to exit. Entries are
+held in memory; **Actions → Export entries** saves them to a file.
+
+[COMPILE-gui](COMPILE-gui) includes prerequisites and an SDL alternative.
+[COMPILE-web](COMPILE-web) builds and launches the browser version using only
+the native build prerequisites and a browser; it also documents the optional
+prepared-SDK Wasm route. Each recipe uses a separate build directory and the
+GUI sources already retained in this checkout.
+
+![Historical FLTK capture of the Entry list application](docs/screenshots/fltk.png)
+
+This historical snapshot comes from the published screenshot gallery.
+[View all seven backends and the capture provenance](docs/screenshots.md#view-screenshots).
+[SCREENSHOTS](SCREENSHOTS) points to the existing capture job and refresh instructions.
 
 ## What is executable here
 

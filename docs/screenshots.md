@@ -1,5 +1,106 @@
 # Initial application screenshots
 
+## View screenshots
+
+**Historical source snapshot — 2026-10-02.** These seven fresh initial views
+come from source commit
+[`b925598f3e57b034c83ac441c929ce900b283a53`](https://github.com/mirage335-colossus/software-foundation/commit/b925598f3e57b034c83ac441c929ce900b283a53),
+the [published screenshot release](https://github.com/mirage335-colossus/software-foundation/releases/tag/screenshots-36977734580-attempt-1)
+and [capture run 36977734580, attempt 1](https://github.com/mirage335-colossus/software-foundation/actions/runs/36977734580/attempts/1).
+The date is the source commit date. This is a historical view of that source,
+not a claim that the images show the current revision.
+
+The checked-in PNGs and original provenance files total about 100 KB and can be
+viewed offline in a Markdown viewer. Read [BUILD.txt](screenshots/BUILD.txt) for
+the capture summary, [screenshots.json](screenshots/screenshots.json) for exact
+source, SDK, runtime, binary and image identities, and
+[SHA256SUMS](screenshots/SHA256SUMS) for the original checksums. The
+[public delivery evidence](validation.md#current-public-delivery-evidence-2026-10-03)
+records the publication and independent readback. These images document appearance;
+functional release qualification remains separate.
+
+### FLTK
+
+![Fresh FLTK Entry list application with an empty entry field, action buttons and no entries.](screenshots/fltk.png)
+
+FLTK native window: 640 by 480 client pixels, 96 DPI, scale one.
+
+### Rev
+
+![Fresh Rev Entry list application with an empty entry field, action buttons and no entries.](screenshots/rev.png)
+
+Rev native window: 640 by 480 client pixels, 96 DPI, scale one.
+
+### SDL
+
+![Fresh SDL Entry list application with an empty entry field, action buttons and no entries.](screenshots/sdl.png)
+
+SDL native window: 640 by 480 client pixels, 96 DPI, scale one.
+
+### Terminal
+
+![Fresh Entry list application in xterm, showing its empty list, controls, status row and terminal border.](screenshots/terminal.png)
+
+Terminal in xterm: 80 by 31 cells, captured at 644 by 531 pixels with the status
+row and border retained.
+
+### Framebuffer
+
+![Fresh framebuffer Entry list application with an empty entry field, action buttons and no entries.](screenshots/framebuffer.png)
+
+Application framebuffer: 640 by 480 pixels, scale one.
+
+### Hosted browser
+
+![Fresh hosted browser Entry list application with an empty entry field, action buttons and no entries.](screenshots/hosted-web.png)
+
+Hosted browser transport: 640 by 480 viewport pixels, scale one.
+
+### Browser Wasm
+
+![Fresh browser Wasm Entry list application with an empty entry field, action buttons and no entries.](screenshots/wasm.png)
+
+Browser Wasm transport: 640 by 480 viewport pixels, scale one. The two browser
+captures have matching initial geometry and identical PNG bytes; the original
+manifest records their separate actual capture modes.
+
+## Regenerate or refresh the checked-in gallery
+
+Use the existing [screenshot workflow](../.github/workflows/screenshots.yml) on
+the desired source revision with exact prepared SDK recipes and a reviewed GUI
+input selector. [SCREENSHOTS](../SCREENSHOTS) is a short command reference;
+the capture inputs and prerequisites are described below. `execute=false`
+captures and retains private draft release assets. `execute=true` additionally
+publishes a new immutable screenshot prerelease through the protected publisher.
+
+To download this exact public snapshot from the repository root, use a fresh
+temporary directory and the existing verifier:
+
+```sh
+gallery_tag=screenshots-36977734580-attempt-1
+gallery_download="$(mktemp -d)"
+gh release download "$gallery_tag" \
+  --repo mirage335-colossus/software-foundation --dir "$gallery_download"
+python3 -B tools/screenshots.py verify "$gallery_download"
+```
+
+For a refresh, select the new exact `screenshots-` tag, confirm the downloaded
+manifest's source commit, run and attempt against that release and capture run,
+and inspect all seven views. After verification succeeds, copy the complete
+inventory without editing or mixing its original provenance:
+
+```sh
+cp "$gallery_download/"*.png "$gallery_download/BUILD.txt" \
+  "$gallery_download/screenshots.json" "$gallery_download/SHA256SUMS" docs/screenshots/
+python3 -B tools/screenshots.py verify docs/screenshots
+```
+
+Update the historical source date, source commit and release/run links above in
+the same change. Keep exactly the seven PNGs and three original companion files
+in `docs/screenshots/`; the verifier rejects extra files and altered bytes.
+
+## Capture inputs and behavior
+
 The [screenshot workflow](../.github/workflows/screenshots.yml) builds this
 application and captures seven actual surfaces: FLTK, Rev, the SDL window,
 the terminal in xterm, the framebuffer, hosted browser rendering and browser

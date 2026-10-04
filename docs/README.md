@@ -6,6 +6,7 @@ what was observed. A proposed platform or procedure is not execution evidence.
 
 | Topic | Start here |
 | --- | --- |
+| Build and run an example | [CLI commands](../COMPILE), [desktop GUI](../COMPILE-gui), [browser GUI](../COMPILE-web), [view screenshots](screenshots.md#view-screenshots), [capture commands](../SCREENSHOTS) |
 | Scope and specification | [Engineering contract](engineering-contract.md), [requirements](requirements.md), [practice map](practice-map.json), [architecture and directory map](architecture.md) |
 | Build and SDK | [Building](building.md), [offline application builds](offline-builds.md), [SDK](sdk.md), [portability](portability.md), [COMPILE](../COMPILE) |
 | Verification speed and coverage | [Development speed](development-speed.md), [testing](testing.md), [CI](ci.md), [legacy archive preservation](legacy-artifacts.md), [validation](validation.md) |

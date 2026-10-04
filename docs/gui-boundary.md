@@ -1,5 +1,9 @@
 # GUI ownership and integration
 
+To try the application, use [the desktop build-and-launch commands](../COMPILE-gui)
+or [the browser commands](../COMPILE-web). [View screenshots](screenshots.md#view-screenshots)
+for all seven hosts. This guide explains their shared contracts and integration.
+
 Application features have one implementation. Shared code owns state, commands,
 labels, availability, rows, menus, layout and service intent. Adapters interpret
 public declarations and return public input. A renderer understands a button;
