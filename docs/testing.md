@@ -92,7 +92,12 @@ A Wasm or foreign-target tree does not claim Rust unit execution by omitting
 that test. Its C++ contract tests still require the declared target executor.
 The installed-consumer check must relocate the package and consume
 `foundation::core` with Rust tools absent, carrying the installed archive's
-transitive native requirements. Check default Rust selection and clear failure
+transitive native requirements. The consumer calls the linked provider marker
+and requires it to match the installed `Foundation_CORE_PROVIDER` export before
+exercising the C++ Store API. This verifies actual Rust execution and mixed
+C++/Rust linkage for Rust packages; explicit C++ packages require the C++ marker.
+Historical exports without provider metadata retain their original consumer
+check. Unknown declared providers fail configuration. Check default Rust selection and clear failure
 when its required tools/extension are absent. Also check an explicitly selected
 legacy C++ build with Rust tools
 and caches absent; its configuration must make zero Rust discovery or acquisition

@@ -1,6 +1,9 @@
 import importlib.util
 import io
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -9,6 +12,110 @@ import zipfile
 spec = importlib.util.spec_from_file_location("artifact", Path(__file__).resolve().parents[1] / "tools/artifact.py")
 artifact = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(artifact)
+
+
+class InstalledProviderConsumerTests(unittest.TestCase):
+    """A relocated static export must match its executing provider, not its label."""
+
+    def setUp(self):
+        tools = str(Path(artifact.__file__).resolve().parent)
+        if tools not in sys.path:
+            sys.path.insert(0, tools)
+
+    def fixture(self, root, actual_provider):
+        source = Path(artifact.__file__).resolve().parents[1]
+        import windows_compiler
+        producer = root / "producer"
+        producer.mkdir()
+        provider = '#include "text_validation.h"\n'
+        provider += 'namespace foundation::detail { uint32_t validate_text(const uint8_t*, size_t) noexcept { return 0; } }\n'
+        if actual_provider is not None:
+            provider += 'extern "C" uint32_t foundation_text_provider_v1() noexcept { return ' + str(actual_provider) + '; }\n'
+        (producer / "provider.cpp").write_text(provider)
+        (producer / "version.hpp").write_text('#pragma once\n#define FOUNDATION_VERSION "0.1.0"\n')
+        (producer / "FoundationConfig.cmake.in").write_text('''
+add_library(foundation::core STATIC IMPORTED)
+set_target_properties(foundation::core PROPERTIES
+  IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/../../../lib/@CMAKE_STATIC_LIBRARY_PREFIX@foundation_fixture@CMAKE_STATIC_LIBRARY_SUFFIX@"
+  INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/../../../include"
+  INTERFACE_COMPILE_FEATURES cxx_std_20)
+function(foundation_apply_runtime target)
+endfunction()
+''')
+        (producer / "FoundationConfigVersion.cmake").write_text(
+            'set(PACKAGE_VERSION "0.1.0")\nset(PACKAGE_VERSION_COMPATIBLE TRUE)\n')
+        (producer / "CMakeLists.txt").write_text('''
+cmake_minimum_required(VERSION 3.24)
+project(FoundationProviderFixture LANGUAGES CXX)
+add_library(foundation_fixture STATIC "''' + (source / 'src/store.cpp').as_posix() + '''" provider.cpp)
+target_compile_features(foundation_fixture PRIVATE cxx_std_20)
+target_include_directories(foundation_fixture PRIVATE "''' + (source / 'include').as_posix() + '''" "''' + (source / 'src').as_posix() + '''")
+configure_file(FoundationConfig.cmake.in FoundationConfig.cmake @ONLY)
+install(TARGETS foundation_fixture ARCHIVE DESTINATION lib)
+install(DIRECTORY "''' + (source / 'include/foundation').as_posix() + '''" DESTINATION include)
+install(FILES version.hpp DESTINATION include/foundation)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/FoundationConfig.cmake" FoundationConfigVersion.cmake DESTINATION lib/cmake/Foundation)
+''')
+        original = root / "original prefix"
+        build = root / "producer build"
+        windows_compiler.run(['cmake', '-S', str(producer), '-B', str(build), '-G', 'Ninja',
+                              '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_INSTALL_PREFIX=' + str(original)], cwd=root)
+        windows_compiler.run(['cmake', '--build', str(build), '--target', 'install', '--parallel', '2'], cwd=root)
+        relocated = root / "relocated prefix"
+        original.rename(relocated)
+        return relocated
+
+    def configure(self, root, prefix, declared_provider, label):
+        import windows_compiler
+        config = prefix / "lib/cmake/Foundation/FoundationConfig.cmake"
+        text = config.read_text()
+        text = '\n'.join(line for line in text.splitlines() if not line.startswith('set(Foundation_CORE_PROVIDER ')) + '\n'
+        if declared_provider is not None:
+            text += 'set(Foundation_CORE_PROVIDER "' + declared_provider + '")\n'
+        config.write_text(text)
+        build = root / ("consumer " + label)
+        source = Path(artifact.__file__).resolve().parents[1] / "examples/consumer"
+        windows_compiler.run(['cmake', '-S', str(source), '-B', str(build), '-G', 'Ninja',
+                              '-DCMAKE_BUILD_TYPE=Release', '-DFoundation_DIR=' + str(config.parent)], cwd=root)
+        return build
+
+    def execute(self, root, build):
+        import windows_compiler
+        windows_compiler.run(['cmake', '--build', str(build), '--parallel', '2'], cwd=root)
+        executable = build / ('consumer.exe' if os.name == 'nt' else 'consumer')
+        return subprocess.run([str(executable)], cwd=root, capture_output=True, text=True).returncode
+
+    def test_relocated_export_executes_actual_provider_and_rejects_mislabelling(self):
+        import windows_compiler
+        for actual in (0, 1):
+            with self.subTest(actual=actual), windows_compiler.workspace(prefix="foundation provider fixture ") as directory:
+                root = Path(directory)
+                prefix = self.fixture(root, actual)
+                for declared, expected in (("cpp", 0), ("rust", 1)):
+                    with self.subTest(declared=declared):
+                        build = self.configure(root, prefix, declared, declared)
+                        self.assertEqual(self.execute(root, build), 0 if actual == expected else 1)
+
+    def test_historical_export_does_not_require_missing_provider_symbol(self):
+        import windows_compiler
+        with windows_compiler.workspace(prefix="foundation historical provider fixture ") as directory:
+            root = Path(directory)
+            prefix = self.fixture(root, None)
+            build = self.configure(root, prefix, None, "historical")
+            self.assertEqual(self.execute(root, build), 0)
+            # A modern declaration cannot silently use an unidentified library.
+            build = self.configure(root, prefix, "rust", "unidentified")
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.execute(root, build)
+
+    def test_new_export_rejects_unsupported_or_empty_provider(self):
+        import windows_compiler
+        with windows_compiler.workspace(prefix="foundation unsupported provider fixture ") as directory:
+            root = Path(directory)
+            prefix = self.fixture(root, 0)
+            for provider in ("automatic", ""):
+                with self.subTest(provider=provider), self.assertRaises(subprocess.CalledProcessError):
+                    self.configure(root, prefix, provider, "unsupported" + (provider or "empty"))
 
 
 class ArtifactTests(unittest.TestCase):
