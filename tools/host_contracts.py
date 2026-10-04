@@ -13,11 +13,13 @@ import time
 
 import process_tree
 import run_tests
+import source_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {'windows-x86_64': ('Windows', 'x64'), 'linux-x86_64': ('Linux', 'x64'),
            'linux-aarch64': ('Linux', 'arm64')}
-SUITES = ('process_tree', 'windows_graphics', 'ci_plan', 'github_release', 'ci_transport', 'windows_hosts')
+BUILD_SUITES = ('test_plan', 'ci_retry', 'package_wasm', 'import_wasm')
+SUITES = ('process_tree', 'windows_graphics', 'ci_plan', 'github_release', 'ci_transport', 'windows_hosts') + BUILD_SUITES
 INTERPRETERS = ('runner-default', '3.12', '3.14')
 REPETITIONS = (1, 5, 20)
 CASE_SECONDS = 120
@@ -134,6 +136,10 @@ def repetition(executable, suite, folder, timeout, environment):
 def source_files(suite, target):
     """Name every maintained input consumed by the optional native host probes."""
     _, case_file = run_tests.suite_source(suite, TARGETS[target][0])
+    if suite in BUILD_SUITES:
+        # These fixtures configure, package or hash source trees. Bind their complete
+        # maintained input inventory without adding a GUI build to the diagnostic.
+        return sorted(source_identity.snapshot_paths(ROOT))
     paths = ['tools/host_contracts.py', 'tools/run_tests.py', 'tools/process_tree.py',
              case_file.relative_to(ROOT).as_posix()]
     if suite == 'windows_hosts':
@@ -184,7 +190,7 @@ def execute(target, suite, selection, count, output, environ=None):
             run_tests.publish(destination, report)
         if digest(executable) != report['runtime']['sha256']:
             raise ValueError('interpreter changed during diagnostics')
-        if any(digest(ROOT / name) != value for name, value in report['source_files'].items()):
+        if {name: digest(ROOT / name) for name in source_files(suite, target)} != report['source_files']:
             raise ValueError('diagnostic source changed during execution')
         report['status'] = 'passed' if all(row['status'] == 'passed' for row in report['repetitions']) else 'failed'
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, process_tree.ProcessTreeError) as error:

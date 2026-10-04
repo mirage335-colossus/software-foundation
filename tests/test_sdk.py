@@ -876,7 +876,9 @@ class NativeLinuxToolchainTests(unittest.TestCase):
                     'add_executable(x main.cpp)\nfoundation_sdk_runtime(x)\n' + common.format(target='x') +
                     ('foundation_link_static_gnu_runtime(x PRIVATE)\n' if portable else '') +
                     'install(TARGETS x RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Runtime)\n'
-                    'add_subdirectory(gui)\nfoundation_install_sdk_runtime()\n')
+                    'add_subdirectory(gui)\nfoundation_install_sdk_runtime()\n' +
+                    ('install(FILES "' + str(library) + '" DESTINATION lib/runtime COMPONENT Runtime)\n' if portable else '') +
+                    'set(CPACK_GENERATOR TGZ)\nset(CPACK_PACKAGE_FILE_NAME runtime-probe)\ninclude(CPack)\n')
                 build = root / 'build'
                 def run(*command, **kwargs):
                     result = subprocess.run(list(map(str, command)), capture_output=True, text=True, **kwargs)
@@ -909,9 +911,19 @@ class NativeLinuxToolchainTests(unittest.TestCase):
                     expected = ['$ORIGIN/../lib/runtime'] if portable else []
                     self.assertEqual(inspect(installed / 'custom-bin' / name)['rpath'], expected)
                 if portable:
-                    from stage_runtime import stage
-                    stage([installed / 'custom-bin/gui_probe'], [library.parent], installed / 'lib/runtime', processor)
+                    self.assertEqual(digest(installed / 'lib/runtime/libfixture.so.1'), digest(library))
                 self.assertEqual(audit(installed, processor)['status'], 'passed')
+                # CPack invokes installation itself; its archive must contain the
+                # final installed policy, never the private build lookup path.
+                run('cmake', '--build', build, '--target', 'package')
+                unpacked = root / 'package'; unpacked.mkdir()
+                run('cmake', '-E', 'tar', 'xzf', build / 'runtime-probe.tar.gz', cwd=unpacked)
+                packaged = unpacked / 'runtime-probe'
+                self.assertEqual(audit(packaged, processor)['status'], 'passed')
+                for name in ('x', 'gui_probe'):
+                    expected = ['$ORIGIN/../lib/runtime'] if portable else []
+                    self.assertEqual(inspect(packaged / 'custom-bin' / name)['rpath'], expected)
+                self.assertEqual(before, {p: (digest(p), p.stat().st_mtime_ns) for p in outputs})
                 cmake_file = source / 'CMakeLists.txt'
                 clean_source = cmake_file.read_text()
                 cmake_file.write_text(clean_source.replace('foundation_install_sdk_runtime()',
@@ -931,7 +943,9 @@ class NativeLinuxToolchainTests(unittest.TestCase):
                 run('cmake', '-S', source, '-B', build)
                 run('cmake', '--install', build, '--prefix', prefix, '--component', 'Runtime', env=environment)
                 sdk_root.rename(root / 'hidden-sdk'); build.rename(root / 'hidden-build')
-                for name in ('x', 'gui_probe'): run(installed / 'custom-bin' / name)
+                for name in ('x', 'gui_probe'):
+                    run(installed / 'custom-bin' / name)
+                    run(packaged / 'custom-bin' / name)
                 # The path length restriction is explicit, never truncation.
                 sdk_root = root / 'hidden-sdk'
                 cmake_file = source / 'CMakeLists.txt'

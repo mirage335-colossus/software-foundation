@@ -71,8 +71,9 @@ class RetryTests(unittest.TestCase):
     def artifact(self, *, attempt=2, role='check', slot='evidence-00', change=None, files=None):
         name = ('evidence-' + self.batch if role == 'check' else 'qualification-inputs' if role == 'prepare' else 'certificate') + '-' + str(attempt)
         source = self.root / ('source-' + str(len(self.rows))); source.mkdir()
-        for path, text in (files or {'evidence/result.json': '{"status":"passed"}\n'}).items():
-            target = source / path; target.parent.mkdir(parents=True, exist_ok=True); target.write_text(text)
+        for path, content in (files or {'evidence/result.json': b'{"status":"passed"}\n'}).items():
+            target = source / path; target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content if isinstance(content, bytes) else content.encode('utf-8'))
         selected = dict(self.context, attempt=attempt)
         prepared = artifacts.prepare(**selected, name=name, root=source, paths=list(files or {'evidence': ''}),
             output=self.root / ('stage-' + str(len(self.rows))), slot=int(slot[-2:]) if slot.startswith('evidence-') else None,
@@ -248,7 +249,8 @@ class RetryTests(unittest.TestCase):
         original = self.root / 'original'; current = self.root / 'current'
         coverage.run_case(plan, 'earlier', self.root, original / 'evidence/earlier', '123', 2)
         coverage.run_case(plan, 'current', self.root, current / 'evidence/current', '123', 3)
-        files = {path.relative_to(original).as_posix(): path.read_text() for path in original.rglob('*') if path.is_file()}
+        # These are retained evidence bytes, including their original newline encoding.
+        files = {path.relative_to(original).as_posix(): path.read_bytes() for path in original.rglob('*') if path.is_file()}
         self.artifact(files=files)
         other = 'batch-linux-source-abcdef012345'
         prepared = artifacts.prepare(**self.context, name='evidence-' + other + '-3', root=current,

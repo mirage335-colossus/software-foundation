@@ -69,13 +69,34 @@ replace that padding without weakening the audit or rewriting warm build outputs
 The 98 affected SDK/runtime/portability cases passed; real generator fixtures
 passed CMake 3.31.6 and retained 4.4.0, including relocation, components, repeated
 installation and untouched no-op outputs. Windows compiled all application and
-GUI-test targets and passed all six installed hosts, native visual and clipboard
+GUI-test targets and passed all six native hosts, native visual and clipboard
 checks, then failed 13 regression suites. Repairs cover canonical Wasm checksum
 bytes, binary/LF/CRLF fixtures, portable declaration keys, declared/physical path
 normalization, exact source-payload expectations and native junction rejection.
 The latter exercises actual reparse protection rather than skipping Windows.
 Independent review added prefix-sibling and caller-preserved alias regressions.
 These changes preserve application/backend insulation and SDK recipe identities.
+
+Qualification of `65a71a0cbe2fcf6ee3c8b65b1f4bb24b212913c2` passed all
+51 native GUI cases on each Linux architecture and all 45 on Windows. The Linux
+runs passed 101/103 CTests but exposed CMake 3.25's manual `$ORIGIN` escaping in
+the two runtime fixture suites; the main SDK application build used CMake 4.4 and
+passed its strict runtime audit. The repair delegates encoding to CMake's managed
+RPATH property while preserving the caller's separate installed policy. All 98
+affected cases passed with privately extracted Bookworm CMake 3.25. Real build,
+install and CPack fixtures passed 3.25, 3.31 and 4.4, including execution after
+removing SDK/build access and unchanged warm-build hashes/timestamps. No SDK
+recipe, runtime auditor or application/backend contract changed.
+
+The Windows run passed 87/91 CTests. Three remaining fixture failures now retain
+exact checksum/evidence bytes and accept CMake diagnostics from either output
+stream. The fourth, independent-build configuration identity, remains under
+investigation: a bounded structural diagnostic reports the actual digest inputs
+without weakening equality. Optional host diagnostics now select any of these
+four complete tooling suites with the installed native compiler, binding the full
+maintained source inventory. They require no repeated GUI build and cannot qualify
+a release. The focused diagnostic helper suite passed after an independent review
+added detection of newly introduced source inputs. Native reruns remain necessary.
 
 The [implementation feedback run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171429379)
 passed all four jobs. The [GUI maintenance run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171470282)

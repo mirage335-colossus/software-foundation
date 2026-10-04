@@ -12,7 +12,7 @@ run-name: Host ${{ inputs.target }} / Python ${{ inputs.interpreter }} / ${{ inp
         description: Complete registered suite or opt-in Windows host probes
         type: choice
         default: process_tree
-        options: [process_tree, windows_graphics, ci_plan, github_release, ci_transport, windows_hosts]
+        options: [process_tree, windows_graphics, ci_plan, github_release, ci_transport, windows_hosts, test_plan, ci_retry, package_wasm, import_wasm]
       interpreter:
         description: Already installed Python; explicit versions require the runner cache
         type: choice
@@ -41,7 +41,7 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
-    - if: inputs.target == 'windows-x86_64' && inputs.suite == 'windows_hosts'
+    - if: inputs.target == 'windows-x86_64' && contains(fromJSON('["windows_hosts", "test_plan", "ci_retry", "package_wasm", "import_wasm"]'), inputs.suite)
       name: Select the installed native compiler for host probes
       shell: pwsh
       run: ./tools/ci_windows.ps1 -Output build/host-contracts-toolchain.json

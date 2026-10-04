@@ -35,12 +35,12 @@ function(foundation_sdk_runtime target)
     message(FATAL_ERROR "SDK runtime already registered: ${target}")
   endif()
   set_property(TARGET "${target}" PROPERTY FOUNDATION_SDK_RUNTIME TRUE)
-  # Supply the exact path at link time. CMake's editable build RPATH adds
-  # trailing ':' padding for installation, which searches the working directory.
-  # Installed copies are changed explicitly below; build/no-relink outputs never
-  # need a binary rewrite. DT_RPATH is inherited by indirect private dependencies.
-  target_link_options(${target} PRIVATE "LINKER:--disable-new-dtags"
-    "LINKER:-rpath,$ORIGIN/.sdk-runtime/${target}")
+  # Build with CMake's install-RPATH encoder to avoid editable build-RPATH
+  # padding and older Ninja generators' manual LINKER:$ORIGIN escaping bug.
+  # Finalization below preserves the caller's installed policy before selecting
+  # the exact private build path. Only installed copies need a path rewrite.
+  # DT_RPATH is inherited by indirect private dependencies.
+  target_link_options(${target} PRIVATE "LINKER:--disable-new-dtags")
   set_target_properties(${target} PROPERTIES SKIP_BUILD_RPATH TRUE
     BUILD_WITH_INSTALL_RPATH TRUE)
   set_property(GLOBAL APPEND PROPERTY FOUNDATION_SDK_ALL_RUNTIME_TARGETS "${target}")
@@ -93,7 +93,7 @@ function(_foundation_finalize_sdk_runtime)
       endif()
     endforeach()
     set_target_properties(${target} PROPERTIES FOUNDATION_SDK_INSTALL_RPATH "${install_rpath}"
-      INSTALL_RPATH "")
+      INSTALL_RPATH "$ORIGIN/.sdk-runtime/${target}" INSTALL_RPATH_USE_LINK_PATH FALSE)
     # Components do not create a dependency under CMP0112 NEW (CMake >=3.24).
     # TARGET_FILE here would create a target/guard dependency cycle.
     add_custom_target("foundation-sdk-runtime-${target}"

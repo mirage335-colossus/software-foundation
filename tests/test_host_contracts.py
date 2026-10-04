@@ -322,6 +322,32 @@ class HostContracts(unittest.TestCase):
             'third_party/sdk/windows-toolchain.json', '.github/workflows/host-contracts.yml'})
         self.assertTrue(all((ROOT / path).is_file() for path in paths))
 
+    def test_new_source_input_during_diagnostic_invalidates_inventory(self):
+        executable = Path(sys.executable).resolve()
+        with mock.patch.object(HOST, 'interpreter', return_value=executable), \
+             mock.patch.object(HOST, 'inspect_runtime', return_value={'sha256': HOST.digest(executable)}), \
+             mock.patch.object(HOST, 'repetition', return_value={'status': 'passed'}), \
+             mock.patch.object(HOST, 'source_files', side_effect=[['tools/host_contracts.py'],
+                 ['tools/host_contracts.py', 'tools/source_identity.py']]):
+            result = HOST.execute(self.target, 'test_plan', 'runner-default', 1, self.root / 'evidence', {})
+        self.assertEqual(result['status'], 'failed')
+        self.assertIn('source changed', result['error'])
+        self.assertTrue(result['writers_stopped'])
+
+    def test_build_diagnostics_select_complete_suites_and_bind_source_inputs(self):
+        maintained = set(HOST.source_identity.snapshot_paths(ROOT))
+        for suite in ('test_plan', 'ci_retry', 'package_wasm', 'import_wasm'):
+            with self.subTest(suite=suite):
+                self.assertIn(suite, HOST.SUITES)
+                _, case = HOST.run_tests.suite_source(suite, 'Windows')
+                self.assertEqual(case, ROOT / ('tests/test_' + suite + '.py'))
+                paths = HOST.source_files(suite, 'windows-x86_64')
+                self.assertEqual(len(paths), len(set(paths)))
+                self.assertEqual(set(paths), maintained)
+                self.assertIn('tools/' + suite + '.py', paths)
+                self.assertIn('CMakeLists.txt', paths)
+                self.assertIn('.github/workflows/host-contracts.yml', paths)
+
     def test_arbitrary_commands_counts_and_reused_output_are_rejected(self):
         for target, suite, interpreter, count in ((self.target, '../run', '3.12', 1),
                 (self.target, 'process_tree', '/tmp/python', 1), ('other', 'process_tree', '3.12', 1),

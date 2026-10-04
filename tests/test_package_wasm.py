@@ -111,9 +111,9 @@ class PackageWasmTests(unittest.TestCase):
                 manifest = json.loads(path.read_text())
                 name = 'LICENSE' if key == 'notices' else 'wasm_worker.mjs'
                 manifest[key][name] = '0' * 64
-                path.write_text(json.dumps(manifest))
-                (self.output / 'manifest.sha256').write_text(''.join(package_wasm.digest((self.output / name).read_bytes()) + '  ' + name + '\n'
-                    for name in sorted((package_wasm.HTML_NAME, 'web-manifest.json'))))
+                path.write_bytes(json.dumps(manifest).encode('utf-8'))
+                (self.output / 'manifest.sha256').write_bytes(''.join(package_wasm.digest((self.output / name).read_bytes()) + '  ' + name + '\n'
+                    for name in sorted((package_wasm.HTML_NAME, 'web-manifest.json'))).encode('utf-8'))
                 with self.assertRaisesRegex(ValueError, 'digest mismatch'):
                     package_wasm.verify(self.output)
 

@@ -521,6 +521,31 @@ class CandidateInventoryTests(unittest.TestCase):
                 twin_tools=root/'independent-tools.json'
                 plan.candidate_run(twin,'tools',twin_tools)
                 self.assertFalse((twin/'probe').exists() or (twin/'probe.exe').exists())
+                # Capture the complete identity at its actual digest boundary.
+                # Host failures must explain the differing input without dropping
+                # cache fields or weakening the independently built scope merge.
+                identities=[]; real_digest=plan.digest
+                def observe_identity(value):
+                    if isinstance(value,dict) and {'inputs','build_info','tests','declarations'} <= value.keys():
+                        identities.append(copy.deepcopy(value))
+                    return real_digest(value)
+                with patch.object(plan,'digest',side_effect=observe_identity):
+                    plan.candidate_plan(build);plan.candidate_plan(twin)
+                self.assertEqual(len(identities),2)
+                differences=[]
+                def compare(left,right,path='configuration'):
+                    if left==right or len(differences)>=12:return
+                    if isinstance(left,dict) and isinstance(right,dict) and left.keys()==right.keys():
+                        for key in sorted(left):compare(left[key],right[key],path+'.'+str(key))
+                    elif isinstance(left,list) and isinstance(right,list) and len(left)==len(right):
+                        for index,(a,b) in enumerate(zip(left,right)):compare(a,b,path+'['+str(index)+']')
+                    else:
+                        a,b=repr(left),repr(right)
+                        first=next((i for i,(x,y) in enumerate(zip(a,b)) if x!=y),min(len(a),len(b)))
+                        begin=max(0,first-120);end=first+240
+                        differences.append(path+' at offset '+str(first)+':\nfirst: '+a[begin:end]+'\ntwin: '+b[begin:end])
+                compare(*identities)
+                if differences:self.fail('Independent build configuration differs:\n'+'\n'.join(differences))
                 self.assertEqual(plan.candidate_merge([paths[0],twin_tools,paths[2]])['plan'],merged['plan'])
                 self.assertEqual(merged['mode'],'candidate');self.assertEqual(merged['plan']['platform_exclusions'],frozen['platform_exclusions'])
                 for changed in (paths[:2],paths+paths[:1]):

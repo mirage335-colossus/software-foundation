@@ -75,7 +75,7 @@ class ImportWasmTests(unittest.TestCase):
                         ('cmake', '--install', str(build), '--prefix', str(self.root/'rejected'))):
             rejected = run(*command)
             self.assertNotEqual(rejected.returncode, 0)
-            self.assertIn('source identities differ', rejected.stderr)
+            self.assertIn('source identities differ', rejected.stdout + rejected.stderr)
         self.assertFalse((self.root/'rejected').exists())
 
     @unittest.skipIf(os.name == "nt", "Unix compiler Win32 declaration fixture; actual Windows GUI link covered by native build")
