@@ -54,19 +54,42 @@ with windows_compiler.workspace(prefix="foundation install ") as directory:
     configs = list(moved.rglob("FoundationConfig.cmake"))
     if len(configs) != 1:
         raise RuntimeError("installed package configuration missing or ambiguous")
+    for configuration in configs[0].parent.glob("*.cmake"):
+        text = configuration.read_text(encoding="utf-8")
+        if str(args.build.resolve()) in text:
+            raise RuntimeError("installed CMake package retains a build-tree path: " + configuration.name)
+        if args.sdk and str(args.sdk.resolve()) in text:
+            raise RuntimeError("installed CMake package retains an SDK path: " + configuration.name)
     extra = []
     if args.sdk:
         extra = ["-DCMAKE_TOOLCHAIN_FILE=" + str(args.source / "cmake/toolchains/sdk.cmake"),
                  "-DFOUNDATION_SDK_ROOT=" + str(args.sdk.resolve())]
         if programs["ninja"] != "ninja":
             extra += ["-DCMAKE_MAKE_PROGRAM=" + programs["ninja"]]
+    poison = root / "unavailable rust tools"
+    poison.mkdir()
+    attempted = root / "rust tool invocation"
+    for tool in ("cargo", "rustc", "rustup"):
+        if os.name == "nt":
+            launcher = poison / (tool + ".cmd")
+            launcher.write_text('@echo off\necho attempted>>"%FOUNDATION_RUST_TOOL_ATTEMPT%"\nexit /b 89\n')
+        else:
+            launcher = poison / tool
+            launcher.write_text('#!/bin/sh\nprintf "%s\\n" "$0" >> "$FOUNDATION_RUST_TOOL_ATTEMPT"\nexit 89\n')
+            launcher.chmod(0o755)
+    consumer_environment = dict(environment)
+    consumer_environment["PATH"] = str(poison) + os.pathsep + consumer_environment.get("PATH", "")
+    consumer_environment["FOUNDATION_RUST_TOOL_ATTEMPT"] = str(attempted)
     run(["cmake", "-S", consumer, "-B", root / "consumer build", "-G", "Ninja",
          "-DCMAKE_BUILD_TYPE=" + args.config, "-DFoundation_DIR=" + str(configs[0].parent),
-         "-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF", "-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF", *extra])
-    run(["cmake", "--build", root / "consumer build", "--parallel", "2"])
+         "-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF", "-DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF", *extra],
+        env=consumer_environment)
+    run(["cmake", "--build", root / "consumer build", "--parallel", "2"], env=consumer_environment)
     suffix = ".js" if browser_sdk else (".exe" if __import__("os").name == "nt" else "")
     executor = [args.sdk / "node/bin/node"] if browser_sdk else []
-    run([*executor, root / "consumer build" / ("consumer" + suffix)])
+    run([*executor, root / "consumer build" / ("consumer" + suffix)], env=consumer_environment)
+    if attempted.exists():
+        raise RuntimeError("installed C++ consumer invoked a Rust tool")
     clean = {key: value for key, value in os.environ.items() if key not in
              ("LD_LIBRARY_PATH", "LD_PRELOAD", "DYLD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES")}
     run([*executor, moved / "bin" / ("foundation-cli" + suffix), "--self-check"], cwd=moved, env=clean)

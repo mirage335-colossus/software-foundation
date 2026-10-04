@@ -305,6 +305,34 @@ class InputIdentityTests(unittest.TestCase):
             run.assert_not_called()
         self.assertFalse((self.root / 'report.json').exists())
 
+    def test_rust_sdk_is_reverified_and_cannot_change_provider_receipt(self):
+        from unittest.mock import patch
+        from dependency_archive import digest
+        import rust_sdk
+        rust = self.root / 'rust-sdk'; rust.mkdir()
+        (rust / 'rust-sdk.json').write_text('{"fixture":1}')
+        metadata = {'recipe_id': 'a' * 64}
+        self.cache.update(FOUNDATION_CORE_PROVIDER='rust', FOUNDATION_RUST_SDK_ROOT=str(rust),
+                          FOUNDATION_RUST_TARGET='x86_64-unknown-linux-gnu')
+        self.write_cache()
+        self.wrapper(core_provider='rust', rust_sdk={'root': str(rust), 'sha256': digest(rust / 'rust-sdk.json')})
+        with patch.object(rust_sdk, 'verify_rust_sdk', return_value=metadata) as verify:
+            first = plan.build_inputs(self.build)
+            self.assertEqual(first['core_provider'], 'rust')
+            verify.assert_called_once_with(rust, cpp_sdk=None, target='x86_64-unknown-linux-gnu', execute=True)
+            (rust / 'rust-sdk.json').write_text('{"fixture":2}')
+            with self.assertRaisesRegex(ValueError, 'Rust SDK differs'):
+                plan.build_inputs(self.build)
+        self.cache['FOUNDATION_CORE_PROVIDER'] = 'cpp'; self.write_cache()
+        with self.assertRaisesRegex(ValueError, r'configured compiler|C\+\+ provider'):
+            plan.build_inputs(self.build)
+
+    def test_cpp_configuration_does_not_discover_rust(self):
+        from unittest.mock import patch
+        import rust_sdk
+        with patch.object(rust_sdk, 'verify_rust_sdk', side_effect=AssertionError('unexpected Rust tool discovery')):
+            self.assertIsNone(plan.build_inputs(self.build)['rust_sdk'])
+
     def test_external_gui_bytes_change_source_identity(self):
         gui = self.root / 'gui-source'; gui.mkdir(); (gui / 'view.hpp').write_text('first input')
         self.cache.update(FOUNDATION_BUILD_GUI='ON', FOUNDATION_GUI_SOURCE=str(gui)); self.write_cache()

@@ -92,10 +92,22 @@ def validate_plan(value, *, system=None, machine=None):
     supported = {item['target']: item for item in contract['targets']}
     seen = set()
     for case in cases:
-        if (not isinstance(case, dict) or set(case) != {'target', 'group', 'recipe'}
+        if not isinstance(case, dict):
+            raise ValueError('offline cases need structured provider and retained group fields')
+        provider = case.get('core_provider', 'cpp')
+        required = {'target', 'group', 'recipe'}
+        allowed = required | {'core_provider'}
+        if provider == 'rust':
+            required |= {'core_provider', 'rust_group', 'rust_recipe'}
+            allowed = required
+        if (provider not in ('cpp', 'rust') or not required <= set(case) or not set(case) <= allowed
                 or case['target'] not in supported or case['target'] in seen or not SHA.fullmatch(case.get('recipe', ''))):
             raise ValueError('offline cases need unique supported targets and complete recipe identities')
         seen.add(case['target']); absolute(case['group'])
+        if provider == 'rust':
+            if not SHA.fullmatch(case.get('rust_recipe', '')):
+                raise ValueError('Rust offline cases need a complete paired Rust recipe identity')
+            absolute(case['rust_group'])
     current_system = platform.system() if system is None else system
     current_machine = processor(machine)
     applicable = [item['target'] for item in contract['targets']
@@ -123,7 +135,21 @@ def verify_case(case):
     capabilities = metadata.get('capabilities', ['wasm'] if case['target'] == 'browser-wasm32' else ['core', 'terminal', 'framebuffer', 'hosted-web'])
     if not set(target['backends']) <= set(capabilities):
         raise ValueError('retained SDK lacks required GUI capabilities; select a complete matching all-GUI group')
-    return {'files': hashes, 'recipe': case['recipe'], 'target': case['target'], 'metadata': metadata}
+    result = {'files': hashes, 'recipe': case['recipe'], 'target': case['target'], 'metadata': metadata,
+              'core_provider': case.get('core_provider', 'cpp')}
+    if result['core_provider'] == 'rust':
+        from rust_sdk import names as rust_names, verify_group as verify_rust_group, verify_pair
+        rust_group = absolute(case['rust_group'])
+        rust_hashes = verify_rust_group(rust_group, case['rust_recipe'])
+        rust_metadata, _ = inspect_manifest_archive(rust_group / rust_names(case['rust_recipe'])[0], 'rust-sdk.json')
+        verify_pair(rust_metadata, metadata)
+        if (rust_metadata['host']['system'] != target['host_system']
+                or processor(rust_metadata['host']['processor']) != target['host_processor']):
+            raise ValueError('retained Rust SDK host tools require a different native host')
+        result['rust'] = {'files': rust_hashes, 'recipe': case['rust_recipe'], 'metadata': rust_metadata}
+    elif result['core_provider'] != 'cpp':
+        raise ValueError('unsupported explicit core provider')
+    return result
 
 
 def snapshot(root, destination):
@@ -161,6 +187,8 @@ def isolation_probe(*, child=False):
     readonly = {}
     for name, path in (('rootfs', Path('/')), ('source', ROOT), ('retained_group', Path('/inputs/group'))):
         readonly[name] = bool(os.statvfs(path).f_flag & os.ST_RDONLY)
+    if Path('/inputs/rust-group').is_dir() and any(Path('/inputs/rust-group').iterdir()):
+        readonly['retained_rust_group'] = bool(os.statvfs('/inputs/rust-group').f_flag & os.ST_RDONLY)
     if not all(readonly.values()):
         raise ValueError('offline rootfs/source/retained inputs must be read-only mounts')
     # A numeric TEST-NET address avoids DNS and must be unreachable in this netns.
@@ -259,6 +287,41 @@ def host_tools(sdk, target):
     return tools
 
 
+def rust_host_tools(rust_sdk, cpp_sdk):
+    from rust_sdk import verify_rust_sdk
+    metadata = verify_rust_sdk(rust_sdk, cpp_sdk=cpp_sdk, execute=True)
+    return {name: tool_identity('retained-' + name, str(rust_sdk / metadata['compiler'][name]))
+            for name in ('rustc', 'cargo')}
+
+
+def rust_environment(output, environment=None):
+    result = dict(os.environ if environment is None else environment)
+    for name in list(result):
+        if name.startswith(('CARGO_', 'RUST')):
+            del result[name]
+    result.update(CARGO_HOME=str(output / 'cargo-home'), CARGO_NET_OFFLINE='true',
+                  RUSTUP_HOME=str(output / 'rustup-home'))
+    return result
+
+
+def readonly_sdk(root):
+    import uuid
+    root = Path(root)
+    if not os.statvfs(root).f_flag & os.ST_RDONLY:
+        raise ValueError('execution must consume the restored Rust SDK through a read-only mount')
+    path = root / ('.offline-write-probe-' + uuid.uuid4().hex)
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except OSError as error:
+        if error.errno != errno.EROFS:
+            raise ValueError('restored Rust SDK did not reject writing as a read-only filesystem') from error
+        return {'mount_readonly': True, 'write_rejection_errno': error.errno}
+    else:
+        os.close(descriptor)
+        path.unlink()
+        raise ValueError('restored Rust SDK unexpectedly allowed writing')
+
+
 def checked_command(argv, commands, *, cwd=ROOT, environment=None):
     row = {'argv': [str(value) for value in argv], 'status': 'running'}
     commands.append(row)
@@ -274,11 +337,15 @@ def checked_command(argv, commands, *, cwd=ROOT, environment=None):
         row['seconds'] = time.monotonic() - started
 
 
-def build_arguments(target, sdk, output, jobs, action):
+def build_arguments(target, sdk, output, jobs, action, *, core_provider='cpp', rust_sdk=None):
     contract = next(item for item in inventory()['targets'] if item['target'] == target)
     arguments = [sys.executable, '-B', str(ROOT / 'tools/build.py'), action, 'release',
                  '--sdk', str(sdk), '--gui', '--gui-backends', ','.join(contract['backends']),
                  '--build-dir', str(output / 'build'), '--build-jobs', str(jobs), '--test-jobs', '2']
+    if core_provider not in ('cpp', 'rust') or (core_provider == 'rust') != (rust_sdk is not None):
+        raise ValueError('offline Rust commands require their exact retained SDK')
+    if core_provider == 'rust':
+        arguments += ['--core-provider', 'rust', '--rust-sdk', str(rust_sdk)]
     if target.startswith('linux-'):
         arguments.append('--portable')
     if action == 'test':
@@ -286,7 +353,7 @@ def build_arguments(target, sdk, output, jobs, action):
     return arguments
 
 
-def verify_core_junit(path):
+def verify_core_junit(path, required=('core.store', 'core.cli')):
     path = Path(path)
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 8 * 1024 * 1024:
         raise ValueError('missing or invalid offline core JUnit evidence')
@@ -296,8 +363,8 @@ def verify_core_junit(path):
         raise ValueError('invalid offline core JUnit XML') from error
     cases = list(root.iter('testcase'))
     names = [case.get('name') for case in cases]
-    if len(names) != 2 or set(names) != {'core.store', 'core.cli'}:
-        raise ValueError('offline core evidence must execute exactly core.store and core.cli')
+    if len(names) != len(required) or set(names) != set(required):
+        raise ValueError('offline core evidence must execute the complete required core inventory')
     for case in cases:
         if (case.get('status') not in (None, 'run', 'passed', 'pass')
                 or any(case.find(name) is not None for name in ('skipped', 'failure', 'error'))):
@@ -306,7 +373,7 @@ def verify_core_junit(path):
         for name in ('failures', 'errors', 'skipped', 'disabled'):
             if suite.get(name) not in (None, '0'):
                 raise ValueError('offline core evidence declares incomplete/failed tests')
-    return {'status': 'passed', 'tests': sorted(names), 'count': 2, 'sha256': digest(path)}
+    return {'status': 'passed', 'tests': sorted(names), 'count': len(names), 'sha256': digest(path)}
 
 
 def inside(phase, request_path):
@@ -314,7 +381,12 @@ def inside(phase, request_path):
     output = Path('/output')
     case = {**request['case'], 'group': '/inputs/group'}
     sdk = output / 'sdk'
+    provider = case.get('core_provider', 'cpp')
+    rust_sdk = output / 'rust-sdk' if provider == 'rust' else None
+    if rust_sdk:
+        case['rust_group'] = '/inputs/rust-group'
     result = {'schema_version': 1, 'phase': phase, 'target': case['target'], 'status': 'failed', 'commands': [],
+              'core_provider': provider,
               'source_tree_sha256': request['source_tree_sha256'], 'inventory_sha256': digest(INVENTORY),
               'requested_backends': next(item['backends'] for item in inventory()['targets'] if item['target'] == case['target']),
               'browser_security': 'separate real-browser qualification required'}
@@ -329,6 +401,12 @@ def inside(phase, request_path):
         if verified['files'] != request['group_files']:
             raise ValueError('retained group changed across the isolated boundary')
         result['group'] = {key: verified[key] for key in ('files', 'recipe', 'target')}
+        if rust_sdk:
+            if verified['rust']['files'] != request.get('rust_group_files'):
+                raise ValueError('retained Rust group changed across the isolated boundary')
+            if not os.statvfs('/inputs/rust-group').f_flag & os.ST_RDONLY:
+                raise ValueError('retained Rust inputs must be a read-only mount')
+            result['rust_group'] = {key: verified['rust'][key] for key in ('files', 'recipe')}
         if phase == 'stage':
             required = ['sh', 'bash', 'git', 'sed', 'find', 'grep', 'xargs', 'dirname', 'readlink', 'dpkg-query']
             if case['target'].startswith('linux-'):
@@ -343,7 +421,10 @@ def inside(phase, request_path):
             if case['target'].startswith('linux-'):
                 result['display_tools'] = {name: tool_identity(name, name, ('-h',) if name == 'xvfb-run' else ('-V',))
                                            for name in ('xvfb-run', 'xauth')}
-            for name in ('home', 'tmp', 'cache', 'stage-home', 'stage-tmp', 'stage-cache'):
+            directories = ['home', 'tmp', 'cache', 'stage-home', 'stage-tmp', 'stage-cache']
+            if rust_sdk:
+                directories += ['cargo-home', 'rustup-home']
+            for name in directories:
                 directory = output / name
                 if directory.exists() and any(directory.iterdir()):
                     raise ValueError('offline HOME/temp/cache must start empty')
@@ -356,6 +437,15 @@ def inside(phase, request_path):
             result['restoration']['status'] = 'passed'
             result['sdk_manifest_sha256'] = digest(sdk / 'sdk.json')
             result['host_tools'] = host_tools(sdk, case['target'])
+            if rust_sdk:
+                from rust_sdk import restore
+                result['rust_restoration'] = {'status': 'running', 'source': 'complete retained Rust group',
+                                             'helper': 'tools/rust_sdk.py', 'operation': 'restore',
+                                             'group': case['rust_group'], 'recipe': case['rust_recipe'], 'output': str(rust_sdk)}
+                restore(Path(case['rust_group']), case['rust_recipe'], rust_sdk, cpp_sdk=sdk, execute=True)
+                result['rust_restoration']['status'] = 'passed'
+                result['rust_sdk_manifest_sha256'] = digest(rust_sdk / 'rust-sdk.json')
+                result['rust_host_tools'] = rust_host_tools(rust_sdk, sdk)
             if case['target'] == 'browser-wasm32':
                 if not (sdk / 'cache').is_dir() or not any((sdk / 'cache').iterdir()) or not (sdk / '.emscripten').is_file():
                     raise ValueError('prepared Wasm cache/configuration is missing; preparation must be explicit')
@@ -365,7 +455,8 @@ def inside(phase, request_path):
             from sdk_manifest import verify_sdk
             if not os.statvfs(sdk).f_flag & os.ST_RDONLY:
                 raise ValueError('execution must consume the restored SDK through a read-only mount')
-            for name in ('home', 'tmp', 'cache'):
+            fresh_directories = ['home', 'tmp', 'cache'] + (['cargo-home', 'rustup-home'] if rust_sdk else [])
+            for name in fresh_directories:
                 if any((output / name).iterdir()):
                     raise ValueError('application acceptance HOME/temp/cache must be fresh after SDK restoration')
             result['fresh_outputs'] = {'home': True, 'temporary': True, 'cache': True, 'build': not (output / 'build').exists()}
@@ -374,17 +465,36 @@ def inside(phase, request_path):
             if stage['status'] != 'passed' or stage['sdk_manifest_sha256'] != before:
                 raise ValueError('installed SDK differs from its isolated restoration receipt')
             result['host_tools'] = host_tools(sdk, case['target'])
+            if result['host_tools'] != stage['host_tools']:
+                raise ValueError('selected host tools differ from their isolated restoration receipt')
             result['sdk_manifest_sha256'] = before
+            if rust_sdk:
+                from rust_sdk import verify_rust_sdk
+                result['rust_sdk_readonly'] = readonly_sdk(rust_sdk)
+                verify_rust_sdk(rust_sdk, cpp_sdk=sdk, execute=True)
+                rust_before = digest(rust_sdk / 'rust-sdk.json')
+                if stage.get('rust_sdk_manifest_sha256') != rust_before:
+                    raise ValueError('installed Rust SDK differs from its isolated restoration receipt')
+                result['rust_sdk_manifest_sha256'] = rust_before
+                result['rust_host_tools'] = rust_host_tools(rust_sdk, sdk)
+                if result['rust_host_tools'] != stage.get('rust_host_tools'):
+                    raise ValueError('selected Rust tools differ from their isolated restoration receipt')
+                result['fresh_outputs'].update(cargo_home=True, rustup_home=True)
             if (output / 'build').exists():
                 raise ValueError('offline application build directory must be fresh')
             environment = os.environ.copy()
             environment.update(CCACHE_DISABLE='1', CCACHE_DIR='/output/cache/ccache', EM_FROZEN_CACHE='1')
+            if rust_sdk:
+                environment = rust_environment(output, environment)
+                result['cargo_environment'] = {name: environment[name] for name in ('CARGO_HOME', 'RUSTUP_HOME', 'CARGO_NET_OFFLINE')}
             if case['target'] == 'browser-wasm32':
                 environment['EM_CACHE'] = str(sdk / 'cache')
             for action in ('build', 'test', 'package'):
-                checked_command(build_arguments(case['target'], sdk, output, request['jobs'], action), result['commands'], environment=environment)
+                checked_command(build_arguments(case['target'], sdk, output, request['jobs'], action,
+                                                core_provider=provider, rust_sdk=rust_sdk), result['commands'], environment=environment)
                 if action == 'test':
-                    result['core_tests'] = verify_core_junit(output / 'core.junit.xml')
+                    result['core_tests'] = verify_core_junit(output / 'core.junit.xml',
+                        ('core.store', 'core.cli', 'core.text_validation', 'core.text_status'))
             choices = sorted((output / 'build/packages').glob('*.tar.gz'))
             if len(choices) != 1:
                 raise ValueError('offline acceptance needs one exact platform application archive')
@@ -408,6 +518,18 @@ def inside(phase, request_path):
                 result['wasm_cache'] = stage['wasm_cache']
             if verify_sdk(sdk, release=True) != before or verify_group(case['group'], case['recipe']) != request['group_files']:
                 raise ValueError('prepared SDK/retained group changed during offline acceptance')
+            result['host_tools_after'] = host_tools(sdk, case['target'])
+            if result['host_tools_after'] != result['host_tools']:
+                raise ValueError('selected host tools changed during offline acceptance')
+            if rust_sdk:
+                from rust_sdk import verify_group as verify_rust_group
+                verify_rust_sdk(rust_sdk, cpp_sdk=sdk, execute=True)
+                if (digest(rust_sdk / 'rust-sdk.json') != rust_before
+                        or verify_rust_group(case['rust_group'], case['rust_recipe']) != request['rust_group_files']):
+                    raise ValueError('prepared Rust SDK/retained group changed during offline acceptance')
+                result['rust_host_tools_after'] = rust_host_tools(rust_sdk, sdk)
+                if result['rust_host_tools_after'] != result['rust_host_tools']:
+                    raise ValueError('selected Rust tools changed during offline acceptance')
             if source_tree(ROOT)['tree_sha256'] != request['source_tree_sha256']:
                 raise ValueError('source changed during offline acceptance')
         else:
@@ -420,12 +542,13 @@ def inside(phase, request_path):
         write_new(output / (phase + '.json'), result)
 
 
-def docker_phase(boundary, source, output, group, uid, gid, phase):
+def docker_phase(boundary, source, output, group, uid, gid, phase, *, rust_group=None):
     import importlib.util
     spec = importlib.util.spec_from_file_location('offline_container_adapter', ROOT / '.github/scripts/container_job.py')
     adapter = importlib.util.module_from_spec(spec); spec.loader.exec_module(adapter)
+    optional = {'rust_group': rust_group} if rust_group is not None else {}
     return adapter.offline_command(source, output, group, uid, gid, boundary['image'], phase,
-                                   target=read_json(output / 'request.json')['case']['target'])
+                                   target=read_json(output / 'request.json')['case']['target'], **optional)
 
 
 def run(plan_path, output, cases=None, jobs=2, root=ROOT):
@@ -452,12 +575,19 @@ def run(plan_path, output, cases=None, jobs=2, root=ROOT):
         rootfs = Path(boundary['rootfs'])
         if output == rootfs or rootfs in output.parents or output in rootfs.parents:
             raise ValueError('offline output and prepared rootfs must be disjoint')
+    for target in selected:
+        groups = [planned[target]['group']]
+        if planned[target].get('core_provider', 'cpp') == 'rust':
+            groups.append(planned[target]['rust_group'])
+        for retained in groups:
+            group = Path(retained)
+            if group == output or group in output.parents or output in group.parents:
+                raise ValueError('offline output and retained input roots must be disjoint')
     # Freeze inputs before launching any expensive work.
     verified = {target: verify_case(planned[target]) for target in selected}
-    for target in selected:
-        group = Path(planned[target]['group'])
-        if group == output or group in output.parents or output in group.parents:
-            raise ValueError('offline output and retained input roots must be disjoint')
+    rust_groups = [Path(planned[target]['rust_group']) for target in selected
+                   if planned[target].get('core_provider', 'cpp') == 'rust']
+    rootfs_options = {'rust_group': rust_groups[0]} if rust_groups else {}
     if boundary['kind'] == 'docker':
         completed = subprocess.run(['docker', 'image', 'inspect', '--format', '{{.Id}}', boundary['image']],
                                    check=True, text=True, capture_output=True)
@@ -465,10 +595,11 @@ def run(plan_path, output, cases=None, jobs=2, root=ROOT):
             raise ValueError('prepared Docker image identity differs; pulling is forbidden')
     else:
         from offline_namespace import verify_rootfs
-        prepared_rootfs = verify_rootfs(boundary)
+        prepared_rootfs = verify_rootfs(boundary, **rootfs_options)
     output.mkdir(parents=True)
     summary = {'schema_version': 1, 'status': 'failed', 'plan_sha256': digest(plan_path), 'isolation': boundary,
                'inventory_sha256': digest(INVENTORY), 'requested_targets': selected,
+               'requested_providers': {target: planned[target].get('core_provider', 'cpp') for target in selected},
                'required_host_targets': applicable, 'complete_host_inventory': set(selected) == set(applicable),
                'unavailable_targets': sorted({item['target'] for item in inventory()['targets']} - set(applicable)),
                'cases': [], 'coverage': 'offline application build, core tests, package/installed consumer and native GUI smoke; browser security and full regressions separate'}
@@ -493,17 +624,23 @@ def run(plan_path, output, cases=None, jobs=2, root=ROOT):
             case_output.mkdir()
             request = {'schema_version': 1, 'case': planned[target], 'group_files': verified[target]['files'],
                        'source_tree_sha256': source_identity['tree_sha256'], 'jobs': jobs}
+            rust_group = None
+            if 'rust' in verified[target]:
+                request['rust_group_files'] = verified[target]['rust']['files']
+                rust_group = Path(planned[target]['rust_group'])
             write_new(case_output / 'request.json', request)
-            row = {'target': target, 'status': 'failed'}
+            row = {'target': target, 'core_provider': planned[target].get('core_provider', 'cpp'), 'status': 'failed'}
             summary['cases'].append(row)
             with (case_output / 'acceptance.log').open('xb') as log:
                 if boundary['kind'] == 'docker':
                     for phase in ('stage', 'execute'):
-                        argv = docker_phase(boundary, source, case_output, Path(planned[target]['group']), os.getuid(), os.getgid(), phase)
+                        argv = docker_phase(boundary, source, case_output, Path(planned[target]['group']), os.getuid(), os.getgid(), phase,
+                                            **({'rust_group': rust_group} if rust_group is not None else {}))
                         subprocess.run(argv, check=True, stdout=log, stderr=subprocess.STDOUT)
                 else:
                     from offline_namespace import command, setup_environment
-                    argv = command(boundary, source, case_output, Path(planned[target]['group']))
+                    argv = command(boundary, source, case_output, Path(planned[target]['group']),
+                                   **({'rust_group': rust_group} if rust_group is not None else {}))
                     subprocess.run(argv, check=True, stdout=log, stderr=subprocess.STDOUT, env=setup_environment())
             result = read_json(case_output / 'execute.json')
             if result['status'] != 'passed':
@@ -512,15 +649,17 @@ def run(plan_path, output, cases=None, jobs=2, root=ROOT):
         if boundary['kind'] == 'namespace':
             # A read-only bind protects the child, not a separate host writer.
             # Refuse success if prepared bytes changed outside the namespace.
-            verify_rootfs(boundary)
+            verify_rootfs(boundary, **rootfs_options)
             summary['rootfs_recheck'] = 'passed'
         for target in selected:
-            group = Path(planned[target]['group'])
-            expected = verified[target]['files']
-            if (group.is_symlink() or not group.is_dir() or {path.name for path in group.iterdir()} != set(expected)
-                    or any((group / name).is_symlink() or not (group / name).is_file() for name in expected)
-                    or {name: digest(group / name) for name in expected} != expected):
-                raise ValueError('retained group changed outside the boundary before acceptance completion')
+            retained_groups = [(Path(planned[target]['group']), verified[target]['files'])]
+            if 'rust' in verified[target]:
+                retained_groups.append((Path(planned[target]['rust_group']), verified[target]['rust']['files']))
+            for group, expected in retained_groups:
+                if (group.is_symlink() or not group.is_dir() or {path.name for path in group.iterdir()} != set(expected)
+                        or any((group / name).is_symlink() or not (group / name).is_file() for name in expected)
+                        or {name: digest(group / name) for name in expected} != expected):
+                    raise ValueError('retained group changed outside the boundary before acceptance completion')
         from source_identity import source_tree
         if source_tree(source) != source_identity:
             raise ValueError('frozen source changed before acceptance completion')

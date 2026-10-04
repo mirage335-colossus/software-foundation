@@ -10,6 +10,82 @@ from dependency_archive import digest, encoded, file_inventory, read_json, relat
 from dependency_store import copy_group, verify_group
 from source_identity import verify_source_archive
 
+RUST_IDENTITY_FIELDS = ('rust_sdk_recipe_id', 'rust_compiler_version', 'rust_target',
+                        'rust_sdk_manifest_sha256', 'rust_compiler_sha256')
+
+
+def provider_identity(entry):
+    provider = entry.get('core_provider', 'cpp')
+    if provider not in ('cpp', 'rust'):
+        raise ValueError('unknown core provider')
+    result = {'core_provider': provider}
+    if provider == 'rust':
+        for field in RUST_IDENTITY_FIELDS:
+            value = entry.get(field)
+            if not isinstance(value, str) or not value.strip() or value == 'none':
+                raise ValueError('Rust artifact needs its complete compiler and SDK identity')
+            if (field.endswith('sha256') or field == 'rust_sdk_recipe_id') and not re.fullmatch(r'[0-9a-f]{64}', value):
+                raise ValueError('invalid Rust compiler or SDK identity')
+            result[field] = value
+    elif any(entry.get(field) not in (None, 'none') for field in RUST_IDENTITY_FIELDS):
+        raise ValueError('C++ artifact cannot declare a Rust compiler or SDK')
+    return result
+
+
+def dependency_kinds(artifacts):
+    kinds = {}
+    for entry in artifacts:
+        identity = provider_identity(entry)
+        for recipe in dependency_recipes(entry):
+            kind = 'rust' if recipe == identity.get('rust_sdk_recipe_id') else 'sdk'
+            if recipe in kinds and kinds[recipe] != kind:
+                raise ValueError('dependency recipe has conflicting SDK kinds')
+            kinds[recipe] = kind
+    return kinds
+
+
+def dependency_names(recipe, kind='sdk'):
+    if kind == 'sdk':
+        from dependency_store import names
+        return names(recipe)
+    if kind == 'rust':
+        from rust_sdk import group_names
+        return group_names(recipe)
+    raise ValueError('unknown dependency group kind')
+
+
+def verify_dependency_group(directory, recipe, kind='sdk', expected_files=None, *, binary=False):
+    if kind == 'rust':
+        from rust_sdk import verify_group as verify_rust_group
+        actual = verify_rust_group(directory, recipe)
+    elif kind == 'sdk':
+        if binary:
+            from dependency_store import verify_binary_group
+            return verify_binary_group(directory, recipe, expected_files)
+        actual = verify_group(directory, recipe)
+    else:
+        raise ValueError('unknown dependency group kind')
+    if expected_files is not None and actual != expected_files:
+        raise ValueError('release dependency identity mismatch')
+    return actual
+
+
+def copy_dependency_group(source, destination, recipe, kind='sdk'):
+    if kind == 'sdk':
+        return copy_group(source, destination, recipe)
+    files = verify_dependency_group(source, recipe, kind)
+    source, destination = Path(source), Path(destination).absolute()
+    if destination.exists() or destination.is_symlink():
+        raise ValueError('refusing to overwrite retained dependency destination')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=destination.parent, prefix='.group-') as temporary:
+        staged = Path(temporary) / 'group'; staged.mkdir()
+        for name in files:
+            shutil.copyfile(source / name, staged / name)
+        verify_dependency_group(staged, recipe, kind, files)
+        staged.rename(destination)
+    return files
+
 
 def safe_name(name):
     if len(relative(name).parts) != 1:
@@ -23,6 +99,10 @@ def dependency_recipes(entry):
         raise ValueError('artifact dependency recipes must be complete, unique and include its primary SDK')
     if any(not re.fullmatch(r'[0-9a-f]{64}', value) for value in recipes):
         raise ValueError('invalid dependency recipe identity')
+    identity = provider_identity(entry)
+    if identity['core_provider'] == 'rust' and (identity['rust_sdk_recipe_id'] not in recipes
+            or identity['rust_sdk_recipe_id'] == entry['sdk_recipe']):
+        raise ValueError('Rust artifact must retain its distinct Rust SDK dependency group')
     return sorted(recipes)
 
 
@@ -47,6 +127,9 @@ def validate_package(archive, entry, source_identity, expected):
         raise ValueError('packaged source tree differs from retained source archive')
     if info.get('target') != entry['target']:
         raise ValueError('packaged target differs from release specification')
+    identity = provider_identity(entry)
+    if provider_identity(info) != identity:
+        raise ValueError('packaged core provider or Rust toolchain differs from release specification')
     backends = [value for value in info.get('gui_backends', '').split(',') if value]
     if len(backends) != len(set(backends)) or sorted(backends) != sorted(entry.get('backends', [])):
         raise ValueError('packaged backends differ from release specification')
@@ -86,10 +169,12 @@ def verify_metadata(directory):
         if not isinstance(backends, list) or len(backends) != len(set(backends)):
             raise ValueError('duplicate release backend')
     observed = set()
-    from dependency_store import names
+    kinds = dependency_kinds(data['artifacts'])
     for entry in data['dependencies']:
         recipe = entry['recipe_id']
-        if recipe in observed or set(entry['files']) != set(names(recipe)):
+        kind = entry.get('kind', 'sdk')
+        if (kind != kinds.get(recipe) or recipe in observed
+                or set(entry['files']) != set(dependency_names(recipe, kind))):
             raise ValueError('duplicate or incomplete dependency group')
         observed.add(recipe)
         for name, value in entry['files'].items():
@@ -118,7 +203,7 @@ def required_files(metadata, target, backend, scope, *, binary_source=True):
         for group in metadata['dependencies']:
             if group['recipe_id'] in recipes:
                 selected.update('dependencies/' + group['recipe_id'] + '/' + name for name in group['files']
-                    if scope == 'recovery' or not binary_source or not name.endswith('-sources.tar.gz'))
+                    if scope == 'recovery' or group.get('kind') == 'rust' or not binary_source or not name.endswith('-sources.tar.gz'))
     return sorted(selected)
 
 
@@ -141,17 +226,15 @@ def verify_selection(directory, target, backend, scope):
     if scope in ('source', 'recovery'):
         for group in data['dependencies']:
             if group['recipe_id'] in dependency_recipes(entry):
-                if scope == 'source' and not any((directory / 'dependencies' / group['recipe_id'] / name).exists() for name in group['files'] if name.endswith('-sources.tar.gz')):
-                    from dependency_store import verify_binary_group
-                    verify_binary_group(directory / 'dependencies' / group['recipe_id'], group['recipe_id'], group['files'])
-                elif verify_group(directory / 'dependencies' / group['recipe_id'], group['recipe_id']) != group['files']:
-                    raise ValueError('release dependency identity mismatch')
+                binary = scope == 'source' and not any((directory / 'dependencies' / group['recipe_id'] / name).exists() for name in group['files'] if name.endswith('-sources.tar.gz'))
+                verify_dependency_group(directory / 'dependencies' / group['recipe_id'], group['recipe_id'],
+                                        group.get('kind', 'sdk'), group['files'], binary=binary)
     return data
 
 
 def verify_release(directory):
     directory = Path(directory).resolve(strict=True)
-    metadata = read_json(directory / 'release.json')
+    metadata = verify_metadata(directory)
     if metadata.get('schema_version') != 1 or metadata.get('qualification') != 'candidate':
         raise ValueError('unsupported local release manifest')
     verify_inventory(directory, metadata['files'], exclude=('release.json',))
@@ -176,8 +259,7 @@ def verify_release(directory):
         recipe = entry['recipe_id']
         if recipe in observed: raise ValueError('duplicate dependency recipe')
         observed.add(recipe)
-        if verify_group(directory / 'dependencies' / recipe, recipe) != entry['files']:
-            raise ValueError('release dependency identity mismatch')
+        verify_dependency_group(directory / 'dependencies' / recipe, recipe, entry.get('kind', 'sdk'), entry['files'])
     if not wanted or wanted != observed:
         raise ValueError('release must retain exactly every required SDK group')
     if not metadata['required_scopes'] or len(metadata['required_scopes']) != len(set(metadata['required_scopes'])):
@@ -223,6 +305,7 @@ def assemble(spec_path, base, output):
                     'source': {'archive': source, 'sha256': source_hash, 'tree_sha256': source_manifest['tree_sha256']}, 'artifacts': [],
                     'dependencies': [], 'required_scopes': spec['required_scopes']}
         recipes = set()
+        kinds = dependency_kinds(spec['artifacts'])
         for entry in spec['artifacts']:
             archive = retain(entry['path'])
             manifest = retain(entry['manifest_path'])
@@ -231,13 +314,18 @@ def assemble(spec_path, base, output):
             recipe = entry['sdk_recipe']
             validate_package(staged / archive, entry, source_manifest['tree_sha256'], read_json(staged / manifest))
             recipes.update(dependency_recipes(entry))
-            metadata['artifacts'].append({'archive': archive, 'sha256': digest(staged / archive),
+            frozen = {'archive': archive, 'sha256': digest(staged / archive),
                 'manifest': manifest, 'manifest_sha256': digest(staged / manifest),
                 'target': entry['target'], 'backends': entry.get('backends', []), 'sdk_recipe': recipe,
-                'dependency_recipes': dependency_recipes(entry)})
+                'dependency_recipes': dependency_recipes(entry)}
+            if entry.get('core_provider') is not None:
+                frozen.update(provider_identity(entry))
+            metadata['artifacts'].append(frozen)
         for recipe in sorted(recipes):
-            files = copy_group(Path(base) / recipe, staged / 'dependencies' / recipe, recipe)
-            metadata['dependencies'].append({'recipe_id': recipe, 'files': files})
+            files = copy_dependency_group(Path(base) / recipe, staged / 'dependencies' / recipe, recipe, kinds[recipe])
+            group = {'recipe_id': recipe, 'files': files}
+            if kinds[recipe] == 'rust': group['kind'] = 'rust'
+            metadata['dependencies'].append(group)
         metadata['files'] = file_inventory(staged)
         write_json(staged / 'release.json', metadata)
         verify_release(staged)
@@ -295,8 +383,8 @@ def verify_recovery(directory, expected_release_sha256=None):
     if verify_source_archive(directory / source['archive'])['tree_sha256'] != source['tree_sha256']:
         raise ValueError('recovery source tree binding mismatch')
     for entry in data['dependencies']:
-        if verify_group(directory / 'dependencies' / entry['recipe_id'], entry['recipe_id']) != entry['files']:
-            raise ValueError('recovery dependency identity mismatch')
+        verify_dependency_group(directory / 'dependencies' / entry['recipe_id'], entry['recipe_id'],
+                                entry.get('kind', 'sdk'), entry['files'])
     expected_directories = {str(parent) for name in expected for parent in relative(name).parents if str(parent) != '.'}
     if {path.relative_to(directory).as_posix() for path in directory.rglob('*') if path.is_dir()} != expected_directories:
         raise ValueError('unexpected recovery directory')
@@ -322,7 +410,8 @@ def recover(directory, output):
         shutil.copyfile(directory / data['source']['archive'], staged / data['source']['archive'])
         for entry in data['dependencies']:
             recipe = entry['recipe_id']
-            copy_group(directory / 'dependencies' / recipe, staged / 'dependencies' / recipe, recipe)
+            copy_dependency_group(directory / 'dependencies' / recipe, staged / 'dependencies' / recipe,
+                                  recipe, entry.get('kind', 'sdk'))
         shutil.copyfile(directory / 'release.json', staged / 'release.json')
         write_json(staged / 'recovery.json', {'schema_version': 1, 'release_sha256': release_hash,
                    'source': data['source'], 'dependencies': data['dependencies']})

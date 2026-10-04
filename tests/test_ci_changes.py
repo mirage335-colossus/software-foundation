@@ -66,6 +66,13 @@ class ClassificationTests(unittest.TestCase):
         self.assertIn('gui_boundary', ci.infrastructure_suites(['gui/host/boot.mjs']))
         self.assertIn('distro_channel', ci.infrastructure_suites(['tests/test_distro_channel.py']))
 
+    def test_rust_sources_locks_and_recipes_keep_provider_evidence_suites(self):
+        for path in ('rust/validation/src/lib.rs', 'rust/Cargo.lock', 'third_party/rust/linux-x86_64.json'):
+            with self.subTest(path=path):
+                selected = set(ci.infrastructure_suites([path]))
+                self.assertLessEqual({'ci_plan', 'source_identity', 'test_plan', 'release', 'release_check'}, selected)
+                self.assertEqual(ci.classify([path])['scope'], 'full')
+
     def test_unknown_deleted_and_missing_inventory_are_conservative(self):
         all_suites = ci.infrastructure_suites([])
         for path in ('tools/new_helper.py', 'tools/deleted_helper.py', 'tests/test_deleted.py',

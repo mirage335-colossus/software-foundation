@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check literal include closure and concrete GUI/domain dependencies before compiling.
+"""Check application sources and concrete GUI/domain dependencies before compiling.
 
 This is an architectural tripwire, not a C++ parser or a security boundary. Keep
 executable conformance and public-interface review alongside it.
@@ -12,10 +12,93 @@ import sys
 
 PUBLIC_GUI = {'gui/contract.hpp', 'gui/layout.hpp', 'gui/runtime.hpp'}
 SOURCE_SUFFIXES = {'.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx',
-                   '.ipp', '.tpp', '.inc', '.ixx', '.cppm'}
+                   '.ipp', '.tpp', '.inc', '.ixx', '.cppm', '.rs'}
 # Keep string contents while removing comments, so includes and widget IDs remain
 # visible and an explanatory comment cannot create a false dependency.
 TOKENS = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|/\*.*?\*/|//[^\n]*', re.S)
+RUST_LITERAL = re.compile(
+    r'(?:br|r)(?P<hashes>\#*)".*?"(?P=hashes)|'
+    r'b?"(?:\\.|[^"\\])*"|'
+    r"b?'(?:\\(?:u\{[0-9a-fA-F_]+\}|x[0-9a-fA-F]{2}|.)|[^'\\])'", re.S)
+RUST_TOKEN = re.compile(r'[A-Za-z_][A-Za-z0-9_]*|::|[^\s]')
+RUST_BACKENDS = {'gui', 'fl', 'fltk', 'sdl', 'sdl2', 'rev', 'backends', 'host', 'hosts'}
+
+
+def rust_code(source):
+    """Keep Rust identifiers and attribute literals without comments or lifetimes loss."""
+    tokens, literals, index = [], {}, 0
+    while index < len(source):
+        if source.startswith('//', index):
+            end = source.find('\n', index)
+            index = len(source) if end < 0 else end
+            continue
+        if source.startswith('/*', index):
+            index += 2
+            depth = 1
+            while index < len(source) and depth:
+                if source.startswith('/*', index): depth += 1; index += 2
+                elif source.startswith('*/', index): depth -= 1; index += 2
+                else: index += 1
+            continue
+        literal = RUST_LITERAL.match(source, index)
+        if literal:
+            value = literal[0]
+            name = 'RUST_LITERAL_' + str(len(literals))
+            if '"' in value:
+                begin, end = value.find('"') + 1, value.rfind('"')
+                contents = value[begin:end]
+                if literal['hashes'] is None:
+                    contents = re.sub(r'\\u\{([0-9a-fA-F_]+)\}',
+                                      lambda m: chr(int(m[1].replace('_', ''), 16)), contents)
+                    contents = re.sub(r'\\x([0-9a-fA-F]{2})', lambda m: chr(int(m[1], 16)), contents)
+                    contents = re.sub(r'\\([\\"nrt0])',
+                                      lambda m: {'n':'\n', 'r':'\r', 't':'\t', '0':'\0'}.get(m[1], m[1]), contents)
+                literals[name] = contents
+            else:
+                literals[name] = ''
+            tokens.append(name)
+            index = literal.end()
+            continue
+        token = RUST_TOKEN.match(source, index)
+        if token:
+            tokens.append(token[0]); index = token.end()
+        else:
+            index += 1
+    return ' '.join(tokens), literals
+
+
+def rust_violations(source):
+    code, literals = rust_code(source)
+    result = []
+    imports = re.findall(r'\b(?:use|extern\s+crate)\s+([^;]+);', code)
+    if any(RUST_BACKENDS.intersection(name.lower() for name in re.findall(r'\b\w+\b', entry))
+           for entry in imports):
+        result.append('concrete Rust GUI/backend import')
+    if re.search(r'\b(?:gui|fltk|sdl2?|rev|backends|hosts?)\s*::', code, re.I) or re.search(
+            r'\b(?:SDL_\w+|Fl_\w+|Rev_\w+|foundation_gui_\w+|gui_\w+|fltk_\w+|'
+            r'(?:Terminal|Framebuffer|Web|Memory|Interactive|Retained)Adapter)\b', code):
+        result.append('concrete Rust backend dependency')
+    for block in re.findall(r'\bextern\s+RUST_LITERAL_\d+\s*\{([^}]+)\}', code):
+        if any(re.match(r'(?:sdl_|sdl2_|rev_|Rev|fltk_|Fl_)', name)
+               for name in re.findall(r'\bfn\s+(\w+)', block)):
+            result.append('concrete Rust backend foreign symbol')
+    for attribute in re.findall(r'#\s*!?\s*\[([^\]]+)\]', code):
+        for field in ('name', 'link_name'):
+            if field == 'name' and not re.match(r'\s*link\s*\(', attribute):
+                continue
+            match = re.search(r'\b' + field + r'\s*=\s*(\w+)', attribute)
+            if not match:
+                continue
+            if match[1] not in literals:
+                result.append('computed Rust native linkage hides dependency boundary')
+                continue
+            name = literals[match[1]]
+            if re.search(r'^(?:lib)?(?:gui|foundation_gui|fltk|fl|sdl2?(?:main)?|rev)(?:\b|[_0-9.-])', name, re.I):
+                result.append('concrete Rust backend linkage: ' + name)
+        path = re.search(r'\bpath\s*=\s*(RUST_LITERAL_\d+)', attribute)
+        if path and any(part.lower() in RUST_BACKENDS for part in Path(literals[path[1]]).parts):
+            result.append('concrete Rust backend module path')
+    return result
 
 
 def uncomment(source):
@@ -63,7 +146,7 @@ def without_includes(source):
 
 
 def composition_root(root, path):
-    return path.parent == root / 'hosts' and path.name.endswith('_main.cpp')
+    return path.parent == root / 'hosts' and path.name.endswith(('_main.cpp', '_main.rs'))
 
 
 def sources(directory):
@@ -90,13 +173,32 @@ def analyze(root):
     shared_paths = sources(root / 'shared')
     identities = {'entries.'}
     for path in shared_paths:
-        identities.update(re.findall(r'"([A-Za-z][A-Za-z0-9_]*\.[A-Za-z0-9_.-]+)"', without_includes(uncomment(path.read_text()))))
+        if path.suffix == '.rs':
+            identities.update(value for value in rust_code(path.read_text())[1].values()
+                              if re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*\.[A-Za-z0-9_.-]+', value))
+        else:
+            identities.update(re.findall(r'"([A-Za-z][A-Za-z0-9_]*\.[A-Za-z0-9_.-]+)"', without_includes(uncomment(path.read_text()))))
 
     def walk(path, layer):
         key = (path, layer)
         if key in visited:
             return
         visited.add(key); dependencies.add(path)
+        if path.suffix == '.rs':
+            source = path.read_text()
+            issues = rust_violations(source) if layer == 'shared' else []
+            if layer == 'host':
+                code, literals = rust_code(source)
+                if any(value.startswith('entries.') or value in identities for value in literals.values()):
+                    issues.append('application identity in Rust host')
+                if re.search(r'\bfoundation\s*::\s*(?:Store|Record|InsertResult|InsertError)\b', code) or re.search(
+                        r'\buse\s+foundation\s*::\s*\{[^;]*(?:Store|Record|InsertResult|InsertError)\b', code):
+                    issues.append('application domain dependency in Rust host')
+                app_types = re.findall(r'\bfoundation\s*::\s*ui\s*::\s*(\w+)', code)
+                if any(name != 'Application' or not composition_root(root, path) for name in app_types):
+                    issues.append('application implementation in Rust host')
+            failures.extend(str(path) + ': ' + issue for issue in issues)
+            return
         text = uncomment(path.read_text())
         issues = shared_violations(text) if layer == 'shared' else []
         if layer == 'host':
@@ -134,6 +236,9 @@ def analyze(root):
 
     for path in shared_paths:
         walk(path.resolve(), 'shared')
+    for path in sources(root.parent / 'rust'):
+        if path.suffix == '.rs':
+            walk(path.resolve(), 'shared')
     for directory in ('host', 'hosts'):
         for path in sources(root / directory):
             walk(path.resolve(), 'host')

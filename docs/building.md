@@ -153,6 +153,62 @@ must use `find_package(Foundation CONFIG REQUIRED)` and link that target;
 consumers must not copy internal include directories or compiler flags. The
 integration checks exercise this installation boundary.
 
+## Optional Rust validation provider
+
+`--core-provider cpp` is the default. It performs no Rust discovery, compiler
+probe, SDK restoration or download. `--core-provider rust` selects the private
+text-validation leaf while preserving the public C++ `Store` API and its failure
+guarantees. The Rust workspace uses edition 2021, a Rust 1.63 baseline, zero
+external crates and allocation-free `no_std` code. C++ owns records, strings,
+exceptions and frontend behavior; every configured CLI/GUI host links the same
+selected core. This is a narrow component, not a rewrite of the application.
+
+Use a verified [retained Rust extension](sdk.md#optional-retained-rust-extension):
+
+```sh
+./build.sh test dev --core-provider rust --rust-sdk /absolute/path/to/rust-sdk \
+  --build-dir build/dev-rust --label core
+./build.sh test dev --sdk /absolute/path/to/cpp-sdk \
+  --core-provider rust --rust-sdk /absolute/path/to/rust-sdk \
+  --build-dir build/dev-sdk-rust --gui --label gui
+```
+
+The existing `--sdk` supplies the C++ target SDK; `--rust-sdk` supplies a separate
+Rust extension matched to that target. Windows uses its existing dependency-base
+selector and Microsoft host prerequisites alongside the Rust extension. Missing,
+changed, incomplete or mismatched explicitly selected Rust inputs fail the
+operation. An unavailable Rust profile never silently selects C++.
+
+Through the wrapper, only native Linux `dev` builds without a target SDK or
+portable policy may use installed distribution `rustc`/Cargo instead of
+`--rust-sdk`. The actual tools,
+compiler host and target libraries are checked; rustup proxies are rejected.
+The wrapper requires the retained extension for Rust `release`, packaging,
+`asan`, portable builds and prepared-target builds. Direct CMake optimization
+alone does not establish release qualification. Ordinary builds never install
+tools, contact rustup or fetch crates. See [provider tests](testing.md#optional-rust-provider-checks)
+for the limits of mixed sanitizer coverage and
+[portability](portability.md#optional-rust-provider-boundary) for platform evidence.
+
+Default output names add `-rust` for native development tools or `-rust-sdk` for
+a retained extension, after the existing `-sdk` suffix when present. Keep C++ and
+Rust in separate trees. Provider, Rust tool digests, target and SDK manifest
+identity belong to the configured tree; changing them requires a fresh tree.
+Direct CMake selects `FOUNDATION_CORE_PROVIDER=rust` and
+`FOUNDATION_RUST_SDK_ROOT=/absolute/path/to/rust-sdk`. An optional
+`FOUNDATION_RUST_TARGET` must match the C++ platform target.
+
+CMake owns one subordinate Rust archive producer for each selected configuration.
+Cargo receives a frozen lockfile, offline mode, one worker, a private Cargo home
+and configuration-specific output under `BUILD_DIR/rust/CONFIG`. The helper rejects
+ambient Rust/Cargo overrides, external crates and build scripts. It binds source,
+compiler, target-library, flag and notice identities into a verified archive
+receipt. CMake owns the final C++ link and installation. Rust panics abort;
+cross-language LTO is unsupported. The installed export carries the Rust archive
+and its native link requirements, so an installed C++ consumer needs no Rust
+compiler or Cargo. Application `build-info.txt` records the provider, Rust
+compiler/target and retained SDK identities.
+
 ## One graph and deliberate configurations
 
 Keep library sources in one reusable target. Link the CLI, tests, and optional

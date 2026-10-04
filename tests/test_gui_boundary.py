@@ -34,6 +34,100 @@ class GuiBoundaryTests(unittest.TestCase):
             self.assertTrue(shared_violations(source), source)
         self.assertFalse(shared_violations('#include <gui/contract.hpp>\ngui::Adapter& adapter;'))
 
+    def test_rust_tripwire_rejects_backend_imports_calls_and_linkage(self):
+        for source in ('use sdl2::video::Window;', 'use fltk::{app, window};',
+                       'extern crate rev as renderer;', 'use gui::framebuffer::Adapter;',
+                       'fn draw() { sdl2::event::poll(); }',
+                       'extern "C" { fn SDL_PollEvent(event: *mut u8) -> u32; }',
+                       'extern "C" { fn foundation_gui_render(); }',
+                       'extern "C" { fn rev_create_window(); }',
+                       '#[link(name = "SDL2")] extern "C" {}',
+                       '#[link(name = "SDL2main")] extern "C" {}',
+                       '#[link(name = r#"fltk"#)] extern "C" {}',
+                       '#[link(name = "\\x53DL2")] extern "C" {}',
+                       '#[link_name = "SDL_PollEvent"] extern "C" { fn poll(); }',
+                       '#[link(name = concat!("SDL", "2"))] extern "C" {}',
+                       '#[path = "../../gui/host/renderer.rs"] mod renderer;'):
+            self.assertTrue(_guard.rust_violations(source), source)
+
+    def test_rust_tripwire_permits_core_and_private_callback_without_data_false_positives(self):
+        source = '''use core::slice;
+use std::{ffi::c_void, ptr};
+extern "C" { fn foundation_rust_panic() -> !; }
+#[link(name = "c")] extern "C" { fn memcpy(); }
+#[link_name = "foundation_rust_panic"] extern "C" { fn fault() -> !; }
+fn borrow<'a>(value: &'a [u8]) -> &'a [u8] { value }
+const TEXT: &str = r###"use sdl2::video::Window; #[link(name="SDL2")]"###;
+const CHAR: char = 'x';
+// extern "C" { fn SDL_PollEvent(); }
+/* outer /* use fltk::app; */ #[link(name="Rev")] */
+'''
+        self.assertEqual([], _guard.rust_violations(source))
+        for path in _guard.sources(ROOT / 'rust'):
+            if path.suffix == '.rs':
+                self.assertEqual([], _guard.rust_violations(path.read_text()), str(path))
+
+    def test_rust_application_modules_are_checked_by_real_entry_point(self):
+        with tempfile.TemporaryDirectory(prefix='Rust GUI boundary ') as temporary:
+            project = Path(temporary); root = project / 'gui'; root.mkdir()
+            guard = root / 'check_boundary.py'
+            guard.write_bytes((ROOT / 'gui/check_boundary.py').read_bytes())
+            path = project / 'rust/component/src/nested/codec.rs'
+            path.parent.mkdir(parents=True)
+            path.write_text('extern "C" { fn SDL_PollEvent(); }\n')
+            result = subprocess.run([sys.executable, '-B', str(guard)],
+                capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn(str(path), result.stderr)
+            path.write_text('use core::slice;\nextern "C" { fn foundation_rust_panic() -> !; }\n')
+            result = subprocess.run([sys.executable, '-B', str(guard), '--dependencies'],
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn(str(path), result.stdout)
+
+    def test_rust_hosts_keep_backend_ownership_and_reject_application_dependencies(self):
+        with tempfile.TemporaryDirectory(prefix='Rust host boundary ') as temporary:
+            root = Path(temporary) / 'gui'
+            (root / 'host').mkdir(parents=True); (root / 'shared').mkdir()
+            (root / 'shared/view.rs').write_text('const ID: &str = "records.add";\n')
+            host = root / 'host/adapter.rs'
+            host.write_text('extern "C" { fn SDL_PollEvent(); }\n')
+            self.assertEqual([], _guard.tree_violations(root))
+            for source in ('const ID: &str = "records.add";\n', 'use foundation::Store;\n',
+                           'use foundation::{Record, Store};\n', 'use foundation::ui::Application;\n'):
+                host.write_text(source)
+                self.assertTrue(_guard.tree_violations(root), source)
+
+    def test_incremental_build_rechecks_new_and_modified_rust_module(self):
+        cmake = (ROOT / 'gui/CMakeLists.txt').read_text()
+        block = 'file(GLOB_RECURSE' + cmake.split('file(GLOB_RECURSE', 1)[1].split(
+            'add_library(foundation_gui_application STATIC', 1)[0]
+        with tempfile.TemporaryDirectory(prefix='incremental Rust boundary ') as temporary:
+            project = Path(temporary) / 'source'; root = project / 'gui'; root.mkdir(parents=True)
+            (root / 'check_boundary.py').write_bytes((ROOT / 'gui/check_boundary.py').read_bytes())
+            (root / 'CMakeLists.txt').write_text(
+                'cmake_minimum_required(VERSION 3.24)\nproject(BoundaryGuard LANGUAGES NONE)\n' +
+                'find_package(Python3 REQUIRED COMPONENTS Interpreter)\n' + block)
+            build = Path(temporary) / 'build'
+            subprocess.run(['cmake', '-G', 'Ninja', '-S', str(root), '-B', str(build)],
+                check=True, capture_output=True, text=True, timeout=30)
+            def check():
+                return subprocess.run(['cmake', '--build', str(build), '--target', 'foundation_gui_contract'],
+                    capture_output=True, text=True, timeout=30)
+            result = check(); self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            path = project / 'rust/component/src/nested/codec.rs'
+            path.parent.mkdir(parents=True)
+            for contents, accepted in [('use sdl2::event;\n', False), ('use core::slice;\n', True),
+                                       ('#[link(name="SDL2")] extern "C" {}\n', False)]:
+                path.write_text(contents)
+                tick = max(time.time_ns(), path.stat().st_mtime_ns + 10_000_000,
+                           (build / 'boundary-checked').stat().st_mtime_ns + 10_000_000)
+                os.utime(path, ns=(tick, tick))
+                result = check()
+                self.assertEqual(accepted, result.returncode == 0, result.stdout + result.stderr)
+                if not accepted:
+                    self.assertIn('codec.rs', result.stdout + result.stderr)
+
     def test_composition_hosts_do_not_name_feature_ids(self):
         for path in _guard.sources(ROOT / "gui/hosts"):
             self.assertNotIn('"entries.', path.read_text(), str(path))
@@ -214,7 +308,7 @@ class GuiBoundaryTests(unittest.TestCase):
             (patches / 'apply.py').write_bytes((ROOT / 'gui/patches/apply.py').read_bytes())
             names = [('contract','touch-contract'),('memory_adapter','touch-memory'),
                      ('interaction','touch-interaction'),('runtime','file-services'),
-                     ('web','web-tick')]
+                     ('terminal','terminal-caret'),('web','web-tick')]
             for name, patch in names:
                 old = 'inline constexpr int ' + name + '_value=1;\n'
                 new = old.replace('=1;', '=2;')

@@ -283,5 +283,80 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unique'):
             release.assemble(self.spec_path, self.base, self.root / 'release')
 
+    def repack_provider(self, **identity):
+        tree = self.root / 'application'
+        info = dict(line.split('=', 1) for line in (tree / 'build-info.txt').read_text().splitlines())
+        info.update(identity)
+        (tree / 'build-info.txt').write_text(''.join(key + '=' + value + '\n' for key, value in info.items()))
+        archive = Path(self.spec['artifacts'][0]['path']); archive.unlink()
+        archive_tree(tree, archive)
+        self.spec['artifacts'][0]['sha256'] = digest(archive)
+        write_json(Path(self.spec['artifacts'][0]['manifest_path']), artifact.describe(archive))
+        write_json(self.spec_path, self.spec)
+
+    def rust_identity(self):
+        return {'core_provider': 'rust', 'rust_sdk_recipe_id': 'b' * 64,
+                'rust_compiler_version': '1.63.0', 'rust_target': 'x86_64-unknown-linux-gnu',
+                'rust_sdk_manifest_sha256': 'c' * 64, 'rust_compiler_sha256': 'd' * 64}
+
+    def test_rust_package_cannot_lose_provider_identity_in_cpp_manifest(self):
+        self.repack_provider(**self.rust_identity())
+        with self.assertRaisesRegex(ValueError, 'core provider or Rust toolchain'):
+            release.assemble(self.spec_path, self.base, self.root / 'release')
+
+    def test_rust_artifact_requires_complete_distinct_retained_sdk(self):
+        identity = self.rust_identity()
+        entry = dict(self.spec['artifacts'][0], **identity)
+        with self.assertRaisesRegex(ValueError, 'distinct Rust SDK'):
+            release.dependency_recipes(entry)
+        entry['dependency_recipes'] = [self.recipe, identity['rust_sdk_recipe_id']]
+        self.assertEqual(release.dependency_kinds([entry]), {self.recipe: 'sdk', 'b' * 64: 'rust'})
+        for key in release.RUST_IDENTITY_FIELDS:
+            broken = dict(entry); del broken[key]
+            with self.subTest(field=key), self.assertRaisesRegex(ValueError, 'complete compiler'):
+                release.provider_identity(broken)
+
+    def test_same_target_two_provider_outputs_are_rejected(self):
+        output = self.root / 'release'; release.assemble(self.spec_path, self.base, output)
+        data = read_json(output / 'release.json')
+        data['artifacts'].append(dict(data['artifacts'][0], core_provider='cpp'))
+        write_json(output / 'release.json', data)
+        with self.assertRaisesRegex(ValueError, 'duplicate release target'):
+            release.verify_release(output)
+
+    def test_rust_identity_cannot_be_relabelled_or_attached_to_cpp(self):
+        identity = self.rust_identity()
+        entry = dict(self.spec['artifacts'][0], dependency_recipes=[self.recipe, 'b' * 64], **identity)
+        self.spec['artifacts'][0] = entry
+        self.repack_provider(dependency_recipes=self.recipe + ',' + 'b' * 64, **identity)
+        entry['rust_target'] = 'aarch64-unknown-linux-gnu'; write_json(self.spec_path, self.spec)
+        with self.assertRaisesRegex(ValueError, 'core provider or Rust toolchain'):
+            release.assemble(self.spec_path, self.base, self.root / 'release')
+        with self.assertRaisesRegex(ValueError, r'C\+\+ artifact'):
+            release.provider_identity(dict(identity, core_provider='cpp'))
+
+    def test_actual_rust_group_is_retained_recovered_and_rejects_missing_sources(self):
+        from test_rust_sdk import RustSdkTests
+        import rust_sdk
+        fixture = RustSdkTests(); fixture.setUp(); self.addCleanup(fixture.doCleanups)
+        tree, sources, rust = fixture.sdk()
+        recipe = rust['recipe_id']
+        group = self.root / 'rust-group'; rust_sdk.export_group(tree, sources, group)
+        release.copy_dependency_group(group, self.base / recipe, recipe, 'rust')
+        identity = {'core_provider': 'rust', 'rust_sdk_recipe_id': recipe,
+                    'rust_compiler_version': rust['compiler']['version'], 'rust_target': rust['target']['triple'],
+                    'rust_sdk_manifest_sha256': digest(tree / 'rust-sdk.json'),
+                    'rust_compiler_sha256': digest(tree / rust['compiler']['rustc'])}
+        self.spec['artifacts'][0].update(identity, dependency_recipes=[self.recipe, recipe])
+        self.repack_provider(dependency_recipes=self.recipe + ',' + recipe, **identity)
+        original, kit, metadata, expected = self.recovery_kit()
+        rust_group = next(item for item in metadata['dependencies'] if item['recipe_id'] == recipe)
+        self.assertEqual(rust_group['kind'], 'rust')
+        self.assertEqual(release.verify_selection(original, 'linux-x86_64', 'core', 'source'), metadata)
+        shutil.rmtree(original); shutil.rmtree(self.base); fixture.doCleanups()
+        self.assertEqual(release.verify_recovery(kit, expected)['artifacts'][0]['core_provider'], 'rust')
+        (kit / 'dependencies' / recipe / rust_sdk.group_names(recipe)[1]).unlink()
+        with self.assertRaises(ValueError): release.verify_recovery(kit, expected)
+
 
 if __name__ == '__main__': unittest.main()

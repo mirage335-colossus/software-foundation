@@ -12,6 +12,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 STANDARD = {"linux-x86_64": "ubuntu-24.04", "linux-aarch64": "ubuntu-24.04-arm",
             "windows-x86_64": "windows-2022"}
+RUST_RECIPES = {'linux-x86_64': 'third_party/rust/linux-x86_64.json',
+                'linux-aarch64': 'third_party/rust/linux-aarch64.json',
+                'windows-x86_64': 'third_party/rust/windows-x86_64.json',
+                'browser-wasm32': 'third_party/rust/wasm32-emscripten.json'}
 
 
 def plan(devfast=False, include_arm=True, pool="standard", configured="", configured_arm="", configured_windows=""):
@@ -210,12 +214,53 @@ def release_matrix(recipes, profile='core', policy=None, *, runners=None):
     return {'include': rows}
 
 
+def rust_qualification_matrix(recipes, *, runners=None):
+    """An explicit complete optional-provider lane, with no publication adapter."""
+    if not isinstance(recipes, dict) or set(recipes) != set(RUST_RECIPES):
+        raise ValueError('Rust qualification requires every native and browser target')
+    rows = release_matrix(recipes, 'all-gui', runners=runners)['include']
+    rust = module('rust_sdk')
+    for row in rows:
+        path = ROOT / RUST_RECIPES[row['target']]
+        rust.checked_recipe(path)
+        row.update(core_provider='rust', rust_recipe=rust.recipe_identity(path),
+                   rust_recipe_file=RUST_RECIPES[row['target']])
+    return {'include': rows}
+
+
 def source_archive(output, gui_source=None):
     module('source_identity').archive_source(ROOT, output, gui_source)
     return {'archive': str(output), 'sha256': module('coverage').sha(output)}
 
 
-def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_archive=None, expected_files=None):
+def rust_selection(core_provider, rust_group, rust_recipe):
+    if core_provider not in ('cpp', 'rust'):
+        raise ValueError('unknown core provider')
+    if core_provider == 'cpp':
+        if rust_group is not None or rust_recipe is not None:
+            raise ValueError('C++ selection must omit Rust SDK inputs')
+        return None
+    if rust_group is None or not isinstance(rust_recipe, str) or not re.fullmatch(r'[0-9a-f]{64}', rust_recipe):
+        raise ValueError('Rust selection requires one exact retained SDK group')
+    return module('rust_sdk').verify_group(Path(rust_group), rust_recipe)
+
+
+def install_rust_input(core_provider, rust_group, rust_recipe, output, cpp_sdk):
+    if core_provider == 'cpp':
+        return [], {'core_provider': 'cpp'}
+    rust = module('rust_sdk')
+    rust.install(Path(rust_group), rust_recipe, output)
+    metadata = rust.verify_rust_sdk(output, cpp_sdk=cpp_sdk, execute=True)
+    identity = {'core_provider': 'rust', 'rust_sdk_recipe_id': rust_recipe,
+                'rust_compiler_version': metadata['compiler']['version'],
+                'rust_target': metadata['target']['triple'],
+                'rust_sdk_manifest_sha256': module('coverage').sha(output / 'rust-sdk.json'),
+                'rust_compiler_sha256': module('coverage').sha(output / metadata['compiler']['rustc'])}
+    return ['--core-provider', 'rust', '--rust-sdk', str(output)], identity
+
+
+def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_archive=None, expected_files=None,
+                     core_provider='cpp', rust_group=None, rust_recipe=None):
     import shutil
     from dependency_archive import extract
     from dependency_store import verify_group
@@ -227,6 +272,7 @@ def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_
         raise ValueError('retained host graphics input applies only to Windows GUI production')
     if jobs < 1 or output.exists():
         raise ValueError('positive concurrency and new package output required')
+    rust_files = rust_selection(core_provider, rust_group, rust_recipe)
     if expected_files is None: verify_group(group, recipe)
     else: module('dependency_store').verify_binary_group(group, recipe, expected_files)
     manifest = module('source_identity').verify_source_archive(source)
@@ -247,6 +293,9 @@ def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_
         options = {} if expected_files is None else {'expected_files': expected_files}
         sdk_metadata = module('sdk').install(group, recipe, work / 'sdk', production=True, **options)
         command += ['--sdk', str(work / 'sdk')]
+    rust_flags, provider = install_rust_input(core_provider, rust_group, rust_recipe, work / 'rust-sdk',
+                                            work / 'dependencies' if target == 'windows-x86_64' else work / 'sdk')
+    command += rust_flags
     gui = root / 'third_party/retained/gui'
     if gui.is_dir():
         backends = ['wasm'] if target == 'browser-wasm32' else ['terminal', 'framebuffer', 'fltk', 'rev', 'sdl', 'hosted-web']
@@ -290,6 +339,13 @@ def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_
     entry = {'path': archive.name, 'sha256': module('coverage').sha(archive),
              'manifest_path': descriptor.name, 'target': target, 'backends': backends,
              'sdk_recipe': recipe, 'dependency_recipes': [recipe]}
+    entry.update(provider)
+    if rust_recipe:
+        entry['dependency_recipes'].append(rust_recipe)
+        if module('rust_sdk').verify_group(Path(rust_group), rust_recipe) != rust_files:
+            raise ValueError('Rust SDK group changed during application production')
+    if core_provider == 'rust':
+        module('release').validate_package(archive, entry, manifest['tree_sha256'], module('coverage').load(descriptor))
     if graphics_evidence is not None:
         module('coverage').write_new(output / 'graphics-qualification.json',
             {'schema_version': 1, 'status': 'passed', 'target': target, 'backends': backends,
@@ -716,7 +772,7 @@ def qualification_payload_names(plan, batch, manifest, attempt, *, include_input
             if group['recipe_id'] in required:
                 found.add(group['recipe_id'])
                 names.append('qualification-sdk-' + str(index) + '-' + attempt)
-                if item['scope'] == 'recovery' or item.get('sdk_payload') != 'binary':
+                if item['scope'] == 'recovery' or group.get('kind') == 'rust' or item.get('sdk_payload') != 'binary':
                     names.append('qualification-sdk-source-' + str(index) + '-' + attempt)
         if found != required: raise ValueError('qualification SDK closure is incomplete')
     if len(names) > 20 or len(names) != len(set(names)):
@@ -1178,11 +1234,13 @@ def windows_gui_qualification(command, archive, build, output, jobs, *, protecte
             for p in [output / 'graphics.json', output / 'graphics-probe.json', *files]}
 
 
-def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphics_archive=None, *, defer_qualification=False, development=False):
+def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphics_archive=None, *, defer_qualification=False, development=False,
+                   core_provider='cpp', rust_group=None, rust_recipe=None):
     """Consume a relocated SDK; GUI qualification retains no distributable output."""
     from dependency_store import verify_group
     if target not in (*STANDARD, 'browser-wasm32') or jobs < 1:
         raise ValueError('supported target and positive concurrency required')
+    rust_files = rust_selection(core_provider, rust_group, rust_recipe)
     if type(development) is not bool or development and (not target.startswith('linux-') or gui_group is None):
         raise ValueError('development qualification requires a native Linux all-GUI SDK')
     graphics_needed = target == 'windows-x86_64' and gui_group is not None
@@ -1205,6 +1263,9 @@ def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphi
     else:
         metadata = module('sdk').install(group, recipe, output / 'sdk', production=True)
         command += ['--sdk', str(output / 'sdk')]
+    rust_flags, provider = install_rust_input(core_provider, rust_group, rust_recipe, output / 'rust-sdk',
+                                            output / 'dependencies' if target == 'windows-x86_64' else output / 'sdk')
+    command += rust_flags
     if gui_group is not None:
         backends = ['wasm'] if target == 'browser-wasm32' else ['terminal', 'framebuffer', 'fltk', 'rev', 'sdl', 'hosted-web']
         if not set(backends) <= set(metadata.get('capabilities', ['wasm'] if target == 'browser-wasm32' else [])):
@@ -1213,6 +1274,8 @@ def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphi
         if target != 'browser-wasm32': command += ['--host-tests']
     if gui_group is None:
         command += ['--label', 'core']
+        if core_provider == 'rust':
+            command.remove('--label'); command.remove('core'); command.append('--full')
         if target == 'browser-wasm32': command += ['--gui-backends', 'wasm']
     if development:
         # Exercise both documented commands in one graph. This opt-in qualification
@@ -1229,7 +1292,9 @@ def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphi
     if gui_group is None:
         packaging = command.copy(); packaging[2] = 'package'
         for option in ('--junit', '--label'):
-            index = packaging.index(option); del packaging[index:index + 2]
+            if option in packaging:
+                index = packaging.index(option); del packaging[index:index + 2]
+        if '--full' in packaging: packaging.remove('--full')
         subprocess.run(packaging, cwd=ROOT, check=True)
         choices = list((output / 'build/packages').glob('*.zip' if target.startswith('windows-') else '*.tar.gz'))
         if len(choices) != 1: raise ValueError('prepared check needs one complete archive')
@@ -1238,10 +1303,14 @@ def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphi
         a.verify(choices[0], descriptor, sdk=output / 'sdk' if target != 'windows-x86_64' else None,
                  abi=target.startswith('linux-'), processor=target.split('-', 1)[1])
     if verify_group(group, recipe) != before: raise ValueError('SDK group changed during qualification')
+    if rust_recipe and module('rust_sdk').verify_group(Path(rust_group), rust_recipe) != rust_files:
+        raise ValueError('Rust SDK group changed during qualification')
     receipt = {'status': 'passed', 'target': target, 'recipe': recipe, 'group_files': before,
                'checks': ['relocated-sdk', 'compile', 'execute', 'installed-consumer'] if gui_group is None
                          else ['relocated-sdk', 'all-native-gui' if target != 'browser-wasm32' else 'wasm-gui', 'full-source-tests'],
                'redistribution': False, 'source_junit': 'source.junit.xml'}
+    receipt.update(provider)
+    if rust_files is not None: receipt['rust_group_files'] = rust_files
     if development:
         receipt['checks'] += ['ordinary-dev-build', 'ordinary-dev-test', 'without-portable-mode']
         receipt['configuration'] = 'dev'

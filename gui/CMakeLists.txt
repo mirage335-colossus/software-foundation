@@ -86,7 +86,7 @@ endif()
 # The Python guard selects source types; CMake must still invalidate its stamp.
 file(GLOB_RECURSE foundation_gui_owned_sources LIST_DIRECTORIES FALSE CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/shared/*" "${CMAKE_CURRENT_SOURCE_DIR}/host/*"
-    "${CMAKE_CURRENT_SOURCE_DIR}/hosts/*")
+    "${CMAKE_CURRENT_SOURCE_DIR}/hosts/*" "${CMAKE_CURRENT_SOURCE_DIR}/../rust/*")
 execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/check_boundary.py" --dependencies
     OUTPUT_VARIABLE foundation_gui_transitive_sources COMMAND_ERROR_IS_FATAL ANY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${foundation_gui_transitive_sources})

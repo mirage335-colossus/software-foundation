@@ -10,7 +10,8 @@ target_compile_features(host_plugin PRIVATE cxx_std_17)
 if(MODE STREQUAL "package")
   # A real installed archive using the production exported runtime helper.
   include(CMakePackageConfigHelpers)
-  add_library(foundation_core STATIC "${FOUNDATION_SOURCE}/src/store.cpp")
+  add_library(foundation_core STATIC "${FOUNDATION_SOURCE}/src/store.cpp"
+    "${FOUNDATION_SOURCE}/src/text_validation.cpp")
   target_compile_features(foundation_core PUBLIC cxx_std_20)
   target_include_directories(foundation_core PUBLIC
     "$<BUILD_INTERFACE:${FOUNDATION_SOURCE}/include>" "$<INSTALL_INTERFACE:include>")
@@ -19,6 +20,7 @@ if(MODE STREQUAL "package")
   install(EXPORT FoundationTargets NAMESPACE foundation:: DESTINATION lib/cmake/Foundation)
   install(FILES "${FOUNDATION_SOURCE}/include/foundation/store.hpp" DESTINATION include/foundation)
   set(FOUNDATION_PORTABLE ON)
+  set(FOUNDATION_CORE_PROVIDER cpp)
   configure_package_config_file("${FOUNDATION_SOURCE}/cmake/FoundationConfig.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/FoundationConfig.cmake" INSTALL_DESTINATION lib/cmake/Foundation)
   install(FILES "${CMAKE_CURRENT_BINARY_DIR}/FoundationConfig.cmake"

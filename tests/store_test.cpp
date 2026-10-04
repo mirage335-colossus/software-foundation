@@ -13,6 +13,14 @@ template<class Error, class Function> void rejects(Function function) {
     catch (const Error&) { return; }
     throw std::runtime_error("expected rejection did not occur");
 }
+template<class Function> void rejects_text(Function function, const char* message) {
+    try { function(); }
+    catch (const std::invalid_argument& error) {
+        require(std::string(error.what()) == message, "text error message changed");
+        return;
+    }
+    throw std::runtime_error("expected text rejection did not occur");
+}
 }
 
 int main() {
@@ -25,9 +33,17 @@ int main() {
         require(a == 1 && b == 2, "initial IDs");
         const auto before = store.snapshot();
         rejects<std::length_error>([&] { store.add("Gamma"); });
-        rejects<std::invalid_argument>([&] { store.update(a, ""); });
-        rejects<std::invalid_argument>([&] { store.update(a, std::string(257, 'x')); });
-        rejects<std::invalid_argument>([&] { store.update(a, "bad\ntext"); });
+        constexpr auto length_error = "text must contain 1..256 bytes";
+        constexpr auto ascii_error = "text must contain printable ASCII only";
+        rejects_text([&] { store.add(""); }, length_error);
+        rejects_text([&] { store.add("bad\ntext"); }, ascii_error);
+        rejects_text([&] { store.update(a, std::string_view{}); }, length_error);
+        rejects_text([&] { store.update(a, std::string(257, 'x')); }, length_error);
+        rejects_text([&] { store.update(a, std::string(257, '\n')); }, length_error);
+        rejects_text([&] { store.update(a, "bad\ntext"); }, ascii_error);
+        rejects_text([&] { store.update(a, std::string("a\0b", 3)); }, ascii_error);
+        rejects_text([&] { store.update(0, ""); }, length_error);
+        rejects_text([&] { store.update(0, "bad\ntext"); }, ascii_error);
         require(store.snapshot() == before, "failed operation changed state");
         require(!store.update(0, "Valid") && !store.erase(0), "missing ID accepted");
         require(store.update(a, std::string(256, 'x')), "maximum length rejected");

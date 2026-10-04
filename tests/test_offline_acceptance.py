@@ -62,6 +62,127 @@ class OfflineAcceptance(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 acceptance.validate_plan(value, system='Linux', machine='x86_64')
 
+    def test_rust_plans_require_an_explicit_complete_paired_group_and_preserve_cpp_plans(self):
+        plan = copy.deepcopy(self.plan)
+        rust_group = self.root / 'rust group'; rust_group.mkdir()
+        case = plan['cases'][0]
+        case.update(core_provider='rust', rust_group=str(rust_group), rust_recipe='c' * 64)
+        self.assertEqual(acceptance.validate_plan(plan, system='Linux', machine='x86_64'),
+                         ['linux-x86_64', 'browser-wasm32'])
+        invalid = []
+        for field in ('rust_group', 'rust_recipe', 'core_provider'):
+            value = copy.deepcopy(plan); value['cases'][0].pop(field); invalid.append(value)
+        value = copy.deepcopy(plan); value['cases'][0]['rust_recipe'] = 'bad'; invalid.append(value)
+        value = copy.deepcopy(plan); value['cases'][0]['core_provider'] = 'auto'; invalid.append(value)
+        value = copy.deepcopy(plan); value['cases'][0]['core_provider'] = 'cpp'; invalid.append(value)
+        for value in invalid:
+            with self.subTest(case=value['cases'][0]), self.assertRaises(ValueError):
+                acceptance.validate_plan(value, system='Linux', machine='x86_64')
+        explicit_cpp = copy.deepcopy(self.plan); explicit_cpp['cases'][0]['core_provider'] = 'cpp'
+        self.assertEqual(acceptance.validate_plan(explicit_cpp, system='Linux', machine='x86_64'),
+                         acceptance.validate_plan(self.plan, system='Linux', machine='x86_64'))
+
+    def test_cpp_group_verification_never_imports_rust_sdk(self):
+        with patch.dict(sys.modules, {'rust_sdk': None}):
+            result = acceptance.verify_case(self.prepared_fixture())
+        self.assertEqual(result['core_provider'], 'cpp')
+        self.assertNotIn('rust', result)
+
+    def test_rust_group_preflight_pairs_metadata_and_binds_complete_archive_hashes(self):
+        import rust_sdk
+        case = self.prepared_fixture()
+        group = self.root / 'rust group'; group.mkdir()
+        case.update(core_provider='rust', rust_group=str(group), rust_recipe='c' * 64)
+        metadata = {'host': {'system': 'Linux', 'processor': 'x86_64'},
+                    'target': {'system': 'Linux', 'processor': 'x86_64'}}
+        files = {name: 'd' * 64 for name in rust_sdk.names(case['rust_recipe'])}
+        inspect = acceptance.inspect_manifest_archive
+        def archive(path, member, **kwargs):
+            return (metadata, None) if member == 'rust-sdk.json' else inspect(path, member, **kwargs)
+        with patch.object(rust_sdk, 'verify_group', return_value=files) as verify, \
+                patch.object(rust_sdk, 'verify_pair') as pair, \
+                patch.object(acceptance, 'inspect_manifest_archive', side_effect=archive):
+            result = acceptance.verify_case(case)
+            verify.assert_called_with(group, case['rust_recipe'])
+            pair.assert_called_once_with(metadata, result['metadata'])
+            self.assertEqual(result['rust'], {'files': files, 'recipe': case['rust_recipe'], 'metadata': metadata})
+            pair.side_effect = ValueError('Rust/C++ target mismatch')
+            with self.assertRaisesRegex(ValueError, 'target mismatch'):
+                acceptance.verify_case(case)
+
+    def test_rust_commands_and_environment_select_retained_tools_without_ambient_cargo_state(self):
+        output = self.root / 'output'; cpp = self.root / 'cpp sdk'; rust = self.root / 'rust sdk'
+        for action in ('build', 'test', 'package'):
+            command = acceptance.build_arguments('linux-x86_64', cpp, output, 2, action,
+                                                 core_provider='rust', rust_sdk=rust)
+            self.assertEqual(command[command.index('--core-provider') + 1], 'rust')
+            self.assertEqual(command[command.index('--rust-sdk') + 1], str(rust))
+            self.assertEqual(command[command.index('--sdk') + 1], str(cpp))
+        for provider, extension in (('cpp', rust), ('rust', None), ('auto', None)):
+            with self.subTest(provider=provider), self.assertRaises(ValueError):
+                acceptance.build_arguments('linux-x86_64', cpp, output, 2, 'build',
+                                           core_provider=provider, rust_sdk=extension)
+        environment = acceptance.rust_environment(output, {'PATH': '/usr/bin', 'CARGO_HOME': '/ambient',
+            'CARGO_TARGET_DIR': '/ambient-target', 'CARGO_BUILD_RUSTC_WRAPPER': 'wrapper',
+            'RUSTFLAGS': '-C target-cpu=native', 'RUSTC_WRAPPER': 'wrapper', 'RUSTUP_HOME': '/ambient-rustup'})
+        self.assertEqual(environment, {'PATH': '/usr/bin', 'CARGO_HOME': str(output / 'cargo-home'),
+            'RUSTUP_HOME': str(output / 'rustup-home'), 'CARGO_NET_OFFLINE': 'true'})
+
+    def test_rust_requests_project_the_verified_group_and_recheck_outer_inputs(self):
+        from dependency_archive import digest
+        for mutate in (False, True):
+            with self.subTest(mutate=mutate), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve(); source = root / 'source'; source.mkdir()
+                (source / 'app.py').write_text('frozen source\n')
+                cpp = root / 'cpp group'; cpp.mkdir(); (cpp / 'archive').write_bytes(b'cpp')
+                rust = root / 'rust group'; rust.mkdir(); (rust / 'archive').write_bytes(b'rust')
+                case = {'target': 'linux-x86_64', 'group': str(cpp), 'recipe': 'a' * 64,
+                        'core_provider': 'rust', 'rust_group': str(rust), 'rust_recipe': 'b' * 64}
+                value = copy.deepcopy(self.plan); value['cases'] = [case]
+                plan = root / 'plan.json'; write_json(plan, value); output = root / 'output'
+                verified = {'files': {'archive': digest(cpp / 'archive')},
+                            'rust': {'files': {'archive': digest(rust / 'archive')}}}
+                def command(boundary, frozen, case_output, group, uid, gid, phase, **kwargs):
+                    self.assertEqual(group, cpp); self.assertEqual(kwargs, {'rust_group': rust})
+                    request = read_json(case_output / 'request.json')
+                    self.assertEqual(request['rust_group_files'], verified['rust']['files'])
+                    self.assertEqual(request['case']['core_provider'], 'rust')
+                    if phase == 'execute':
+                        write_json(case_output / 'execute.json', {'status': 'passed'})
+                        if mutate:
+                            (rust / 'archive').write_bytes(b'changed after launch')
+                    return ['boundary', phase]
+                with patch.object(acceptance, 'verify_case', return_value=verified), \
+                        patch.object(acceptance, 'docker_phase', side_effect=command) as phases, \
+                        patch.object(acceptance.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                            [], 0, value['isolation']['image'] + '\n', '')):
+                    if mutate:
+                        with self.assertRaisesRegex(ValueError, 'retained group changed outside'):
+                            acceptance.run(plan, output, ['linux-x86_64'], root=source)
+                    else:
+                        report = acceptance.run(plan, output, ['linux-x86_64'], root=source)
+                        self.assertEqual(report['requested_providers'], {'linux-x86_64': 'rust'})
+                        self.assertEqual(report['cases'][0]['core_provider'], 'rust')
+                        self.assertEqual(report['input_recheck'], 'passed')
+                    self.assertEqual(phases.call_count, 2)
+                self.assertEqual(read_json(output / 'acceptance.json')['status'], 'failed' if mutate else 'passed')
+
+    def test_rust_sdk_readonly_receipt_requires_the_mount_and_a_filesystem_write_rejection(self):
+        import errno
+        from types import SimpleNamespace
+        with patch.object(acceptance.os, 'statvfs', return_value=SimpleNamespace(f_flag=os.ST_RDONLY)), \
+                patch.object(acceptance.os, 'open', side_effect=OSError(errno.EROFS, 'read-only')) as write:
+            self.assertEqual(acceptance.readonly_sdk(self.root),
+                             {'mount_readonly': True, 'write_rejection_errno': errno.EROFS})
+            self.assertEqual(write.call_count, 1)
+            write.side_effect = OSError(errno.EACCES, 'permissions')
+            with self.assertRaisesRegex(ValueError, 'read-only filesystem'):
+                acceptance.readonly_sdk(self.root)
+        with patch.object(acceptance.os, 'statvfs', return_value=SimpleNamespace(f_flag=0)), \
+                patch.object(acceptance.os, 'open') as write, self.assertRaisesRegex(ValueError, 'read-only mount'):
+            acceptance.readonly_sdk(self.root)
+        write.assert_not_called()
+
     def test_default_requires_wasm_inputs_and_narrow_selection_never_implies_full_inventory(self):
         plan = copy.deepcopy(self.plan); plan['cases'].pop()
         path = self.root / 'plan.json'; write_json(path, plan)
@@ -156,6 +277,18 @@ class OfflineAcceptance(unittest.TestCase):
             with self.subTest(document=document):
                 path.write_text(document)
                 with self.assertRaises(ValueError): acceptance.verify_core_junit(path)
+
+    def test_current_core_inventory_requires_component_and_fail_closed_tests(self):
+        required = ('core.store', 'core.cli', 'core.text_validation', 'core.text_status')
+        path = self.root / 'current-core.junit.xml'
+        cases = ''.join('<testcase name="' + name + '" status="run"/>' for name in required)
+        path.write_text('<testsuite tests="4" failures="0">' + cases + '</testsuite>')
+        result = acceptance.verify_core_junit(path, required)
+        self.assertEqual(result['count'], 4)
+        self.assertEqual(result['tests'], sorted(required))
+        path.write_text('<testsuite>' + cases.replace('<testcase name="core.text_status" status="run"/>', '') + '</testsuite>')
+        with self.assertRaisesRegex(ValueError, 'complete required core inventory'):
+            acceptance.verify_core_junit(path, required)
 
     def test_snapshot_contains_only_application_inputs_and_complete_source_identity(self):
         source = self.root / 'checkout'; source.mkdir()

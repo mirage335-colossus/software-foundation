@@ -121,6 +121,73 @@ byte-identical development aliases and runtime version checks. Arbitrary files
 with private ABI requirements remain rejected, and application packages cannot
 inherit this SDK allowance or bundle the target libc/loader.
 
+## Optional retained Rust extension
+
+The C++ SDK remains `sdk.json`. Selecting the optional Rust provider adds a
+separate `rust-sdk.json` extension; it does not change the existing C++ manifest
+or make Rust a prerequisite of C++ builds. See
+[provider selection](building.md#optional-rust-validation-provider). All ordinary
+Rust builds consume existing inputs without supplier access or SDK mutation.
+
+[`rust_sdk.py`](../tools/rust_sdk.py) prepares exact official Rust 1.63.0 compiler,
+Cargo, host/target library and source components from the recipes in
+[`third_party/rust`](../third_party/rust). Recipes cover native GNU/Linux x86_64
+and aarch64, native Windows x86_64 MSVC, and the exact Rust 1.63.0 / Emscripten
+6.0.10 experiment. Recipe availability is not platform qualification. Official
+Rust distribution archives are an explicit supplier for this extension; a
+distribution-package-only policy cannot be inferred from the existing C++ SDK.
+No rustup installation or moving toolchain selection is used.
+
+Only the explicit `fetch` action acquires missing recipe-pinned supplier bytes.
+`prepare` is offline and requires all declared files to be retained already:
+
+```sh
+python3 tools/rust_sdk.py recipe-id --recipe third_party/rust/linux-x86_64.json
+python3 tools/rust_sdk.py fetch --recipe third_party/rust/linux-x86_64.json \
+  --inputs /owned/retained-rust-inputs
+python3 tools/rust_sdk.py prepare --recipe third_party/rust/linux-x86_64.json \
+  --inputs /owned/retained-rust-inputs --output /owned/new-rust-group
+python3 tools/rust_sdk.py verify-group --group /owned/new-rust-group \
+  --recipe EXACT_RECIPE_SHA256
+python3 tools/rust_sdk.py restore --group /owned/new-rust-group \
+  --recipe EXACT_RECIPE_SHA256 --output /owned/new-rust-sdk --execute
+python3 tools/rust_sdk.py verify --root /owned/new-rust-sdk --execute
+```
+
+Use the complete recipe identity returned by `recipe-id` in place of
+`EXACT_RECIPE_SHA256`. Preparation and restoration destinations must be new.
+The same offline lifecycle applies to the other recipes. Add
+`--cpp-sdk /absolute/path/to/cpp-sdk` when pairing a retained C++ target SDK;
+Emscripten preparation requires that exact pair. `--execute` is a native host
+tool probe, not a foreign-target execution claim.
+
+The complete retained group is exactly
+`rust-sdk-RECIPE-binary.tar.gz`, `rust-sdk-RECIPE-sources.tar.gz` and
+`rust-sdk-RECIPE-SHA256SUMS`. The binary manifest binds the source inventory,
+compiler/Cargo versions, compiler host, target triple and library directory,
+licenses and every retained file digest. GNU/Linux and MSVC extensions must
+match the selected C++ target ABI. Emscripten also binds the exact C++ SDK recipe
+and Emscripten version. Missing or differing inputs fail instead of falling back
+to tools on PATH. The component build independently rechecks the selected tools,
+target libraries, notices and manifest before and after use.
+
+Keep three recovery results separate:
+
+| Operation | Retained inputs and scope |
+| --- | --- |
+| Toolchain restoration | Restore the exact official compiler, Cargo and matched target-library binaries from the verified group, then probe on their declared native host |
+| Source-input recovery | `restore-sources --group GROUP --recipe RECIPE --output NEW_DIRECTORY` recovers official compiler/Cargo source with vendored dependencies, library sources, supplier components, release metadata, recipe and helper bytes |
+| Compiler reconstruction | A source compiler/Cargo build, complete bootstrap closure and executable rebuilt toolchain are **UNVERIFIED**; retaining source or `bootstrap/stage0.json` does not establish this result |
+
+`rust-src` also supplies retained library sources inside the binary extension for
+inspection. The source inventory records the bounded recovery contract and
+`bootstrap_reconstructed: false`; the binary inventory records
+`compiler_reconstructed: false`. Keep these limits visible in release recovery
+evidence. An offline application rebuild using restored official tools proves
+application recovery only. Platform host/runtime/GUI qualification remains
+separate in [the Rust implementation record](rust-hybrid-plan.md) and
+[portability](portability.md#optional-rust-provider-boundary).
+
 ## Linux SDK filenames and destination filesystems
 
 Native Linux producers explicitly declare `path_policy: "linux-case-sensitive-v1"`

@@ -480,8 +480,22 @@ def run_source(candidate, manifest, entry, work, evidence, jobs, recovery=False,
         version = inspect_selected_linker()['version']
         sdk_windows.install(group, entry["sdk_recipe"], work / "windows-dependencies", version, **({"expected_files": expected_files} if expected_files is not None else {}))
         command += ["--binary-dependency-group" if binary_only else "--dependency-group", str(group), "--windows-dependencies", str(work / "windows-dependencies")]
-    for recipe in entry.get("dependency_recipes", [entry["sdk_recipe"]]):
-        if recipe != entry["sdk_recipe"]:
+    provider = release.provider_identity(entry)
+    rust_recipe = provider.get("rust_sdk_recipe_id")
+    if rust_recipe:
+        import rust_sdk
+        rust_group = candidate / "dependencies" / rust_recipe
+        rust_sdk.install(rust_group, rust_recipe, work / "rust-sdk")
+        cpp_sdk = work / "sdk" if (work / "sdk/sdk.json").is_file() else work / "windows-dependencies"
+        rust_metadata = rust_sdk.verify_rust_sdk(work / "rust-sdk", cpp_sdk=cpp_sdk,
+                                               target=provider["rust_target"], execute=True)
+        if (digest(work / "rust-sdk/rust-sdk.json") != provider["rust_sdk_manifest_sha256"]
+                or rust_metadata["compiler"]["version"] != provider["rust_compiler_version"]
+                or digest(work / "rust-sdk" / rust_metadata["compiler"]["rustc"]) != provider["rust_compiler_sha256"]):
+            raise ValueError("recovered Rust SDK differs from delivered compiler identity")
+        command += ["--core-provider", "rust", "--rust-sdk", str(work / "rust-sdk")]
+    for recipe in release.dependency_recipes(entry):
+        if recipe not in (entry["sdk_recipe"], rust_recipe):
             command += ["--binary-dependency-group" if binary_only else "--dependency-group", str(candidate / "dependencies" / recipe)]
     if entry["backends"] and entry["backends"] != ["core"]:
         gui = work / "source/third_party/retained/gui"
@@ -537,6 +551,7 @@ def run_source(candidate, manifest, entry, work, evidence, jobs, recovery=False,
         raise ValueError("source changed during qualification")
     result = {"executed_tests": names, "junit_sha256": digest(junit), "retained_inputs_only": recovery,
               "tool_reports": reports, "platform_exclusions": excluded, "installed_consumer": "passed"}
+    result.update(provider)
     if graphics is not None:
         result["windows_graphics"] = graphics
     if {"framebuffer", "fltk", "rev"} <= set(entry["backends"]):
@@ -828,9 +843,10 @@ def check(candidate, target, backend, scope, evidence, jobs=2, browser_options=N
                 # Recover only this target's complete source/dependency closure.
                 recovered = work / 'recovered'; recovered.mkdir()
                 shutil.copyfile(candidate / manifest['source']['archive'], recovered / manifest['source']['archive'])
-                from dependency_store import copy_group
+                kinds = release.dependency_kinds(manifest['artifacts'])
                 for recipe in release.dependency_recipes(entry):
-                    copy_group(candidate / 'dependencies' / recipe, recovered / 'dependencies' / recipe, recipe)
+                    release.copy_dependency_group(candidate / 'dependencies' / recipe,
+                        recovered / 'dependencies' / recipe, recipe, kinds[recipe])
                 # Recovery outputs deliberately omit application binaries. Rebuild
                 # from only the retained source and groups, not from the base.
                 inputs = work / "recovered"

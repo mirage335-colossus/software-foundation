@@ -61,7 +61,16 @@ def inventory_digest(files):
     return hashlib.sha256(json.dumps(files, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
-def verify_rootfs(boundary):
+def mount_point(root, name):
+    path = root / name
+    parts = Path(name).parts
+    if (path.is_symlink() or not path.is_dir() or root not in path.resolve().parents
+            or any(root.joinpath(*parts[:index]).is_symlink() for index in range(1, len(parts)))):
+        raise ValueError('prepared rootfs lacks an ordinary acceptance mount point: ' + name)
+    return path
+
+
+def verify_rootfs(boundary, *, rust_group=None):
     root, manifest_path = Path(boundary['rootfs']), Path(boundary['manifest'])
     if file_hash(manifest_path) != boundary['manifest_sha256']:
         raise ValueError('prepared rootfs manifest differs from its pinned identity')
@@ -82,26 +91,33 @@ def verify_rootfs(boundary):
     actual = rootfs_files(root)
     if actual != expected or inventory_digest(actual) != manifest.get('inventory_sha256'):
         raise ValueError('prepared rootfs file/link/mode inventory changed')
-    for name in ('work', 'output', 'inputs/group', 'proc', 'dev', 'sys', 'tmp'):
-        path = root / name
-        parts = Path(name).parts
-        if (path.is_symlink() or not path.is_dir() or root not in path.resolve().parents
-                or any(root.joinpath(*parts[:index]).is_symlink() for index in range(1, len(parts)))):
-            raise ValueError('prepared rootfs lacks an ordinary acceptance mount point: ' + name)
+    required = ('work', 'output', 'inputs/group', 'proc', 'dev', 'sys', 'tmp')
+    if rust_group is not None:
+        required += ('inputs/rust-group',)
+    for name in required:
+        mount_point(root, name)
     if not (root / 'usr/bin/setpriv').is_file() or root not in (root / 'usr/bin/setpriv').resolve().parents:
         raise ValueError('prepared rootfs lacks the capability-dropping host tool')
     return manifest
 
 
-def command(boundary, source, output, group):
+def command(boundary, source, output, group, *, rust_group=None):
     if not hasattr(os, 'getuid') or os.getuid() == 0 or os.getgid() == 0:
         raise ValueError('namespace acceptance requires an ordinary Linux host user')
     for name in ('unshare', 'mount', 'chroot', 'ip'):
         setup_program(name)
-    return [setup_program('unshare'), '--user', '--map-root-user', '--mount', '--net', '--pid', '--fork',
+    if rust_group is not None:
+        rust_group = Path(rust_group)
+        if rust_group.is_symlink() or not rust_group.is_dir() or rust_group.resolve(strict=True) != rust_group:
+            raise ValueError('retained Rust group must be an ordinary canonical directory')
+        mount_point(Path(boundary['rootfs']), 'inputs/rust-group')
+    argv = [setup_program('unshare'), '--user', '--map-root-user', '--mount', '--net', '--pid', '--fork',
             str(Path(sys.executable).resolve(strict=True)), '-I', '-B', str(source / 'tools/offline_namespace.py'), '--inside', '--rootfs', boundary['rootfs'],
             '--source', str(source), '--output', str(output), '--group', str(group),
             '--uid', str(os.getuid()), '--gid', str(os.getgid())]
+    if rust_group is not None:
+        argv += ['--rust-group', str(rust_group)]
+    return argv
 
 
 def mount(*arguments):
@@ -113,7 +129,16 @@ def read_only_bind(source, destination):
     mount('-o', 'remount,bind,ro,nosuid,nodev', destination)
 
 
-def inside(rootfs, source, output, group, uid, gid):
+def restored_sdk(output, name, manifest):
+    root = output / name
+    receipt = root / manifest
+    if (root.is_symlink() or not root.is_dir() or root.resolve(strict=True) != output.resolve(strict=True) / name
+            or receipt.is_symlink() or not receipt.is_file()):
+        raise ValueError('offline execution requires an ordinary completed SDK restoration: ' + name)
+    return root
+
+
+def inside(rootfs, source, output, group, uid, gid, *, rust_group=None):
     if os.getuid() != 0 or uid <= 0 or gid <= 0:
         raise ValueError('namespace setup requires a mapped ordinary host user')
     expected = f'0 {uid} 1'
@@ -127,6 +152,8 @@ def inside(rootfs, source, output, group, uid, gid):
     read_only_bind(rootfs, view)
     read_only_bind(source, view / 'work')
     read_only_bind(group, view / 'inputs/group')
+    if rust_group is not None:
+        read_only_bind(rust_group, view / 'inputs/rust-group')
     mount('--bind', output, view / 'output')
     mount('-t', 'proc', '-o', 'nosuid,nodev,noexec', 'proc', view / 'proc')
     mount('-t', 'sysfs', '-o', 'ro,nosuid,nodev,noexec', 'sysfs', view / 'sys')
@@ -153,7 +180,11 @@ def inside(rootfs, source, output, group, uid, gid):
     stage_environment = {**environment, 'HOME': '/output/stage-home', 'TMPDIR': '/output/stage-tmp',
                          'XDG_CACHE_HOME': '/output/stage-cache', 'CCACHE_DIR': '/output/stage-cache/ccache'}
     subprocess.run([*launcher, *inner, '--inside', 'stage'], check=True, env=stage_environment)
-    read_only_bind(Path('/output/sdk'), Path('/output/sdk'))
+    sdk = restored_sdk(Path('/output'), 'sdk', 'sdk.json')
+    read_only_bind(sdk, sdk)
+    if rust_group is not None:
+        rust_sdk = restored_sdk(Path('/output'), 'rust-sdk', 'rust-sdk.json')
+        read_only_bind(rust_sdk, rust_sdk)
     # Native GUI smoke requires a separately declared disposable display. This
     # does not enter the retained SDK or become an application prerequisite.
     target = json.loads(Path('/output/request.json').read_text())['case']['target']
@@ -167,12 +198,13 @@ def main(argv=None):
     parser.add_argument('--inside', action='store_true')
     for name in ('rootfs', 'source', 'output', 'group'):
         parser.add_argument('--' + name, type=Path, required=True)
+    parser.add_argument('--rust-group', type=Path)
     parser.add_argument('--uid', type=int, required=True)
     parser.add_argument('--gid', type=int, required=True)
     args = parser.parse_args(argv)
     if not args.inside:
         raise ValueError('namespace adapter must be invoked by the validated acceptance launcher')
-    inside(args.rootfs, args.source, args.output, args.group, args.uid, args.gid)
+    inside(args.rootfs, args.source, args.output, args.group, args.uid, args.gid, rust_group=args.rust_group)
     return 0
 
 

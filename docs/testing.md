@@ -65,6 +65,52 @@ stable and their extensive execution is authorized; otherwise record pending wor
 Reuse evidence only for unchanged source, configuration, dependency identity,
 test inventory, and relevant environment. Record reused results explicitly.
 
+## Optional Rust provider checks
+
+The private text-validation tests are available in both provider configurations.
+`core.text_validation` checks provider identity, byte and length boundaries,
+null/overlong inputs and unchanged caller buffers through the actual C++ caller.
+`core.text_status` verifies unknown provider statuses fail closed.
+`core.store` checks exact errors, validation precedence and state preservation;
+`core.cli` checks observable executable behavior. Rust unit tests supplement
+these foreign-caller checks rather than replacing them.
+
+```sh
+./build.sh test dev --core-provider cpp --build-dir build/check-cpp --label core
+./build.sh test dev --core-provider rust --rust-sdk /absolute/path/to/rust-sdk \
+  --build-dir build/check-rust --label core
+./build.sh test dev --core-provider rust --rust-sdk /absolute/path/to/rust-sdk \
+  --build-dir build/check-rust --test rust.unit
+```
+
+`rust.unit` is registered only for an executable exact-host native Rust target.
+A Wasm or foreign-target tree does not claim Rust unit execution by omitting
+that test. Its C++ contract tests still require the declared target executor.
+The installed-consumer check must relocate the package and consume
+`foundation::core` with Rust tools absent, carrying the installed archive's
+transitive native requirements. Also check a default C++ build with Rust tools
+and caches absent; its configuration must make zero Rust discovery or acquisition
+attempts.
+
+Build-helper coverage must distinguish frozen/offline inputs, hostile Cargo/Rust
+configuration, invalid SDK pairing, changed tools/target libraries/notices,
+archive/receipt tampering, missing-output rebuilds, incremental reuse and separate
+Debug/Release outputs. Selecting a missing retained Rust SDK must fail even when
+unrelated Rust tools are available. Shared GUI tests run against the selected
+core, with every applicable frontend remaining in its normal backend inventory.
+Provider, compiler, SDK/group and source identities must survive CI receipts,
+source replay and package recovery; a C++ result cannot certify Rust bytes.
+
+Stable Rust 1.63 code is not instrumented by the existing C++ `asan` preset.
+Mixed ASan success establishes the exercised C++ and boundary scope; it is not
+Rust-internal sanitizer coverage. No nightly toolchain is acquired for an ordinary
+test. Native ARM64/Windows and full browser application execution remain their
+own qualification scopes. A successful primitive Wasm ABI probe establishes
+only its exact compiler/SDK/settings/cases. Offline toolchain restoration and
+source-input recovery likewise do not certify a compiler rebuilt from source.
+Use [platform limits](portability.md#optional-rust-provider-boundary) and
+[the implementation record](rust-hybrid-plan.md) for actual outcomes.
+
 ## Test design
 
 Assert public behavior and invariants. Use independent expected values,

@@ -31,6 +31,59 @@ recipes and environments. All-GUI recipe results do not qualify different core-o
 recipes, every older operating system, or independent signed package channels.
 Use the [validation template](templates/validation.md) to record adopted targets.
 
+## Optional Rust provider boundary
+
+The existing target/release evidence above belongs to its recorded application
+bytes and provider. Adding a Rust build profile does not qualify new Rust
+binaries on those platforms. C++ remains the default and complete compatibility
+route. Explicit Rust selection must succeed with its declared toolchain or fail;
+it cannot silently fall back to C++.
+
+The implemented Rust leaf validates the same borrowed byte buffer used by
+`Store`, behind a private C ABI. It uses fixed-width statuses and `size_t`/`usize`
+lengths, retains no pointers, performs no allocation and never exchanges C++
+objects or exceptions. C++ continues to own strings, records, frontend behavior
+and the final link. All enabled frontends share this provider, so the language
+choice does not create backend-specific application logic. This limited ABI
+reduces the compatibility surface; it does not prove the compiler host,
+target-library or final runtime contract.
+
+| Rust profile | Implemented boundary and qualification limit |
+| --- | --- |
+| GNU/Linux x86_64 | Retained official Rust 1.63.0 extension; native distribution tools are an optional `dev` route. Exact mixed build, installed consumer, runtime and disconnected results must be recorded separately |
+| GNU/Linux aarch64 | Matching retained native extension; a native ARM64 environment is required for execution evidence, and x86_64 emulation cannot qualify it |
+| Windows x86_64 MSVC | Matching retained official extension plus the existing Microsoft host-tool and dependency-base closure; native build, CRT/linkage, packaging and GUI execution need separate evidence |
+| Browser wasm32 | Exact Rust 1.63.0 / Emscripten 6.0.10 pair using native Wasm objects, panic abort and no cross-language LTO; primitive ABI/link probe evidence is preliminary, and full application/browser execution remains pending until separately recorded |
+| Arduino and other targets | No implemented Rust profile or qualified board port; use the C++ route and the selective-porting policy below |
+
+See [the Rust implementation record](rust-hybrid-plan.md) for actual runs and
+remaining qualification. Stable Rust 1.63 and edition 2021 are the component
+baseline. Native development may use a newer identified stable compiler; that
+does not establish Rust 1.63 execution or an older runtime floor. Retained
+compiler executable host requirements and the final application's target
+requirements remain separate, even for an allocation-free static component.
+
+Windows uses Rust `+crt-static` with the project's static MSVC CRT policy.
+Cooperating objects, including configuration-specific debug/release inputs,
+must have compatible CRT requirements, and the selected native-static-library
+receipt must reach the final C++ link. The Rust archive does not replace the
+Microsoft compiler, Windows SDK or required system import libraries. Qualify
+the exact native toolset and configuration before a Windows compatibility claim.
+
+The Wasm experiment does not qualify `std`, pthreads/shared memory, arbitrary
+callbacks, cross-language LTO or another Emscripten version. Matching target
+names alone cannot establish ABI compatibility across independently built
+compiler libraries. Inspect the actual archive, final imports and executable
+cases for the exact retained pair, then run the complete browser application
+against its existing backend contract. Preserve the current C++ browser route
+while these checks are pending.
+
+Offline restoration from retained official tools, recovery of retained source
+inputs, and compiler reconstruction from source are distinct promises. The last
+is **UNVERIFIED** for this extension. See
+[the Rust SDK recovery contract](sdk.md#optional-retained-rust-extension);
+application recovery with restored tools cannot satisfy compiler reconstruction.
+
 ## Arduino as a selective porting target
 
 Arduino's longstanding role is an environment to which selected application

@@ -1,4 +1,5 @@
 #include "foundation/store.hpp"
+#include "text_validation.h"
 
 #include <algorithm>
 #include <limits>
@@ -14,13 +15,18 @@ Store::Store(std::size_t capacity) : capacity_(capacity) {
 }
 
 void Store::validate(std::string_view text) {
-    if (text.empty() || text.size() > max_text_bytes) {
+    static_assert(max_text_bytes == 256, "private text ABI length limit changed");
+    const auto status = detail::validate_text(
+        reinterpret_cast<const std::uint8_t*>(text.data()), text.size());
+    switch (status) {
+    case FOUNDATION_TEXT_OK:
+        return;
+    case FOUNDATION_TEXT_INVALID_LENGTH:
         throw std::invalid_argument("text must contain 1..256 bytes");
-    }
-    for (const unsigned char byte : text) {
-        if (byte < 32 || byte > 126) {
-            throw std::invalid_argument("text must contain printable ASCII only");
-        }
+    case FOUNDATION_TEXT_INVALID_ASCII:
+        throw std::invalid_argument("text must contain printable ASCII only");
+    default:
+        throw std::logic_error("text validation component failed");
     }
 }
 

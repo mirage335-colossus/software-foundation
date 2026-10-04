@@ -101,21 +101,36 @@ def command(action, root, uid, gid, environment, *, prepared_image=None):
     return argv
 
 
-def offline_command(source, output, group, uid, gid, image, phase, *, target):
+def offline_restored_sdk(output, name, manifest):
+    root = output / name
+    receipt = root / manifest
+    if (root.is_symlink() or not root.is_dir() or root.resolve(strict=True) != output / name
+            or receipt.is_symlink() or not receipt.is_file()):
+        raise ValueError('offline execution requires an ordinary completed SDK restoration: ' + name)
+    return root
+
+
+def offline_command(source, output, group, uid, gid, image, phase, *, target, rust_group=None):
     """Consume a locally prepared immutable image without package setup/pulling.
 
     Restoration and execution use separate fresh containers with identical
     disconnected policy. The restored SDK becomes a read-only input to execution.
-    Only the source snapshot, exact retained group and owned output are exposed.
+    Only the source snapshot, exact retained groups and owned output are exposed.
     """
     uid, gid = account_id(uid), account_id(gid)
     if (not re.fullmatch(r'sha256:[0-9a-f]{64}', image) or phase not in ('stage', 'execute')
             or target not in ('linux-x86_64', 'linux-aarch64', 'browser-wasm32')):
         raise ValueError('offline acceptance needs an immutable image and explicit phase')
-    paths = [Path(path).resolve(strict=True) for path in (source, output, group)]
+    inputs = (source, output, group)
+    if rust_group is not None:
+        rust_group = Path(rust_group)
+        if rust_group.is_symlink() or not rust_group.is_dir() or rust_group.resolve(strict=True) != rust_group:
+            raise ValueError('retained Rust group must be an ordinary canonical directory')
+        inputs += (rust_group,)
+    paths = [Path(path).resolve(strict=True) for path in inputs]
     if any(any(character in str(path) for character in (',', '\n', '\0')) for path in paths):
         raise ValueError('unsupported offline bind mount path')
-    source, output, group = paths
+    source, output, group = paths[:3]
     argv = ['docker', 'run', '--rm', '--pull=never', '--network=none', '--read-only',
             '--cap-drop=ALL', '--security-opt=no-new-privileges', '--user', f'{uid}:{gid}',
             '--tmpfs', '/tmp:rw,nosuid,nodev,mode=1777', '-w', '/work']
@@ -127,10 +142,14 @@ def offline_command(source, output, group, uid, gid, image, phase, *, target):
         argv += ['-e', name + '=' + ('/tmp' if name == 'TMPDIR' and display else value)]
     for path, destination, readonly in ((source, '/work', True), (output, '/output', False), (group, '/inputs/group', True)):
         argv += ['--mount', f'type=bind,source={path},target={destination}' + (',readonly' if readonly else '')]
+    if rust_group is not None:
+        argv += ['--mount', f'type=bind,source={rust_group},target=/inputs/rust-group,readonly']
     if phase == 'execute':
-        if not (output / 'sdk/sdk.json').is_file():
-            raise ValueError('offline execution requires a completed SDK restoration')
-        argv += ['--mount', f'type=bind,source={output / "sdk"},target=/output/sdk,readonly']
+        sdk = offline_restored_sdk(output, 'sdk', 'sdk.json')
+        argv += ['--mount', f'type=bind,source={sdk},target=/output/sdk,readonly']
+        if rust_group is not None:
+            rust_sdk = offline_restored_sdk(output, 'rust-sdk', 'rust-sdk.json')
+            argv += ['--mount', f'type=bind,source={rust_sdk},target=/output/rust-sdk,readonly']
     inner = ['python3', '-B', '/work/tools/offline_acceptance.py', '--inside', phase, '--request', '/output/request.json']
     argv += [image, *(['xvfb-run', '-a', 'env', 'TMPDIR=/output/tmp'] if display else []), *inner]
     return argv

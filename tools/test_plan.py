@@ -74,7 +74,11 @@ def build_inputs(build):
             raise ValueError("configured compiler/options changed outside the build wrapper")
     elif configured.exists():
         raise ValueError("configured build receipt is missing its wrapper identity")
+    provider = cache.get("FOUNDATION_CORE_PROVIDER", "cpp")
+    if provider not in ("cpp", "rust"):
+        raise ValueError("unknown configured core provider")
     result = {"cache": cache, "wrapper": wrapper, "sdk": None, "dependencies": [], "windows_dependencies": None, "dependency_prefix": None,
+              "core_provider": provider, "rust_sdk": None,
               "environment": {key: os.environ.get(key) for key in (*HOST_OVERRIDES, "CMAKE_GENERATOR")}}
     sdk_root = cache.get("FOUNDATION_SDK_ROOT")
     prefix_root = cache.get("FOUNDATION_DEPENDENCY_PREFIX")
@@ -91,7 +95,23 @@ def build_inputs(build):
         require_clean()
         result["sdk"] = {"root": str(sdk), "sha256": builder.sdk_identity(sdk)}
         recipe_ids.append(read_json(sdk / "sdk.json")["recipe_id"])
+    rust_root = cache.get("FOUNDATION_RUST_SDK_ROOT")
+    if provider == "rust":
+        if not rust_root:
+            raise ValueError("Rust provider requires its configured retained SDK")
+        from rust_sdk import verify_rust_sdk
+        from dependency_archive import digest as file_digest
+        rust = Path(rust_root).resolve(strict=True)
+        metadata = verify_rust_sdk(rust, cpp_sdk=Path(sdk_root) if sdk_root else
+                                   Path(cache["FOUNDATION_WINDOWS_DEPENDENCIES"]) if cache.get("FOUNDATION_WINDOWS_DEPENDENCIES") else None,
+                                   target=cache.get("FOUNDATION_RUST_TARGET") or None, execute=True)
+        result["rust_sdk"] = {"root": str(rust), "sha256": file_digest(rust / "rust-sdk.json")}
+        recipe_ids.append(metadata["recipe_id"])
+    elif rust_root:
+        raise ValueError("C++ provider cannot retain a configured Rust SDK")
     if wrapper is not None:
+        if wrapper.get("core_provider", "cpp") != provider or wrapper.get("rust_sdk") != result["rust_sdk"]:
+            raise ValueError("core provider or Rust SDK differs from configured wrapper identity")
         if wrapper.get("dependency_prefix") != result["dependency_prefix"]:
             raise ValueError("native dependency prefix differs from configured wrapper identity")
         if prefix_root and wrapper.get("windows_dependencies"):
@@ -137,6 +157,8 @@ def build_inputs(build):
     declared = set(filter(None, cache.get("FOUNDATION_DEPENDENCY_RECIPES", "").split(";")))
     if sdk_root:
         declared.add(read_json(Path(sdk_root) / "sdk.json")["recipe_id"])
+    if result["rust_sdk"]:
+        declared.add(metadata["recipe_id"])
     primary = cache.get("FOUNDATION_DEPENDENCY_RECIPE", "native-unprepared")
     if (sorted(declared) != sorted(recipe_ids)
             or (primary != "native-unprepared" and primary not in recipe_ids)):

@@ -6,6 +6,8 @@ collection, a command-line application, and an optional shared GUI application.
 The engineering mechanisms are comprehensive: application size does not reduce
 coordination, supply, recovery or qualification requirements. C++20 and CMake make the build and binary compatibility examples concrete;
 the ownership, testing, documentation and delivery rules apply across languages.
+The default implementation is C++; an optional Rust component implements the same
+private text-validation contract for the CLI and shared GUI.
 
 ## One application, seven backends
 
@@ -60,6 +62,19 @@ The library installs as CMake package `Foundation`, target `foundation::core`.
 [The external consumer](examples/consumer/CMakeLists.txt) demonstrates finding it
 after installation. [COMPILE](COMPILE) is the short command reference;
 [building](docs/building.md) explains configuration, concurrency and SDK use.
+
+Select the Rust validation provider explicitly with a verified retained extension:
+
+```sh
+./build.sh test dev --core-provider rust --rust-sdk /absolute/path/to/rust-sdk --label core
+```
+
+[Rust provider commands](docs/building.md#optional-rust-validation-provider) and
+[SDK preparation](docs/sdk.md#optional-retained-rust-extension) describe the pinned
+Rust 1.63, dependency-free `no_std` component. C++ builds do not discover Rust or
+download its tools. [Platform limits](docs/portability.md#optional-rust-provider-boundary)
+and [the implementation record](docs/rust-hybrid-plan.md) separate working code
+from observed qualification.
 
 ## Run the GUI
 

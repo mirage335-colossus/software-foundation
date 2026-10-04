@@ -4,6 +4,8 @@
   "native_backends": ["terminal", "framebuffer", "fltk", "rev", "sdl", "hosted-web"],
   "source_inputs": ["checkout", "third_party/gui-inputs", "patches", "fonts", "notices"],
   "group_inputs": ["binary archive", "source/bootstrap archive", "complete SHA256SUMS"],
+  "core_providers": {"default": "cpp", "optional": ["rust"], "automatic_fallback": false},
+  "rust_extension": {"manifest": "rust-sdk.json", "plan_fields": ["core_provider", "rust_group", "rust_recipe"], "separate_from_cpp_sdk": true, "rust_minimum": "1.63", "cargo_version": "exact inventoried baseline-compatible executable", "edition": "2021", "lockfile_version": 3, "external_application_crates": false, "paired_target_and_host_required": true, "offline_environment": ["fresh CARGO_HOME", "fresh RUSTUP_HOME", "CARGO_NET_OFFLINE=true", "no ambient Rust flags or wrappers"]},
   "distribution_host_tools": {
     "common": ["sh", "python3", "git", "cmake", "ninja"],
     "native_sdk": ["readelf", "pkg-config", "dpkg-query"],
@@ -12,7 +14,8 @@
   },
   "retained_host_tools": {
     "native": ["compiler", "linker", "sysroot", "toolkits", "declared sdk.json host_tools", "pkg-config when retained"],
-    "wasm": ["Emscripten", "LLVM", "Binaryen", "Node", "prepared EM_CACHE", "notices"]
+    "wasm": ["Emscripten", "LLVM", "Binaryen", "Node", "prepared EM_CACHE", "notices"],
+    "rust": ["matched rustc and cargo", "compiler sysroot", "target core and compiler-builtins libraries", "complete rust-sdk.json file inventory", "binary/source-bootstrap group and complete checksums", "supplier notices"]
   },
   "validation_prerequisites": {
     "native_gui": ["display/OpenGL runtime", "Xvfb", "xauth", "Node for JavaScript tests"],

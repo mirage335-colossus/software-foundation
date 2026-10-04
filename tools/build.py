@@ -57,6 +57,24 @@ def sdk_identity(root):
     return verify_sdk(root)
 
 
+def rust_sdk_identity(root, cpp_sdk=None):
+    import platform
+    from rust_sdk import verify_rust_sdk
+    metadata = verify_rust_sdk(root, cpp_sdk=cpp_sdk, execute=True)
+    if cpp_sdk is None:
+        machine = {'AMD64': 'x86_64', 'amd64': 'x86_64', 'arm64': 'aarch64', 'ARM64': 'aarch64'}.get(
+            platform.machine(), platform.machine())
+        if metadata['target']['system'] != platform.system() or metadata['target']['processor'] != machine:
+            raise ValueError("Rust SDK target requires its matching prepared C++ SDK")
+    return hashlib.sha256((root / "rust-sdk.json").read_bytes()).hexdigest()
+
+
+def native_rust_identity():
+    from rust_build import native_tool_identity, select_native_tools
+    selected = select_native_tools()
+    return selected, native_tool_identity(selected["cargo"], selected["rustc"])
+
+
 def host_programs(root=None):
     """Select retained build tools where the SDK declares them."""
     programs = {name: name for name in ("cmake", "ctest", "cpack", "ninja")}
@@ -176,6 +194,9 @@ def main(argv=None):
                            help="run an exact CTest name; repeat for several names (including fixture prerequisites)")
     selection.add_argument("--full", action="store_true", help="run all enabled tests (default)")
     parser.add_argument("--sdk", type=Path)
+    parser.add_argument("--core-provider", choices=("cpp", "rust"), default="cpp",
+                        help="implementation of the private core validation component")
+    parser.add_argument("--rust-sdk", type=Path, help="verified Rust extension paired with the selected target SDK")
     parser.add_argument("--windows-dependencies", type=Path, help="verified restored Windows dependency export")
     parser.add_argument("--dependency-group", type=Path, action="append", default=[],
                         help="verified complete retained group; first group is primary for host-supplied toolchains")
@@ -208,6 +229,8 @@ def main(argv=None):
 
 
 def execute(args, parser, timings):
+    if args.rust_sdk and args.core_provider != "rust":
+        parser.error("--rust-sdk requires --core-provider rust")
     if bool(args.wasm_package) != bool(args.wasm_package_sha256):
         parser.error("--wasm-package and --wasm-package-sha256 must be supplied together")
     if args.wasm_package_sha256 and not re.fullmatch(r"[0-9a-f]{64}", args.wasm_package_sha256):
@@ -227,6 +250,10 @@ def execute(args, parser, timings):
         parser.error("test selection applies only to test")
     if args.action == "package" and preset != "release":
         parser.error("package requires release configuration")
+    if (args.core_provider == "rust" and not args.rust_sdk
+            and (sys.platform != "linux" or args.sdk or args.windows_dependencies
+                 or args.portable or preset != "dev")):
+        parser.error("this Rust target/configuration requires an explicit retained --rust-sdk")
     backends = args.gui_backends.split(",")
     allowed = {"terminal", "framebuffer", "fltk", "rev", "sdl", "hosted-web", "wasm"}
     if len(set(backends)) != len(backends) or not set(backends) <= allowed:
@@ -239,11 +266,13 @@ def execute(args, parser, timings):
     if "wasm" in backends and (backends != ["wasm"] or not args.sdk or args.host_tests):
         parser.error("Wasm requires one backend and a prepared SDK; native host tests are separate")
     jobs, test_jobs = job_limits(args)
-    suffix = ("-sdk" if args.sdk else "") + ("-gui" if has_gui else "")
+    suffix = (("-sdk" if args.sdk else "")
+              + ("-rust-sdk" if args.rust_sdk else "-rust" if args.core_provider == "rust" else "")
+              + ("-gui" if has_gui else ""))
     build = args.build_dir.resolve() if args.build_dir else ROOT / "build" / (preset + suffix + ("-portable" if args.portable else ""))
     timings.context = {"action": args.action, "preset": preset, "build_directory": str(build),
                        "warm_tree_at_start": (build / "CMakeCache.txt").is_file(),
-                       "build_jobs": jobs, "test_jobs": test_jobs}
+                       "build_jobs": jobs, "test_jobs": test_jobs, "core_provider": args.core_provider}
     gui_group_identity = None
     if args.gui_input_group:
         gui_group = args.gui_input_group.resolve(strict=True)
@@ -254,6 +283,8 @@ def execute(args, parser, timings):
         args.gui_source = Path(restored["source"]).resolve(strict=True)
         gui_group_identity = {"root": str(gui_group), "sha256": restored["group_sha256"]}
     configure = ["cmake", "--preset", preset, "-B", str(build),
+                 "-DFOUNDATION_CORE_PROVIDER=" + args.core_provider,
+                 "-DFOUNDATION_RUST_SDK_ROOT=",
                  "-DFOUNDATION_BUILD_GUI=" + ("ON" if args.gui_source else "OFF"),
                  "-DFOUNDATION_SANITIZERS=" + ("ON" if preset == "asan" else "OFF"),
                  "-DFOUNDATION_PORTABLE=" + ("ON" if args.portable else "OFF"),
@@ -263,6 +294,7 @@ def execute(args, parser, timings):
     configure += ["-DFOUNDATION_GUI_WEB=" + ("ON" if "hosted-web" in backends else "OFF"),
                   "-DFOUNDATION_GUI_HOST_TESTS=" + ("ON" if args.host_tests else "OFF")]
     identity = {"preset": preset, "sdk": None, "gui": None,
+                "core_provider": args.core_provider, "rust_sdk": None,
                 "backends": sorted(backends) if args.gui_source else [], "host_tests": args.host_tests,
                 "portable": args.portable, "distribution_tests": args.distribution_tests, "dependencies": [],
                 "windows_dependencies": None,
@@ -279,6 +311,19 @@ def execute(args, parser, timings):
         configure += ["-DFOUNDATION_DEPENDENCY_PREFIX=" + str(prefix_root)]
     programs = host_programs()
     child_environment = os.environ.copy()
+    if args.core_provider == "rust":
+        if args.rust_sdk:
+            rust_sdk = args.rust_sdk.resolve(strict=True)
+            paired_sdk = (args.sdk or args.windows_dependencies)
+            paired_sdk = paired_sdk.resolve(strict=True) if paired_sdk else None
+            identity["rust_sdk"] = {"root": str(rust_sdk), "sha256": timings.call(
+                "rust_sdk_verification", rust_sdk_identity, rust_sdk, paired_sdk)}
+            configure += ["-DFOUNDATION_RUST_SDK_ROOT=" + str(rust_sdk)]
+        else:
+            native_rust_tools, native_rust_before = timings.call("rust_tool_verification", native_rust_identity)
+            identity["rust_tools"] = native_rust_before
+            configure += ["-DFOUNDATION_RUST_CARGO=" + native_rust_tools["cargo"],
+                          "-DFOUNDATION_RUST_RUSTC=" + native_rust_tools["rustc"]]
     if args.sdk:
         sdk = args.sdk.resolve(strict=True)
         try:
@@ -404,6 +449,7 @@ def execute(args, parser, timings):
     source_before = timings.call("source_verification", source_tree, ROOT, args.gui_source)
     timings.context["source_tree_sha256"] = source_before.get("tree_sha256")
     timings.context["sdk_sha256"] = identity["sdk"]["sha256"] if identity["sdk"] else None
+    timings.context["rust_sdk_sha256"] = identity["rust_sdk"]["sha256"] if identity["rust_sdk"] else None
     timings.call("configure", run, configure, env=child_environment)
     cache_stamp.write_text(json.dumps(timings.call("configuration_verification", cache_identity, build), indent=2) + "\n")
     targets = ["all"]
@@ -473,6 +519,12 @@ def execute(args, parser, timings):
             raise ValueError("GUI input group changed during execution; evidence is invalid")
     if args.sdk and timings.call("sdk_verification", sdk_identity, args.sdk.resolve()) != identity["sdk"]["sha256"]:
         raise ValueError("prepared SDK changed during execution; evidence is invalid")
+    if identity["rust_sdk"]:
+        if timings.call("rust_sdk_verification", rust_sdk_identity, rust_sdk, paired_sdk) != identity["rust_sdk"]["sha256"]:
+            raise ValueError("prepared Rust SDK changed during execution; evidence is invalid")
+    elif args.core_provider == "rust":
+        if timings.call("rust_tool_verification", native_rust_identity) != (native_rust_tools, native_rust_before):
+            raise ValueError("selected Rust tools changed during execution; evidence is invalid")
     if args.windows_dependencies:
         timings.call("sdk_verification", verify_inventory, dependencies, metadata["files"], exclude=("sdk.json",))
         if hashlib.sha256((dependencies / "sdk.json").read_bytes()).hexdigest() != identity["windows_dependencies"]["sha256"]:

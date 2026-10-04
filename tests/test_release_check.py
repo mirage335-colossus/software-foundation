@@ -248,6 +248,38 @@ class ReleaseCheckTests(unittest.TestCase):
                 self.assertNotIn('--test-jobs', command)
                 self.assertIn('--full', command)
 
+    def test_rust_source_recovery_uses_exact_retained_group_and_provider(self):
+        import rust_sdk
+        from dependency_archive import digest
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); work = root / 'work'; rust = work / 'rust-sdk'; rust.mkdir(parents=True)
+            (rust / 'rust-sdk.json').write_text('manifest fixture')
+            (rust / 'rustc').write_text('compiler fixture')
+            entry = {'target': 'linux-x86_64', 'sdk_recipe': 'a' * 64, 'backends': [],
+                     'core_provider': 'rust', 'rust_sdk_recipe_id': 'b' * 64,
+                     'dependency_recipes': ['a' * 64, 'b' * 64],
+                     'rust_compiler_version': '1.63.0', 'rust_target': 'x86_64-unknown-linux-gnu',
+                     'rust_sdk_manifest_sha256': digest(rust / 'rust-sdk.json'),
+                     'rust_compiler_sha256': digest(rust / 'rustc')}
+            manifest = {'source': {'archive': 'source.tar.gz'},
+                        'dependencies': [{'recipe_id': 'a' * 64, 'files': {'sources.tar.gz': 'c' * 64}}]}
+            metadata = {'compiler': {'version': '1.63.0', 'rustc': 'rustc'}}
+            with patch.object(check, 'native_target'), patch.object(check, 'verify_source_archive', return_value='snapshot'), \
+                    patch.object(check, 'extract'), patch.object(check, 'source_tree', return_value='snapshot'), \
+                    patch.object(check.sdk, 'install'), patch.object(rust_sdk, 'install') as install, \
+                    patch.object(rust_sdk, 'verify_rust_sdk', return_value=metadata), \
+                    patch.object(check.windows_compiler, 'run', side_effect=RuntimeError('inspect recovered command')) as run:
+                with self.assertRaisesRegex(RuntimeError, 'inspect recovered command'):
+                    check.run_source(root, manifest, entry, work, root / 'evidence', 2, recovery=True)
+                command = run.call_args.args[0]
+                self.assertIn('--core-provider', command)
+                self.assertEqual(command[command.index('--rust-sdk') + 1], str(rust))
+                self.assertNotIn('--dependency-group', command)
+                install.assert_called_once_with(root / 'dependencies' / ('b' * 64), 'b' * 64, rust)
+                entry['rust_compiler_sha256'] = 'f' * 64
+                with self.assertRaisesRegex(ValueError, 'delivered compiler identity'):
+                    check.run_source(root, manifest, entry, work, root / 'evidence', 2, recovery=True)
+
     def test_windows_source_consumes_verified_file_version_and_rejects_bad_probe(self):
         import sdk_windows
         import windows_toolchain

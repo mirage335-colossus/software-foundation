@@ -14,6 +14,90 @@ spec.loader.exec_module(builder)
 
 
 class BuildTests(unittest.TestCase):
+    def test_default_cpp_never_discovers_rust_and_rejects_unused_rust_sdk(self):
+        from unittest.mock import patch
+        import source_identity
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run, \
+                    patch.object(builder, 'cache_identity', return_value={}), \
+                    patch.object(builder, 'native_rust_identity') as native, \
+                    patch.object(builder, 'rust_sdk_identity') as verify, \
+                    patch.object(source_identity, 'source_tree', return_value={}):
+                self.assertEqual(builder.main(['build', '--configure-only']), 0)
+                configure = run.call_args.args[0]
+                self.assertIn('-DFOUNDATION_CORE_PROVIDER=cpp', configure)
+                self.assertIn('-DFOUNDATION_RUST_SDK_ROOT=', configure)
+                identity = json.loads((root / 'build/dev/wrapper-identity.json').read_text())
+                self.assertEqual(identity['core_provider'], 'cpp')
+                self.assertIsNone(identity['rust_sdk'])
+                with self.assertRaises(SystemExit):
+                    builder.main(['build', '--rust-sdk', str(root / 'absent')])
+                native.assert_not_called(); verify.assert_not_called()
+
+    def test_retained_rust_sdk_has_separate_target_argument_identity_and_rechecks(self):
+        from unittest.mock import patch
+        import source_identity
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve(); rust = root / 'rust'; rust.mkdir()
+            sdk = root / 'cpp'; sdk.mkdir()
+            (sdk / 'sdk.json').write_text(json.dumps({'target': {'system': 'Linux'}, 'recipe_id': 'a' * 64}))
+            args = ['build', '--core-provider', 'rust', '--rust-sdk', str(rust), '--sdk', str(sdk)]
+            with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run, \
+                    patch.object(builder, 'cache_identity', return_value={}), \
+                    patch.object(builder, 'require_clean'), patch.object(builder, 'sdk_identity', return_value='c' * 64), \
+                    patch.object(builder, 'rust_sdk_identity', return_value='b' * 64) as verify, \
+                    patch.object(source_identity, 'source_tree', return_value={}):
+                self.assertEqual(builder.main(args), 0)
+                self.assertEqual(verify.call_count, 2)
+                verify.assert_called_with(rust, sdk)
+                configure = run.call_args_list[0].args[0]
+                self.assertIn('-DFOUNDATION_CORE_PROVIDER=rust', configure)
+                self.assertIn('-DFOUNDATION_RUST_SDK_ROOT=' + str(rust), configure)
+                self.assertIn('-DFOUNDATION_SDK_ROOT=' + str(sdk), configure)
+                build = root / 'build/dev-sdk-rust-sdk'
+                identity = json.loads((build / 'wrapper-identity.json').read_text())
+                self.assertEqual(identity['rust_sdk'], {'root': str(rust), 'sha256': 'b' * 64})
+                verify.return_value = 'd' * 64
+                with self.assertRaisesRegex(ValueError, 'configuration changed'):
+                    builder.main(args)
+                verify.side_effect = ['b' * 64, 'd' * 64]
+                with self.assertRaisesRegex(ValueError, 'Rust SDK changed'):
+                    builder.main(args)
+
+    def test_native_rust_development_freezes_selected_tools_and_rejects_changed_tools(self):
+        from unittest.mock import patch
+        import source_identity
+        selected = {'cargo': '/usr/bin/cargo', 'rustc': '/usr/bin/rustc'}
+        before = {'cargo': {'sha256': 'a' * 64}, 'rustc': {'sha256': 'b' * 64}}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run, \
+                    patch.object(builder.sys, 'platform', 'linux'), \
+                    patch.object(builder, 'cache_identity', return_value={}), \
+                    patch.object(builder, 'native_rust_identity', return_value=(selected, before)) as verify, \
+                    patch.object(source_identity, 'source_tree', return_value={}):
+                self.assertEqual(builder.main(['build', '--core-provider', 'rust']), 0)
+                self.assertEqual(verify.call_count, 2)
+                configure = run.call_args_list[0].args[0]
+                self.assertIn('-DFOUNDATION_RUST_CARGO=/usr/bin/cargo', configure)
+                self.assertIn('-DFOUNDATION_RUST_RUSTC=/usr/bin/rustc', configure)
+                identity = json.loads((root / 'build/dev-rust/wrapper-identity.json').read_text())
+                self.assertEqual(identity['rust_tools'], before)
+                verify.side_effect = [(selected, before), (selected, {'changed': True})]
+                with self.assertRaisesRegex(ValueError, 'Rust tools changed'):
+                    builder.main(['build', '--core-provider', 'rust'])
+
+    def test_explicit_rust_rejects_unprepared_release_and_unsupported_host(self):
+        from unittest.mock import patch
+        with patch.object(builder, 'run') as run, patch.object(builder, 'native_rust_identity') as discover:
+            for arguments in (['build', 'release'], ['package'], ['build', '--portable'], ['build', '--sdk', 'absent']):
+                with self.subTest(arguments=arguments), self.assertRaises(SystemExit):
+                    builder.main([*arguments, '--core-provider', 'rust'])
+            with patch.object(builder.sys, 'platform', 'darwin'), self.assertRaises(SystemExit):
+                builder.main(['build', '--core-provider', 'rust'])
+            run.assert_not_called(); discover.assert_not_called()
+
     def test_opt_in_timings_distinguish_probe_execution_and_failure(self):
         from unittest.mock import patch
         import source_identity

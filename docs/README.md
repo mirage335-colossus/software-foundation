@@ -9,7 +9,7 @@ what was observed. A proposed platform or procedure is not execution evidence.
 | Build and run an example | [CLI commands](../COMPILE), [desktop GUI](../COMPILE-gui), [browser GUI](../COMPILE-web), [view screenshots](screenshots.md#view-screenshots), [capture commands](../SCREENSHOTS) |
 | Scope and specification | [Engineering contract](engineering-contract.md), [requirements](requirements.md), [practice map](practice-map.json), [architecture and directory map](architecture.md) |
 | Build and SDK | [Building](building.md), [offline application builds](offline-builds.md), [SDK](sdk.md), [portability](portability.md), [COMPILE](../COMPILE) |
-| Proposed Rust integration | [Research, portability assessment and phased hybrid Rust plan](rust-hybrid-plan.md) |
+| Optional Rust validation component | [Implementation and remaining qualification](rust-hybrid-plan.md), [provider selection](building.md#optional-rust-validation-provider), [retained Rust extension](sdk.md#optional-retained-rust-extension), [provider tests](testing.md#optional-rust-provider-checks), [platform limits](portability.md#optional-rust-provider-boundary) |
 | Verification speed and coverage | [Development speed](development-speed.md), [testing](testing.md), [CI](ci.md), [workflow examples](../.github/WORKFLOWS.md), [legacy archive preservation](legacy-artifacts.md), [validation](validation.md) |
 | Dependency maintenance | [Dependency requirements](dependencies.md), [inventory](../third_party/README.md) |
 | Installed manuals | [Manual sources and preview](man/README.md) |

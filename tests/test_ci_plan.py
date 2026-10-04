@@ -15,6 +15,49 @@ spec.loader.exec_module(ci)
 
 
 class CiPlanTests(unittest.TestCase):
+    def test_cpp_lane_has_no_rust_discovery_or_inputs(self):
+        with patch.object(ci, 'module') as module:
+            self.assertIsNone(ci.rust_selection('cpp', None, None))
+            self.assertEqual(ci.install_rust_input('cpp', None, None, Path('out'), None),
+                             ([], {'core_provider': 'cpp'}))
+            module.assert_not_called()
+        for provider, group, recipe in [('cpp', Path('group'), None), ('rust', None, 'a' * 64),
+                                        ('rust', Path('group'), 'latest'), ('automatic', None, None)]:
+            with self.subTest(provider=provider), self.assertRaises(ValueError):
+                ci.rust_selection(provider, group, recipe)
+
+    def test_rust_lane_binds_installed_compiler_bytes_and_complete_group(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); output = root / 'rust-sdk'; output.mkdir()
+            (output / 'rust-sdk.json').write_text('manifest fixture')
+            (output / 'rustc').write_text('compiler fixture')
+            rust = Mock()
+            rust.verify_group.return_value = {'retained-input': 'b' * 64}
+            rust.verify_rust_sdk.return_value = {'compiler': {'version': '1.63.0', 'rustc': 'rustc'},
+                                                 'target': {'triple': 'x86_64-unknown-linux-gnu'}}
+            original = ci.module
+            with patch.object(ci, 'module', side_effect=lambda name: rust if name == 'rust_sdk' else original(name)):
+                self.assertEqual(ci.rust_selection('rust', root / 'group', 'a' * 64), rust.verify_group.return_value)
+                flags, identity = ci.install_rust_input('rust', root / 'group', 'a' * 64, output, root / 'cpp-sdk')
+            self.assertEqual(flags, ['--core-provider', 'rust', '--rust-sdk', str(output)])
+            self.assertEqual(identity['rust_sdk_recipe_id'], 'a' * 64)
+            self.assertEqual(identity['rust_compiler_sha256'], original('coverage').sha(output / 'rustc'))
+            rust.verify_rust_sdk.assert_called_once_with(output, cpp_sdk=root / 'cpp-sdk', execute=True)
+
+    def test_binary_source_batches_keep_complete_rust_producer_inputs(self):
+        original = ci.module
+        execution = {'id': 'source', 'target': 'linux-x86_64', 'backend': 'core', 'scope': 'source', 'sdk_payload': 'binary'}
+        coverage = Mock(); coverage.executions.return_value = [execution]
+        entry = {'target': 'linux-x86_64', 'sdk_recipe': 'a' * 64, 'dependency_recipes': ['a' * 64, 'b' * 64],
+                 'core_provider': 'rust', 'rust_sdk_recipe_id': 'b' * 64, 'rust_compiler_version': '1.63.0',
+                 'rust_target': 'x86_64-unknown-linux-gnu', 'rust_sdk_manifest_sha256': 'c' * 64,
+                 'rust_compiler_sha256': 'd' * 64}
+        manifest = {'artifacts': [entry], 'dependencies': [{'recipe_id': 'a' * 64}, {'recipe_id': 'b' * 64, 'kind': 'rust'}]}
+        with patch.object(ci, 'module', side_effect=lambda name: coverage if name == 'coverage' else original(name)):
+            names = ci.qualification_payload_names({}, {'checks': ['source']}, manifest, '1')
+        self.assertIn('qualification-sdk-source-1-1', names)
+        self.assertNotIn('qualification-sdk-source-0-1', names)
+
     def test_default_disjoint_source_scopes_and_independent_producers(self):
         plan = ci.plan()
         checks = plan["checks"]["include"]

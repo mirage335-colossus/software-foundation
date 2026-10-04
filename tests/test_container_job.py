@@ -233,8 +233,9 @@ class OfflineContainers(unittest.TestCase):
         (self.output / 'sdk').mkdir(); (self.output / 'sdk/sdk.json').write_text('{}')
         self.image = 'sha256:' + 'a' * 64
 
-    def command(self, phase='execute', target='linux-x86_64'):
-        return job.offline_command(self.source, self.output, self.group, 1001, 1002, self.image, phase, target=target)
+    def command(self, phase='execute', target='linux-x86_64', *, rust_group=None):
+        return job.offline_command(self.source, self.output, self.group, 1001, 1002, self.image, phase,
+                                   target=target, rust_group=rust_group)
 
     def test_offline_launch_is_disconnected_readonly_and_has_only_declared_mounts(self):
         command = self.command()
@@ -268,6 +269,46 @@ class OfflineContainers(unittest.TestCase):
         comma = self.root / 'source,with-comma'; comma.mkdir()
         with self.assertRaisesRegex(ValueError, 'bind mount'):
             job.offline_command(comma, self.output, self.group, 1001, 1002, self.image, 'stage', target='linux-x86_64')
+
+    def test_optional_rust_inputs_are_read_only_and_execution_protects_both_restored_sdks(self):
+        rust_group = self.root / 'retained Rust group'; rust_group.mkdir()
+        stage = self.command('stage', rust_group=rust_group)
+        mounts = [stage[index + 1] for index, value in enumerate(stage) if value == '--mount']
+        self.assertEqual(mounts[-1], f'type=bind,source={rust_group},target=/inputs/rust-group,readonly')
+        self.assertEqual(len(mounts), 4)
+        self.assertFalse(any('target=/output/rust-sdk' in item for item in mounts))
+        with self.assertRaisesRegex(ValueError, 'completed SDK restoration: rust-sdk'):
+            self.command(rust_group=rust_group)
+        rust_sdk = self.output / 'rust-sdk'; rust_sdk.mkdir()
+        (rust_sdk / 'rust-sdk.json').write_text('{}')
+        execute = self.command(rust_group=rust_group)
+        mounts = [execute[index + 1] for index, value in enumerate(execute) if value == '--mount']
+        self.assertEqual(mounts[-2:], [f'type=bind,source={self.output / "sdk"},target=/output/sdk,readonly',
+                                      f'type=bind,source={rust_sdk},target=/output/rust-sdk,readonly'])
+        self.assertEqual(len(mounts), 6)
+        self.assertIn('--network=none', execute); self.assertIn('--cap-drop=ALL', execute)
+        self.assertNotIn('/inputs/rust-group', ' '.join(self.command()))
+
+    def test_rust_input_separator_aliases_and_restored_root_or_receipt_links_fail_closed(self):
+        rust_group = self.root / 'rust-group'; rust_group.mkdir()
+        invalid = self.root / 'rust,group'; invalid.mkdir()
+        with self.assertRaisesRegex(ValueError, 'bind mount'):
+            self.command('stage', rust_group=invalid)
+        alias = self.root / 'rust-group-alias'; alias.symlink_to(rust_group, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'ordinary canonical directory'):
+            self.command('stage', rust_group=alias)
+        rust_sdk = self.output / 'rust-sdk'; rust_sdk.mkdir()
+        receipt = rust_sdk / 'rust-sdk.json'
+        with self.assertRaisesRegex(ValueError, 'completed SDK restoration: rust-sdk'):
+            self.command(rust_group=rust_group)
+        receipt.write_text('{}')
+        receipt.rename(rust_sdk / 'receipt.json'); receipt.symlink_to('receipt.json')
+        with self.assertRaisesRegex(ValueError, 'completed SDK restoration: rust-sdk'):
+            self.command(rust_group=rust_group)
+        receipt.unlink(); (rust_sdk / 'receipt.json').rename(receipt)
+        rust_sdk.rename(self.output / 'other-sdk'); rust_sdk.symlink_to('other-sdk', target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'completed SDK restoration: rust-sdk'):
+            self.command(rust_group=rust_group)
 
 
 class BrowserPrivilegeSplit(unittest.TestCase):
