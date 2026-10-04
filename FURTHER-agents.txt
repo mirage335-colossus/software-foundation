@@ -1,0 +1,18 @@
+Not implemented
+===============
+
+Optional improvements for later work; these are not pending qualification or
+authorization to execute. Reuse existing mechanisms and preserve their safeguards.
+
+- Publication-only reuse of qualified CI artifacts, binding original consumer
+  evidence and exact bytes without rebuilding or relaying through a workstation.
+- Authenticated assembly/retry reuse of successful producers with unchanged inputs,
+  preserving original attempts and complete required inventories.
+- Earlier native platform diagnostics for affected contracts before costly dependent
+  builds, while retaining required final qualification.
+- Compact evidence reporting that distinguishes execution, retention, qualification
+  and publication and links the original receipts.
+- Conservative development-check selection if measurements justify it, retaining
+  broad coverage for unknown dependencies and shared build changes.
+- Thin agent-operation wrappers if necessary to remove repeated bookkeeping while
+  preserving ownership checks, supervised completion and failure handling.

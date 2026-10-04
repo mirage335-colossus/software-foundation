@@ -1,8 +1,9 @@
 # Fast development and complete qualification
 
 Use the smallest scope that can answer the current development question. Reserve
-complete platform and release qualification for a finished candidate. A diagnostic
-pass identifies its selected scope and cannot make a release eligible.
+complete platform and release qualification for a stable candidate and an explicit
+request under the [manual-qualification policy](../AGENTS.md#development-checks-and-manual-qualification).
+A diagnostic pass identifies its selected scope and cannot make a release eligible.
 
 ## Local iteration
 

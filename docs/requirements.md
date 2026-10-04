@@ -18,19 +18,19 @@ being advertised; omission must never be disguised as successful coverage.
 | DEP-1 | Every shipped external component MUST be traceable to pinned source, supplier, terms, patches and upgrade checks | [Dependencies](dependencies.md) |
 | PORT-1 | Build-host requirements and target runtime requirements MUST be stated separately | [Portability](portability.md) |
 | PORT-2 | Compatibility claims MUST cover the entire shipped dependency closure and CPU instruction floor | Target execution, binary inspection and relocation evidence |
-| TEST-1 | Changes MUST start with meaningful focused checks and complete applicable final gates | [Testing](testing.md) |
+| TEST-1 | Changes MUST start with meaningful focused checks; applicable final gates remain required for qualified binary delivery under the manual-qualification policy | [Testing](testing.md), [authorization](../AGENTS.md#development-checks-and-manual-qualification) |
 | TEST-2 | Missing, failed, cancelled, skipped and incomplete coverage MUST remain distinct from passing coverage | Inventory-complete results and [validation](validation.md) |
 | CI-1 | CI MUST have bounded concurrency, unambiguous scopes and minimally privileged execution | [CI](ci.md) |
 | GUI-1 | Existing feature vocabulary MUST be declared and handled entirely in shared application code | Cross-adapter feature-extension test |
 | GUI-2 | Layout, focus, event validity and capabilities MUST be specified consistently | [GUI audit](gui-audit.md) and conformance tests |
-| COLLAB-1 | Concurrent writers MUST claim files/resources and coordinate read dependencies before mutation | [Coordination](agent-coordination.md) |
+| COLLAB-1 | Under shared coordination, concurrent writers MUST claim files/resources and coordinate read dependencies before mutation | [Coordination modes](../AGENTS.md#simultaneous-sessions), [protocol](agent-coordination.md) |
 | COLLAB-2 | Temporary knowledge MUST be bounded, attributable, ignored by Git and promoted when durable | [Lifecycle](agent-lifecycle.md) |
 | REL-1 | Published artifacts MUST have immutable identities and verification of their actual bytes | [Release requirements](releases.md) |
 | REL-2 | Source, recipes, notices and required dependency inputs MUST remain recoverable with each release | Release inventory and source bundles |
 | SDK-1 | Ordinary consumers MUST use the exact immutable prepared recipe; base maintenance MUST retain complete reconstruction inputs | [SDK lifecycle](sdk.md) |
 | SDK-2 | Binary releases MUST carry the exact compiled/source/checksum groups, with recovery tested without the base | [Release assembly](releases.md), [certification](certification.md) |
 | DIST-1 | Package channels MUST preserve archive bytes and verify signed metadata, update identity and installed payloads | [Distribution](distribution.md) |
-| COLLAB-3 | Source saves MUST recheck current ownership, reviewed input identity and predecessor handoffs through a qualified helper | [Checked operations](agent-recipes.md) |
+| COLLAB-3 | Under shared coordination, source saves MUST recheck current ownership, reviewed input identity and predecessor handoffs through a qualified helper | [Coordination modes](../AGENTS.md#simultaneous-sessions), [checked operations](agent-recipes.md) |
 | DOC-1 | Maintained docs MUST separate requirements, proposals, procedures and observed evidence | [Documentation rules](documentation.md) |
 | MAINT-1 | Failures MUST preserve diagnostic context without leaking sensitive material or corrupting state | [Maintenance](maintenance.md) |
 

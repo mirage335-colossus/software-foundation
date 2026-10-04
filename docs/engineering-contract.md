@@ -161,9 +161,12 @@ only after reviewing the intended differences. Retain a reversible previous reci
 ## Verification without excessive iteration cost
 
 During diagnosis, run the smallest case that distinguishes the suspected cause.
-After the fix or feature is complete, run affected full scopes once. At the final
-candidate, complete all required platform, frontend, package and SDK checks. Do not
-repeat unchanged expensive successes merely because another independent scope was
+Apply the [manual-qualification policy](../AGENTS.md#development-checks-and-manual-qualification)
+to extensive checks: defer them until implementation is stable and execution is
+explicitly authorized, except for explicitly requested earlier diagnostics. Required
+platform, frontend, package and SDK gates remain mandatory before qualified binary
+delivery; record applicable deferred scopes in [pending work](../.agent-pending/README.md).
+Do not repeat unchanged expensive successes merely because another independent scope was
 repaired. Evidence reuse requires identical relevant source, configuration,
 dependency inventory, case inventory and environment; retain the original attempt.
 

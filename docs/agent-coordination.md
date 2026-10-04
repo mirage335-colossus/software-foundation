@@ -1,7 +1,10 @@
 # Working with simultaneous AI sessions
 
-Use this workflow when sessions share this project, including Codex/ChatGPT,
-Anthropic desktop sessions, OpenRouter-compatible harnesses and writing subagents.
+Use this shared protocol when required by the
+[coordination-mode policy](../AGENTS.md#simultaneous-sessions). That policy also
+governs applicability of the linked recipes and lifecycle procedures; a supervisor
+may consolidate bookkeeping in lightweight mode. The shared mode covers independent
+Codex/ChatGPT, Anthropic desktop and OpenRouter-compatible sessions and writing subagents.
 Give every participant [AGENTS.md](../AGENTS.md), this guide, its **absolute checkout**
 and the **agreed absolute board path**; automatic discovery is not assumed.
 

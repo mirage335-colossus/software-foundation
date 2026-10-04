@@ -1,14 +1,18 @@
 # Test selection, completeness, and execution cost
 
 Use the least expensive check that can answer the current development question,
-then run the required broader checks when the candidate is ready. A focused
+then follow the [manual-qualification trigger](../AGENTS.md#development-checks-and-manual-qualification)
+for costly broader checks; readiness alone does not authorize execution. A focused
 pass proves only its named scope. A test plan must identify what is required
 for the change and what remains outstanding.
 
 See [development speed](development-speed.md) for targeted prerequisites, independent
 compile/test concurrency and scope-specific release inputs.
 
-## Everyday sequence
+## Select the applicable stage
+
+These are available stages, not a mandatory sequence for every change. Defer
+applicable extensive stages to [pending work](../.agent-pending/README.md) until authorized.
 
 ```sh
 ./build.sh test dev --label core
@@ -56,7 +60,8 @@ scope without this option; it does not alter candidate or release qualification.
 
 During diagnosis, preserve a failing reproducer, fix the cause, and repeat that
 scope. Do not continually rebuild SDKs or rerun every platform while the same
-fault is unresolved. After completion, run the broader applicable gates once.
+fault is unresolved. Run broader applicable final gates once implementation is
+stable and their extensive execution is authorized; otherwise record pending work.
 Reuse evidence only for unchanged source, configuration, dependency identity,
 test inventory, and relevant environment. Record reused results explicitly.
 
@@ -225,8 +230,8 @@ passes is not a substitute for investigating a flaky assertion.
 ## AI-agent requirements
 
 Agents must state the affected scope, use the smallest meaningful checks during
-editing, and broaden validation at the candidate checkpoint. They must not
-claim full validation from `devfast`, a subset, an old build tree, or another
+editing, and apply the manual-qualification trigger at the candidate checkpoint.
+They must not claim full validation from `devfast`, a subset, an old build tree, or another
 revision. Recheck [coordination](agent-coordination.md) before launching shared
 builds or long tests. Record process identity and owned output paths if a job
 outlives a tool response; do not launch duplicate work because the tool yielded.
