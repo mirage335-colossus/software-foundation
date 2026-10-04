@@ -179,10 +179,69 @@ selector and Microsoft host prerequisites alongside the Rust extension. Missing,
 changed, incomplete or mismatched explicitly selected Rust inputs fail the
 operation. An unavailable Rust profile never silently selects C++.
 
-Through the wrapper, only native Linux `dev` builds without a target SDK or
-portable policy may use installed distribution `rustc`/Cargo instead of
-`--rust-sdk`. The actual tools,
-compiler host and target libraries are checked; rustup proxies are rejected.
+The following target examples consume already restored, verified all-GUI inputs.
+They do not prepare or fetch an SDK. Use separate fresh build directories and a
+matching native host for each target. The full CTest selection is not a substitute
+for the separate real-browser or host-visual qualification prerequisites.
+
+Native Linux x64 or ARM64, with the matching retained C++ and Rust extensions:
+
+```sh
+./build.sh test release --sdk /retained/linux-all-gui-sdk \
+  --core-provider rust --rust-sdk /retained/rust-linux-sdk --portable \
+  --gui --gui-backends terminal,framebuffer,fltk,rev,sdl,hosted-web \
+  --build-dir build/rust-linux-all-gui --full
+```
+
+Native Windows x64, from the initialized matching MSVC developer prompt:
+
+```powershell
+python tools/build.py test release --portable `
+  --windows-dependencies C:\retained\windows-all-gui-dependencies `
+  --dependency-group C:\retained\windows-all-gui-group `
+  --core-provider rust --rust-sdk C:\retained\rust-windows-sdk `
+  --gui --gui-backends terminal,framebuffer,fltk,rev,sdl,hosted-web `
+  --build-dir build/rust-windows-all-gui --full
+```
+
+The Windows group must be the complete binary/source/checksum group matching the
+restored dependency export. It supplies dependencies, not the Microsoft compiler
+or Windows SDK; retain and initialize those host prerequisites separately.
+
+Browser Wasm, with the exact paired Emscripten 6.0.10 and Rust 1.63 extensions:
+
+```sh
+./build.sh test release --sdk /retained/emscripten-sdk \
+  --core-provider rust --rust-sdk /retained/rust-emscripten-sdk \
+  --gui --gui-backends wasm --build-dir build/rust-wasm --full
+```
+
+To create and relocate-verify a native archive, replace `test release`/`--full`
+with `package release`/`--verify-package`, preserving the same target, input,
+provider, GUI and build-directory options. Wasm test execution uses the retained
+Node executor; actual browser interaction remains separate. The
+[qualification workflow](../.github/workflows/rust-qualification.yml) supplies
+the declared execution environments and records each gate's scope.
+
+Through the wrapper, only Debian-family native Linux `dev` builds without a
+target SDK or portable policy may use installed distribution `rustc`/Cargo
+instead of `--rust-sdk`. This route needs dpkg-backed ownership and complete
+package/license notices; other distributions and unowned tool layouts use the
+retained extension until another ownership/notice provider is implemented.
+The actual tools, compiler host, target libraries, native link requirements and
+notices are checked; rustup proxies are rejected. The native-only library check
+accepts the matched package-owned `libstd`/`libtest` links only after binding the
+link, regular target, package versions and ownership tool. This does not permit
+symlinks in retained SDK target libraries.
+
+With those distribution prerequisites already installed, a fresh focused check is:
+
+```sh
+./build.sh test dev --core-provider rust --build-dir build/dev-distro-rust \
+  --test core.store --test core.cli --test core.text_validation \
+  --test core.text_status --test rust.unit --test integration.install
+```
+
 The wrapper requires the retained extension for Rust `release`, packaging,
 `asan`, portable builds and prepared-target builds. Direct CMake optimization
 alone does not establish release qualification. Ordinary builds never install

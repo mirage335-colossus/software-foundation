@@ -13,16 +13,72 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
-## Optional Rust local qualification (2026-10-04)
+## Optional Rust qualification (2026-10-04)
 
-The optional [Rust validation component](rust-hybrid-plan.md) passed the local
-scopes below. These results do not extend earlier C++ release certification to
-new Rust bytes or establish the still-pending hosted/native/browser matrix.
-The default application provider remains C++.
+The optional [Rust validation component](rust-hybrid-plan.md) passed the complete
+four-target hosted qualification at commit
+`41d28fec5481c77fc5b20e20808405ff3f83707a` in
+[run 37211392657](https://github.com/mirage335-colossus/software-foundation/actions/runs/37211392657),
+attempt 1, of
+[`rust-qualification.yml`](../.github/workflows/rust-qualification.yml).
+All four producers and verdict job `111473327645` succeeded. This qualifies the
+declared configurations and executed gates, not every operating system, device
+or recovery claim. Subsequent documentation edits do not change those evidence
+identities. The default application provider remains C++.
+
+| Final hosted target | Console-observed result |
+| --- | --- |
+| Native Linux x86_64, job `111466315537` | 116 source CTests passed: four core, one Rust-unit harness, 58 tooling, 52 `foundation.gui.*` tests and documentation. Actual Firefox interactions and all 30 renderer-isolation cases passed. Package/installed-consumer, all six backend runtime, ABI, retained compiler-package replay and disconnected acceptance gates completed. |
+| Native Linux aarch64, job `111466315485` | The same 116-test source inventory passed on the native ARM64 lane, with actual Firefox interactions and all 30 renderer-isolation cases. Package/installed-consumer, all six backend runtime, ABI, retained compiler-package replay and disconnected acceptance gates completed. This is native execution, not x86_64 emulation. |
+| Native Windows x86_64, job `111466315478` | Full source/GUI/browser/package gates, all six installed backends and the bounded disconnected core/consumer/package gate succeeded. All seven Debug CTests passed: five core, `rust.unit` and installed consumer; static-CRT checks passed. Final Release inner case totals and browser versions are not asserted from uninspected payload receipts. Full offline GUI regression and Microsoft host-tool reinstallation were not selected. |
+| Browser wasm32, job `111466315491` | 65 source CTests passed: four core, 51 tooling and ten `foundation.gui.*` controller/Node/integration tests, not ten browser frontends. Actual Firefox and Chromium Wasm interactions passed editing, geometry, retained rows, bounded import, offered export and pagehide cleanup; each engine passed all 30 renderer-isolation cases. Retained compiler-package replay and disconnected acceptance completed. Native Rust-unit and native install CTests were not scheduled for Emscripten. |
+
+The proof is the authenticated completed producer/run context, complete local
+console logs and the implemented fail-closed gates, with immutable remote
+retention pointers. The complete payloads remain in run-scoped draft retention
+release `403087008`. Each small manifest was downloaded, SHA-256 checked and
+context-validated; final archive chunks and per-file payload bytes were **not**
+read back locally. Every final `readback-scope.json` records
+`full_payload_readback: false`, `bundle_accepted: false` and
+`local_file_bytes_verified: false`. Metadata inspection grants no additional
+qualification or accepted bundle receipt; a workstation multi-gigabyte
+re-download is not another hosted platform gate.
+
+| Target | Manifest asset | Manifest SHA-256 |
+| --- | --- | --- |
+| Windows x86_64 | `610112088` | `6f764f45d5461b213375347973ca7d8c44c2f227c3f5bc3bd4c1bd0c82599119` |
+| Linux x86_64 | `610116838` | `c53a8911d6367fd6024a01e7766c12463bc37845315d52e3343a30ebf378706a` |
+| Linux aarch64 | `610126271` | `63ec2df73efdee1315abfe8c1a71ac25e11121796ae8498cdab81dcc5e096d3b` |
+| Browser wasm32 | `610133601` | `01465c802f06d5e8af5cee288c91b546a2c7f0bebdc6720a989654a244d6a864` |
+
+The local index is
+`build/agents/rust-ci-hosted/run37211392657/final-evidence-index.md`, with log
+hashes, original completed-job/run metadata and per-target `*-remote-metadata/`
+pointers. No runtime skip markers occurred in the observed Linux/Wasm source
+logs; unexpected runtime skips fail the executed runner. Applicable omissions
+are explicit source-bound platform policy. Exact final inner Python totals,
+full exclusion inventories and Rust inner-case totals are not inferred from
+uninspected payload metadata. Earlier complete readbacks remain source-bound
+to their original revisions below.
+
+The latest default-C++ development check used commit
+`41d28fec5481c77fc5b20e20808405ff3f83707a`, source inventory
+`3cbb6adb3b6959721bb7cad1f2ddda31c7d93c8cc486b8c4ebbe41c9bf7618fb`.
+All 65 CTests and 1,533 executed Python cases in 58 suites passed, with no runtime
+skips or nonpassing cases and the same three explicit native-Windows exclusions
+listed below. `rustc`, Cargo and rustup were absent from the host PATH; the
+configured provider was `cpp` and Rust SDK/compiler fields were `none`.
+Its receipts under `build/agents/rust-hybrid-root/` are
+`cpp-final-41d28fe.junit.xml`, SHA-256
+`6aac6add0f7fccdd9068185f287dae2bb5a1da1fb8c82da125349e63f13fd71a`,
+`cpp-final-41d28fe/test-reports/`, `build-info.txt` in that tree, and
+`cpp-final-41d28fe.timings.json`, SHA-256
+`d77cc0db9ca8409a87444983a5d58179d84dadadbcee390430b768bef3bbe49a`.
+These later host-development results do not relabel the older package evidence.
 
 The disconnected runner froze a 434-file checkout with source identity
 `e3ce53899b49915d466388fcdcafda71116f1b6686aaf4c264ff92a27347042e`.
-The default C++ build records that same identity. Both Rust GUI build/package
+The original default C++ build records that same identity. Both Rust GUI build/package
 records instead identify
 `fc38ea4046a6cef53e00aae1e308b8de59e0bd0cc0d5429a6eb1efab69dbbfbf`:
 the same frozen checkout plus the verified retained GUI-source supplement.
@@ -33,32 +89,31 @@ relabel these receipts as evidence for a newer complete source snapshot.
 
 | Scope | Observed result |
 | --- | --- |
-| Default C++ without a Rust application toolchain | All 65 enabled CTests passed. The 58 Python suite receipts contain 1,498 passed executed cases and exactly three explicit native-Windows platform exclusions: delete-pending directory semantics, Win32 linker file identity and Job Object containment. The configured provider is `cpp`; Rust SDK/compiler fields are `none`. |
+| Original frozen C++ check without a Rust application toolchain | All 65 enabled CTests passed. The 58 Python suite receipts contain 1,498 passed executed cases and exactly three explicit native-Windows platform exclusions: delete-pending directory semantics, Win32 linker file identity and Job Object containment. This is the original `e3ce5389` snapshot, not the latest 1,533-case result above. |
+| Debian distro-tool Rust development | Clean commit `41d28fe`, source inventory `3cbb6adb`, passed four core CTests, six Rust unit cases and the poison-tool relocated installed consumer with neither SDK selected. The actual Bookworm rustc package `1.63.0+dfsg1-2` reports 1.63.0; Cargo package `0.66.0+ds1-1` reports executable 1.65.0. The normal planner and changed-compiler rejection passed in a loopback-only, external-network-denied namespace with fresh homes and read-only source/rootfs; input/rootfs rechecks passed. No GUI, release, portable, package or complete-tool-matrix result is inferred. |
 | Additional distribution helpers | Five CTests and 148 Python cases passed with no exclusions in a separate C++ development tree. Its configured source identity is `052118622e0d9f5ba7e63f1844ef5b8c50c603299cbac448f4a74da0309cf931`. These are helper regressions, not new signed-channel publication or package-manager transaction certification. |
 | Actual Rust package projections | Seven core/backend projections in each of Debian, Arch and Gentoo formats produced 21 projections on the Debian 13 host. Each preserved all 206 shared non-`bin` files, including the Rust archive and notices, byte for byte with matching modes; all 21 CLI version/self-check invocations passed. Three separately extracted C++ consumers linked the Rust provider, checked rejection/atomicity and confirmed Rust symbols with `nm`. A real `.deb` and ELF audit, Arch `package()` Bash execution and modeled Gentoo helpers passed. This projection-only receipt did not exercise native package-manager transactions, public `/opt` launchers, channel activation, signing or publication; the separate Bookworm transaction result follows. |
 | Actual Debian Rust package transactions | In a fresh disposable disconnected Bookworm rootfs, `dpkg` installed and configured all seven retained Debian variants, verified their installed payloads, passed 28 public/private CLI version/self-check commands and six Xvfb GUI smoke commands, then removed and purged all seven variants. Rust tools and Rust tool packages were absent, the host package database was unused, the baseline distribution package state was preserved, and retained inputs/rootfs passed rechecks. This used the original package projections above, not packages rebuilt from the later final-source snapshot. |
 | Complete local disconnected x86_64 host inventory | `linux-x86_64` and `browser-wasm32`, both explicitly selecting Rust, passed fresh SDK restoration, builds, four core tests each, packaging and installed CMake consumers. The aggregate, retained-input rechecks and rootfs recheck passed. Source, both retained groups and restored execution SDKs were read-only; build, HOME, temporary, cache, Cargo home and rustup home were fresh. Parent/child probes recorded loopback only, denied external connections and zero capabilities. |
 | Native Bookworm Rust application | Actual Rust 1.63.0 compiled the Release/portable component into one native graph with terminal, framebuffer, FLTK, Rev, SDL and hosted-web. The package passed its explicit Bookworm ABI audit, relocated installed C++ consumer and all six installed backend smoke checks. This scope does not include full backend interaction or visual certification. |
-| Disconnected Rust Wasm application | The exact Rust 1.63.0 / Emscripten 6.0.10 tuple passed fresh application compilation, four Node core tests, packaging and the installed Node/CMake consumer using the retained frozen SDK cache. Real browser coverage has its separate local Firefox result below; Chromium and hosted/native browser scopes remain pending. |
+| Disconnected Rust Wasm application | The exact Rust 1.63.0 / Emscripten 6.0.10 tuple passed fresh application compilation, four Node core tests, packaging and the installed Node/CMake consumer using the retained frozen SDK cache. This original local receipt is separate from the later hosted Firefox/Chromium qualification above. |
 | Local Firefox Rust Wasm application | Firefox 153.4.0esr on the Debian 13 desktop host passed four application cases: HTTP and direct-file, each standalone and isolated. Editing, tasks, geometry, retained rows, atomic invalid-ASCII import, 65,537-byte file rejection and pagehide/navigation cleanup passed. The complete 30-case renderer-isolation inventory and six additional error-state cases passed, with ten desktop capture files retained. Browser/server owners joined and input bytes were rechecked. |
 | Native retained source-input replay | The complete Rust source group was recovered offline, its retained original supplier archives regenerated the extension, and its native toolchain probe passed against recipe `888eaacdca83ecc2d518a2062e13b65d43fdbe6188ee6daaf29713f2aabb13cd`. Input/rootfs rechecks passed. Compiler/Cargo reconstruction from source was not executed or qualified. |
+| Trusted native Windows lane | Successful producer job `111452286607` in run `37206730598` at `3f70889` passed 102 source CTests, including 49 `foundation.gui.*` application tests, and 1,164 Python cases with 64 explicit platform exclusions and zero runtime skips. Seven Debug core/unit/consumer CTests, static-CRT audits, all six installed backend checks and Firefox 156.0.1 hosted standalone/isolated checks passed. Its bounded disconnected recovery, five core CTests, installed consumer and package verification completed; full offline GUI regression was explicitly false. This lane is not the otherwise failed matrix's four-target verdict. |
 
-A later native-development check at commit
-`6455ee46d3eaa505f6935b4b9c2ad3efd65d3b0e` configured both providers against source
-inventory `a7be2688618648eb63225cb5064fef09b21c2d48b079d18ceead5f4d82213c4d`.
-The default C++ tree passed all 65 CTests and all 1,503 executed Python cases in
-58 suites, with the same three explicit native-Windows exclusions and no Rust
-application SDK/compiler selected. The Debug Rust tree used the final retained
+A retained-extension native-development check at commit
+`6455ee46d3eaa505f6935b4b9c2ad3efd65d3b0e` records source inventory
+`a7be2688618648eb63225cb5064fef09b21c2d48b079d18ceead5f4d82213c4d`.
+The Debug Rust tree used the final retained
 Rust 1.63.0 extension and passed six CTests: the four core tests, `rust.unit`
 (six Rust unit cases) and `integration.install`. The latter relocated the package
 and built/executed an ordinary C++ consumer with poison Cargo/rustc/rustup launchers
 without invoking them. This Debian 13/GNU 14.2 configuration had GUI and portable
 mode disabled and no prepared C++ SDK; it is not new portable/full-GUI release
-qualification. The retained receipts are `cpp-final-6455ee4.junit.xml`,
-`cpp-final-6455ee4/test-reports/`, `rust-final-6455ee4.junit.xml` and both trees'
-`build-info.txt` under `build/agents/rust-hybrid-root/`.
+qualification. Its retained receipts are `rust-final-6455ee4.junit.xml` and that
+tree's `build-info.txt` under `build/agents/rust-hybrid-root/`.
 
-The same final-source Rust development tree passed a warm no-op with input
+The same `6455ee4` Rust development tree passed a warm no-op with input
 verification and Cargo freshness checks. The archive, receipt and CLI retained
 their exact timestamps and sizes. The measured wrapper total was 8.372 seconds;
 this is one local observation, not a speedup or cross-platform performance claim.
@@ -67,7 +122,7 @@ Its source/SDK-bound record and phase measurements are
 `rust-final-6455ee4.noop.timings.json` in that same directory. These later checks
 do not relabel the older package, browser or disconnected receipts.
 
-Both disconnected targets executed exactly `core.cli`, `core.store`,
+The original local retained-SDK Linux/Wasm targets executed exactly `core.cli`, `core.store`,
 `core.text_status` and `core.text_validation`. Native Rust unit execution and
 broader GUI/regression coverage cannot be inferred from that four-test selection.
 The retained C++ recipes are
@@ -95,6 +150,12 @@ per-target `stage.json`, `execute.json`, core JUnit, package inventories and
 configured `build-info.txt`. Source-input replay has its separate original
 receipt at
 `build/agents/rust-offline-adapters/native-source-replay-v2/qualification.json`.
+The clean Debian distro-tool receipt is
+`build/agents/rust-distro-native/attempt-v3/evidence/qualification.json`, SHA-256
+`81f7eae4b6d567b1c4905d8a153e8c446c45c381856fdce719773f2f0e8e3e17`.
+Its separate prerequisite inventory records explicit Debian package preparation;
+the ordinary application build acquired nothing. Native package-owned library
+links and complete notices were validated without relaxing retained-SDK rules.
 The actual projection evidence is
 `build/agents/rust-package-qualification/qualification.json`, SHA-256
 `6e653c85b27f4500f033895f2bd80f099c8dc4a8e8e591f6b6147a19cbc1ee42`,
@@ -128,15 +189,32 @@ application direct-file cases observed no HTTP/S resources. This is not
 whole-browser network denial, Chromium/native Windows, mobile or assistive-device
 qualification. The renderer's authority and navigation limits remain those
 documented in [browser embedding](browser-embedding.md).
-Native ARM64, native Windows, Chromium and the complete hosted matrix remain
-pending. Hosted run `37200078067` at `85700f2` executed 102 Windows CTests:
-98 passed, including actual Rust execution, the installed consumer and all 52
-GUI cases; four fixture failures were repaired in `6455ee4`. Its later Windows
-packaging, Debug, browser and firewall checks were not reached. The three
-Linux-hosted jobs remained silent beyond package bootstrap for more than 80
-minutes, confirmed in their live GitHub logs. That run and the unstarted queued
-replacement `37201305850` were cancelled to add phase diagnostics before another
-qualification attempt. Neither cancellation is a target qualification result.
+The earlier accepted [Windows lane in run 37206730598](https://github.com/mirage335-colossus/software-foundation/actions/runs/37206730598) above is bound to commit
+`3f70889d0eab35af067f51c4bbf3281c120d5723` and source inventory
+`1f1851daccd31f328d460491e138dd6c915e3a991decd552e719ee96a960ce88`.
+Strict successful-producer transport verification checked the complete context
+and archive/file hashes. Its retained manifest SHA-256 is
+`e0010181e1e4c96bce6ec899e8ff3d30a2eb8755f78f47cb61501b794bb5a9df`;
+the scope, strict fetch receipt, recovery readback and producer log are under
+`build/agents/rust-ci-hosted/run37206730598/`, starting at `windows-scope.md`.
+Its about-209-second owned firewall stage denied external TCP 443 controls,
+permitted loopback, restored original profiles and removed its temporary rule.
+The recorded Debug PE import result covers its five executables and consumer,
+not every GUI binary or an older Windows OS. These older inner counts and browser
+version are not transferred to final `41d28fe` evidence.
+
+The preceding complete four-target
+[run 37209852887](https://github.com/mirage335-colossus/software-foundation/actions/runs/37209852887)
+at `9860e00` also succeeded. Strict complete-byte local readbacks were accepted
+for its Windows, Linux x86_64 and Linux aarch64 bundles. Its Wasm producer and
+remote retention succeeded, but the workstation's full Wasm fetch timed out at
+600 seconds and was not accepted. This is not a failed hosted platform gate.
+Earlier cancelled runs `37200078067`, `37201305850` and `37205559015` retain
+forensic diagnostics, not target qualification. The successful `3f70889` Windows
+lane belonged to an otherwise failed matrix. No later success retroactively
+certifies those incomplete or failed producers.
+Full Windows offline GUI regression, Microsoft tool installation/reinstallation,
+older-client floors and other unexecuted platforms/devices remain unqualified.
 Retained toolchain restoration, source-input recovery
 and a compiler rebuilt from source remain distinct claims; the last is
 **UNVERIFIED**. No stable application release or distro-channel promotion is claimed.
@@ -209,11 +287,12 @@ revocation; subsequent dispatch and late parent completion effects are rejected.
 Worker computation, native process isolation and disconnected build networking
 remain distinct boundaries.
 
-No native aarch64/Windows offline execution, new hosted CI run, distro-channel
-transaction or release publication is claimed. Applicable unavailable environments
-are recorded in [pending native qualification](../.agent-pending/offline-platform-qualification.md).
-Support is preserved; those remaining platform claims require their native
-environments and exact retained inputs.
+At that revision, these local receipts did not establish native aarch64/Windows
+offline execution, a new hosted CI run, distro-channel transactions or release
+publication. Later source-bound Rust qualification is recorded above; broader
+unselected scopes remain in
+[pending native qualification](../.agent-pending/offline-platform-qualification.md).
+These historical receipts retain their original limits and source identity.
 
 ## Remaining transfer implementation (2026-10-04)
 

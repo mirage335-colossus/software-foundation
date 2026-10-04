@@ -105,8 +105,14 @@ Emscripten `--sdk` with its Rust extension. [Building](building.md) gives backen
 test and package commands. Changing provider/toolchain requires a fresh compatible
 tree; native and Wasm ABIs necessarily use separate trees.
 
-Native Linux development without a C++ SDK may explicitly use installed distro
-tools. Portable/release, Windows and browser profiles require retained tools.
+SDK-free native development currently supports Debian-family package-owned
+`rustc`/Cargo and dpkg-backed complete notices. It is restricted to wrapper `dev`
+without a target SDK or portable policy; other Linux distributions and unowned
+tool layouts use the retained extension until an ownership/notice provider exists.
+The receipt binds actual tools, target libraries, native link requirements and
+notices. Only matched package-owned `libstd`/`libtest` links are accepted in this
+native route; retained SDK target libraries still reject symlinks.
+Portable/release, Windows and browser profiles require retained tools.
 Rustup proxies are not accepted as selected compiler executables. Actual Rust
 1.63 execution, not just `rust-version`, verifies source compatibility with the
 [Bookworm compiler baseline](https://packages.debian.org/bookworm/rustc).
@@ -196,13 +202,16 @@ present. Wasm also requires `--cpp-sdk /absolute/emscripten-sdk`. Source recover
 retains exact sources, supplier inputs, bootstrap metadata/binaries, recipes,
 hashes and licenses. It is not a compiler build command.
 
-Three distinct claims are recorded:
+Four distinct claims are recorded:
 
 1. **Offline application build:** retained tools/targets run configure, compile,
    test and package with network access denied.
 2. **Retained-toolchain restoration:** original binary inputs are verified,
    restored and executed without downloads.
-3. **Compiler reconstruction from source:** compiler/LLVM/Cargo and their entire
+3. **Source-input recovery:** exact retained source, vendored dependencies,
+   supplier archives and stage0 inputs are recovered and checked. Reassembling
+   the original supplier binaries from those inputs is not a compiler build.
+4. **Compiler reconstruction from source:** compiler/LLVM/Cargo and their entire
    bootstrap closure are rebuilt and validated. This is not claimed here.
 
 A source archive or `stage0.json` is not proof of compiler reconstruction. The
@@ -238,6 +247,33 @@ Initial discriminating checks passed during implementation:
 
 ### Executed application qualification
 
+The complete four-target
+[`rust-qualification.yml`](../.github/workflows/rust-qualification.yml)
+[run 37211392657](https://github.com/mirage335-colossus/software-foundation/actions/runs/37211392657),
+attempt 1, passed at commit
+`41d28fec5481c77fc5b20e20808405ff3f83707a`. Native Linux x86_64, native Linux
+aarch64, native Windows x86_64 and browser wasm32 producers all succeeded, as
+did verdict job `111473327645`.
+
+| Final hosted scope | Observed result |
+| --- | --- |
+| Native Linux x86_64 and aarch64 | Each executed 116 passed source CTests, including four core, one Rust-unit harness and 52 application GUI tests. Actual Firefox interactions and all 30 renderer-isolation cases passed. Package/installed-consumer, six backend runtime, ABI, retained compiler-package replay and disconnected acceptance gates succeeded on their native Bookworm architectures. |
+| Native Windows x86_64 | Full source/GUI/browser/package and all six installed backend gates succeeded; seven Debug CTests and static-CRT checks passed. Its bounded disconnected core/consumer/package gate completed. Full offline GUI regression and Microsoft host-tool reinstallation were not selected. |
+| Browser wasm32 | 65 source CTests passed: four core, 51 tooling and ten controller/Node/integration tests, not ten browser frontends. Actual Firefox and Chromium Wasm application cases and all 30 renderer-isolation cases per engine passed. Retained compiler-package replay and disconnected acceptance completed. Native Rust unit/native install CTests were not scheduled for Emscripten. |
+
+The proof consists of authenticated completed-job/run context, complete console
+logs, executed fail-closed gates and immutable remote retention pointers. The
+small manifests were locally SHA-256 checked; final archive chunks and per-file
+payloads were not read back locally. The metadata records explicitly say
+`full_payload_readback: false` and `bundle_accepted: false`; they do not grant an
+additional qualification or accepted bundle receipt. The exact job IDs,
+manifest hashes, observed counts and limits are in
+[the canonical Rust validation record](validation.md#optional-rust-qualification-2026-10-04)
+and `build/agents/rust-ci-hosted/run37211392657/final-evidence-index.md`.
+Subsequent documentation edits do not change those source-bound evidence
+identities. Final inner Python/Rust case totals and browser versions are not
+inferred from uninspected payload metadata.
+
 The local frozen checkout is
 `e3ce53899b49915d466388fcdcafda71116f1b6686aaf4c264ff92a27347042e`.
 The same checkout plus its retained GUI-source supplement has identity
@@ -246,22 +282,28 @@ These are different inventory scopes, not interchangeable source identifiers.
 The snapshot records base commit `8854f4f` plus its exact implementation diff;
 later workflow-only repairs do not relabel that original evidence.
 
-A subsequent fresh local check used committed
+The latest default-C++ local check used committed
+`41d28fec5481c77fc5b20e20808405ff3f83707a`, source inventory
+`3cbb6adb3b6959721bb7cad1f2ddda31c7d93c8cc486b8c4ebbe41c9bf7618fb`.
+It passed all 65 CTests and 1,533 Python cases in 58 suites, with the same three
+explicit native-Windows exclusions, no nonpassing cases and no runtime skips.
+The host had no `rustc`, `cargo` or `rustup` on PATH. The same clean commit passed
+the separate SDK-free Bookworm Rust development scope described below.
+
+The retained-extension Debug check remains bound to
 `6455ee46d3eaa505f6935b4b9c2ad3efd65d3b0e`, source inventory
 `a7be2688618648eb63225cb5064fef09b21c2d48b079d18ceead5f4d82213c4d`.
-Its complete default C++ run passed 65 CTests and 1,503 Python cases in 58
-suites, with the same three explicit native-Windows exclusions and no skipped
-cases. The host had no `rustc`, `cargo` or `rustup` on PATH. A separate explicit
-Rust 1.63 Debug run passed four core CTests, the six-case Rust unit harness and
-the relocated C++ consumer with Rust tools shadowed to fail. Its no-op wrapper
+It passed four core CTests, the six-case Rust unit harness and the relocated C++
+consumer with Rust tools shadowed to fail. Its no-op wrapper
 build retained identical archive, receipt and executable timestamps and sizes;
 the measured wrapper time was 8.372 seconds, including input verification, not
-a claimed improvement over C++. These are host-development checks, not new
-Bookworm or hosted-platform qualification.
+a claimed improvement over C++. That retained-extension check is host-development
+coverage, not new Bookworm or hosted-platform qualification.
 
 | Scope | Observed result |
 | --- | --- |
-| Complete default C++ checks | 65 CTests passed on the host without Rust commands on PATH; 58 Python suites contain 1,498 passed cases. Three explicit Windows-only exclusions remain outside that host's inventory. |
+| Original frozen default C++ checks | 65 CTests passed on the host without Rust commands on PATH; 58 Python suites contain 1,498 passed cases. These retain the original `e3ce5389` inventory; the later 1,533-case result above has its own identity. |
+| Debian distro-tool development | Clean `41d28fe` passed six CTests: four core tests, six Rust unit cases and the poison-tool relocated installed consumer, without C++ or Rust SDKs. Actual Bookworm packages were rustc `1.63.0+dfsg1-2` and Cargo `0.66.0+ds1-1`; the executables reported rustc 1.63.0 and Cargo 1.65.0. The normal planner and changed-compiler rejection passed in the denied namespace; source/rootfs/retained-input rechecks passed. No portable, GUI, package or full-tool-matrix result is inferred. |
 | Distribution regression checks | Five additional suites, 148 cases, passed with no exclusions. Temporary signing agents required execution outside the outer sandbox; no host package installation or keyring changes occurred. |
 | Disconnected native Bookworm | Rust 1.63 release/portable build of all six backends, four core tests, TGZ packaging, ELF runtime-floor audit, installed C++ consumer and all six installed backend smoke checks passed. |
 | Disconnected browser Wasm | Existing mixed application module built with the pinned pair; four core tests executed in Node; TGZ packaging and installed CMake/Node consumer passed. This is not a real-browser interaction claim. |
@@ -269,9 +311,10 @@ Bookworm or hosted-platform qualification.
 | Actual distro payload projections | Seven core/backend projections through Debian, Arch and Gentoo preserved all Rust archive/notices; 21 extracted CLI checks and three linked C++ consumers passed. Arch install-body execution and modeled Gentoo helpers are not native package-manager transactions. |
 | Actual Debian transactions | In a fresh disconnected Bookworm rootfs, all seven packages installed/configured, their complete payloads matched, 28 CLI checks and six public backend smoke checks passed, and removal/purge restored the original package inventory. An additional GCC 12 C++ consumer passed with explicit `-no-pie`; default-PIE consumption with that different compiler is not qualified. No Rust tools were installed. |
 | Retained native toolchain recovery | Source-input recovery and offline regeneration from the original supplier archives reproduced all three retained-group hashes; restored compiler/Cargo executed successfully. Compiler reconstruction from source was not performed. |
+| Trusted native Windows lane | Run `37206730598` at `3f70889` passed 102 source CTests, including 49 application GUI tests, and 1,164 Python cases with 64 explicit platform exclusions. Seven Debug CTests, static-CRT audits, all six installed backends and Firefox 156.0.1 hosted standalone/isolated checks passed. Bounded disconnected retained-input recovery, five core CTests, installed consumer and package verification completed; full offline GUI regression was not selected. This successful lane is not the failed matrix's four-target verdict. |
 
-Both disconnected cases used fresh homes/caches/output, read-only source,
-retained groups and restored SDKs, loopback-only networking and zero effective
+The original local retained-SDK Linux/Wasm cases used fresh homes/caches/output,
+read-only source, retained groups and restored SDKs, loopback-only networking and zero effective
 and bounding capabilities. External connections failed and attempted writes to
 the Rust SDK failed with `EROFS`. Final rootfs and retained-input rechecks passed.
 The complete local acceptance receipt is
@@ -297,22 +340,41 @@ C++ consumer contract; no `-no-pie` requirement is exported to consumers. Native
 Arch/Gentoo transactions, APT repository retrieval, upgrades, signing and
 repository activation were not performed.
 
-Full native GUI interaction/visual checks, Chromium and native Windows and
-ARM64 coverage remain separate gates. Hosted run
-[37200078067](https://github.com/mirage335-colossus/software-foundation/actions/runs/37200078067)
-at `85700f21c56d5fc56728094ac1716c179be13f55` is not a completed
-qualification. Its Windows source run passed 98 of 102 CTests, including actual
-Rust execution, the installed consumer and all 52 GUI cases. Four test-fixture
-failures were repaired in `6455ee4`; later packaging, Debug and disconnected
-Windows checks were not reached. Corrected full-matrix run
-[37201305850](https://github.com/mirage335-colossus/software-foundation/actions/runs/37201305850)
-was cancelled while queued. The preceding run's three Linux-hosted lanes showed
-no output beyond package bootstrap after more than 80 minutes and were stopped
-for phase diagnostics; they are incomplete, not application runtime passes.
-The initial run was cancelled after a workflow environment error before target
-qualification; its logs remain retained. See the canonical
-[validation record](validation.md) for detailed scopes. Unexecuted, skipped or
-compile-only targets are not runtime passes.
+The clean Debian distro-tool receipt is
+`build/agents/rust-distro-native/attempt-v3/evidence/qualification.json`, SHA256
+`81f7eae4b6d567b1c4905d8a153e8c446c45c381856fdce719773f2f0e8e3e17`.
+Its prerequisite receipt distinguishes explicit Debian package preparation from
+the ordinary build, which acquired nothing. Use the focused commands in
+[building](building.md#optional-rust-validation-provider) to reproduce the
+development selection with those prerequisites already installed.
+
+The earlier accepted Windows producer is job `111452286607`,
+[run 37206730598](https://github.com/mirage335-colossus/software-foundation/actions/runs/37206730598), attempt 1,
+at commit `3f70889d0eab35af067f51c4bbf3281c120d5723`, source inventory
+`1f1851daccd31f328d460491e138dd6c915e3a991decd552e719ee96a960ce88`.
+Strict successful-producer transport verification checked the full context and
+archive/file hashes; its retained manifest SHA256 is
+`e0010181e1e4c96bce6ec899e8ff3d30a2eb8755f78f47cb61501b794bb5a9df`.
+The detailed scope and recovery readback are under
+`build/agents/rust-ci-hosted/run37206730598/`, starting at `windows-scope.md`.
+Its owned firewall stage completed in about 209 seconds with external controls
+denied, loopback working and the original firewall state restored. Those inner
+counts and browser version retain their original `3f70889` identity.
+
+The preceding complete four-target
+[run 37209852887](https://github.com/mirage335-colossus/software-foundation/actions/runs/37209852887)
+at `9860e00` also succeeded. Complete-byte local readbacks were accepted for its
+Windows and both Linux bundles; its successful remote Wasm retention was not
+accepted as a local bundle because the workstation full fetch timed out after
+600 seconds. No workstation full-payload re-download is an extra hosted gate.
+Earlier cancelled runs `37200078067`, `37201305850` and `37205559015` remain
+forensic-only; the successful `3f70889` Windows lane was part of an otherwise
+failed matrix. Later successes do not retroactively qualify those producers.
+Full Windows offline GUI regression, Microsoft host-tool installation from
+retained media, older operating-system floors and unexecuted targets remain
+separate. Compiler reconstruction from Rust source remains **UNVERIFIED**.
+No stable application release or distro-channel promotion is claimed.
+Unexecuted, skipped or compile-only targets are not runtime passes.
 
 ## Future portable logic
 

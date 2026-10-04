@@ -92,6 +92,13 @@ transitive native requirements. Also check a default C++ build with Rust tools
 and caches absent; its configuration must make zero Rust discovery or acquisition
 attempts.
 
+The SDK-free Rust development check is Debian-family native only. Exercise its
+actual package-owned tools, library-link/target identities, complete notices and
+native link requirements; then change the selected compiler and require stale
+identity rejection. This is separate from restoring an official Rust extension.
+GUI-labelled CTests include tooling suites: report `foundation.gui.*` application
+tests separately from tooling cases when describing frontend execution.
+
 Build-helper coverage must distinguish frozen/offline inputs, hostile Cargo/Rust
 configuration, invalid SDK pairing, changed tools/target libraries/notices,
 archive/receipt tampering, missing-output rebuilds, incremental reuse and separate

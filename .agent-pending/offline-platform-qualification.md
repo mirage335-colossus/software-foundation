@@ -14,19 +14,26 @@ Those receipts retain their original source identity; they are not evidence for 
 later changed source snapshot. Wasm and browser results are recorded separately in
 the validation record.
 
-Two applicable scopes are blocked on environments, rather than awaiting further
-authorization:
+Qualification is revision- and scope-specific. The optional Rust four-target
+matrix at `41d28fec5481c77fc5b20e20808405ff3f83707a` completed successfully in
+[run 37211392657](https://github.com/mirage335-colossus/software-foundation/actions/runs/37211392657).
+Both native Bookworm architectures passed source/all-six-backend, package,
+installed-consumer, ABI, browser, retained-package replay and disconnected gates.
+The native Windows source/GUI/browser/package, Debug/static-CRT and bounded
+disconnected core/consumer/package gates passed. Wasm passed its declared
+source/core/package/consumer/replay/disconnected scope and actual Firefox and
+Chromium application/renderer checks. Native ARM64 was executed, not emulated.
+See the [current Rust record](../docs/validation.md#optional-rust-qualification-2026-10-04)
+for precise counts and immutable evidence pointers. These results do not relabel
+older C++ receipts. Final complete console/job evidence and SHA-verified small
+manifests are local; payload bytes remain remotely retained without a final local
+full-byte bundle acceptance claim.
 
-- Native Linux aarch64: a prepared native aarch64 Bookworm host/rootfs or immutable
-  local image and complete retained SDK group matching recipe
-  `afe8d1ba004206fcf234376a2110e69c4e9e1ef6b373e7afe23afe8497f8e4de`.
-  Run the documented `tools/offline_acceptance.py run` command with a new output
-  directory and a native aarch64 plan. Its default host selection must remain
-  complete, with all six native backends. Do not substitute x86_64 emulation for a
-  native qualification claim.
-- Native Windows x86_64: a supported Windows host, the complete Microsoft offline
-  installer layout and selected installed compiler/Windows SDK components, plus
-  the retained dependency group matching recipe
+The following broader scopes were not selected and are not implied by that pass:
+
+- Full native Windows x86_64 offline GUI/host-bootstrap scope: a supported Windows
+  host, the complete Microsoft offline installer layout and selected compiler/Windows SDK
+  components, plus the retained dependency group matching recipe
   `da0aa41ad58536497e23503b4ca778521e47cbd412c5b944490aa3c4d535bf0a`.
   Follow the existing [Windows offline prerequisite procedure](../docs/sdk.md#windows-dependency-base-and-separately-installed-host-tools)
   with external networking unavailable, fresh build/HOME/temp directories and
@@ -34,7 +41,13 @@ authorization:
   isolation adapter. Record build, packaging, installed-consumer and all six GUI
   runtime results separately.
 
-The next manual action is to provide either missing native environment and execute
-its corresponding procedure against a newly identified source snapshot. No native
-ARM/Windows execution, new hosted CI result or release publication is claimed by
-the current local evidence. Existing release/certification gates still apply.
+The declared four-target Rust qualification has no outstanding hosted job.
+Broader Windows offline GUI/host-bootstrap work needs an explicit support claim
+and qualification request before execution. The existing Microsoft prerequisite
+procedure remains required; bounded checks reused selected installed host tools
+and do not establish installation/reinstallation from retained media. Other OS
+floors, devices and target/compiler pairs require their own scope. Retained
+compiler-package replay is not compiler reconstruction from Rust source, which
+remains **UNVERIFIED**. Preserve each newly executed result's source identity.
+No stable application release or distro-channel promotion is claimed. Existing
+certification gates still apply.

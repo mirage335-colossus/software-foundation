@@ -13,10 +13,11 @@ archives are generated outputs, not committed inputs. A runnable producer does
 not establish that every host or target is qualified; record actual cold-build
 and oldest-runtime results separately.
 
-Ordinary Linux builds need only the checkout and distribution packages, including
-selected toolkit development packages. `--gui` restores the checked-in source
-group; it does not prepare an SDK. Wasm and Windows instead use the checkout plus
-retained complete SDK/dependency groups and their declared host prerequisites.
+Ordinary default-C++ Linux builds need only the checkout and distribution
+packages, including selected toolkit development packages. `--gui` restores the
+checked-in source group; it does not prepare an SDK. Wasm and Windows instead use
+the checkout plus retained complete SDK/dependency groups and their declared
+host prerequisites.
 Keep these groups outside Git. See the [independence boundary](dependencies.md#bootstrap-without-recurring-supplier-access).
 
 Use [offline application builds](offline-builds.md) for the complete retained-input
@@ -123,17 +124,25 @@ inherit this SDK allowance or bundle the target libc/loader.
 
 ## Optional retained Rust extension
 
-The C++ SDK remains `sdk.json`. Selecting the optional Rust provider adds a
-separate `rust-sdk.json` extension; it does not change the existing C++ manifest
+The C++ SDK remains `sdk.json`. Retained Rust builds use a separate
+`rust-sdk.json` extension; it does not change the existing C++ manifest
 or make Rust a prerequisite of C++ builds. See
 [provider selection](building.md#optional-rust-validation-provider). All ordinary
 Rust builds consume existing inputs without supplier access or SDK mutation.
+
+The separate SDK-free development route is currently Debian-family native Linux
+only: actual distribution tools, target libraries, native link requirements and
+dpkg-backed notices are identified in the build receipt, not a `rust-sdk.json`.
+Matched package-owned `libstd`/`libtest` links are verified together with their
+ordinary targets and package versions. Retained extensions still reject target
+library symlinks. Other Linux distributions or unowned tool layouts use the
+retained route; see [provider selection](building.md#optional-rust-validation-provider).
 
 [`rust_sdk.py`](../tools/rust_sdk.py) prepares exact official Rust 1.63.0 compiler,
 Cargo, host/target library and source components from the recipes in
 [`third_party/rust`](../third_party/rust). Recipes cover native GNU/Linux x86_64
 and aarch64, native Windows x86_64 MSVC, and the exact Rust 1.63.0 / Emscripten
-6.0.10 experiment. Recipe availability is not platform qualification. Official
+6.0.10 profile. Recipe availability is not platform qualification. Official
 Rust distribution archives are an explicit supplier for this extension; a
 distribution-package-only policy cannot be inferred from the existing C++ SDK.
 No rustup installation or moving toolchain selection is used.

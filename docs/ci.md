@@ -597,7 +597,7 @@ Missing inputs and mismatched recipe/target identities fail without a supplier
 or provider fallback. Compiler reconstruction from source is not a workflow gate
 or claimed result; replay reassembles original retained compiler packages.
 
-The planned gates include complete configured source tests, package/installed
+The implemented gates include complete configured source tests, package/installed
 consumers, all applicable native backend checks, real browser checks and retained
 recovery evidence. Linux lanes use their matching Bookworm architecture for the
 application and a separate network-denied source-input replay and disconnected
@@ -616,8 +616,18 @@ preparation receipt is not a target pass. The final verdict requires every plann
 lane to succeed; cancelled, failed or incomplete jobs do not satisfy it. No stable
 application release, base/Latest change or distro-channel promotion is performed
 by this workflow.
-[Validation](validation.md#optional-rust-local-qualification-2026-10-04) records
-observed local results separately from any completed hosted run.
+[Run 37211392657](https://github.com/mirage335-colossus/software-foundation/actions/runs/37211392657)
+at `41d28fec5481c77fc5b20e20808405ff3f83707a` completed all four producers and
+the verdict successfully. [Validation](validation.md#optional-rust-qualification-2026-10-04)
+records the executed scope, exact immutable pointers and evidence basis:
+authenticated completed-job/run contexts, complete console logs and successful
+fail-closed gates. Final small manifests were SHA-verified locally; the complete
+payloads remain remotely retained, without local full-payload readback or an
+accepted bundle claim. Earlier full-byte readbacks, local checks and failed or
+cancelled attempts retain their original identities. A successful lane in a
+failed matrix is not the complete four-target verdict. Windows checks reuse
+selected Microsoft host tools; they do not prove installation or reinstallation
+from retained installer media.
 
 ## Executable hosted lifecycle
 

@@ -50,18 +50,23 @@ target-library or final runtime contract.
 
 | Rust profile | Implemented boundary and qualification limit |
 | --- | --- |
-| GNU/Linux x86_64 | Actual Rust 1.63.0 passed the recorded disconnected Bookworm Release/portable build with all six native backends, four core tests, package ABI audit, relocated installed C++ consumer and six installed backend smoke checks; broader GUI and hosted qualification remain pending |
-| GNU/Linux aarch64 | Matching retained native extension; a native ARM64 environment is required for execution evidence, and x86_64 emulation cannot qualify it |
-| Windows x86_64 MSVC | Matching retained official extension plus the existing Microsoft host-tool and dependency-base closure; native build, CRT/linkage, packaging and GUI execution need separate evidence |
-| Browser wasm32 | Exact Rust 1.63.0 / Emscripten 6.0.10 pair passed the recorded disconnected application build, four Node core tests, package and installed Node/CMake consumer. Local Firefox 153.4.0esr application/renderer checks passed; Chromium, mobile and hosted qualification remain pending. Native Wasm objects, panic abort and no cross-language LTO remain required |
+| GNU/Linux x86_64 | Final `41d28fe` native Bookworm lane passed 116 source CTests, including four core and 52 application GUI tests, all six backend runtime checks, package/consumer/ABI gates, actual Firefox/renderer checks, retained-package replay and disconnected acceptance. A separate clean Debian distro-tool development check passed four core tests, six Rust unit cases and the installed consumer without SDKs; it is not portable/full-GUI qualification |
+| GNU/Linux aarch64 | Final `41d28fe` native ARM64 Bookworm lane passed the same declared source/backend/package/consumer/ABI/browser/recovery gates. This is native execution with the matching retained extension, not x86_64 emulation; other environments need separate qualification |
+| Windows x86_64 MSVC | Final `41d28fe` native lane passed source/GUI/browser/package and all six installed backend gates, seven Debug CTests/static-CRT checks and bounded disconnected core/consumer/package verification. The matching retained extension and Microsoft host-tool/dependency-base closure remain required. Full offline GUI regression and older-client compatibility remain separate |
+| Browser wasm32 | Exact Rust 1.63.0 / Emscripten 6.0.10 pair passed final `41d28fe` source/core/package/consumer/replay/disconnected gates and actual Firefox/Chromium application checks, with 30 renderer-isolation cases per engine. Mobile, other engines/devices and other compiler pairs are unqualified. Native Wasm objects, panic abort and no cross-language LTO remain required |
 | Arduino and other targets | No implemented Rust profile or qualified board port; use the C++ route and the selective-porting policy below |
 
-See [the local Rust validation record](validation.md#optional-rust-local-qualification-2026-10-04)
+See [the Rust validation record](validation.md#optional-rust-qualification-2026-10-04)
 for exact source, recipe, package and receipt identities, and
-[the Rust implementation record](rust-hybrid-plan.md) for remaining qualification.
+[the Rust implementation record](rust-hybrid-plan.md) for implemented scope and limits.
+The complete four-target hosted run passed with remotely retained evidence;
+final metadata inspection did not read back full payload bytes or create a local
+accepted bundle. Older independent full-byte readbacks keep their own identities.
 Stable Rust 1.63 and edition 2021 are the component
-baseline. Native development may use a newer identified stable compiler; that
-does not establish Rust 1.63 execution or an older runtime floor. Retained
+baseline. SDK-free native development currently requires Debian-family package
+ownership and complete notices; other Linux distributions or unowned tool
+layouts use the retained extension. A newer identified stable compiler does not
+establish Rust 1.63 execution or an older runtime floor. Retained
 compiler executable host requirements and the final application's target
 requirements remain separate, even for an allocation-free static component.
 
@@ -71,18 +76,19 @@ must have compatible CRT requirements, and the selected native-static-library
 receipt must reach the final C++ link. The Rust archive does not replace the
 Microsoft compiler, Windows SDK or required system import libraries. Qualify
 the exact native toolset and configuration before a Windows compatibility claim.
+The recorded hosted checks reused installed Microsoft tools; they do not prove
+installation or reinstallation from the retained Microsoft installer layout.
 
-The Wasm experiment does not qualify `std`, pthreads/shared memory, arbitrary
+The Wasm profile does not qualify `std`, pthreads/shared memory, arbitrary
 callbacks, cross-language LTO or another Emscripten version. Matching target
 names alone cannot establish ABI compatibility across independently built
 compiler libraries. Inspect the actual archive, final imports and executable
 cases for the exact retained pair. The disconnected application and Node consumer
-results above establish their recorded build/core/package scope. The separate
-local Firefox receipt establishes its named desktop application/renderer cases,
-including HTTP and direct-file compositions. It is not whole-browser network
-denial or other-engine/platform qualification. Chromium and the complete hosted
-browser matrix remain pending. Preserve the current C++ browser route while
-these checks are pending.
+results establish their recorded build/core/package scope. The final hosted
+Firefox/Chromium cases and the older local Firefox receipt have separate source
+and evidence identities. Direct-file application cases are not whole-browser
+network denial, mobile or assistive-device qualification. The existing C++
+browser route remains the default.
 
 Offline restoration from retained official tools, recovery of retained source
 inputs, and compiler reconstruction from source are distinct promises. The last
