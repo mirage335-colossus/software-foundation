@@ -653,7 +653,10 @@ class CandidateFetchTests(unittest.TestCase):
                 for relative, content in payloads[name].items():
                     path = Path(output) / relative; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
             with patch.object(helper, 'ROOT', destination), \
-                    patch.dict(helper.os.environ, GITHUB_RUN_ATTEMPT='1', BATCH=batch['id']), \
+                    patch.dict(helper.os.environ, GITHUB_ACTIONS='true', GITHUB_REPOSITORY='example/project',
+                        GITHUB_WORKFLOW_REF='example/project/.github/workflows/certify.yml@refs/heads/main',
+                        GITHUB_RUN_ID='12', GITHUB_SHA='a'*40, GITHUB_RUN_ATTEMPT='1',
+                        CONTROL_ATTEMPT='1', BATCH=batch['id']), \
                     patch.object(helper, 'fetch_bundles', side_effect=lambda requests: [restore(request['name'], request['output']) for request in requests]):
                 helper.fetch_check_payloads()
             actual = {path.relative_to(destination / 'build/candidate').as_posix() for path in (destination / 'build/candidate').rglob('*') if path.is_file()}
@@ -1137,24 +1140,54 @@ class QualificationBatchTests(unittest.TestCase):
         self.assertEqual([call.kwargs for call in check.call_args_list], [{'metadata_only':True}]*2)
 
     def test_evidence_controls_and_every_failed_outcome_restore_together_then_reconcile(self):
-        plan = self.plan(); matrix = ci.qualification_batches(plan)
+        plan = self.plan(); matrix = ci.qualification_batches(plan); events = []
+        context = dict(repository='example/project', run_id=12, attempt=2,
+                       source_commit='a'*40, workflow='certify.yml')
         with patch.object(self.helper, 'ROOT', self.root), \
-                patch.object(self.helper, 'fetch_bundles') as fetch, \
-                patch.object(self.helper.evidence, 'check_inputs'), \
+                patch.object(self.helper, 'fetch_bundle', side_effect=lambda *args: events.append('controls')) as controls, \
+                patch.object(self.helper, 'fetch_bundles', side_effect=lambda *args: events.append('evidence')) as fetch, \
+                patch.object(self.helper.evidence, 'check_inputs', side_effect=lambda *args, **kwargs: events.append('validated-controls')), \
+                patch.object(self.helper.ci_retry, 'local_present', return_value=True) as present, \
+                patch.object(self.helper.ci_retry.EarlierAttempts, 'select_batch') as select_prior, \
+                patch.object(self.helper.ci_retry.EarlierAttempts, 'restore') as restore_prior, \
                 patch.object(self.helper.ci, 'module', return_value=Mock(verify_metadata=Mock(return_value={}))), \
                 patch.object(self.helper.ci, 'qualification_batches', return_value=matrix), \
-                patch.dict(self.helper.os.environ, GITHUB_RUN_ATTEMPT='2', CHECK_BATCHES=json.dumps(matrix)):
+                patch.dict(self.helper.os.environ, GITHUB_ACTIONS='true', GITHUB_REPOSITORY='example/project',
+                    GITHUB_WORKFLOW_REF='example/project/.github/workflows/certify.yml@refs/heads/main',
+                    GITHUB_RUN_ID='12', GITHUB_SHA='a'*40, GITHUB_RUN_ATTEMPT='2',
+                    CONTROL_ATTEMPT='2', CHECK_BATCHES=json.dumps(matrix)):
             self.helper.fetch_certification_evidence()
+            self.assertEqual(events, ['controls', 'validated-controls', 'evidence'])
+            controls.assert_called_once_with('qualification-inputs-2', self.root / 'build')
             fetch.assert_called_once()
             requests = fetch.call_args.args[0]
-            self.assertEqual(requests[0]['name'], 'qualification-inputs-2')
-            self.assertNotIn('allow_failed', requests[0])
-            self.assertEqual([row['name'] for row in requests[1:]], ['evidence-'+row['id']+'-2' for row in matrix['include']])
-            self.assertTrue(all(row['allow_failed'] for row in requests[1:]))
+            self.assertEqual([row['name'] for row in requests], ['evidence-'+row['id']+'-2' for row in matrix['include']])
+            self.assertTrue(all(row['allow_failed'] for row in requests))
+            self.assertEqual([call.args for call in present.call_args_list],
+                [(context, 'evidence-'+row['id']+'-2', 'evidence-'+str(index).zfill(2))
+                 for index, row in enumerate(matrix['include'])])
+            select_prior.assert_not_called(); restore_prior.assert_not_called()
             altered = {'include':[dict(row, runner='foreign-runner') for row in matrix['include']]}
             with patch.dict(self.helper.os.environ, CHECK_BATCHES=json.dumps(altered)), \
                     self.assertRaisesRegex(ValueError, 'differ from complete frozen'):
                 self.helper.fetch_certification_evidence()
+            fetch.assert_called_once()  # Rejected selectors must not fetch any outcome.
+
+    def test_evidence_collection_requires_exact_workflow_context_before_fetch(self):
+        matrix = ci.qualification_batches(self.plan())
+        environment = dict(GITHUB_ACTIONS='true', GITHUB_REPOSITORY='example/project',
+            GITHUB_WORKFLOW_REF='example/project/.github/workflows/certify.yml@refs/heads/main',
+            GITHUB_RUN_ID='12', GITHUB_SHA='a'*40, GITHUB_RUN_ATTEMPT='2',
+            CONTROL_ATTEMPT='2', CHECK_BATCHES=json.dumps(matrix))
+        for changed in ({'GITHUB_WORKFLOW_REF':''}, {'GITHUB_SHA':''},
+                        {'GITHUB_WORKFLOW_REF':'foreign/project/.github/workflows/certify.yml@refs/heads/main'}):
+            with self.subTest(changed=changed), \
+                    patch.dict(self.helper.os.environ, dict(environment, **changed), clear=True), \
+                    patch.object(self.helper, 'fetch_bundle') as controls, \
+                    patch.object(self.helper, 'fetch_bundles') as fetch, \
+                    patch.object(self.helper.ci_retry, 'EarlierAttempts') as earlier:
+                with self.assertRaises(ValueError): self.helper.fetch_certification_evidence()
+                controls.assert_not_called(); fetch.assert_not_called(); earlier.assert_not_called()
 
     def test_check_input_fetch_rederives_exact_scope_before_executing_any_case(self):
         names=['qualification-inputs-2','qualification-linux-x86_64-2']

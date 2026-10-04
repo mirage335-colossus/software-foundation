@@ -32,7 +32,12 @@ Core headers are GUI independent. A source-boundary guard runs before the shared
 GUI library compiles, even with `BUILD_TESTING=OFF`; unchanged inputs reuse its stamp.
 The guard recursively checks C/C++ source/header variants under shared and host
 trees, so moving a feature or adapter into a nested directory cannot evade the
-application/backend separation checks. [Shared application code](../gui/shared/application.cpp)
+application/backend separation checks. It also follows literal local includes through
+helper headers, rejects computed includes on either side, and identifies concrete
+backend aliases and domain dependencies. Only a composition root may include the
+public application declaration. Its discovered local dependencies participate in
+incremental guard invalidation. This source tripwire supplements executable
+conformance and interface review; it is not a C++ parser. [Shared application code](../gui/shared/application.cpp)
 uses `foundation::Store`, the same core library as the CLI. The core owns record
 validation, capacity, identities and mutation. Shared GUI code projects records
 and owns editor state, error recovery, enabled actions, count, menu, heading prompt
@@ -81,6 +86,78 @@ conformance checks run against the selected adapters when host testing is enable
 The Rev supplier fixture also runs at scale 1.25 and maps its bitmap sample points
 from logical coordinates to actual physical pixels; expected colors do not change.
 
+## Touch input and embedding a pixel display
+
+Physical pointer input has press, move, release and cancel phases. The first
+contact owns the gesture and captures an exact widget identity and generation.
+Additional contacts cannot complete it. Moves and releases continue to reach that
+owner outside its original bounds, while a removed, disabled, obscured or replaced
+target, a modal transition, focus loss, resize or close revokes the old gesture.
+A standard button activates once on a valid release; pressing or cancellation
+cannot activate it. Raw pointer surfaces receive phases through the same public
+contract, without application commands inside a renderer.
+
+The SDL runner translates finger events into logical client coordinates. It
+filters synthetic mouse events from touch and retains one contact across a drag.
+Browser raw surfaces use pointer capture and the same ordered event vocabulary.
+The [touch fixture](../tests/gui_touch.cpp), [browser fixture](../gui/tests/touch_test.mjs)
+and [SDL translation fixture](../tests/gui_sdl_touch.cpp) exercise these rules.
+
+[`FramebufferHost`](../gui/host/framebuffer.hpp) supplies an embedding composition
+interface with `resize`, `contact`, `cancel` and `present`. A device driver provides
+logical coordinates and consumes immutable RGB24 frames plus damage metadata;
+the application and shared interaction policy remain unchanged. The caller owns
+timing and calls the interface on one thread. Retained frame storage can outlive
+presentation, and a failed display operation does not consume the frame revision.
+The [fake input/display driver](../tests/gui_embedding.cpp) demonstrates this
+without SDL, a window server or a hardware device.
+
+This is a porting seam for a touchscreen, VR panel or embedded display. A real
+port still supplies calibrated input and display drivers, an appropriate C++20
+runtime and sufficient memory. The example does not claim an Arduino board port
+or hardware touchscreen qualification.
+
+## Worker execution and an offline browser application
+
+The Wasm host creates one dedicated module Worker for each application session.
+The existing ordered Client envelopes cross a bounded message boundary; only one
+request is outstanding. The client snapshots each accepted operation and bounds
+it to 1 MiB, with an 8 MiB total including the in-flight operation. Adjacent
+compatible edits coalesce without crossing action barriers; rejected work cannot
+consume a sequence number or silently drop an earlier accepted action. C++
+callbacks and ordinary application work execute away
+from the browser UI thread. DOM rendering, user input and dialogs stay in the
+browser thread. This complements bounded application work without adding pthreads,
+SharedArrayBuffer, Asyncify or an audio loop.
+
+Close waits for acknowledgment after C++ destruction. A bounded timeout or Worker
+failure terminates the Worker, rejects pending work and requires a new session
+with a new epoch. Startup failure, late responses and close during initialization
+cannot revive an old session. See the [transport implementation](../gui/host/wasm_transport.mjs)
+and [Worker ownership notes](../gui/host/wasm-worker.md).
+
+A Wasm build also produces
+`gui/wasm-package/software-foundation-wasm.html`, `web-manifest.json` and
+`manifest.sha256`. The single HTML embeds the **generated patched** renderer,
+transport, Worker, compiled factory, Wasm binary, styles and applicable notices.
+It can be opened as a local file. Its content policy disables network connections;
+module Blob URLs are owned and revoked by their creating lifetimes. Build it with:
+
+```sh
+./build.sh build release --gui --gui-backends wasm --sdk /absolute/prepared-sdk
+```
+
+The ordinary graph builds the package as `foundation-wasm-package`; it reuses the
+same application target and prepared SDK. The package manifest binds every input
+and the final HTML. Packaging does not download a runtime or a browser. Actual
+browser checks remain necessary when changing a compiler, Worker lifecycle or
+content policy; Node fixtures alone cannot qualify browser behavior.
+
+The existing file services still select paths. A future content import/export
+example needs a separate bounded-content service contract, cancellation and stale
+completion handling, a native executor, and a transactional application format.
+Worker transport alone does not change path selection into file-content I/O.
+
 ## Complete offline GUI input group
 
 [The source-group tool](../gui/source_group.py) exports every tracked file from the
@@ -125,7 +202,9 @@ duplicates, case collisions, unsupported entries, extra/missing inputs and bound
 size violations, then reconstructs the complete upstream Git tree identity from
 bytes and modes. That tree must match the reviewed lock; changes to uncompiled
 source are therefore detected too. Retained patches must match this checkout
-exactly. The group checksum detects transfer damage; the repository's reviewed
+exactly. Configuration mirrors the complete verified public-header closure into
+the build tree before applying local contract extensions. This is required for
+quoted sibling includes to use the same patched definitions in every caller. The group checksum detects transfer damage; the repository's reviewed
 lock supplies input identity. Keep the group under the signed release inventory
 when transferring it through a release channel.
 

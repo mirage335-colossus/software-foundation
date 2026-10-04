@@ -59,7 +59,6 @@ jobs:
 
   shared-gui:
     name: Shared GUI contracts and generic hosts
-    if: vars.FOUNDATION_GUI_GROUP != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -74,12 +73,6 @@ jobs:
         env:
           SELECTED: ${{ steps.changes.outputs.gui }}
         run: test "$SELECTED" = true || test "$SELECTED" = false
-      - name: Restore exact repository-retained GUI inputs
-        if: steps.changes.outputs.gui == 'true'
-        run: python3 .github/scripts/lifecycle.py gui-input
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GUI_INPUT: '{"source":"base","manifest_sha256":"${{ vars.FOUNDATION_GUI_GROUP }}"}'
       - name: Compile shared application once and check generic hosts
         if: steps.changes.outputs.gui == 'true'
-        run: python3 -B tools/build.py test dev --gui-input-group build/gui-group --gui-backends terminal,framebuffer,hosted-web --host-tests --label gui --test-jobs 2
+        run: python3 -B tools/build.py test dev --gui --gui-backends terminal,framebuffer,hosted-web --host-tests --label gui --test-jobs 2

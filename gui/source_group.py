@@ -51,20 +51,55 @@ def ordinary(path):
     return path
 
 
-def metadata(path, logical_mode=None):
-    mode = path.lstat().st_mode
-    if not stat.S_ISREG(mode) or path.stat().st_nlink != 1:
+def file_version(path):
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
         raise ValueError('input must be an ordinary singly linked file')
-    size = path.stat().st_size
-    if size > MAX_FILE:
+    if info.st_size > MAX_FILE:
         raise ValueError('retained file exceeds size limit')
-    return {'sha256': archive.digest(path), 'size': size, 'mode': logical_mode if WINDOWS and logical_mode is not None else (0o755 if mode & 0o111 else 0o644)}
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink, info.st_size,
+            info.st_mtime_ns, info.st_ctime_ns)
+
+
+def observed_metadata(path, logical_mode=None):
+    before = file_version(path)
+    digest = archive.digest(path)
+    if file_version(path) != before:
+        raise ValueError('retained file changed while hashing')
+    mode = logical_mode if WINDOWS and logical_mode is not None else (0o755 if before[2] & 0o111 else 0o644)
+    return {'sha256': digest, 'size': before[4], 'mode': mode}, before
+
+
+def metadata(path, logical_mode=None):
+    return observed_metadata(path, logical_mode)[0]
+
+
+def stream_identity(stream, size):
+    """Hash one bounded member without retaining its payload or a second copy."""
+    sha256 = hashlib.sha256()
+    blob = hashlib.sha1(b'blob ' + str(size).encode() + b'\0')
+    remaining = size
+    while remaining:
+        block = stream.read(min(1024 * 1024, remaining))
+        if not block: raise ValueError('archive content differs from inventory')
+        remaining -= len(block); sha256.update(block); blob.update(block)
+    if stream.read(1): raise ValueError('archive content exceeds declared size')
+    return sha256.hexdigest(), blob.digest()
 
 
 def tree_identity(files):
-    """Git tree identity from complete relative file bytes and executable bits."""
-    root = {}
+    """Compatibility entry point for complete in-memory source byte inventories."""
+    blobs = {}
     for name, (mode, data) in files.items():
+        blob = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0')
+        blob.update(data); blobs[name] = (mode, blob.digest())
+    return tree_from_blobs(blobs)
+
+
+def tree_from_blobs(files):
+    """Git tree identity from modes and already-hashed complete member bytes."""
+    root = {}
+    for name, (mode, blob) in files.items():
         parts = portable(name).parts
         node = root
         for part in parts[:-1]:
@@ -73,17 +108,17 @@ def tree_identity(files):
                 raise ValueError('file is also a directory')
         if parts[-1] in node:
             raise ValueError('duplicate source entry')
-        blob = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).digest()
         node[parts[-1]] = (mode, blob)
 
     def encode(node):
-        content = b''
+        entries = []
         for name, item in sorted(node.items(), key=lambda pair: (pair[0] + ('/' if isinstance(pair[1], dict) else '')).encode()):
             if isinstance(item, dict):
                 mode, digest = b'40000', encode(item)
             else:
                 mode, digest = (b'100755' if item[0] == 0o755 else b'100644'), item[1]
-            content += mode + b' ' + name.encode() + b'\0' + digest
+            entries.append(mode + b' ' + name.encode() + b'\0' + digest)
+        content = b''.join(entries)
         return hashlib.sha1(b'tree ' + str(len(content)).encode() + b'\0' + content).digest()
     return encode(root).hex()
 
@@ -158,16 +193,16 @@ def verify(group, redistribution=False, foundation_root=ROOT):
     group = ordinary(group)
     if not group.is_dir() or {p.name for p in group.iterdir()} != GROUP_FILES:
         raise ValueError('incomplete or unexpected group inputs')
-    for name in GROUP_FILES:
-        ordinary(group / name)
-        metadata(group / name)
+    # Reuse only this complete observation. Physical versions are rechecked
+    # after decoding; a later verify/restore operation always hashes afresh.
+    observed = {name: observed_metadata(ordinary(group / name)) for name in GROUP_FILES}
     if (group / 'manifest.json').stat().st_size > MAX_JSON or (group / 'SHA256SUMS').stat().st_size > 1024:
         raise ValueError('oversize group metadata')
     manifest = archive.read_json(group / 'manifest.json')
     if set(manifest) != {'schema_version', 'kind', 'revision', 'source_tree', 'upstream', 'license', 'redistributable', 'archive_sha256', 'files'} or type(manifest['schema_version']) is not int or manifest['schema_version'] != 1 or manifest['kind'] != 'foundation-gui-inputs':
         raise ValueError('unsupported GUI input manifest')
-    expected_sums = ''.join(f'{archive.digest(group / name)}  {name}\n' for name in ['gui-inputs.tar.gz', 'manifest.json'])
-    if (group / 'SHA256SUMS').read_text() != expected_sums or archive.digest(group / 'gui-inputs.tar.gz') != manifest['archive_sha256']:
+    expected_sums = ''.join(f'{observed[name][0]["sha256"]}  {name}\n' for name in ['gui-inputs.tar.gz', 'manifest.json'])
+    if (group / 'SHA256SUMS').read_text() != expected_sums or observed['gui-inputs.tar.gz'][0]['sha256'] != manifest['archive_sha256']:
         raise ValueError('group checksum mismatch')
     lock, inputs = integration(foundation_root)
     for key in ['revision', 'source_tree', 'upstream', 'license']:
@@ -185,7 +220,7 @@ def verify(group, redistribution=False, foundation_root=ROOT):
             expanded += len(block)
             if expanded > MAX_TOTAL + MAX_FILES * 4096:
                 raise ValueError('archive expansion exceeds limit')
-    upstream, seen, retained = {}, set(), {}
+    upstream, upstream_hashes, seen, retained = {}, {}, set(), {}
     with tarfile.open(group / 'gui-inputs.tar.gz', 'r:gz', tarinfo=BoundedInfo) as stream:
         for member in stream:
             if len(seen) >= MAX_FILES or not member.isfile() or member.name in seen or member.name not in expected:
@@ -195,25 +230,30 @@ def verify(group, redistribution=False, foundation_root=ROOT):
             if member.size != info['size'] or member.mode != info['mode'] or member.uid != 0 or member.gid != 0 or member.linkname:
                 raise ValueError('archive metadata differs from inventory')
             with stream.extractfile(member) as data:
-                content = data.read(MAX_FILE + 1)
-            if len(content) != info['size'] or hashlib.sha256(content).hexdigest() != info['sha256']:
+                digest, blob = stream_identity(data, info['size'])
+            if digest != info['sha256']:
                 raise ValueError('archive content differs from inventory')
             if name.startswith('upstream/'):
-                upstream[name[len('upstream/'):]] = (member.mode, content)
+                relative = name[len('upstream/'):]
+                upstream[relative] = (member.mode, blob)
+                upstream_hashes[relative] = digest
             elif name.startswith('foundation/') and name[len('foundation/'):] in inputs:
-                retained[name[len('foundation/'):]] = content
+                retained[name[len('foundation/'):]] = dict(sha256=digest, size=member.size, mode=member.mode)
             else:
                 raise ValueError('unexpected retained namespace')
     if seen != set(expected) or set(retained) != set(inputs):
         raise ValueError('incomplete archive inventory')
-    if tree_identity(upstream) != lock['source_tree']:
+    if tree_from_blobs(upstream) != lock['source_tree']:
         raise ValueError('complete source tree differs from reviewed commit')
     for name, path in inputs.items():
-        if retained[name] != path.read_bytes() or expected['foundation/' + name] != metadata(path, 0o644):
+        if retained[name] != metadata(path, 0o644):
             raise ValueError('retained integration differs from current source: ' + name)
     for name, digest in lock['files'].items():
-        if name not in upstream or hashlib.sha256(upstream[name][1]).hexdigest() != digest:
+        if upstream_hashes.get(name) != digest:
             raise ValueError('consumed upstream input differs from lock')
+    if {path.name for path in group.iterdir()} != GROUP_FILES or any(
+            file_version(ordinary(group / name)) != version for name, (_, version) in observed.items()):
+        raise ValueError('group inputs changed during verification')
     return manifest
 
 
@@ -247,7 +287,8 @@ def export(source, output, foundation_root=ROOT):
         digest = archive.digest(group / 'gui-inputs.tar.gz')
         manifest = {'schema_version': 1, 'kind': 'foundation-gui-inputs', **{key: lock[key] for key in ['revision', 'source_tree', 'upstream', 'license']}, 'redistributable': distributable(lock), 'archive_sha256': digest, 'files': entries}
         (group / 'manifest.json').write_bytes(archive.encoded(manifest))
-        (group / 'SHA256SUMS').write_text(''.join(f'{archive.digest(group / name)}  {name}\n' for name in ['gui-inputs.tar.gz', 'manifest.json']))
+        (group / 'SHA256SUMS').write_text(f'{digest}  gui-inputs.tar.gz\n' +
+            f'{archive.digest(group / "manifest.json")}  manifest.json\n')
         verify(group, foundation_root=foundation_root)
         group.rename(output)
     return receipt(output, manifest)
@@ -264,9 +305,14 @@ def restore(group, output, foundation_root=ROOT):
     manifest = verify(group, foundation_root=foundation_root)
     output = ordinary(output)
     if output.exists():
-        actual = {p.relative_to(output).as_posix(): metadata(ordinary(p), manifest['files'].get(p.relative_to(output).as_posix(), {}).get('mode')) for p in output.rglob('*') if not p.is_dir() or p.is_symlink()}
+        actual, actual_dirs = {}, set()
+        for path in output.rglob('*'):
+            name = path.relative_to(output).as_posix()
+            if path.is_dir() and not path.is_symlink():
+                actual_dirs.add(name)
+            else:
+                actual[name] = metadata(ordinary(path), manifest['files'].get(name, {}).get('mode'))
         expected_dirs = {str(parent) for name in manifest['files'] for parent in PurePosixPath(name).parents if str(parent) != '.'}
-        actual_dirs = {p.relative_to(output).as_posix() for p in output.rglob('*') if p.is_dir()}
         if actual != manifest['files'] or actual_dirs != expected_dirs:
             raise ValueError('existing restored output changed or contains foreign entries')
     else:

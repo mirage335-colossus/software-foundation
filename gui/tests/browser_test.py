@@ -204,28 +204,35 @@ def browser_workspace(output):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--firefox',default='firefox');parser.add_argument('--server',type=Path,required=True)
+    parser.add_argument('--firefox',default='firefox');parser.add_argument('--server',type=Path)
     parser.add_argument('--browser',choices=('firefox','chromium'),default='firefox')
     parser.add_argument('--browser-executable',help='Explicit Chromium executable for its matching driver')
     parser.add_argument('--driver',default='chromedriver')
     parser.add_argument('--browser-argument',action='append',default=[])
-    parser.add_argument('--mode',choices=('hosted','wasm','both'),default='both')
+    parser.add_argument('--mode',choices=('hosted','wasm','both','offline','wasm-offline','all'),default='both')
     parser.add_argument('--executable',type=Path);parser.add_argument('--wasm-dir',type=Path)
+    parser.add_argument('--offline-html',type=Path,help='Self-contained HTML opened directly from the filesystem')
     parser.add_argument('--output',type=Path,required=True);args=parser.parse_args()
-    modes=('hosted','wasm') if args.mode=='both' else (args.mode,)
+    modes=({'all':('hosted','wasm','offline'),'both':('hosted','wasm'),'wasm-offline':('wasm','offline')}.get(args.mode,(args.mode,)))
+    if any(mode!='offline' for mode in modes) and not args.server:parser.error('Hosted asset modes require --server')
+    if 'offline' in modes and not args.offline_html:parser.error('Offline qualification requires --offline-html')
     if 'hosted' in modes and not args.executable:parser.error('Hosted qualification requires --executable')
     if 'wasm' in modes and not args.wasm_dir:parser.error('Wasm qualification requires --wasm-dir')
     if args.browser=='chromium' and not args.browser_executable:parser.error('Chromium requires --browser-executable')
     args.output.mkdir(parents=True,exist_ok=False)
-    inputs=[Path(__file__).resolve(),PROCESS_TREE_PATH,args.server,
-            *(args.server.parent/name for name in ('host.py','renderer.mjs','boot.mjs','browser_lifecycle.mjs','style.css','index.html'))]
+    inputs=[Path(__file__).resolve(),PROCESS_TREE_PATH]
+    if args.server:
+        inputs.extend([args.server,*(args.server.parent/name for name in ('host.py','renderer.mjs','boot.mjs','browser_lifecycle.mjs','wasm_worker.mjs','wasm_transport.mjs','style.css','index.html'))])
+    if 'offline' in modes:inputs.append(args.offline_html)
     if 'hosted' in modes:inputs.append(args.executable)
     if 'wasm' in modes:inputs.extend(args.wasm_dir/name for name in ('gui_web_wasm.js','gui_web_wasm.wasm'))
     identify=lambda:{str(path.resolve()):hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}
     expected_inputs=identify()
-    spec=importlib.util.spec_from_file_location('server',args.server);server=importlib.util.module_from_spec(spec);spec.loader.exec_module(server)
-    host=server.boundary.Host(('127.0.0.1',0),args.executable,args.wasm_dir)
-    thread=threading.Thread(target=host.serve_forever);thread.start()
+    host=thread=None
+    if any(mode!='offline' for mode in modes):
+        spec=importlib.util.spec_from_file_location('server',args.server);server=importlib.util.module_from_spec(spec);spec.loader.exec_module(server)
+        host=server.boundary.Host(('127.0.0.1',0),args.executable,args.wasm_dir)
+        thread=threading.Thread(target=host.serve_forever);thread.start()
     try:
         with browser_workspace(args.output) as directory:
             browser=(Browser(args.firefox,Path(directory)) if args.browser=='firefox' else
@@ -233,8 +240,12 @@ def main():
             try:
                 layouts=[]
                 for mode in modes:
-                    browser.command('WebDriver:Navigate',{'url':'http://'+host.authority+'/?mode='+mode})
-                    browser.wait('return Boolean(document.querySelector("input.editor"));')
+                    url=args.offline_html.resolve().as_uri() if mode=='offline' else 'http://'+host.authority+'/?mode='+mode
+                    browser.command('WebDriver:Navigate',{'url':url})
+                    try:browser.wait('return Boolean(document.querySelector("input.editor"));')
+                    except TimeoutError as error:
+                        status=browser.script('return document.querySelector("#status")?.textContent;')
+                        raise RuntimeError('Browser startup failed: '+str(status)) from error
                     # Fixed viewport makes geometry directly comparable across transports.
                     browser.script('document.querySelector("#viewport").style.width="800px";document.querySelector("#viewport").style.height="640px";')
                     browser.wait('return document.querySelector("input.editor").getBoundingClientRect().width===752;')
@@ -255,16 +266,22 @@ def main():
                     browser.wait('return Boolean(document.querySelector("dialog[open]"));')
                     browser.script('Array.from(document.querySelectorAll("dialog button")).find(x=>x.textContent==="Cancel").click();')
                     browser.wait('return !document.querySelector("dialog[open]");')
-                if len(layouts)==2 and layouts[0]!=layouts[1]:raise RuntimeError('Hosted and Wasm DOM geometry differ')
+                    if mode=='offline':
+                        external=browser.script('return performance.getEntriesByType("resource").filter(x=>/^https?:/.test(x.name)).map(x=>x.name);')
+                        if external:raise RuntimeError('Offline package loaded external resources: '+str(external))
+                        if browser.script('return document.querySelector("meta[http-equiv=Content-Security-Policy]").content.includes("connect-src \'none\'");') is not True:
+                            raise RuntimeError('Offline package did not disable network connections')
+                if any(layout!=layouts[0] for layout in layouts):raise RuntimeError('Browser transport DOM geometry differs')
                 (args.output/'geometry.json').write_text(json.dumps(layouts[0],indent=2)+'\n')
                 browser_version=browser.capabilities['browserVersion']
             finally:browser.close()
     finally:
-        host.shutdown();thread.join(timeout=5);host.server_close()
-    if thread.is_alive():raise RuntimeError('Browser host thread did not stop')
+        if host is not None:host.shutdown();thread.join(timeout=5);host.server_close()
+    if thread is not None and thread.is_alive():raise RuntimeError('Browser host thread did not stop')
     if identify()!=expected_inputs:raise RuntimeError('Browser qualification inputs changed while running')
     receipt={'schema_version':1,'status':'passed','engine':args.browser,'browser_version':browser_version,
-             'mode':args.mode,'checks':['editing','accessible-names','shared-geometry','prompt-cancel','bounded-task','capture','cleanup'],
+             'mode':args.mode,'executed_modes':list(modes),'checks':['editing','accessible-names','shared-geometry','prompt-cancel','bounded-task','capture','cleanup']+(['offline-no-network'] if 'offline' in modes else []),
+             'offline_network_resources':False if 'offline' in modes else None,
              'inputs':expected_inputs,
              'browser_arguments':args.browser_argument}
     temporary=args.output/'qualification.tmp'

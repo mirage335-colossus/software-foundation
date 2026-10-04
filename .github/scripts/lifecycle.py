@@ -18,6 +18,7 @@ import github_release as delivery
 import dependency_store
 import coverage as evidence
 import qualification_tasks
+import ci_retry
 from process_tree import ProcessTreeError
 
 
@@ -352,14 +353,30 @@ def qualification_metadata(*, prepare_only=False):
     evidence.check_inputs(plan, ROOT, metadata_only=True)
 
 
+def control_attempt():
+    context = storage_context()
+    return ci_retry.origin_attempt(os.environ.get('CONTROL_ATTEMPT', str(context['attempt'])), context['attempt'])
+
+
+def restore_controls(reader=None):
+    context = storage_context(); attempt = control_attempt()
+    name = 'qualification-inputs-' + str(attempt)
+    if attempt == context['attempt']:
+        return fetch_bundle(name, ROOT / 'build')
+    reader = reader or ci_retry.EarlierAttempts(context)
+    result = reader.restore(attempt, name, 'qualification-inputs', ROOT / 'build', role='prepare')
+    write(ROOT / 'build/transport-receipts' / (name + '.json'), result)
+    return result
+
+
 def fetch_published_check_inputs():
     """Authenticate frozen controls before deriving the exact original-asset subset."""
     raw = value('CHECK_PAYLOADS')
     if len(raw) > 8192: raise ValueError('qualification payload selector exceeds bound')
-    names = delivery.parse(raw); attempt = value('GITHUB_RUN_ATTEMPT')
+    names = delivery.parse(raw); attempt = str(control_attempt())
     if not isinstance(names, list) or not 2 <= len(names) <= 20 or names[0] != 'qualification-inputs-' + attempt:
         raise ValueError('bounded qualification input names required')
-    fetch_bundle(names[0], ROOT / 'build')
+    restore_controls()
     plan = evidence.validate(evidence.load(ROOT / 'build/check-plan.json'))
     evidence.check_inputs(plan, ROOT, metadata_only=True)
     batch, expected = check_payload_selection(plan)
@@ -367,32 +384,69 @@ def fetch_published_check_inputs():
     result = ci.fetch_candidate_payloads(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'),
         ROOT / 'build/candidate', evidence.load(ROOT / 'build/delivery.json'),
         evidence.load(ROOT / 'build/candidate-remote.json'), plan, batch['checks'],
-        trusted_context=storage_context())
+        trusted_context=storage_context() if control_attempt() == int(value('GITHUB_RUN_ATTEMPT')) else None)
     evidence.check_inputs(plan, ROOT, check_ids=batch['checks'])
     write(ROOT / 'build/transport-receipts/candidate-payloads.json', result)
 
 
 def fetch_certification_evidence():
-    """Share metadata reads across the frozen controls and every batch outcome."""
+    """Collect the exact latest execution of every frozen physical batch."""
     raw = value('CHECK_BATCHES')
     if len(raw) > 131072: raise ValueError('qualification batch selector exceeds bound')
     matrix = delivery.parse(raw)
     if not isinstance(matrix, dict) or set(matrix) != {'include'} or not isinstance(matrix['include'], list):
         raise ValueError('complete qualification batch matrix required')
     rows = matrix['include']
-    if not 1 <= len(rows) <= 256 or any(not isinstance(row, dict) or not isinstance(row.get('id'), str) or
+    if not 1 <= len(rows) <= 48 or any(not isinstance(row, dict) or not isinstance(row.get('id'), str) or
             not ci.re.fullmatch(r'batch-[a-z0-9_-]{1,20}-[0-9a-f]{12}', row['id']) for row in rows):
         raise ValueError('bounded exact qualification batches required')
     ids = [row['id'] for row in rows]
     if len(ids) != len(set(ids)): raise ValueError('duplicate qualification batch')
-    attempt = value('GITHUB_RUN_ATTEMPT')
-    fetch_bundles([dict(name='qualification-inputs-' + attempt, output=ROOT / 'build')] +
-        [dict(name='evidence-' + name + '-' + attempt, output=ROOT / 'build', allow_failed=True) for name in ids])
+    context = storage_context(); attempt = context['attempt']
+    reader = ci_retry.EarlierAttempts(context) if attempt > 1 else None
+    restore_controls(reader)
     plan = evidence.validate(evidence.load(ROOT / 'build/check-plan.json'))
     evidence.check_inputs(plan, ROOT, metadata_only=True)
     expected = ci.qualification_batches(plan, runners=selected_runners(),
-        manifest=ci.module('release').verify_metadata(ROOT / 'build/candidate'), attempt=attempt)
+        manifest=ci.module('release').verify_metadata(ROOT / 'build/candidate'), attempt=str(control_attempt()))
     if matrix != expected: raise ValueError('evidence batches differ from complete frozen qualification scope')
+    current, prior = [], []
+    for index, row in enumerate(rows):
+        slot = 'evidence-' + str(index).zfill(2)
+        name = 'evidence-' + row['id'] + '-' + str(attempt)
+        if attempt == 1 or ci_retry.local_present(context, name, slot):
+            current.append(dict(name=name, output=ROOT / 'build', allow_failed=True))
+        else:
+            original = reader.select_batch(row['id'])
+            name = 'evidence-' + row['id'] + '-' + str(original)
+            result = reader.restore(original, name, slot, ROOT / 'build', role='check', batch=row['id'])
+            write(ROOT / 'build/transport-receipts' / (name + '.json'), result)
+            prior.extend(row['checks'])
+    if current: fetch_bundles(current)
+    if prior:
+        # Local adoption independently verifies selected frozen inputs as well as
+        # every original nested receipt. Reuse saves execution, not these checks.
+        ci.fetch_candidate_payloads(value('GITHUB_REPOSITORY'), value('TAG'), value('INVENTORY'),
+            ROOT / 'build/candidate', evidence.load(ROOT / 'build/delivery.json'),
+            evidence.load(ROOT / 'build/candidate-remote.json'), plan, prior,
+            trusted_context=context if control_attempt() == attempt else None)
+        checks = [item for leader in evidence.executions(plan) if leader['id'] in prior
+                  for item in evidence.execution_members(plan, leader)]
+        reports = [evidence.result_path(plan, item['id'], ROOT / 'build/evidence') for item in checks]
+        write(ROOT / 'build/adoption.json', evidence.adopt(plan, reports, ROOT, str(context['run_id']), attempt))
+
+
+def fetch_certificate():
+    context = storage_context()
+    attempt = ci_retry.origin_attempt(value('CERTIFICATE_ATTEMPT'), context['attempt'])
+    name = 'certificate-' + str(attempt)
+    if attempt == context['attempt']:
+        fetch_bundle(name, ROOT / 'build')
+    else:
+        result = ci_retry.EarlierAttempts(context).restore(attempt, name, 'certificate', ROOT / 'build', role='record')
+        write(ROOT / 'build/transport-receipts' / (name + '.json'), result)
+    if evidence.sha(ROOT / 'build/certificate.json') != value('CERTIFICATE_SHA256'):
+        raise ValueError('restored certificate differs from exact successful record output')
 
 
 def qualification_payloads():
@@ -419,7 +473,7 @@ def check_payload_selection(plan):
     batches = [row for row in ci.qualification_batches(plan, runners=selected_runners())['include'] if row['id'] == value('BATCH')]
     if len(batches) != 1: raise ValueError('unknown physical qualification batch')
     manifest = ci.module('release').verify_metadata(ROOT / 'build/candidate')
-    names = ci.qualification_payload_names(plan, batches[0], manifest, value('GITHUB_RUN_ATTEMPT'))
+    names = ci.qualification_payload_names(plan, batches[0], manifest, str(control_attempt()))
     return batches[0], names
 
 
@@ -779,6 +833,8 @@ def main(command):
             raise ValueError('qualification matrix requires 1 to 256 batches')
         output('matrix', matrix)
         scalar_output('max_parallel', min(limit or count, count))
+    elif command == 'fetch-certificate':
+        fetch_certificate()
     elif command == 'check-batch':
         check_batch()
     elif command in ('check-prerequisites', 'check'):
@@ -795,7 +851,8 @@ def main(command):
         if command == 'certificate':
             import certify_release
             result = certify_release.certify(directory, ci.module('release').verify_metadata(directory), plan, reports,
-                       evidence.load(policy), value('PROFILE'), identity['experiment'])
+                       evidence.load(policy), value('PROFILE'), identity['experiment'],
+                       adoption=evidence.load(ROOT / 'build/adoption.json') if (ROOT / 'build/adoption.json').exists() else None)
             write('build/certificate.json', result)
             for name,item in dict(certificate_sha256=evidence.sha(Path('build/certificate.json')),
                 certification_run=value('GITHUB_RUN_ID'),certification_attempt=value('GITHUB_RUN_ATTEMPT'),
@@ -807,7 +864,8 @@ def main(command):
         else:
             write('build/receipts/attachment.json', delivery.attach_certificate(value('GITHUB_REPOSITORY'), value('TAG'), directory,
                     identity, Path('build/certificate.json'), Path('build/check-plan.json'), policy, value('PROFILE'),
-                    reports, int(value('GITHUB_RUN_ATTEMPT')), execute=True, metadata_only=True))
+                    reports, ci_retry.origin_attempt(value('CERTIFICATE_ATTEMPT'), int(value('GITHUB_RUN_ATTEMPT'))),
+                    execute=True, metadata_only=True))
             scalar_output('attached',True)
     elif command in ('promotion-plan', 'promote'):
         if command == 'promotion-plan':

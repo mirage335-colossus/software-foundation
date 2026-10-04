@@ -12,6 +12,45 @@ spec.loader.exec_module(check)
 
 
 class ReleaseCheckTests(unittest.TestCase):
+    def test_browser_requires_offline_build_and_installed_packages(self):
+        for installed in (False, True):
+            with self.subTest(installed=installed), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / 'source/tools').mkdir(parents=True)
+                (root / 'source/tools/package_wasm.py').write_text('# capability marker')
+                server = root / ('installed/share/software-foundation/web/serve.py' if installed else 'build/gui/web/serve.py')
+                wasm = server.parent if installed else server.parent.parent
+                html = (server.parent.parent / 'wasm/software-foundation-wasm.html' if installed else
+                        wasm / 'wasm-package/software-foundation-wasm.html')
+                html.parent.mkdir(parents=True); html.write_text('offline fixture')
+                receipt = dict(schema_version=1, status='passed', engine='firefox', browser_version='test',
+                               mode='wasm-offline', executed_modes=['wasm', 'offline'], offline_network_resources=False,
+                               checks=['editing', 'accessible-names', 'shared-geometry', 'prompt-cancel', 'capture', 'cleanup', 'offline-no-network'])
+                with patch.object(check.subprocess, 'run') as run, patch.object(check.c, 'load', return_value=receipt):
+                    check.browser_check(root / 'source', server, root / 'evidence', {}, wasm=wasm)
+                    command = run.call_args.args[0]
+                    self.assertEqual(command[command.index('--mode') + 1], 'wasm-offline')
+                    self.assertEqual(command[command.index('--offline-html') + 1], str(html))
+                    for field, value in [('mode', 'wasm'), ('executed_modes', ['wasm']), ('offline_network_resources', True)]:
+                        broken = dict(receipt); broken[field] = value
+                        with patch.object(check.c, 'load', return_value=broken), self.assertRaises(ValueError):
+                            check.browser_check(root / 'source', server, root / 'evidence', {}, wasm=wasm)
+                html.unlink()
+                with patch.object(check.subprocess, 'run') as run, self.assertRaisesRegex(ValueError, 'offline Wasm HTML missing'):
+                    check.browser_check(root / 'source', server, root / 'evidence', {}, wasm=wasm)
+                run.assert_not_called()
+
+    def test_legacy_browser_source_retains_multi_file_mode(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            receipt = dict(schema_version=1, status='passed', engine='firefox', browser_version='test', mode='wasm',
+                           checks=['editing', 'accessible-names', 'shared-geometry', 'prompt-cancel', 'capture', 'cleanup'])
+            with patch.object(check.subprocess, 'run') as run, patch.object(check.c, 'load', return_value=receipt):
+                check.browser_check(root / 'source', root / 'web/serve.py', root / 'evidence', {}, wasm=root / 'web')
+                command = run.call_args.args[0]
+                self.assertEqual(command[command.index('--mode') + 1], 'wasm')
+                self.assertNotIn('--offline-html', command)
+
     def test_source_test_capacity_is_independent_of_compile_override(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); recipe = 'a' * 64

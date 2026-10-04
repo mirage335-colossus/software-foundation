@@ -1,12 +1,14 @@
 foundation_register_build_directory()
 # Preserved local input by default; explicit source/group selections take precedence.
 # Configuration never fetches dependencies.
+get_filename_component(foundation_gui_project_root "${CMAKE_CURRENT_SOURCE_DIR}/.." REALPATH)
 set(FOUNDATION_GUI_SOURCE "" CACHE PATH "Verified gui-boundary source checkout or archive")
 set(FOUNDATION_GUI_INPUT_GROUP "" CACHE PATH "Retained complete GUI input group")
 if(NOT FOUNDATION_GUI_SOURCE AND NOT FOUNDATION_GUI_INPUT_GROUP)
-    set(FOUNDATION_GUI_INPUT_GROUP "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/gui-inputs")
+    set(FOUNDATION_GUI_INPUT_GROUP "${foundation_gui_project_root}/third_party/gui-inputs")
 endif()
 if(FOUNDATION_GUI_INPUT_GROUP)
+    get_filename_component(FOUNDATION_GUI_INPUT_GROUP "${FOUNDATION_GUI_INPUT_GROUP}" REALPATH)
     if(FOUNDATION_GUI_SOURCE)
         message(FATAL_ERROR "Select FOUNDATION_GUI_INPUT_GROUP or FOUNDATION_GUI_SOURCE, not both")
     endif()
@@ -18,7 +20,7 @@ if(FOUNDATION_GUI_INPUT_GROUP)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${FOUNDATION_GUI_INPUT_GROUP}/manifest.json" "${FOUNDATION_GUI_INPUT_GROUP}/SHA256SUMS"
         "${FOUNDATION_GUI_INPUT_GROUP}/gui-inputs.tar.gz" "${CMAKE_CURRENT_SOURCE_DIR}/source_group.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../tools/dependency_archive.py")
+        "${foundation_gui_project_root}/tools/dependency_archive.py")
 endif()
 option(FOUNDATION_GUI_FLTK "Build the FLTK native host" OFF)
 option(FOUNDATION_GUI_SDL "Build the SDL framebuffer window host" OFF)
@@ -85,10 +87,14 @@ endif()
 file(GLOB_RECURSE foundation_gui_owned_sources LIST_DIRECTORIES FALSE CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/shared/*" "${CMAKE_CURRENT_SOURCE_DIR}/host/*"
     "${CMAKE_CURRENT_SOURCE_DIR}/hosts/*")
+execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/check_boundary.py" --dependencies
+    OUTPUT_VARIABLE foundation_gui_transitive_sources COMMAND_ERROR_IS_FATAL ANY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${foundation_gui_transitive_sources})
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/boundary-checked"
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/check_boundary.py"
     COMMAND "${CMAKE_COMMAND}" -E touch "${CMAKE_CURRENT_BINARY_DIR}/boundary-checked"
-    DEPENDS ${foundation_gui_owned_sources} "${CMAKE_CURRENT_SOURCE_DIR}/check_boundary.py" VERBATIM)
+    DEPENDS ${foundation_gui_owned_sources} ${foundation_gui_transitive_sources}
+        "${CMAKE_CURRENT_SOURCE_DIR}/check_boundary.py" VERBATIM)
 add_custom_target(foundation_gui_contract DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/boundary-checked")
 add_library(foundation_gui_application STATIC shared/application.cpp)
 add_dependencies(foundation_gui_application foundation_gui_contract)
@@ -144,12 +150,55 @@ if(BUILD_TESTING)
     add_custom_target(foundation-gui-tests)
 endif()
 find_program(FOUNDATION_NODE_EXECUTABLE NAMES node nodejs)
+# Quoted sibling includes must see the patched contract consistently. Mirror the
+# complete verified header closure before applying any local extensions.
+# Patched headers are written only by the exact patcher, preserving their mtime
+# when final bytes are unchanged across incremental configuration.
+set(foundation_gui_mirrored_headers)
+foreach(path IN LISTS verified_files)
+    file(RELATIVE_PATH relative "${FOUNDATION_GUI_SOURCE}" "${path}")
+    if(relative MATCHES "^include/gui/")
+        list(APPEND foundation_gui_mirrored_headers "${CMAKE_CURRENT_BINARY_DIR}/${relative}")
+        if(NOT relative MATCHES "^include/gui/(contract|memory_adapter|interaction|web)\\.hpp$")
+            configure_file("${path}" "${CMAKE_CURRENT_BINARY_DIR}/${relative}" COPYONLY)
+        endif()
+    endif()
+endforeach()
+# This generated directory belongs to the mirror. Remove obsolete outputs after
+# a reviewed inventory upgrade so incremental and fresh builds see the same API.
+file(GLOB_RECURSE foundation_gui_existing_headers LIST_DIRECTORIES FALSE
+    "${CMAKE_CURRENT_BINARY_DIR}/include/gui/*")
+foreach(path IN LISTS foundation_gui_existing_headers)
+    if(NOT path IN_LIST foundation_gui_mirrored_headers)
+        file(REMOVE "${path}")
+    endif()
+endforeach()
+foundation_gui_patch(include/gui/contract.hpp touch-contract.patch include/gui/contract.hpp)
+foundation_gui_patch(include/gui/memory_adapter.hpp touch-memory.patch include/gui/memory_adapter.hpp)
+foundation_gui_patch(include/gui/interaction.hpp touch-interaction.patch include/gui/interaction.hpp)
 # Keep the browser asset names stable; both transport modes use the same renderer.
 foundation_gui_patch(include/gui/web.hpp web-tick.patch include/gui/web.hpp)
 foundation_gui_patch(backends/web/renderer.mjs web-ordering.patch web/renderer.mjs)
 foundation_gui_patch(backends/web/boot.mjs web-lifecycle.patch web/boot.mjs)
 foundation_gui_patch(backends/web/host.py web-assets.patch web/host.py)
 configure_file(host/browser_lifecycle.mjs "${CMAKE_CURRENT_BINARY_DIR}/web/browser_lifecycle.mjs" COPYONLY)
+foreach(module wasm_transport wasm_worker)
+    configure_file("host/${module}.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/${module}.mjs" COPYONLY)
+endforeach()
+if(BUILD_TESTING AND FOUNDATION_NODE_EXECUTABLE)
+    add_test(NAME foundation.gui.worker COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/worker_test.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web/wasm_transport.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web/wasm_worker.mjs")
+    foundation_test_prerequisites(foundation.gui.worker)
+    set_tests_properties(foundation.gui.worker PROPERTIES LABELS "gui;focused" TIMEOUT 30)
+    foreach(fixture touch queue)
+        add_test(NAME foundation.gui.${fixture}-browser COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/${fixture}_test.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/renderer.mjs")
+        foundation_test_prerequisites(foundation.gui.${fixture}-browser)
+        set_tests_properties(foundation.gui.${fixture}-browser PROPERTIES LABELS "gui;focused" TIMEOUT 30)
+    endforeach()
+endif()
 file(COPY "${FOUNDATION_GUI_SOURCE}/backends/web/style.css"
     "${FOUNDATION_GUI_SOURCE}/backends/web/index.html" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/web")
 configure_file(hosts/web_host.py "${CMAKE_CURRENT_BINARY_DIR}/web/serve.py" COPYONLY)
@@ -163,7 +212,8 @@ if(FOUNDATION_GUI_DISTRIBUTABLE)
         foundation_notice_file("${FOUNDATION_GUI_SOURCE}/${notice}")
     endforeach()
     install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/web/"
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/software-foundation/web")
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/software-foundation/web"
+        PATTERN "__pycache__" EXCLUDE PATTERN "*.pyc" EXCLUDE)
     install(FILES "${lock_path}" DESTINATION "${CMAKE_INSTALL_DOCDIR}/gui-boundary")
     foreach(index RANGE 0 ${license_last})
         string(JSON license_file GET "${lock}" redistribution license_files ${index})
@@ -180,15 +230,44 @@ if(EMSCRIPTEN)
     target_link_options(foundation-gui-web-wasm PRIVATE --no-entry -fexceptions
         -sMODULARIZE=1 -sEXPORT_ES6=1 -sALLOW_MEMORY_GROWTH=1
         "-sEXPORTED_FUNCTIONS=['_gui_web_create','_gui_web_receive','_gui_web_destroy']"
-        "-sEXPORTED_RUNTIME_METHODS=['ccall']" -sENVIRONMENT=web,node)
+        "-sEXPORTED_RUNTIME_METHODS=['ccall']" -sENVIRONMENT=web,worker,node)
     target_link_options(foundation-gui-web-wasm PRIVATE
         "-sINCOMING_MODULE_JS_API=['wasmBinary','locateFile','print','printErr','onRuntimeInitialized']")
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/package.json" "{\"type\":\"module\"}\n")
+    set(wasm_notice_args --notice "foundation=${CMAKE_SOURCE_DIR}/LICENSE"
+        --notice "gui-boundary=${FOUNDATION_GUI_SOURCE}/LICENSE")
+    set(wasm_notices "${CMAKE_SOURCE_DIR}/LICENSE" "${FOUNDATION_GUI_SOURCE}/LICENSE")
+    if(FOUNDATION_SDK_ROOT)
+        list(APPEND wasm_notice_args --sdk "${FOUNDATION_SDK_ROOT}")
+        list(APPEND wasm_notices "${FOUNDATION_SDK_ROOT}/sdk.json")
+    endif()
+    set(wasm_package "${CMAKE_CURRENT_BINARY_DIR}/wasm-package")
+    set(wasm_html "${wasm_package}/software-foundation-wasm.html")
+    set(wasm_manifest "${wasm_package}/web-manifest.json")
+    set(wasm_checksums "${wasm_package}/manifest.sha256")
+    add_custom_command(OUTPUT "${wasm_html}" "${wasm_manifest}" "${wasm_checksums}"
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tools/package_wasm.py"
+            --assets "${CMAKE_CURRENT_BINARY_DIR}/web"
+            --module-dir "$<TARGET_FILE_DIR:foundation-gui-web-wasm>"
+            --output "${wasm_package}" ${wasm_notice_args}
+        DEPENDS foundation-gui-web-wasm "${CMAKE_SOURCE_DIR}/tools/package_wasm.py"
+            "${CMAKE_SOURCE_DIR}/tools/package_notices.py" "${CMAKE_SOURCE_DIR}/tools/sdk_manifest.py"
+            "${CMAKE_CURRENT_BINARY_DIR}/web/boot.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/renderer.mjs"
+            "${CMAKE_CURRENT_BINARY_DIR}/web/browser_lifecycle.mjs"
+            "${CMAKE_CURRENT_BINARY_DIR}/web/wasm_transport.mjs"
+            "${CMAKE_CURRENT_BINARY_DIR}/web/wasm_worker.mjs"
+            "${CMAKE_CURRENT_BINARY_DIR}/web/index.html" "${CMAKE_CURRENT_BINARY_DIR}/web/style.css"
+            ${wasm_notices} VERBATIM)
+    add_custom_target(foundation-wasm-package ALL DEPENDS "${wasm_html}" "${wasm_manifest}" "${wasm_checksums}")
+    if(FOUNDATION_GUI_DISTRIBUTABLE)
+        install(FILES "${wasm_html}" "${wasm_manifest}" "${wasm_checksums}"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/software-foundation/wasm")
+    endif()
     if(BUILD_TESTING AND FOUNDATION_NODE_EXECUTABLE)
         add_test(NAME foundation.gui.wasm COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_test.mjs" $<TARGET_FILE:foundation-gui-web-wasm>)
         set_tests_properties(foundation.gui.wasm PROPERTIES LABELS "gui;host" TIMEOUT 60)
-        foundation_test_prerequisites(foundation.gui.wasm foundation-gui-web-wasm)
+        foundation_test_prerequisites(foundation.gui.wasm foundation-gui-web-wasm foundation-wasm-package)
     endif()
     if(FOUNDATION_GUI_DISTRIBUTABLE)
         install(FILES "$<TARGET_FILE:foundation-gui-web-wasm>"
@@ -257,6 +336,13 @@ if(FOUNDATION_GUI_REV)
     target_link_libraries(foundation-gui-rev PRIVATE gui_rev_adapter)
 endif()
 if(BUILD_TESTING)
+    if(FOUNDATION_GUI_SDL)
+        add_executable(foundation_gui_sdl_touch_test "${CMAKE_SOURCE_DIR}/tests/gui_sdl_touch.cpp")
+        target_link_libraries(foundation_gui_sdl_touch_test PRIVATE foundation_gui_application foundation_gui_sdl)
+        target_include_directories(foundation_gui_sdl_touch_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+        foundation_options(foundation_gui_sdl_touch_test)
+        foundation_gui_check(sdl-touch foundation_gui_sdl_touch_test focused)
+    endif()
     set(smoke_backends terminal framebuffer)
     if(FOUNDATION_GUI_WEB)
         list(APPEND smoke_backends web)
@@ -279,6 +365,13 @@ if(BUILD_TESTING)
         elseif(backend STREQUAL "fltk" OR backend STREQUAL "rev")
             set_tests_properties(foundation.gui.installed-${backend} PROPERTIES RESOURCE_LOCK foundation_native_display)
         endif()
+    endforeach()
+    foreach(example touch embedding)
+        add_executable(foundation_gui_${example}_test "${CMAKE_SOURCE_DIR}/tests/gui_${example}.cpp")
+        target_link_libraries(foundation_gui_${example}_test PRIVATE foundation_gui_boundary)
+        target_include_directories(foundation_gui_${example}_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+        foundation_options(foundation_gui_${example}_test)
+        foundation_gui_check(${example} foundation_gui_${example}_test focused)
     endforeach()
     foundation_gui_executable(foundation_gui_test tests/application_test.cpp)
     foundation_gui_check(shared-feature foundation_gui_test focused)

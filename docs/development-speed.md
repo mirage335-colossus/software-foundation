@@ -10,7 +10,7 @@ pass identifies its selected scope and cannot make a release eligible.
 ./build.sh
 ./build.sh test dev --label core
 ./build.sh test dev --label tools
-./build.sh test dev --label gui --gui-input-group /absolute/retained-gui-inputs
+./build.sh test dev --label gui --gui
 ./build.sh test release --full
 ```
 
@@ -40,6 +40,19 @@ different scope does not hide a new test or change the aggregation identity.
 Source archives prune generated build, coordination and Python cache directories
 before walking the tree. The complete selected source inventory and before/after
 mutation checks still apply; only adjacent duplicate identity work is removed.
+A plain build uses its post-compilation source observation as its final one;
+testing and packaging keep a separate observation after those operations.
+Candidate test planning reads CTest declarations once per phase and shares that
+observation across inventory, prerequisite and configuration binding. It still
+observes the declarations afresh after compilation and after tests; it does not
+cache evidence across a mutation boundary.
+
+Retained GUI verification streams file contents in bounded chunks while computing
+SHA-256 and the upstream Git blob identity together. It retains digest records,
+not every expanded source file. Compressed group files are hashed once per guarded
+observation; file identity/version reconciliation still rejects inputs changed
+during verification. Restore also checks the complete existing output inventory
+before reuse. There is no persistent trust cache or bypass for a warm checkout.
 
 ## Hosted scheduling
 
@@ -54,7 +67,9 @@ compile, GUI downloads and workflow syntax work for documentation-only changes.
 Each existing parallel job selects its scope from local Git without API calls or
 another serial runner. Missing history, changed policy/manuals and unknown paths
 select full feedback. Complete candidate and release workflows remain unchanged
-by this diagnostic selection. Each fresh copied-package check waits only for its
+by this diagnostic selection. Ordinary Linux GUI feedback consumes the retained
+checkout input through `--gui`, without a repository-variable gate or release API
+lookup. Each fresh copied-package check waits only for its
 own target producer, while retaining a separate fresh runner.
 
 Complete certification keeps every required logical result. Native source checks
@@ -77,6 +92,12 @@ one job so an executing release does not upload and download a complete temporar
 candidate between those steps. Diagnostic preparation can still retain a private
 candidate. Cold SDK maintenance uses explicit runner selection and the same
 automatic compiler budget as ordinary application builds.
+
+Certification retries can adopt authenticated, successful whole batches from a
+prior attempt while executing incomplete batches again. Original controls and
+evidence retain their original attempt identity; the new attempt cannot relabel
+or overwrite them. See [the retry contract](certification.md) for the exact
+checks and failure rules.
 
 ## Transfer only consumed inputs
 

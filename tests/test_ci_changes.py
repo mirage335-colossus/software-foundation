@@ -176,7 +176,12 @@ class FeedbackWorkflowTests(unittest.TestCase):
             self.assertIn('test "$SELECTED" = true || test "$SELECTED" = false', block)
             self.assertIn('fetch-depth: 2', block)
         self.assertIn('Focused checks (not release qualification)', workflow)
-        self.assertEqual(workflow.count("if: steps.changes.outputs.gui == 'true'"), 2)
+        self.assertEqual(workflow.count("if: steps.changes.outputs.gui == 'true'"), 1)
+        gui = workflow.split("  shared-gui:\n", 1)[1]
+        self.assertIn("--gui --gui-backends", gui)
+        self.assertNotIn("FOUNDATION_GUI_GROUP", gui)
+        self.assertNotIn("lifecycle.py gui-input", gui)
+        self.assertNotIn("GH_TOKEN", gui)
         self.assertIn('python3 -B tools/check_docs.py', workflow)
 
     def test_package_consumers_are_isolated_and_depend_only_on_own_producer(self):

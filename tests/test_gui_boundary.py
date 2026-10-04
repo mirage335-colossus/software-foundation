@@ -81,7 +81,8 @@ class GuiBoundaryTests(unittest.TestCase):
                 path.write_text(content)
                 # Exercise dependency invalidation, independently of filesystem
                 # timestamp granularity when edits follow a build immediately.
-                tick = (build / "boundary-checked").stat().st_mtime_ns + 2_000_000_000
+                tick = max(time.time_ns(), path.stat().st_mtime_ns + 10_000_000,
+                           (build / "boundary-checked").stat().st_mtime_ns + 10_000_000)
                 os.utime(path, ns=(tick, tick))
             change('#include <FL/Fl.H>\n')
             result = check(); self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
@@ -91,6 +92,164 @@ class GuiBoundaryTests(unittest.TestCase):
             change('#include <gui/framebuffer.hpp>\n')
             result = check(); self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
             self.assertIn("control.hh", result.stdout + result.stderr)
+            helper = source / 'helpers/bridge.hpp'; helper.parent.mkdir()
+            helper.write_text('void generic_helper();\n')
+            change('#include "../../../helpers/bridge.hpp"\n')
+            result = check(); self.assertEqual(0,result.returncode,result.stdout+result.stderr)
+            nested = helper.parent / 'nested.hpp'; nested.write_text('void another_helper();\n')
+            helper.write_text('#include "nested.hpp"\n')
+            tick = max(time.time_ns(), helper.stat().st_mtime_ns + 10_000_000,
+                       (build / 'boundary-checked').stat().st_mtime_ns + 10_000_000)
+            os.utime(helper,ns=(tick,tick))
+            result = check(); self.assertEqual(0,result.returncode,result.stdout+result.stderr)
+            nested.write_text('#include <FL/Fl.H>\n')
+            tick = max(time.time_ns(), nested.stat().st_mtime_ns + 10_000_000,
+                       (build / 'boundary-checked').stat().st_mtime_ns + 10_000_000)
+            os.utime(nested,ns=(tick,tick))
+            result = check(); self.assertNotEqual(0,result.returncode,result.stdout+result.stderr)
+            self.assertIn('nested.hpp',result.stdout+result.stderr)
+
+    def test_direct_group_configure_dependencies_have_no_path_aliases(self):
+        selection = (ROOT/'gui/CMakeLists.txt').read_text().split('option(FOUNDATION_GUI_FLTK',1)[0]
+        with tempfile.TemporaryDirectory(prefix='direct retained inputs ') as temporary:
+            source=Path(temporary)/'source';(source/'gui').mkdir(parents=True)
+            group=source/'third_party/gui-inputs';group.mkdir(parents=True)
+            tool=source/'tools/dependency_archive.py';tool.parent.mkdir();tool.write_text('# fixture\n')
+            for name in ('manifest.json','SHA256SUMS','gui-inputs.tar.gz'):
+                (group/name).write_text('fixture\n')
+            # Isolate CMake dependency spelling; archive validity is covered by
+            # the real source-group suite and combined direct native build.
+            (source/'gui/source_group.py').write_text('print('+repr(json.dumps({'source':str(source/'upstream')}))+')\n')
+            (source/'gui/CMakeLists.txt').write_text(selection)
+            (source/'CMakeLists.txt').write_text(
+                'cmake_minimum_required(VERSION 3.24)\nproject(DirectInputs NONE)\n'
+                'find_package(Python3 REQUIRED COMPONENTS Interpreter)\n'
+                'function(foundation_register_build_directory)\nendfunction()\n'
+                'set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS\n'
+                ' "${CMAKE_SOURCE_DIR}/tools/dependency_archive.py"\n'
+                ' "${CMAKE_SOURCE_DIR}/third_party/gui-inputs/manifest.json"\n'
+                ' "${CMAKE_SOURCE_DIR}/third_party/gui-inputs/SHA256SUMS"\n'
+                ' "${CMAKE_SOURCE_DIR}/third_party/gui-inputs/gui-inputs.tar.gz")\n'
+                'add_subdirectory(gui)\n')
+            for label,arguments in [('default',[]),('explicit-alias',[
+                    '-DFOUNDATION_GUI_INPUT_GROUP='+str(source/'gui/../third_party/gui-inputs')])]:
+                build=Path(temporary)/label
+                for command in (['cmake','-G','Ninja','-S',str(source),'-B',str(build),*arguments],
+                                ['cmake','--build',str(build)]):
+                    result=subprocess.run(command,capture_output=True,text=True,timeout=30)
+                    self.assertEqual(0,result.returncode,result.stdout+result.stderr)
+
+    def test_literal_include_closure_and_aliases_cannot_hide_native_dependencies(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'gui'
+            for directory in ('shared', 'helpers', 'host', 'hosts'):
+                (root / directory).mkdir(parents=True)
+            (root / 'shared/app.cpp').write_text('#include "../helpers/bridge.hpp"\n')
+            bridge = root / 'helpers/bridge.hpp'
+            for contents in ('#include<gui/detail/framebuffer.hpp>\n',
+                             '#include "../host/adapter.hpp"\n',
+                             'using Native = SDL_Window;\n', '#define BACKEND <FL/Fl.H>\n#include BACKEND\n'):
+                bridge.write_text(contents)
+                (root / 'host/adapter.hpp').write_text('struct NativeAdapter {};\n')
+                failures = _guard.tree_violations(root)
+                self.assertTrue(failures, contents)
+                self.assertTrue(any('bridge.hpp' in failure for failure in failures))
+            bridge.write_text('#include <gui/contract.hpp>\n// SDL_Window is forbidden here.\n')
+            self.assertEqual([], _guard.tree_violations(root))
+            dependencies = _guard.analyze(root)[1]
+            self.assertIn(bridge.resolve(), dependencies)
+            bridge.write_text('#include "cycle.hpp"\n')
+            (root / 'helpers/cycle.hpp').write_text('#include "bridge.hpp"\n')
+            self.assertEqual([], _guard.tree_violations(root))
+
+    def test_include_resolution_preserves_angle_and_quoted_search_order(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'gui'
+            for directory in ('shared', 'helpers'):
+                (root / directory).mkdir(parents=True)
+            (root / 'shared/app.cpp').write_text('#include "../helpers/bridge.hpp"\n')
+            bridge = root / 'helpers/bridge.hpp'
+            (root / 'common.hpp').write_text('void public_helper();\n')
+            (root / 'helpers/common.hpp').write_text('using Hidden = SDL_Window;\n')
+            bridge.write_text('#include <common.hpp>\n')
+            self.assertEqual([], _guard.tree_violations(root))
+            bridge.write_text('#include "common.hpp"\n')
+            self.assertTrue(_guard.tree_violations(root))
+            (root / 'common.hpp').write_text('using Hidden = SDL_Window;\n')
+            (root / 'helpers/common.hpp').write_text('void sibling_helper();\n')
+            bridge.write_text('#include <common.hpp>\n')
+            self.assertTrue(_guard.tree_violations(root))
+            self.assertTrue(shared_violations('#include_next <hidden.hpp>\n'))
+
+    def test_host_domain_guards_follow_helpers_and_allow_only_composition_type(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'gui'
+            for directory in ('shared', 'helpers', 'host', 'hosts'):
+                (root / directory).mkdir(parents=True)
+            (root / 'shared/task.hpp').write_text('class TextTask {};\n')
+            (root / 'shared/application.hpp').write_text('#include "task.hpp"\nclass Application {};\n')
+            (root / 'shared/view_definition.hpp').write_text('const char* id="records.add";\n')
+            main = root / 'hosts/example_main.cpp'
+            main.write_text('#include "shared/application.hpp"\nfoundation::ui::Application* app;\n')
+            (root / 'host/task.hpp').write_text('void generic_task();\n')
+            (root / 'host/service.hpp').write_text('#include "task.hpp"\n')
+            self.assertEqual([], _guard.tree_violations(root))
+            for source in ('const char* id="records.add";\n', 'foundation::Store entries;\n',
+                           'foundation::ui::TextTask task;\n', 'foundation::ui::Application* concrete;\n',
+                           '#include "shared/view_definition.hpp"\n'):
+                (root / 'host/service.hpp').write_text(source)
+                self.assertTrue(_guard.tree_violations(root), source)
+            (root / 'host/service.hpp').write_text('#include "../helpers/bridge.hpp"\n')
+            (root / 'helpers/bridge.hpp').write_text('#include "../shared/application.hpp"\n')
+            self.assertTrue(any('bridge.hpp' in failure for failure in _guard.tree_violations(root)))
+
+    def test_header_mirror_uses_final_patch_bytes_and_preserves_incremental_outputs(self):
+        cmake = (ROOT / 'gui/CMakeLists.txt').read_text()
+        patcher = 'function(foundation_gui_patch' + cmake.split('function(foundation_gui_patch',1)[1].split('endfunction()',1)[0] + 'endfunction()\n'
+        mirror = '# Quoted sibling includes' + cmake.split('# Quoted sibling includes',1)[1].split('# Keep the browser',1)[0]
+        with tempfile.TemporaryDirectory(prefix='patched header mirror ') as temporary:
+            root = Path(temporary); source = root / 'source'; source.mkdir()
+            upstream = source / 'upstream/include/gui'; upstream.mkdir(parents=True)
+            patches = source / 'patches'; patches.mkdir()
+            (patches / 'apply.py').write_bytes((ROOT / 'gui/patches/apply.py').read_bytes())
+            names = [('contract','touch-contract'),('memory_adapter','touch-memory'),
+                     ('interaction','touch-interaction'),('web','web-tick')]
+            for name, patch in names:
+                old = 'inline constexpr int ' + name + '_value=1;\n'
+                new = old.replace('=1;', '=2;')
+                (upstream / (name+'.hpp')).write_text(old)
+                (patches / (patch+'.patch')).write_text('--- old\n+++ new\n@@ -1 +1 @@\n-'+old+'+'+new)
+            (upstream / 'removed.hpp').write_text('inline constexpr int obsolete=1;\n')
+            (upstream / 'other.hpp').write_text(''.join('#include "'+name+'.hpp"\n' for name,_ in names))
+            (source / 'main.cpp').write_text('#include <gui/other.hpp>\n' +
+                ''.join('static_assert('+name+'_value==2);\n' for name,_ in names)+'int main(){return 0;}\n')
+            project = 'cmake_minimum_required(VERSION 3.24)\nproject(HeaderMirror LANGUAGES CXX)\nfind_package(Python3 REQUIRED COMPONENTS Interpreter)\n'
+            project += 'set(FOUNDATION_GUI_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/upstream")\n'
+            project += 'file(GLOB verified_files "${FOUNDATION_GUI_SOURCE}/include/gui/*")\n'
+            project += patcher + mirror + 'foundation_gui_patch(include/gui/web.hpp web-tick.patch include/gui/web.hpp)\n'
+            project += 'add_executable(mirror main.cpp)\ntarget_compile_features(mirror PRIVATE cxx_std_20)\n'
+            project += 'target_include_directories(mirror PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include" "${FOUNDATION_GUI_SOURCE}/include")\n'
+            (source / 'CMakeLists.txt').write_text(project)
+            build = root / 'build'
+            configure = ['cmake','-G','Ninja','-S',str(source),'-B',str(build)]
+            compile = ['cmake','--build',str(build)]
+            for command in (configure,compile):
+                subprocess.run(command,check=True,capture_output=True,text=True,timeout=45)
+            outputs = list((build/'include/gui').glob('*.hpp')) + list((build/'CMakeFiles/mirror.dir').rglob('*.o')) + list((build/'CMakeFiles/mirror.dir').rglob('*.obj'))
+            self.assertGreater(len(outputs),5)
+            before = {path: (path.read_bytes(),path.stat().st_mtime_ns) for path in outputs}
+            for command in (configure,compile):
+                subprocess.run(command,check=True,capture_output=True,text=True,timeout=45)
+            self.assertEqual(before,{path:(path.read_bytes(),path.stat().st_mtime_ns) for path in outputs})
+            # A reviewed supplier inventory upgrade cannot leave stale generated
+            # headers visible only to incremental consumers.
+            (upstream/'removed.hpp').unlink()
+            remaining={path:value for path,value in before.items() if path.name!='removed.hpp'}
+            for command in (configure,compile):
+                subprocess.run(command,check=True,capture_output=True,text=True,timeout=45)
+            self.assertFalse((build/'include/gui/removed.hpp').exists())
+            self.assertEqual(remaining,{path:(path.read_bytes(),path.stat().st_mtime_ns) for path in remaining})
+            self.assertIn('contract_value=1', (upstream/'contract.hpp').read_text())
 
     def test_shared_declaration_has_one_construction_and_layout_source(self):
         source = (ROOT / "gui/shared/application.cpp").read_text()

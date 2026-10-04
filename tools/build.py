@@ -113,6 +113,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", nargs="?", choices=("build", "test", "package"), default="build")
     parser.add_argument("preset", nargs="?", choices=("dev", "release", "asan"), default=None)
+    parser.add_argument("--verify-package", action="store_true", help="relocate and verify produced archives, including the installed CMake consumer")
     parser.add_argument("--configure-only", action="store_true", help="configure without compiling; candidate scopes build their own prerequisites")
     parser.add_argument("--jobs", type=positive)
     parser.add_argument("--build-jobs", type=positive, help="independent compilation concurrency")
@@ -142,6 +143,8 @@ def main(argv=None):
     parser.add_argument("--junit", type=Path, help="machine-readable outcomes for this test invocation")
     args = parser.parse_args(argv)
     preset = args.preset or ("release" if args.action == "package" else "dev")
+    if args.verify_package and args.action != "package":
+        parser.error("--verify-package applies only to package")
     if args.configure_only and args.action != "build":
         parser.error("--configure-only applies only to build")
     if args.stop_on_failure and args.action != "test":
@@ -334,7 +337,24 @@ def main(argv=None):
         run(command, env=child_environment)
     elif args.action == "package":
         run([programs["cpack"], "--config", str(build / "CPackConfig.cmake"), "-C", "Release"], env=child_environment)
-    if source_tree(ROOT, args.gui_source) != source_before:
+        if args.verify_package:
+            archives = sorted([*(build / "packages").glob("*.tar.gz"), *(build / "packages").glob("*.zip")])
+            if not archives:
+                raise ValueError("no application archives found for verification")
+            for archive in archives:
+                manifest = archive.with_name(archive.name + ".json")
+                for operation in ("create", "verify"):
+                    verification = []
+                    if operation == "verify" and args.sdk:
+                        target = json.loads((args.sdk.resolve() / "sdk.json").read_text())["target"]
+                        verification = ["--sdk", str(args.sdk.resolve())]
+                        if target["system"] != "Emscripten":
+                            verification += ["--processor", target["processor"]]
+                    run([sys.executable, "-B", str(ROOT / "tools/artifact.py"), operation,
+                         str(archive), "--manifest", str(manifest), *verification], env=child_environment)
+    # A plain build already checked its terminal source above. Tests and
+    # packaging execute additional writers and require a fresh final observation.
+    if args.action != "build" and source_tree(ROOT, args.gui_source) != source_before:
         raise ValueError("source changed during the operation; outputs are not qualification")
     if gui_group_identity:
         verified = json.loads(subprocess.check_output(

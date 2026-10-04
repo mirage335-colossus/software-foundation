@@ -174,7 +174,9 @@ and install the same receipt. They never delete files outside that new package
 tree. All original bytes remain available in the retained archive. A combined
 archive containing GUI code requires resolved GUI redistribution terms even for
 a core selection, because the retained archive and shared files still contain
-that material. The current terms gate therefore remains closed for those inputs.
+that material. The current lock records permission for this repository owner's
+software-foundation source and compiled releases. It does not grant unrelated
+downstream projects a general Rev license; see the [recorded scope](gui-audit.md#distribution-gate).
 
 ## Generated native contents
 
@@ -291,8 +293,8 @@ links/aliases, backend launcher coexistence, combined-archive selection for all
 seven native profiles, unknown-executable rejection, selection provenance and
 receipt collisions, failed staging, failure before pointer
 replacement and explicit uncertainty afterward. Recipe shell syntax is checked;
-GUI fixture approval is isolated to tests; the public packaging terms gate also
-rejects core selection from a combined GUI archive. Generated Arch install bodies
+GUI fixture approval is isolated to tests; a negative permission fixture also
+rejects core selection from a combined GUI archive when its terms gate is closed. Generated Arch install bodies
 execute directly in fixtures; Gentoo install bodies execute with small modeled
 package-manager helpers. Their resulting bytes and modes are compared with the
 generated native payload, including all shared resources. These checks do not

@@ -26,6 +26,7 @@ runtimes still apply. GUI integration is optional and has separate prerequisites
 ./build.sh test dev --full
 ./build.sh test asan
 ./build.sh package release
+./build.sh package release --verify-package
 ```
 
 On Windows, start a terminal with the intended compiler environment initialized
@@ -72,6 +73,13 @@ builds. Default core builds do not restore or compile GUI inputs. Follow
 [the GUI guide](gui-boundary.md) for extra native-host options. GUI distribution
 checks the locked, reviewed supplier permissions. `package` requires a
 Release configuration and all selected dependencies and notices.
+
+`package --verify-package` also creates an inventory beside each generated archive,
+verifies it after safe extraction into a fresh location, runs the installed CLI
+and builds a separate consumer of the installed CMake export. Verification failure
+fails the command. This is an opt-in local package check; hosted release producers
+already perform these checks through their existing delivery path. It does not
+install anything into the host or establish other-platform qualification.
 
 `test` builds prerequisites before invoking CTest. Its default runs the complete
 enabled local test suite. `--label fast`, `core`, `tools`, `integration`, or

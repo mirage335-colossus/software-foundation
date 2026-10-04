@@ -152,11 +152,25 @@ def bind_browser_prerequisite(state, details, evidence):
 
 def browser_check(source_root, server, evidence, options, executable=None, wasm=None):
     engine = options.get("browser") or "firefox"
-    command = [sys.executable, str(source_root / "gui/tests/browser_test.py"), "--browser", engine,
-               "--mode", "wasm" if wasm else "hosted", "--server", str(server),
+    offline = bool(wasm and (source_root / "tools/package_wasm.py").is_file())
+    mode = "wasm-offline" if offline else ("wasm" if wasm else "hosted")
+    offline_html = None
+    if offline:
+        # Build and installed layouts are explicit; never silently fall back to
+        # a multi-file check when the new source promises an offline package.
+        candidates = [Path(wasm) / "wasm-package/software-foundation-wasm.html",
+                      server.parent.parent / "wasm/software-foundation-wasm.html"]
+        present = [path for path in candidates if path.is_file() and not path.is_symlink()]
+        if len(present) != 1:
+            raise ValueError("required offline Wasm HTML missing or ambiguous")
+        offline_html = present[0]
+    command = [sys.executable, "-B", str(source_root / "gui/tests/browser_test.py"), "--browser", engine,
+               "--mode", mode, "--server", str(server),
                "--output", str(evidence / "browser")]
     if wasm:
         command += ["--wasm-dir", str(wasm)]
+        if offline:
+            command += ["--offline-html", str(offline_html)]
     else:
         command += ["--executable", str(executable)]
     if engine == "firefox":
@@ -169,8 +183,13 @@ def browser_check(source_root, server, evidence, options, executable=None, wasm=
     receipt = c.load(evidence / "browser/qualification.json")
     required = {"editing", "accessible-names", "shared-geometry", "prompt-cancel", "capture", "cleanup"}
     if (receipt.get("schema_version") != 1 or receipt.get("status") != "passed" or receipt.get("engine") != engine or
-            not receipt.get("browser_version") or not required <= set(receipt.get("checks", []))):
+            not receipt.get("browser_version") or receipt.get("mode") != mode or
+            not required <= set(receipt.get("checks", []))):
         raise ValueError("real browser did not complete the required interaction inventory")
+    if offline and (receipt.get("executed_modes") != ["wasm", "offline"] or
+                    "offline-no-network" not in receipt.get("checks", []) or
+                    receipt.get("offline_network_resources") is not False):
+        raise ValueError("real browser did not complete both Wasm modes without offline network resources")
     return receipt
 
 

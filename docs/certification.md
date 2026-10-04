@@ -118,14 +118,30 @@ same validator. `coverage.py merge`
 alone does not certify or promote a release. A new attempt may also execute all
 checks normally without using adoption.
 
-This is a local/file-based scheduling feature. The caller must supply trusted
-original evidence; hashes do not authenticate its producer. A hosted adapter must
-verify the original repository, workflow, run, attempt, successful producer and
-immutable artifact identity before supplying downloaded receipts. Current GitHub
-workflows still acquire only the executing attempt and do not automatically adopt
-siblings when choosing **Re-run failed jobs**. Do not weaken that transport check,
-rename old receipts to the new attempt, or use mutable artifact overwrite as a
-substitute for explicit adoption.
+The GitHub certification workflow also supports **Re-run failed jobs** and retries
+of the record or attachment job. It retains the original prepare attempt and
+matrix, restores current-attempt artifacts through the ordinary strict path, and
+uses [`ci_retry.py`](../tools/ci_retry.py) to authenticate earlier successful whole
+batches. It checks the original repository, workflow, run, attempt, completed job,
+runner, artifact creation interval, immutable artifact ID and ZIP digest, then
+validates the original manifest and every extracted byte. The latest execution
+wins: a failed or missing current batch cannot be replaced by an older pass.
+Ambiguous, expired, changed or incomplete evidence fails closed; rerun all jobs
+when the original handoffs are no longer available. Selection is bounded to 64
+attempts and the native transport's 48 evidence slots.
+
+The record job rechecks the frozen input payloads required by adopted groups and
+uses the same local adoption validator. This saves compilation and execution, but
+still downloads and hashes those exact payloads. Source, policy, environment or
+plan changes invalidate reuse. Certificates retain the original result identities
+and explicit adoption manifest; attachment retries restore the exact successful
+record output and append its original certificate attempt. They do not relabel it
+as the attachment job's newer attempt. A partially completed remote attachment
+still requires normal reconciliation; retry does not authorize replacement.
+
+Local/file-based callers must continue supplying trusted original evidence;
+hashes alone do not authenticate producers. The historical path never weakens the
+current-attempt transport check, renames old receipts or overwrites artifacts.
 
 ## File-based commands for another CI or a local scheduler
 

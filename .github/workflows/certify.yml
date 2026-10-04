@@ -90,12 +90,21 @@ jobs:
   prepare:
     runs-on: ubuntu-24.04
     outputs:
+      control_attempt: ${{ steps.origin.outputs.attempt }}
       matrix: ${{ steps.plan.outputs.matrix }}
       max_parallel: ${{ steps.plan.outputs.max_parallel }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+    - name: Retain the original control attempt
+      id: origin
+      shell: python
+      run: |
+        import os
+        from pathlib import Path
+        with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as stream:
+            stream.write('attempt=' + os.environ['GITHUB_RUN_ATTEMPT'] + '\n')
     - shell: python
       run: |-
         import subprocess, sys
@@ -126,6 +135,7 @@ jobs:
     # Includes bounded shared GitHub quota waits as well as execution.
     timeout-minutes: 240
     env:
+      CONTROL_ATTEMPT: ${{ needs.prepare.outputs.control_attempt }}
       BATCH: ${{ matrix.id }}
       CHECK_IMAGE: ${{ matrix.image }}
     steps:
@@ -133,6 +143,7 @@ jobs:
       with:
         persist-credentials: false
     - name: Download bounded workflow evidence
+      if: needs.prepare.outputs.control_attempt == github.run_attempt
       uses: ./.github/actions/ci-evidence-download
       with:
         pattern: qualification-inputs
@@ -167,6 +178,8 @@ jobs:
       contents: write
       actions: read
   record:
+    env:
+      CONTROL_ATTEMPT: ${{ needs.prepare.outputs.control_attempt }}
     if: always() && needs.prepare.result == 'success'
     needs:
     - prepare
@@ -206,6 +219,7 @@ jobs:
           build/evidence/
           build/certificate.json
           build/attachment-plan.json
+          build/transport-receipts/
     permissions:
       contents: write
       actions: read
@@ -217,6 +231,9 @@ jobs:
       inventory_sha256: ${{ steps.result.outputs.inventory_sha256 }}
       eligible_for_promotion: ${{ steps.result.outputs.eligible_for_promotion }}
   attach:
+    env:
+      CERTIFICATE_ATTEMPT: ${{ needs.record.outputs.certification_attempt }}
+      CERTIFICATE_SHA256: ${{ needs.record.outputs.certificate_sha256 }}
     if: inputs.execute && always() && needs.record.result == 'success'
     needs: record
     runs-on: ubuntu-24.04
@@ -232,16 +249,14 @@ jobs:
       with:
         persist-credentials: false
     - name: Download bounded certificate evidence
+      if: needs.record.outputs.certification_attempt == github.run_attempt
       uses: ./.github/actions/ci-evidence-download
       with:
         pattern: certificate
     - shell: python
       run: |
         import subprocess,sys
-        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','bundle-fetch'],check=True)
-      env:
-        BUNDLE_NAME: certificate-${{ github.run_attempt }}
-        BUNDLE_OUTPUT: build
+        subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-certificate'],check=True)
     - shell: python
       run: |-
         import subprocess, sys

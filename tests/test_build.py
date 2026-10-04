@@ -14,6 +14,27 @@ spec.loader.exec_module(builder)
 
 
 class BuildTests(unittest.TestCase):
+    def test_source_observations_keep_execution_boundaries_without_duplicate_build_scan(self):
+        from unittest.mock import patch
+        import source_identity
+        for action in ('build', 'test', 'package'):
+            with self.subTest(action=action), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                phases = []
+                def execute(command, **kwargs):
+                    phases.append('configure' if '--preset' in command else
+                                  'compile' if '--build' in command else command[0])
+                def observe(*args):
+                    phases.append('source')
+                    return {}
+                with patch.object(builder, 'ROOT', root), patch.object(builder, 'run', side_effect=execute), \
+                        patch.object(builder, 'cache_identity', return_value={}), \
+                        patch.object(source_identity, 'source_tree', side_effect=observe):
+                    self.assertEqual(builder.main([action, 'release']), 0)
+                expected = ['source', 'configure', 'compile', 'source']
+                if action != 'build': expected += ['ctest' if action == 'test' else 'cpack', 'source']
+                self.assertEqual(phases, expected)
+
     def test_bundled_gui_is_explicit_and_retains_group_identity(self):
         from unittest.mock import patch
         import source_identity
@@ -348,6 +369,86 @@ class BuildTests(unittest.TestCase):
                 policy.write_text(body)
                 result = subprocess.run([cmake, '-DCPACK_BUILD_CONFIG=' + requested, '-P', str(policy)], capture_output=True)
                 self.assertEqual(result.returncode == 0, success, result.stderr)
+
+    def test_local_package_verification_relocates_every_produced_archive(self):
+        import source_identity
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); build = root / 'output'
+            calls = []
+            def run(command, **kwargs):
+                calls.append([str(value) for value in command])
+                if command[0] == 'cpack':
+                    (build / 'packages').mkdir()
+                    for name in ('example.tar.gz', 'example.zip'):
+                        (build / 'packages' / name).write_bytes(b'archive fixture')
+            with patch.object(builder, 'ROOT', root), patch.object(builder, 'run', side_effect=run), \
+                    patch.object(builder, 'cache_identity', return_value={}), \
+                    patch.object(source_identity, 'source_tree', return_value={'revision': 1}):
+                builder.main(['package', 'release', '--build-dir', str(build), '--verify-package'])
+            checks = [call for call in calls if str(root / 'tools/artifact.py') in call]
+            self.assertEqual(['create', 'verify', 'create', 'verify'], [call[3] for call in checks])
+            self.assertEqual(['example.tar.gz', 'example.tar.gz', 'example.zip', 'example.zip'],
+                             [Path(call[4]).name for call in checks])
+            for call in checks:
+                self.assertEqual(call[4] + '.json', call[6])
+                self.assertNotIn('--runtime-only', call)
+
+    def test_local_package_verification_preserves_prepared_toolchain(self):
+        import source_identity
+        import sdk_manifest
+        import sdk_wasm
+        from unittest.mock import patch
+        for system, processor in [('Linux', 'aarch64'), ('Emscripten', 'wasm32')]:
+            with self.subTest(system=system), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); build = root / 'output'; sdk = root / 'sdk'; sdk.mkdir()
+                (sdk / 'node/bin').mkdir(parents=True)
+                (sdk / 'node/bin/node').write_text('executor')
+                (sdk / 'sdk.json').write_text(json.dumps({'target': {'system': system, 'processor': processor},
+                                                        'recipe_id': 'retained'}))
+                calls = []
+                def run(command, **kwargs):
+                    calls.append([str(value) for value in command])
+                    if command[0] == 'cpack':
+                        (build / 'packages').mkdir()
+                        (build / 'packages/example.tar.gz').write_bytes(b'archive fixture')
+                with patch.object(builder, 'ROOT', root), patch.object(builder, 'run', side_effect=run), \
+                        patch.object(builder, 'cache_identity', return_value={}), \
+                        patch.object(builder, 'sdk_identity', return_value='verified'), \
+                        patch.object(sdk_manifest, 'verify_sdk', return_value='verified'), \
+                        patch.object(sdk_wasm, 'environment', return_value={}), \
+                        patch.object(source_identity, 'source_tree', return_value={'revision': 1}), \
+                        patch.dict(builder.os.environ, {}, clear=True):
+                    builder.main(['package', '--build-dir', str(build), '--sdk', str(sdk), '--verify-package',
+                                  *(['--gui-backends', 'wasm'] if system == 'Emscripten' else [])])
+                create, verify = [call for call in calls if str(root / 'tools/artifact.py') in call]
+                self.assertNotIn('--sdk', create)
+                self.assertEqual(str(sdk), verify[verify.index('--sdk') + 1])
+                if system == 'Emscripten':
+                    self.assertNotIn('--processor', verify)
+                else:
+                    self.assertEqual(processor, verify[verify.index('--processor') + 1])
+
+    def test_local_package_verification_propagates_failure_and_requires_packages(self):
+        import source_identity
+        from unittest.mock import patch
+        for missing in (True, False):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); build = root / 'output'
+                def run(command, **kwargs):
+                    if command[0] == 'cpack' and not missing:
+                        (build / 'packages').mkdir()
+                        (build / 'packages/example.tar.gz').write_bytes(b'archive fixture')
+                    if 'verify' in command:
+                        raise ValueError('installed consumer rejected')
+                with patch.object(builder, 'ROOT', root), patch.object(builder, 'run', side_effect=run), \
+                        patch.object(builder, 'cache_identity', return_value={}), \
+                        patch.object(source_identity, 'source_tree', return_value={'revision': 1}):
+                    with self.assertRaisesRegex(ValueError, 'no application archives' if missing else 'consumer rejected'):
+                        builder.main(['package', '--build-dir', str(build), '--verify-package'])
+        for action in ('build', 'test'):
+            with self.assertRaises(SystemExit):
+                builder.main([action, '--verify-package'])
 
     def test_mutation_during_packaging_invalidates_result(self):
         from unittest.mock import patch

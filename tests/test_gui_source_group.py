@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import tracemalloc
 import unittest
 from unittest.mock import patch
 
@@ -287,6 +288,75 @@ class SourceGroupTests(unittest.TestCase):
     def test_dirty_checkout_rejected(self):
         (self.source / 'retained.txt').write_text('changed')
         with self.assertRaises(ValueError): subject.export(self.source, self.root / 'dirty', self.foundation)
+
+
+    def test_one_guarded_group_digest_observation_per_verify(self):
+        digest = subject.archive.digest
+        with patch.object(subject.archive, 'digest', wraps=digest) as observed:
+            manifest = self.verify()
+        for name in subject.GROUP_FILES:
+            self.assertEqual(1, sum(call.args[0] == self.group / name for call in observed.call_args_list), name)
+        self.assertEqual(self.lock['source_tree'], manifest['source_tree'])
+        # No cached success crosses invocations, even for an unchanged directory.
+        with patch.object(subject.archive, 'digest', wraps=digest) as observed:
+            self.verify()
+        self.assertEqual(1, sum(call.args[0] == self.group / 'gui-inputs.tar.gz' for call in observed.call_args_list))
+
+    def test_group_change_between_hashing_and_decode_is_rejected(self):
+        identity = subject.stream_identity; changed = False
+        def mutate(stream, size):
+            nonlocal changed
+            result = identity(stream, size)
+            if not changed:
+                changed = True
+                path = self.group / 'manifest.json'
+                # Even replacing equivalent bytes invalidates this observation.
+                staged = self.group / 'replacement'; staged.write_bytes(path.read_bytes()); staged.replace(path)
+            return result
+        with patch.object(subject, 'stream_identity', side_effect=mutate), self.assertRaisesRegex(ValueError, 'changed during verification'):
+            self.verify()
+
+    def test_file_change_while_hashing_is_rejected(self):
+        path = self.source / 'retained.txt'; digest = subject.archive.digest
+        def mutate(source):
+            result = digest(source); source.write_bytes(source.read_bytes() + b'changed'); return result
+        with patch.object(subject.archive, 'digest', side_effect=mutate), self.assertRaisesRegex(ValueError, 'changed while hashing'):
+            subject.metadata(path)
+
+    def test_streamed_blob_identity_has_bounded_reads_and_exact_size(self):
+        payload = b'complete source bytes' * 200000
+        class BoundedRead(io.BytesIO):
+            def read(self, size=-1):
+                if not 0 <= size <= 1024 * 1024: raise AssertionError('unbounded member read')
+                return super().read(size)
+        digest, blob = subject.stream_identity(BoundedRead(payload), len(payload))
+        self.assertEqual(hashlib.sha256(payload).hexdigest(), digest)
+        expected = hashlib.sha1(b'blob ' + str(len(payload)).encode() + b'\0' + payload).digest()
+        self.assertEqual(expected, blob)
+        self.assertEqual(subject.tree_identity({'nested/file': (0o644, payload)}),
+                         subject.tree_from_blobs({'nested/file': (0o644, blob)}))
+        for stream, size in [(io.BytesIO(b'ab'), 3), (io.BytesIO(b'abcd'), 3)]:
+            with self.assertRaises(ValueError): subject.stream_identity(stream, size)
+
+    def test_large_member_verification_does_not_retain_whole_source_bytes(self):
+        target = self.source / 'retained.txt'
+        with target.open('wb') as output:
+            for _ in range(12): output.write(b'x' * (1024 * 1024))
+        subprocess.run(['git', '-C', str(self.source), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(self.source), 'commit', '-qm', 'Large retained fixture'], check=True)
+        self.lock['revision'] = subprocess.check_output(['git', '-C', str(self.source), 'rev-parse', 'HEAD']).decode().strip()
+        self.lock['source_tree'] = subprocess.check_output(['git', '-C', str(self.source), 'rev-parse', 'HEAD^{tree}']).decode().strip()
+        (self.foundation / 'third_party/gui-boundary.lock.json').write_bytes(subject.archive.encoded(self.lock))
+        group = self.root / 'large-group'; subject.export(self.source, group, self.foundation)
+        tracemalloc.start()
+        try:
+            subject.verify(group, foundation_root=self.foundation)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        # Generous headroom over the 1MiB chunks; old whole-member retention needs
+        # at least12MiB and then duplicates payload bytes for Git blob hashing.
+        self.assertLess(peak, 8 * 1024 * 1024, 'verification retained an entire large source member')
 
 
 if __name__ == '__main__':

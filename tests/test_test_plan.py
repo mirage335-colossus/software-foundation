@@ -577,7 +577,11 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
             with patch.object(plan, 'ROOT', source):
                 frozen = plan.candidate_plan(build)
                 self.assertEqual(frozen['scopes']['core'], ['a.core', 'b.gui'])
-                receipt = plan.candidate_run(build, 'core', root/'candidate.json')
+                with patch.object(plan, 'test_definitions', wraps=plan.test_definitions) as observe:
+                    receipt = plan.candidate_run(build, 'core', root/'candidate.json')
+                # Fresh inventory before compilation, after compilation, and after
+                # execution; no duplicate CTest subprocesses inside a phase.
+                self.assertEqual(observe.call_count, 3)
                 self.assertEqual(receipt['results'], {'a.core':'passed', 'b.gui':'passed'})
                 self.assertEqual(plan.candidate_plan(build), frozen)
 

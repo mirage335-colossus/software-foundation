@@ -168,7 +168,11 @@ def test_definitions(build):
 
 
 def inventory(build):
-    tests = sorted(item["name"] for item in test_definitions(build))
+    return test_names(test_definitions(build))
+
+
+def test_names(definitions):
+    tests = sorted(item["name"] for item in definitions)
     if not tests or len(set(tests)) != len(tests):
         raise ValueError("test inventory is empty or duplicated")
     return tests
@@ -197,6 +201,10 @@ def ctest_declarations(build):
 
 def prerequisites(build):
     """Return the complete configured mapping; old external trees keep full builds."""
+    return _prerequisites(build)
+
+
+def _prerequisites(build, tests=None):
     path = Path(build) / "test-prerequisites.json"
     if not path.exists():
         if builder.cache_identity(build).get("FOUNDATION_HAS_TEST_PREREQUISITES") == "ON":
@@ -207,7 +215,7 @@ def prerequisites(build):
             not isinstance(value["tests"], dict)):
         raise ValueError("invalid test prerequisite inventory")
     mapping = value["tests"]
-    if sorted(mapping) != inventory(build):
+    if sorted(mapping) != (inventory(build) if tests is None else tests):
         raise ValueError("test prerequisite inventory differs from complete CTest inventory")
     validate_prerequisites(mapping)
     return mapping
@@ -238,15 +246,21 @@ def compile_targets(programs, environment, build, targets, jobs):
 
 
 def configuration_id(build, *, declared_commands=False):
+    definitions = test_definitions(build)
+    mapping = _prerequisites(build, test_names(definitions))
+    return _configuration_id(build, definitions, mapping, declared_commands=declared_commands)
+
+
+def _configuration_id(build, tests, mapping, *, declared_commands=False):
+    # Reuse one complete CTest observation only inside this verification phase.
+    # Callers take a fresh observation after compilation and after execution.
     build = build.resolve()
     inputs = build_inputs(build)
     # Normalize checkout/build locations while preserving actual compiler and
     # retained-input digests, complete cache values and external locations.
     normalized = normalize_locations(inputs, build)
     info = (build / "build-info.txt").read_text()
-    tests = test_definitions(build)
     identity = {"inputs": normalized, "build_info": info, "tests": tests}
-    mapping = prerequisites(build)
     if mapping is not None:
         identity["prerequisites"] = mapping
     if declared_commands:
@@ -408,6 +422,10 @@ CANDIDATE_SCOPES = ("core", "tools", "integration")
 
 
 def candidate_plan(build):
+    return _candidate_observation(build)[0]
+
+
+def _candidate_observation(build):
     definitions = test_definitions(build)
     assignments = {scope: [] for scope in CANDIDATE_SCOPES}
     for item in definitions:
@@ -426,11 +444,13 @@ def candidate_plan(build):
             any(not name.startswith("tools.") or name in tests or not isinstance(reason, str) or not reason
                 for name, reason in platform["excluded_suites"].items())):
         raise ValueError("invalid explicit platform exclusions")
-    value = dict(schema_version=1, source=source_id(build), configuration=configuration_id(build, declared_commands=True),
+    mapping = _prerequisites(build, tests)
+    value = dict(schema_version=1, source=source_id(build),
+                 configuration=_configuration_id(build, definitions, mapping, declared_commands=True),
                  tests=tests, scopes={key: sorted(value) for key, value in assignments.items()},
                  platform_exclusions=platform["excluded_suites"], timeouts=test_timeouts(definitions))
     value["id"] = digest(value)
-    return value
+    return value, mapping
 
 
 def candidate_prerequisite_inputs(build):
@@ -457,9 +477,8 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None, summary=None
     compile_jobs = build_jobs or selected_compile_jobs(os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL"))
     started = time.monotonic()
     before = candidate_prerequisite_inputs(build)
-    frozen = candidate_plan(build)
+    frozen, mapping = _candidate_observation(build)
     programs, environment = execution_context(build)
-    mapping = prerequisites(build)
     targets = selected_targets(mapping, frozen["scopes"][scope]) if mapping is not None else ["foundation-tests-" + scope]
     compile_targets(programs, environment, build, targets, compile_jobs)
     compiled_at = time.monotonic()

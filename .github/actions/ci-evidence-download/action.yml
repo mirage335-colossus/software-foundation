@@ -35,6 +35,9 @@ runs:
         path = Path(os.environ['ARTIFACT_DIRECTORY']).absolute()
         if path.exists() or path.is_symlink():
             raise SystemExit('artifact download directory must be new')
+        # An empty current-attempt download is meaningful during a retry.
+        # Historical selection remains independently authenticated by ci_retry.
+        path.mkdir(parents=True)
         value = str(path)
         if any(c in value for c in '\r\n'):
             raise SystemExit('artifact download path must occupy one line')
