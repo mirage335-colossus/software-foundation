@@ -38,7 +38,8 @@ class RustBuildTests(unittest.TestCase):
         self.sysroot = self.root / 'retained sysroot'
         self.libdir = self.sysroot / 'lib/rustlib/x86_64-unknown-linux-gnu/lib'
         self.libdir.mkdir(parents=True)
-        for name in ('libcore-identified.rlib', 'libcompiler_builtins-identified.rlib'):
+        for name in ('libcore-identified.rlib', 'libcompiler_builtins-identified.rlib',
+                     'libstd-a5a48102fbd58791.rlib', 'libtest-8bb3380c32c2be31.rlib'):
             (self.libdir / name).write_bytes(name.encode())
         self.notice = self.root / 'copyright'
         self.notice.write_text('Complete retained compiler support license\n', encoding='utf-8')
@@ -112,7 +113,7 @@ class RustBuildTests(unittest.TestCase):
         self.assertEqual(data['source_inputs'], sorted(data['sources']))
         self.assertEqual(len([path for path in data['source_inputs'] if str(self.source / 'rust') in path]), 4)
         self.assertIn(str(Path(rust_build.__file__).resolve()), data['source_inputs'])
-        self.assertEqual(len(data['target_libraries']), 2)
+        self.assertEqual(len(data['target_libraries']), 4)
         self.assertEqual(data['native_static_libs'], ['gcc_s', 'util', 'rt', 'pthread', 'm', 'dl', 'c'])
         self.assertEqual(data['notice_files'], [str(self.notice)])
         metadata_call = next(row for row in self.calls if 'metadata' in row[0])
@@ -261,6 +262,202 @@ class RustBuildTests(unittest.TestCase):
             (self.crate / 'src/foreign.rs').unlink()
         with self.assertRaisesRegex(ValueError, 'outside the Rust source tree'):
             rust_build.describe(str(self.source), str(self.source / 'rust/target'), self.target, **self.tools)
+
+    def distro_layout(self):
+        usr = self.root / 'usr'
+        self.sysroot.rename(usr)
+        self.sysroot = usr
+        self.libdir = usr / 'lib/rustlib' / self.target / 'lib'
+        (usr / 'bin').mkdir()
+        for name in ('cargo', 'rustc'):
+            destination = usr / 'bin' / name
+            shutil.copy2(self.tools[name], destination)
+            self.tools[name] = str(destination)
+        (usr / 'bin/dpkg-query').write_bytes(b'identified package ownership tool')
+        runtime = usr / 'lib/x86_64-linux-gnu'
+        runtime.mkdir()
+        self.owners = {self.tools['rustc']: 'rustc'}
+        self.versions = {package: '1.63.0+dfsg1-2' for package in
+                         ('rustc', 'libstd-rust-dev:amd64', 'libstd-rust-1.63:amd64')}
+        self.statuses = {}
+        self.runtime_links = []
+        for rlib in sorted(self.libdir.glob('libstd-*.rlib')) + sorted(self.libdir.glob('libtest-*.rlib')):
+            link = rlib.with_suffix('.so')
+            destination = runtime / link.name
+            destination.write_bytes(link.name.encode())
+            link.symlink_to('../../../x86_64-linux-gnu/' + link.name)
+            self.owners[str(link)] = 'libstd-rust-dev:amd64'
+            self.owners[str(destination)] = 'libstd-rust-1.63:amd64'
+            self.runtime_links.append((link, destination))
+        self.distro_notices = []
+        for name in ('libstd-rust-dev', 'libstd-rust-1.63'):
+            notice = usr / 'share/doc' / name / 'copyright'
+            notice.parent.mkdir(parents=True)
+            notice.write_text('Complete ' + name + ' copyright\n', encoding='utf-8')
+            self.distro_notices.append(notice)
+        for mock in (patch.object(rust_build, 'DISTRO_USR', usr),
+                     patch.object(rust_build.package_notices, 'command', side_effect=self.distro_query)):
+            mock.start()
+            self.addCleanup(mock.stop)
+
+    def distro_query(self, query, operation, *args):
+        self.assertEqual(query, str(self.sysroot / 'bin/dpkg-query'))
+        if operation == '-S':
+            path = args[0]
+            if path not in self.owners:
+                raise subprocess.CalledProcessError(1, [query, operation, path])
+            package = self.owners[path]
+            return package + ': ' + path
+        self.assertEqual(operation, '-W')
+        self.assertEqual(args[0], '-f=${db:Status-Abbrev}\n${Version}')
+        return self.statuses.get(args[1], 'ii ') + '\n' + self.versions.get(args[1], '1.63.0+dfsg1-2')
+
+    def test_native_distro_links_bind_owners_versions_link_and_runtime_notices(self):
+        self.distro_layout()
+        data = self.built()
+        self.assertEqual(len(data['target_libraries']), 6)
+        for link, target in self.runtime_links:
+            row = data['target_libraries'][str(link)]
+            self.assertEqual(row['path'], str(link))
+            self.assertEqual(row['link'], os.readlink(link))
+            self.assertEqual(row['target'], rust_build._snapshot(target))
+            self.assertEqual(row['compiler_package'], {'package': 'rustc', 'version': '1.63.0+dfsg1-2'})
+            self.assertEqual(row['target_package']['package'], 'libstd-rust-1.63:amd64')
+        self.assertEqual(data['notice_files'], sorted(map(str, [self.notice] + self.distro_notices)))
+        with patch.dict(os.environ, {}, clear=True), patch.object(rust_build, '_run', side_effect=self.fake_run):
+            self.fake_fresh = True
+            rust_build.build(str(self.config_path))
+            rust_build.test(str(self.config_path))
+        rust_build.verify(str(self.config_path))
+
+    def test_retained_target_libraries_still_reject_native_distro_links(self):
+        self.distro_layout()
+        with self.assertRaisesRegex(ValueError, 'must not contain symlinks'):
+            rust_build._target_libraries(self.libdir)
+
+    def test_native_distro_bad_dangling_escaping_chained_and_special_link_targets(self):
+        self.distro_layout()
+        link, target = self.runtime_links[0]
+        original = os.readlink(link)
+        foreign = self.root / link.name
+        foreign.write_bytes(b'foreign runtime')
+        for text in ('missing-runtime.so', str(foreign), str(target.parent / 'other-name.so')):
+            link.unlink()
+            link.symlink_to(text)
+            with self.subTest(target=text), self.assertRaisesRegex(ValueError, 'invalid native Rust library link'):
+                self.describe()
+        link.unlink()
+        link.symlink_to(original)
+        target.unlink()
+        with self.assertRaisesRegex(ValueError, 'invalid native Rust library link'):
+            self.describe()
+        target.symlink_to(foreign)
+        with self.assertRaisesRegex(ValueError, 'invalid native Rust library link'):
+            self.describe()
+        target.unlink()
+        os.mkfifo(target)
+        with self.assertRaisesRegex(ValueError, 'invalid native Rust library link'):
+            self.describe()
+
+    def test_native_distro_directory_links_and_other_library_names_are_not_allowed(self):
+        self.distro_layout()
+        link, _ = self.runtime_links[0]
+        link.rename(link.with_name('libforeign-1234.so'))
+        with self.assertRaisesRegex(ValueError, 'unsupported native Rust library link layout'):
+            self.describe()
+        link.with_name('libforeign-1234.so').unlink()
+        (self.libdir / 'foreign-directory').symlink_to(self.libdir, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'unsupported native Rust library link layout'):
+            self.describe()
+
+    def test_native_distro_package_ambiguity_unowned_wrong_owner_and_versions_fail(self):
+        self.distro_layout()
+        link, target = self.runtime_links[0]
+        for path, owner in ((link, 'foreign:amd64'), (target, 'libstd-rust-1.63:arm64'),
+                            (link, 'libstd-rust-dev:amd64: ' + str(link) + '\nforeign')):
+            original = self.owners[str(path)]
+            self.owners[str(path)] = owner
+            with self.subTest(owner=owner), self.assertRaisesRegex(ValueError, 'package ownership|package owners or versions differ'):
+                self.describe()
+            self.owners[str(path)] = original
+        original = self.owners.pop(str(link))
+        with self.assertRaisesRegex(ValueError, 'package ownership is unavailable'):
+            self.describe()
+        self.owners[str(link)] = original
+        for package in self.versions:
+            previous = self.versions[package]
+            self.versions[package] = '1.63.0+dfsg1-3'
+            with self.subTest(package=package), self.assertRaisesRegex(ValueError, 'package owners or versions differ'):
+                self.describe()
+            self.versions[package] = previous
+        self.statuses['libstd-rust-dev:amd64'] = 'rc '
+        with self.assertRaisesRegex(ValueError, 'package is not installed'):
+            self.describe()
+        self.statuses.clear()
+        self.versions['rustc'] = '1.63.0+dfsg1-2\nambiguous version'
+        with self.assertRaisesRegex(ValueError, 'one identified version'):
+            self.describe()
+
+    def test_native_distro_changed_target_and_retargeted_link_block_all_operations(self):
+        self.distro_layout()
+        self.built()
+        link, target = self.runtime_links[0]
+        original = target.read_bytes()
+        target.write_bytes(original + b'changed')
+        for operation in (rust_build.build, rust_build.test, rust_build.verify):
+            with self.subTest(operation=operation.__name__), patch.object(rust_build, '_run') as command:
+                with self.assertRaisesRegex(ValueError, 'target library inputs changed'):
+                    operation(str(self.config_path))
+                command.assert_not_called()
+        target.write_bytes(original)
+        self.config_path.unlink()
+        rust_build.save_config(self.config_path, self.describe())
+        link.unlink()
+        link.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, 'target library inputs changed'):
+            rust_build.test(str(self.config_path))
+
+    def test_native_distro_ownership_changes_and_missing_harness_family_invalidate_inputs(self):
+        self.distro_layout()
+        self.configured()
+        self.versions = {package: '1.63.0+dfsg1-3' for package in self.versions}
+        with self.assertRaisesRegex(ValueError, 'target library inputs changed'):
+            rust_build.build(str(self.config_path))
+        for link, _ in self.runtime_links:
+            if link.name.startswith('libtest-'):
+                link.unlink()
+        with self.assertRaisesRegex(ValueError, 'incomplete native Rust distro runtime library family'):
+            self.describe()
+        (self.libdir / 'libtest-8bb3380c32c2be31.rlib').unlink()
+        with self.assertRaisesRegex(ValueError, 'missing matched libtest'):
+            self.describe()
+
+    def test_native_distro_target_replacement_during_ownership_queries_is_rejected(self):
+        self.distro_layout()
+        link, target = self.runtime_links[0]
+        foreign = self.root / target.name
+        foreign.write_bytes(b'foreign target substituted during package query')
+        def retarget(query, operation, *args):
+            result = self.distro_query(query, operation, *args)
+            if operation == '-S' and args[0] == str(target):
+                target.unlink()
+                target.symlink_to(foreign)
+            return result
+        with patch.object(rust_build.package_notices, 'command', side_effect=retarget):
+            with self.assertRaisesRegex(ValueError, 'link or target changed while identified'):
+                rust_build._distro_library_link(link, self.libdir, self.target,
+                                               self.tools['rustc'], '1.63.0')
+
+    def test_native_distro_link_text_cannot_hide_intermediate_symlink_traversal(self):
+        self.distro_layout()
+        link, _ = self.runtime_links[0]
+        intermediate = self.libdir / 'intermediate'
+        intermediate.symlink_to(self.root, target_is_directory=True)
+        link.unlink()
+        link.symlink_to('intermediate/../../../../x86_64-linux-gnu/' + link.name)
+        with self.assertRaisesRegex(ValueError, 'invalid native Rust library link'):
+            rust_build._distro_library_link(link, self.libdir, self.target,
+                                           self.tools['rustc'], '1.63.0')
 
     def test_native_linkage_rejects_search_paths_dynamic_rust_and_unknown_flags(self):
         self.assertEqual(rust_build.parse_native_static_libs('note: native-static-libs: -lm -lm -lc\n', 'Linux'), ['m', 'c'])

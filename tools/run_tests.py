@@ -31,6 +31,17 @@ def inapplicable(case, system):
         return 'Native Win32 linker file identity inspection belongs to Windows runners.'
     if system != 'Linux' and name.startswith('test_sdk.NativeLinuxToolchainTests.'):
         return 'Native Linux retained C/C++ compiler fixture belongs to Linux runners.'
+    if system != 'Linux' and name in {
+            'test_rust_build.RustBuildTests.test_native_distro_links_bind_owners_versions_link_and_runtime_notices',
+            'test_rust_build.RustBuildTests.test_retained_target_libraries_still_reject_native_distro_links',
+            'test_rust_build.RustBuildTests.test_native_distro_bad_dangling_escaping_chained_and_special_link_targets',
+            'test_rust_build.RustBuildTests.test_native_distro_directory_links_and_other_library_names_are_not_allowed',
+            'test_rust_build.RustBuildTests.test_native_distro_package_ambiguity_unowned_wrong_owner_and_versions_fail',
+            'test_rust_build.RustBuildTests.test_native_distro_changed_target_and_retargeted_link_block_all_operations',
+            'test_rust_build.RustBuildTests.test_native_distro_ownership_changes_and_missing_harness_family_invalidate_inputs',
+            'test_rust_build.RustBuildTests.test_native_distro_target_replacement_during_ownership_queries_is_rejected',
+            'test_rust_build.RustBuildTests.test_native_distro_link_text_cannot_hide_intermediate_symlink_traversal'}:
+        return 'Native Debian Rust symlink and package-ownership fixtures belong to Linux runners; retained SDK and Windows ownership checks remain required.'
     if system != 'Linux' and name == 'test_release_check.ReleaseCheckTests.test_apt_timeout_stops_descendant_before_cleanup':
         return 'Native Linux APT descendant fixture belongs to Linux runners.'
     if system != 'Linux' and name.startswith('test_process_tree.LinuxSubreaper.'):

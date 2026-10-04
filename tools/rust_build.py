@@ -34,11 +34,18 @@ NATIVE_LIBRARIES = {
     'Emscripten': set(),
 }
 MAX_OUTPUT = 16 * 1024 * 1024
+DISTRO_USR = Path('/usr')
+DISTRO_TARGETS = {'x86_64-unknown-linux-gnu': ('x86_64-linux-gnu', 'amd64'),
+                  'aarch64-unknown-linux-gnu': ('aarch64-linux-gnu', 'arm64')}
 CONFIG_FIELDS = {'schema_version', 'source_root', 'build_dir', 'target', 'system',
                  'profile', 'tools', 'sysroot', 'target_libdir', 'target_libraries',
                  'source_inputs', 'sources', 'flags', 'artifact_path', 'receipt_path',
                  'native_static_libs', 'notice_files', 'notices', 'sdk_root',
                  'cpp_sdk_root', 'sdk_manifest', 'cpp_sdk_manifest', 'metadata'}
+
+
+def _file_identity(value):
+    return [value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns]
 
 
 def _snapshot(path):
@@ -53,11 +60,9 @@ def _snapshot(path):
     with path.open('rb') as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b''):
             digest.update(chunk)
-    identity = lambda value: [value.st_dev, value.st_ino, value.st_size,
-                              value.st_mtime_ns, value.st_ctime_ns]
-    if identity(path.stat()) != identity(before):
+    if _file_identity(path.stat()) != _file_identity(before):
         raise ValueError('Rust input changed while identified: ' + str(path))
-    return {'path': str(path), 'sha256': digest.hexdigest(), 'identity': identity(before)}
+    return {'path': str(path), 'sha256': digest.hexdigest(), 'identity': _file_identity(before)}
 
 
 def native_tool_identity(cargo, rustc):
@@ -227,19 +232,103 @@ def _sources(root, sdk=False):
     return {str(path): _snapshot(path) for path in paths}
 
 
-def _target_libraries(directory):
+def _distro_package(path):
+    query = str(DISTRO_USR / 'bin/dpkg-query')
+    try:
+        rows = package_notices.command(query, '-S', str(path)).splitlines()
+        if len(rows) != 1 or ': ' not in rows[0]:
+            raise ValueError('ambiguous package ownership')
+        package, owned = rows[0].rsplit(': ', 1)
+        if (not re.fullmatch(r'[a-z0-9][a-z0-9+.-]*(?::[a-z0-9]+)?', package)
+                or owned != str(path)):
+            raise ValueError('package ownership names a different input')
+        status = package_notices.command(query, '-W', '-f=${db:Status-Abbrev}\n${Version}', package)
+        lines = status.splitlines()
+        if len(lines) != 2 or lines[0] != 'ii ' or not lines[1] or lines[1].strip() != lines[1]:
+            raise ValueError('package is not installed with one identified version')
+        return {'package': package, 'version': lines[1]}
+    except (ValueError, subprocess.SubprocessError, OSError) as error:
+        raise ValueError('native Rust package ownership is unavailable: ' + str(path)
+                         + '; prepare a retained Rust SDK (' + str(error) + ')') from error
+
+
+def _distro_library_link(path, directory, target, rustc, compiler_version):
+    if target not in DISTRO_TARGETS:
+        raise ValueError('unsupported native Rust library link layout; prepare a retained Rust SDK')
+    multiarch, architecture = DISTRO_TARGETS[target]
+    expected_directory = DISTRO_USR / 'lib/rustlib' / target / 'lib'
+    if (directory != expected_directory or path.parent != directory
+            or expected_directory.resolve(strict=True) != expected_directory
+            or Path(rustc) != DISTRO_USR / 'bin/rustc'
+            or not re.fullmatch(r'lib(?:std|test)-[0-9a-f]+\.so', path.name)):
+        raise ValueError('unsupported native Rust library link layout; prepare a retained Rust SDK')
+    before = path.lstat()
+    if not stat.S_ISLNK(before.st_mode):
+        raise ValueError('native Rust library input stopped being a link')
+    text = os.readlink(path)
+    expected = DISTRO_USR / 'lib' / multiarch / path.name
+    try:
+        target_before = expected.lstat()
+        if (text not in ('../../../' + multiarch + '/' + path.name, str(expected))
+                or path.resolve(strict=True) != expected or expected.resolve(strict=True) != expected
+                or not stat.S_ISREG(target_before.st_mode)):
+            raise ValueError('link must name the matched ordinary distro runtime file')
+    except (ValueError, OSError, RuntimeError) as error:
+        raise ValueError('invalid native Rust library link: ' + str(path)
+                         + '; prepare a retained Rust SDK (' + str(error) + ')') from error
+    ownership_tool = _snapshot(_absolute(DISTRO_USR / 'bin/dpkg-query',
+                                        'native Rust package ownership tool', existing=True))
+    compiler = _distro_package(Path(rustc))
+    link = _distro_package(path)
+    runtime = _distro_package(expected)
+    runtime_name = 'libstd-rust-' + '.'.join(compiler_version.split('.')[:2])
+    if (compiler['package'] not in ('rustc', 'rustc:' + architecture)
+            or link['package'] != 'libstd-rust-dev:' + architecture
+            or runtime['package'] != runtime_name + ':' + architecture
+            or compiler['version'] != link['version'] or compiler['version'] != runtime['version']):
+        raise ValueError('native Rust compiler and library package owners or versions differ; '
+                         'prepare a retained Rust SDK')
+    result = {'path': str(path), 'link': text, 'identity': _file_identity(before),
+              'target': _snapshot(expected), 'compiler_package': compiler,
+              'link_package': link, 'target_package': runtime,
+              'ownership_tool': ownership_tool}
+    link_after, target_after = path.lstat(), expected.lstat()
+    if (not stat.S_ISLNK(link_after.st_mode) or _file_identity(link_after) != result['identity']
+            or os.readlink(path) != text or path.resolve(strict=True) != expected
+            or not stat.S_ISREG(target_after.st_mode)
+            or expected.resolve(strict=True) != expected or result['target']['path'] != str(expected)
+            or _file_identity(target_after) != _file_identity(target_before)
+            or _file_identity(target_after) != result['target']['identity']
+            or _snapshot(ownership_tool['path']) != ownership_tool):
+        raise ValueError('native Rust library link or target changed while identified')
+    return result
+
+
+def _target_libraries(directory, native_target=None, native_rustc=None, compiler_version=None):
     directory = _absolute(directory, 'Rust target library directory', existing=True)
     result = {}
     for path in sorted(directory.rglob('*')):
         if path.is_symlink():
-            raise ValueError('Rust target libraries must not contain symlinks')
-        if path.is_file():
+            if native_target is None:
+                raise ValueError('Rust target libraries must not contain symlinks')
+            result[str(path)] = _distro_library_link(path, directory, native_target,
+                                                    native_rustc, compiler_version)
+        elif path.is_file():
             result[str(path)] = _snapshot(path)
         elif not path.is_dir():
             raise ValueError('Rust target libraries contain a special entry')
-    for prefix in ('libcore-', 'libcompiler_builtins-'):
+    required = ('libcore-', 'libcompiler_builtins-')
+    if native_target:
+        required += ('libstd-', 'libtest-')
+    for prefix in required:
         if not any(Path(path).name.startswith(prefix) and path.endswith('.rlib') for path in result):
             raise ValueError('missing matched ' + prefix[:-1] + ' target library; prepare the exact target')
+    links = [row for row in result.values() if 'link' in row]
+    if links:
+        families = [Path(row['path']).name.split('-', 1)[0] for row in links]
+        if sorted(families) != ['libstd', 'libtest'] or any(
+                str(Path(row['path']).with_suffix('.rlib')) not in result for row in links):
+            raise ValueError('incomplete native Rust distro runtime library family; prepare a retained Rust SDK')
     return result
 
 
@@ -320,6 +409,11 @@ def _notices(sdk, tools, libraries, metadata=None):
                      if Path(path).name.startswith(('libcore-', 'libcompiler_builtins-'))]:
             _, notice = package_notices.distro_notice(path)
             paths.add(notice)
+        for row in libraries.values():
+            if 'link' in row:
+                for provider in ('link_package', 'target_package'):
+                    package = row[provider]['package'].split(':', 1)[0]
+                    paths.add(package_notices.regular(DISTRO_USR / 'share/doc' / package / 'copyright'))
     notices = {str(path): _snapshot(path) for path in sorted(paths)}
     # Distro notices can reference separately installed complete license texts.
     for path in list(notices):
@@ -394,7 +488,8 @@ def describe(source_root, build_dir, target, cargo, rustc, profile='debug', sdk_
     if sdk and (Path(sysroot) != (Path(sdk) / manifest['compiler']['sysroot']).resolve(strict=True)
                 or Path(libdir) != (Path(sdk) / manifest['target']['library_directory']).resolve(strict=True)):
         raise ValueError('Rust compiler target libraries differ from its retained SDK')
-    libraries = _target_libraries(libdir)
+    libraries = _target_libraries(libdir, None if sdk else target,
+                                 tools['rustc']['path'], version)
     flags = _flags(target, sysroot)
     environment = child_environment(build, tools['cargo']['path'], tools['rustc']['path'], flags)
     metadata = _metadata(root, tools['cargo']['path'], environment, build)
@@ -422,7 +517,8 @@ def _unchanged(config):
     for name, row in config['tools'].items():
         if _snapshot(row['path']) != {key: row[key] for key in ('path', 'sha256', 'identity')}:
             raise ValueError('selected Rust tool changed; use a fresh configured build tree')
-    if _target_libraries(config['target_libdir']) != config['target_libraries']:
+    if _target_libraries(config['target_libdir'], None if config['sdk_root'] else config['target'],
+                         config['tools']['rustc']['path'], config['tools']['rustc']['version']) != config['target_libraries']:
         raise ValueError('Rust target library inputs changed; reconfigure with the verified SDK')
     if any(_snapshot(path) != row for path, row in config['notices'].items()):
         raise ValueError('Rust dependency notice inputs changed')

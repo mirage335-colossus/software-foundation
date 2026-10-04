@@ -69,6 +69,43 @@ class RunnerTests(unittest.TestCase):
                      'test_wrong_pin_changed_source_legacy_group_and_tampered_stage_fail'):
             self.assertIsNone(runner.inapplicable(Named('test_import_wasm.ImportWasmTests.' + name), 'Windows'))
 
+    def test_native_rust_distro_exclusions_partition_complete_inventory_without_skips(self):
+        native = {'test_native_distro_links_bind_owners_versions_link_and_runtime_notices',
+                  'test_retained_target_libraries_still_reject_native_distro_links',
+                  'test_native_distro_bad_dangling_escaping_chained_and_special_link_targets',
+                  'test_native_distro_directory_links_and_other_library_names_are_not_allowed',
+                  'test_native_distro_package_ambiguity_unowned_wrong_owner_and_versions_fail',
+                  'test_native_distro_changed_target_and_retargeted_link_block_all_operations',
+                  'test_native_distro_ownership_changes_and_missing_harness_family_invalidate_inputs',
+                  'test_native_distro_target_replacement_during_ownership_queries_is_rejected',
+                  'test_native_distro_link_text_cannot_hide_intermediate_symlink_traversal'}
+        module_spec = importlib.util.spec_from_file_location(
+            'test_rust_build', Path(__file__).with_name('test_rust_build.py'))
+        module = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(module)
+        cases = list(runner.flatten(unittest.defaultTestLoader.loadTestsFromModule(module)))
+        expected = {'test_rust_build.RustBuildTests.' + name for name in native}
+        self.assertTrue(expected.issubset({case.id() for case in cases}))
+        for case in cases:
+            self.assertFalse(getattr(case, '__unittest_skip__', False))
+            self.assertFalse(getattr(getattr(case, case._testMethodName), '__unittest_skip__', False))
+        class InventoryCase(unittest.TestCase):
+            def __init__(self, name):
+                super().__init__()
+                self.name = name
+            def id(self):
+                return self.name
+            def runTest(self):
+                self.assertTrue(self.name.startswith('test_rust_build.'))
+        for system in ('Linux', 'Windows', 'Darwin'):
+            result = runner.execute(unittest.TestSuite(InventoryCase(case.id()) for case in cases),
+                                    system=system, stream=io.StringIO())
+            self.assertEqual(result['status'], 'passed')
+            self.assertEqual(set(result['excluded']), set() if system == 'Linux' else expected)
+            self.assertFalse(set(result['excluded']) & set(result['results']))
+            self.assertEqual(set(result['inventory']), set(result['excluded']) | set(result['results']))
+            self.assertTrue(all(row['status'] == 'passed' for row in result['results'].values()))
+
 
 if __name__ == '__main__':
     unittest.main()
