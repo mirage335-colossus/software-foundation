@@ -1,11 +1,16 @@
 # Retained Rust SDK extensions
 
-The optional Rust provider consumes a separate `FOUNDATION_RUST_SDK_ROOT`, paired
+The default Rust provider consumes a separate `FOUNDATION_RUST_SDK_ROOT`, paired
 with the application's retained C++ SDK or Windows MSVC dependency SDK. These
 recipes use official Rust distribution archives, Rust 1.63.0 and Cargo 1.63.0.
 Cargo's distribution package reports `0.64.0`; the executable reports `1.63.0`.
 No rustup installation, user toolchain override, or application crate download
 belongs in an ordinary build.
+
+SDK-free native `dev` builds may instead use Debian-family package-owned Rust
+tools and complete distribution notices. Every other supported profile needs
+this retained extension. `--core-provider cpp` is the explicit legacy route;
+unavailable Rust inputs never silently select it.
 
 | Recipe | Host | Target |
 | --- | --- | --- |

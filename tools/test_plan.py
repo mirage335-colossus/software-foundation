@@ -115,6 +115,7 @@ def build_inputs(build):
             raise ValueError("configured compiler/options changed outside the build wrapper")
     elif configured.exists():
         raise ValueError("configured build receipt is missing its wrapper identity")
+    # Pre-provider build trees remain C++; the current configure default is irrelevant.
     provider = cache.get("FOUNDATION_CORE_PROVIDER", "cpp")
     if provider not in ("cpp", "rust"):
         raise ValueError("unknown configured core provider")

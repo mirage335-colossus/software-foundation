@@ -14,6 +14,11 @@ gh workflow run screenshots.yml --repo mirage335-colossus/software-foundation \
   -f source=base -f jobs=auto -f linux_pool=standard -f execute=false
 
 Replace placeholders with reviewed existing inputs; missing groups fail.
+core_provider defaults rust. The exact checked-in native/Wasm Rust recipes are
+derived unless native_rust_recipe/wasm_rust_recipe are supplied. Their complete
+retained groups must exist in rust_source=base (default). For rust_source=retained,
+supply rust_retained_inputs with exact native and wasm Rust producer requests.
+Explicit core_provider=cpp selects the historical Rust-free capture route.
 Optional tag must be a new screenshots- tag; empty uses the run and attempt.
 For source=retained, also supply retained_inputs with exact native and wasm
 version-2 requests, and the corresponding exact gui_input selector.

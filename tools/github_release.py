@@ -33,6 +33,7 @@ if TOOLS not in sys.path:
     sys.path.insert(0, TOOLS)
 import dependency_archive as archive
 import dependency_store as store
+import rust_sdk
 import release
 import certify_release as certification
 coverage = certification.coverage
@@ -939,12 +940,13 @@ def download_files(remote, assets, selections, *, _completed=None):
                 _completed(futures[future])  # Coordinator only; never a transfer worker.
 
 
-def _fetch_base_groups(repository, recipes, output, *, transport, binary_only, single):
+def _fetch_base_groups(repository, recipes, output, *, transport, binary_only, single,
+                       group_store=store):
     if type(binary_only) is not bool: raise DeliveryError('binary-only selection must be boolean')
     if (not isinstance(recipes, (list, tuple)) or not recipes or
             any(not isinstance(recipe, str) for recipe in recipes) or len(set(recipes)) != len(recipes)):
         raise DeliveryError('expected distinct nonempty SDK recipe identities')
-    expected = {recipe: store.names(recipe) for recipe in recipes}
+    expected = {recipe: group_store.names(recipe) for recipe in recipes}
     output = Path(output)
     if output.exists() or output.is_symlink():
         raise DeliveryError('fetch destination must be new')
@@ -971,7 +973,8 @@ def _fetch_base_groups(repository, recipes, output, *, transport, binary_only, s
             owners.update((name, recipe) for name in selected)
         def verify(recipe):
             group = groups[recipe]
-            files = store.verify_binary_group(group, recipe) if binary_only else store.verify_group(group, recipe)
+            files = (group_store.verify_binary_group(group, recipe) if binary_only else
+                     group_store.verify_group(group, recipe))
             if any(assets[name]['digest'] != 'sha256:' + files[name] for name in expected[recipe]):
                 raise DeliveryError('base assets differ from complete checksum inventory')
             return dict(fetched=True, recipe=recipe, files=files,
@@ -1006,11 +1009,24 @@ def fetch_bases(repository, recipes, output, *, transport=None, binary_only=Fals
                               binary_only=binary_only, single=False)
 
 
-def publish_base(repository, recipe, group, source_commit, *, execute=False, transport=None):
-    files = store.verify_group(group, recipe)
+def fetch_rust_base(repository, recipe, output, *, transport=None):
+    """Fetch and verify the exact complete retained Rust extension group."""
+    return _fetch_base_groups(repository, [recipe], output, transport=transport,
+                              binary_only=False, single=True, group_store=rust_sdk)[recipe]
+
+
+def fetch_rust_bases(repository, recipes, output, *, transport=None):
+    """Fetch complete Rust recipe subdirectories using one base inventory."""
+    return _fetch_base_groups(repository, recipes, output, transport=transport,
+                              binary_only=False, single=False, group_store=rust_sdk)
+
+
+def _publish_base_group(repository, recipe, group, source_commit, *, execute, transport,
+                        group_store, operation):
+    files = group_store.verify_group(group, recipe)
     if not OID.fullmatch(source_commit):
         raise DeliveryError('complete source commit required')
-    result = plan('publish-base', repository, recipe=recipe, source_commit=source_commit, files=files,
+    result = plan(operation, repository, recipe=recipe, source_commit=source_commit, files=files,
                   lifecycle='prerelease; never Latest; immutable complete group')
     if not execute:return result
     remote = Remote(repository, transport)
@@ -1042,7 +1058,7 @@ def publish_base(repository, recipe, group, source_commit, *, execute=False, tra
             if not info['draft'] or not info['prerelease'] or info['name']!='base':
                 raise DeliveryError('created base does not match requested draft lifecycle')
             remote.wait_find('base', release_id=info['id'])
-        binary, source, checksum = store.names(recipe)
+        binary, source, checksum = group_store.names(recipe)
         upload_files(remote, 'base', [Path(group) / name for name in (binary, source)], release_info=info)
         remote.upload_to(info, Path(group) / checksum)  # Complete group marker follows joined payloads.
         current = remote.find('base'); assets = remote.assets(current)
@@ -1052,8 +1068,8 @@ def publish_base(repository, recipe, group, source_commit, *, execute=False, tra
             raise DeliveryError('base inventory changed unexpectedly')
         with tempfile.TemporaryDirectory(prefix='base-confirm-') as temporary:
             download_files(remote, assets, [(name, Path(temporary) / name, files[name]) for name in files])
-            if store.verify_group(temporary, recipe) != files:raise DeliveryError('uploaded group differs')
-        if store.verify_group(group, recipe) != files:raise DeliveryError('local dependency group changed')
+            if group_store.verify_group(temporary, recipe) != files:raise DeliveryError('uploaded group differs')
+        if group_store.verify_group(group, recipe) != files:raise DeliveryError('local dependency group changed')
         remote.unchanged('base', current, assets, reference)
         if current['draft']:
             remote.change(f'/releases/{current["id"]}', method='PATCH', body={'draft':False,'prerelease':True,'make_latest':'false'})
@@ -1065,6 +1081,17 @@ def publish_base(repository, recipe, group, source_commit, *, execute=False, tra
         if remote.reference('base') != reference:raise DeliveryError('base tag identity changed')
         return dict(result, execute=True, reused=False, release_id=final['id'])
     return run_mutation(remote, act)
+
+
+def publish_base(repository, recipe, group, source_commit, *, execute=False, transport=None):
+    return _publish_base_group(repository, recipe, group, source_commit, execute=execute,
+                               transport=transport, group_store=store, operation='publish-base')
+
+
+def publish_rust_base(repository, recipe, group, source_commit, *, execute=False, transport=None):
+    """Plan or append an immutable complete retained Rust extension group."""
+    return _publish_base_group(repository, recipe, group, source_commit, execute=execute,
+                               transport=transport, group_store=rust_sdk, operation='publish-rust-base')
 
 
 def publish_candidate(repository, tag, directory, source_commit, packager_commit, publication_id,
@@ -1284,7 +1311,8 @@ def promote(repository,tag,directory,delivery,policy,profile,run_id,attempt,cert
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=('fetch-base','publish-base','publish-candidate','attach-certificate','promote'))
+    parser.add_argument('operation',choices=('fetch-base','fetch-rust-base','publish-base',
+        'publish-rust-base','publish-candidate','attach-certificate','promote'))
     parser.add_argument('--input',default='-',help='strict JSON request file or stdin')
     parser.add_argument('--execute',action='store_true',help='explicitly execute planned remote mutations')
     args=parser.parse_args(argv)
@@ -1292,11 +1320,12 @@ def main(argv=None):
     if not isinstance(request,dict) or 'execute' in request or 'transport' in request:
         raise DeliveryError('request must be an object; execution is a separate explicit CLI option')
     operation=globals()[args.operation.replace('-','_')]
-    result=operation(**request,**({} if args.operation=='fetch-base' else {'execute':args.execute}))
+    fetching=args.operation in ('fetch-base','fetch-rust-base')
+    result=operation(**request,**({} if fetching else {'execute':args.execute}))
     try:
         print(json.dumps(result,sort_keys=True,indent=2),flush=True)
     except (OSError,ValueError) as error:
-        if args.execute and args.operation!='fetch-base':
+        if args.execute and not fetching:
             raise DeliveryError('execution completed but its receipt could not be delivered; reconcile remote before retry',True) from error
         raise
     return 0

@@ -17,11 +17,13 @@ applicable extensive stages to [pending work](../.agent-pending/README.md) until
 ```sh
 ./build.sh test dev --label core
 ./build.sh test dev --full
-./build.sh test asan
-./build.sh package release
+./build.sh test asan --rust-sdk /absolute/path/to/rust-sdk
+./build.sh package release --rust-sdk /absolute/path/to/rust-sdk
 ```
 
-Choose the first label for the actual change: `core`, `tools`, `integration`, or
+These commands use the Rust default and the prerequisites documented in
+[building](building.md#rust-default-and-provider-selection). Debian-family
+native `dev` commands can use installed package-owned Rust tools. Choose the first label for the actual change: `core`, `tools`, `integration`, or
 `gui`. `fast` is the inexpensive cross-cutting selection. These labels can
 overlap; running several overlapping labels is not additional independent
 coverage. The dependency-free GUI input and visual-comparison fixtures also belong
@@ -65,7 +67,9 @@ stable and their extensive execution is authorized; otherwise record pending wor
 Reuse evidence only for unchanged source, configuration, dependency identity,
 test inventory, and relevant environment. Record reused results explicitly.
 
-## Optional Rust provider checks
+<a id="optional-rust-provider-checks"></a>
+
+## Rust Provider Checks
 
 The private text-validation tests are available in both provider configurations.
 `core.text_validation` checks provider identity, byte and length boundaries,
@@ -77,9 +81,9 @@ these foreign-caller checks rather than replacing them.
 
 ```sh
 ./build.sh test dev --core-provider cpp --build-dir build/check-cpp --label core
-./build.sh test dev --core-provider rust --rust-sdk /absolute/path/to/rust-sdk \
+./build.sh test dev --rust-sdk /absolute/path/to/rust-sdk \
   --build-dir build/check-rust --label core
-./build.sh test dev --core-provider rust --rust-sdk /absolute/path/to/rust-sdk \
+./build.sh test dev --rust-sdk /absolute/path/to/rust-sdk \
   --build-dir build/check-rust --test rust.unit
 ```
 
@@ -88,7 +92,9 @@ A Wasm or foreign-target tree does not claim Rust unit execution by omitting
 that test. Its C++ contract tests still require the declared target executor.
 The installed-consumer check must relocate the package and consume
 `foundation::core` with Rust tools absent, carrying the installed archive's
-transitive native requirements. Also check a default C++ build with Rust tools
+transitive native requirements. Check default Rust selection and clear failure
+when its required tools/extension are absent. Also check an explicitly selected
+legacy C++ build with Rust tools
 and caches absent; its configuration must make zero Rust discovery or acquisition
 attempts.
 
@@ -115,7 +121,7 @@ test. Native ARM64/Windows and full browser application execution remain their
 own qualification scopes. A successful primitive Wasm ABI probe establishes
 only its exact compiler/SDK/settings/cases. Offline toolchain restoration and
 source-input recovery likewise do not certify a compiler rebuilt from source.
-Use [platform limits](portability.md#optional-rust-provider-boundary) and
+Use [platform limits](portability.md#rust-provider-boundary) and
 [the implementation record](rust-hybrid-plan.md) for actual outcomes.
 
 ## Test design
@@ -154,9 +160,9 @@ correctness requirement merely to obtain a faster or green CI run.
 CTest's machine-readable inventory can support deterministic assignment:
 
 ```sh
-ctest --test-dir build/dev --show-only=json-v1
-ctest --test-dir build/dev --output-on-failure --no-tests=error \
-  --output-junit build/dev/results.xml --parallel 2
+ctest --test-dir build/dev-rust --show-only=json-v1
+ctest --test-dir build/dev-rust --output-on-failure --no-tests=error \
+  --output-junit build/dev-rust/results.xml --parallel 2
 ```
 
 The project helper may wrap these operations; the underlying features are
@@ -199,7 +205,7 @@ are published atomically. This example runs two shards
 sequentially so their use is safe in one owned local build tree:
 
 ```sh
-cmake --preset release
+cmake --preset release -DFOUNDATION_RUST_SDK_ROOT=/absolute/path/to/rust-sdk
 python3 tools/test_plan.py plan --build build/release --shards 2 --output build/plan.json
 python3 tools/test_plan.py run --build build/release --plan build/plan.json \
   --shard 0 --jobs 2 --output build/result-0.json

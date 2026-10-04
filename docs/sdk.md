@@ -5,7 +5,7 @@ environment. Its host requirements describe where the tools run. Its target
 requirements describe where the generated application runs. Keep these
 contracts separate in metadata, documentation, and tests.
 
-The default example builds with native tools. This repository also implements
+The default example combines the selected native C++ tools with Rust. This repository also implements
 pinned native source SDK preparation, WebAssembly build SDK preparation, Windows
 dependency bases, immutable local base storage, strict installation and complete
 release recovery. These are executable maintenance facilities. Compiled SDK
@@ -13,11 +13,13 @@ archives are generated outputs, not committed inputs. A runnable producer does
 not establish that every host or target is qualified; record actual cold-build
 and oldest-runtime results separately.
 
-Ordinary default-C++ Linux builds need only the checkout and distribution
-packages, including selected toolkit development packages. `--gui` restores the
-checked-in source group; it does not prepare an SDK. Wasm and Windows instead use
-the checkout plus retained complete SDK/dependency groups and their declared
-host prerequisites.
+Ordinary Debian-family native `dev` Rust builds need only the checkout and
+distribution packages, including package-owned `rustc`/Cargo and selected
+toolkit development packages. Other Rust profiles require their verified
+retained extension. Explicit C++ builds need no Rust inputs. `--gui` restores the
+checked-in source group; it does not prepare an SDK. Wasm and Windows use
+the checkout plus retained complete C++ and Rust SDK/dependency groups and their
+declared host prerequisites.
 Keep these groups outside Git. See the [independence boundary](dependencies.md#bootstrap-without-recurring-supplier-access).
 
 Use [offline application builds](offline-builds.md) for the complete retained-input
@@ -51,9 +53,9 @@ utilities, target headers/libraries, build-tool prerequisites, licenses, and
 its compatibility baseline. Neither is an application runtime prerequisite.
 
 ```sh
-./build.sh build dev --sdk /absolute/path/to/prepared-sdk --jobs 2
-./build.sh test dev --sdk /absolute/path/to/prepared-sdk --jobs 2
-./build.sh package release --sdk /absolute/path/to/prepared-sdk --jobs 2
+./build.sh build dev --sdk /absolute/path/to/prepared-sdk --rust-sdk /absolute/path/to/rust-sdk --jobs 2
+./build.sh test dev --sdk /absolute/path/to/prepared-sdk --rust-sdk /absolute/path/to/rust-sdk --jobs 2
+./build.sh package release --sdk /absolute/path/to/prepared-sdk --rust-sdk /absolute/path/to/rust-sdk --jobs 2
 ```
 
 These commands require a valid prepared SDK matching the toolchain file's
@@ -122,12 +124,15 @@ byte-identical development aliases and runtime version checks. Arbitrary files
 with private ABI requirements remain rejected, and application packages cannot
 inherit this SDK allowance or bundle the target libc/loader.
 
-## Optional retained Rust extension
+<a id="optional-retained-rust-extension"></a>
+
+## Retained Rust Extension
 
 The C++ SDK remains `sdk.json`. Retained Rust builds use a separate
 `rust-sdk.json` extension; it does not change the existing C++ manifest
-or make Rust a prerequisite of C++ builds. See
-[provider selection](building.md#optional-rust-validation-provider). All ordinary
+or make Rust a prerequisite of explicitly selected C++ builds. Fresh
+configurations default to Rust; missing matched inputs fail clearly. See
+[provider selection](building.md#rust-default-and-provider-selection). All ordinary
 Rust builds consume existing inputs without supplier access or SDK mutation.
 
 The separate SDK-free development route is currently Debian-family native Linux
@@ -491,7 +496,7 @@ python3 tools/dependency_store.py fetch --base /owned/base --recipe <recipe> --o
 python3 tools/sdk.py install --group /owned/fetched-group --recipe <recipe> --output /owned/installed-sdk
 python3 tools/sdk.py verify /owned/installed-sdk --release
 python3 tools/sdk.py smoke /owned/installed-sdk --work /owned/compiler-smoke
-./build.sh test release --sdk /owned/installed-sdk --portable --full --jobs 2
+./build.sh test release --sdk /owned/installed-sdk --rust-sdk /owned/matched-rust-sdk --portable --full --jobs 2
 ```
 
 `put` reuses identical bytes and rejects a conflicting immutable recipe. `fetch`
@@ -665,7 +670,7 @@ For a separately reviewed export, the lower-level assembly command remains:
 ```powershell
 python tools/sdk_windows.py assemble --export-root prepared-export --source-root retained-inputs --provenance producer.json --output prepared-group
 python tools/sdk_windows.py install --group prepared-group --recipe <recipe> --output installed-base --linker-version <actual-linker-version>
-python tools/build.py test release --dependency-group prepared-group --windows-dependencies installed-base --portable --full
+python tools/build.py test release --dependency-group prepared-group --windows-dependencies installed-base --rust-sdk C:\retained\rust-windows-sdk --portable --full
 ```
 
 The nonempty export provenance includes complete `files` and `source_files`
@@ -944,7 +949,7 @@ then install the dependencies into a new location and run a fresh consumer:
 ./tools/ci_windows.ps1 -Output build/retry/windows-toolchain.json
 $selected = Get-Content build/retry/windows-toolchain.json -Raw | ConvertFrom-Json
 python tools/sdk_windows.py install --group build/retry/group --recipe RECIPE --output build/retry/dependencies --linker-version $selected.LinkerVersion
-python tools/build.py test release --windows-dependencies build/retry/dependencies --dependency-group build/retry/group --build-dir build/retry/core-build --portable --full --jobs 2
+python tools/build.py test release --windows-dependencies build/retry/dependencies --dependency-group build/retry/group --rust-sdk C:\retained\rust-windows-sdk --build-dir build/retry/core-build --portable --full --jobs 2
 ```
 
 The core check does not qualify GUI capabilities. To rerun the existing complete
@@ -952,7 +957,7 @@ GUI consumer, supply the separately retained GUI input group and pinned external
 host graphics archive. In the same selected compiler environment:
 
 ```text
-python -c "import sys; from pathlib import Path; sys.path.insert(0, 'tools'); import ci_plan; ci_plan.prepared_check('windows-x86_64', 'RECIPE', Path('build/retry/group'), Path('build/retry/gui-check'), 2, gui_group=Path('RETAINED_GUI_GROUP'), graphics_archive=Path('RETAINED_GRAPHICS_ARCHIVE'))"
+python -c "import sys; from pathlib import Path; sys.path.insert(0, 'tools'); import ci_plan; ci_plan.prepared_check('windows-x86_64', 'RECIPE', Path('build/retry/group'), Path('build/retry/gui-check'), 2, gui_group=Path('RETAINED_GUI_GROUP'), graphics_archive=Path('RETAINED_GRAPHICS_ARCHIVE'), rust_group=Path('RETAINED_RUST_GROUP'), rust_recipe='EXACT_RUST_RECIPE_ID')"
 ```
 
 That command verifies and relocates the SDK, builds in one tree, probes actual
@@ -967,10 +972,14 @@ consumer commands:
 ```text
 python tools/sdk.py install --group build/retry/group --recipe RECIPE --output build/retry/sdk
 python tools/sdk.py verify build/retry/sdk --release
-python tools/build.py test release --sdk build/retry/sdk --build-dir build/retry/native-build --portable --full --jobs 2
+python tools/build.py test release --sdk build/retry/sdk --rust-sdk /owned/matched-rust-sdk --build-dir build/retry/native-build --portable --full --jobs 2
 ```
 
 Choose a new output directory for every attempt and preserve failure evidence.
+Restore and verify the complete matching Rust extension separately before these
+application commands. The prepared GUI helper consumes its complete Rust group
+and exact 64-character recipe digest. For a deliberately legacy C++ recovery,
+select `--core-provider cpp` (or `core_provider='cpp'` in the helper) explicitly.
 Native GUI and browser requirements still need their relevant full consumers.
 Hosted `source=auto` and `source=base` continue to use qualified base storage;
 draft bundle reuse requires the separate explicit `source=retained` selection.

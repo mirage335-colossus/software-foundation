@@ -228,7 +228,7 @@ class ScreenshotTests(unittest.TestCase):
                             json.dumps({'source': 'base', 'manifest_sha256': 'c'*64})])
                 self.assertEqual(command.call_args.args[2], expected)
         argv = S.hosted_command('a'*64, 'b'*64, 16, uid=1001, gid=1001)
-        self.assertEqual(argv[-2:], ['--jobs', '16'])
+        self.assertEqual(argv[argv.index('--jobs') + 1], '16')
         for invalid in (0, -1, True):
             with self.assertRaisesRegex(ValueError, 'positive'):
                 S.hosted_command('a'*64, 'b'*64, invalid, uid=1001, gid=1001)
@@ -252,8 +252,124 @@ class ScreenshotTests(unittest.TestCase):
              mock.patch.object(S.delivery, 'fetch_base') as base:
             with self.assertRaisesRegex(ValueError, 'missing retained input'):
                 S.prepare_inputs('example/project', 'b' * 64, 'c' * 64, self.root / 'inputs', 'retained', requests,
-                                 gui_input={'source': 'base', 'manifest_sha256': 'd'*64})
+                                 gui_input={'source': 'base', 'manifest_sha256': 'd'*64}, core_provider='cpp')
         base.assert_not_called()
+
+    def test_hosted_defaults_bind_both_rust_recipes_and_explicit_cpp_omits_them(self):
+        argv = S.hosted_command('a'*64, 'b'*64, 2, uid=1001, gid=1001)
+        self.assertEqual(argv[argv.index('--core-provider') + 1], 'rust')
+        for name, target in [('native', 'linux-x86_64'), ('wasm', 'browser-wasm32')]:
+            self.assertEqual(argv[argv.index('--'+name+'-rust-recipe') + 1], S.ci.rust_recipe(target))
+            self.assertEqual(argv[argv.index('--'+name+'-rust-group') + 1], 'build/screenshots-inputs/'+name+'-rust')
+        cpp = S.hosted_command('a'*64, 'b'*64, 2, uid=1001, gid=1001, core_provider='cpp')
+        self.assertEqual(cpp[cpp.index('--core-provider') + 1], 'cpp')
+        self.assertNotIn('--native-rust-group', cpp); self.assertNotIn('--rust-origins', cpp)
+        with self.assertRaisesRegex(ValueError, 'must omit'):
+            S.hosted_command('a'*64, 'b'*64, 2, uid=1001, gid=1001,
+                             core_provider='cpp', native_rust_recipe='c'*64)
+
+    def test_default_collection_requires_complete_rust_inputs_before_output_or_build(self):
+        import windows_graphics
+        with mock.patch.object(S.ci, 'assert_host'), \
+             mock.patch.object(S.ci, 'gui_group_module') as gui, \
+             mock.patch.object(S.delivery.store, 'verify_group', return_value={}), \
+             mock.patch.object(windows_graphics, 'run_owned') as run:
+            gui.return_value.verify.return_value = {}
+            with self.assertRaisesRegex(ValueError, 'exact retained SDK group'):
+                S.collect('native', 'a'*64, 'wasm', 'b'*64, 'gui', self.root/'work', self.root/'output')
+        run.assert_not_called(); self.assertFalse((self.root/'work').exists())
+
+    def test_collection_installs_each_rust_target_with_its_matching_cpp_sdk(self):
+        import sdk
+        import windows_graphics
+        work = self.root/'work'; commands = []
+        def installed(provider, group, recipe, output, cpp_sdk):
+            self.assertEqual(provider, 'rust')
+            name = 'native' if group == 'native-rust' else 'wasm'
+            self.assertEqual(output, work/(name+'-rust-sdk'))
+            self.assertEqual(cpp_sdk, work/(name+'-sdk'))
+            return ['--core-provider', 'rust', '--rust-sdk', str(output)], {'core_provider': 'rust'}
+        def run(argv, *args, **kwargs):
+            commands.append(argv)
+            if len(commands) == 3: raise ValueError('stop before surfaces')
+        with mock.patch.object(S.ci, 'assert_host'), \
+             mock.patch.object(S.ci, 'gui_group_module') as gui, \
+             mock.patch.object(S.delivery.store, 'verify_group', return_value={}), \
+             mock.patch.object(S.ci, 'rust_selection', return_value={}), \
+             mock.patch.object(S.ci, 'install_rust_input', side_effect=installed) as install, \
+             mock.patch.object(S, 'text', side_effect=['a'*40, '']), \
+             mock.patch.object(S.ci, 'module') as module, \
+             mock.patch.object(sdk, 'install', side_effect=[
+                 {'target': {'system': 'Linux', 'processor': 'x86_64'},
+                  'capabilities': ['terminal', 'framebuffer', 'fltk', 'rev', 'sdl', 'hosted-web']},
+                 {'target': {'system': 'Emscripten'}}]), \
+             mock.patch.object(windows_graphics, 'run_owned', side_effect=run):
+            gui.return_value.verify.return_value = {}; module.return_value.source_tree.return_value = {}
+            with self.assertRaisesRegex(ValueError, 'stop before surfaces'):
+                S.collect('native', 'a'*64, 'wasm', 'b'*64, 'gui', work, self.root/'output',
+                          native_rust_group='native-rust', native_rust_recipe='c'*64,
+                          wasm_rust_group='wasm-rust', wasm_rust_recipe='d'*64)
+        self.assertEqual(install.call_count, 2)
+        for index, name in enumerate(('native', 'wasm')):
+            self.assertEqual(commands[index][commands[index].index('--core-provider')+1], 'rust')
+            self.assertEqual(commands[index][commands[index].index('--rust-sdk')+1], str(work/(name+'-rust-sdk')))
+
+    def test_rust_gallery_retains_both_compilers_and_historical_cpp_schema(self):
+        value = gallery(self.directory)
+        self.assertEqual(S.verify_gallery(self.directory), value)
+        value.update(schema_version=2, core_provider='rust', rust={})
+        for name, recipe, target in [('native', 'd'*64, 'x86_64-unknown-linux-gnu'),
+                                     ('wasm', 'e'*64, 'wasm32-unknown-emscripten')]:
+            value['rust'][name] = {'core_provider': 'rust', 'rust_sdk_recipe_id': recipe,
+                'rust_compiler_version': '1.63.0', 'rust_target': target,
+                'rust_sdk_manifest_sha256': 'f'*64, 'rust_compiler_sha256': 'a'*64,
+                'group_files': {p: 'b'*64 for p in S.ci.module('rust_sdk').group_names(recipe)},
+                'origin': {'origin': 'local', 'recipe': recipe}}
+        (self.directory/'screenshots.json').write_bytes(S.archive.encoded(value)); seal(self.directory)
+        self.assertEqual(S.verify_gallery(self.directory), value)
+        for field, changed in [('rust', {}), ('core_provider', 'cpp')]:
+            invalid = copy.deepcopy(value); invalid[field] = changed
+            (self.directory/'screenshots.json').write_bytes(S.archive.encoded(invalid)); seal(self.directory)
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'selected provider'):
+                S.verify_gallery(self.directory)
+        for field, changed in [('rust_target', 'x86_64-unknown-linux-gnu'),
+                               ('group_files', {}), ('rust_compiler_sha256', 'latest')]:
+            invalid = copy.deepcopy(value); invalid['rust']['wasm'][field] = changed
+            (self.directory/'screenshots.json').write_bytes(S.archive.encoded(invalid)); seal(self.directory)
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'target-matched Rust'):
+                S.verify_gallery(self.directory)
+
+    def test_missing_retained_rust_never_selects_base_or_cpp(self):
+        requests = {name: {'request': name} for name in ('native', 'wasm')}
+        with mock.patch.object(S.ci, 'retained_rust_request') as check, \
+             mock.patch.object(S.ci, 'retained_rust_sdk', side_effect=ValueError('missing retained Rust')), \
+             mock.patch.object(S.ci, 'fetch_rust_base') as base, \
+             mock.patch.object(S.delivery, 'fetch_base'), \
+             mock.patch.object(S, 'fetch_gui_input') as gui:
+            with self.assertRaisesRegex(ValueError, 'missing retained Rust'):
+                S.prepare_inputs('example/project', 'a'*64, 'b'*64, self.root/'inputs',
+                    gui_input={'source': 'base', 'manifest_sha256': 'c'*64},
+                    native_rust_recipe='d'*64, wasm_rust_recipe='e'*64,
+                    rust_source='retained', rust_retained_inputs=requests)
+        self.assertEqual(check.call_count, 2); base.assert_not_called(); gui.assert_not_called()
+
+    def test_retained_rust_selection_requires_both_target_bound_requests(self):
+        requests = {name: {'schema_version': 1, 'repository': 'example/project', 'target': target,
+            'recipe_id': recipe, 'workflow': 'sdk-maintenance.yml', 'run_id': 123,
+            'attempt': 1, 'job_id': 456, 'source_commit': 'a'*40,
+            'group': {'manifest_id': 11 if name == 'native' else 12, 'manifest_sha256': 'f'*64}}
+            for name, target, recipe in [('native', 'linux-x86_64', 'd'*64),
+                                         ('wasm', 'browser-wasm32', 'e'*64)]}
+        self.assertEqual(S.rust_input_selection('example/project', 'rust', 'd'*64, 'e'*64,
+                         'retained', requests), {'native': 'd'*64, 'wasm': 'e'*64})
+        for selected in (None, {}, {'native': requests['native']}, {**requests, 'extra': {}},
+                         {**requests, 'wasm': requests['native']}):
+            with self.subTest(selected=selected), self.assertRaises(ValueError):
+                S.rust_input_selection('example/project', 'rust', 'd'*64, 'e'*64, 'retained', selected)
+        with self.assertRaisesRegex(ValueError, 'must not contain'):
+            S.rust_input_selection('example/project', 'rust', 'd'*64, 'e'*64, 'base', requests)
+        with self.assertRaisesRegex(ValueError, 'must omit'):
+            S.rust_input_selection('example/project', 'cpp', source='retained', retained_inputs=requests)
 
     def test_host_capture_uses_owned_process_tree_and_sanitized_environment(self):
         import windows_graphics

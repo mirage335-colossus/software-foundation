@@ -2,6 +2,11 @@ name: Explicit prepared SDK maintenance
 'on':
   workflow_dispatch:
     inputs:
+      core_provider:
+        description: Rust application consumers and retained extension; cpp selects legacy SDK probes
+        type: choice
+        options: [rust, cpp]
+        default: rust
       target:
         description: Explicit producer target
         type: choice
@@ -131,11 +136,23 @@ jobs:
       env:
         BUNDLE_NAME: sdk-group-${{ matrix.target }}-${{ github.run_attempt }}
         BUNDLE_PATHS: build/sdk-group/
+    - name: Retain the complete Rust extension and reconstruction inputs
+      if: always() && inputs.core_provider == 'rust' && hashFiles('build/rust-sdk-group/*-SHA256SUMS') != ''
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: rust-sdk-group-${{ matrix.target }}-${{ github.run_attempt }}
+        BUNDLE_PATHS: build/rust-sdk-group/
     - name: Retain verified sdk-plan-${{ matrix.target }}-${{ github.run_attempt }}
       run: python .github/scripts/lifecycle.py bundle-store
       env:
         BUNDLE_NAME: sdk-plan-${{ matrix.target }}-${{ github.run_attempt }}
         BUNDLE_PATHS: build/sdk-publication-plan.json
+    - name: Retain Rust publication preparation
+      if: always() && inputs.core_provider == 'rust' && hashFiles('build/rust-sdk-publication-plan.json') != ''
+      run: python .github/scripts/lifecycle.py bundle-store
+      env:
+        BUNDLE_NAME: rust-sdk-plan-${{ matrix.target }}-${{ github.run_attempt }}
+        BUNDLE_PATHS: build/rust-sdk-publication-plan.json
     - if: always()
       name: Retain verified sdk-proof-${{ matrix.target }}-${{ github.run_attempt }}
       run: python .github/scripts/lifecycle.py bundle-store
@@ -145,6 +162,8 @@ jobs:
           build/gui-origin.json
           build/sdk-origin.json
           build/sdk-isolation.json
+          build/rust-sdk-isolation.json
+          build/rust-sdk-origin.json
           build/sdk-retention.json
           build/sdk-consumer/qualification.json
           build/sdk-consumer/source.junit.xml
@@ -200,6 +219,7 @@ env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'
   PYTHONDONTWRITEBYTECODE: '1'
+  CORE_PROVIDER: ${{ inputs.core_provider }}
   LINUX_POOL: ${{ inputs.linux_pool }}
   FOUNDATION_FASTER_LINUX_RUNNER: ${{ vars.FOUNDATION_FAST_LINUX_RUNNER }}
   FOUNDATION_FASTER_ARM_RUNNER: ${{ vars.FOUNDATION_FAST_ARM_RUNNER }}

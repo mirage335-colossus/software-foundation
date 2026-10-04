@@ -72,8 +72,9 @@ def absolute(value, *, exists=True):
 
 def validate_plan(value, *, system=None, machine=None):
     contract = inventory()
-    if not isinstance(value, dict) or set(value) != {'schema_version', 'isolation', 'cases'} or value['schema_version'] != 1:
-        raise ValueError('exact schema-1 offline plan required')
+    if (not isinstance(value, dict) or set(value) != {'schema_version', 'isolation', 'cases'}
+            or type(value['schema_version']) is not int or value['schema_version'] not in (1, 2)):
+        raise ValueError('exact schema-2 offline plan or explicit-provider schema-1 plan required')
     boundary = value['isolation']
     if not isinstance(boundary, dict):
         raise ValueError('an explicit prepared isolation boundary is required')
@@ -94,12 +95,17 @@ def validate_plan(value, *, system=None, machine=None):
     for case in cases:
         if not isinstance(case, dict):
             raise ValueError('offline cases need structured provider and retained group fields')
-        provider = case.get('core_provider', 'cpp')
+        if value['schema_version'] == 1 and 'core_provider' not in case:
+            raise ValueError('schema-1 offline plans require an explicit core_provider; select cpp to preserve '
+                             'the historical request, or migrate to schema 2 with complete retained Rust inputs')
+        provider = case.get('core_provider', 'rust')
         required = {'target', 'group', 'recipe'}
         allowed = required | {'core_provider'}
         if provider == 'rust':
-            required |= {'core_provider', 'rust_group', 'rust_recipe'}
-            allowed = required
+            if not {'rust_group', 'rust_recipe'} <= set(case):
+                raise ValueError('Rust offline cases need their complete retained Rust group and recipe identity')
+            required |= {'rust_group', 'rust_recipe'}
+            allowed = required | {'core_provider'}
         if (provider not in ('cpp', 'rust') or not required <= set(case) or not set(case) <= allowed
                 or case['target'] not in supported or case['target'] in seen or not SHA.fullmatch(case.get('recipe', ''))):
             raise ValueError('offline cases need unique supported targets and complete recipe identities')
@@ -121,6 +127,13 @@ def validate_plan(value, *, system=None, machine=None):
 
 
 def verify_case(case):
+    provider = case.get('core_provider', 'rust')
+    if provider not in ('cpp', 'rust'):
+        raise ValueError('unsupported explicit core provider')
+    if provider == 'rust' and (not isinstance(case.get('rust_group'), str)
+                               or not isinstance(case.get('rust_recipe'), str)
+                               or not SHA.fullmatch(case['rust_recipe'])):
+        raise ValueError('Rust offline cases need their complete retained Rust group and recipe identity')
     target = next(item for item in inventory()['targets'] if item['target'] == case['target'])
     group = absolute(case['group'])
     hashes = verify_group(group, case['recipe'])
@@ -136,7 +149,7 @@ def verify_case(case):
     if not set(target['backends']) <= set(capabilities):
         raise ValueError('retained SDK lacks required GUI capabilities; select a complete matching all-GUI group')
     result = {'files': hashes, 'recipe': case['recipe'], 'target': case['target'], 'metadata': metadata,
-              'core_provider': case.get('core_provider', 'cpp')}
+              'core_provider': provider}
     if result['core_provider'] == 'rust':
         from rust_sdk import names as rust_names, verify_group as verify_rust_group, verify_pair
         rust_group = absolute(case['rust_group'])
@@ -147,8 +160,6 @@ def verify_case(case):
                 or processor(rust_metadata['host']['processor']) != target['host_processor']):
             raise ValueError('retained Rust SDK host tools require a different native host')
         result['rust'] = {'files': rust_hashes, 'recipe': case['rust_recipe'], 'metadata': rust_metadata}
-    elif result['core_provider'] != 'cpp':
-        raise ValueError('unsupported explicit core provider')
     return result
 
 
@@ -337,15 +348,16 @@ def checked_command(argv, commands, *, cwd=ROOT, environment=None):
         row['seconds'] = time.monotonic() - started
 
 
-def build_arguments(target, sdk, output, jobs, action, *, core_provider='cpp', rust_sdk=None):
+def build_arguments(target, sdk, output, jobs, action, *, core_provider='rust', rust_sdk=None):
     contract = next(item for item in inventory()['targets'] if item['target'] == target)
     arguments = [sys.executable, '-B', str(ROOT / 'tools/build.py'), action, 'release',
                  '--sdk', str(sdk), '--gui', '--gui-backends', ','.join(contract['backends']),
                  '--build-dir', str(output / 'build'), '--build-jobs', str(jobs), '--test-jobs', '2']
     if core_provider not in ('cpp', 'rust') or (core_provider == 'rust') != (rust_sdk is not None):
         raise ValueError('offline Rust commands require their exact retained SDK')
+    arguments += ['--core-provider', core_provider]
     if core_provider == 'rust':
-        arguments += ['--core-provider', 'rust', '--rust-sdk', str(rust_sdk)]
+        arguments += ['--rust-sdk', str(rust_sdk)]
     if target.startswith('linux-'):
         arguments.append('--portable')
     if action == 'test':
@@ -381,7 +393,10 @@ def inside(phase, request_path):
     output = Path('/output')
     case = {**request['case'], 'group': '/inputs/group'}
     sdk = output / 'sdk'
-    provider = case.get('core_provider', 'cpp')
+    if 'core_provider' not in case:
+        raise ValueError('projected offline requests require an explicit core_provider; recreate the request '
+                         'from a migrated plan')
+    provider = case['core_provider']
     rust_sdk = output / 'rust-sdk' if provider == 'rust' else None
     if rust_sdk:
         case['rust_group'] = '/inputs/rust-group'
@@ -558,7 +573,8 @@ def run(plan_path, output, cases=None, jobs=2, root=ROOT):
     selected = list(cases) if cases else applicable
     if len(selected) != len(set(selected)) or not set(selected) <= set(applicable):
         raise ValueError('focused selection must name unique host-applicable targets')
-    planned = {case['target']: case for case in plan['cases']}
+    planned = {case['target']: {**case, 'core_provider': case.get('core_provider', 'rust')}
+               for case in plan['cases']}
     missing = set(selected) - set(planned)
     if missing:
         raise ValueError('missing retained inputs for required offline targets: ' + ', '.join(sorted(missing)))
@@ -577,7 +593,7 @@ def run(plan_path, output, cases=None, jobs=2, root=ROOT):
             raise ValueError('offline output and prepared rootfs must be disjoint')
     for target in selected:
         groups = [planned[target]['group']]
-        if planned[target].get('core_provider', 'cpp') == 'rust':
+        if planned[target]['core_provider'] == 'rust':
             groups.append(planned[target]['rust_group'])
         for retained in groups:
             group = Path(retained)
@@ -586,7 +602,7 @@ def run(plan_path, output, cases=None, jobs=2, root=ROOT):
     # Freeze inputs before launching any expensive work.
     verified = {target: verify_case(planned[target]) for target in selected}
     rust_groups = [Path(planned[target]['rust_group']) for target in selected
-                   if planned[target].get('core_provider', 'cpp') == 'rust']
+                   if planned[target]['core_provider'] == 'rust']
     rootfs_options = {'rust_group': rust_groups[0]} if rust_groups else {}
     if boundary['kind'] == 'docker':
         completed = subprocess.run(['docker', 'image', 'inspect', '--format', '{{.Id}}', boundary['image']],
@@ -599,7 +615,7 @@ def run(plan_path, output, cases=None, jobs=2, root=ROOT):
     output.mkdir(parents=True)
     summary = {'schema_version': 1, 'status': 'failed', 'plan_sha256': digest(plan_path), 'isolation': boundary,
                'inventory_sha256': digest(INVENTORY), 'requested_targets': selected,
-               'requested_providers': {target: planned[target].get('core_provider', 'cpp') for target in selected},
+               'requested_providers': {target: planned[target]['core_provider'] for target in selected},
                'required_host_targets': applicable, 'complete_host_inventory': set(selected) == set(applicable),
                'unavailable_targets': sorted({item['target'] for item in inventory()['targets']} - set(applicable)),
                'cases': [], 'coverage': 'offline application build, core tests, package/installed consumer and native GUI smoke; browser security and full regressions separate'}
@@ -629,7 +645,7 @@ def run(plan_path, output, cases=None, jobs=2, root=ROOT):
                 request['rust_group_files'] = verified[target]['rust']['files']
                 rust_group = Path(planned[target]['rust_group'])
             write_new(case_output / 'request.json', request)
-            row = {'target': target, 'core_provider': planned[target].get('core_provider', 'cpp'), 'status': 'failed'}
+            row = {'target': target, 'core_provider': planned[target]['core_provider'], 'status': 'failed'}
             summary['cases'].append(row)
             with (case_output / 'acceptance.log').open('xb') as log:
                 if boundary['kind'] == 'docker':

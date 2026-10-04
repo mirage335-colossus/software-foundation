@@ -32,6 +32,17 @@ def results(execute=True):
     return value
 
 
+def retained_base(names):
+    remote = fixtures.FakeGitHub()
+    remote.refs['base'] = 'a' * 40
+    remote.releases.append({'id': 1, 'tag_name': 'base', 'draft': False,
+        'prerelease': True, 'name': 'base', 'assets': [
+            {'id': index + 100, 'name': name, 'state': 'uploaded',
+             'size': 1, 'digest': 'sha256:' + 'a' * 64}
+            for index, name in enumerate(sorted(names))]})
+    return remote
+
+
 class LatestReleaseTests(unittest.TestCase):
     def test_cli_creates_fresh_receipt_parent_without_overwriting(self):
         # Supply a fixture request and preflight response in a fresh child;
@@ -80,12 +91,59 @@ L.main()
             self.assertFalse(Path(mismatch[-1]).exists())
 
     def test_preflight_requires_complete_target_recipes_and_separate_tag(self):
-        self.assertEqual(L.preflight(request(), remote=False)['tag'], 'v1')
+        prepared = L.preflight(request(), remote=False)
+        self.assertEqual(prepared['tag'], 'v1')
+        self.assertEqual(prepared['core_provider'], 'rust')
+        self.assertEqual(prepared['rust_recipes'],
+                         {target: L.ci.rust_recipe(target) for target in L.ci.STANDARD})
         for changes in ({'recipes': {}}, {'tag': 'base'}, {'tag': 'screenshots-1'}, {'tag': 'ci-1'},
-                        {'execute': 'true'}, {'source_commit': 'main'}, {'gui_group': 'a' * 64}):
+                        {'execute': 'true'}, {'source_commit': 'main'}, {'gui_group': 'a' * 64},
+                        {'core_provider': ''}, {'core_provider': 'automatic'}, {'unknown': True}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 L.preflight(dict(request(), **changes), remote=False)
         self.assertEqual(L.preflight(dict(request(), tag=''), remote=False)['tag'], 'release-123-attempt-1')
+
+    def test_default_preflight_requires_every_exact_retained_rust_group_without_acquisition(self):
+        cpp_names = {name for recipe in request()['recipes'].values()
+                     for name in L.delivery.store.names(recipe)}
+        rust_names = {name for target in L.ci.STANDARD
+                      for name in L.ci.rust_base_names(L.ci.rust_recipe(target))}
+        complete = cpp_names | rust_names
+        cases = [cpp_names, complete - {sorted(rust_names)[0]},
+                 cpp_names | set(L.ci.rust_base_names('f' * 64))]
+        for names in cases:
+            with self.subTest(names=sorted(names)):
+                remote = retained_base(names)
+                with self.assertRaisesRegex(ValueError, 'complete Rust base recipe missing'):
+                    L.preflight(request(), transport=remote)
+                self.assertEqual(remote.mutations, [])
+                self.assertFalse(any(call[0] == 'download' for call in remote.calls))
+        remote = retained_base(complete)
+        prepared = L.preflight(request(), transport=remote)
+        self.assertEqual(prepared['core_provider'], 'rust')
+        self.assertEqual(len(prepared['rust_recipes']), len(L.ci.STANDARD))
+        self.assertEqual(remote.mutations, [])
+        self.assertFalse(any(call[0] == 'download' for call in remote.calls))
+
+    def test_explicit_cpp_recovery_preflight_uses_cpp_base_without_rust_inputs(self):
+        names = {name for recipe in request()['recipes'].values()
+                 for name in L.delivery.store.names(recipe)}
+        remote = retained_base(names)
+        prepared = L.preflight(dict(request(), core_provider='cpp'), transport=remote)
+        self.assertEqual(prepared['core_provider'], 'cpp')
+        self.assertEqual(prepared['rust_recipes'], {})
+        self.assertTrue(all(row['core_provider'] == 'cpp' and not row['rust_recipe']
+                            for row in prepared['matrix']['include']))
+        self.assertEqual(remote.mutations, [])
+
+    def test_environment_provider_defaults_rust_and_preserves_explicit_cpp(self):
+        environment = {'GITHUB_REPOSITORY': 'example/project', 'GITHUB_SHA': 'a' * 40,
+            'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1', 'PROFILE': 'core',
+            'RECIPES': json.dumps(request()['recipes']), 'EXECUTE': 'false', 'JOBS': '2'}
+        with mock.patch.dict(os.environ, environment, clear=True):
+            self.assertEqual(L.environment_request()['core_provider'], 'rust')
+            with mock.patch.dict(os.environ, CORE_PROVIDER='cpp'):
+                self.assertEqual(L.environment_request()['core_provider'], 'cpp')
 
     def test_unresolved_gui_redistribution_fails_before_remote_work(self):
         policy=(L.ci.ROOT/'docs/release-policy.json').read_bytes()

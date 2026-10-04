@@ -9,6 +9,16 @@ producers retain outputs in private draft releases with complete manifests; no
 workflow uses Actions artifact storage. Neither workflow publishes an application
 release or establishes an older-runtime baseline.
 
+Application entry points default `core_provider` to `rust`; `cpp` is an explicit
+legacy choice. Development feedback prepares distribution Rust tools and checks
+both the default and Rust-free compatibility path. Candidate native jobs prepare
+pinned official Rust inputs separately. Prepared-SDK application, GUI, screenshot
+and Latest workflows require complete already-retained Rust groups matched to
+their C++ targets; missing groups fail before application work. SDK maintenance
+provides the explicit Rust group preparation/qualification/publication route.
+Normal application configure, build, test and package steps never acquire tools
+or crates. See [the default policy](../docs/rust-hybrid-plan.md#why-rust-is-the-default).
+
 Manual candidate inputs:
 
 | Input | Default | Effect |
@@ -81,7 +91,7 @@ The manual lifecycle is executable, not only described:
   preparation inventories without a complete input kit.
   Every planned lane must complete successfully; no stable application release,
   base/Latest change or distro-channel promotion occurs. Compiler reconstruction
-  from source is not claimed. See [the qualification contract](../docs/ci.md#optional-rust-qualification).
+  from source is not claimed. See [the qualification contract](../docs/ci.md#rust-qualification).
 
 `execute=false` may write private CI transport drafts. It does not publish a
 public application/base/gallery or advance Latest. See the exact

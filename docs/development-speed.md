@@ -12,8 +12,17 @@ A diagnostic pass identifies its selected scope and cannot make a release eligib
 ./build.sh test dev --label core
 ./build.sh test dev --label tools
 ./build.sh test dev --label gui --gui
-./build.sh test release --full
+./build.sh test release --rust-sdk /absolute/retained/rust-sdk --full
 ```
+
+Fresh build trees select the Rust validation provider. Native Debian development
+uses already-installed distribution `rustc` and `cargo`; other targets and the
+wrapper's release, sanitizer, packaging, portable or prepared-C++-SDK configurations
+require the matching retained `--rust-sdk`. Normal builds use only those local
+inputs and the checkout: they never acquire a compiler, target library or crate.
+An unavailable Rust provider fails clearly. Use `--core-provider cpp` explicitly
+for the legacy compatibility configuration. See [building](building.md) for the
+exact prerequisites and target recipes.
 
 Compilation automatically uses the available CPU and memory budget. Explicit
 `--build-jobs N` overrides it; `--test-jobs N` controls test concurrency separately.
@@ -23,8 +32,12 @@ Keep tests bounded for their
 actual memory, process and real-time requirements. A faster machine alone does
 not justify changing an assertion or deadline.
 
-CMake owns one native graph: the core and shared GUI libraries compile once and
-all selected hosts link them. Reuse the same configuration for incremental edits.
+CMake owns one native graph: the Rust validation archive, C++ core and shared GUI
+libraries compile once per compatible target/configuration and all selected hosts
+link them. A change confined to Rust validation rebuilds that archive and relinks
+its consumers; it does not require recompiling unchanged C++ GUI supplier modules.
+This preserves the existing C++ compiler's granular dependency graph as application
+logic grows. Reuse the same configuration for incremental edits.
 Different target architectures, SDK identities and sanitizer configurations use
 separate trees. Optional compiler caching remains an optimization, not a required
 supplier or a substitute for verifying the selected source and toolchain.
@@ -79,8 +92,9 @@ start. A pre-existing cache alone does not prove all outputs were already built.
   --build-jobs 2 --test-jobs 2 --timings build/timing-core/warm-2.json
 ```
 
-Apply the same recipe with `--sdk PATH` to measure retained-SDK verification,
-or `--gui` and the relevant label to measure source restoration and GUI work.
+Apply the same recipe with `--sdk PATH --rust-sdk RUST_PATH` to measure matching
+retained-SDK verification, or `--gui` and the relevant label to measure source
+restoration and GUI work.
 Preserve each receipt, its console log, source/configuration, host/tool versions
 and cold/warm condition. Compare the phase seconds over several repetitions;
 report the observed range/median rather than promising a universal duration.
@@ -115,8 +129,9 @@ An illustrative local measurement on 2026-10-04 used a complete 366-file source
 snapshot `f46b4c51d7e5d672c6bc306b29a662b6814c01429de7f920e27d0b1896e9a611`,
 Linux x86_64/glibc 2.41, GCC 14.2, CMake 3.31.6, Python 3.13.5 and two compile/test
 workers. The two core CTests passed on every invocation; both warm Ninja builds
-reported no work. No SDK was selected. These are diagnostic observations on this
-host, not a performance target or Bookworm/SDK qualification:
+reported no work. This historical snapshot used the then-default C++ provider;
+no SDK was selected. These are diagnostic observations on this host, not a Rust
+measurement, performance target or Bookworm/SDK qualification:
 
 | Wall seconds (rounded) | Cold | Warm 1 | Warm 2 |
 | --- | ---: | ---: | ---: |
@@ -130,6 +145,11 @@ host, not a performance target or Bookworm/SDK qualification:
 Use the result to choose the next optimization. A verification-bound warm build
 needs an integrity-preserving algorithm improvement, not unchecked timestamp reuse;
 a compilation-bound build needs appropriate target selection or parallelism.
+The shared Rust archive and zero-external-crate application keep the additional
+build graph small, but they do not establish a universal overhead of a few seconds.
+Compare explicit `--core-provider cpp` and Rust configurations in separate trees
+with matched scope and retained inputs before making a timing claim. Existing
+qualification timings also do not measure developer time or AI token savings.
 
 ## Hosted scheduling
 
@@ -426,8 +446,14 @@ candidate coverage after the fix. Automatic changed-infrastructure feedback uses
 whole suites and conservative dependency closure; it is independent of local
 core/GUI feedback and cannot substitute for required release coverage.
 
-`./build.sh portable-package` is the deliberate Release + portable runtime +
-relocated archive/installed-consumer verification operation. It does not add
-packaging or full regression work to ordinary builds. Native SDK runtime output
-checks hash only the selected executable/private closure during incremental
+The deliberate Release + portable runtime + relocated archive/installed-consumer
+verification operation is:
+
+```sh
+./build.sh portable-package --sdk /absolute/retained/target-sdk \
+  --rust-sdk /absolute/retained/rust-sdk
+```
+
+It does not add packaging or full regression work to ordinary builds. Native SDK
+runtime output checks hash only the selected executable/private closure during incremental
 validation, while the existing shared SDK input guard retains full-input authority.

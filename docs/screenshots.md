@@ -135,6 +135,19 @@ also required. Ordinary capture consumes an existing complete reviewed GUI group
 it never clones upstream or builds a missing dependency group. It does not publish
 that source or its application binaries.
 
+Captures default `core_provider` to `rust`. The native and Wasm applications each
+need their separate complete matching Rust extension. Hosted
+`--native-rust-recipe`/`--wasm-rust-recipe` selectors may name exact retained
+recipes; omitted values derive the checked-in producer identities.
+`rust_source=base` consumes their exact public base groups. For private recovery,
+select `rust_source=retained` and provide `rust_retained_inputs` with exactly
+`native` and `wasm` schema-1 Rust requests: repository, target, exact `recipe_id`,
+producer run/source/attempt/job, `workflow: "sdk-maintenance.yml"` and
+`group` containing `manifest_id`/`manifest_sha256`. The authenticated bundle must
+be `rust-sdk-group-<target>-<attempt>`. Invalid or missing groups fail; normal
+collection uses only existing local inputs. Explicit `core_provider=cpp` needs
+no Rust groups and preserves the legacy capture route.
+
 The default `source=base` consumes only the exact public base. For recovery or
 qualification before base publication, select `source=retained` and provide
 `retained_inputs`, a JSON object with exactly `native` and `wasm` entries. Each
@@ -224,7 +237,10 @@ application publisher lock but uses a distinct release namespace.
 
 `screenshots.json` records the source commit and tree digest, actual executable
 digests, both complete SDK triplets, reviewed GUI input identity, runtime/tool
-versions, run/attempt, dimensions and image checksums. `BUILD.txt` is a short
+versions, run/attempt, dimensions and image checksums. New schema-2 galleries
+also bind the provider, both Rust compiler/manifest identities, targets/versions,
+complete group inventories and origins. Historical schema-1 C++ galleries retain
+their original validation rules and bytes. `BUILD.txt` is a short
 human-readable companion. Source, executable files, SDK archives, browser
 profiles and external graphics libraries are excluded from the public gallery.
 
@@ -243,6 +259,10 @@ a clean source checkout, the declared display/runtime environment and the same
 prerequisites as the workflow. `hosted` runs the complete unprivileged hosted-runtime
 path and explicitly fetches its existing SDK and required `--gui-input` selections. `publish` plans by default;
 only its `--execute` switch mutates a public release.
+
+Default Rust collection additionally supplies `--native-rust-group`,
+`--native-rust-recipe`, `--wasm-rust-group` and `--wasm-rust-recipe`, with optional
+`--rust-origins`. `--core-provider cpp` explicitly selects legacy collection.
 
 Run the [offline failure suite](../tests/test_screenshots.py) through the normal
 tool-test runner. It covers complete inventories, changed images, nonblank

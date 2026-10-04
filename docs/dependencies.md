@@ -6,8 +6,12 @@ integrator leaves. Keep a machine-readable inventory in
 maintenance notes for each selected dependency. Preserve upstream license and
 notice files with the source and all applicable binary distributions.
 
-The default library and CLI use the C++ standard library and platform/compiler
-runtimes. They have no added third-party application runtime dependency. Optional
+The default library and CLI combine the C++ standard library and platform/compiler
+runtimes with the Rust `no_std` validation archive. They have no external
+application crates or added third-party application runtime dependency. Rust
+tools are build inputs supplied by Debian-family native development packages or
+the matched retained extension; installed executables and C++ consumers need no
+Rust toolchain. Optional
 GUI integration consumes the complete source group retained in this checkout,
 with its own toolchain, runtime, and redistribution requirements. An explicit
 pinned checkout or source group can override the bundled input. Build/test tools are still
@@ -133,11 +137,14 @@ The supported independence boundary is explicit:
 
 | Build | Inputs retained before disconnecting |
 | --- | --- |
-| Ordinary native Linux core/CLI | This checkout and distribution build packages |
-| Ordinary native Linux GUI | This checkout (including `third_party/gui-inputs`) and the selected distribution toolkit/development packages |
-| Linux with a controlled newer compiler or target sysroot | Checkout, complete matching SDK group and its declared distribution host prerequisites |
-| Browser/Wasm | Checkout, complete prepared Emscripten/Node SDK group and declared distribution host prerequisites |
-| Native Windows | Checkout, complete matching dependency group, local host tools and complete Microsoft compiler/Windows SDK installer layout |
+| Debian-family native `dev` core/CLI | This checkout and distribution build packages including package-owned `rustc`/Cargo and complete notices |
+| Debian-family native `dev` GUI | This checkout (including `third_party/gui-inputs`), Rust prerequisites above, and selected distribution toolkit/development packages |
+| Linux release/portable/ASan or controlled compiler/target sysroot | Checkout, matching retained Rust extension, selected C++ SDK group where required, and declared distribution host prerequisites |
+| Browser/Wasm | Checkout, complete matched Emscripten/Node and Rust SDK groups, and declared distribution host prerequisites |
+| Native Windows | Checkout, complete matching dependency and Rust groups, local host tools and complete Microsoft compiler/Windows SDK installer layout |
+
+Explicit `--core-provider cpp` preserves the original build closure without Rust
+inputs. The Rust default never substitutes that provider when inputs are missing.
 
 “Complete group” includes binary, source/bootstrap inputs and checksum inventory;
 it is kept outside Git in durable local storage. A release URL or recipe alone
@@ -153,7 +160,7 @@ Rev needs newer compiler/CMake support than stock Debian 12 supplies; use suitab
 distribution packages or the prepared SDK. See [GUI inputs](gui-boundary.md#complete-offline-gui-input-group)
 and [SDK recovery](sdk.md#replay-without-supplier-acquisition).
 
-Debian 12 supplies the default C++20 compiler, CMake, Ninja and Python through its
+Debian 12 supplies the default C++20 compiler, CMake, Ninja, Python, Rust 1.63 and Cargo through its
 normal package repositories. Native SDK preparation also uses the explicit
 `bootstrap_packages` list in its pinned recipe. Capture installed package
 versions and retain a supported installation image or permitted package cache

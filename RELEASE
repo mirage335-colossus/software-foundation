@@ -3,7 +3,8 @@ Software Foundation — release and recovery order
 1. Freeze source, version, target/backend inventory and qualification policy.
 2. Verify supplier terms, pinned inputs and notices. Resolve GUI terms before
    distributing optional GUI code. Select exact immutable prepared recipes.
-3. Fetch verified compiled SDK/dependency groups from the durable base. Missing
+3. Fetch verified compiled C++ and matched Rust SDK/dependency groups from the durable base. Rust
+   is the default; core_provider=cpp is an explicit legacy choice. Missing
    groups fail with explicit maintenance instructions; never cold-build implicitly.
 4. Build each configuration once. Stage only allowed target runtime dependencies;
    inspect every binary for architecture, generic CPU floor and runtime ceiling.

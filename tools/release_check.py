@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run source, archive or recovery qualification from an immutable candidate."""
 import argparse
+import ast
 from contextlib import contextmanager
 import importlib.util
 import json
@@ -453,6 +454,22 @@ def retain_native_visuals(build, evidence):
             for path in destination.rglob("*") if path.is_file()}
 
 
+def source_provider_options(source, provider):
+    """Select the delivered provider while retaining pre-provider C++ builders."""
+    builder = source / "tools/build.py"
+    if builder.is_symlink() or not builder.is_file() or builder.stat().st_size > 8 * 1024 * 1024:
+        raise ValueError("invalid retained builder capability input")
+    tree = ast.parse(builder.read_text(encoding="utf-8"))
+    supported = any(isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and
+                    node.func.attr == "add_argument" and any(isinstance(arg, ast.Constant) and
+                    arg.value == "--core-provider" for arg in node.args) for node in ast.walk(tree))
+    if supported:
+        return ["--core-provider", provider]
+    if provider != "cpp":
+        raise ValueError("retained builder cannot select the delivered Rust provider")
+    return []
+
+
 def run_source(candidate, manifest, entry, work, evidence, jobs, recovery=False, browser_options=None):
     browser_target = entry["target"] == "browser-wasm32"
     if not browser_target:
@@ -466,9 +483,11 @@ def run_source(candidate, manifest, entry, work, evidence, jobs, recovery=False,
     group_files = next(x["files"] for x in manifest["dependencies"] if x["recipe_id"] == entry["sdk_recipe"])
     binary_only = not recovery and not any((group / name).exists() for name in group_files if name.endswith("-sources.tar.gz"))
     expected_files = group_files if binary_only else None
+    provider = release.provider_identity(entry)
     command = [sys.executable, str(work / "source/tools/build.py"), "test", "release", "--full",
                "--portable", "--build-jobs", str(jobs), "--build-dir", str(work / "build"),
-               "--junit", str(evidence / "source.junit.xml")]
+               "--junit", str(evidence / "source.junit.xml"),
+               *source_provider_options(work / "source", provider["core_provider"])]
     if entry["target"].startswith("linux-") or browser_target:
         sdk.install(group, entry["sdk_recipe"], work / "sdk", production=True, **({"expected_files": expected_files} if expected_files is not None else {}))
         command += ["--sdk", str(work / "sdk")]
@@ -480,7 +499,6 @@ def run_source(candidate, manifest, entry, work, evidence, jobs, recovery=False,
         version = inspect_selected_linker()['version']
         sdk_windows.install(group, entry["sdk_recipe"], work / "windows-dependencies", version, **({"expected_files": expected_files} if expected_files is not None else {}))
         command += ["--binary-dependency-group" if binary_only else "--dependency-group", str(group), "--windows-dependencies", str(work / "windows-dependencies")]
-    provider = release.provider_identity(entry)
     rust_recipe = provider.get("rust_sdk_recipe_id")
     if rust_recipe:
         import rust_sdk
@@ -493,7 +511,7 @@ def run_source(candidate, manifest, entry, work, evidence, jobs, recovery=False,
                 or rust_metadata["compiler"]["version"] != provider["rust_compiler_version"]
                 or digest(work / "rust-sdk" / rust_metadata["compiler"]["rustc"]) != provider["rust_compiler_sha256"]):
             raise ValueError("recovered Rust SDK differs from delivered compiler identity")
-        command += ["--core-provider", "rust", "--rust-sdk", str(work / "rust-sdk")]
+        command += ["--rust-sdk", str(work / "rust-sdk")]
     for recipe in release.dependency_recipes(entry):
         if recipe not in (entry["sdk_recipe"], rust_recipe):
             command += ["--binary-dependency-group" if binary_only else "--dependency-group", str(candidate / "dependencies" / recipe)]

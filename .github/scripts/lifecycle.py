@@ -193,15 +193,18 @@ def absent(path):
 
 
 @contextmanager
-def isolated_sdk_producer(target, profile, recipe, origin, files):
+def isolated_sdk_producer(target, profile, recipe, origin, files, *,
+                          input_name='sdk-inputs', receipt_name='sdk-isolation.json'):
     """Exclude original producer paths during all synchronous consumer work.
 
     The caller owns this build tree exclusively and must stop producer writers
     first. This is relocation qualification, not a hostile-process sandbox.
     Never delete or overwrite an unexpected entry during recovery.
     """
-    parent = ROOT / 'build'; original = parent / 'sdk-inputs'
-    receipt_path = parent / 'sdk-isolation.json'
+    if input_name not in ('sdk-inputs', 'rust-sdk-inputs') or receipt_name not in ('sdk-isolation.json', 'rust-sdk-isolation.json'):
+        raise ValueError('unknown isolated SDK producer tree')
+    parent = ROOT / 'build'; original = parent / input_name
+    receipt_path = parent / receipt_name
     if not absent(receipt_path): raise FileExistsError('SDK isolation receipt must be new')
     parent_id = ordinary_directory(parent)
     receipt = dict(schema_version=1, status='started', target=target, profile=profile,
@@ -229,7 +232,7 @@ def isolated_sdk_producer(target, profile, recipe, origin, files):
             original_id = ordinary_directory(original)
             receipt['initial_state'] = 'present'
             holder = Path(tempfile.mkdtemp(prefix='sdk-producer-quarantine-', dir=parent))
-            holder_id = ordinary_directory(holder); moved = holder / 'sdk-inputs'
+            holder_id = ordinary_directory(holder); moved = holder / input_name
             receipt['quarantine'] = str(moved)
             receipt['disposition'] = 'preserved'
             # The private holder is new. Any rename error has an unknown outcome;
@@ -297,6 +300,43 @@ def selected_runners():
     return ci.runner_selection(os.environ.get('LINUX_POOL', 'standard'),
         os.environ.get('FOUNDATION_FASTER_LINUX_RUNNER', ''), os.environ.get('FOUNDATION_FASTER_ARM_RUNNER', ''),
         os.environ.get('FOUNDATION_FASTER_WINDOWS_RUNNER', ''))
+
+
+def core_provider():
+    provider = os.environ.get('CORE_PROVIDER', 'rust')
+    if provider not in ('rust', 'cpp'):
+        raise ValueError('unknown core provider')
+    return provider
+
+
+def rust_input(target):
+    if core_provider() == 'cpp':
+        if os.environ.get('FOUNDATION_PROVIDER_RECIPE', ''):
+            raise ValueError('C++ selection must omit Rust SDK inputs')
+        return dict(core_provider='cpp')
+    recipe = ci.rust_recipe(target)
+    if os.environ.get('FOUNDATION_PROVIDER_RECIPE', recipe) != recipe:
+        raise ValueError('workflow Rust recipe differs from exact checked-in target inputs')
+    return dict(core_provider='rust', rust_recipe=recipe, rust_group=ROOT / 'build/rust-base' / recipe)
+
+
+def prepare_rust_maintenance(target):
+    import rust_sdk
+    recipe = ROOT / ci.RUST_RECIPES[target]
+    identity = ci.rust_recipe(target)
+    cpp_sdk = None
+    if target == 'browser-wasm32':
+        cpp_identity = sdk_identity(target, value('SDK_PROFILE'))
+        if rust_sdk.checked_recipe(recipe)['cpp_sdk_recipe_id'] != cpp_identity:
+            raise ValueError('Rust maintenance requires its exact matched C++ SDK recipe')
+        cpp_sdk = ROOT / 'build/rust-paired-sdk'
+        ci.module('sdk').install(ROOT / 'build/sdk-group', cpp_identity, cpp_sdk, production=True)
+    # This named maintenance operation is the explicit supplier-acquisition boundary.
+    rust_sdk.fetch(recipe, ROOT / 'build/rust-sdk-inputs', network=True)
+    rust_sdk.prepare(recipe, ROOT / 'build/rust-sdk-inputs', ROOT / 'build/rust-sdk-group', cpp_sdk=cpp_sdk)
+    files = rust_sdk.verify_group(ROOT / 'build/rust-sdk-group', identity)
+    write('build/rust-sdk-origin.json', dict(origin='rebuild', recipe=identity, files=files))
+    return identity, files
 
 
 def compile_jobs():
@@ -577,13 +617,19 @@ def main(command):
         targets=[*ci.STANDARD,'browser-wasm32'] if value('SDK_TARGET')=='all' else [value('SDK_TARGET')]
         if any(target not in (*ci.STANDARD,'browser-wasm32') for target in targets): raise ValueError('unknown SDK target')
         fetch_bundles([dict(name='sdk-group-'+target+'-'+value('GITHUB_RUN_ATTEMPT'), output='build/sdk-groups/'+target) for target in targets])
+        if core_provider() == 'rust':
+            fetch_bundles([dict(name='rust-sdk-group-'+target+'-'+value('GITHUB_RUN_ATTEMPT'),
+                               output='build/rust-sdk-groups/'+target) for target in targets])
     elif command == 'fetch-assembly-inputs':
         recipes = delivery.parse(value('RECIPES'))
-        ci.release_matrix(recipes, value('PROFILE'))
+        rows = ci.release_matrix(recipes, value('PROFILE'), core_provider=core_provider())['include']
         fetch_bundles([dict(name='source-' + value('GITHUB_RUN_ATTEMPT'), output='build/source')] +
             [dict(name='application-' + target + '-' + value('GITHUB_RUN_ATTEMPT'), output='build/packages/' + target) for target in recipes])
         if evidence.load(Path('build/source/recipes.json')) != recipes:
             raise ValueError('assembly recipe selection differs from frozen source')
+        frozen_rust = {row['target']: row['rust_recipe'] for row in rows if row['core_provider'] == 'rust'}
+        if evidence.load(Path('build/source/rust-recipes.json')) != frozen_rust:
+            raise ValueError('assembly Rust recipe selection differs from frozen source')
     elif command == 'fetch-application-bundles':
         fetch_bundles([dict(name='application-'+target+'-'+value('GITHUB_RUN_ATTEMPT'), output='build/packages/'+target) for target in evidence.load(Path('build/source/recipes.json'))])
     elif command == 'fetch-evidence-bundles':
@@ -712,40 +758,74 @@ def main(command):
         recipe_id = checksums[0].name[4:-len('-SHA256SUMS')]
         files = dependency_store.verify_group(Path('build/sdk-group'), recipe_id)
         if recipe_id != origin['recipe']: raise ValueError('produced SDK identity differs from selected recipe')
+        rust_id, rust_files = prepare_rust_maintenance(target) if core_provider() == 'rust' else (None, None)
+        provider = (dict(core_provider='rust', rust_group=ROOT / 'build/rust-sdk-group', rust_recipe=rust_id)
+                    if rust_id is not None else dict(core_provider='cpp'))
         pending = []
-        with isolated_sdk_producer(target, value('SDK_PROFILE'), recipe_id, origin['origin'], files) as isolated:
+        rust_isolation = (isolated_sdk_producer(target, value('SDK_PROFILE'), rust_id, 'rebuild', rust_files,
+                          input_name='rust-sdk-inputs', receipt_name='rust-sdk-isolation.json')
+                          if rust_id is not None else nullcontext(lambda label: None))
+        with isolated_sdk_producer(target, value('SDK_PROFILE'), recipe_id, origin['origin'], files) as isolated, rust_isolation as isolated_rust:
             consumer = ROOT / 'build/sdk-consumer'
             pending.append((consumer, ci.prepared_check(target, recipe_id, Path('build/sdk-group'), consumer,
-                                                       jobs, defer_qualification=True)))
-            isolated('after-core')
+                                                       jobs, defer_qualification=True, **provider)))
+            isolated('after-core'); isolated_rust('after-core')
             if value('SDK_PROFILE') == 'all-gui':
                 ci.gui_group_module().verify(ROOT / 'build/gui-group')
-                isolated('before-gui-install')
+                isolated('before-gui-install'); isolated_rust('before-gui-install')
                 consumer = ROOT / 'build/sdk-gui-consumer'
                 pending.append((consumer, ci.prepared_check(target, recipe_id, Path('build/sdk-group'), consumer,
                     jobs, ROOT / 'build/gui-group', defer_qualification=True,
-                    graphics_archive=ROOT / 'build/host-graphics/mesa-windows.7z' if target == 'windows-x86_64' else None)))
+                    graphics_archive=ROOT / 'build/host-graphics/mesa-windows.7z' if target == 'windows-x86_64' else None,
+                    **provider)))
         isolation = evidence.sha(ROOT / 'build/sdk-isolation.json')
         for consumer, receipt in pending:
             receipt['producer_isolation'] = {'file': '../sdk-isolation.json', 'sha256': isolation}
+            if rust_id is not None:
+                receipt['rust_producer_isolation'] = {'file': '../rust-sdk-isolation.json',
+                    'sha256': evidence.sha(ROOT / 'build/rust-sdk-isolation.json')}
             write(consumer / 'qualification.json', receipt)
         request = dict(repository=value('GITHUB_REPOSITORY'), recipe=recipe_id, group='build/sdk-group', source_commit=value('GITHUB_SHA'))
         write('build/sdk-publication-plan.json', delivery.publish_base(**request))
+        if rust_id is not None:
+            write('build/rust-sdk-publication-plan.json', ci.publish_rust_base(value('GITHUB_REPOSITORY'),
+                  rust_id, ROOT / 'build/rust-sdk-group', value('GITHUB_SHA')))
     elif command == 'publish-bases':
+        selected_groups = []
         for group in sorted(Path('build/sdk-groups').iterdir()):
             if not group.is_dir(): raise ValueError('unexpected SDK transport entry')
             files = list(group.glob('sdk-*-SHA256SUMS'))
             if len(files) != 1: raise ValueError('missing complete SDK output')
             recipe = files[0].name[4:-len('-SHA256SUMS')]
+            delivery.publish_base(value('GITHUB_REPOSITORY'), recipe, group, value('GITHUB_SHA'))
+            selected_groups.append((group, recipe))
+        selected_rust_groups = []
+        if core_provider() == 'rust':
+            for group in sorted(Path('build/rust-sdk-groups').iterdir()):
+                if not group.is_dir(): raise ValueError('unexpected Rust SDK transport entry')
+                files = list(group.glob('rust-sdk-*-SHA256SUMS'))
+                if len(files) != 1: raise ValueError('missing complete Rust SDK output')
+                recipe = files[0].name[len('rust-sdk-'):-len('-SHA256SUMS')]
+                if recipe != ci.rust_recipe(group.name):
+                    raise ValueError('Rust SDK publication differs from current exact target recipe')
+                ci.publish_rust_base(value('GITHUB_REPOSITORY'), recipe, group, value('GITHUB_SHA'))
+                selected_rust_groups.append((group, recipe))
+            if {group.name for group, _ in selected_groups} != {group.name for group, _ in selected_rust_groups}:
+                raise ValueError('SDK publication requires both complete language groups for every selected target')
+        for group, recipe in selected_groups:
             result = delivery.publish_base(value('GITHUB_REPOSITORY'), recipe, group, value('GITHUB_SHA'), execute=True)
             write('build/receipts/base-' + recipe + '.json', result)
+        for group, recipe in selected_rust_groups:
+            result = ci.publish_rust_base(value('GITHUB_REPOSITORY'), recipe, group, value('GITHUB_SHA'), execute=True)
+            write('build/receipts/rust-base-' + recipe + '.json', result)
     elif command == 'apt-native-smoke':
         import artifact, release_check
         release_check.apt_preflight('linux-x86_64')
         write('build/apt-evidence/started.json', dict(operation=command, target='linux-x86_64',
               backend='core', status='started', source_commit=os.environ.get('GITHUB_SHA')))
         subprocess.run([sys.executable, 'tools/build.py', 'package', 'release', '--portable', '--jobs', '2',
-                        '--build-dir', 'build/apt-smoke'], check=True)
+                        '--build-dir', 'build/apt-smoke', '--core-provider', core_provider(),
+                        *(['--rust-sdk', str(ROOT / 'build/native-rust-sdk')] if core_provider() == 'rust' else [])], check=True)
         packages = ROOT / 'build/apt-smoke/packages'
         archives = list(packages.glob('*.tar.gz'))
         if len(archives) != 1: raise ValueError('one native archive required for APT mechanism check')
@@ -785,13 +865,16 @@ def main(command):
         ci.prepared_check(value('TARGET'), value('RECIPE'), ROOT / 'build/base' / value('RECIPE'),
                           ROOT / 'build/native-gui', compile_jobs(), ROOT / 'build/gui-group',
                           graphics_archive=ROOT / 'build/host-graphics/mesa-windows.7z' if value('TARGET') == 'windows-x86_64' else None,
-                          development=boolean('SDK_DEVELOPMENT') if 'SDK_DEVELOPMENT' in os.environ else False)
+                          development=boolean('SDK_DEVELOPMENT') if 'SDK_DEVELOPMENT' in os.environ else False,
+                          **rust_input(value('TARGET')))
     elif command == 'publish-gui':
         write('build/receipts/gui-publication.json', ci.publish_gui_group(value('GITHUB_REPOSITORY'), Path('build/gui-group'), value('GITHUB_SHA'), execute=True))
     elif command == 'application-plan':
         recipes = delivery.parse(value('RECIPES').encode())
-        matrix = ci.release_matrix(recipes, value('PROFILE'), runners=selected_runners())
+        matrix = ci.release_matrix(recipes, value('PROFILE'), runners=selected_runners(), core_provider=core_provider())
         write('build/recipes.json', recipes)
+        write('build/rust-recipes.json', {row['target']: row['rust_recipe'] for row in matrix['include']
+              if row['core_provider'] == 'rust'})
         output('matrix', matrix)
         gui = None
         if value('PROFILE') == 'all-gui':
@@ -803,16 +886,31 @@ def main(command):
         origin = delivery.fetch_base(value('GITHUB_REPOSITORY'), value('RECIPE'), Path('build/base') / value('RECIPE'),
                                      binary_only=command == 'fetch-sdk-binary')
         write('build/application-sdk.json', origin)
+    elif command == 'fetch-rust-sdk':
+        selected = rust_input(value('TARGET'))
+        if selected['core_provider'] == 'rust':
+            origin = ci.fetch_rust_base(value('GITHUB_REPOSITORY'), selected['rust_recipe'], selected['rust_group'])
+            write('build/application-rust-sdk.json', origin)
     elif command == 'application-build':
         ci.prepared_package(value('TARGET'), value('RECIPE'), (ROOT / 'build/base' / value('RECIPE')),
                             ROOT / 'build/source/source.tar.gz', ROOT / 'build/produced', compile_jobs(),
                             graphics_archive=ROOT / 'build/host-graphics/mesa-windows.7z'
                             if value('TARGET') == 'windows-x86_64' and value('PROFILE') == 'all-gui' else None,
                             expected_files=evidence.load(ROOT / 'build/application-sdk.json')['files']
-                            if evidence.load(ROOT / 'build/application-sdk.json').get('payload') == 'binary' else None)
+                            if evidence.load(ROOT / 'build/application-sdk.json').get('payload') == 'binary' else None,
+                            **rust_input(value('TARGET')))
     elif command == 'assemble':
         recipes = evidence.load(Path('build/source/recipes.json'))
         delivery.fetch_bases(value('GITHUB_REPOSITORY'), sorted(set(recipes.values())), Path('build/base'))
+        rust_recipes = evidence.load(Path('build/source/rust-recipes.json'))
+        expected_rust = {row['target']: row['rust_recipe'] for row in ci.release_matrix(recipes, value('PROFILE'),
+            core_provider=core_provider())['include'] if row['core_provider'] == 'rust'}
+        if rust_recipes != expected_rust:
+            raise ValueError('assembled Rust dependencies differ from frozen current recipes')
+        if rust_recipes:
+            delivery.fetch_rust_bases(value('GITHUB_REPOSITORY'), sorted(set(rust_recipes.values())), Path('build/rust-base'))
+            for recipe in sorted(set(rust_recipes.values())):
+                (Path('build/rust-base') / recipe).rename(Path('build/base') / recipe)
         ci.assemble_release(Path('build/source/source.tar.gz'), Path('build/packages'), Path('build/base'), Path('build/candidate'), value('PROFILE'))
         tag = os.environ.get('TAG') or 'candidate-' + value('GITHUB_RUN_ID') + '-attempt-' + value('GITHUB_RUN_ATTEMPT')
         request = dict(repository=value('GITHUB_REPOSITORY'), tag=tag, directory='build/candidate',

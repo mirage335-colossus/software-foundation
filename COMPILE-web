@@ -2,7 +2,9 @@ Software Foundation — build and open the browser GUI
 
 Run from the repository root. Requires Git, CMake >=3.24, Ninja, a C++20
 compiler, Python >=3.9, and a current browser. No native GUI toolkit or
-prepared SDK is needed for the hosted-browser example.
+prepared C++ SDK is needed for the hosted-browser example. Rust is the default;
+Debian-family dev requires installed distribution rustc/Cargo, while another
+native host needs --rust-sdk /absolute/matched-rust-sdk.
 
 Build and start the hosted application:
 ./build.sh build dev --gui --gui-backends hosted-web --build-dir build/demo-web
@@ -20,13 +22,14 @@ The GUI sources are retained in this checkout; normal builds download nothing.
 Keep build/demo-web separate from native-toolkit and Wasm trees. A changed
 toolchain or backend selection needs a fresh build directory.
 On Windows, initialize a developer prompt, use python tools/build.py instead
-of ./build.sh and python instead of python3, and append .exe to the executable.
+of ./build.sh and python instead of python3, append .exe to the executable, and
+add --rust-sdk C:\retained\rust-windows-sdk to the build command.
 
 Optional self-contained Wasm application (Linux x86_64 host):
-This route needs the separate prepared browser SDK; the Windows substitution
+This route needs the separate matched browser and Rust SDK extensions; the Windows substitution
 above applies to the hosted-native recipe, not this SDK.
-Replace /absolute/prepared-wasm-sdk with the verified SDK described in docs/sdk.md.
-./build.sh build release --gui --gui-backends wasm --sdk /absolute/prepared-wasm-sdk --build-dir build/demo-wasm
+Replace both paths with verified Emscripten 6.0.10/Rust 1.63 inputs in docs/sdk.md.
+./build.sh build release --gui --gui-backends wasm --sdk /absolute/prepared-wasm-sdk --rust-sdk /absolute/prepared-wasm-rust-sdk --build-dir build/demo-wasm
 
 Open build/demo-wasm/gui/wasm-package/software-foundation-wasm.html in a browser.
 That single file contains the application and runs without a server or network.

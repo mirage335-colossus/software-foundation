@@ -29,15 +29,20 @@ the C++20 features used by this repository. Python runs developer helpers; the
 installed CLI does not require Python. The default application has no
 third-party application runtime dependencies. Compiler and operating-system
 runtimes still apply. GUI integration is optional and has separate prerequisites.
+The core provider defaults to Rust. For Debian-family native `dev` builds,
+install distribution `rustc` and Cargo; Debian 12 supplies the Rust 1.63 baseline.
+Other native hosts and release, sanitizer, packaging, portable, Windows, Wasm
+or prepared-C++-SDK profiles need an already verified `--rust-sdk PATH` matched
+to the selected target. These are build inputs, not installed runtime tools.
 
 ```sh
 ./build.sh build dev
 ./build.sh test dev --label core
 ./build.sh test dev --full
-./build.sh test asan
-./build.sh package release
-./build.sh package release --verify-package
-./build.sh portable-package
+./build.sh test asan --rust-sdk /absolute/path/to/rust-sdk
+./build.sh package release --rust-sdk /absolute/path/to/rust-sdk
+./build.sh package release --rust-sdk /absolute/path/to/rust-sdk --verify-package
+./build.sh portable-package --rust-sdk /absolute/path/to/rust-sdk
 ./build.sh test dev --test core.store --test core.cli
 ```
 
@@ -45,9 +50,9 @@ On Windows, start a terminal with the intended compiler environment initialized
 and invoke the same helper directly:
 
 ```powershell
-python tools/build.py build dev
-python tools/build.py test dev --full
-python tools/build.py package release
+python tools/build.py build dev --rust-sdk C:\retained\rust-sdk
+python tools/build.py test dev --rust-sdk C:\retained\rust-sdk --full
+python tools/build.py package release --rust-sdk C:\retained\rust-sdk
 ```
 
 The sanitizer preset requires a supported compiler/runtime combination; do not
@@ -57,10 +62,11 @@ arguments must be passed as arguments, never evaluated as shell text.
 
 | Preset | Output directory | Purpose |
 | --- | --- | --- |
-| `dev` | `build/dev/` | Incremental native development and tests |
-| `release` | `build/release/` | Optimized application and package candidate |
-| `asan` | `build/asan/` | Instrumented development and regression tests |
-| A preset with `--sdk PATH` | `build/PRESET-sdk/` | Explicit prepared SDK selection |
+| `dev` with Debian distribution Rust | `build/dev-rust/` | Incremental native development and tests |
+| `release --rust-sdk PATH` | `build/release-rust-sdk/` | Optimized application and package candidate |
+| `asan --rust-sdk PATH` | `build/asan-rust-sdk/` | C++ and boundary instrumentation; stable Rust itself is not instrumented |
+| A preset with `--sdk PATH --rust-sdk PATH` | `build/PRESET-sdk-rust-sdk/` | Explicit matched target SDK selection |
+| `--core-provider cpp` | Original preset directory, such as `build/dev/` | Complete legacy C++ configuration |
 
 `--gui` adds the optional GUI integration using the complete verified source group
 in this checkout, with a `-gui` directory suffix. It needs no second repository,
@@ -68,7 +74,7 @@ submodule initialization or supplier download. For example:
 
 ```sh
 ./build.sh test dev --gui --gui-backends terminal,framebuffer,hosted-web --label gui
-./build.sh build release --gui --gui-backends fltk
+./build.sh build release --rust-sdk /absolute/path/to/rust-sdk --gui --gui-backends fltk
 ```
 
 The second command also needs the distribution's FLTK development package and
@@ -101,7 +107,8 @@ create a schema-3 browser package with `tools/package_wasm.py --source-root PATH
 Pass its directory and the exact SHA256 of `web-manifest.json` to the native build:
 
 ```sh
-./build.sh portable-package --build-dir build/native-with-browser \
+./build.sh portable-package --rust-sdk /absolute/path/to/native-rust-sdk \
+  --build-dir build/native-with-browser \
   --wasm-package /absolute/path/to/verified-browser-package \
   --wasm-package-sha256 EXACT_WEB_MANIFEST_SHA256
 ```
@@ -136,7 +143,7 @@ scope assignment is broader and remains derived from the complete test inventory
 Direct CMake remains supported:
 
 ```sh
-cmake --preset dev
+cmake --preset dev -DFOUNDATION_RUST_SDK_ROOT=/absolute/path/to/rust-sdk
 cmake --build --preset dev --target foundation-tests --parallel "$(python3 tools/build_capacity.py)"
 ctest --preset dev --output-on-failure --no-tests=error --parallel 2
 cmake --install build/dev --prefix "$PWD/build/install"
@@ -153,23 +160,30 @@ must use `find_package(Foundation CONFIG REQUIRED)` and link that target;
 consumers must not copy internal include directories or compiler flags. The
 integration checks exercise this installation boundary.
 
-## Optional Rust validation provider
+<a id="optional-rust-validation-provider"></a>
 
-`--core-provider cpp` is the default. It performs no Rust discovery, compiler
-probe, SDK restoration or download. `--core-provider rust` selects the private
+## Rust Default And Provider Selection
+
+`--core-provider rust` is the default for all fresh configurations. It selects the private
 text-validation leaf while preserving the public C++ `Store` API and its failure
 guarantees. The Rust workspace uses edition 2021, a Rust 1.63 baseline, zero
 external crates and allocation-free `no_std` code. C++ owns records, strings,
 exceptions and frontend behavior; every configured CLI/GUI host links the same
 selected core. This is a narrow component, not a rewrite of the application.
+The [policy rationale](rust-hybrid-plan.md#why-rust-is-the-default) explains the
+security direction, tool requirements and measured-performance limits.
+`--core-provider cpp` explicitly selects the complete legacy provider and makes
+no Rust discovery, compiler probe, SDK restoration or download. Missing Rust
+inputs never silently select it. An existing direct CMake cache keeps its recorded
+provider; changing providers requires a fresh tree.
 
-Use a verified [retained Rust extension](sdk.md#optional-retained-rust-extension):
+Use a verified [retained Rust extension](sdk.md#retained-rust-extension):
 
 ```sh
-./build.sh test dev --core-provider rust --rust-sdk /absolute/path/to/rust-sdk \
+./build.sh test dev --rust-sdk /absolute/path/to/rust-sdk \
   --build-dir build/dev-rust --label core
 ./build.sh test dev --sdk /absolute/path/to/cpp-sdk \
-  --core-provider rust --rust-sdk /absolute/path/to/rust-sdk \
+  --rust-sdk /absolute/path/to/rust-sdk \
   --build-dir build/dev-sdk-rust --gui --label gui
 ```
 
@@ -188,7 +202,7 @@ Native Linux x64 or ARM64, with the matching retained C++ and Rust extensions:
 
 ```sh
 ./build.sh test release --sdk /retained/linux-all-gui-sdk \
-  --core-provider rust --rust-sdk /retained/rust-linux-sdk --portable \
+  --rust-sdk /retained/rust-linux-sdk --portable \
   --gui --gui-backends terminal,framebuffer,fltk,rev,sdl,hosted-web \
   --build-dir build/rust-linux-all-gui --full
 ```
@@ -199,7 +213,7 @@ Native Windows x64, from the initialized matching MSVC developer prompt:
 python tools/build.py test release --portable `
   --windows-dependencies C:\retained\windows-all-gui-dependencies `
   --dependency-group C:\retained\windows-all-gui-group `
-  --core-provider rust --rust-sdk C:\retained\rust-windows-sdk `
+  --rust-sdk C:\retained\rust-windows-sdk `
   --gui --gui-backends terminal,framebuffer,fltk,rev,sdl,hosted-web `
   --build-dir build/rust-windows-all-gui --full
 ```
@@ -212,7 +226,7 @@ Browser Wasm, with the exact paired Emscripten 6.0.10 and Rust 1.63 extensions:
 
 ```sh
 ./build.sh test release --sdk /retained/emscripten-sdk \
-  --core-provider rust --rust-sdk /retained/rust-emscripten-sdk \
+  --rust-sdk /retained/rust-emscripten-sdk \
   --gui --gui-backends wasm --build-dir build/rust-wasm --full
 ```
 
@@ -237,7 +251,7 @@ symlinks in retained SDK target libraries.
 With those distribution prerequisites already installed, a fresh focused check is:
 
 ```sh
-./build.sh test dev --core-provider rust --build-dir build/dev-distro-rust \
+./build.sh test dev --build-dir build/dev-distro-rust \
   --test core.store --test core.cli --test core.text_validation \
   --test core.text_status --test rust.unit --test integration.install
 ```
@@ -245,17 +259,28 @@ With those distribution prerequisites already installed, a fresh focused check i
 The wrapper requires the retained extension for Rust `release`, packaging,
 `asan`, portable builds and prepared-target builds. Direct CMake optimization
 alone does not establish release qualification. Ordinary builds never install
-tools, contact rustup or fetch crates. See [provider tests](testing.md#optional-rust-provider-checks)
+tools, contact rustup or fetch crates. See [provider tests](testing.md#rust-provider-checks)
 for the limits of mixed sanitizer coverage and
-[portability](portability.md#optional-rust-provider-boundary) for platform evidence.
+[portability](portability.md#rust-provider-boundary) for platform evidence.
 
 Default output names add `-rust` for native development tools or `-rust-sdk` for
 a retained extension, after the existing `-sdk` suffix when present. Keep C++ and
 Rust in separate trees. Provider, Rust tool digests, target and SDK manifest
 identity belong to the configured tree; changing them requires a fresh tree.
-Direct CMake selects `FOUNDATION_CORE_PROVIDER=rust` and
+Fresh direct CMake configurations default `FOUNDATION_CORE_PROVIDER=rust`; select
 `FOUNDATION_RUST_SDK_ROOT=/absolute/path/to/rust-sdk`. An optional
 `FOUNDATION_RUST_TARGET` must match the C++ platform target.
+
+For the legacy build on a host with no Rust tools, use a fresh tree explicitly:
+
+```sh
+./build.sh test dev --core-provider cpp --build-dir build/legacy-cpp --label core
+cmake --preset dev -DFOUNDATION_CORE_PROVIDER=cpp -B build/legacy-cpp-cmake
+```
+
+Neither command supplies Rust inputs. Target profiles without a qualified Rust
+extension must fail under the default; explicit C++ selection retains their
+existing compatibility route.
 
 CMake owns one subordinate Rust archive producer for each selected configuration.
 Cargo receives a frozen lockfile, offline mode, one worker, a private Cargo home
@@ -519,8 +544,8 @@ reduce development work without claiming omitted coverage as successful.
 
 ```sh
 ./build.sh test dev --build-dir /owned/session-build --label core
-./build.sh test release --build-dir /owned/release-build --sdk /owned/sdk --portable --full
-./build.sh package release --build-dir /owned/release-build --sdk /owned/sdk --portable
+./build.sh test release --build-dir /owned/release-build --sdk /owned/sdk --rust-sdk /owned/matched-rust-sdk --portable --full
+./build.sh package release --build-dir /owned/release-build --sdk /owned/sdk --rust-sdk /owned/matched-rust-sdk --portable
 ```
 
 Native Windows dependency groups are separate from compiler/sysroot SDKs. Use

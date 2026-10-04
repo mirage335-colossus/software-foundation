@@ -2,6 +2,11 @@ name: Publish initial-view screenshots
 'on':
   workflow_dispatch:
     inputs:
+      core_provider:
+        description: Rust application default; cpp explicitly selects legacy compatibility
+        type: choice
+        options: [rust, cpp]
+        default: rust
       native_recipe:
         description: Exact prepared Linux x64 GUI SDK recipe already in base
         type: string
@@ -17,6 +22,23 @@ name: Publish initial-view screenshots
         default: base
       retained_inputs:
         description: For retained only; JSON object containing native and wasm version-2 requests
+        type: string
+        default: ''
+      native_rust_recipe:
+        description: Exact existing Rust Linux x64 recipe; empty selects the checked-in recipe
+        type: string
+        default: ''
+      wasm_rust_recipe:
+        description: Exact existing matched Rust browser recipe; empty selects the checked-in recipe
+        type: string
+        default: ''
+      rust_source:
+        description: Existing public Rust base or explicitly retained Rust bundle
+        type: choice
+        options: [base, retained]
+        default: base
+      rust_retained_inputs:
+        description: For Rust retained only; JSON native and wasm exact producer requests
         type: string
         default: ''
       gui_input:
@@ -92,13 +114,22 @@ jobs:
         SDK_SOURCE: ${{ inputs.source }}
         RETAINED_INPUTS: ${{ inputs.retained_inputs }}
         GUI_INPUT: ${{ inputs.gui_input }}
+        CORE_PROVIDER: ${{ inputs.core_provider }}
+        FOUNDATION_NATIVE_PROVIDER_RECIPE: ${{ inputs.native_rust_recipe }}
+        FOUNDATION_WASM_PROVIDER_RECIPE: ${{ inputs.wasm_rust_recipe }}
+        FOUNDATION_PROVIDER_SOURCE: ${{ inputs.rust_source }}
+        FOUNDATION_PROVIDER_RETAINED_INPUTS: ${{ inputs.rust_retained_inputs }}
       run: |
         import os, subprocess, sys
         command=['/usr/bin/python3', '-B', 'tools/screenshots.py', 'hosted', '--repository',
           os.environ['GITHUB_REPOSITORY'], '--native-recipe', os.environ['NATIVE_RECIPE'],
           '--wasm-recipe', os.environ['WASM_RECIPE'], '--jobs', os.environ['JOBS'], '--source', os.environ['SDK_SOURCE'],
-          '--gui-input', os.environ['GUI_INPUT']]
+          '--gui-input', os.environ['GUI_INPUT'], '--core-provider', os.environ['CORE_PROVIDER'],
+          '--rust-source', os.environ['FOUNDATION_PROVIDER_SOURCE']]
         if os.environ['RETAINED_INPUTS']: command += ['--retained-inputs', os.environ['RETAINED_INPUTS']]
+        if os.environ['FOUNDATION_NATIVE_PROVIDER_RECIPE']: command += ['--native-rust-recipe', os.environ['FOUNDATION_NATIVE_PROVIDER_RECIPE']]
+        if os.environ['FOUNDATION_WASM_PROVIDER_RECIPE']: command += ['--wasm-rust-recipe', os.environ['FOUNDATION_WASM_PROVIDER_RECIPE']]
+        if os.environ['FOUNDATION_PROVIDER_RETAINED_INPUTS']: command += ['--rust-retained-inputs', os.environ['FOUNDATION_PROVIDER_RETAINED_INPUTS']]
         subprocess.run(command, check=True)
     - name: Verify and plan public gallery publication
       shell: python

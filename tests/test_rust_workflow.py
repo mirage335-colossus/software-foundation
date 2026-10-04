@@ -11,9 +11,71 @@ from unittest.mock import Mock, call, patch
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('rust_qualification', ROOT / '.github/scripts/rust_qualification.py')
 qualification = importlib.util.module_from_spec(spec); spec.loader.exec_module(qualification)
+host_spec = importlib.util.spec_from_file_location('rust_host_prepare', ROOT / '.github/scripts/rust_host_prepare.py')
+host_preparation = importlib.util.module_from_spec(host_spec); host_spec.loader.exec_module(host_preparation)
 
 
 class RustWorkflowTests(unittest.TestCase):
+    def test_native_candidate_preparation_retains_exact_official_inputs_before_install(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for target in qualification.ci_plan.STANDARD:
+                output = root / target / 'sdk'; output.parent.mkdir()
+                recipe = ROOT / qualification.ci_plan.RUST_RECIPES[target]
+                with self.subTest(target=target), \
+                     patch.object(host_preparation.ci_plan, 'assert_host') as host, \
+                     patch.object(host_preparation.rust_sdk, 'recipe_identity', return_value='a' * 64), \
+                     patch.object(host_preparation.rust_sdk, 'fetch') as fetch, \
+                     patch.object(host_preparation.rust_sdk, 'prepare') as prepare, \
+                     patch.object(host_preparation.rust_sdk, 'install') as install, \
+                     patch.object(host_preparation.rust_sdk, 'verify_group', return_value={'retained': 'b' * 64}):
+                    result = host_preparation.prepare(target, output)
+                host.assert_called_once_with(target)
+                fetch.assert_called_once_with(recipe, output.parent / 'native-rust-inputs', network=True)
+                prepare.assert_called_once_with(recipe, output.parent / 'native-rust-inputs', output.parent / 'native-rust-group')
+                install.assert_called_once_with(output.parent / 'native-rust-group', 'a' * 64, output, execute=True)
+                self.assertEqual(result['recipe'], 'a' * 64)
+                self.assertEqual(result['files'], {'retained': 'b' * 64})
+
+    def test_native_candidate_preparation_refuses_foreign_hosts_and_occupied_output_before_acquisition(self):
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(host_preparation.rust_sdk, 'fetch') as fetch:
+            root = Path(temporary)
+            with patch.object(host_preparation.ci_plan, 'assert_host', side_effect=ValueError('wrong host')):
+                with self.assertRaisesRegex(ValueError, 'wrong host'):
+                    host_preparation.prepare('windows-x86_64', root / 'sdk')
+            with patch.object(host_preparation.ci_plan, 'assert_host'):
+                with self.assertRaisesRegex(ValueError, 'must be new'):
+                    host_preparation.prepare('linux-x86_64', root)
+            fetch.assert_not_called()
+
+    def test_new_workflow_entrypoints_select_rust_and_forward_legacy_provider_explicitly(self):
+        for name in ('candidate', 'candidate-package', 'sdk-application', 'sdk-maintenance', 'native-gui', '_release-latest', 'screenshots'):
+            with self.subTest(workflow=name):
+                text = (ROOT / '.github/workflows' / (name + '.yml')).read_text()
+                self.assertIn('      core_provider:', text)
+                self.assertIn('        default: rust', text)
+                self.assertIn('CORE_PROVIDER: ${{ inputs.core_provider }}', text)
+        feedback = (ROOT / '.github/workflows/ci.yml').read_text()
+        self.assertEqual(feedback.count('sudo sh tools/ci-apt.sh install rustc cargo'), 2)
+        self.assertEqual(feedback.count('PATH=/usr/bin:/bin:$PATH python3'), 2)
+        self.assertIn('--core-provider cpp --build-dir build/cpp-compat', feedback)
+        self.assertLess(feedback.index('Prepare distribution Rust host tools'), feedback.index('Build and test inexpensive contracts'))
+        self.assertLess(feedback.rindex('Prepare distribution Rust host tools'), feedback.index('Compile shared application once'))
+
+    def test_ordinary_prepared_workflows_require_retained_rust_and_sdk_maintenance_retains_full_group(self):
+        for name in ('sdk-application', 'native-gui'):
+            with self.subTest(workflow=name):
+                text = (ROOT / '.github/workflows' / (name + '.yml')).read_text()
+                self.assertIn('lifecycle.py fetch-rust-sdk', text)
+                self.assertNotIn('rust_host_prepare.py', text)
+        application = (ROOT / '.github/workflows/sdk-application.yml').read_text()
+        self.assertIn('build/rust-recipes.json', application)
+        self.assertIn('FOUNDATION_PROVIDER_RECIPE: ${{ matrix.rust_recipe }}', application)
+        maintenance = (ROOT / '.github/workflows/sdk-maintenance.yml').read_text()
+        self.assertIn('BUNDLE_PATHS: build/rust-sdk-group/', maintenance)
+        self.assertIn('build/rust-sdk-isolation.json', maintenance)
+
     def test_phase_markers_flush_and_preserve_failures(self):
         with patch('builtins.print') as output:
             with qualification.phase('fixture-success'):
@@ -99,6 +161,8 @@ class RustWorkflowTests(unittest.TestCase):
     def test_explicit_lane_uses_four_native_hosts_and_exact_paired_recipes(self):
         ci = qualification.ci_plan
         recipes = {target: 'a' * 64 for target in ci.RUST_RECIPES}
+        recipes['browser-wasm32'] = qualification.rust_sdk.checked_recipe(
+            ROOT / ci.RUST_RECIPES['browser-wasm32'])['cpp_sdk_recipe_id']
         result = ci.rust_qualification_matrix(recipes)['include']
         self.assertEqual({row['target'] for row in result}, set(ci.RUST_RECIPES))
         self.assertEqual(next(row['runner'] for row in result if row['target'] == 'linux-aarch64'), 'ubuntu-24.04-arm')

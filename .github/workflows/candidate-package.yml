@@ -2,6 +2,9 @@ name: Independent native package consumer
 'on':
   workflow_call:
     inputs:
+      core_provider:
+        type: string
+        default: rust
       preserve_artifacts:
         type: boolean
         default: false
@@ -32,15 +35,27 @@ jobs:
     - if: runner.os == 'Windows'
       shell: pwsh
       run: ./tools/ci_windows.ps1
+    - name: Explicit pinned native Rust host preparation
+      if: inputs.core_provider == 'rust'
+      shell: python
+      env:
+        TARGET: ${{ inputs.target }}
+      run: |
+        import os, subprocess, sys
+        subprocess.run([sys.executable, '-B', '.github/scripts/rust_host_prepare.py',
+                        '--target', os.environ['TARGET']], check=True)
     - env:
         JOBS: ${{ inputs.build_jobs }}
         TARGET: ${{ inputs.target }}
+        CORE_PROVIDER: ${{ inputs.core_provider }}
       shell: python
       run: |
         import os, subprocess, sys
         subprocess.run([sys.executable, 'tools/ci_plan.py', 'host', os.environ['TARGET']], check=True)
-        subprocess.run([sys.executable, 'tools/ci_plan.py', 'package', '--build', 'build/package',
-                        '--jobs', os.environ['JOBS']], check=True)
+        command = [sys.executable, 'tools/ci_plan.py', 'package', '--build', 'build/package',
+                   '--jobs', os.environ['JOBS'], '--core-provider', os.environ['CORE_PROVIDER']]
+        if os.environ['CORE_PROVIDER'] == 'rust': command += ['--rust-sdk', 'build/native-rust-sdk']
+        subprocess.run(command, check=True)
     - id: package_bundle
       name: Retain verified package-${{ inputs.target }}-${{ github.run_attempt }}
       uses: ./.github/actions/ci-evidence-publish

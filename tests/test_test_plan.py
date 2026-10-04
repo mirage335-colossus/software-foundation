@@ -274,6 +274,15 @@ class InputIdentityTests(unittest.TestCase):
         plan.require_current(self.build, frozen)
         self.assertEqual(self.freeze(), frozen)
 
+    def test_legacy_cache_and_wrapper_keep_cpp_provider_without_rust_tools(self):
+        from unittest.mock import patch
+        self.wrapper()
+        with patch.object(plan, 'native_rust_inputs', side_effect=AssertionError('Rust tools must not be inspected')):
+            inputs = plan.build_inputs(self.build)
+        self.assertEqual(inputs['core_provider'], 'cpp')
+        self.assertIsNone(inputs['rust_sdk'])
+        self.assertNotIn('rust_tools', inputs)
+
     def test_compiler_bytes_change_with_unchanged_path_size_and_time(self):
         import os
         frozen = self.freeze(); stat = self.compiler.stat()

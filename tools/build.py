@@ -71,8 +71,13 @@ def rust_sdk_identity(root, cpp_sdk=None):
 
 def native_rust_identity():
     from rust_build import native_tool_identity, select_native_tools
-    selected = select_native_tools()
-    return selected, native_tool_identity(selected["cargo"], selected["rustc"])
+    try:
+        selected = select_native_tools()
+        return selected, native_tool_identity(selected["cargo"], selected["rustc"])
+    except (OSError, ValueError) as error:
+        raise ValueError("Rust tools are unavailable or invalid: " + str(error)
+                         + "; provide a retained --rust-sdk or Debian distribution Rust tools, "
+                           "or explicitly select --core-provider cpp") from error
 
 
 def host_programs(root=None):
@@ -194,8 +199,8 @@ def main(argv=None):
                            help="run an exact CTest name; repeat for several names (including fixture prerequisites)")
     selection.add_argument("--full", action="store_true", help="run all enabled tests (default)")
     parser.add_argument("--sdk", type=Path)
-    parser.add_argument("--core-provider", choices=("cpp", "rust"), default="cpp",
-                        help="implementation of the private core validation component")
+    parser.add_argument("--core-provider", choices=("rust", "cpp"), default="rust",
+                        help="private core validation implementation (default: rust; cpp is explicit compatibility mode)")
     parser.add_argument("--rust-sdk", type=Path, help="verified Rust extension paired with the selected target SDK")
     parser.add_argument("--windows-dependencies", type=Path, help="verified restored Windows dependency export")
     parser.add_argument("--dependency-group", type=Path, action="append", default=[],
@@ -253,7 +258,8 @@ def execute(args, parser, timings):
     if (args.core_provider == "rust" and not args.rust_sdk
             and (sys.platform != "linux" or args.sdk or args.windows_dependencies
                  or args.portable or preset != "dev")):
-        parser.error("this Rust target/configuration requires an explicit retained --rust-sdk")
+        parser.error("this Rust target/configuration requires an explicit retained --rust-sdk; "
+                     "prepare its matched extension or explicitly select --core-provider cpp")
     backends = args.gui_backends.split(",")
     allowed = {"terminal", "framebuffer", "fltk", "rev", "sdl", "hosted-web", "wasm"}
     if len(set(backends)) != len(backends) or not set(backends) <= allowed:

@@ -18,6 +18,15 @@ Producers then download and validate those groups, restore them into fresh
 locations and compile against them. Missing or partial groups fail. The workflow
 does not silently compile a new SDK; use explicit SDK maintenance first.
 
+`core_provider` defaults to `rust`. The preflight derives the exact per-target
+Rust recipes from the checked-in recipes and producing helper bytes, and requires
+their complete retained binary/source/checksum triplets alongside the selected
+C++ groups. Missing, partial or stale Rust inputs fail before SDK consumption
+or publication. It returns the Rust recipe map to the existing producers and
+retains those groups with application recovery inputs. Explicit
+`core_provider=cpp` selects the complete legacy release route without Rust
+inputs; historical delivered inventories keep their original provider identity.
+
 ## Executable ordering
 
 1. Freeze the exact source revision, selected inventory, new tag and existing

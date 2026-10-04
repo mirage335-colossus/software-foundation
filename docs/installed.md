@@ -40,12 +40,14 @@ or browser exception settings. Linking a static archive alone does not configure
 the consumer's runtime. Keep the matching prepared SDK for SDK-produced packages;
 this helper does not turn a different compiler or target into a compatible one.
 
-A package produced with the optional Rust core provider also installs its Rust
+A package produced with the default Rust core provider also installs its Rust
 static archive. `foundation::core` includes that archive and its recorded native
 link requirements automatically; ordinary installed C++ consumers do not need
 Cargo, rustc or rustup. `build-info.txt` identifies the selected provider and Rust
 compiler/SDK. The matching C++ toolchain, target and runtime requirements above
 still apply; this does not add a general default-PIE or shared-library guarantee.
+Explicitly selected C++ packages retain their original export without a Rust
+archive. A consumer uses the same public interface for either provider.
 
 The accompanying `LICENSE` applies to this package's own code.
 `third_party/dependencies.json` records dependency status. Core packages contain

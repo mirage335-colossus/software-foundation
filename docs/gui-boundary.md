@@ -50,8 +50,14 @@ is consumed by both widget construction and layout: control identity, kind, text
 font role, order and height have one declaration. Its [header](../gui/shared/application.hpp) exposes only
 `gui::Adapter`. No native object crosses into application code.
 
-The shared library is linked into every selected executable. One native build
-graph builds all selected native hosts and their tests; Emscripten uses a separate
+The shared library is linked into every selected executable. Fresh configurations
+use Rust for the Store's bounded text validation through its private C ABI;
+allocation, application state and public C++ interfaces retain their existing
+owners. Every frontend reaches this one provider through the same Store and
+Application, so backend adapters contain no Rust-specific feature implementation.
+The explicit C++ compatibility provider uses that same application interface.
+One native build graph builds all selected native hosts and their tests and reuses
+one Rust archive per compatible target/configuration; Emscripten uses a separate
 toolchain build directory because its output is a different target platform.
 Source changes and tests still use the same library and CMake definitions.
 
@@ -131,8 +137,10 @@ touch release/cancellation remains ordered and no event is dropped.
 
 This is a porting seam for a touchscreen, VR panel or embedded display. A real
 port still supplies calibrated input and display drivers, an appropriate C++20
-runtime and sufficient memory. The example does not claim an Arduino board port
-or hardware touchscreen qualification.
+runtime, a qualified target Rust extension for the default provider, and sufficient
+memory. The bounded validation boundary can be selected for a future C++ or hybrid
+firmware port; the desktop toolchain is not a board toolchain. The example does not
+claim an Arduino board port or hardware touchscreen qualification.
 
 ## Worker execution and an offline browser application
 
@@ -146,7 +154,7 @@ request is outstanding. The client snapshots each accepted operation and bounds
 it to 1 MiB, with an 8 MiB total including the in-flight operation. Adjacent
 compatible edits coalesce without crossing action barriers; rejected work cannot
 consume a sequence number or silently drop an earlier accepted action. C++
-callbacks and ordinary application work execute away
+callbacks and the linked Rust validation code execute ordinary application work away
 from the browser UI thread. DOM rendering and user input stay in the browser;
 trusted host code owns dialogs and file services. [Browser embedding](browser-embedding.md)
 places the renderer in an opaque sandboxed iframe while keeping transport,
@@ -167,12 +175,16 @@ It can be opened as a local file. Its content policy disables network connection
 module Blob URLs are owned and revoked by their creating lifetimes. Build it with:
 
 ```sh
-./build.sh build release --gui --gui-backends wasm --sdk /absolute/prepared-sdk
+./build.sh build release --gui --gui-backends wasm \
+  --sdk /absolute/retained/emscripten-sdk \
+  --rust-sdk /absolute/retained/rust-emscripten-sdk
 ```
 
 The ordinary graph builds the package as `foundation-wasm-package`; it reuses the
-same application target and prepared SDK. The package manifest binds every input
-and the final HTML. Schema 3 also binds the isolated child bundle and policy; the
+same mixed C++/Rust application target and matched prepared SDKs. The qualified
+tuple uses Rust 1.63 and Emscripten 6.0.10 without cross-language LTO. The package
+manifest binds every input and the final HTML. Schema 3 also binds the isolated
+child bundle and policy; the
 same HTML offers standalone and isolated compositions. Legacy schemas retain
 their original policies and make no isolation claim. See
 [browser package compatibility](browser-embedding.md#offline-package-and-legacy-compatibility).
@@ -381,7 +393,9 @@ not an SDK. The verified group is committed under
 upstream's Rev sources, retained GLEW/FreeType archives and fonts. The FLTK
 adapter is included; the FLTK library remains a distribution or SDK dependency. Compiler, platform headers
 and toolkit dependencies come from distribution packages for ordinary native
-Linux builds, or from an explicitly selected prepared [SDK](sdk.md).
+Linux development builds, or from an explicitly selected prepared [SDK](sdk.md).
+The default Rust provider additionally needs installed Debian `rustc`/`cargo` for
+native development, or a matching retained Rust extension for the selected target.
 
 ```sh
 ./build.sh test dev --gui --gui-backends terminal,framebuffer,hosted-web --label gui
@@ -487,6 +501,12 @@ browser run. See [installed and browser evidence](gui-audit.md#executed-verifica
 ./build/gui/gui/foundation-gui-web --smoke-test
 ```
 
+These paths match the direct CMake tree above. The default Debian development
+wrapper instead uses `build/dev-rust-gui`; use the selected build directory for
+a retained Rust SDK or an explicit C++ provider.
+All hosts below inherit the same core-provider inputs. A missing default Rust
+toolchain is a configuration failure, with no silent C++ fallback.
+
 | Host | CMake selection | Executable/output | Required inputs |
 | --- | --- | --- | --- |
 | Terminal | `FOUNDATION_BUILD_GUI=ON` | `foundation-gui-terminal` | Interactive POSIX terminal or Windows console |
@@ -495,7 +515,7 @@ browser run. See [installed and browser evidence](gui-audit.md#executed-verifica
 | SDL window over framebuffer | `FOUNDATION_GUI_SDL=ON` | `foundation-gui-sdl` | SDL2 development package and video driver |
 | Rev | `FOUNDATION_GUI_REV=ON` | `foundation-gui-rev` | Module compiler/scanner, OpenGL, Linux/X11 or Windows SDK |
 | Hosted browser | `FOUNDATION_GUI_WEB=ON` (default) | `foundation-gui-web`, `web/serve.py` | Python 3.9+, current browser |
-| Browser Wasm | Emscripten toolchain | target `foundation-gui-web-wasm`; `gui_web_wasm.js/.wasm` | Prepared Emscripten SDK, Node for tests, current browser |
+| Browser Wasm | Emscripten toolchain | target `foundation-gui-web-wasm`; `gui_web_wasm.js/.wasm` | Matched retained Emscripten and Rust SDKs, Node for tests, current browser |
 
 With a multi-configuration generator, add `--config Debug` to builds and
 `-C Debug` to CTest; use the configuration subdirectory for executable paths.
@@ -512,7 +532,7 @@ On Debian 12 Bookworm, the basic terminal/framebuffer/hosted-browser/FLTK/SDL
 profile can use distribution packages:
 
 ```sh
-sudo apt-get install build-essential cmake ninja-build python3 nodejs \
+sudo apt-get install build-essential cmake ninja-build python3 nodejs rustc cargo \
   libfltk1.3-dev libsdl2-dev xvfb xauth
 ```
 
@@ -528,6 +548,7 @@ libfreetype6-dev`; use a reviewed prepared toolchain with the chosen target
 ```sh
 cmake -S . -B build/gui-native -G Ninja -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_CXX_COMPILER=clang++-19 \
+  -DFOUNDATION_RUST_SDK_ROOT=/absolute/retained/rust-linux-sdk \
   -DFOUNDATION_BUILD_GUI=ON -DFOUNDATION_GUI_SOURCE=/path/to/gui-boundary \
   -DFOUNDATION_GUI_FLTK=ON -DFOUNDATION_GUI_SDL=ON -DFOUNDATION_GUI_REV=ON \
   -DFOUNDATION_GUI_HOST_TESTS=ON
@@ -543,17 +564,26 @@ and dependency inventories, including added/removed files. Toolkit C++23/module
 settings stay on toolkit targets; core and public GUI code remain C++20.
 
 On Windows, prepare Visual Studio 2022 17.6+ C++ desktop tools and the Windows SDK,
-CMake 3.28+, Ninja when using that generator, Python, and optional Node. Supply
-reviewed FLTK/SDL2 packages for the exact x64 or ARM64 toolchain through
-`CMAKE_PREFIX_PATH`. Use matching architecture/runtime settings throughout;
+CMake 3.28+, Ninja when using that generator, Python, optional Node, and the
+matching retained Rust extension selected by `FOUNDATION_RUST_SDK_ROOT` or
+the wrapper's `--rust-sdk`. Supply reviewed FLTK/SDL2 packages for the exact x64
+or ARM64 toolchain through
+`CMAKE_PREFIX_PATH`. The retained Rust profile is Windows x64 only; an ARM64
+integration must explicitly select `FOUNDATION_CORE_PROVIDER=cpp` until a matched
+Rust extension is implemented and qualified, and retains its own platform checks.
+Use matching architecture/runtime settings throughout;
 `GUI_REV_BUNDLED_DEPS=ON` avoids mixing arbitrary GLEW/FreeType binaries. A Linux
 build or Xvfb check does not qualify Windows or ARM64. Rev currently targets
 Linux/X11 and Windows/OpenGL; macOS is not a supported Rev integration profile.
 
-Wasm uses a separately prepared SDK, not the host's native sysroot:
+Wasm uses the matched separately prepared Emscripten/Rust SDKs. This direct CMake
+example selects the same retained tools as the supported wrapper command above:
 
 ```sh
-emcmake cmake -S . -B build/gui-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
+cmake -S . -B build/gui-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/sdk.cmake \
+  -DFOUNDATION_SDK_ROOT=/absolute/retained/emscripten-sdk \
+  -DFOUNDATION_RUST_SDK_ROOT=/absolute/retained/rust-emscripten-sdk \
   -DFOUNDATION_BUILD_GUI=ON
 cmake --build build/gui-wasm --target foundation-gui-tests --parallel 2
 ctest --test-dir build/gui-wasm -L gui --output-on-failure

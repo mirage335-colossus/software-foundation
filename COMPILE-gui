@@ -2,9 +2,11 @@ Software Foundation — build and open a desktop window
 
 Run from the repository root on a Linux desktop with a working display.
 Requires Git, CMake >=3.24, Ninja, a C++20 compiler, Python >=3.9, and
-the FLTK development package with its platform dependencies.
+the FLTK development package with its platform dependencies. Rust is the default:
+these Debian-family native dev examples use installed distribution rustc/Cargo.
+Other native hosts need --rust-sdk /absolute/matched-rust-sdk.
 Debian 12 preparation, if needed:
-sudo apt-get install git build-essential cmake ninja-build python3 libfltk1.3-dev
+sudo apt-get install git build-essential cmake ninja-build python3 rustc cargo libfltk1.3-dev
 
 Build and launch the FLTK application:
 ./build.sh build dev --gui --gui-backends fltk --build-dir build/demo-fltk
@@ -20,7 +22,8 @@ SDL window alternative (also requires the SDL2 development package):
 ./build/demo-sdl/gui/foundation-gui-sdl
 
 These commands use the GUI sources retained in this checkout. Ordinary builds
-do not download dependencies or require a prepared SDK. Each backend recipe
+do not download dependencies. Debian-family dev can use installed Rust packages;
+release and qualified target profiles need their retained Rust extension. Each backend recipe
 has its own build directory; use a fresh directory when changing toolchain or
 backend selection. Compile concurrency is automatic; --build-jobs overrides it.
 
@@ -30,5 +33,6 @@ Terminal, framebuffer image, Rev and platform details:
 docs/gui-boundary.md#build-and-run and #prepared-platform-dependencies.
 Windows: initialize the compiler and matching toolkit dependencies described
 there, replace ./build.sh with python tools/build.py, and add .exe to the
-executable name. These recipes use the wrapper's single-configuration Ninja.
+executable name and --rust-sdk C:\retained\rust-windows-sdk to each build command.
+These recipes use the wrapper's single-configuration Ninja.
 Build reference: docs/building.md. Focused checks: docs/testing.md.

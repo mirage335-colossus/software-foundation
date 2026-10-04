@@ -31,7 +31,7 @@ exact hashes, but does not authenticate, query or reserve a remote tag. Its dige
 is a review aid, not an authorization token. Executing later revalidates the inputs;
 the caller must compare against its reviewed plan and hold those inputs unchanged.
 
-`fetch-base` is the exception: it reads GitHub and creates a new local destination,
+`fetch-base` and `fetch-rust-base` are read operations: they read GitHub and create a new local destination,
 without making remote changes. It never falls back to compiling dependencies.
 
 For an authorized publishing job, execute the same frozen request explicitly:
@@ -82,11 +82,21 @@ candidate plan or successful publication receipt, not a reconstructed abbreviati
 | --- | --- | --- |
 | `fetch-base` | `repository`, `recipe`, `output` | Fetch the exact recipe's binary/source/checksum group into a new directory; verify all three before publishing the local directory. |
 | `publish-base` | `repository`, `recipe`, `group`, `source_commit` | Verify the complete local group, reuse an exact existing group or append a new group; never replace a partial or conflicting group. |
+| `fetch-rust-base` | `repository`, `recipe`, `output` | Fetch and verify the complete exact Rust binary/source/checksum group into a new directory. |
+| `publish-rust-base` | `repository`, `recipe`, `group`, `source_commit` | Verify and append or exactly reuse a complete immutable Rust group through the same base lifecycle. |
 | `publish-candidate` | `repository`, `tag`, `directory`, `source_commit`, `packager_commit`, `publication_id`, optional `experiment: false` | Freeze delivery identity, create an absent tag and draft, upload every required file, verify bytes and then publish without moving Latest. |
 | `attach-certificate` | `repository`, `tag`, `directory`, `delivery`, `certificate`, `check_plan`, `policy`, `profile`, `reports`, positive `attempt` | Reproduce the certificate, retain complete evidence, append its uniquely named bundle and envelope, verify uploads and preserve all existing assets. |
 | `promote` | `repository`, `tag`, `directory`, `delivery`, `policy`, `profile`, `run_id`, positive `attempt`, `certificate_sha256` | Reproduce the exact selected remote certificate against current policy, recheck all identities, change Latest and verify the final pointer. |
 
 `recipe` is the digest produced by the [dependency store](../tools/dependency_store.py).
+For Rust commands it is `rust_sdk.recipe_identity` from the checked-in recipe
+and producing helper bytes. `rust_sdk.verify_group` checks the complete
+`rust-sdk-HASH-binary.tar.gz`, `rust-sdk-HASH-sources.tar.gz` and
+`rust-sdk-HASH-SHA256SUMS` group, including source binding and inventories.
+No binary-only fetch or publication shortcut is supported. Rust uses the same
+immutable base lifecycle and draft transport conventions as the C++ groups;
+normal application operations consume verified local inputs. Implementing these
+commands does not itself publish any Rust group or qualify a live operation.
 `group` contains exactly its verified binary archive, corresponding source archive
 and checksum manifest. `directory` is the complete output of
 [`release.py assemble`](../tools/release.py). `reports` is an explicit ordered array

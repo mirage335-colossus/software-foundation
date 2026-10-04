@@ -13,6 +13,79 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
+## Rust-default selection (2026-10-04)
+
+The default-policy change was checked against base commit
+`49a4f397b9c58c3c364bdce8af2d6b296f7c551b` plus its exact working changes,
+including the new native host-preparation script. The frozen 435-file source
+inventory is `a46f29084bf1c1c8f0890628b133903ac9b8fcf221756f6f8fc418d16a14bb2f`.
+These are intentional dirty-source checks, not a claim that the unchanged base
+commit contains the new defaults. Later documentation edits retain this evidence
+identity. See the [default-policy rationale](rust-hybrid-plan.md#why-rust-is-the-default).
+
+| Scope | Observed result |
+| --- | --- |
+| Missing default toolchain | A fresh wrapper invocation with the provider omitted failed before creating its output tree. The diagnostic named retained Rust inputs, distro tools and explicit `--core-provider cpp`; no fallback occurred. Cargo, rustc and rustup were absent from the host PATH. |
+| Explicit C++ compatibility | All 65 CTests and 1,577 executed Python cases in 58 suites passed. No runtime skips or nonpassing cases occurred. The three explicit native-Windows exclusions remain delete-pending directories, selected linker file identity and Job Object containment. |
+| Retained Rust default | With only `--rust-sdk` supplied, all six selected CTests passed: four core checks, the six-case Rust unit harness and the relocated installed C++ consumer with Rust commands poisoned. The compiler was the retained official Rust 1.63.0. |
+| Direct CMake default | A fresh direct configuration omitting `FOUNDATION_CORE_PROVIDER` selected `rust`, built the mixed executable and passed its CLI self-check. This did not depend on the wrapper supplying the provider. |
+| Actual disconnected Bookworm | Omitted provider selected distro rustc 1.63.0 and Cargo executable 1.65.0 with neither SDK selected; the same six CTests and six Rust assertions passed. A separate explicit C++ phase passed five CTests with Rust commands mounted read-only as failing stubs, without discovery or invocation. Normal test planning passed; replacing a copied compiler caused the required stale-identity rejection. |
+| Tooling and review | Independent integration review found no actionable issue. Changed workflows passed retained actionlint 1.7.12. All 26 changed Python files parsed with Python 3.9 grammar; this is a syntax check, not execution on Python 3.9. Documentation and whitespace checks passed. |
+
+The Bookworm probe used fresh private outputs/homes/caches, read-only source,
+rootfs and retained inputs, zero effective/bounding capabilities and a denied
+external network. Original/new rootfs, source, harness and retained Debian input
+inventories were unchanged afterward; all three owned process groups were empty.
+An initial sandbox sysfs-mount rejection executed no application assertions; its
+evidence was preserved and the authorized escalation reran the unchanged boundary
+and checks successfully. No package/tool acquisition occurred in either build.
+
+Evidence is retained under `build/agents/rust-default-root/`:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `cpp-full.junit.xml` | `e049d9657ef517c926479e6c5a351b3f1e2381a74f3bc9a7eb72fe3d25491c59` |
+| `cpp-full.timings.json` | `6463c099d1eec8b938106bf0b47b75e86b063954421458ed047460743ae9da79` |
+| `rust-core.junit.xml` | `95ebb6a79b1277066ed3057c9b368f9dde2e36ffa2f545d1aaca2761561e3ab2` |
+| `rust-core.timings.json` | `bed7e0cd235957f4d9aa622454f1e942c8d6b7f3365209eaad4f47a99d419a45` |
+| `warm-logs.json` | `b75d9296bf0fbf9dd5d42581497782885ba8614f76860a72dab7d20c100d5a2f` |
+
+The separate Bookworm receipt is
+`build/agents/rust-default-native-probe/attempt-v2/evidence/qualification.json`,
+SHA-256 `7f6644a3cf80f4ab47c53f54e041c2cc39cf6252ba943d9fb0bb22e8c9b27dfc`.
+Its archived source, exact diff, individual commands, JUnit, planner results and
+input afterchecks retain the scope above. Its unequal six/five-test phase times
+are not the matched build comparison below.
+
+### Measured local build cost
+
+One fresh build tree per provider and three alternating warm no-op builds per
+provider used the same frozen source, Debian 13 host, GNU 14.2, Debug configuration,
+four compile jobs, no GUI and no prepared C++ SDK. Rust used the retained 1.63.0
+extension. Tools and operating-system caches were already available; these were
+not cold-machine or SDK-provisioning measurements. Wrapper wall time starts after
+argument parsing and includes input verification, configuration and build work.
+
+| Build | Explicit C++ | Default Rust | Difference |
+| --- | --- | --- | --- |
+| Fresh tree, one observation | 1.516 s | 9.612 s | 8.096 s |
+| Warm no-op, median of three | 0.445 s | 8.346 s | 7.901 s |
+
+The warm ranges were 0.441-0.461 seconds and 8.329-8.388 seconds respectively.
+All C++ warm runs reported no work; all Rust warm runs reported the archive
+fresh. The remaining Rust cost is verification/configuration/build orchestration,
+not repeated component compilation. The build phase itself includes verification,
+so it must not be labeled pure compiler time. No integrity checks were relaxed.
+Receipts are `cpp-cold.json`, `rust-cold.json` and each provider's
+`*-warm-1.json` through `*-warm-3.json` in the same output directory.
+
+This small core-only sample does not establish all-GUI iteration time, changed-file
+compile cost, other-machine performance, CI preparation/transfer cost or AI-token
+savings. The preceding four-target runtime qualification below remains tied to
+`41d28fe`; the default-policy checks do not relabel it or constitute a rerun of
+changed hosted release, SDK-maintenance or gallery workflows. No stable release,
+base SDK publication or package-channel promotion was performed for this change.
+
 ## Optional Rust qualification (2026-10-04)
 
 The optional [Rust validation component](rust-hybrid-plan.md) passed the complete

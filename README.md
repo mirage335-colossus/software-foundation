@@ -6,8 +6,10 @@ collection, a command-line application, and an optional shared GUI application.
 The engineering mechanisms are comprehensive: application size does not reduce
 coordination, supply, recovery or qualification requirements. C++20 and CMake make the build and binary compatibility examples concrete;
 the ownership, testing, documentation and delivery rules apply across languages.
-The default implementation is C++; an optional Rust component implements the same
-private text-validation contract for the CLI and shared GUI.
+The default build combines C++ with a Rust component implementing the private
+text-validation contract shared by the CLI and every GUI frontend. This makes
+the reviewed Rust boundary the normal starting point for further application
+logic; the present application remains predominantly C++.
 
 ## One application, seven backends
 
@@ -42,20 +44,26 @@ see [development speed](docs/development-speed.md).
 ## Run the example
 
 Requires Git, CMake 3.24+, Ninja, a C++20 compiler, and Python 3.9+ for tooling/tests.
+Debian-family native `dev` builds also require installed distribution `rustc`
+and Cargo (Debian 12 provides Rust 1.63). Release, sanitizer, package, Windows,
+Wasm and prepared-C++-SDK builds require the verified retained Rust extension
+matching their target. Restore those inputs before building; see
+[Rust prerequisites and commands](docs/building.md#rust-default-and-provider-selection).
 On Windows, use a developer command prompt with MSVC and run the Python entry
 point shown below. Configuring the project never downloads dependencies.
+The POSIX quick start below uses the Debian-family native development route.
 
 ```sh
 ./build.sh
-./build/dev/foundation-cli -- "First entry" "Second entry"
+./build/dev-rust/foundation-cli -- "First entry" "Second entry"
 ./build.sh test dev --label core
-./build.sh test release --full
-./build.sh package release
+./build.sh test release --rust-sdk /absolute/path/to/rust-sdk --full
+./build.sh package release --rust-sdk /absolute/path/to/rust-sdk
 ```
 
 ```powershell
-python tools/build.py test release --full
-python tools/build.py package release
+python tools/build.py test release --rust-sdk C:\retained\rust-sdk --full
+python tools/build.py package release --rust-sdk C:\retained\rust-sdk
 ```
 
 The library installs as CMake package `Foundation`, target `foundation::core`.
@@ -63,23 +71,30 @@ The library installs as CMake package `Foundation`, target `foundation::core`.
 after installation. [COMPILE](COMPILE) is the short command reference;
 [building](docs/building.md) explains configuration, concurrency and SDK use.
 
-Select the Rust validation provider explicitly with a verified retained extension:
+Use a verified retained extension for native development on other distributions,
+or when selecting controlled Rust tool inputs:
 
 ```sh
-./build.sh test dev --core-provider rust --rust-sdk /absolute/path/to/rust-sdk --label core
+./build.sh test dev --rust-sdk /absolute/path/to/rust-sdk --label core
 ```
 
-[Rust provider commands](docs/building.md#optional-rust-validation-provider) and
-[SDK preparation](docs/sdk.md#optional-retained-rust-extension) describe the pinned
-Rust 1.63, dependency-free `no_std` component. C++ builds do not discover Rust or
-download its tools. [Platform limits](docs/portability.md#optional-rust-provider-boundary)
-and [the implementation record](docs/rust-hybrid-plan.md) separate working code
+[Provider commands](docs/building.md#rust-default-and-provider-selection) and
+[SDK preparation](docs/sdk.md#retained-rust-extension) describe the pinned
+Rust 1.63, dependency-free `no_std` component. Missing Rust inputs fail clearly;
+normal operations acquire no tools or crates. `--core-provider cpp` explicitly
+selects the complete legacy build, which performs no Rust discovery.
+[The default-policy rationale](docs/rust-hybrid-plan.md#why-rust-is-the-default)
+explains the security and maintenance choice and its limits.
+[Platform limits](docs/portability.md#rust-provider-boundary) and
+[the implementation record](docs/rust-hybrid-plan.md) separate working code
 from observed qualification.
 
 ## Run the GUI
 
 On a Linux desktop, install the native build prerequisites above plus
-the FLTK development package (`libfltk1.3-dev` on Debian 12). From the repository
+the FLTK development package (`libfltk1.3-dev` on Debian 12). The command below
+uses Debian-family installed Rust tools; add `--rust-sdk PATH` for a retained
+extension on another native host. From the repository
 root, build and open the application:
 
 ```sh

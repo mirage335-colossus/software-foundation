@@ -76,6 +76,8 @@ def main():
     p = sub.add_parser("package")
     p.add_argument("--build", type=Path, required=True)
     p.add_argument("--jobs", type=module("build_capacity").compile_jobs, default="auto")
+    p.add_argument("--core-provider", choices=("rust", "cpp"), default="rust")
+    p.add_argument("--rust-sdk", type=Path)
     p = sub.add_parser("check-archives")
     p.add_argument("directory", type=Path)
     p.add_argument("--runtime-only", action="store_true")
@@ -99,7 +101,8 @@ def main():
         if args.jobs < 1:
             raise ValueError("positive compile concurrency required")
         run([sys.executable, "tools/build.py", "package", "release", "--portable", "--build-dir", args.build,
-             "--jobs", str(args.jobs)])
+             "--jobs", str(args.jobs), "--core-provider", args.core_provider,
+             *(["--rust-sdk", str(args.rust_sdk)] if args.rust_sdk is not None else [])])
         for archive in archives(args.build / "packages", recursive=False):
             manifest = archive.with_name(archive.name + ".json")
             for operation in ("create", "verify"):
@@ -191,7 +194,21 @@ def runner_selection(pool='standard', configured='', configured_arm='', configur
     return {row['target']: row['runner'] for row in plan(pool=pool, configured=configured, configured_arm=configured_arm, configured_windows=configured_windows)['packages']['include']}
 
 
-def release_matrix(recipes, profile='core', policy=None, *, runners=None):
+def rust_recipe(target):
+    if target not in RUST_RECIPES:
+        raise ValueError('no qualified Rust recipe for target')
+    rust = module('rust_sdk'); path = ROOT / RUST_RECIPES[target]
+    rust.checked_recipe(path)
+    return rust.recipe_identity(path)
+
+
+def rust_base_names(recipe):
+    return module('rust_sdk').group_names(recipe)
+
+
+def release_matrix(recipes, profile='core', policy=None, *, runners=None, core_provider='rust'):
+    if core_provider not in ('rust', 'cpp'):
+        raise ValueError('unknown core provider')
     policy = policy or module('coverage').load(ROOT / 'docs/release-policy.json')
     selected, _ = module('certify_release').requirements(policy, profile)
     if not isinstance(recipes, dict) or set(recipes) != set(selected['targets']):
@@ -208,9 +225,15 @@ def release_matrix(recipes, profile='core', policy=None, *, runners=None):
     for target, backends in selected['targets'].items():
         if target not in (*STANDARD, 'browser-wasm32'):
             raise ValueError('no qualified runner adapter for target')
+        if core_provider == 'rust' and target == 'browser-wasm32':
+            paired = module('rust_sdk').checked_recipe(ROOT / RUST_RECIPES[target])
+            if paired['cpp_sdk_recipe_id'] != recipes[target]:
+                raise ValueError('browser Rust recipe requires its exact matched C++ SDK recipe')
         rows.append({'target': target, 'runner': runners.get(target, runners['linux-x86_64']),
                      'recipe': recipes[target], 'backends': backends,
-                     'container': 'debian:bookworm' if target.startswith('linux-') else ''})
+                     'container': 'debian:bookworm' if target.startswith('linux-') else '',
+                     'core_provider': core_provider,
+                     'rust_recipe': rust_recipe(target) if core_provider == 'rust' else ''})
     return {'include': rows}
 
 
@@ -247,7 +270,7 @@ def rust_selection(core_provider, rust_group, rust_recipe):
 
 def install_rust_input(core_provider, rust_group, rust_recipe, output, cpp_sdk):
     if core_provider == 'cpp':
-        return [], {'core_provider': 'cpp'}
+        return ['--core-provider', 'cpp'], {'core_provider': 'cpp'}
     rust = module('rust_sdk')
     rust.install(Path(rust_group), rust_recipe, output)
     metadata = rust.verify_rust_sdk(output, cpp_sdk=cpp_sdk, execute=True)
@@ -260,7 +283,7 @@ def install_rust_input(core_provider, rust_group, rust_recipe, output, cpp_sdk):
 
 
 def prepared_package(target, recipe, group, source, output, jobs=2, *, graphics_archive=None, expected_files=None,
-                     core_provider='cpp', rust_group=None, rust_recipe=None):
+                     core_provider='rust', rust_group=None, rust_recipe=None):
     import shutil
     from dependency_archive import extract
     from dependency_store import verify_group
@@ -961,6 +984,63 @@ def retained_sdk(repository,request,target,profile,recipe,output,*,transport=Non
                 repository=repository,request=request,bundles=observed,retention=receipt,previous_origin=origin)
 
 
+def retained_rust_request(request, repository, target, recipe):
+    fields = {'schema_version', 'repository', 'target', 'recipe_id', 'run_id',
+              'source_commit', 'attempt', 'job_id', 'workflow', 'group'}
+    if (not isinstance(request, dict) or set(request) != fields or
+            type(request['schema_version']) is not int or request['schema_version'] != 1):
+        raise ValueError('exact retained Rust bundle request required')
+    module('github_release').location(repository); exact_commit(request['source_commit'])
+    if (target not in RUST_RECIPES or request['repository'] != repository or
+            request['target'] != target or request['recipe_id'] != recipe or
+            not isinstance(recipe, str) or not re.fullmatch(r'[0-9a-f]{64}', recipe) or
+            request['workflow'] != 'sdk-maintenance.yml'):
+        raise ValueError('retained Rust repository, target, recipe or producer workflow differs')
+    for key in ('run_id', 'attempt', 'job_id'):
+        if type(request[key]) is not int or request[key] < 1:
+            raise ValueError('retained Rust producer identifiers must be positive integers')
+    entry = request['group']
+    if (not isinstance(entry, dict) or set(entry) != {'manifest_id', 'manifest_sha256'} or
+            type(entry['manifest_id']) is not int or entry['manifest_id'] < 1 or
+            not isinstance(entry['manifest_sha256'], str) or
+            not re.fullmatch(r'[0-9a-f]{64}', entry['manifest_sha256'])):
+        raise ValueError('exact retained Rust manifest identity required')
+    return request
+
+
+def retained_rust_sdk(repository, request, target, recipe, output, *, transport=None):
+    import shutil
+    import tempfile
+    retained_rust_request(request, repository, target, recipe)
+    output = Path(output).absolute()
+    if output.exists() or output.is_symlink():
+        raise ValueError('retained Rust output must be new')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    rust = module('rust_sdk'); reference = request['group']
+    with tempfile.TemporaryDirectory(prefix='.retained-rust-', dir=output.parent) as temporary:
+        stage = Path(temporary) / 'group'
+        observed = module('ci_transport').fetch_bundle(repository, request['run_id'], request['attempt'],
+            request['source_commit'], request['workflow'], f'rust-sdk-group-{target}-{request["attempt"]}', stage,
+            job_id=request['job_id'], manifest_id=reference['manifest_id'],
+            manifest_sha256=reference['manifest_sha256'], allow_failed=True, transport=transport)
+        files = rust.verify_group(stage, recipe)
+        shutil.copytree(stage, output)
+        if rust.verify_group(output, recipe) != files or rust.verify_group(stage, recipe) != files:
+            raise ValueError('retained Rust group changed during copying')
+    return dict(origin='retained', recipe=recipe, files=files, qualification='unqualified',
+                publication_approved=False, repository=repository, request=request, bundle=observed)
+
+
+def fetch_rust_base(repository, recipe, output, *, transport=None):
+    return dict(module('github_release').fetch_rust_base(repository, recipe, output, transport=transport),
+                origin='base')
+
+
+def publish_rust_base(repository, recipe, group, source_commit, *, execute=False, transport=None):
+    return module('github_release').publish_rust_base(repository, recipe, group, source_commit,
+                                                     execute=execute, transport=transport)
+
+
 def legacy_sdk_request(request, repository, target, profile, recipe):
     """One explicit producer and two immutable transport objects; no selection fallback."""
     g = module('github_release')
@@ -1235,7 +1315,7 @@ def windows_gui_qualification(command, archive, build, output, jobs, *, protecte
 
 
 def prepared_check(target, recipe, group, output, jobs=2, gui_group=None, graphics_archive=None, *, defer_qualification=False, development=False,
-                   core_provider='cpp', rust_group=None, rust_recipe=None):
+                   core_provider='rust', rust_group=None, rust_recipe=None):
     """Consume a relocated SDK; GUI qualification retains no distributable output."""
     from dependency_store import verify_group
     if target not in (*STANDARD, 'browser-wasm32') or jobs < 1:
@@ -1428,7 +1508,10 @@ def lifecycle_main(argv):
     if op == 'release-matrix': result = release_matrix(**data)
     elif op == 'source': result = source_archive(Path(data['output']), Path(data['gui_source']) if data.get('gui_source') else None)
     elif op == 'prepared-package':
-        result = prepared_package(data['target'], data['recipe'], Path(data['group']).resolve(), Path(data['source']).resolve(), Path(data['output']).resolve(), data.get('jobs', 2))
+        result = prepared_package(data['target'], data['recipe'], Path(data['group']).resolve(), Path(data['source']).resolve(),
+            Path(data['output']).resolve(), data.get('jobs', 2), core_provider=data.get('core_provider', 'rust'),
+            rust_group=Path(data['rust_group']).resolve() if data.get('rust_group') else None,
+            rust_recipe=data.get('rust_recipe'))
     elif op == 'assemble': result = assemble_release(*(Path(data[k]) for k in ('source', 'packages', 'base', 'output')), data['profile'])
     elif op == 'fetch-candidate': result = fetch_candidate(data['repository'], data['tag'], data['inventory'], Path(data['output']))
     elif op == 'qualification-plan': result = qualification_plan(Path(data['candidate']).resolve(), data['profile'], Path(data['plan']))

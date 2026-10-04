@@ -31,12 +31,15 @@ recipes and environments. All-GUI recipe results do not qualify different core-o
 recipes, every older operating system, or independent signed package channels.
 Use the [validation template](templates/validation.md) to record adopted targets.
 
-## Optional Rust provider boundary
+<a id="optional-rust-provider-boundary"></a>
+
+## Rust Provider Boundary
 
 The existing target/release evidence above belongs to its recorded application
 bytes and provider. Adding a Rust build profile does not qualify new Rust
-binaries on those platforms. C++ remains the default and complete compatibility
-route. Explicit Rust selection must succeed with its declared toolchain or fail;
+binaries on those platforms. Fresh configurations default to Rust; the complete
+legacy compatibility route is explicitly selected with `--core-provider cpp`.
+Default or explicit Rust selection must succeed with its declared toolchain or fail;
 it cannot silently fall back to C++.
 
 The implemented Rust leaf validates the same borrowed byte buffer used by
@@ -88,12 +91,12 @@ results establish their recorded build/core/package scope. The final hosted
 Firefox/Chromium cases and the older local Firefox receipt have separate source
 and evidence identities. Direct-file application cases are not whole-browser
 network denial, mobile or assistive-device qualification. The existing C++
-browser route remains the default.
+browser route remains available through explicit C++ selection.
 
 Offline restoration from retained official tools, recovery of retained source
 inputs, and compiler reconstruction from source are distinct promises. The last
 is **UNVERIFIED** for this extension. See
-[the Rust SDK recovery contract](sdk.md#optional-retained-rust-extension);
+[the Rust SDK recovery contract](sdk.md#retained-rust-extension);
 application recovery with restored tools cannot satisfy compiler reconstruction.
 
 ## Arduino as a selective porting target

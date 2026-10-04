@@ -1,17 +1,22 @@
-# Optional Rust/C++ implementation
+# Default Rust/C++ implementation
 
 Implementation date: 2026-10-04. This document supersedes the research proposal
-written against `45b27ebc36feabdb772ae99edb2f86dca2c6b093`. Implementation started
+written against `45b27ebc36feabdb772ae99edb2f86dca2c6b093`. The subsequent Rust-default
+policy supersedes the original optional-provider decision; historical execution
+records below keep their original source and provider identities. Implementation started
 from `8854f4fb9026c21d72d9066f6afffca7bd17bf31`. Contracts and execution evidence
 are separate below: existing C++ release evidence in [validation](validation.md)
 does not automatically qualify Rust binaries.
 
 ## Decision
 
-Rust is an explicitly selected implementation of one shared application
-component. C++ remains the complete default. The public C++ API, application
-behavior, GUI feature layout and package formats are unchanged. Ordinary C++
-builds do not discover or require Rust tools.
+Rust is the default implementation of one shared application component in all
+fresh configurations, including native and browser targets. The public C++ API,
+application behavior, GUI feature layout and package formats are unchanged.
+`--core-provider cpp` explicitly selects the complete legacy implementation and
+performs no Rust discovery. The default fails clearly when its Rust inputs are
+unavailable; it never silently changes provider. Unsupported Rust targets retain
+the explicit C++ compatibility route without acquiring an unqualified toolchain.
 
 The initial Rust component uses stable Rust 1.63, edition 2021, a format-3
 lockfile and no external application crates. It has no build scripts, procedural
@@ -23,6 +28,61 @@ not its build machinery or target promises. See the
 [kernel abstraction guidance](https://docs.kernel.org/6.15/rust/general-information.html)
 and [architecture restrictions](https://docs.kernel.org/rust/arch-support.html).
 Safe Rust cannot repair invalid pointers from C++ or an unsound foreign interface.
+
+## Why Rust Is The Default
+
+An example's normal path influences how downstream application code grows.
+Selecting the reviewed Rust boundary by default gives maintainers a working,
+tested place to add suitable portable logic using safe Rust, with the existing
+C++ GUI adapters and public interfaces. This aligns with
+[NSA/CISA's 2025 memory-safety guidance](https://www.nsa.gov/Press-Room/Press-Releases-Statements/Press-Release-View/Article/4223298/nsa-and-cisa-release-csi-highlighting-importance-of-memory-safe-languages-in-so/),
+which supports interoperability during gradual adoption, and
+[ONCD's 2024 technical report](https://bidenwhitehouse.archives.gov/wp-content/uploads/2024/02/Final-ONCD-Technical-Report.pdf),
+which recommends prioritizing critical functions when migrating existing code.
+
+The initial boundary is deliberately small. After the caller establishes its
+borrowed-buffer contract, slice iteration and validation run in safe Rust; the
+single raw-pointer conversion remains reviewed unsafe code. C++ still owns
+records, strings, allocation, state and GUI integration. Toolkit and platform
+code also remain C++. The default establishes neither whole-application memory
+safety nor a substantially Rust application. Future parsers, bounded state
+transitions and selected MFD/menu logic are useful candidates when their real
+contracts justify extending this boundary; backend adapters should continue to
+implement generic capabilities.
+
+The supplier and portability cost is controlled: stable Rust 1.63 source,
+zero external application crates, retained target tools, frozen/offline Cargo,
+one archive per compatible configuration and no Rust installation at runtime
+or for installed C++ consumers. Bookworm distribution tools cover native
+development; the exact retained extensions cover qualified release, Windows
+and Wasm configurations. CMake/Python, runtime floors and Windows CRT policy
+remain unchanged. Default builds do require an additional compiler and its
+complete local inputs. SDK restoration and application building are verified
+separately from compiler reconstruction, which remains unverified.
+
+Incremental dependency tracking preserves the small development loop. The Rust
+archive is reused by every selected frontend; changing only Rust component
+sources rebuilds that producer and affected final links without requiring
+unchanged C++ GUI library compilation. Input verification still runs. The
+historical 8.372-second warm no-op below is not a C++/Rust comparison and does
+not prove that added compilation always costs a few seconds. Use the
+[warm measurement recipe](development-speed.md#measure-warm-iterations) with
+matched source, configuration and inputs before claiming iteration-time,
+review-effort or AI token savings. This policy is based on the available
+integration and security direction, not an unmeasured performance promise.
+The [subsequent local comparison](validation.md#measured-local-build-cost)
+measured about eight seconds of added wrapper time for this small core-only
+sample, including verification; it is not a cross-platform performance guarantee.
+
+Memory-safety policy can inform customer requirements, but selecting a language
+is not a compliance certificate. The
+[CISA/FBI Product Security Bad Practices announcement](https://www.cisa.gov/news-events/alerts/2025/01/17/cisa-and-fbi-release-updated-guidance-product-security-bad-practices)
+describes voluntary guidance, and the
+[European Commission's CRA summary](https://digital-strategy.ec.europa.eu/en/policies/cra-summary)
+describes risk assessment, vulnerability handling and conformity obligations.
+These sources do not establish a blanket prohibition on C++ or demonstrate this
+project's compliance. Evaluate actual contractual and legal obligations for a
+derivative's product, market and delivery date.
 
 ## Shared component
 
@@ -84,17 +144,18 @@ harness is not the production panic policy.
 
 ## Configuration
 
-The supported wrapper selects `--core-provider cpp|rust`, default `cpp`, and
+The supported wrapper selects `--core-provider cpp|rust`, default `rust`, and
 `--rust-sdk /absolute/path`. Direct CMake exposes
-`FOUNDATION_CORE_PROVIDER=cpp|rust` and `FOUNDATION_RUST_SDK_ROOT`. There is no
+`FOUNDATION_CORE_PROVIDER=cpp|rust` (fresh-tree default `rust`) and
+`FOUNDATION_RUST_SDK_ROOT`. There is no
 automatic provider. Missing tools, missing target libraries, changed identities
 or incompatible SDK pairs fail; they never select C++ silently.
 
 ```sh
-python3 tools/build.py test dev --build-dir build/cpp --label core
-python3 tools/build.py test dev --core-provider rust \
+python3 tools/build.py test dev --core-provider cpp --build-dir build/cpp --label core
+python3 tools/build.py test dev \
   --rust-sdk /absolute/rust-sdk --build-dir build/rust-dev --label core
-python3 tools/build.py test release --core-provider rust \
+python3 tools/build.py test release \
   --sdk /absolute/cpp-sdk --rust-sdk /absolute/rust-sdk \
   --gui --build-dir build/rust-release --test core.text_validation
 ```
@@ -282,7 +343,7 @@ These are different inventory scopes, not interchangeable source identifiers.
 The snapshot records base commit `8854f4f` plus its exact implementation diff;
 later workflow-only repairs do not relabel that original evidence.
 
-The latest default-C++ local check used committed
+The latest pre-policy default-C++ local check used committed
 `41d28fec5481c77fc5b20e20808405ff3f83707a`, source inventory
 `3cbb6adb3b6959721bb7cad1f2ddda31c7d93c8cc486b8c4ebbe41c9bf7618fb`.
 It passed all 65 CTests and 1,533 Python cases in 58 suites, with the same three

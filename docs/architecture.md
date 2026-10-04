@@ -7,6 +7,7 @@ release tools belong outside the runtime dependency graph.
 | Path | Responsibility and ownership rule |
 | --- | --- |
 | `src/` | Compiled implementation and thin CLI composition root; no public implementation details leak into consumers |
+| `rust/text_validation/` | Default allocation-free text validator behind the private C ABI; portable logic stays independent of GUI toolkits |
 | `include/foundation/` | Public, self-contained C++ interfaces; document ownership, bounds, failures and concurrency |
 | `gui/` | Shared feature declarations and composition roots; generic external adapters stay in their pinned package |
 | `tests/` | Independent contract checks, failure cases and tool tests; private fixtures live here with provenance |
@@ -48,6 +49,12 @@ place. `erase` removes the selected ID while preserving other IDs. `get` and
 `snapshot` return values, so callers cannot mutate internal storage. The class
 requires caller-serialized access; it does not imply thread safety.
 
+The private validator defaults to Rust through `src/text_validation.h`; its
+borrowed-buffer contract and status translation preserve the public C++ API.
+`--core-provider cpp` selects the equivalent legacy implementation. Every selected
+frontend reaches the same provider through `Store`, so feature code is never
+duplicated in backend adapters. See [the boundary and policy](rust-hybrid-plan.md).
+
 `tests/store_test.cpp` checks failure atomicity, stable IDs, independent snapshots,
 maximum length and every possible input byte. `tests/check_cli.py` checks actual
 process exit status and complete output, including rejection after an earlier
@@ -62,7 +69,8 @@ contracts are tested without requiring every physical display on each edit.
 `build.sh` resolves its own directory and forwards arguments unchanged to
 `tools/build.py`. The wrapper selects one preset, validates configuration identity,
 configures incrementally, builds declared prerequisites, and runs CTest or CPack.
-CMake compiles `foundation_core` once per tree and links consumers to it. The
+CMake compiles `foundation_core` and one Rust archive per compatible
+configuration, then links consumers to them. The
 exported target carries the required language level and installed include path.
 Private warnings do not become downstream consumer policy.
 

@@ -218,7 +218,9 @@ def surfaces(native, wasm, directory):
     delivery.coverage.write_new(directory / 'captures.json', result)
 
 
-def collect(native_group, native_recipe, wasm_group, wasm_recipe, gui_group, work, output, jobs=2, origins=None):
+def collect(native_group, native_recipe, wasm_group, wasm_recipe, gui_group, work, output, jobs=2, origins=None, *,
+            core_provider='rust', native_rust_group=None, native_rust_recipe=None,
+            wasm_rust_group=None, wasm_rust_recipe=None, rust_origins=None):
     import sdk
     import windows_graphics
     ci.assert_host('linux-x86_64')
@@ -228,6 +230,16 @@ def collect(native_group, native_recipe, wasm_group, wasm_recipe, gui_group, wor
     gui = ci.gui_group_module().verify(Path(gui_group))
     inputs = {'native': delivery.store.verify_group(native_group, native_recipe),
               'wasm': delivery.store.verify_group(wasm_group, wasm_recipe)}
+    rust_groups = {'native': native_rust_group, 'wasm': wasm_rust_group}
+    rust_recipes = {'native': native_rust_recipe, 'wasm': wasm_rust_recipe}
+    rust_inputs = {name: ci.rust_selection(core_provider, rust_groups[name], rust_recipes[name])
+                   for name in ('native', 'wasm')}
+    if core_provider == 'cpp' and rust_origins is not None:
+        raise ValueError('C++ selection must omit Rust SDK origins')
+    if rust_origins is None:
+        rust_origins = {name: {'origin': 'local', 'recipe': recipe} for name, recipe in rust_recipes.items()}
+    if core_provider == 'rust' and (not isinstance(rust_origins, dict) or set(rust_origins) != {'native', 'wasm'}):
+        raise ValueError('both Rust SDK acquisition origins are required')
     origins = origins or {name: {'origin': 'local', 'recipe': recipe} for name, recipe in
                           [('native', native_recipe), ('wasm', wasm_recipe)]}
     commit = ci.exact_commit(text(['git', '-C', ROOT, 'rev-parse', 'HEAD']))
@@ -243,10 +255,15 @@ def collect(native_group, native_recipe, wasm_group, wasm_recipe, gui_group, wor
             wasm_metadata['target']['system'] != 'Emscripten' or
             not {'terminal', 'framebuffer', 'fltk', 'rev', 'sdl', 'hosted-web'} <= set(native_metadata.get('capabilities', []))):
         raise ValueError('capture requires the declared GUI-capable native and browser SDKs')
+    rust_provenance = {}
     for name, backends in (('native', 'terminal,framebuffer,fltk,rev,sdl,hosted-web'), ('wasm', 'wasm')):
+        provider_flags, identity = ci.install_rust_input(core_provider, rust_groups[name], rust_recipes[name],
+                                                        work / (name + '-rust-sdk'), work / (name + '-sdk'))
+        if core_provider == 'rust':
+            rust_provenance[name] = {**identity, 'group_files': rust_inputs[name], 'origin': rust_origins[name]}
         windows_graphics.run_owned([sys.executable, str(ROOT / 'tools/build.py'), 'build', 'release', '--portable',
             '--sdk', str(work / (name + '-sdk')), '--gui-input-group', str(Path(gui_group).resolve()),
-            '--gui-backends', backends, '--build-dir', str(work / name), '--jobs', str(jobs)],
+            '--gui-backends', backends, '--build-dir', str(work / name), '--jobs', str(jobs), *provider_flags],
             ROOT, work / (name + '-build.log'), timeout=3600)
     windows_graphics.run_owned([sys.executable, str(Path(__file__).resolve()), 'surfaces',
         '--native', str(work / 'native'), '--wasm', str(work / 'wasm'), '--output', str(work / 'captures')],
@@ -254,7 +271,9 @@ def collect(native_group, native_recipe, wasm_group, wasm_recipe, gui_group, wor
     if (ci.module('source_identity').source_tree(ROOT) != source or
             ci.gui_group_module().verify(Path(gui_group)) != gui or
             delivery.store.verify_group(native_group, native_recipe) != inputs['native'] or
-            delivery.store.verify_group(wasm_group, wasm_recipe) != inputs['wasm']):
+            delivery.store.verify_group(wasm_group, wasm_recipe) != inputs['wasm'] or
+            any(ci.rust_selection(core_provider, rust_groups[name], rust_recipes[name]) != rust_inputs[name]
+                for name in ('native', 'wasm'))):
         raise ValueError('source or prepared capture inputs changed during execution')
     captures = delivery.coverage.load(work / 'captures/captures.json')
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -265,13 +284,14 @@ def collect(native_group, native_recipe, wasm_group, wasm_recipe, gui_group, wor
         binaries = {str(path.relative_to(work)): archive.digest(path) for path in
             [*(work / 'native/gui' / ('foundation-gui-' + name) for name in TARGETS),
              work / 'wasm/gui/gui_web_wasm.js', work / 'wasm/gui/gui_web_wasm.wasm']}
-        manifest = {'schema_version': 1, 'kind': 'initial-view-gallery', 'source_commit': commit,
+        manifest = {'schema_version': 2, 'kind': 'initial-view-gallery', 'source_commit': commit,
             'source_sha256': delivery.coverage.digest(source), 'run_id': os.environ.get('GITHUB_RUN_ID', 'local'),
             'attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')), 'state': 'fresh initial application',
             'logical_viewport': [640, 480], 'display_dpi': 96, 'display_scale': 1,
             'terminal': '80x31 cells; DejaVu Sans Mono 10pt; status row and terminal border retained',
             'host': ci.assert_host('linux-x86_64'), 'distribution': platform.freedesktop_os_release(),
             'recipes': {'native': native_recipe, 'wasm': wasm_recipe}, 'dependencies': inputs, 'origins': origins,
+            'core_provider': core_provider, 'rust': rust_provenance,
             'gui_group': {**{key: gui[key] for key in ('revision', 'source_tree', 'upstream', 'license',
                            'redistributable', 'archive_sha256')},
                           'manifest_sha256': archive.digest(Path(gui_group) / 'manifest.json')},
@@ -285,6 +305,7 @@ def collect(native_group, native_recipe, wasm_group, wasm_recipe, gui_group, wor
         delivery.coverage.write_new(stage / 'screenshots.json', manifest)
         (stage / 'BUILD.txt').write_text('Initial application view for seven actual backends.\n'
             'Source: ' + commit + '\nRun: ' + manifest['run_id'] + '; attempt: ' + str(manifest['attempt']) + '\n'
+            'Core provider: ' + core_provider + '\n'
             'Native: X11, 96 DPI, 640x480 client pixels, scale 1. Browser: 640x480 viewport.\n'
             'Terminal: 80x31 cells; status row and border retained. No content edits or image resampling.\n'
             'See screenshots.json for exact source, SDK inputs, binaries, runtime and image digests.\n'
@@ -309,6 +330,32 @@ def input_selection(repository, native_recipe, wasm_recipe, source='base', retai
         raise ValueError('retained source requires exactly two explicit SDK requests')
     for name, target in [('native', 'linux-x86_64'), ('wasm', 'browser-wasm32')]:
         ci.retained_sdk_request(retained_inputs[name], repository, target, 'all-gui', recipes[name])
+    return recipes
+
+
+def rust_input_selection(repository, core_provider='rust', native_recipe=None, wasm_recipe=None,
+                         source='base', retained_inputs=None):
+    if repository is not None:
+        delivery.location(repository)
+    if core_provider == 'cpp':
+        if native_recipe is not None or wasm_recipe is not None or retained_inputs is not None or source != 'base':
+            raise ValueError('C++ selection must omit Rust SDK acquisition inputs')
+        return {}
+    if core_provider != 'rust':
+        raise ValueError('unknown core provider')
+    recipes = {name: recipe if recipe is not None else ci.rust_recipe(target)
+               for name, target, recipe in [('native', 'linux-x86_64', native_recipe),
+                                           ('wasm', 'browser-wasm32', wasm_recipe)]}
+    if any(not isinstance(recipe, str) or not delivery.SHA.fullmatch(recipe) for recipe in recipes.values()):
+        raise ValueError('both exact Rust SDK recipes are required')
+    if source == 'base':
+        if retained_inputs is not None:
+            raise ValueError('base Rust source must not contain retained input requests')
+        return recipes
+    if source != 'retained' or not isinstance(retained_inputs, dict) or set(retained_inputs) != {'native', 'wasm'}:
+        raise ValueError('retained Rust source requires exactly two explicit SDK requests')
+    for name, target in [('native', 'linux-x86_64'), ('wasm', 'browser-wasm32')]:
+        ci.retained_rust_request(retained_inputs[name], repository, target, recipes[name])
     return recipes
 
 
@@ -385,9 +432,13 @@ def fetch_gui_input(repository, selector, output):
     return {'selector': selector, 'receipt': receipt, 'publication_approved': False}
 
 
-def prepare_inputs(repository, native_recipe, wasm_recipe, directory, source='base', retained_inputs=None, *, gui_input):
+def prepare_inputs(repository, native_recipe, wasm_recipe, directory, source='base', retained_inputs=None, *, gui_input,
+                   core_provider='rust', native_rust_recipe=None, wasm_rust_recipe=None,
+                   rust_source='base', rust_retained_inputs=None):
     """Consume existing verified SDK and GUI groups; ordinary capture never fetches source upstream."""
     recipes = input_selection(repository, native_recipe, wasm_recipe, source, retained_inputs)
+    rust_recipes = rust_input_selection(repository, core_provider, native_rust_recipe, wasm_rust_recipe,
+                                       rust_source, rust_retained_inputs)
     gui_input_selection(repository, gui_input)
     directory = Path(directory).absolute()
     if directory.exists() or directory.is_symlink():
@@ -402,11 +453,24 @@ def prepare_inputs(repository, native_recipe, wasm_recipe, directory, source='ba
             result = ci.retained_sdk(repository, retained_inputs[name], target, 'all-gui', recipes[name], directory / name)
             origins[name] = {key: result[key] for key in ('origin', 'recipe', 'qualification', 'publication_approved', 'request')}
     delivery.coverage.write_new(directory / 'origins.json', origins)
+    if core_provider == 'rust':
+        rust_origins = {}
+        for name, target in [('native', 'linux-x86_64'), ('wasm', 'browser-wasm32')]:
+            if rust_source == 'base':
+                ci.fetch_rust_base(repository, rust_recipes[name], directory / (name + '-rust'))
+                rust_origins[name] = {'origin': 'base', 'recipe': rust_recipes[name]}
+            else:
+                result = ci.retained_rust_sdk(repository, rust_retained_inputs[name], target, rust_recipes[name],
+                                              directory / (name + '-rust'))
+                rust_origins[name] = {key: result[key] for key in
+                                     ('origin', 'recipe', 'qualification', 'publication_approved', 'request')}
+        delivery.coverage.write_new(directory / 'rust-origins.json', rust_origins)
     gui_origin = fetch_gui_input(repository, gui_input, directory / 'gui')
     delivery.coverage.write_new(directory / 'gui-origin.json', gui_origin)
 
 
-def hosted_command(native_recipe, wasm_recipe, jobs, *, uid=None, gid=None):
+def hosted_command(native_recipe, wasm_recipe, jobs, *, uid=None, gid=None, core_provider='rust',
+                   native_rust_recipe=None, wasm_rust_recipe=None):
     """Ordinary unprivileged Linux runtime; no container or host policy mutation."""
     for recipe in (native_recipe, wasm_recipe):
         if not delivery.SHA.fullmatch(recipe): raise ValueError('exact SDK recipe required')
@@ -414,11 +478,18 @@ def hosted_command(native_recipe, wasm_recipe, jobs, *, uid=None, gid=None):
     if (type(uid) is not int or type(gid) is not int or not 0 < uid < 2**31 or
             not 0 < gid < 2**31 or type(jobs) is not int or jobs < 1):
         raise ValueError('non-root host account and positive concurrency required')
-    return [sys.executable, '-B', str(ROOT / 'tools/screenshots.py'), 'display-collect',
+    recipes = rust_input_selection(None, core_provider, native_rust_recipe, wasm_rust_recipe)
+    argv = [sys.executable, '-B', str(ROOT / 'tools/screenshots.py'), 'display-collect',
         '--native-group', 'build/screenshots-inputs/native', '--native-recipe', native_recipe,
         '--wasm-group', 'build/screenshots-inputs/wasm', '--wasm-recipe', wasm_recipe,
         '--gui-group', 'build/screenshots-inputs/gui', '--origins', 'build/screenshots-inputs/origins.json',
-        '--work', 'build/screenshots-work', '--output', 'build/gallery', '--jobs', str(jobs)]
+        '--work', 'build/screenshots-work', '--output', 'build/gallery', '--jobs', str(jobs),
+        '--core-provider', core_provider]
+    if core_provider == 'rust':
+        argv += ['--native-rust-group', 'build/screenshots-inputs/native-rust', '--native-rust-recipe', recipes['native'],
+                 '--wasm-rust-group', 'build/screenshots-inputs/wasm-rust', '--wasm-rust-recipe', recipes['wasm'],
+                 '--rust-origins', 'build/screenshots-inputs/rust-origins.json']
+    return argv
 
 
 def capture_environment():
@@ -567,7 +638,11 @@ def verify_gallery(directory):
     required = {'schema_version', 'kind', 'source_commit', 'source_sha256', 'run_id', 'attempt', 'state',
                 'logical_viewport', 'display_dpi', 'display_scale', 'terminal', 'host', 'distribution',
                 'recipes', 'dependencies', 'origins', 'gui_group', 'binaries', 'captures', 'tools', 'images'}
-    if (set(manifest) != required or manifest.get('schema_version') != 1 or manifest.get('kind') != 'initial-view-gallery' or
+    version = manifest.get('schema_version')
+    if version == 2:
+        required |= {'core_provider', 'rust'}
+    if (set(manifest) != required or type(version) is not int or version not in (1, 2) or
+            manifest.get('kind') != 'initial-view-gallery' or
             manifest.get('state') != 'fresh initial application' or manifest.get('logical_viewport') != [640, 480] or
             manifest.get('display_dpi') != 96 or manifest.get('display_scale') != 1 or
             set(manifest.get('images', {})) != {name + '.png' for name in BACKENDS}):
@@ -600,6 +675,37 @@ def verify_gallery(directory):
                                     'all-gui', origin['recipe'])
             if origin.get('qualification') != 'unqualified' or origin.get('publication_approved') is not False:
                 raise ValueError('retained byte reuse must not grant SDK publication eligibility')
+    if version == 2:
+        provider = manifest['core_provider']; rust = manifest['rust']
+        if (not isinstance(provider, str) or provider not in ('cpp', 'rust') or not isinstance(rust, dict) or
+                set(rust) != ({'native', 'wasm'} if provider == 'rust' else set())):
+            raise ValueError('gallery requires the selected provider and both Rust target identities')
+        fields = {'core_provider', 'rust_sdk_recipe_id', 'rust_compiler_version', 'rust_target',
+                  'rust_sdk_manifest_sha256', 'rust_compiler_sha256', 'group_files', 'origin'}
+        for name, item in rust.items():
+            if not isinstance(item, dict):
+                raise ValueError('complete target-matched Rust compiler and retained group provenance required')
+            recipe = item.get('rust_sdk_recipe_id')
+            if (set(item) != fields or item['core_provider'] != 'rust' or
+                    not isinstance(recipe, str) or not delivery.SHA.fullmatch(recipe) or
+                    item['rust_target'] != ('x86_64-unknown-linux-gnu' if name == 'native' else 'wasm32-unknown-emscripten') or
+                    not isinstance(item['rust_compiler_version'], str) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', item['rust_compiler_version']) or
+                    any(not isinstance(item[key], str) or not delivery.SHA.fullmatch(item[key]) for key in
+                        ('rust_sdk_manifest_sha256', 'rust_compiler_sha256')) or
+                    not isinstance(item['group_files'], dict) or
+                    set(item['group_files']) != set(ci.module('rust_sdk').group_names(recipe)) or
+                    any(not isinstance(value, str) or not delivery.SHA.fullmatch(value) for value in item['group_files'].values())):
+                raise ValueError('complete target-matched Rust compiler and retained group provenance required')
+            origin = item['origin']
+            if (not isinstance(origin, dict) or origin.get('origin') not in ('base', 'retained', 'local') or
+                    origin.get('recipe') != recipe):
+                raise ValueError('Rust acquisition origin differs from selected input')
+            if origin['origin'] == 'retained':
+                request = origin.get('request', {})
+                ci.retained_rust_request(request, request.get('repository'),
+                    'linux-x86_64' if name == 'native' else 'browser-wasm32', recipe)
+                if origin.get('qualification') != 'unqualified' or origin.get('publication_approved') is not False:
+                    raise ValueError('retained Rust reuse must not grant publication eligibility')
     gui = manifest['gui_group']
     if (set(gui) != {'revision', 'source_tree', 'upstream', 'license', 'redistributable', 'archive_sha256', 'manifest_sha256'} or
             not delivery.OID.fullmatch(gui['revision']) or not delivery.OID.fullmatch(gui['source_tree']) or
@@ -692,6 +798,11 @@ def main(argv=None):
         for name in ('native-recipe', 'wasm-recipe'): p.add_argument('--' + name, required=True)
         p.add_argument('--jobs', type=int, default=2)
         p.add_argument('--origins', type=Path)
+        p.add_argument('--core-provider', choices=('rust', 'cpp'), default='rust')
+        for name in ('native-rust-group', 'wasm-rust-group', 'rust-origins'):
+            p.add_argument('--' + name, type=Path)
+        for name in ('native-rust-recipe', 'wasm-rust-recipe'):
+            p.add_argument('--' + name)
     p = sub.add_parser('verify'); p.add_argument('directory', type=Path)
     p = sub.add_parser('hosted')
     p.add_argument('--repository', required=True); p.add_argument('--native-recipe', required=True)
@@ -699,6 +810,11 @@ def main(argv=None):
     p.add_argument('--source', choices=('base', 'retained'), default='base')
     p.add_argument('--gui-input', required=True, help='exact existing GUI group selector as JSON')
     p.add_argument('--retained-inputs', help='exact version-2 native and wasm requests as one JSON object')
+    p.add_argument('--core-provider', choices=('rust', 'cpp'), default='rust')
+    p.add_argument('--native-rust-recipe', help='exact retained Rust recipe; default is the checked-in Linux recipe')
+    p.add_argument('--wasm-rust-recipe', help='exact retained Rust recipe; default is the checked-in Wasm recipe')
+    p.add_argument('--rust-source', choices=('base', 'retained'), default='base')
+    p.add_argument('--rust-retained-inputs', help='exact native and wasm retained Rust requests as one JSON object')
     p = sub.add_parser('publish'); p.add_argument('directory', type=Path)
     p.add_argument('--repository', required=True); p.add_argument('--tag', required=True)
     p.add_argument('--source-commit', required=True); p.add_argument('--execute', action='store_true')
@@ -711,16 +827,26 @@ def main(argv=None):
     if args.operation == 'collect':
         return collect(args.native_group, args.native_recipe, args.wasm_group, args.wasm_recipe,
                        args.gui_group, args.work, args.output, args.jobs,
-                       delivery.coverage.load(args.origins) if args.origins else None)
+                       delivery.coverage.load(args.origins) if args.origins else None,
+                       core_provider=args.core_provider, native_rust_group=args.native_rust_group,
+                       native_rust_recipe=args.native_rust_recipe, wasm_rust_group=args.wasm_rust_group,
+                       wasm_rust_recipe=args.wasm_rust_recipe,
+                       rust_origins=delivery.coverage.load(args.rust_origins) if args.rust_origins else None)
     if args.operation == 'verify': return verify_gallery(args.directory)
     if args.operation == 'hosted':
         gui_input = gui_input_selection(args.repository, delivery.parse(args.gui_input))
         retained = delivery.parse(args.retained_inputs) if args.retained_inputs else None
+        rust_retained = delivery.parse(args.rust_retained_inputs) if args.rust_retained_inputs else None
         input_selection(args.repository, args.native_recipe, args.wasm_recipe, args.source, retained)
-        argv = hosted_command(args.native_recipe, args.wasm_recipe, args.jobs)
+        rust_recipes = rust_input_selection(args.repository, args.core_provider, args.native_rust_recipe,
+                                           args.wasm_rust_recipe, args.rust_source, rust_retained)
+        argv = hosted_command(args.native_recipe, args.wasm_recipe, args.jobs, core_provider=args.core_provider,
+                              native_rust_recipe=rust_recipes.get('native'), wasm_rust_recipe=rust_recipes.get('wasm'))
         gallery_browser.preflight(ROOT / 'build/browser-preflight')
         prepare_inputs(args.repository, args.native_recipe, args.wasm_recipe, ROOT / 'build/screenshots-inputs',
-                       args.source, retained, gui_input=gui_input)
+                       args.source, retained, gui_input=gui_input, core_provider=args.core_provider,
+                       native_rust_recipe=rust_recipes.get('native'), wasm_rust_recipe=rust_recipes.get('wasm'),
+                       rust_source=args.rust_source, rust_retained_inputs=rust_retained)
         run_hosted(argv)
         return verify_gallery(ROOT / 'build/gallery')
     result = publish(args.repository, args.tag, args.directory, args.source_commit, execute=args.execute)

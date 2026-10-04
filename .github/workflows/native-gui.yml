@@ -2,6 +2,11 @@ name: Explicit native GUI qualification
 'on':
   workflow_dispatch:
     inputs:
+      core_provider:
+        description: Application provider; cpp explicitly selects legacy compatibility
+        type: choice
+        options: [rust, cpp]
+        default: rust
       target:
         description: Native execution host
         type: choice
@@ -43,6 +48,7 @@ env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'
   PYTHONDONTWRITEBYTECODE: '1'
+  CORE_PROVIDER: ${{ inputs.core_provider }}
   LINUX_POOL: ${{ inputs.linux_pool }}
   FOUNDATION_FASTER_LINUX_RUNNER: ${{ vars.FOUNDATION_FAST_LINUX_RUNNER }}
   FOUNDATION_FASTER_ARM_RUNNER: ${{ vars.FOUNDATION_FAST_ARM_RUNNER }}
@@ -77,6 +83,9 @@ jobs:
       if: runner.os == 'Windows'
       run: python .github/scripts/lifecycle.py graphics-input
     - run: python .github/scripts/lifecycle.py fetch-sdk
+    - name: Restore the exact complete retained Rust extension
+      if: inputs.core_provider == 'rust'
+      run: python .github/scripts/lifecycle.py fetch-rust-sdk
     - name: Restore and verify the exact retained GUI group
       if: inputs.gui_input != ''
       run: python .github/scripts/lifecycle.py gui-input

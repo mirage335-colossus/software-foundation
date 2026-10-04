@@ -10,6 +10,17 @@ They are starting points for a newly hosted repository. Local success does not
 prove that hosted jobs, permissions, runner labels, or release settings have
 been exercised.
 
+Application workflow entry points default `core_provider` to `rust`, with an
+explicit `cpp` compatibility choice. Linux development feedback declares its
+distribution `rustc`/Cargo setup and selects the actual package tools; it also
+runs an explicit Rust-free C++ smoke check. Candidate native release and ASan
+jobs prepare pinned official host Rust inputs in a separate setup step before
+application compilation. SDK application, native GUI, screenshot and Latest
+consumers instead require exact already-retained Rust triplets matched to their
+C++ target groups. SDK maintenance explicitly prepares and retains those groups
+before consumer qualification. Missing groups fail clearly. Tool acquisition
+belongs to declared workflow preparation, never normal configure/build/test/package.
+
 ## Three distinct scopes
 
 | Scope | Trigger and intent | Meaning of success |
@@ -579,13 +590,15 @@ and periodically review runner images, action pins, timeouts, cache size,
 retention, permissions, and obsolete matrix entries.
 
 
-## Optional Rust qualification
+<a id="optional-rust-qualification"></a>
+
+## Rust Qualification
 
 [`rust-qualification.yml`](../.github/workflows/rust-qualification.yml) selects
 four explicit lanes: native Linux x86_64, native Linux aarch64, native Windows
 x86_64 and browser wasm32. It runs on `codex/rust-*` branch pushes and manual
-dispatches. Ordinary C++ feedback remains independent of Rust discovery and
-input preparation. The matrix binds an exact all-GUI C++ SDK recipe and matching
+dispatches. Rust is now the application default, while explicitly selected C++
+feedback remains independent of Rust discovery and input preparation. The matrix binds an exact all-GUI C++ SDK recipe and matching
 Rust producer recipe for each target; every lane records the actual source
 commit, complete retained groups and selected configuration.
 
@@ -618,7 +631,9 @@ application release, base/Latest change or distro-channel promotion is performed
 by this workflow.
 [Run 37211392657](https://github.com/mirage335-colossus/software-foundation/actions/runs/37211392657)
 at `41d28fec5481c77fc5b20e20808405ff3f83707a` completed all four producers and
-the verdict successfully. [Validation](validation.md#optional-rust-qualification-2026-10-04)
+the verdict successfully under the earlier explicit-Rust configuration policy.
+That result does not relabel later default-policy edits as the same tested source.
+[Validation](validation.md#optional-rust-qualification-2026-10-04)
 records the executed scope, exact immutable pointers and evidence basis:
 authenticated completed-job/run contexts, complete console logs and successful
 fail-closed gates. Final small manifests were SHA-verified locally; the complete

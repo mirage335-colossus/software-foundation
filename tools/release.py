@@ -15,6 +15,7 @@ RUST_IDENTITY_FIELDS = ('rust_sdk_recipe_id', 'rust_compiler_version', 'rust_tar
 
 
 def provider_identity(entry):
+    # An omitted field belongs to a historical C++ artifact, not a new build request.
     provider = entry.get('core_provider', 'cpp')
     if provider not in ('cpp', 'rust'):
         raise ValueError('unknown core provider')

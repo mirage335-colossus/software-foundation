@@ -19,8 +19,12 @@ STAGES = ('prepare', 'regression', 'application', 'certification', 'promotion')
 def preflight(request, *, transport=None, remote=True):
     required = {'repository', 'source_commit', 'run_id', 'attempt', 'tag', 'profile',
                 'recipes', 'gui_group', 'graphics_archive_url', 'execute', 'jobs'}
-    if not isinstance(request, dict) or set(request) != required:
+    if (not isinstance(request, dict) or not required <= set(request) or
+            set(request) - required - {'core_provider'}):
         raise ValueError('complete Latest request required')
+    core_provider = request.get('core_provider', 'rust')
+    if core_provider not in ('rust', 'cpp'):
+        raise ValueError('Latest core provider must be rust or cpp')
     delivery.location(request['repository']); ci.exact_commit(request['source_commit'])
     if (not re.fullmatch(r'[1-9][0-9]*', str(request['run_id'])) or
             type(request['attempt']) is not int or request['attempt'] < 1 or
@@ -30,7 +34,9 @@ def preflight(request, *, transport=None, remote=True):
     delivery.valid_name(tag)
     if tag == 'base' or tag.startswith(('ci-', 'screenshots-', 'experiment')):
         raise ValueError('ordinary release needs a distinct application tag')
-    matrix = ci.release_matrix(request['recipes'], request['profile'])
+    matrix = ci.release_matrix(request['recipes'], request['profile'], core_provider=core_provider)
+    rust_recipes = ({row['target']: row['rust_recipe'] for row in matrix['include']}
+                    if core_provider == 'rust' else {})
     if request['profile'] == 'all-gui':
         if not delivery.SHA.fullmatch(request['gui_group']):
             raise ValueError('all-GUI release requires an exact retained GUI input identity')
@@ -47,8 +53,11 @@ def preflight(request, *, transport=None, remote=True):
         expected = {name for recipe in request['recipes'].values() for name in delivery.store.names(recipe)}
         if not expected <= assets.keys():
             raise ValueError('exact base recipe missing; run explicit SDK maintenance first')
+        rust_expected = {name for recipe in rust_recipes.values() for name in ci.rust_base_names(recipe)}
+        if not rust_expected <= assets.keys():
+            raise ValueError('exact complete Rust base recipe missing; run explicit Rust SDK maintenance first')
         api.unchanged('base', base, assets, reference)
-    return dict(request, tag=tag, matrix=matrix,
+    return dict(request, core_provider=core_provider, rust_recipes=rust_recipes, tag=tag, matrix=matrix,
                 intent='publish and certify ordinary candidate before Latest' if request['execute'] else
                        'prepare only; no public candidate, certification or Latest change')
 
@@ -117,6 +126,7 @@ def environment_request():
     return {'repository': os.environ['GITHUB_REPOSITORY'], 'source_commit': os.environ['GITHUB_SHA'],
             'run_id': os.environ['GITHUB_RUN_ID'], 'attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
             'tag': os.environ.get('TAG', ''), 'profile': os.environ['PROFILE'],
+            'core_provider': os.environ.get('CORE_PROVIDER', 'rust'),
             'recipes': delivery.parse(os.environ['RECIPES']), 'gui_group': os.environ.get('GUI_GROUP', ''),
             'graphics_archive_url': os.environ.get('GRAPHICS_ARCHIVE_URL', ''),
             'execute': {'true': True, 'false': False}[os.environ['EXECUTE']], 'jobs': os.environ['JOBS']}

@@ -21,6 +21,7 @@ jobs:
     - id: plan
       env:
         DEVFAST: ${{ inputs.devfast }}
+        CORE_PROVIDER: ${{ inputs.core_provider }}
         ARM: ${{ inputs.include_arm }}
         POOL: ${{ inputs.linux_pool }}
         FAST: ${{ vars.FOUNDATION_FAST_LINUX_RUNNER }}
@@ -29,6 +30,8 @@ jobs:
       shell: python
       run: |
         import os, subprocess, sys
+        if os.environ['CORE_PROVIDER'] not in ('rust', 'cpp'):
+            raise SystemExit('Unknown application provider')
         command = [sys.executable, 'tools/ci_plan.py', 'plan', '--pool', os.environ['POOL'],
                    '--configured', os.environ['FAST'], '--configured-arm', os.environ['FAST_ARM'],
                    '--configured-windows', os.environ['FAST_WINDOWS'], '--github-output', os.environ['GITHUB_OUTPUT']]
@@ -48,6 +51,7 @@ jobs:
       CTEST_PARALLEL_LEVEL: '2'
       TARGET: ${{ matrix.target }}
       SCOPE: ${{ matrix.scope }}
+      CORE_PROVIDER: ${{ inputs.core_provider }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
@@ -55,12 +59,22 @@ jobs:
     - if: runner.os == 'Windows'
       shell: pwsh
       run: ./tools/ci_windows.ps1
+    - name: Explicit pinned native Rust host preparation
+      if: inputs.core_provider == 'rust'
+      shell: python
+      run: |
+        import os, subprocess, sys
+        subprocess.run([sys.executable, '-B', '.github/scripts/rust_host_prepare.py',
+                        '--target', os.environ['TARGET']], check=True)
     - name: Verify host and execute disjoint scope
       shell: python
       run: |
         import os, subprocess, sys
         subprocess.run([sys.executable, 'tools/ci_plan.py', 'host', os.environ['TARGET']], check=True)
-        subprocess.run([sys.executable, 'tools/build.py', 'build', 'release', '--configure-only'], check=True)
+        command = [sys.executable, 'tools/build.py', 'build', 'release', '--configure-only',
+                   '--core-provider', os.environ['CORE_PROVIDER'], '--build-dir', 'build/release']
+        if os.environ['CORE_PROVIDER'] == 'rust': command += ['--rust-sdk', 'build/native-rust-sdk']
+        subprocess.run(command, check=True)
         subprocess.run([sys.executable, 'tools/test_plan.py', 'candidate-run', '--build', 'build/release',
                         '--scope', os.environ['SCOPE'], '--jobs', os.environ.get('CTEST_PARALLEL_LEVEL', '2'),
                         '--output', 'build/release/candidate-' + os.environ['SCOPE'] + '.json',
@@ -76,6 +90,7 @@ jobs:
           build/release/test-reports/
           build/release/candidate-${{ matrix.scope }}.json
           build/release/candidate-${{ matrix.scope }}.junit.xml
+          build/native-rust-preparation.json
     permissions:
       contents: write
       actions: read
@@ -92,6 +107,7 @@ jobs:
       runner: ${{ matrix.runner }}
       build_jobs: ${{ inputs.build_jobs }}
       preserve_artifacts: ${{ inputs.preserve_artifacts }}
+      core_provider: ${{ inputs.core_provider }}
     permissions:
       contents: read
       actions: write
@@ -103,9 +119,19 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
-    - run: python3 tools/build.py test asan --label core --test-jobs 2
+    - name: Explicit pinned Rust host preparation
+      if: inputs.core_provider == 'rust'
+      run: python3 -B .github/scripts/rust_host_prepare.py --target linux-x86_64
+    - shell: python
       env:
+        CORE_PROVIDER: ${{ inputs.core_provider }}
         CMAKE_BUILD_PARALLEL_LEVEL: ${{ inputs.build_jobs }}
+      run: |
+        import os, subprocess, sys
+        command = [sys.executable, 'tools/build.py', 'test', 'asan', '--label', 'core', '--test-jobs', '2',
+                   '--core-provider', os.environ['CORE_PROVIDER']]
+        if os.environ['CORE_PROVIDER'] == 'rust': command += ['--rust-sdk', 'build/native-rust-sdk']
+        subprocess.run(command, check=True)
   distribution:
     if: ${{ !inputs.devfast }}
     runs-on: ubuntu-24.04
@@ -128,9 +154,13 @@ jobs:
         if failed:
             raise SystemExit('Required distribution suites failed: ' + ', '.join(failed))
     - name: Actual signed APT install, update, rejection and removal in disposable Debian
+      env:
+        CORE_PROVIDER: ${{ inputs.core_provider }}
       shell: python
       run: |
-        import subprocess, sys
+        import os, subprocess, sys
+        if os.environ['CORE_PROVIDER'] == 'rust':
+            subprocess.run([sys.executable, '-B', '.github/scripts/rust_host_prepare.py', '--target', 'linux-x86_64'], check=True)
         subprocess.run([sys.executable, '.github/scripts/container_job.py', 'apt-native-smoke'], check=True)
     - if: always()
       name: Retain verified apt-mechanism-${{ github.run_attempt }}
@@ -192,6 +222,11 @@ jobs:
 'on':
   workflow_dispatch:
     inputs:
+      core_provider:
+        description: Rust application default; cpp explicitly exercises legacy compatibility
+        type: choice
+        options: [rust, cpp]
+        default: rust
       preserve_artifacts:
         description: Keep temporary handoffs and diagnostics for one day after completion
         type: boolean
@@ -222,6 +257,10 @@ jobs:
         default: true
   workflow_call:
     inputs:
+      core_provider:
+        description: Application provider; legacy compatibility explicitly selects cpp
+        type: string
+        default: rust
       preserve_artifacts:
         description: Keep temporary handoffs and diagnostics for one day after completion
         type: boolean

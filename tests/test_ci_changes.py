@@ -276,7 +276,8 @@ class FeedbackWorkflowTests(unittest.TestCase):
         self.assertIn('--run-tool-suites --tool-jobs 2', tooling)
         self.assertIn("steps.changes.outputs.tools == 'true'", tooling)
         self.assertIn('uses: ./.github/actions/ci-evidence-publish', tooling)
-        self.assertEqual(workflow.count("if: steps.changes.outputs.gui == 'true'"), 1)
+        self.assertEqual(workflow.count("if: steps.changes.outputs.gui == 'true'"), 2)
+        self.assertIn('Prepare distribution Rust host tools', workflow)
         gui = workflow.split("  shared-gui:\n", 1)[1]
         self.assertIn("--gui --gui-backends", gui)
         self.assertNotIn("FOUNDATION_GUI_GROUP", gui)

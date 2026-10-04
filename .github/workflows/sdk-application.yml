@@ -2,6 +2,11 @@ name: Prepared SDK application and candidate
 'on':
   workflow_dispatch:
     inputs:
+      core_provider:
+        description: Application provider; cpp explicitly selects legacy compatibility
+        type: choice
+        options: [rust, cpp]
+        default: rust
       preserve_artifacts:
         description: Keep temporary handoffs and diagnostics for one day after completion
         type: boolean
@@ -57,6 +62,10 @@ name: Prepared SDK application and candidate
         required: false
   workflow_call:
     inputs:
+      core_provider:
+        description: Application provider; cpp explicitly selects legacy compatibility
+        type: string
+        default: rust
       preserve_artifacts:
         description: Keep temporary handoffs and diagnostics for one day after completion
         type: boolean
@@ -137,6 +146,7 @@ jobs:
       linux_pool: ${{ inputs.linux_pool }}
       build_jobs: ${{ inputs.jobs }}
       preserve_artifacts: ${{ inputs.preserve_artifacts }}
+      core_provider: ${{ inputs.core_provider }}
   prepare:
     runs-on: ubuntu-24.04
     outputs:
@@ -165,6 +175,7 @@ jobs:
         paths: |-
           build/source.tar.gz
           build/recipes.json
+          build/rust-recipes.json
     permissions:
       contents: write
       actions: read
@@ -183,6 +194,8 @@ jobs:
     env:
       TARGET: ${{ matrix.target }}
       RECIPE: ${{ matrix.recipe }}
+      CORE_PROVIDER: ${{ matrix.core_provider }}
+      FOUNDATION_PROVIDER_RECIPE: ${{ matrix.rust_recipe }}
       JOBS: ${{ inputs.jobs }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -204,6 +217,9 @@ jobs:
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'fetch-sdk-binary'], check=True)
       name: Fetch exact verified binary SDK and paired checksum; never cold-build
+    - name: Restore the exact complete retained Rust extension
+      if: inputs.core_provider == 'rust'
+      run: python .github/scripts/lifecycle.py fetch-rust-sdk
     - name: Verify explicitly retained Windows host graphics input
       if: runner.os == 'Windows' && inputs.profile == 'all-gui'
       run: python .github/scripts/lifecycle.py graphics-input
@@ -348,6 +364,7 @@ env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'
   PYTHONDONTWRITEBYTECODE: '1'
+  CORE_PROVIDER: ${{ inputs.core_provider }}
   PROFILE: ${{ inputs.profile }}
   EXPERIMENT: ${{ inputs.experiment }}
   TAG: ${{ inputs.tag }}

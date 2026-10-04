@@ -40,7 +40,7 @@ class SdkRetentionTests(unittest.TestCase):
         sdk_windows.empty_base(self.recipe_file, provenance_path, self.group)
         self.files = store.verify_group(self.group, self.recipe)
         archive.write_json(self.root / 'build/sdk-origin.json', {'origin': 'base', 'recipe': self.recipe})
-        self.environment = {'TARGET': 'windows-x86_64', 'SDK_PROFILE': 'core', 'JOBS': '2',
+        self.environment = {'TARGET': 'windows-x86_64', 'SDK_PROFILE': 'core', 'JOBS': '2', 'CORE_PROVIDER': 'cpp',
             'GITHUB_SHA': 'a' * 40, 'GITHUB_REPOSITORY': 'example/foundation',
             'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2',
             'GITHUB_OUTPUT': str(self.root / 'step-output')}
@@ -69,6 +69,48 @@ class SdkRetentionTests(unittest.TestCase):
             self.assertEqual(remote.download.call_count,1)
 
     def receipt(self): return json.loads((self.root / 'build/sdk-retention.json').read_text())
+
+    def test_rust_maintenance_consumes_retained_extension_with_both_producers_isolated(self):
+        rust_recipe = 'b' * 64; rust_files = {'retained-rust-input': 'c' * 64}
+        rust_inputs = self.root / 'build/rust-sdk-inputs'; rust_inputs.mkdir()
+        (rust_inputs / 'producer-only.txt').write_bytes(b'Rust supplier bytes')
+        self.publisher.side_effect = None; self.publisher.return_value = {'operation': 'plan'}
+        def consume(*args, **kwargs):
+            self.assertFalse(rust_inputs.exists())
+            self.assertFalse((self.root / 'build/sdk-inputs').exists())
+            self.assertEqual(kwargs['core_provider'], 'rust')
+            self.assertEqual(kwargs['rust_recipe'], rust_recipe)
+            self.assertEqual(kwargs['rust_group'], self.root / 'build/rust-sdk-group')
+            return {'status': 'passed'}
+        with patch.dict(lifecycle.os.environ, CORE_PROVIDER='rust'), \
+             patch.object(lifecycle.ci, 'assert_host'), \
+             patch.object(lifecycle, 'prepare_rust_maintenance', return_value=(rust_recipe, rust_files)), \
+             patch.object(lifecycle.ci, 'prepared_check', side_effect=consume) as check, \
+             patch.object(lifecycle.ci, 'publish_rust_base', return_value={'operation': 'Rust plan'}) as rust_publish:
+            lifecycle.main('sdk-produce')
+        check.assert_called_once()
+        rust_publish.assert_called_once_with('example/foundation', rust_recipe,
+            self.root / 'build/rust-sdk-group', 'a' * 40)
+        self.assertTrue(rust_inputs.is_dir())
+        receipt = json.loads((self.root / 'build/sdk-consumer/qualification.json').read_text())
+        self.assertEqual(receipt['rust_producer_isolation']['sha256'],
+            lifecycle.evidence.sha(self.root / 'build/rust-sdk-isolation.json'))
+        self.assertEqual(json.loads((self.root / 'build/rust-sdk-isolation.json').read_text())['status'], 'passed')
+
+    def test_rust_maintenance_failure_keeps_inputs_and_cannot_plan_publication(self):
+        rust_inputs = self.root / 'build/rust-sdk-inputs'; rust_inputs.mkdir()
+        (rust_inputs / 'producer-only.txt').write_bytes(b'Rust supplier bytes')
+        with patch.dict(lifecycle.os.environ, CORE_PROVIDER='rust'), \
+             patch.object(lifecycle.ci, 'assert_host'), \
+             patch.object(lifecycle, 'prepare_rust_maintenance', return_value=('b' * 64, {})), \
+             patch.object(lifecycle.ci, 'prepared_check', side_effect=RuntimeError('Rust consumer failed')), \
+             patch.object(lifecycle.ci, 'publish_rust_base') as rust_publish:
+            with self.assertRaisesRegex(RuntimeError, 'Rust consumer failed'):
+                lifecycle.main('sdk-produce')
+        rust_publish.assert_not_called(); self.publisher.assert_not_called()
+        receipt = json.loads((self.root / 'build/rust-sdk-isolation.json').read_text())
+        self.assertEqual(receipt['status'], 'failed')
+        self.assertEqual((Path(receipt['quarantine']) / 'producer-only.txt').read_bytes(), b'Rust supplier bytes')
 
     def test_failed_consumer_keeps_failure_and_complete_group_can_be_retained(self):
         with patch.object(lifecycle.ci, 'assert_host'), \
@@ -671,7 +713,7 @@ class SdkProducerIsolationTests(unittest.TestCase):
             with patch.object(lifecycle.ci,'module',side_effect=module),patch.object(lifecycle.ci,'assert_host'), \
                  patch.object(lifecycle.ci.subprocess,'run'):
                 receipt=lifecycle.ci.prepared_check('linux-x86_64',self.recipe,self.group,output,
-                    gui_group=self.group,defer_qualification=defer)
+                    gui_group=self.group,defer_qualification=defer,core_provider='cpp')
             self.assertEqual(receipt['status'],'passed')
             self.assertEqual((output/'qualification.json').exists(),not defer)
         self.assertEqual(sdk.install.call_count,2)

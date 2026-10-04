@@ -27,12 +27,17 @@ class OfflineAcceptance(unittest.TestCase):
         host = patch.object(acceptance.platform, 'machine', return_value='x86_64')
         host.start(); self.addCleanup(host.stop)
         self.group = self.root / 'group with spaces'; self.group.mkdir()
-        self.plan = {'schema_version': 1, 'isolation': {'kind': 'docker', 'image': 'sha256:' + 'f' * 64},
-                     'cases': [{'target': 'linux-x86_64', 'group': str(self.group), 'recipe': 'a' * 64},
-                               {'target': 'browser-wasm32', 'group': str(self.group), 'recipe': 'b' * 64}]}
+        self.plan = {'schema_version': 2, 'isolation': {'kind': 'docker', 'image': 'sha256:' + 'f' * 64},
+                     'cases': [{'target': 'linux-x86_64', 'group': str(self.group), 'recipe': 'a' * 64,
+                                'core_provider': 'cpp'},
+                               {'target': 'browser-wasm32', 'group': str(self.group), 'recipe': 'b' * 64,
+                                'core_provider': 'cpp'}]}
 
     def test_inventory_preserves_supported_hosts_backends_and_distro_route(self):
         contract = acceptance.inventory()
+        self.assertEqual(contract['core_providers'],
+                         {'default': 'rust', 'optional': ['cpp'], 'automatic_fallback': False})
+        self.assertEqual(contract['plan_schema'], {'current': 2, 'schema_1_requires_explicit_provider': True})
         self.assertEqual(acceptance.validate_plan(self.plan, system='Linux', machine='x86_64'),
                          ['linux-x86_64', 'browser-wasm32'])
         native = contract['native_backends']
@@ -45,8 +50,42 @@ class OfflineAcceptance(unittest.TestCase):
         self.assertIn('complete Microsoft offline compiler/Windows SDK installer layout and component configuration',
                       next(item for item in contract['targets'] if item['target'] == 'windows-x86_64')['separate_prerequisites'])
         arm = copy.deepcopy(self.plan)
-        arm['cases'] = [{'target': 'linux-aarch64', 'group': str(self.group), 'recipe': 'c' * 64}]
+        arm['cases'] = [{'target': 'linux-aarch64', 'group': str(self.group), 'recipe': 'c' * 64,
+                         'core_provider': 'cpp'}]
         self.assertEqual(acceptance.validate_plan(arm, system='Linux', machine='aarch64'), ['linux-aarch64'])
+
+    def test_historical_plan_omissions_require_migration_before_any_launch_or_input_verification(self):
+        historical = copy.deepcopy(self.plan); historical['schema_version'] = 1
+        for case in historical['cases']:
+            case.pop('core_provider')
+        path = self.root / 'historical-plan.json'; write_json(path, historical)
+        output = self.root / 'new output'
+        with patch.object(acceptance, 'verify_case') as verify, \
+                patch.object(acceptance.subprocess, 'run') as launch, \
+                self.assertRaisesRegex(ValueError, 'schema-1.*explicit core_provider.*schema 2'):
+            acceptance.run(path, output)
+        verify.assert_not_called(); launch.assert_not_called(); self.assertFalse(output.exists())
+        for case in historical['cases']:
+            case['core_provider'] = 'cpp'
+        self.assertEqual(acceptance.validate_plan(historical, system='Linux', machine='x86_64'),
+                         ['linux-x86_64', 'browser-wasm32'])
+
+    def test_new_plan_defaults_to_rust_and_requires_frozen_paired_inputs(self):
+        plan = copy.deepcopy(self.plan)
+        case = plan['cases'][0]; case.pop('core_provider')
+        for fields in ({}, {'rust_group': str(self.group)}, {'rust_recipe': 'c' * 64}):
+            with self.subTest(fields=fields), self.assertRaisesRegex(ValueError, 'retained Rust group and recipe'):
+                acceptance.validate_plan({**plan, 'cases': [{**case, **fields}]},
+                                         system='Linux', machine='x86_64')
+        case.update(rust_group=str(self.group), rust_recipe='c' * 64)
+        self.assertEqual(acceptance.validate_plan(plan, system='Linux', machine='x86_64'),
+                         ['linux-x86_64', 'browser-wasm32'])
+        historical = copy.deepcopy(plan); historical['schema_version'] = 1
+        with self.assertRaisesRegex(ValueError, 'schema-1.*explicit core_provider'):
+            acceptance.validate_plan(historical, system='Linux', machine='x86_64')
+        historical['cases'][0]['core_provider'] = 'rust'
+        self.assertEqual(acceptance.validate_plan(historical, system='Linux', machine='x86_64'),
+                         ['linux-x86_64', 'browser-wasm32'])
 
     def test_plans_reject_tags_shell_fields_duplicates_and_foreign_hosts(self):
         invalid = []
@@ -62,7 +101,7 @@ class OfflineAcceptance(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 acceptance.validate_plan(value, system='Linux', machine='x86_64')
 
-    def test_rust_plans_require_an_explicit_complete_paired_group_and_preserve_cpp_plans(self):
+    def test_rust_plans_require_a_complete_paired_group_and_preserve_explicit_cpp_plans(self):
         plan = copy.deepcopy(self.plan)
         rust_group = self.root / 'rust group'; rust_group.mkdir()
         case = plan['cases'][0]
@@ -70,7 +109,7 @@ class OfflineAcceptance(unittest.TestCase):
         self.assertEqual(acceptance.validate_plan(plan, system='Linux', machine='x86_64'),
                          ['linux-x86_64', 'browser-wasm32'])
         invalid = []
-        for field in ('rust_group', 'rust_recipe', 'core_provider'):
+        for field in ('rust_group', 'rust_recipe'):
             value = copy.deepcopy(plan); value['cases'][0].pop(field); invalid.append(value)
         value = copy.deepcopy(plan); value['cases'][0]['rust_recipe'] = 'bad'; invalid.append(value)
         value = copy.deepcopy(plan); value['cases'][0]['core_provider'] = 'auto'; invalid.append(value)
@@ -106,18 +145,32 @@ class OfflineAcceptance(unittest.TestCase):
             verify.assert_called_with(group, case['rust_recipe'])
             pair.assert_called_once_with(metadata, result['metadata'])
             self.assertEqual(result['rust'], {'files': files, 'recipe': case['rust_recipe'], 'metadata': metadata})
+            case.pop('core_provider')
+            self.assertEqual(acceptance.verify_case(case)['core_provider'], 'rust')
             pair.side_effect = ValueError('Rust/C++ target mismatch')
             with self.assertRaisesRegex(ValueError, 'target mismatch'):
                 acceptance.verify_case(case)
+
+    def test_default_case_preflight_never_treats_missing_rust_inputs_as_cpp(self):
+        case = self.prepared_fixture(); case.pop('core_provider')
+        with patch.object(acceptance, 'verify_group') as verify, \
+                self.assertRaisesRegex(ValueError, 'retained Rust group and recipe'):
+            acceptance.verify_case(case)
+        verify.assert_not_called()
 
     def test_rust_commands_and_environment_select_retained_tools_without_ambient_cargo_state(self):
         output = self.root / 'output'; cpp = self.root / 'cpp sdk'; rust = self.root / 'rust sdk'
         for action in ('build', 'test', 'package'):
             command = acceptance.build_arguments('linux-x86_64', cpp, output, 2, action,
-                                                 core_provider='rust', rust_sdk=rust)
+                                                 rust_sdk=rust)
             self.assertEqual(command[command.index('--core-provider') + 1], 'rust')
             self.assertEqual(command[command.index('--rust-sdk') + 1], str(rust))
             self.assertEqual(command[command.index('--sdk') + 1], str(cpp))
+            legacy = acceptance.build_arguments('linux-x86_64', cpp, output, 2, action, core_provider='cpp')
+            self.assertEqual(legacy[legacy.index('--core-provider') + 1], 'cpp')
+            self.assertNotIn('--rust-sdk', legacy)
+        with self.assertRaisesRegex(ValueError, 'exact retained SDK'):
+            acceptance.build_arguments('linux-x86_64', cpp, output, 2, 'build')
         for provider, extension in (('cpp', rust), ('rust', None), ('auto', None)):
             with self.subTest(provider=provider), self.assertRaises(ValueError):
                 acceptance.build_arguments('linux-x86_64', cpp, output, 2, 'build',
@@ -130,14 +183,16 @@ class OfflineAcceptance(unittest.TestCase):
 
     def test_rust_requests_project_the_verified_group_and_recheck_outer_inputs(self):
         from dependency_archive import digest
-        for mutate in (False, True):
-            with self.subTest(mutate=mutate), tempfile.TemporaryDirectory() as directory:
+        for implicit, mutate in ((False, False), (False, True), (True, False), (True, True)):
+            with self.subTest(implicit=implicit, mutate=mutate), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory).resolve(); source = root / 'source'; source.mkdir()
                 (source / 'app.py').write_text('frozen source\n')
                 cpp = root / 'cpp group'; cpp.mkdir(); (cpp / 'archive').write_bytes(b'cpp')
                 rust = root / 'rust group'; rust.mkdir(); (rust / 'archive').write_bytes(b'rust')
                 case = {'target': 'linux-x86_64', 'group': str(cpp), 'recipe': 'a' * 64,
                         'core_provider': 'rust', 'rust_group': str(rust), 'rust_recipe': 'b' * 64}
+                if implicit:
+                    case.pop('core_provider')
                 value = copy.deepcopy(self.plan); value['cases'] = [case]
                 plan = root / 'plan.json'; write_json(plan, value); output = root / 'output'
                 verified = {'files': {'archive': digest(cpp / 'archive')},
@@ -166,6 +221,15 @@ class OfflineAcceptance(unittest.TestCase):
                         self.assertEqual(report['input_recheck'], 'passed')
                     self.assertEqual(phases.call_count, 2)
                 self.assertEqual(read_json(output / 'acceptance.json')['status'], 'failed' if mutate else 'passed')
+
+    def test_old_projected_request_without_provider_is_rejected_without_reinterpretation(self):
+        request = {'case': {'target': 'linux-x86_64', 'group': str(self.group), 'recipe': 'a' * 64}}
+        with patch.object(acceptance, 'read_json', return_value=request), \
+                patch.object(acceptance, 'verify_case') as verify, \
+                patch.object(acceptance, 'checked_command') as launch, \
+                self.assertRaisesRegex(ValueError, 'projected offline requests require an explicit core_provider'):
+            acceptance.inside('stage', Path('/output/request.json'))
+        verify.assert_not_called(); launch.assert_not_called()
 
     def test_rust_sdk_readonly_receipt_requires_the_mount_and_a_filesystem_write_rejection(self):
         import errno
@@ -204,7 +268,7 @@ class OfflineAcceptance(unittest.TestCase):
         write_json(tree / 'sdk.json', metadata)
         shutil.rmtree(group)
         sdk.export_group(tree, sources, group)
-        return {'target': 'linux-x86_64', 'group': str(group), 'recipe': recipe}
+        return {'target': 'linux-x86_64', 'group': str(group), 'recipe': recipe, 'core_provider': 'cpp'}
 
     def test_complete_group_integrity_and_capabilities_are_verified_without_repair(self):
         case = self.prepared_fixture()
@@ -231,7 +295,8 @@ class OfflineAcceptance(unittest.TestCase):
     def test_one_tree_per_target_and_existing_build_entrypoint(self):
         output = self.root / 'output'; retained = self.root / 'installed sdk'
         for target in ('linux-x86_64', 'linux-aarch64', 'browser-wasm32'):
-            commands = [acceptance.build_arguments(target, retained, output, 3, action) for action in ('build', 'test', 'package')]
+            commands = [acceptance.build_arguments(target, retained, output, 3, action, core_provider='cpp')
+                        for action in ('build', 'test', 'package')]
             for command in commands:
                 self.assertEqual(command[2], str(acceptance.ROOT / 'tools/build.py'))
                 self.assertEqual(command[command.index('--build-dir') + 1], str(output / 'build'))

@@ -198,12 +198,12 @@ class StorageLayoutTests(unittest.TestCase):
         self.assertTrue(all(len(call.args[0]) == 3 and call.kwargs == {'diagnostic':False} for call in merge.call_args_list))
 
     def test_assembly_fetches_one_unique_sdk_batch_before_building_candidate(self):
-        recipes = {'linux': 'b' * 64, 'windows': 'a' * 64, 'alias': 'b' * 64}
+        recipes = {'linux-x86_64': 'b' * 64, 'windows-x86_64': 'a' * 64, 'linux-aarch64': 'b' * 64}
         events = []
         previous = Path.cwd()
         try:
-            with patch.dict(os.environ, PROFILE='all-gui', EXPERIMENT='false'), \
-                    patch.object(lifecycle.evidence, 'load', return_value=recipes), \
+            with patch.dict(os.environ, PROFILE='core', EXPERIMENT='false', CORE_PROVIDER='cpp'), \
+                    patch.object(lifecycle.evidence, 'load', side_effect=[recipes, {}]), \
                     patch.object(lifecycle.delivery, 'fetch_bases',
                                  side_effect=lambda *args: events.append('fetched')) as fetch, \
                     patch.object(ci, 'assemble_release', side_effect=lambda *args: events.append('assembled')), \

@@ -299,6 +299,13 @@ class ReleaseTests(unittest.TestCase):
                 'rust_compiler_version': '1.63.0', 'rust_target': 'x86_64-unknown-linux-gnu',
                 'rust_sdk_manifest_sha256': 'c' * 64, 'rust_compiler_sha256': 'd' * 64}
 
+    def test_omitted_provider_retains_historical_cpp_identity(self):
+        self.assertEqual(release.provider_identity(self.spec['artifacts'][0]), {'core_provider': 'cpp'})
+        rust_fields_without_provider = self.rust_identity()
+        del rust_fields_without_provider['core_provider']
+        with self.assertRaisesRegex(ValueError, r'C\+\+ artifact'):
+            release.provider_identity(rust_fields_without_provider)
+
     def test_rust_package_cannot_lose_provider_identity_in_cpp_manifest(self):
         self.repack_provider(**self.rust_identity())
         with self.assertRaisesRegex(ValueError, 'core provider or Rust toolchain'):

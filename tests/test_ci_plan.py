@@ -15,11 +15,52 @@ spec.loader.exec_module(ci)
 
 
 class CiPlanTests(unittest.TestCase):
+    def test_default_prepared_operations_reject_missing_rust_before_building(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run') as launch:
+                with self.assertRaisesRegex(ValueError, 'exact retained SDK group'):
+                    ci.prepared_check('linux-x86_64', 'a' * 64, root / 'group', root / 'check')
+                with self.assertRaisesRegex(ValueError, 'exact retained SDK group'):
+                    ci.prepared_package('linux-x86_64', 'a' * 64, root / 'group', root / 'source', root / 'package')
+                launch.assert_not_called()
+            self.assertFalse((root / 'check').exists()); self.assertFalse((root / 'package').exists())
+
+    def test_release_matrix_freezes_rust_inputs_and_cpp_opt_out(self):
+        recipes = {target: 'a' * 64 for target in ci.STANDARD}
+        rows = ci.release_matrix(recipes)['include']
+        self.assertEqual({row['target']: row['rust_recipe'] for row in rows},
+                         {target: ci.rust_recipe(target) for target in ci.STANDARD})
+        self.assertEqual({row['core_provider'] for row in rows}, {'rust'})
+        with patch.object(ci, 'rust_recipe', side_effect=AssertionError('C++ recipe discovery')):
+            rows = ci.release_matrix(recipes, core_provider='cpp')['include']
+        self.assertEqual({row['core_provider'] for row in rows}, {'cpp'})
+        self.assertEqual({row['rust_recipe'] for row in rows}, {''})
+
+    def test_browser_matrix_requires_exact_matched_rust_cpp_tuple(self):
+        recipes = {target: 'a' * 64 for target in ci.RUST_RECIPES}
+        with self.assertRaisesRegex(ValueError, r'exact matched C\+\+ SDK'):
+            ci.release_matrix(recipes, 'all-gui')
+        paired = ci.module('rust_sdk').checked_recipe(ci.ROOT / ci.RUST_RECIPES['browser-wasm32'])
+        recipes['browser-wasm32'] = paired['cpp_sdk_recipe_id']
+        self.assertEqual(len(ci.release_matrix(recipes, 'all-gui')['include']), 4)
+
+    def test_retained_rust_requires_one_exact_owned_producer(self):
+        request = dict(schema_version=1, repository='owner/project', target='linux-x86_64',
+            recipe_id='a' * 64, run_id=7, source_commit='b' * 40, attempt=2, job_id=9,
+            workflow='sdk-maintenance.yml', group=dict(manifest_id=11, manifest_sha256='c' * 64))
+        self.assertEqual(ci.retained_rust_request(request, 'owner/project', 'linux-x86_64', 'a' * 64), request)
+        for changes in ({'repository': 'other/project'}, {'target': 'linux-aarch64'},
+                        {'recipe_id': 'd' * 64}, {'workflow': 'untrusted.yml'}, {'job_id': True},
+                        {'group': {'manifest_id': 11, 'manifest_sha256': 'latest'}}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                ci.retained_rust_request(dict(request, **changes), 'owner/project', 'linux-x86_64', 'a' * 64)
+
     def test_cpp_lane_has_no_rust_discovery_or_inputs(self):
         with patch.object(ci, 'module') as module:
             self.assertIsNone(ci.rust_selection('cpp', None, None))
             self.assertEqual(ci.install_rust_input('cpp', None, None, Path('out'), None),
-                             ([], {'core_provider': 'cpp'}))
+                             (['--core-provider', 'cpp'], {'core_provider': 'cpp'}))
             module.assert_not_called()
         for provider, group, recipe in [('cpp', Path('group'), None), ('rust', None, 'a' * 64),
                                         ('rust', Path('group'), 'latest'), ('automatic', None, None)]:
@@ -801,7 +842,7 @@ class CandidateFetchTests(unittest.TestCase):
                 shutil.copyfile(archive, destination / 'application.tar.gz')
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run', side_effect=launch):
             entry = ci.prepared_package('linux-x86_64', self.fixture.fixture.recipe, self.fixture.root / 'group',
-                    self.fixture.directory / ci.module('release').verify_release(self.fixture.directory)['source']['archive'], produced, 2)
+                    self.fixture.directory / ci.module('release').verify_release(self.fixture.directory)['source']['archive'], produced, 2, core_provider='cpp')
         self.assertEqual([x[2] for x in commands], ['test', 'package'])
         self.assertIn('--full', commands[0]); self.assertNotIn('--full', commands[1])
         self.assertNotIn('--junit', commands[1])
@@ -840,7 +881,7 @@ class CandidateFetchTests(unittest.TestCase):
                 shutil.copyfile(archive, destination / 'application.tar.gz')
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run', side_effect=launch):
             entry = ci.prepared_package('linux-x86_64', self.fixture.fixture.recipe, binary_group,
-                    self.fixture.directory / ci.module('release').verify_release(self.fixture.directory)['source']['archive'], produced, 2, expected_files=complete)
+                    self.fixture.directory / ci.module('release').verify_release(self.fixture.directory)['source']['archive'], produced, 2, expected_files=complete, core_provider='cpp')
         self.assertEqual([x[2] for x in commands], ['test', 'package'])
         self.assertIn('--full', commands[0]); self.assertNotIn('--full', commands[1])
         self.assertNotIn('--junit', commands[1])
@@ -1452,14 +1493,14 @@ class SdkMaintenanceTests(unittest.TestCase):
                 packages = Path(argv[argv.index('--build-dir') + 1]) / 'packages'; packages.mkdir(parents=True)
                 shutil.copyfile(archive, packages / 'application.tar.gz')
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run', side_effect=run):
-            result = ci.prepared_check('linux-x86_64', self.recipe, self.root / 'group', output)
+            result = ci.prepared_check('linux-x86_64', self.recipe, self.root / 'group', output, core_provider='cpp')
             self.assertIn('installed-consumer', result['checks'])
             self.assertEqual([x[2] for x in commands], ['test', 'package'])
             self.assertIn('--label', commands[0]); self.assertNotIn('--label', commands[1])
             self.assertNotIn('--junit', commands[1]); verifier.verify.assert_called_once()
             verifier.verify.side_effect = ValueError('installed consumer failed')
             with self.assertRaisesRegex(ValueError, 'consumer failed'):
-                ci.prepared_check('linux-x86_64', self.recipe, self.root / 'group', self.root / 'failed-probe')
+                ci.prepared_check('linux-x86_64', self.recipe, self.root / 'group', self.root / 'failed-probe', core_provider='cpp')
             self.assertFalse((self.root / 'failed-probe/qualification.json').exists())
 
     def test_browser_core_probe_selects_wasm_for_test_and_package_without_gui(self):
@@ -1478,7 +1519,7 @@ class SdkMaintenanceTests(unittest.TestCase):
                 packages = output / 'build/packages'; packages.mkdir(parents=True)
                 shutil.copyfile(archive, packages / 'application.tar.gz')
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci.platform, 'system', return_value='Linux'), patch.object(ci.platform, 'machine', return_value='x86_64'), patch.object(ci.subprocess, 'run', side_effect=run):
-            result = ci.prepared_check('browser-wasm32', self.recipe, self.root / 'group', output)
+            result = ci.prepared_check('browser-wasm32', self.recipe, self.root / 'group', output, core_provider='cpp')
         self.assertEqual([argv[2] for argv in commands], ['test', 'package'])
         for argv in commands:
             self.assertEqual(argv[argv.index('--gui-backends') + 1], 'wasm')
@@ -1494,7 +1535,7 @@ class SdkMaintenanceTests(unittest.TestCase):
         def selected(name): return sdk if name == 'sdk' else original(name)
         group = self.root / 'group'; output = self.root / 'development-check'
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run') as run:
-            result = ci.prepared_check('linux-x86_64', self.recipe, group, output, gui_group=group, development=True)
+            result = ci.prepared_check('linux-x86_64', self.recipe, group, output, gui_group=group, development=True, core_provider='cpp')
         commands = [call.args[0] for call in run.call_args_list]
         self.assertEqual([row[2:4] for row in commands], [['build', 'dev'], ['test', 'dev']])
         for command in commands:
@@ -1508,7 +1549,7 @@ class SdkMaintenanceTests(unittest.TestCase):
                 patch.object(ci.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, ['build'])):
             failed = self.root / 'development-failed'
             with self.assertRaises(subprocess.CalledProcessError):
-                ci.prepared_check('linux-x86_64', self.recipe, group, failed, gui_group=group, development=True)
+                ci.prepared_check('linux-x86_64', self.recipe, group, failed, gui_group=group, development=True, core_provider='cpp')
             self.assertFalse((failed / 'qualification.json').exists())
 
     def test_development_sdk_scope_rejects_unsupported_targets_before_install(self):
@@ -1518,7 +1559,7 @@ class SdkMaintenanceTests(unittest.TestCase):
                                       ('linux-x86_64', None, True), ('linux-x86_64', group, 'true')]:
                 output = self.root / 'not-created'
                 with self.assertRaisesRegex(ValueError, 'development qualification'):
-                    ci.prepared_check(target, self.recipe, group, output, gui_group=gui, development=mode)
+                    ci.prepared_check(target, self.recipe, group, output, gui_group=gui, development=mode, core_provider='cpp')
                 self.assertFalse(output.exists())
             host.assert_not_called()
 
@@ -1529,7 +1570,7 @@ class SdkMaintenanceTests(unittest.TestCase):
         def selected(name): return sdk if name == 'sdk' else original(name)
         group = self.root / 'group'; output = self.root / 'gui-check'
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run') as run:
-            result = ci.prepared_check('linux-x86_64', self.recipe, group, output, gui_group=group)
+            result = ci.prepared_check('linux-x86_64', self.recipe, group, output, gui_group=group, core_provider='cpp')
         self.assertEqual(run.call_count, 1)
         argv = run.call_args.args[0]
         self.assertEqual(argv[2], 'test'); self.assertIn('--full', argv); self.assertIn('--host-tests', argv)
@@ -1538,7 +1579,7 @@ class SdkMaintenanceTests(unittest.TestCase):
         with patch.object(ci, 'module', side_effect=selected), patch.object(ci, 'assert_host'), patch.object(ci.subprocess, 'run') as run:
             sdk.install.return_value = {'capabilities': ['core']}
             with self.assertRaisesRegex(ValueError, 'capabilities'):
-                ci.prepared_check('linux-x86_64', self.recipe, group, self.root / 'insufficient', gui_group=group)
+                ci.prepared_check('linux-x86_64', self.recipe, group, self.root / 'insufficient', gui_group=group, core_provider='cpp')
             run.assert_not_called()
 
 
@@ -1557,7 +1598,7 @@ class WindowsGraphicsCiTests(unittest.TestCase):
             for target, gui, archive in (('windows-x86_64', root, None),
                     ('windows-x86_64', None, root / 'graphics.7z'), ('linux-x86_64', root, root / 'graphics.7z')):
                 with self.assertRaisesRegex(ValueError, 'explicit retained'):
-                    ci.prepared_check(target, 'a' * 64, root, root / 'output', gui_group=gui, graphics_archive=archive)
+                    ci.prepared_check(target, 'a' * 64, root, root / 'output', gui_group=gui, graphics_archive=archive, core_provider='cpp')
             self.assertFalse((root / 'output').exists())
 
     def test_gui_runner_uses_bounded_shared_owner_and_propagates_failures(self):
@@ -1615,7 +1656,7 @@ class WindowsGraphicsCiTests(unittest.TestCase):
              patch('windows_toolchain.inspect_selected_linker', return_value={'version':'14.44.35207.0'}), \
              patch.object(ci.subprocess, 'run', side_effect=AssertionError('unowned compiler launch')), patch.object(ci, 'graphics_test', side_effect=tested):
             result = ci.prepared_check('windows-x86_64', fixture.fixture.recipe, root / 'group', output,
-                                      gui_group=root / 'group', graphics_archive=root / 'graphics.7z')
+                                      gui_group=root / 'group', graphics_archive=root / 'graphics.7z', core_provider='cpp')
         sdk.install.assert_called_once_with((root / 'group').resolve(strict=True), fixture.fixture.recipe, output / 'dependencies', '14.44.35207.0')
         self.assertEqual(events, ['build', 'prerequisites', 'probe', 'test', 'cleanup'])
         self.assertEqual(compiler.run.call_count, 2)
@@ -1634,7 +1675,7 @@ class WindowsGraphicsCiTests(unittest.TestCase):
              patch.object(ci, 'graphics_test', side_effect=RuntimeError('GUI assertion failed')):
             with self.assertRaisesRegex(RuntimeError, 'GUI assertion failed'):
                 ci.prepared_check('windows-x86_64', fixture.fixture.recipe, root / 'group', output,
-                                  gui_group=root / 'group', graphics_archive=root / 'graphics.7z')
+                                  gui_group=root / 'group', graphics_archive=root / 'graphics.7z', core_provider='cpp')
         self.assertEqual(events, ['build', 'prerequisites', 'probe', 'cleanup'])
         self.assertFalse((output / 'qualification.json').exists())
         self.assertEqual(json.loads((output / 'graphics.json').read_text())['cleanup'], 'removed')
@@ -1646,7 +1687,7 @@ class WindowsGraphicsCiTests(unittest.TestCase):
              patch.object(ci.subprocess, 'run', side_effect=AssertionError('unowned compiler launch')):
             with self.assertRaisesRegex(RuntimeError, 'probe setup failed'):
                 ci.prepared_check('windows-x86_64', fixture.fixture.recipe, root / 'group', output,
-                                  gui_group=root / 'group', graphics_archive=root / 'graphics.7z')
+                                  gui_group=root / 'group', graphics_archive=root / 'graphics.7z', core_provider='cpp')
         self.assertFalse((output / 'qualification.json').exists())
         self.assertEqual(json.loads((output / 'graphics.json').read_text()), failure.graphics_receipt)
 
@@ -1793,7 +1834,7 @@ class WindowsGraphicsPackageTests(unittest.TestCase):
                    side_effect=getattr(self, 'probe_error', None)), \
              patch.object(ci.subprocess, 'run', side_effect=unmanaged):
             return ci.prepared_package(target, self.recipe, self.group, source or self.gui_source,
-                self.output, 2, graphics_archive=self.archive if graphics else None)
+                self.output, 2, graphics_archive=self.archive if graphics else None, core_provider='cpp')
 
     def test_unverified_windows_linker_stops_before_dependency_install_or_build(self):
         self.probe_error = ValueError('selected linker identity invalid')

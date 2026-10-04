@@ -21,7 +21,7 @@ distinct when assembling a kit:
 | Selected retained group | Binary archive, source/bootstrap archive and complete `SHA256SUMS`, all matching one exact recipe identity |
 | Native SDK contents | Matching native compiler/linker, target sysroot, selected toolkits, notices and every declared `sdk.json` host tool |
 | Wasm SDK contents | Emscripten, LLVM, Binaryen, Node, configuration, prepared frozen `EM_CACHE` and notices |
-| Explicit Rust provider | A separate complete Rust binary/source/checksum group matching the C++ target, including official tools/target libraries, source and stage0 inputs, licenses and `rust-sdk.json`; no Rust group is needed for the default C++ provider |
+| Default Rust provider | A separate complete Rust binary/source/checksum group matching the C++ target, including official tools/target libraries, source and stage0 inputs, licenses and `rust-sdk.json`; an explicitly selected C++ case needs no Rust group |
 | Distribution host tools | Shell, Python, Git, CMake and Ninja where not retained; native inspection/package tools and relocation utilities listed in the inventory |
 | Acceptance host | Prepared Bookworm image or root filesystem, plus the selected isolation adapter's setup tools and declared runtime/display prerequisites |
 | Separate validation/delivery tools | Browsers and drivers, JavaScript test tools when not already supplied, display services, and package/signing tools for the requested checks |
@@ -32,11 +32,14 @@ upstream download URLs do not create an ordinary-build network dependency.
 Browser engines are validation prerequisites and do not enter the compiler SDK.
 Missing or corrupt contents require explicit preparation before a new attempt.
 
-Native distribution builds remain supported without a retained SDK. They use the
+Debian-family native `dev` distribution builds remain supported without a retained
+SDK, using package-owned `rustc`/Cargo with complete notices. They use the
 checkout, its complete GUI source group when enabled, and the selected
 distribution compiler/toolkit package closure. The ordinary core minimum remains
 Python 3.9, CMake 3.24 and the required C++20 compiler features. Rev requires the
 newer module toolchain documented in [GUI platform dependencies](gui-boundary.md#prepared-platform-dependencies).
+Other Rust profiles require the retained extension. Explicit `--core-provider cpp`
+preserves the existing distribution-only C++ build route.
 
 ## Native host and target selection
 
@@ -56,13 +59,17 @@ including the complete Microsoft installer layout/component configuration,
 installed matching compiler/Windows SDK and retained graphics prerequisites.
 This contract adds no cross-host SDK support.
 
-Provider selection is independent of the target. An omitted `core_provider`
-means `cpp` and keeps existing schema-1 plans valid. A Rust case requires all
-three additional fields: `core_provider: "rust"`, `rust_group` naming a canonical
+Provider selection is independent of the target. New schema-2 plans default an
+omitted `core_provider` to `rust`. A Rust case requires `rust_group` naming a canonical
 absolute retained-group directory and `rust_recipe` containing its complete
 64-character lowercase recipe SHA-256. It still requires the existing C++
 `group` and `recipe`. A C++ case rejects Rust group/recipe fields; an explicitly
 selected incomplete or mismatched Rust case fails without provider fallback.
+Schema-1 plans remain readable only when every case explicitly selects `cpp`
+or `rust`; a missing provider is rejected with a migration instruction. Migrate
+an old implicit-C++ plan by adding `core_provider: "cpp"` to each case, or move
+to schema 2 and provide each target's matched Rust group and recipe. This avoids
+silently reinterpreting a historical recovery request.
 
 ## Prepare the boundary, then run acceptance
 
@@ -82,7 +89,7 @@ is incomplete until the group recipes and image ID are replaced with exact
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "isolation": {
     "kind": "docker",
     "image": "sha256:REPLACE_WITH_PREPARED_LOCAL_IMAGE_ID"
@@ -91,12 +98,16 @@ is incomplete until the group recipes and image ID are replaced with exact
     {
       "target": "linux-x86_64",
       "group": "/owned/retained/native-gui-group",
-      "recipe": "REPLACE_WITH_EXACT_NATIVE_RECIPE_ID"
+      "recipe": "REPLACE_WITH_EXACT_NATIVE_RECIPE_ID",
+      "rust_group": "/owned/retained/rust-linux-group",
+      "rust_recipe": "REPLACE_WITH_EXACT_NATIVE_RUST_RECIPE_ID"
     },
     {
       "target": "browser-wasm32",
       "group": "/owned/retained/wasm-group",
-      "recipe": "REPLACE_WITH_EXACT_WASM_RECIPE_ID"
+      "recipe": "REPLACE_WITH_EXACT_WASM_RECIPE_ID",
+      "rust_group": "/owned/retained/rust-wasm-group",
+      "rust_recipe": "REPLACE_WITH_EXACT_WASM_RUST_RECIPE_ID"
     }
   ]
 }
@@ -113,23 +124,21 @@ The namespace alternative replaces only `isolation` with:
 }
 ```
 
-For Rust, add the provider fields to each selected case, using that target's
-separate extension group. For example, a native case becomes:
+The cases above use the default Rust provider and each target's separate
+extension group. An explicit legacy C++ case omits Rust inputs:
 
 ```json
 {
   "target": "linux-x86_64",
   "group": "/owned/retained/native-gui-group",
   "recipe": "REPLACE_WITH_EXACT_NATIVE_RECIPE_ID",
-  "core_provider": "rust",
-  "rust_group": "/owned/retained/rust-linux-group",
-  "rust_recipe": "REPLACE_WITH_EXACT_RUST_RECIPE_ID"
+  "core_provider": "cpp"
 }
 ```
 
 The Wasm case uses its own Rust extension pinned to the exact selected Emscripten
 SDK recipe. Obtain missing supplier bytes only through explicit
-[Rust SDK preparation](sdk.md#optional-retained-rust-extension) before acceptance.
+[Rust SDK preparation](sdk.md#retained-rust-extension) before acceptance.
 Neither acceptance nor its build commands acquire Rust tools, crates or stage0
 inputs. Restore and verify the complete extension within the same boundary.
 Rebuilding the compiler from source remains a separate, unqualified operation.

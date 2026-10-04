@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 ACTIONS = ('sdk-produce', 'application-build', 'native-gui-check', 'check', 'apt-native-smoke')
 IMAGES = ('debian:bookworm', 'debian:trixie', 'ubuntu:24.04')
 ENVIRONMENT = ('SDK_PROFILE', 'PROFILE', 'JOBS', 'TARGET', 'RECIPE', 'GITHUB_REPOSITORY', 'GITHUB_SHA',
-               'CHECK', 'CHECK_IMAGE', 'CHECK_BROWSER', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'SDK_DEVELOPMENT')
+               'CHECK', 'CHECK_IMAGE', 'CHECK_BROWSER', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'SDK_DEVELOPMENT',
+               'CORE_PROVIDER', 'FOUNDATION_PROVIDER_RECIPE')
 COMMON = 'ca-certificates python3 git file binutils gnupg openssl curl xz-utils unzip xvfb xauth fonts-dejavu-core'.split()
 BUILD = 'build-essential cmake ninja-build cpio rsync wget patch bc bzip2 perl gawk libncurses-dev dpkg-dev apt-utils nodejs'.split()
 GUI_RUNTIME = ('libgl1 libopengl0 libgl1-mesa-dri libegl1 libx11-6 libxext6 libxft2 libxinerama1 '

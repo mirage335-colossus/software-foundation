@@ -17,6 +17,7 @@ ROOT=Path(__file__).resolve().parents[1]
 SPEC=importlib.util.spec_from_file_location('github_delivery',ROOT/'tools/github_release.py')
 G=importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(G)
 import test_release as release_fixtures
+import test_rust_sdk as rust_fixtures
 
 
 class FakeGitHub:
@@ -105,6 +106,200 @@ class FakeGitHub:
         value=self.data[asset['id']] if value is None else value
         asset.update(id=self.next_asset,size=len(value),digest='sha256:'+G.sha(value));self.next_asset+=1
         self.data[asset['id']]=value
+
+
+class RustBaseTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = rust_fixtures.RustSdkTests()
+        self.fixture.setUp(); self.addCleanup(self.fixture.doCleanups)
+        self.root = self.fixture.work
+        self.remote = FakeGitHub()
+        self.recipe, self.group = self.group_fixture()
+
+    def group_fixture(self, suffix=''):
+        original_work = self.fixture.work
+        if suffix:
+            self.fixture.work = self.root / suffix; self.fixture.work.mkdir()
+        try:
+            tree, sources, data = self.fixture.sdk()
+            if suffix:
+                helper = sources / 'tools' / G.rust_sdk.TOOLS[0]
+                helper.write_text(helper.read_text() + suffix)
+                source_data = G.archive.read_json(sources / 'sources.json')
+                files = G.archive.file_inventory(sources, exclude=('sources.json',))
+                names = ['recipe/rust.json'] + ['tools/' + name for name in G.rust_sdk.TOOLS]
+                identity = G.sha(G.archive.encoded({name: files[name] for name in names}))
+                source_data.update(recipe_id=identity, files=files)
+                G.archive.write_json(sources / 'sources.json', source_data)
+                data.update(recipe_id=identity, sources_sha256=G.archive.digest(sources / 'sources.json'))
+                G.archive.write_json(tree / 'rust-sdk.json', data)
+            group = self.fixture.work / 'group'
+            G.rust_sdk.export_group(tree, sources, group)
+            return data['recipe_id'], group
+        finally:
+            self.fixture.work = original_work
+
+    def publish(self, **changes):
+        return G.publish_rust_base('example/project', self.recipe, self.group, 'a' * 40,
+                                   transport=self.remote, **changes)
+
+    def test_rust_plan_validates_complete_sources_without_remote_reads(self):
+        result = self.publish()
+        self.assertFalse(result['execute'])
+        self.assertEqual(result['operation'], 'publish-rust-base')
+        self.assertEqual(result['files'], G.rust_sdk.verify_group(self.group, self.recipe))
+        self.assertFalse(self.remote.calls)
+
+    def test_rust_publish_fetch_and_reuse_preserve_complete_group(self):
+        self.assertFalse(self.publish(execute=True)['reused'])
+        names = G.rust_sdk.group_names(self.recipe)
+        uploads = [call[2] for call in self.remote.calls if call[0] == 'upload']
+        self.assertCountEqual(uploads, names); self.assertEqual(uploads[-1], names[-1])
+        finalization = max(index for index, call in enumerate(self.remote.calls) if call[0] == 'PATCH')
+        self.assertEqual(sum(call[0] == 'download' for call in self.remote.calls[:finalization]), 3)
+        self.assertFalse(self.remote.releases[0]['draft'])
+        self.assertTrue(self.remote.releases[0]['prerelease']); self.assertIsNone(self.remote.latest)
+        self.remote.calls.clear()
+        output = self.root / 'fetched'
+        result = G.fetch_rust_base('example/project', self.recipe, output, transport=self.remote)
+        expected = G.rust_sdk.verify_group(self.group, self.recipe)
+        self.assertEqual(result, dict(fetched=True, recipe=self.recipe, files=expected, payload='complete'))
+        self.assertEqual(G.rust_sdk.verify_group(output, self.recipe), expected)
+        self.assertEqual(sum(call[0] == 'download' for call in self.remote.calls), 3)
+        self.remote.calls.clear()
+        self.assertTrue(self.publish(execute=True)['reused'])
+        self.assertFalse(self.remote.mutations)
+        self.assertFalse(any(call[0] == 'download' for call in self.remote.calls))
+
+    def test_rust_append_preserves_existing_cpp_group_and_base_tag(self):
+        recipe = 'b' * 64
+        _, _, _, group = release_fixtures.fixture(self.root / 'cpp', recipe=recipe)
+        G.publish_base('example/project', recipe, group, 'b' * 40, execute=True, transport=self.remote)
+        before = copy.deepcopy(self.remote.releases[0]['assets'])
+        self.publish(execute=True)
+        self.assertEqual(self.remote.refs['base'], 'b' * 40)
+        self.assertEqual(self.remote.releases[0]['assets'][:3], before)
+        self.assertEqual(len(self.remote.releases[0]['assets']), 6)
+        G.fetch_base('example/project', recipe, self.root / 'cpp-fetched', transport=self.remote)
+        self.assertEqual(G.store.verify_group(self.root / 'cpp-fetched', recipe),
+                         G.store.verify_group(group, recipe))
+
+    def test_rust_batch_fetch_uses_one_inventory_for_distinct_complete_groups(self):
+        recipe, group = self.group_fixture('second')
+        self.publish(execute=True)
+        G.publish_rust_base('example/project', recipe, group, 'a' * 40,
+                            execute=True, transport=self.remote)
+        self.remote.calls.clear()
+        output = self.root / 'batch'
+        result = G.fetch_rust_bases('example/project', [self.recipe, recipe], output,
+                                   transport=self.remote)
+        for identity, source in ((self.recipe, self.group), (recipe, group)):
+            expected = G.rust_sdk.verify_group(source, identity)
+            self.assertEqual(result[identity]['files'], expected)
+            self.assertEqual(G.rust_sdk.verify_group(output / identity, identity), expected)
+            self.assertEqual(result[identity]['payload'], 'complete')
+        self.assertEqual(sum(call[0] in ('GET', 'pages') for call in self.remote.calls), 7)
+        self.assertEqual(sum(call[0] == 'download' for call in self.remote.calls), 6)
+
+    def test_rust_has_no_binary_only_fetch_shortcut(self):
+        with self.assertRaises(TypeError):
+            G.fetch_rust_base('example/project', self.recipe, self.root / 'binary',
+                              transport=self.remote, binary_only=True)
+        with self.assertRaises(TypeError):
+            G.fetch_rust_bases('example/project', [self.recipe], self.root / 'binaries',
+                               transport=self.remote, binary_only=True)
+        self.assertFalse(self.remote.calls)
+
+    def test_invalid_rust_selection_and_existing_output_fail_before_remote_reads(self):
+        output = self.root / 'existing'; output.mkdir(); (output / 'keep').write_text('retained')
+        for recipes in ([], self.recipe, [None], ['../bad'], [self.recipe, self.recipe]):
+            with self.subTest(recipes=recipes), self.assertRaises(ValueError):
+                G.fetch_rust_bases('example/project', recipes, self.root / 'invalid', transport=self.remote)
+        with self.assertRaises(ValueError):
+            G.fetch_rust_base('example/project', self.recipe, output, transport=self.remote)
+        self.assertEqual((output / 'keep').read_text(), 'retained'); self.assertFalse(self.remote.calls)
+
+    def test_incomplete_or_altered_local_rust_group_prevents_remote_reads(self):
+        source = self.group / G.rust_sdk.group_names(self.recipe)[1]
+        original = source.read_bytes(); source.unlink()
+        with self.assertRaisesRegex(ValueError, 'exactly'):
+            self.publish(execute=True)
+        source.write_bytes(original + b'altered')
+        with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+            self.publish(execute=True)
+        self.assertFalse(self.remote.calls)
+
+    def test_wrong_matched_archive_identity_is_rejected_despite_valid_checksums(self):
+        recipe, group = self.group_fixture('different-recipe')
+        binary, source, sums = G.rust_sdk.group_names(self.recipe)
+        for destination, name in zip((binary, source), G.rust_sdk.group_names(recipe)[:2]):
+            (self.group / destination).write_bytes((group / name).read_bytes())
+        (self.group / sums).write_text(''.join(G.archive.digest(self.group / name) + '  ' + name + '\n'
+                                             for name in (binary, source)))
+        with self.assertRaisesRegex(ValueError, 'recipe identity mismatch'):
+            self.publish(execute=True)
+        self.assertFalse(self.remote.calls)
+
+    def test_partial_remote_rust_group_never_overwrites_or_downloads(self):
+        self.publish(execute=True)
+        self.remote.releases[0]['assets'].pop(); self.remote.calls.clear()
+        with self.assertRaisesRegex(ValueError, 'partial existing'):
+            self.publish(execute=True)
+        output = self.root / 'incomplete'
+        with self.assertRaisesRegex(ValueError, 'exact complete'):
+            G.fetch_rust_base('example/project', self.recipe, output, transport=self.remote)
+        self.assertFalse(output.exists()); self.assertFalse(self.remote.mutations)
+        self.assertFalse(any(call[0] == 'download' for call in self.remote.calls))
+
+    def test_altered_remote_rust_source_rejects_fetch_and_immutable_reuse(self):
+        self.publish(execute=True)
+        self.remote.replace_asset(G.rust_sdk.group_names(self.recipe)[1], b'changed compiler sources')
+        self.remote.calls.clear(); output = self.root / 'changed'
+        with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+            G.fetch_rust_base('example/project', self.recipe, output, transport=self.remote)
+        with self.assertRaisesRegex(ValueError, 'immutable group conflicts'):
+            self.publish(execute=True)
+        self.assertFalse(output.exists()); self.assertFalse(list(self.root.glob('.base-fetch-*')))
+        self.assertFalse(self.remote.mutations)
+
+    def test_rust_snapshot_identity_drift_never_exposes_output(self):
+        self.publish(execute=True)
+        original = copy.deepcopy(self.remote.releases[0]); references = dict(self.remote.refs)
+        changes = (lambda: self.remote.refs.update(base='b' * 40),
+                   lambda: self.remote.replace_asset(G.rust_sdk.group_names(self.recipe)[1]),
+                   lambda: self.remote.releases[0].update(prerelease=False))
+        for index, change in enumerate(changes):
+            with self.subTest(change=index):
+                self.remote.releases[0] = copy.deepcopy(original); self.remote.refs = dict(references)
+                self.remote.change_download = change; output = self.root / ('drift-' + str(index))
+                with self.assertRaises(ValueError):
+                    G.fetch_rust_base('example/project', self.recipe, output, transport=self.remote)
+                self.assertFalse(output.exists()); self.assertFalse(list(self.root.glob('.base-fetch-*')))
+
+    def test_rust_payload_failure_prevents_checksum_marker_and_publication(self):
+        binary, _, checksum = G.rust_sdk.group_names(self.recipe)
+        self.remote.fail_upload = binary
+        with self.assertRaises(G.DeliveryError) as caught:
+            self.publish(execute=True)
+        self.assertTrue(caught.exception.uncertain); self.assertTrue(self.remote.releases[0]['draft'])
+        self.assertNotIn(checksum, [call[2] for call in self.remote.calls if call[0] == 'upload'])
+        self.assertFalse(any(call[0] == 'PATCH' for call in self.remote.mutations))
+
+    def test_rust_cli_plan_and_fetch_use_the_explicit_rust_api(self):
+        request = self.root / 'request.json'
+        G.archive.write_json(request, dict(repository='example/project', recipe=self.recipe,
+                                           group=str(self.group), source_commit='a' * 40))
+        result = subprocess.run([sys.executable, '-B', str(ROOT / 'tools/github_release.py'),
+                                 'publish-rust-base', '--input', str(request)], cwd=ROOT,
+                                check=True, capture_output=True, text=True)
+        self.assertEqual(json.loads(result.stdout)['operation'], 'publish-rust-base')
+        G.archive.write_json(request, dict(repository='example/project', recipe=self.recipe,
+                                           output=str(self.root / 'cli-fetch')))
+        with mock.patch.object(G, 'fetch_rust_base', return_value={'fetched': True}) as fetch, \
+                mock.patch('sys.stdout', new_callable=io.StringIO):
+            self.assertEqual(G.main(['fetch-rust-base', '--input', str(request)]), 0)
+        fetch.assert_called_once_with(repository='example/project', recipe=self.recipe,
+                                      output=str(self.root / 'cli-fetch'))
 
 
 class PublicFakeGitHub(FakeGitHub):

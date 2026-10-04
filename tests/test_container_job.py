@@ -38,6 +38,15 @@ class ContainerJobs(unittest.TestCase):
             with self.assertRaises(ValueError): job.command('sdk-produce', self.root, uid, gid, {})
         with self.assertRaises(ValueError): job.command('check', self.root, 1001, 1002, {'CHECK_IMAGE': 'untrusted:tag'})
 
+    def test_provider_and_recipe_cross_container_boundary_without_ambient_rust_overrides(self):
+        command = job.command('application-build', self.root, 1001, 1002,
+            {'CORE_PROVIDER': 'rust', 'FOUNDATION_PROVIDER_RECIPE': 'a' * 64,
+             'RUSTFLAGS': 'ambient override', 'GH_TOKEN': 'private'})
+        self.assertIn('CORE_PROVIDER', command)
+        self.assertIn('FOUNDATION_PROVIDER_RECIPE', command)
+        self.assertNotIn('RUSTFLAGS', command)
+        self.assertNotIn('GH_TOKEN', command)
+
     def test_package_selection_avoids_gui_headers_for_runtime_or_core_producers(self):
         core = job.packages('application-build', {'PROFILE':'core'})
         gui = job.packages('sdk-produce', {'SDK_PROFILE':'all-gui'})

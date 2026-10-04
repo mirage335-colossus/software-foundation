@@ -15,6 +15,28 @@ spec.loader.exec_module(check)
 
 
 class ReleaseCheckTests(unittest.TestCase):
+    def retained_builder(self, source, provider=True):
+        path = source / 'tools/build.py'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("parser.add_argument('--core-provider', default='rust')\n" if provider else
+                        "# Before hybrid support, --core-provider was not an argument.\nparser.add_argument('--full')\n")
+        return path
+
+    def test_source_provider_selection_is_explicit_and_legacy_cpp_is_preserved(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            self.retained_builder(source)
+            for provider in ('cpp', 'rust'):
+                with self.subTest(provider=provider):
+                    self.assertEqual(check.source_provider_options(source, provider), ['--core-provider', provider])
+            builder = self.retained_builder(source, provider=False)
+            self.assertEqual(check.source_provider_options(source, 'cpp'), [])
+            with self.assertRaisesRegex(ValueError, 'cannot select.*Rust'):
+                check.source_provider_options(source, 'rust')
+            builder.unlink()
+            with self.assertRaisesRegex(ValueError, 'capability input'):
+                check.source_provider_options(source, 'cpp')
+
     def test_isolated_interaction_receipt_cannot_omit_an_existing_application_feature(self):
         receipt = dict(composition='both', executed_compositions=['standalone', 'isolated'],
                        executed_cases=[dict(transport='hosted', composition=name) for name in ('standalone', 'isolated')],
@@ -234,6 +256,7 @@ class ReleaseCheckTests(unittest.TestCase):
     def test_source_test_capacity_is_independent_of_compile_override(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); recipe = 'a' * 64
+            self.retained_builder(root / 'work/source')
             entry = {'target': 'linux-x86_64', 'sdk_recipe': recipe, 'backends': []}
             manifest = {'source': {'archive': 'source.tar.gz'},
                         'dependencies': [{'recipe_id': recipe, 'files': {'sources.tar.gz': 'b' * 64}}]}
@@ -247,12 +270,14 @@ class ReleaseCheckTests(unittest.TestCase):
                 self.assertEqual(command[command.index('--build-jobs') + 1], '16')
                 self.assertNotIn('--test-jobs', command)
                 self.assertIn('--full', command)
+                self.assertEqual(command[command.index('--core-provider') + 1], 'cpp')
 
     def test_rust_source_recovery_uses_exact_retained_group_and_provider(self):
         import rust_sdk
         from dependency_archive import digest
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); work = root / 'work'; rust = work / 'rust-sdk'; rust.mkdir(parents=True)
+            self.retained_builder(work / 'source')
             (rust / 'rust-sdk.json').write_text('manifest fixture')
             (rust / 'rustc').write_text('compiler fixture')
             entry = {'target': 'linux-x86_64', 'sdk_recipe': 'a' * 64, 'backends': [],
@@ -273,6 +298,8 @@ class ReleaseCheckTests(unittest.TestCase):
                     check.run_source(root, manifest, entry, work, root / 'evidence', 2, recovery=True)
                 command = run.call_args.args[0]
                 self.assertIn('--core-provider', command)
+                self.assertEqual(command[command.index('--core-provider') + 1], 'rust')
+                self.assertEqual(command.count('--core-provider'), 1)
                 self.assertEqual(command[command.index('--rust-sdk') + 1], str(rust))
                 self.assertNotIn('--dependency-group', command)
                 install.assert_called_once_with(root / 'dependencies' / ('b' * 64), 'b' * 64, rust)
@@ -285,6 +312,7 @@ class ReleaseCheckTests(unittest.TestCase):
         import windows_toolchain
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); entry = {'target':'windows-x86_64','sdk_recipe':'a'*64,'backends':[]}
+            self.retained_builder(root / 'work/source')
             source_name = 'sdk-' + entry['sdk_recipe'] + '-sources.tar.gz'
             group = root / 'dependencies' / entry['sdk_recipe']; group.mkdir(parents=True)
             (group / source_name).write_text('full-group source fixture')

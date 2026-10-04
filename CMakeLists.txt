@@ -28,7 +28,7 @@ endif()
 option(FOUNDATION_BUILD_GUI "Build optional pinned GUI boundary examples" OFF)
 set(FOUNDATION_GUI_SOURCE "" CACHE PATH "Explicit pinned GUI boundary checkout")
 
-set(FOUNDATION_CORE_PROVIDER "cpp" CACHE STRING "Text validation implementation: cpp or rust")
+set(FOUNDATION_CORE_PROVIDER "rust" CACHE STRING "Text validation implementation: rust (default) or cpp")
 set_property(CACHE FOUNDATION_CORE_PROVIDER PROPERTY STRINGS cpp rust)
 if(NOT FOUNDATION_CORE_PROVIDER MATCHES "^(cpp|rust)$")
   message(FATAL_ERROR "FOUNDATION_CORE_PROVIDER must be cpp or rust")
@@ -38,6 +38,9 @@ if(DEFINED FOUNDATION_CONFIGURED_CORE_PROVIDER AND
   message(FATAL_ERROR "Core provider changed; configure a fresh build directory")
 endif()
 set(FOUNDATION_CONFIGURED_CORE_PROVIDER "${FOUNDATION_CORE_PROVIDER}" CACHE INTERNAL "Configured core provider" FORCE)
+if(FOUNDATION_CORE_PROVIDER STREQUAL "cpp")
+  message(STATUS "Using the selected/cached C++ core provider; fresh build trees default to Rust")
+endif()
 if(MSVC AND FOUNDATION_CORE_PROVIDER STREQUAL "rust")
   set(_foundation_static_msvc_runtime "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   if(_foundation_initial_msvc_runtime AND

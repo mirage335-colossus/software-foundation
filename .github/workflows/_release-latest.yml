@@ -3,6 +3,11 @@ run-name: Latest preparation from ${{ github.ref_name }} (${{ inputs.profile }})
 'on':
   workflow_dispatch:
     inputs:
+      core_provider:
+        description: Rust application default; cpp explicitly selects legacy compatibility
+        type: choice
+        options: [rust, cpp]
+        default: rust
       preserve_artifacts:
         description: Keep temporary handoffs and diagnostics for one day after completion
         type: boolean
@@ -53,6 +58,7 @@ env:
   GH_TOKEN: ${{ github.token }}
   PYTHONUTF8: '1'
   PYTHONDONTWRITEBYTECODE: '1'
+  CORE_PROVIDER: ${{ inputs.core_provider }}
   TAG: ${{ inputs.tag }}
   PROFILE: ${{ inputs.profile }}
   RECIPES: ${{ inputs.recipes }}
@@ -100,6 +106,7 @@ jobs:
     uses: ./.github/workflows/sdk-application.yml
     with:
       preserve_artifacts: ${{ inputs.preserve_artifacts }}
+      core_provider: ${{ inputs.core_provider }}
       profile: ${{ inputs.profile }}
       recipes: ${{ inputs.recipes }}
       linux_pool: ${{ inputs.linux_pool }}

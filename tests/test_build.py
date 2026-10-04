@@ -14,7 +14,7 @@ spec.loader.exec_module(builder)
 
 
 class BuildTests(unittest.TestCase):
-    def test_default_cpp_never_discovers_rust_and_rejects_unused_rust_sdk(self):
+    def test_explicit_cpp_never_discovers_rust_and_rejects_unused_rust_sdk(self):
         from unittest.mock import patch
         import source_identity
         with tempfile.TemporaryDirectory() as directory:
@@ -24,7 +24,7 @@ class BuildTests(unittest.TestCase):
                     patch.object(builder, 'native_rust_identity') as native, \
                     patch.object(builder, 'rust_sdk_identity') as verify, \
                     patch.object(source_identity, 'source_tree', return_value={}):
-                self.assertEqual(builder.main(['build', '--configure-only']), 0)
+                self.assertEqual(builder.main(['build', '--core-provider', 'cpp', '--configure-only']), 0)
                 configure = run.call_args.args[0]
                 self.assertIn('-DFOUNDATION_CORE_PROVIDER=cpp', configure)
                 self.assertIn('-DFOUNDATION_RUST_SDK_ROOT=', configure)
@@ -32,8 +32,59 @@ class BuildTests(unittest.TestCase):
                 self.assertEqual(identity['core_provider'], 'cpp')
                 self.assertIsNone(identity['rust_sdk'])
                 with self.assertRaises(SystemExit):
-                    builder.main(['build', '--rust-sdk', str(root / 'absent')])
+                    builder.main(['build', '--core-provider', 'cpp', '--rust-sdk', str(root / 'absent')])
                 native.assert_not_called(); verify.assert_not_called()
+
+    def test_default_native_rust_fails_with_actionable_missing_tools_without_configure(self):
+        from unittest.mock import patch
+        import rust_build
+        with patch.object(builder.sys, 'platform', 'linux'), patch.object(builder, 'run') as run, \
+                patch.object(rust_build, 'select_native_tools', side_effect=ValueError('missing rustc')):
+            with self.assertRaisesRegex(ValueError, 'missing rustc.*--rust-sdk.*--core-provider cpp'):
+                builder.main(['build', '--configure-only'])
+            run.assert_not_called()
+
+    def test_default_rust_is_selected_with_retained_tools_for_every_profile(self):
+        from unittest.mock import patch
+        import source_identity
+        for arguments, preset, portable in (
+                (['build'], 'dev', False), (['test', 'dev'], 'dev', False),
+                (['build', 'release'], 'release', False), (['test', 'release'], 'release', False),
+                (['build', 'asan'], 'asan', False), (['test', 'asan'], 'asan', False),
+                (['package'], 'release', False), (['portable-package'], 'release', True)):
+            with self.subTest(arguments=arguments), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve(); rust = root / 'rust'; rust.mkdir()
+                def execute(command, **kwargs):
+                    if command[0] == 'cpack':
+                        packages = root / ('build/' + preset + '-rust-sdk' + ('-portable' if portable else '')) / 'packages'
+                        packages.mkdir(parents=True)
+                        (packages / 'example.tar.gz').write_bytes(b'archive fixture')
+                with patch.object(builder, 'ROOT', root), patch.object(builder, 'run', side_effect=execute) as run, \
+                        patch.object(builder, 'cache_identity', return_value={}), \
+                        patch.object(builder, 'native_rust_identity') as native, \
+                        patch.object(builder, 'rust_sdk_identity', return_value='a' * 64) as verify, \
+                        patch.object(source_identity, 'source_tree', return_value={}):
+                    self.assertEqual(builder.main([*arguments, '--rust-sdk', str(rust)]), 0)
+                configure = run.call_args_list[0].args[0]
+                self.assertIn('-DFOUNDATION_CORE_PROVIDER=rust', configure)
+                self.assertIn('-DFOUNDATION_PORTABLE=' + ('ON' if portable else 'OFF'), configure)
+                self.assertIn('-DFOUNDATION_SANITIZERS=' + ('ON' if preset == 'asan' else 'OFF'), configure)
+                path = root / ('build/' + preset + '-rust-sdk' + ('-portable' if portable else ''))
+                identity = json.loads((path / 'wrapper-identity.json').read_text())
+                self.assertEqual(identity['core_provider'], 'rust')
+                self.assertEqual(verify.call_count, 2)
+                native.assert_not_called()
+
+    def test_direct_cmake_and_presets_share_rust_default(self):
+        import re
+        root = Path(builder.__file__).resolve().parents[1]
+        cmake = (root / 'CMakeLists.txt').read_text()
+        provider = re.search(r'set\(FOUNDATION_CORE_PROVIDER "([^"]+)" CACHE STRING', cmake)
+        self.assertIsNotNone(provider)
+        self.assertEqual(provider[1], 'rust')
+        presets = json.loads((root / 'CMakePresets.json').read_text())
+        for preset in presets['configurePresets']:
+            self.assertNotEqual(preset.get('cacheVariables', {}).get('FOUNDATION_CORE_PROVIDER'), 'cpp')
 
     def test_retained_rust_sdk_has_separate_target_argument_identity_and_rechecks(self):
         from unittest.mock import patch
@@ -42,7 +93,7 @@ class BuildTests(unittest.TestCase):
             root = Path(directory).resolve(); rust = root / 'rust'; rust.mkdir()
             sdk = root / 'cpp'; sdk.mkdir()
             (sdk / 'sdk.json').write_text(json.dumps({'target': {'system': 'Linux'}, 'recipe_id': 'a' * 64}))
-            args = ['build', '--core-provider', 'rust', '--rust-sdk', str(rust), '--sdk', str(sdk)]
+            args = ['build', '--rust-sdk', str(rust), '--sdk', str(sdk)]
             with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run, \
                     patch.object(builder, 'cache_identity', return_value={}), \
                     patch.object(builder, 'require_clean'), patch.object(builder, 'sdk_identity', return_value='c' * 64), \
@@ -77,7 +128,7 @@ class BuildTests(unittest.TestCase):
                     patch.object(builder, 'cache_identity', return_value={}), \
                     patch.object(builder, 'native_rust_identity', return_value=(selected, before)) as verify, \
                     patch.object(source_identity, 'source_tree', return_value={}):
-                self.assertEqual(builder.main(['build', '--core-provider', 'rust']), 0)
+                self.assertEqual(builder.main(['build']), 0)
                 self.assertEqual(verify.call_count, 2)
                 configure = run.call_args_list[0].args[0]
                 self.assertIn('-DFOUNDATION_RUST_CARGO=/usr/bin/cargo', configure)
@@ -86,17 +137,46 @@ class BuildTests(unittest.TestCase):
                 self.assertEqual(identity['rust_tools'], before)
                 verify.side_effect = [(selected, before), (selected, {'changed': True})]
                 with self.assertRaisesRegex(ValueError, 'Rust tools changed'):
-                    builder.main(['build', '--core-provider', 'rust'])
+                    builder.main(['build'])
 
-    def test_explicit_rust_rejects_unprepared_release_and_unsupported_host(self):
+    def test_default_and_explicit_rust_reject_unprepared_profiles_and_unsupported_hosts(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
         from unittest.mock import patch
         with patch.object(builder, 'run') as run, patch.object(builder, 'native_rust_identity') as discover:
-            for arguments in (['build', 'release'], ['package'], ['build', '--portable'], ['build', '--sdk', 'absent']):
-                with self.subTest(arguments=arguments), self.assertRaises(SystemExit):
-                    builder.main([*arguments, '--core-provider', 'rust'])
-            with patch.object(builder.sys, 'platform', 'darwin'), self.assertRaises(SystemExit):
-                builder.main(['build', '--core-provider', 'rust'])
+            for selection in ([], ['--core-provider', 'rust']):
+                for arguments in (['build', 'release'], ['build', 'asan'], ['package'], ['portable-package'],
+                                  ['build', '--portable'], ['build', '--sdk', 'absent'],
+                                  ['build', '--windows-dependencies', 'absent']):
+                    with self.subTest(arguments=arguments, selection=selection), \
+                            redirect_stderr(StringIO()) as error, self.assertRaises(SystemExit):
+                        builder.main([*arguments, *selection])
+                    self.assertIn('--rust-sdk', error.getvalue())
+                    self.assertIn('--core-provider cpp', error.getvalue())
+                for system in ('darwin', 'win32'):
+                    with patch.object(builder.sys, 'platform', system), \
+                            redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                        builder.main(['build', *selection])
             run.assert_not_called(); discover.assert_not_called()
+
+    def test_default_rust_does_not_adopt_an_existing_cpp_wrapper_tree(self):
+        from unittest.mock import patch
+        import source_identity
+        selected = {'cargo': '/usr/bin/cargo', 'rustc': '/usr/bin/rustc'}
+        tools = {'cargo': {'sha256': 'a' * 64}, 'rustc': {'sha256': 'b' * 64}}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve(); tree = root / 'existing'
+            with patch.object(builder, 'ROOT', root), patch.object(builder.sys, 'platform', 'linux'), \
+                    patch.object(builder, 'run') as run, patch.object(builder, 'cache_identity', return_value={}), \
+                    patch.object(builder, 'native_rust_identity', return_value=(selected, tools)), \
+                    patch.object(source_identity, 'source_tree', return_value={}):
+                self.assertEqual(builder.main(['build', '--core-provider', 'cpp', '--build-dir', str(tree)]), 0)
+                before = (tree / 'wrapper-identity.json').read_bytes()
+                run.reset_mock()
+                with self.assertRaisesRegex(ValueError, 'configuration changed.*fresh build tree'):
+                    builder.main(['build', '--build-dir', str(tree)])
+                self.assertEqual((tree / 'wrapper-identity.json').read_bytes(), before)
+                run.assert_not_called()
 
     def test_opt_in_timings_distinguish_probe_execution_and_failure(self):
         from unittest.mock import patch
@@ -113,7 +193,7 @@ class BuildTests(unittest.TestCase):
                         patch.object(builder, 'cache_identity', return_value={}), \
                         patch.object(builder.subprocess, 'check_output', side_effect=execute), \
                         patch.object(source_identity, 'source_tree', return_value={'tree_sha256':'a'*64}):
-                    arguments = ['test', 'dev', '--label', 'core', '--timings', str(output)]
+                    arguments = ['test', 'dev', '--core-provider', 'cpp', '--label', 'core', '--timings', str(output)]
                     if fail:
                         with self.assertRaises(subprocess.CalledProcessError): builder.main(arguments)
                     else:
@@ -142,7 +222,7 @@ class BuildTests(unittest.TestCase):
                     patch.object(builder, 'sdk_identity', return_value='b'*64) as verify, \
                     patch.object(builder, 'require_clean'), \
                     patch.object(source_identity, 'source_tree', return_value={'tree_sha256':'c'*64}):
-                self.assertEqual(builder.main(['build', '--sdk', str(sdk), '--timings', str(output)]), 0)
+                self.assertEqual(builder.main(['build', '--core-provider', 'cpp', '--sdk', str(sdk), '--timings', str(output)]), 0)
             report = json.loads(output.read_text())
             self.assertEqual(report['phases']['sdk_verification']['calls'], 2)
             self.assertEqual(verify.call_count, 2)
@@ -155,7 +235,7 @@ class BuildTests(unittest.TestCase):
         import import_wasm, source_identity
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve(); package = root / 'wasm'; package.mkdir(); digest = 'a'*64
-            args = ['build', '--wasm-package', str(package), '--wasm-package-sha256', digest]
+            args = ['build', '--core-provider', 'cpp', '--wasm-package', str(package), '--wasm-package-sha256', digest]
             with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run, \
                     patch.object(builder, 'cache_identity', return_value={}), \
                     patch.object(source_identity, 'source_tree', return_value={}), \
@@ -169,7 +249,7 @@ class BuildTests(unittest.TestCase):
                 identity = json.loads((root/'build/dev/wrapper-identity.json').read_text())
                 self.assertEqual(identity['wasm_package'], {'root':str(package), 'sha256':digest})
                 with self.assertRaisesRegex(ValueError, 'configuration changed'):
-                    builder.main(['build'])
+                    builder.main(['build', '--core-provider', 'cpp'])
             with patch.object(builder, 'run') as run:
                 for invalid in (['build', '--wasm-package', str(package)],
                                 ['build', '--wasm-package-sha256', digest],
@@ -193,7 +273,7 @@ class BuildTests(unittest.TestCase):
             with patch.object(builder, 'ROOT', root), patch.object(builder, 'run', side_effect=execute), \
                     patch.object(builder, 'cache_identity', return_value={}), \
                     patch.object(source_identity, 'source_tree', return_value={}):
-                self.assertEqual(builder.main(['portable-package']), 0)
+                self.assertEqual(builder.main(['portable-package', '--core-provider', 'cpp']), 0)
             self.assertIn('release', calls[0])
             self.assertIn('-DFOUNDATION_PORTABLE=ON', calls[0])
             actions = [c[3] for c in calls if len(c) > 3 and str(c[2]).endswith('artifact.py')]
@@ -236,19 +316,19 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
             (root / 'CMakePresets.json').write_text(json.dumps({'version':3,'configurePresets':[
                 {'name':'dev','generator':'Ninja','binaryDir':'${sourceDir}/build/dev'}]}))
             with patch.object(builder, 'ROOT', root):
-                self.assertEqual(builder.main(['test', 'dev', '--test', 'script.only', '--jobs', '1']), 0)
+                self.assertEqual(builder.main(['test', 'dev', '--core-provider', 'cpp', '--test', 'script.only', '--jobs', '1']), 0)
                 tree = root / 'build/dev'
                 self.assertFalse((tree / 'selected').exists())
                 self.assertFalse((tree / 'setup').exists())
-                self.assertEqual(builder.main(['test', 'dev', '--test', 'a.core', '--test', 'script.only', '--jobs', '1']), 0)
+                self.assertEqual(builder.main(['test', 'dev', '--core-provider', 'cpp', '--test', 'a.core', '--test', 'script.only', '--jobs', '1']), 0)
                 suffix = '.exe' if sys.platform == 'win32' else ''
                 self.assertTrue((tree / ('selected' + suffix)).is_file())
                 self.assertTrue((tree / ('setup' + suffix)).is_file())
                 self.assertFalse((tree / ('unrelated' + suffix)).exists())
                 with self.assertRaisesRegex(ValueError, 'unknown exact test'):
-                    builder.main(['test', 'dev', '--test', 'a.cor'])
+                    builder.main(['test', 'dev', '--core-provider', 'cpp', '--test', 'a.cor'])
                 with self.assertRaisesRegex(ValueError, 'unique'):
-                    builder.main(['test', 'dev', '--test', 'a.core', '--test', 'a.core'])
+                    builder.main(['test', 'dev', '--core-provider', 'cpp', '--test', 'a.core', '--test', 'a.core'])
             for options in (['build', '--test', 'a.core'], ['test', '--test', 'a.core', '--full'],
                             ['test', '--test', 'a.core', '--label', 'core']):
                 with self.subTest(options=options), self.assertRaises(SystemExit):
@@ -270,7 +350,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
                 with patch.object(builder, 'ROOT', root), patch.object(builder, 'run', side_effect=execute), \
                         patch.object(builder, 'cache_identity', return_value={}), \
                         patch.object(source_identity, 'source_tree', side_effect=observe):
-                    self.assertEqual(builder.main([action, 'release']), 0)
+                    self.assertEqual(builder.main([action, 'release', '--core-provider', 'cpp']), 0)
                 expected = ['source', 'configure', 'compile', 'source']
                 if action != 'build': expected += ['ctest' if action == 'test' else 'cpack', 'source']
                 self.assertEqual(phases, expected)
@@ -295,7 +375,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
                         patch.object(builder, 'cache_identity', return_value={}), \
                         patch.object(builder.subprocess, 'check_output', return_value=receipt) as restore, \
                         patch.object(source_identity, 'source_tree', return_value={}):
-                    self.assertEqual(builder.main(['build', 'dev', '--configure-only', *arguments]), 0)
+                    self.assertEqual(builder.main(['build', 'dev', '--core-provider', 'cpp', '--configure-only', *arguments]), 0)
                 configure = run.call_args.args[0]
                 enabled = bool(selector)
                 self.assertIn('-DFOUNDATION_BUILD_GUI=' + ('ON' if enabled else 'OFF'), configure)
@@ -318,7 +398,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
             root = Path(directory).resolve()
             with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run:
                 with self.assertRaises(FileNotFoundError):
-                    builder.main(['build', '--gui'])
+                    builder.main(['build', '--core-provider', 'cpp', '--gui'])
                 run.assert_not_called()
                 self.assertFalse((root / 'build').exists())
                 for option in ('--gui-source', '--gui-input-group'):
@@ -334,7 +414,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
             with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run, \
                     patch.object(builder, 'cache_identity', return_value={}), \
                     patch.object(source_identity, 'source_tree', return_value={}):
-                self.assertEqual(builder.main(['build', 'release', '--configure-only']), 0)
+                self.assertEqual(builder.main(['build', 'release', '--core-provider', 'cpp', '--configure-only']), 0)
             self.assertEqual(run.call_count, 1)
             self.assertIn('--preset', run.call_args.args[0])
             self.assertTrue((root / 'build/release/configured-identity.json').is_file())
@@ -389,7 +469,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
                         patch.object(builder, 'cache_identity', return_value={}), \
                         patch.object(source_identity, 'source_tree', return_value={}):
                     with self.assertRaises(subprocess.CalledProcessError) as failed:
-                        builder.main(['test', 'dev', '--label', 'core', '--jobs', '1',
+                        builder.main(['test', 'dev', '--core-provider', 'cpp', '--label', 'core', '--jobs', '1',
                                       *(['--stop-on-failure'] if stop else [])])
                 self.assertNotEqual(failed.exception.returncode, 0)
                 self.assertIn('01_fail', failed.exception.stdout)
@@ -439,7 +519,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
                     environment = {'PATH': 'selected-toolkit', 'VCPKG_DISABLE_METRICS': '0',
                                    'vcpkg_disable_metrics': 'inherited-alias', 'UNCHANGED': 'value'}
                     baseline = dict(environment)
-                    args = [action, 'release', '--jobs', '2', '--portable']
+                    args = [action, 'release', '--core-provider', 'cpp', '--jobs', '2', '--portable']
                     if retained:
                         args += ['--windows-dependencies', str(dependencies),
                                  '--binary-dependency-group' if retained == 'binary' else '--dependency-group', str(group)]
@@ -625,7 +705,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
             with patch.object(builder, 'ROOT', root), patch.object(builder, 'run', side_effect=run), \
                     patch.object(builder, 'cache_identity', return_value={}), \
                     patch.object(source_identity, 'source_tree', return_value={'revision': 1}):
-                builder.main(['package', 'release', '--build-dir', str(build), '--verify-package'])
+                builder.main(['package', 'release', '--core-provider', 'cpp', '--build-dir', str(build), '--verify-package'])
             checks = [call for call in calls if str(root / 'tools/artifact.py') in call]
             self.assertEqual(['create', 'verify', 'create', 'verify'], [call[3] for call in checks])
             self.assertEqual(['example.tar.gz', 'example.tar.gz', 'example.zip', 'example.zip'],
@@ -659,7 +739,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
                         patch.object(sdk_wasm, 'environment', return_value={}), \
                         patch.object(source_identity, 'source_tree', return_value={'revision': 1}), \
                         patch.dict(builder.os.environ, {}, clear=True):
-                    builder.main(['package', '--build-dir', str(build), '--sdk', str(sdk), '--verify-package',
+                    builder.main(['package', '--core-provider', 'cpp', '--build-dir', str(build), '--sdk', str(sdk), '--verify-package',
                                   *(['--gui-backends', 'wasm'] if system == 'Emscripten' else [])])
                 create, verify = [call for call in calls if str(root / 'tools/artifact.py') in call]
                 self.assertNotIn('--sdk', create)
@@ -685,7 +765,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
                         patch.object(builder, 'cache_identity', return_value={}), \
                         patch.object(source_identity, 'source_tree', return_value={'revision': 1}):
                     with self.assertRaisesRegex(ValueError, 'no application archives' if missing else 'consumer rejected'):
-                        builder.main(['package', '--build-dir', str(build), '--verify-package'])
+                        builder.main(['package', '--core-provider', 'cpp', '--build-dir', str(build), '--verify-package'])
         for action in ('build', 'test'):
             with self.assertRaises(SystemExit):
                 builder.main([action, '--verify-package'])
@@ -706,7 +786,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
                     patch.object(builder, 'cache_identity', return_value={}), \
                     patch.object(source_identity, 'source_tree', side_effect=identity):
                 with self.assertRaisesRegex(ValueError, 'source changed during the operation'):
-                    builder.main(['package', 'release'])
+                    builder.main(['package', 'release', '--core-provider', 'cpp'])
 
     def test_mutation_during_compilation_or_validation_invalidates_result(self):
         import source_identity
@@ -725,7 +805,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
                         patch.object(builder, 'cache_identity', return_value={}), \
                         patch.object(source_identity, 'source_tree', side_effect=identity):
                     with self.assertRaisesRegex(ValueError, message):
-                        builder.main(['test', 'dev', '--jobs', '2'])
+                        builder.main(['test', 'dev', '--core-provider', 'cpp', '--jobs', '2'])
 
     def test_normal_variable_compiler_is_read_from_active_cmake_record(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -750,7 +830,7 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
             (tree / 'CMakeCache.txt').write_text('CMAKE_BUILD_TYPE:STRING=Release\n')
             with patch.object(builder, 'ROOT', root), patch.object(builder, 'run') as run:
                 with self.assertRaises(ValueError):
-                    builder.main(['build', 'dev'])
+                    builder.main(['build', 'dev', '--core-provider', 'cpp'])
                 run.assert_not_called()
 
     def test_link_runtime_launcher_and_dependency_cache_edits_change_identity(self):

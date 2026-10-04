@@ -10,8 +10,8 @@ release assembly/recovery, exact-evidence certification and Debian repository
 metadata generation. These operations do not publish remotely. Having an
 implementation or workflow does not establish multi-platform qualification.
 
-Local packaging uses `./build.sh package release --jobs 2` and writes to
-`build/release/packages/`. The default is TGZ on Unix-like systems and ZIP on
+Local packaging uses `./build.sh package release --rust-sdk /absolute/path/to/rust-sdk --jobs 2` and writes to
+`build/release-rust-sdk/packages/`. The default is TGZ on Unix-like systems and ZIP on
 Windows. The exact filename comes from CPack's project version, target system,
 and processor. Inspect and verify the emitted archive explicitly:
 
