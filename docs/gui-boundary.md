@@ -457,6 +457,12 @@ tabs receive separate processes and random session identities. The server binds
 only loopback; its exact Host/Origin checks and session tokens are not a deployed
 multiuser authentication system. Do not expose it through a public proxy.
 
+The terminal editor shows its caret by inverting the cell's colors. It preserves
+the character under the caret, including the first placeholder character and
+escaped Unicode text, and clips the highlight to the editor's visible area.
+Plain cell inspection contains the unchanged text; ANSI output carries the caret
+style. The focused terminal-caret and real terminal-host checks cover this path.
+
 Every native executable accepts `--smoke-test` and `--self-check`. A fresh
 application runs the same shared validation/edit/add/remove/resize scenario while
 the host presents through its actual adapter, closes it, and emits exactly

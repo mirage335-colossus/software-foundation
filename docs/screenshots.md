@@ -10,7 +10,7 @@ and [capture run 36977734580, attempt 1](https://github.com/mirage335-colossus/s
 The date is the source commit date. This is a historical view of that source,
 not a claim that the images show the current revision.
 
-The checked-in PNGs and original provenance files total about 100 KB and can be
+The original gallery's PNGs and provenance files total about 100 KB and can be
 viewed offline in a Markdown viewer. Read [BUILD.txt](screenshots/BUILD.txt) for
 the capture summary, [screenshots.json](screenshots/screenshots.json) for exact
 source, SDK, runtime, binary and image identities, and
@@ -39,10 +39,30 @@ SDL native window: 640 by 480 client pixels, 96 DPI, scale one.
 
 ### Terminal
 
+**Caret correction — 2026-10-04 local verification.** The terminal now inverts
+the caret cell's colors while preserving its character. The complete placeholder
+reads “Type an entry”; moving the caret through entered text preserves every glyph.
+This additional terminal-only capture uses the working source based on
+`9335ddf21a8a31e6b8f61a124a13cf31c0acf5b0` with the
+[reviewed caret patch](../gui/patches/terminal-caret.patch).
+[Capture provenance](terminal-caret/capture.json) records the patch, source tree,
+executable and image digests, tool settings and four passing focused checks.
+It is separate from the historical seven-host release gallery.
+
+![Corrected terminal Entry list application showing the complete Type an entry placeholder with an inverse-color caret on the T.](terminal-caret/terminal.png)
+
+<details>
+<summary>Original published terminal capture</summary>
+
 ![Fresh Entry list application in xterm, showing its empty list, controls, status row and terminal border.](screenshots/terminal.png)
 
-Terminal in xterm: 80 by 31 cells, captured at 644 by 531 pixels with the status
-row and border retained.
+This older image shows the `|` caret replacing the initial “T”. Its original
+bytes and release provenance remain unchanged.
+
+</details>
+
+Both terminal captures use xterm at 80 by 31 cells, captured at 644 by 531 pixels
+with the status row and border retained. Neither image was cropped or resampled.
 
 ### Framebuffer
 

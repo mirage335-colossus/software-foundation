@@ -37,6 +37,7 @@ def run(executable, stop_with_signal=False):
             raise AssertionError("Expected terminal text did not appear: " + repr(value))
 
         until(b"0 entries")
+        until(b"Type an entry")
         if stop_with_signal:
             process.send_signal(signal.SIGTERM)
         else:

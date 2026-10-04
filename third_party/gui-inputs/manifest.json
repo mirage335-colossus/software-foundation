@@ -1,5 +1,5 @@
 {
-  "archive_sha256": "6e5a8fcfa0ee77b1fa34fb798d9f62a3aef877816a7410d7633c82794038b7c8",
+  "archive_sha256": "d9ee81629c4d75ed7a29f25c6a886d31fb03a3801b53e16c7971f32ecdb0d019",
   "files": {
     "foundation/gui/patches/adapter-portability.patch": {
       "mode": 420,
@@ -50,6 +50,11 @@
       "mode": 420,
       "sha256": "e9d44e408656c35cc6d7df627a02c65ca0238b82987f3afa1d27fd8c4b3b74cc",
       "size": 10177
+    },
+    "foundation/gui/patches/terminal-caret.patch": {
+      "mode": 420,
+      "sha256": "69ed0a5c60187449f8b45ea0dad2f489a74177092743b9c24e4deef36d8f30c7",
+      "size": 1200
     },
     "foundation/gui/patches/terminal-runner.patch": {
       "mode": 420,
@@ -128,8 +133,8 @@
     },
     "foundation/third_party/gui-boundary.lock.json": {
       "mode": 420,
-      "sha256": "d86b77f3ccd6d5d79e69063bf618b39206fcb75aa3483565de14b2e22c5f548d",
-      "size": 12909
+      "sha256": "fd4516822efdfcc0efbd3768438361ef40d452f0622487b689ca5baf9e4ed2d4",
+      "size": 13027
     },
     "upstream/.github/workflows/screenshots.yml": {
       "mode": 420,

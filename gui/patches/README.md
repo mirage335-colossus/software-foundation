@@ -8,6 +8,12 @@ identity inside a renderer.
 
 - `terminal-runner.patch` exposes `run_terminal<App>` under the typed host
   contract. Terminal setup, input, output bounds and restoration stay upstream.
+- `terminal-caret.patch` inverts the focused editor's caret cell colors without
+  replacing its glyph. Placeholders and text stay readable at the insertion point,
+  including the first character and literal Unicode escapes. The caret remains
+  clipped to the editor and terminal viewport. Generic cell/ANSI regressions and
+  the actual terminal-host test cover this behavior. Remove the patch when the
+  pinned upstream provides the same behavior and passes those checks.
 - `sdl-runner.patch` exposes `run_sdl<App, Observer>`. It removes the upstream
   demonstration's test actions and accepts a test observer. Production uses a
   no-op observer. Input translation, texture upload, damage and window handling

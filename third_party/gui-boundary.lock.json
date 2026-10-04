@@ -7,6 +7,7 @@
   "license_note": "Project-owned work is dedicated under CC0-1.0. Third-party code and generated font data retain their separate terms. Rev permission is owner-specific as recorded below; it is not a general supplier license grant.",
   "patches": [
     "gui/patches/terminal-runner.patch: typed application runner with unchanged platform I/O",
+    "gui/patches/terminal-caret.patch: invert the clipped caret cell without replacing placeholder or editor glyphs",
     "gui/patches/sdl-runner.patch: typed application runner and injected test observer; removes demonstration actions",
     "gui/patches/rev-build.patch: explicit dependency root and reusable targets without upstream demonstration or install rules",
     "gui/patches/rev-dependencies.patch: explicit preserved archive root",
