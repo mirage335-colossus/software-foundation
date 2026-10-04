@@ -118,6 +118,46 @@ def launchers(backend, selected):
     return result
 
 
+def desktop_files(backend, retained):
+    """Generated consumer entries; image-output framebuffer has no desktop window.
+
+    The browser launcher keeps a visible terminal as its lifetime owner: Ctrl+C
+    closes the loopback server and child sessions. It never detaches a hidden host.
+    """
+    if backend not in ('terminal', 'fltk', 'rev', 'sdl', 'hosted-web'):
+        return {}
+    public = 'foundation-gui-' + ('web' if backend == 'hosted-web' else backend)
+    if 'bin/' + public not in retained:
+        return {}
+    result = {}
+    if backend == 'hosted-web':
+        web = 'share/software-foundation/web/'
+        if not {web + name for name in ('serve.py', 'host.py', 'index.html', 'boot.mjs', 'renderer.mjs', 'style.css',
+                                       'browser_lifecycle.mjs', 'wasm_transport.mjs', 'browser_presenter.mjs',
+                                       'file_services.mjs', 'wasm_worker.mjs')} <= set(retained):
+            return {}  # Older/minimal archives may only contain the wire protocol executable.
+        public = 'foundation-gui-browser'
+        script = ("#!/usr/bin/python3\n"
+                  "\"\"\"Open the installed loopback UI; Ctrl+C stops the host and its sessions.\"\"\"\n"
+                  "import runpy\nimport webbrowser\n"
+                  "host = runpy.run_path('/opt/software-foundation/hosted-web/share/software-foundation/web/serve.py')['boundary']\n"
+                  "server = host.Host(('127.0.0.1', 0), '/opt/software-foundation/hosted-web/bin/foundation-gui-web')\n"
+                  "url = 'http://' + server.authority + '/'\n"
+                  "print('Browser UI: ' + url + '\\nPress Ctrl+C in this terminal to stop.', flush=True)\n"
+                  "try:\n"
+                  "    if not webbrowser.open(url):\n        print('Open the URL above in your browser.', flush=True)\n"
+                  "    server.serve_forever()\n"
+                  "except KeyboardInterrupt:\n    pass\n"
+                  "finally:\n    server.server_close()\n")
+        result['usr/bin/' + public] = (script.encode(), 0o755)
+    terminal = 'true' if backend in ('terminal', 'hosted-web') else 'false'
+    entry = (f'[Desktop Entry]\nType=Application\nName=Software Foundation ({backend})\n'
+             f'Comment=Generic application example\nExec={public}\nTryExec={public}\n'
+             f'Terminal={terminal}\nCategories=Utility;\nStartupNotify=false\n')
+    result['usr/share/applications/software-foundation-' + backend + '.desktop'] = (entry.encode(), 0o644)
+    return result
+
+
 def manual_paths(backend, files):
     suffix = "-" + backend if backend != "core" else ""
     mapping = {"share/man/man1/foundation-cli.1": "usr/share/man/man1/foundation-cli" + suffix + ".1",
@@ -127,7 +167,7 @@ def manual_paths(backend, files):
     return {source: destination for source, destination in mapping.items() if source in files}
 
 
-def projected_payload(chosen):
+def projected_payload(chosen, schema=3):
     backend = chosen["backend"]
     private = "opt/software-foundation/" + backend + "/"
     result = {private + name: value for name, value in chosen["retained_files"].items()}
@@ -135,6 +175,8 @@ def projected_payload(chosen):
     result.update({name: byte_record(data, 0o755) for name, data in launchers(backend, chosen["selected_executables"]).items()})
     result.update({destination: chosen["retained_files"][source]
                    for source, destination in manual_paths(backend, chosen["retained_files"]).items()})
+    if schema >= 3:
+        result.update({name: byte_record(data, mode) for name, (data, mode) in desktop_files(backend, chosen["retained_files"]).items()})
     return result
 
 
@@ -273,6 +315,11 @@ def package(archive, manifest, version, arch, backend, output):
             manual.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source / source_name, manual)
             manual.chmod(chosen["retained_files"][source_name]["mode"])
+        for relative, (data, mode) in desktop_files(backend, chosen["retained_files"]).items():
+            entry = stage / relative
+            entry.parent.mkdir(parents=True, exist_ok=True)
+            entry.write_bytes(data)
+            entry.chmod(mode)
         ctl = stage / "DEBIAN"
         ctl.mkdir(mode=0o755)
         text = (f"Package: {name}\nVersion: {version}\nArchitecture: {arch}\n"
@@ -287,7 +334,7 @@ def package(archive, manifest, version, arch, backend, output):
         if expected_payload != projected_payload(chosen):
             raise ValueError("staged payload differs from exact backend projection")
         run("dpkg-deb", "--build", "--root-owner-group", stage, deb)
-        receipt = {"schema_version": 2, "archive": archive.name, "archive_sha256": expected["sha256"],
+        receipt = {"schema_version": 3, "archive": archive.name, "archive_sha256": expected["sha256"],
                    "archive_manifest": expected, "selection": chosen,
                    "package": deb.name, "sha256": c.sha(deb), "architecture": arch, "backend": backend,
                    "version": version, "control": text, "payload": expected_payload}
@@ -302,7 +349,7 @@ def package(archive, manifest, version, arch, backend, output):
 def verify_package(path, receipt):
     fields_required = {"schema_version", "archive", "archive_sha256", "archive_manifest", "selection", "package",
                        "sha256", "architecture", "backend", "version", "control", "payload"}
-    if (set(receipt) != fields_required or receipt["schema_version"] != 2 or receipt["package"] != path.name or c.sha(path) != receipt["sha256"] or
+    if (set(receipt) != fields_required or type(receipt["schema_version"]) is not int or receipt["schema_version"] not in (2, 3) or receipt["package"] != path.name or c.sha(path) != receipt["sha256"] or
             deb_contents(path) != receipt["payload"] or set(deb_contents(path, True)) != {"control"} or
             run("dpkg-deb", "--field", path).decode() != receipt["control"]):
         raise ValueError("Debian package differs from its verified source payload")
@@ -321,7 +368,7 @@ def verify_package(path, receipt):
     expected_manifest = {"schema_version": 1, "archive": receipt["archive"], "sha256": receipt["archive_sha256"],
                          "files": {chosen["archive_root"] + "/" + name: {"sha256": record["sha256"], "size": record["size"]}
                                    for name, record in original.items()}}
-    if receipt["archive_manifest"] != expected_manifest or receipt["payload"] != projected_payload(chosen):
+    if receipt["archive_manifest"] != expected_manifest or receipt["payload"] != projected_payload(chosen, receipt["schema_version"]):
         raise ValueError("Debian payload no longer binds the original archive projection")
     return fields
 

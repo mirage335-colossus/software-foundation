@@ -1,11 +1,13 @@
 --- host.py
 +++ host.py
-@@ -137,7 +137,10 @@
+@@ -137,7 +137,12 @@
                   "/index.html": ("index.html", "text/html; charset=utf-8"),
                   "/renderer.mjs": ("renderer.mjs", "text/javascript; charset=utf-8"),
                   "/style.css": ("style.css", "text/css; charset=utf-8"),
 -                 "/boot.mjs": ("boot.mjs", "text/javascript; charset=utf-8")}
 +                 "/boot.mjs": ("boot.mjs", "text/javascript; charset=utf-8"),
++                 "/browser_presenter.mjs": ("browser_presenter.mjs", "text/javascript; charset=utf-8"),
++                 "/file_services.mjs": ("file_services.mjs", "text/javascript; charset=utf-8"),
 +                 "/browser_lifecycle.mjs": ("browser_lifecycle.mjs", "text/javascript; charset=utf-8"),
 +                 "/wasm_worker.mjs": ("wasm_worker.mjs", "text/javascript; charset=utf-8"),
 +                 "/wasm_transport.mjs": ("wasm_transport.mjs", "text/javascript; charset=utf-8")}

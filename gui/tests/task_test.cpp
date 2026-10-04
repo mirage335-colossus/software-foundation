@@ -7,6 +7,9 @@
 
 using foundation::ui::TextTask;
 using foundation::ui::TaskUpdate;
+struct CooperativeApplication : foundation::ui::Application {
+    explicit CooperativeApplication(gui::Adapter& adapter) : Application(adapter, std::make_unique<foundation::ui::CooperativeTaskExecutor>()) {}
+};
 void owned_task() {
     TextTask task;
     std::vector<std::string> input{"ab cd", "e"};
@@ -24,7 +27,7 @@ void owned_task() {
     fixture::check(rejected&&!task.advance(),"Closed task accepted work");
 }
 template<class Adapter> void application_task() {
-    foundation::host::Session<foundation::ui::Application,Adapter> session;
+    foundation::host::Session<CooperativeApplication,Adapter> session;
     auto& app=session.application;
     auto activate=[&](const char* id){session.adapter.policy().send(gui::WidgetEvent{{id,1},gui::Activate{}});};
     for(unsigned i=0;i<4;++i) {
@@ -49,7 +52,7 @@ template<class Adapter> void application_task() {
     fixture::check(!app.task_running()&&!app.complete_task(second),"Close retained task work");
 }
 void browser_task() {
-    foundation::host::Browser<foundation::ui::Application> runtime("task");
+    foundation::host::Browser<CooperativeApplication> runtime("task");
     using namespace gui::web_detail;std::uint64_t seq=0;
     const auto send=[&](Json::Object operation){return runtime.receive(encode(Json::Object{{"epoch","task"},{"seq",std::to_string(++seq)},{"operation",std::move(operation)}}));};
     for(unsigned i=0;i<2;++i){send({{"type","edit"},{"key",key({"entries.editor",1})},{"base",""},{"value",std::string(256,'a')}});send({{"type","activate"},{"key",key({"entries.add",1})}});}

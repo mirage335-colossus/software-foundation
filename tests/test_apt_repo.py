@@ -2,13 +2,15 @@ from datetime import datetime, timedelta, timezone
 import importlib.util
 import io
 import json
+import sys
+import types
 from pathlib import Path
 import shutil
 import subprocess
 import tarfile
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 spec = importlib.util.spec_from_file_location("apt_repo", Path(__file__).resolve().parents[1] / "tools/apt_repo.py")
 apt = importlib.util.module_from_spec(spec)
@@ -82,7 +84,7 @@ class AptTests(unittest.TestCase):
                     package = output / receipt['package']
                     fields = apt.verify_package(package, receipt)
                     self.assertEqual(fields['Package'], 'software-foundation-' + backend)
-                    self.assertEqual(receipt['schema_version'], 2)
+                    self.assertEqual(receipt['schema_version'], 3)
                     extracted = root / ('installed-' + backend)
                     apt.run('dpkg-deb', '--extract', package, extracted)
                     private = extracted / 'opt/software-foundation' / backend
@@ -101,6 +103,69 @@ class AptTests(unittest.TestCase):
                     self.assertEqual(set(receipt['selection']['excluded_executables']),
                                      {'bin/' + name for name in set(binaries) - selected})
                     self.assertEqual(archive.read_bytes(), original)
+
+
+    def test_desktop_entries_and_browser_lifetime_match_supported_payload(self):
+        for backend in ('terminal', 'fltk', 'rev', 'sdl'):
+            files = apt.desktop_files(backend, {'bin/foundation-gui-' + backend: {}})
+            path = 'usr/share/applications/software-foundation-' + backend + '.desktop'
+            self.assertEqual(set(files), {path})
+            entry, mode = files[path]
+            self.assertEqual(mode, 0o644)
+            self.assertIn(('Exec=foundation-gui-' + backend + '\n').encode(), entry)
+            self.assertIn(('Terminal=' + ('true' if backend == 'terminal' else 'false')).encode(), entry)
+        for backend in ('core', 'framebuffer', 'hosted-web'):
+            self.assertEqual(apt.desktop_files(backend, {'bin/foundation-gui-web': {}}), {})
+        payload = {'bin/foundation-gui-web': {}}
+        payload.update({'share/software-foundation/web/' + name: {} for name in
+                        ('serve.py', 'host.py', 'index.html', 'boot.mjs', 'renderer.mjs', 'style.css',
+                         'browser_lifecycle.mjs', 'wasm_transport.mjs', 'browser_presenter.mjs',
+                         'file_services.mjs', 'wasm_worker.mjs')})
+        for dependency in ('browser_lifecycle.mjs', 'wasm_transport.mjs', 'browser_presenter.mjs',
+                           'file_services.mjs', 'wasm_worker.mjs'):
+            with self.subTest(missing=dependency):
+                partial = dict(payload)
+                del partial['share/software-foundation/web/' + dependency]
+                self.assertEqual(apt.desktop_files('hosted-web', partial), {})
+        files = apt.desktop_files('hosted-web', payload)
+        launcher, mode = files['usr/bin/foundation-gui-browser']
+        self.assertEqual(mode, 0o755)
+        entry = files['usr/share/applications/software-foundation-hosted-web.desktop'][0]
+        self.assertIn(b'Exec=foundation-gui-browser\n', entry)
+        self.assertIn(b'Terminal=true\n', entry)
+        for failure in (KeyboardInterrupt(), RuntimeError('browser launch failed')):
+            server = Mock(authority='127.0.0.1:12345')
+            factory = Mock(return_value=server)
+            loader = Mock(return_value={'boundary': types.SimpleNamespace(Host=factory)})
+            browser = Mock(return_value=True)
+            if isinstance(failure, KeyboardInterrupt):
+                server.serve_forever.side_effect = failure
+            else:
+                browser.side_effect = failure
+            with patch.dict(sys.modules, runpy=types.SimpleNamespace(run_path=loader),
+                            webbrowser=types.SimpleNamespace(open=browser)):
+                try:
+                    exec(compile(launcher, 'installed-browser', 'exec'), {})
+                except RuntimeError:
+                    self.assertIsInstance(failure, RuntimeError)
+            factory.assert_called_once_with(('127.0.0.1', 0), '/opt/software-foundation/hosted-web/bin/foundation-gui-web')
+            browser.assert_called_once_with('http://127.0.0.1:12345/')
+            server.server_close.assert_called_once_with()
+
+    def test_historical_debian_projection_keeps_its_original_contract(self):
+        with tempfile.TemporaryDirectory() as temporary, self.approved_fixture_terms():
+            root = Path(temporary)
+            archive, manifest = self.archive(root, ['foundation-cli', 'foundation-gui-terminal'],
+                {'share/doc/Foundation/gui-boundary/LICENSE': (b'GUI fixture terms\n', 0o644)})
+            # Reproduce schema 2's original package bytes, then verify with the new reader.
+            with patch.object(apt, 'desktop_files', return_value={}):
+                receipt = apt.package(archive, manifest, '1.0.0', 'amd64', 'terminal', root/'old')
+            receipt['schema_version'] = 2
+            package = root/'old'/receipt['package']
+            apt.verify_package(package, receipt)
+            receipt['schema_version'] = 3
+            with self.assertRaisesRegex(ValueError, 'projection'):
+                apt.verify_package(package, receipt)
 
     def test_core_projection_cannot_bypass_combined_gui_terms(self):
         with tempfile.TemporaryDirectory() as temporary:

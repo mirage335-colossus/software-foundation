@@ -14,7 +14,7 @@ import urllib.request
 from dependency_archive import sdk_temporary_directory, digest, encoded, file_inventory, read_json, relative, verify_inventory, write_json
 from sdk import export_group, materialize, seal
 
-TOOLS = ('distro_sdk.py', 'sdk.py', 'sdk_manifest.py', 'dependency_archive.py', 'dependency_store.py', 'verify_abi.py')
+TOOLS = ('distro_sdk.py', 'sdk.py', 'sdk_environment.py', 'sdk_manifest.py', 'dependency_archive.py', 'dependency_store.py', 'verify_abi.py')
 
 
 def recipe_id(recipe):

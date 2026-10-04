@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -53,4 +54,24 @@ public:
     void shutdown() noexcept { cancel(); closed_ = true; }
     bool running() const noexcept { return running_; }
 };
+
+class TaskExecutor {
+public:
+    virtual ~TaskExecutor() = default;
+    virtual TaskUpdate start(std::vector<std::string>) = 0;
+    virtual std::optional<TaskUpdate> advance() = 0;
+    virtual void cancel() noexcept = 0;
+    virtual void shutdown() noexcept = 0;
+};
+class CooperativeTaskExecutor final : public TaskExecutor {
+    TextTask task_;
+public:
+    TaskUpdate start(std::vector<std::string> input) override { return task_.start(std::move(input)); }
+    std::optional<TaskUpdate> advance() override { return task_.advance(); }
+    void cancel() noexcept override { task_.cancel(); }
+    void shutdown() noexcept override { task_.shutdown(); }
+};
+// The build selects scheduling policy once for the platform. Application
+// features depend only on this value-oriented interface, never a UI toolkit.
+std::unique_ptr<TaskExecutor> make_task_executor();
 } // namespace foundation::ui

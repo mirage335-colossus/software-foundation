@@ -25,7 +25,17 @@ to `tools`, so ordinary native candidate jobs exercise them before any GUI SDK
 preparation. Their `gui;focused` labels preserve targeted GUI selection; each
 suite is registered once and records every case through the common test runner.
 The wrapper rebuilds test prerequisites. Direct `ctest` alone does
-not compile modified source.
+not compile modified source. For a narrower iteration, repeat exact names:
+
+```sh
+./build.sh test dev --test core.store --test core.cli
+./build.sh test dev --gui --test foundation.gui.task-native --test foundation.gui.file-content
+```
+
+An unknown name or empty selection fails. Fixture setup and cleanup tests join
+the selected inventory, and compilation uses their complete prerequisite union.
+Script-only selections do not compile the default target. Exact names and labels
+are alternative selectors; focused success does not replace the candidate scope.
 
 During diagnosis, `./build.sh test dev --label core --stop-on-failure` stops
 CTest from scheduling further cases after its first failure. The same option works

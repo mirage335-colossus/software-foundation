@@ -1,5 +1,5 @@
 #include "shared/application.hpp"
-#include "host/contract.hpp"
+#include "host/native_session.hpp"
 #include "host/qualification.hpp"
 #include "adapter.hpp"
 #include <iostream>
@@ -9,7 +9,7 @@ template<Application App> int run_fltk(int argc, char** argv) {
     try {
         const bool smoke = smoke_requested(argc, argv);
         if (argc != 1 && !smoke) throw std::invalid_argument("Usage: foundation-gui-fltk [--smoke-test|--self-check]");
-        Session<App, gui::fltk::Adapter> session;
+        NativeSession<App, gui::fltk::Adapter> session;
         if (smoke) {
             session.adapter.show();
             session.application.qualify([&] {

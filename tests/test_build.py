@@ -14,6 +14,83 @@ spec.loader.exec_module(builder)
 
 
 class BuildTests(unittest.TestCase):
+    def test_portable_package_is_explicit_release_and_verifies_both_archive_formats(self):
+        from unittest.mock import patch
+        import source_identity
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            calls = []
+            def execute(command, **kwargs):
+                calls.append(command)
+                if command[0] == 'cpack':
+                    packages = root / 'build/release-portable/packages'
+                    packages.mkdir(parents=True)
+                    for name in ('Foundation.tar.gz', 'Foundation.zip'):
+                        (packages / name).write_bytes(b'fixture')
+            with patch.object(builder, 'ROOT', root), patch.object(builder, 'run', side_effect=execute), \
+                    patch.object(builder, 'cache_identity', return_value={}), \
+                    patch.object(source_identity, 'source_tree', return_value={}):
+                self.assertEqual(builder.main(['portable-package']), 0)
+            self.assertIn('release', calls[0])
+            self.assertIn('-DFOUNDATION_PORTABLE=ON', calls[0])
+            actions = [c[3] for c in calls if len(c) > 3 and str(c[2]).endswith('artifact.py')]
+            self.assertEqual(actions, ['create', 'verify', 'create', 'verify'])
+        with patch.object(builder, 'run') as execute, self.assertRaises(SystemExit):
+            builder.main(['portable-package', 'dev'])
+        execute.assert_not_called()
+
+    def test_exact_test_selection_builds_only_registered_fixture_closure(self):
+        import shutil, subprocess
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module = Path(__file__).resolve().parents[1] / 'cmake/TestPrerequisites.cmake'
+            shutil.copyfile(module, root / module.name)
+            (root / 'ok.cpp').write_text('int main(){return 0;}\n')
+            (root / 'bad.cpp').write_text('#error unrelated compilation must never run\n')
+            (root / 'CMakeLists.txt').write_text("""cmake_minimum_required(VERSION 3.24)
+project(ExactSelection LANGUAGES CXX)
+enable_testing()
+include(TestPrerequisites.cmake)
+add_executable(selected EXCLUDE_FROM_ALL ok.cpp)
+add_executable(setup EXCLUDE_FROM_ALL ok.cpp)
+add_executable(unrelated bad.cpp)
+add_test(NAME a.core COMMAND selected)
+set_tests_properties(a.core PROPERTIES FIXTURES_REQUIRED prepare)
+foundation_test_prerequisites(a.core selected)
+add_test(NAME setup.fixture COMMAND setup)
+set_tests_properties(setup.fixture PROPERTIES FIXTURES_SETUP prepare)
+foundation_test_prerequisites(setup.fixture setup)
+add_test(NAME cleanup.fixture COMMAND "${CMAKE_COMMAND}" -E true)
+set_tests_properties(cleanup.fixture PROPERTIES FIXTURES_CLEANUP prepare)
+foundation_test_prerequisites(cleanup.fixture)
+add_test(NAME axcore COMMAND unrelated)
+foundation_test_prerequisites(axcore unrelated)
+add_test(NAME script.only COMMAND "${CMAKE_COMMAND}" -E true)
+foundation_test_prerequisites(script.only)
+cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
+""")
+            (root / 'CMakePresets.json').write_text(json.dumps({'version':3,'configurePresets':[
+                {'name':'dev','generator':'Ninja','binaryDir':'${sourceDir}/build/dev'}]}))
+            with patch.object(builder, 'ROOT', root):
+                self.assertEqual(builder.main(['test', 'dev', '--test', 'script.only', '--jobs', '1']), 0)
+                tree = root / 'build/dev'
+                self.assertFalse((tree / 'selected').exists())
+                self.assertFalse((tree / 'setup').exists())
+                self.assertEqual(builder.main(['test', 'dev', '--test', 'a.core', '--test', 'script.only', '--jobs', '1']), 0)
+                suffix = '.exe' if sys.platform == 'win32' else ''
+                self.assertTrue((tree / ('selected' + suffix)).is_file())
+                self.assertTrue((tree / ('setup' + suffix)).is_file())
+                self.assertFalse((tree / ('unrelated' + suffix)).exists())
+                with self.assertRaisesRegex(ValueError, 'unknown exact test'):
+                    builder.main(['test', 'dev', '--test', 'a.cor'])
+                with self.assertRaisesRegex(ValueError, 'unique'):
+                    builder.main(['test', 'dev', '--test', 'a.core', '--test', 'a.core'])
+            for options in (['build', '--test', 'a.core'], ['test', '--test', 'a.core', '--full'],
+                            ['test', '--test', 'a.core', '--label', 'core']):
+                with self.subTest(options=options), self.assertRaises(SystemExit):
+                    builder.main(options)
+
     def test_source_observations_keep_execution_boundaries_without_duplicate_build_scan(self):
         from unittest.mock import patch
         import source_identity

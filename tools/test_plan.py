@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build as builder
 import windows_compiler
 import build_capacity
+from sdk_environment import HOST_OVERRIDES, require_clean
 from dependency_archive import read_json
 from dependency_store import verify_group
 from source_identity import source_tree
@@ -43,6 +44,8 @@ def source_id(build=None):
 def execution_context(build):
     cache = builder.cache_identity(build)
     sdk = Path(cache["FOUNDATION_SDK_ROOT"]).resolve(strict=True) if cache.get("FOUNDATION_SDK_ROOT") else None
+    if sdk:
+        require_clean()
     programs = builder.host_programs(sdk)
     if not sdk:
         programs["cmake"] = cache.get("CMAKE_COMMAND", programs["cmake"])
@@ -72,8 +75,7 @@ def build_inputs(build):
     elif configured.exists():
         raise ValueError("configured build receipt is missing its wrapper identity")
     result = {"cache": cache, "wrapper": wrapper, "sdk": None, "dependencies": [], "windows_dependencies": None, "dependency_prefix": None,
-              "environment": {key: os.environ.get(key) for key in ("CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS",
-                  "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "LIBRARY_PATH", "PKG_CONFIG_PATH", "CMAKE_GENERATOR")}}
+              "environment": {key: os.environ.get(key) for key in (*HOST_OVERRIDES, "CMAKE_GENERATOR")}}
     sdk_root = cache.get("FOUNDATION_SDK_ROOT")
     prefix_root = cache.get("FOUNDATION_DEPENDENCY_PREFIX")
     if prefix_root:
@@ -86,9 +88,7 @@ def build_inputs(build):
     recipe_ids = []
     if sdk_root:
         sdk = Path(sdk_root).resolve(strict=True)
-        if any(os.environ.get(key) for key in ("CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS", "CPATH",
-                                               "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "LIBRARY_PATH", "PKG_CONFIG_PATH")):
-            raise ValueError("unset host search overrides for prepared SDK validation")
+        require_clean()
         result["sdk"] = {"root": str(sdk), "sha256": builder.sdk_identity(sdk)}
         recipe_ids.append(read_json(sdk / "sdk.json")["recipe_id"])
     if wrapper is not None:
@@ -236,6 +236,32 @@ def selected_targets(mapping, names):
     if not names or not set(names) <= set(mapping):
         raise ValueError("selected tests have missing prerequisites")
     return sorted({target for name in names for target in mapping[name]})
+
+
+def named_selection(build, names, programs, environment):
+    """Select literal names and ask CTest to expand its actual fixture graph.
+
+    The complete registered mapping is authoritative. Never infer build targets
+    from names, silently accept a typo, or fall back to the expensive all target.
+    """
+    if (not names or len(names) != len(set(names)) or
+            any(not isinstance(name, str) or not name for name in names)):
+        raise ValueError("named tests must be nonempty and unique")
+    command = [programs["ctest"], "--test-dir", str(build), "--show-only=json-v1"]
+    complete = json.loads(subprocess.check_output(command, text=True, env=environment))["tests"]
+    available = test_names(complete)
+    if not set(names) <= set(available):
+        raise ValueError("unknown exact test name: " + ", ".join(sorted(set(names) - set(available))))
+    mapping = _prerequisites(build, available)
+    if mapping is None:
+        raise ValueError("exact test selection requires the complete registered prerequisite inventory")
+    pattern = "^(" + "|".join(re.escape(name) for name in sorted(names)) + ")$"
+    selected = json.loads(subprocess.check_output(command + ["-R", pattern], text=True, env=environment))["tests"]
+    executed = test_names(selected)
+    if not set(names) <= set(executed) or not set(executed) <= set(available):
+        raise ValueError("CTest exact selection differs from the complete inventory")
+    return {"names": executed, "targets": selected_targets(mapping, executed), "pattern": pattern,
+            "prerequisites": mapping}
 
 
 def compile_targets(programs, environment, build, targets, jobs):

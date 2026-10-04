@@ -3,10 +3,12 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('ci_changes', ROOT / 'tools/ci_changes.py')
@@ -49,6 +51,92 @@ class ClassificationTests(unittest.TestCase):
             self.assertEqual(ci.select(ROOT, 'push', event, 'a' * 40)['scope'], 'full')
         with patch.object(ci, 'git', side_effect=[b'a' * 40 + b'\n', b'\xff\0']):
             self.assertEqual(ci.select(ROOT, 'push', event, 'a' * 40)['scope'], 'full')
+
+
+    def test_changed_domains_run_whole_affected_suites(self):
+        for tool, required in {
+            'agent_edit': {'agent_edit', 'agent_record', 'agent_session', 'agent_stress'},
+            'apt_repo': {'apt_repo', 'distro_channel', 'distribution_release'},
+            'sdk': {'sdk', 'sdk_paths', 'sdk_retention'},
+            'gui_source_group': {'gui_source_group', 'gui_boundary', 'gui_visual'},
+        }.items():
+            with self.subTest(tool=tool):
+                self.assertLessEqual(required, set(ci.infrastructure_suites(['tools/' + tool + '.py'])))
+        self.assertNotIn('apt_repo', ci.infrastructure_suites(['tools/agent_edit.py']))
+        self.assertIn('gui_boundary', ci.infrastructure_suites(['gui/host/boot.mjs']))
+        self.assertIn('distro_channel', ci.infrastructure_suites(['tests/test_distro_channel.py']))
+
+    def test_unknown_deleted_and_missing_inventory_are_conservative(self):
+        all_suites = ci.infrastructure_suites([])
+        for path in ('tools/new_helper.py', 'tools/deleted_helper.py', 'tests/test_deleted.py',
+                     '.github/workflows/ci.yml', 'cmake/new.cmake', 'docs/release-policy.json', 'src/new_helper.py'):
+            self.assertEqual(ci.infrastructure_suites([path]), all_suites)
+        self.assertEqual(ci.infrastructure_suites(['README.md']), [])
+        self.assertEqual(ci.infrastructure_suites(['src/main.cpp']), [])
+        with tempfile.TemporaryDirectory() as temporary, self.assertRaises(ValueError):
+            ci.infrastructure_suites(['tools/sdk.py'], Path(temporary))
+
+    def test_reference_closure_includes_dynamic_literal_consumers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root / 'tools').mkdir(); (root / 'tests').mkdir()
+            (root / 'tools/sdk.py').write_text('')
+            (root / 'tools/consumer.py').write_text("module('sdk')")
+            (root / 'tests/test_consumer.py').write_text("subprocess.run(['consumer.py'])")
+            self.assertEqual(ci.infrastructure_suites(['tools/sdk.py'], root), ['consumer'])
+
+
+    def test_shared_test_fixtures_select_transitive_whole_suite_consumers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'tools').mkdir(); (root/'tests').mkdir()
+            (root/'tools/example.py').write_text('')
+            (root/'tests/test_fixture.py').write_text('')
+            (root/'tests/test_first.py').write_text('from . import test_fixture')
+            (root/'tests/test_second.py').write_text('import test_first')
+            self.assertEqual(ci.infrastructure_suites(['tests/test_fixture.py'], root), ['first', 'fixture', 'second'])
+
+    def test_actual_whole_suite_runner_rejects_skipped_and_expected_failure_cases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'tools').mkdir(); (root/'tests').mkdir()
+            shutil.copyfile(ROOT/'tools/run_tests.py', root/'tools/run_tests.py')
+            (root/'tests/test_fixture.py').write_text(
+                "import unittest\nclass Cases(unittest.TestCase):\n"
+                " @unittest.skip('fixture incomplete')\n def test_skip(self): pass\n"
+                " @unittest.expectedFailure\n def test_expected(self): self.fail('fixture incomplete')\n")
+            result = ci.run_tool_suites(['fixture'], root/'output', root=root)
+            self.assertEqual(result['status'], 'failed')
+            receipt = json.loads((root/'output/fixture.json').read_text())
+            self.assertEqual(len(receipt['inventory']), 2)
+            self.assertEqual({v['status'] for v in receipt['results'].values()}, {'incomplete'})
+
+
+    def test_successful_suite_with_surviving_child_is_rejected_and_joined(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'tools').mkdir(); (root/'tests').mkdir()
+            shutil.copyfile(ROOT/'tools/run_tests.py', root/'tools/run_tests.py')
+            (root/'tests/test_fixture.py').write_text(
+                "import unittest, subprocess, sys\nclass Cases(unittest.TestCase):\n"
+                " def test_orphan(self): subprocess.Popen([sys.executable, '-c', 'import time;time.sleep(30)'])\n")
+            result = ci.run_tool_suites(['fixture'], root/'output', root=root)
+            self.assertEqual(json.loads((root/'output/fixture.json').read_text())['status'], 'passed')
+            self.assertEqual(result['status'], 'failed')
+            self.assertIn('descendants outlived', (root/'output/fixture.log').read_text())
+
+    def test_strict_runner_failure_and_missing_receipt_cannot_pass(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root / 'tests').mkdir(); (root / 'tools').mkdir()
+            (root / 'tests/test_fixture.py').write_text('')
+            for name, code in [('failed', 1), ('missing', 0)]:
+                owner = Mock(); owner.finish.return_value = code
+                launch = Mock(return_value=owner)
+                supervisor = SimpleNamespace(launch=launch, ProcessTreeError=RuntimeError)
+                with patch.object(ci, 'load_supervisor', return_value=supervisor):
+                    result = ci.run_tool_suites(['fixture'], root/name, root=root)
+                    self.assertEqual(result['status'], 'failed')
+                    self.assertIn(str(root/'tools/run_tests.py'), launch.call_args.args[0])
+                    owner.wait.assert_called_once_with(timeout=900)
+                    owner.close.assert_called_once_with()
+            with self.assertRaises(ValueError):
+                ci.run_tool_suites([], root/'empty', root=root)
 
 
 class GitSelectionTests(unittest.TestCase):
@@ -155,7 +243,7 @@ class GitSelectionTests(unittest.TestCase):
                         '--head', head, '--github-output', str(output), '--summary', str(summary)],
                        check=True, capture_output=True, text=True, timeout=20)
         self.assertEqual(output.read_text().splitlines(),
-                         ['build=false', 'gui=false', 'workflow_lint=false', 'scope=documents'])
+                         ['build=false', 'gui=false', 'workflow_lint=false', 'tools=false', 'scope=documents'])
         self.assertIn('does not qualify', summary.read_text())
         event.write_text('{invalid')
         result = subprocess.run([sys.executable, '-B', str(ROOT / 'tools/ci_changes.py'),
@@ -168,7 +256,7 @@ class FeedbackWorkflowTests(unittest.TestCase):
     def test_feedback_has_conclusive_gate_and_no_workflow_path_filter(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
         self.assertNotIn('paths-ignore:', workflow)
-        self.assertNotIn('paths:', workflow)
+        self.assertNotIn('paths:', workflow.split('permissions:', 1)[0])
         for name, end in (('focused', 'workflow-syntax'), ('workflow-syntax', 'shared-gui')):
             block = workflow.split('  ' + name + ':\n', 1)[1].split('  ' + end + ':\n', 1)[0]
             self.assertNotIn('    needs:', block)
@@ -176,6 +264,11 @@ class FeedbackWorkflowTests(unittest.TestCase):
             self.assertIn('test "$SELECTED" = true || test "$SELECTED" = false', block)
             self.assertIn('fetch-depth: 2', block)
         self.assertIn('Focused checks (not release qualification)', workflow)
+        tooling = workflow.split('  changed-tools:\n')[1]
+        self.assertNotIn('    needs:', tooling)
+        self.assertIn('--run-tool-suites --tool-jobs 2', tooling)
+        self.assertIn("steps.changes.outputs.tools == 'true'", tooling)
+        self.assertIn('uses: ./.github/actions/ci-evidence-publish', tooling)
         self.assertEqual(workflow.count("if: steps.changes.outputs.gui == 'true'"), 1)
         gui = workflow.split("  shared-gui:\n", 1)[1]
         self.assertIn("--gui --gui-backends", gui)

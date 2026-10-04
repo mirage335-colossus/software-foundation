@@ -22,7 +22,11 @@
     "gui/patches/rev-clipboard-ownership.patch: synchronize fixture selection ownership across native connections and require a malformed reply without weakening rejection assertions",
     "gui/patches/touch-contract.patch: contact identity, move/release/cancel phases and bounded pointer validation",
     "gui/patches/touch-memory.patch: capture routing beyond target bounds with revocation on lifecycle changes",
-    "gui/patches/touch-interaction.patch: exactly-once release activation and generation-bound touch ownership"
+    "gui/patches/touch-interaction.patch: exactly-once release activation and generation-bound touch ownership",
+    "gui/patches/file-services.patch: bounded owned text import/export capabilities",
+    "gui/patches/web-file-services.patch: browser-owned file selection and download capability",
+    "gui/patches/web-responsiveness.patch: bounded measurement scheduling and retained keyed rows",
+    "gui/patches/web-presentation.patch: ordered state acceptance with coalesced visual presentation"
   ],
   "files": {
     "LICENSE": "1b3b788174fca1e8879d5d714528f22732f03925621b4e3484ee88ae6b4ef5f0",

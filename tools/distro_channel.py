@@ -203,14 +203,14 @@ def runtime_policy(backend):
     return result
 
 
-CURRENT_SCHEMA = 4
+CURRENT_SCHEMA = 5
 
 
 def validate_spec(spec):
     fields = {'schema_version', 'version', 'package_release', 'architecture', 'backend',
               'archive_url', 'archive_sha256', 'license_files', 'redistribution_approved',
               'application_source', 'packaging_tool', 'sdk', 'dependencies', 'runtime_dependencies'}
-    if not isinstance(spec, dict) or set(spec) != fields or type(spec['schema_version']) is not int or spec['schema_version'] not in (1, 2, 3, 4):
+    if not isinstance(spec, dict) or set(spec) != fields or type(spec['schema_version']) is not int or spec['schema_version'] not in (1, 2, 3, 4, 5):
         raise ValueError('invalid complete package specification')
     version_key(spec)
     if spec['architecture'] not in ARCHES or spec['backend'] not in BACKENDS or spec['redistribution_approved'] is not True:
@@ -378,6 +378,11 @@ def recipe_files(spec, root_name, payload, archive_name):
     for binary in sorted(binaries):
         public = binary + ('-' + backend if binary == 'foundation-cli' and backend != 'core' else '')
         launchers[public] = (f'#!/bin/sh\nexec /{private}/bin/{binary} "$@"\n'.encode(), 0o755)
+    desktop = apt.desktop_files(backend, payload) if spec['schema_version'] >= 5 else {}
+    for path, value in desktop.items():
+        if path.startswith('usr/bin/'):
+            launchers[Path(path).name] = value
+    entries = {Path(path).name: value for path, value in desktop.items() if path.startswith('usr/share/applications/')}
     notices = []
     for path in spec['license_files']:
         if path not in payload:
@@ -394,6 +399,7 @@ def recipe_files(spec, root_name, payload, archive_name):
     native = {private + '/' + path: value for path, value in payload.items()}
     native.update({destination: payload[source] for source, destination in manuals.items()})
     native.update({'usr/bin/' + path: value for path, value in launchers.items()})
+    native.update({'usr/share/applications/' + path: value for path, value in entries.items()})
     native[f'usr/share/licenses/{name}/LICENSE'] = (terms, 0o644)
     version = spec['version'] + '-' + str(spec['package_release'])
     pkginfo = (f'pkgname = {name}\npkgbase = {name}\npkgver = {version}\n'
@@ -421,6 +427,9 @@ def recipe_files(spec, root_name, payload, archive_name):
     install += ''.join(f'  install -Dm755 "$srcdir/{launcher}" "$pkgdir/usr/bin/{launcher}"\n' for launcher in launchers)
     install += ''.join(f'  install -Dm644 "$srcdir/{root_name}/{source}" "$pkgdir/{destination}"\n'
                        for source, destination in manuals.items())
+    source_values.extend(entries)
+    sums.extend(digest(value[0]) for value in entries.values())
+    install += ''.join(f'  install -Dm644 \"$srcdir/{entry}\" \"$pkgdir/usr/share/applications/{entry}\"\n' for entry in entries)
     source_values[0] = archive_name + '::' + source_values[0]
     quotes = lambda values: ' '.join("'" + value + "'" for value in values)
     pkgbuild = (f'pkgname={name}\npkgver={spec["version"]}\npkgrel={spec["package_release"]}\n'
@@ -439,6 +448,7 @@ def recipe_files(spec, root_name, payload, archive_name):
     output.update({arch_prefix + 'PKGBUILD': (pkgbuild.encode(), 0o644), arch_prefix + '.SRCINFO': (srcinfo.encode(), 0o644),
                    arch_prefix + 'LICENSE': (terms, 0o644)})
     output.update({arch_prefix + path: value for path, value in launchers.items()})
+    output.update({arch_prefix + path: value for path, value in entries.items()})
     if selection is not None:
         output['backend-selection.json'] = (encoded(selection), 0o644)
         output[arch_prefix + 'selection.json'] = (encoded(selection), 0o644)
@@ -463,11 +473,12 @@ def recipe_files(spec, root_name, payload, archive_name):
     ebuild += ''.join(f'  dobin "${{FILESDIR}}/{path}"\n' for path in launchers)
     ebuild += ''.join(f'  insinto /{Path(destination).parent.as_posix()}\n  newins "${{S}}/{source}" {Path(destination).name}\n'
                       for source, destination in manuals.items())
+    ebuild += ''.join(f'  insinto /usr/share/applications\n  newins \"${{FILESDIR}}/{path}\" {path}\n' for path in entries)
     if spec['schema_version'] >= 3:
         ebuild += '  docompress -x /opt/software-foundation /usr/share/man\n'
     ebuild += '}\n'
     output[gentoo_prefix + ebuild_name] = (ebuild.encode(), 0o644)
-    gentoo_aux = dict(launchers)
+    gentoo_aux = dict(launchers, **entries)
     if selection is not None:
         gentoo_aux['selection.json'] = (encoded(selection), 0o644)
     output.update({gentoo_prefix + 'files/' + path: value for path, value in gentoo_aux.items()})

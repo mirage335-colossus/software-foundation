@@ -96,7 +96,12 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/boundary-checked"
     DEPENDS ${foundation_gui_owned_sources} ${foundation_gui_transitive_sources}
         "${CMAKE_CURRENT_SOURCE_DIR}/check_boundary.py" VERBATIM)
 add_custom_target(foundation_gui_contract DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/boundary-checked")
-add_library(foundation_gui_application STATIC shared/application.cpp)
+if(EMSCRIPTEN)
+    set(foundation_task_executor shared/task_cooperative.cpp)
+else()
+    set(foundation_task_executor shared/task_native.cpp)
+endif()
+add_library(foundation_gui_application STATIC shared/application.cpp ${foundation_task_executor})
 add_dependencies(foundation_gui_application foundation_gui_contract)
 target_link_libraries(foundation_gui_application PUBLIC foundation_gui_boundary foundation::core)
 target_include_directories(foundation_gui_application PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -127,6 +132,17 @@ function(foundation_gui_patch source patch output)
         "${CMAKE_CURRENT_BINARY_DIR}/${output}" COMMAND_ERROR_IS_FATAL ANY)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/patches/${patch}" "${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.py")
+endfunction()
+# Continue a verified patch sequence without exposing intermediate assets in the
+# installed web directory. The exact patcher preserves unchanged output mtimes.
+function(foundation_gui_repatch source patch output)
+    get_filename_component(output_directory "${CMAKE_CURRENT_BINARY_DIR}/${output}" DIRECTORY)
+    file(MAKE_DIRECTORY "${output_directory}")
+    execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/${source}" "${CMAKE_CURRENT_SOURCE_DIR}/patches/${patch}"
+        "${CMAKE_CURRENT_BINARY_DIR}/${output}" COMMAND_ERROR_IS_FATAL ANY)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/patches/${patch}")
 endfunction()
 function(foundation_gui_check name target labels)
     set_target_properties(${target} PROPERTIES EXCLUDE_FROM_ALL TRUE)
@@ -159,7 +175,7 @@ foreach(path IN LISTS verified_files)
     file(RELATIVE_PATH relative "${FOUNDATION_GUI_SOURCE}" "${path}")
     if(relative MATCHES "^include/gui/")
         list(APPEND foundation_gui_mirrored_headers "${CMAKE_CURRENT_BINARY_DIR}/${relative}")
-        if(NOT relative MATCHES "^include/gui/(contract|memory_adapter|interaction|web)\\.hpp$")
+        if(NOT relative MATCHES "^include/gui/(contract|memory_adapter|interaction|web|runtime)\\.hpp$")
             configure_file("${path}" "${CMAKE_CURRENT_BINARY_DIR}/${relative}" COPYONLY)
         endif()
     endif()
@@ -173,16 +189,20 @@ foreach(path IN LISTS foundation_gui_existing_headers)
         file(REMOVE "${path}")
     endif()
 endforeach()
+foundation_gui_patch(include/gui/runtime.hpp file-services.patch include/gui/runtime.hpp)
 foundation_gui_patch(include/gui/contract.hpp touch-contract.patch include/gui/contract.hpp)
 foundation_gui_patch(include/gui/memory_adapter.hpp touch-memory.patch include/gui/memory_adapter.hpp)
 foundation_gui_patch(include/gui/interaction.hpp touch-interaction.patch include/gui/interaction.hpp)
 # Keep the browser asset names stable; both transport modes use the same renderer.
 foundation_gui_patch(include/gui/web.hpp web-tick.patch include/gui/web.hpp)
-foundation_gui_patch(backends/web/renderer.mjs web-ordering.patch web/renderer.mjs)
-foundation_gui_patch(backends/web/boot.mjs web-lifecycle.patch web/boot.mjs)
+foundation_gui_patch(backends/web/renderer.mjs web-ordering.patch patch-inputs/renderer-ordered.mjs)
+foundation_gui_repatch(patch-inputs/renderer-ordered.mjs web-responsiveness.patch patch-inputs/renderer-responsive.mjs)
+foundation_gui_repatch(patch-inputs/renderer-responsive.mjs web-file-services.patch web/renderer.mjs)
+foundation_gui_patch(backends/web/boot.mjs web-lifecycle.patch patch-inputs/boot-lifecycle.mjs)
+foundation_gui_repatch(patch-inputs/boot-lifecycle.mjs web-presentation.patch web/boot.mjs)
 foundation_gui_patch(backends/web/host.py web-assets.patch web/host.py)
 configure_file(host/browser_lifecycle.mjs "${CMAKE_CURRENT_BINARY_DIR}/web/browser_lifecycle.mjs" COPYONLY)
-foreach(module wasm_transport wasm_worker)
+foreach(module wasm_transport wasm_worker browser_presenter file_services)
     configure_file("host/${module}.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/${module}.mjs" COPYONLY)
 endforeach()
 if(BUILD_TESTING AND FOUNDATION_NODE_EXECUTABLE)
@@ -192,6 +212,18 @@ if(BUILD_TESTING AND FOUNDATION_NODE_EXECUTABLE)
         "${CMAKE_CURRENT_BINARY_DIR}/web/wasm_worker.mjs")
     foundation_test_prerequisites(foundation.gui.worker)
     set_tests_properties(foundation.gui.worker PROPERTIES LABELS "gui;focused" TIMEOUT 30)
+    add_test(NAME foundation.gui.browser-responsiveness COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_responsiveness_test.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/renderer.mjs")
+    add_test(NAME foundation.gui.browser-presenter COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_presenter_test.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web/browser_presenter.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/renderer.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web/boot.mjs")
+    add_test(NAME foundation.gui.file-browser COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/file_services_test.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/file_services.mjs")
+    foreach(name browser-responsiveness browser-presenter file-browser)
+        foundation_test_prerequisites(foundation.gui.${name})
+        set_tests_properties(foundation.gui.${name} PROPERTIES LABELS "gui;focused" TIMEOUT 30)
+    endforeach()
     foreach(fixture touch queue)
         add_test(NAME foundation.gui.${fixture}-browser COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/${fixture}_test.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/renderer.mjs")
@@ -254,6 +286,8 @@ if(EMSCRIPTEN)
             "${CMAKE_SOURCE_DIR}/tools/package_notices.py" "${CMAKE_SOURCE_DIR}/tools/sdk_manifest.py"
             "${CMAKE_CURRENT_BINARY_DIR}/web/boot.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/renderer.mjs"
             "${CMAKE_CURRENT_BINARY_DIR}/web/browser_lifecycle.mjs"
+            "${CMAKE_CURRENT_BINARY_DIR}/web/browser_presenter.mjs"
+            "${CMAKE_CURRENT_BINARY_DIR}/web/file_services.mjs"
             "${CMAKE_CURRENT_BINARY_DIR}/web/wasm_transport.mjs"
             "${CMAKE_CURRENT_BINARY_DIR}/web/wasm_worker.mjs"
             "${CMAKE_CURRENT_BINARY_DIR}/web/index.html" "${CMAKE_CURRENT_BINARY_DIR}/web/style.css"
@@ -377,6 +411,12 @@ if(BUILD_TESTING)
     foundation_gui_check(shared-feature foundation_gui_test focused)
     foundation_gui_executable(foundation_gui_task_test tests/task_test.cpp)
     foundation_gui_check(task-lifecycle foundation_gui_task_test focused)
+    if(NOT EMSCRIPTEN)
+        foundation_gui_executable(foundation_gui_task_native_test tests/task_native_test.cpp)
+        foundation_gui_check(task-native foundation_gui_task_native_test focused)
+        foundation_gui_executable(foundation_gui_file_test tests/file_services_test.cpp)
+        foundation_gui_check(file-content foundation_gui_file_test focused)
+    endif()
     foundation_gui_executable(foundation_gui_parity_test tests/parity_test.cpp)
     foundation_gui_check(parity foundation_gui_parity_test focused)
     add_test(NAME foundation.gui.transport COMMAND ${Python3_EXECUTABLE} -B

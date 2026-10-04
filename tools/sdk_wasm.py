@@ -13,7 +13,7 @@ from distro_sdk import fetch_file, unpack_source
 from sdk import clean_environment, export_group, materialize
 from verify_abi import audit
 
-TOOLS = ('sdk_wasm.py', 'distro_sdk.py', 'sdk.py', 'sdk_manifest.py', 'dependency_archive.py', 'dependency_store.py', 'verify_abi.py')
+TOOLS = ('sdk_wasm.py', 'distro_sdk.py', 'sdk.py', 'sdk_environment.py', 'sdk_manifest.py', 'dependency_archive.py', 'dependency_store.py', 'verify_abi.py')
 PROBE = '#include <string>\n#include <vector>\n#include <stdexcept>\nint main(){std::vector<std::string> v{"entry"}; try { throw std::runtime_error(v.at(0)); } catch(const std::exception& e) { return std::string(e.what())=="entry" ? 0 : 1; }}\n'
 
 

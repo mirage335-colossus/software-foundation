@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 import windows_compiler
+from sdk_environment import require_clean
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -111,7 +112,7 @@ def run(command, **kwargs):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", nargs="?", choices=("build", "test", "package"), default="build")
+    parser.add_argument("action", nargs="?", choices=("build", "test", "package", "portable-package"), default="build")
     parser.add_argument("preset", nargs="?", choices=("dev", "release", "asan"), default=None)
     parser.add_argument("--verify-package", action="store_true", help="relocate and verify produced archives, including the installed CMake consumer")
     parser.add_argument("--configure-only", action="store_true", help="configure without compiling; candidate scopes build their own prerequisites")
@@ -123,6 +124,8 @@ def main(argv=None):
     parser.add_argument("--dependency-prefix", type=Path, help="verified native development prefix")
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--label", choices=("fast", "core", "tools", "integration", "gui"))
+    selection.add_argument("--test", action="append", dest="tests", metavar="NAME",
+                           help="run an exact CTest name; repeat for several names (including fixture prerequisites)")
     selection.add_argument("--full", action="store_true", help="run all enabled tests (default)")
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--windows-dependencies", type=Path, help="verified restored Windows dependency export")
@@ -142,6 +145,10 @@ def main(argv=None):
     parser.add_argument("--distribution-tests", action="store_true")
     parser.add_argument("--junit", type=Path, help="machine-readable outcomes for this test invocation")
     args = parser.parse_args(argv)
+    if args.action == "portable-package":
+        args.action = "package"
+        args.portable = True
+        args.verify_package = True
     preset = args.preset or ("release" if args.action == "package" else "dev")
     if args.verify_package and args.action != "package":
         parser.error("--verify-package applies only to package")
@@ -149,7 +156,7 @@ def main(argv=None):
         parser.error("--configure-only applies only to build")
     if args.stop_on_failure and args.action != "test":
         parser.error("--stop-on-failure applies only to test")
-    if (args.label or args.full or args.junit) and args.action != "test":
+    if (args.label or args.full or args.tests or args.junit) and args.action != "test":
         parser.error("test selection applies only to test")
     if args.action == "package" and preset != "release":
         parser.error("package requires release configuration")
@@ -204,9 +211,10 @@ def main(argv=None):
     child_environment = os.environ.copy()
     if args.sdk:
         sdk = args.sdk.resolve(strict=True)
-        for key in ("CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS", "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "LIBRARY_PATH", "PKG_CONFIG_PATH"):
-            if os.environ.get(key):
-                parser.error("unset host search override for SDK builds: " + key)
+        try:
+            require_clean()
+        except ValueError as error:
+            parser.error(str(error))
         identity["sdk"] = {"root": str(sdk), "sha256": sdk_identity(sdk)}
         is_browser = json.loads((sdk / "sdk.json").read_text(encoding="utf-8"))["target"]["system"] == "Emscripten"
         if is_browser != (backends == ["wasm"]):
@@ -315,11 +323,19 @@ def main(argv=None):
     source_before = source_tree(ROOT, args.gui_source)
     run(configure, env=child_environment)
     cache_stamp.write_text(json.dumps(cache_identity(build), indent=2) + "\n")
-    target = "all"
+    targets = ["all"]
+    exact_selection = None
     if args.action == "test":
-        target = "foundation-tests" + ("-" + args.label if args.label else "")
-    if not args.configure_only:
-        run([programs["cmake"], "--build", str(build), "--parallel", str(jobs), "--target", target], env=child_environment)
+        if args.tests:
+            from test_plan import named_selection
+            exact_selection = named_selection(build, args.tests, programs, child_environment)
+            targets = exact_selection["targets"]
+        else:
+            targets = ["foundation-tests" + ("-" + args.label if args.label else "")]
+    if not args.configure_only and targets:
+        run([programs["cmake"], "--build", str(build), "--parallel", str(jobs), "--target", *targets], env=child_environment)
+    if exact_selection is not None and named_selection(build, args.tests, programs, child_environment) != exact_selection:
+        raise ValueError("named test inventory or prerequisites changed during compilation")
     if source_tree(ROOT, args.gui_source) != source_before:
         raise ValueError("source changed during compilation; rebuild a stable candidate")
     if args.action == "test":
@@ -332,6 +348,8 @@ def main(argv=None):
             command += ["--output-junit", str(junit)]
         if args.label:
             command += ["-L", "^" + args.label + "$"]
+        if exact_selection is not None:
+            command += ["-R", exact_selection["pattern"]]
         if args.stop_on_failure:
             command.append("--stop-on-failure")
         run(command, env=child_environment)

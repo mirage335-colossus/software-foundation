@@ -13,7 +13,7 @@ from dependency_archive import digest, encoded, extract, file_inventory, read_js
 from dependency_store import names, verify_group
 from sdk import export_group, materialize
 
-TOOLS = ('sdk_windows.py', 'sdk.py', 'sdk_manifest.py', 'dependency_store.py', 'dependency_archive.py', 'verify_abi.py', 'select-windows-toolchain.ps1')
+TOOLS = ('sdk_windows.py', 'sdk.py', 'sdk_environment.py', 'sdk_manifest.py', 'dependency_store.py', 'dependency_archive.py', 'verify_abi.py', 'select-windows-toolchain.ps1')
 
 
 def recipe_identity(recipe):

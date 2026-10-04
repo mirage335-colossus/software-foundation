@@ -213,7 +213,8 @@ class GuiBoundaryTests(unittest.TestCase):
             patches = source / 'patches'; patches.mkdir()
             (patches / 'apply.py').write_bytes((ROOT / 'gui/patches/apply.py').read_bytes())
             names = [('contract','touch-contract'),('memory_adapter','touch-memory'),
-                     ('interaction','touch-interaction'),('web','web-tick')]
+                     ('interaction','touch-interaction'),('runtime','file-services'),
+                     ('web','web-tick')]
             for name, patch in names:
                 old = 'inline constexpr int ' + name + '_value=1;\n'
                 new = old.replace('=1;', '=2;')

@@ -16,7 +16,7 @@ from package_notices import WASM_RUNTIME_NOTICES, notice_files
 from sdk_manifest import verify_sdk
 
 ASSETS = ('boot.mjs', 'renderer.mjs', 'browser_lifecycle.mjs', 'wasm_transport.mjs',
-          'wasm_worker.mjs', 'style.css', 'index.html', 'gui_web_wasm.js', 'gui_web_wasm.wasm')
+          'wasm_worker.mjs', 'browser_presenter.mjs', 'file_services.mjs', 'style.css', 'index.html', 'gui_web_wasm.js', 'gui_web_wasm.wasm')
 MAX_ASSET = 64 * 1024 * 1024
 MAX_TOTAL = 96 * 1024 * 1024
 HTML_NAME = 'software-foundation-wasm.html'
@@ -24,7 +24,8 @@ CSP = ("default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:;
        "worker-src blob:; connect-src 'none'; style-src 'unsafe-inline'; "
        "img-src data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'")
 # Static module imports are rewritten only at these exact reviewed dependency edges.
-IMPORTS = {'boot.mjs': ('renderer.mjs', 'browser_lifecycle.mjs', 'wasm_transport.mjs')}
+IMPORTS = {'boot.mjs': ('renderer.mjs', 'browser_lifecycle.mjs', 'browser_presenter.mjs', 'wasm_transport.mjs'),
+           'renderer.mjs': ('file_services.mjs',)}
 
 
 def read_file(path, limit=MAX_ASSET):
@@ -47,10 +48,11 @@ def make_html(blobs, notices):
     for name in ASSETS:
         if name.endswith(('.mjs', '.js', '.css', '.html')):
             blobs[name].decode('utf-8')
-    boot = blobs['boot.mjs'].decode('utf-8')
-    for name in IMPORTS['boot.mjs']:
-        if boot.count("'./" + name + "'") != 1:
-            raise ValueError('Generated boot module dependency changed: ' + name)
+    for module, dependencies in IMPORTS.items():
+        source = blobs[module].decode('utf-8')
+        for name in dependencies:
+            if source.count("'./" + name + "'") != 1:
+                raise ValueError('Generated module dependency changed: ' + module + ' -> ' + name)
     shell = blobs['index.html'].decode('utf-8')
     style_link = '<link rel="stylesheet" href="/style.css">'
     script_link = '<script type="module" src="/boot.mjs"></script>'
@@ -68,16 +70,22 @@ const text=name=>new TextDecoder('utf-8',{fatal:true}).decode(bytes(name));
 const urls=[];
 const local=source=>{const url=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));urls.push(url);return url;};
 try{
-  let boot=text('boot.mjs');
-  for(const name of ['renderer.mjs','browser_lifecycle.mjs','wasm_transport.mjs']){
-    boot=boot.replace("'./"+name+"'",JSON.stringify(local(text(name))));
-  }
+  const dependencies=DEPENDENCY_GRAPH;
+  const modules=new Map();
+  const moduleURL=name=>{
+    if(modules.has(name))return modules.get(name);
+    let source=text(name);
+    for(const dependency of dependencies[name]||[])
+      source=source.replace("'./"+dependency+"'",JSON.stringify(moduleURL(dependency)));
+    const url=local(source);modules.set(name,url);return url;
+  };
   globalThis.foundationWasmAssets={workerURL:local(text('wasm_worker.mjs')),moduleURL:'embedded',
     factorySource:text('gui_web_wasm.js'),wasmBinary:bytes('gui_web_wasm.wasm')};
-  await import(local(boot));
+  await import(moduleURL('boot.mjs'));
 }catch(error){document.querySelector('#status').textContent='Could not start: '+error.message;}
 finally{delete globalThis.foundationWasmAssets;for(const url of urls)URL.revokeObjectURL(url);}
 '''
+    bootstrap = bootstrap.replace('DEPENDENCY_GRAPH', json.dumps(IMPORTS, separators=(',', ':')))
     content = ('<script type="application/json" id="foundation-assets">' +
                json.dumps(payload, separators=(',', ':')) + '</script>' +
                '<script type="application/json" id="foundation-notices">' +

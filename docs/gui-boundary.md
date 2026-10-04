@@ -56,16 +56,20 @@ Source changes and tests still use the same library and CMake definitions.
 The visible **Count text**, **Cancel task** and progress label are declared in the
 same view table as the other controls. `Application` copies authoritative records
 into [TextTask](../gui/shared/task.hpp), then applies owned progress values on the
-UI thread. Each host turn processes at most 256 input bytes. Editing and clearing
-live records remain responsive and cannot change the task's captured input.
-A new task has a new generation; cancellation, restart and close reject late or
-repeated completion. Closing discards input, queued services and pending work.
+UI thread. The value-only `TaskExecutor` interface selects native background
+execution or cooperative stepping once per target platform; features and layout
+are identical. Wasm uses cooperative work inside its existing module Worker.
+Native applications use one persistent producer and a one-slot latest-progress
+mailbox. A native work chunk covers at most 4096 bytes; cancellation/replacement
+invalidates its generation without waiting in the event handler. Shutdown joins
+the producer before its owned state is destroyed. No worker retains an adapter,
+widget or application reference. The cooperative executor processes at most 256
+bytes per tick and remains available for deterministic fixtures and embeddings.
 
-This example uses cooperative bounded work, with no background thread or blocking
-call. The bound is appropriate for this fixed in-memory operation. A blocking or
-unbounded operation requires an owned executor, bounded message queue, cancellation
-and joined shutdown; retaining UI objects in such a worker is forbidden. Do not
-present cooperative stepping as protection against a blocking external service.
+Editing and clearing live records cannot change captured input. A new task has a
+new generation; cancellation, restart and close reject late or repeated completion.
+The bounded in-memory worker is not a promise that arbitrary external calls can
+be interrupted. OS file services have a separate lifecycle described below.
 
 The common native `Session` advances work through `Application::tick`; terminal
 and SDL typed runners obey the same contract. Hosted and Wasm browsers use one
@@ -110,7 +114,16 @@ the application and shared interaction policy remain unchanged. The caller owns
 timing and calls the interface on one thread. Retained frame storage can outlive
 presentation, and a failed display operation does not consume the frame revision.
 The [fake input/display driver](../tests/gui_embedding.cpp) demonstrates this
-without SDL, a window server or a hardware device.
+without SDL, a window server or a hardware device. The optional host-side
+[`copy_frame`](../gui/host/framebuffer_surface.hpp) converts damage into an owned
+RGB24, RGBA8888, BGRA8888 or little-endian RGB565 surface with explicit stride.
+It validates dimensions, storage, format and damage before any write; pixels
+outside damage and row padding remain unchanged. The display must request full
+damage when its storage is new or its last revision was skipped.
+
+SDL drains at most 128 events or roughly 4 ms before its next tick and paint.
+A continuously nonempty input queue therefore cannot indefinitely defer painting;
+touch release/cancellation remains ordered and no event is dropped.
 
 This is a porting seam for a touchscreen, VR panel or embedded display. A real
 port still supplies calibrated input and display drivers, an appropriate C++20
@@ -153,10 +166,49 @@ and the final HTML. Packaging does not download a runtime or a browser. Actual
 browser checks remain necessary when changing a compiler, Worker lifecycle or
 content policy; Node fixtures alone cannot qualify browser behavior.
 
-The existing file services still select paths. A future content import/export
-example needs a separate bounded-content service contract, cancellation and stale
-completion handling, a native executor, and a transactional application format.
-Worker transport alone does not change path selection into file-content I/O.
+## Bounded content services
+
+**Actions → Import entries / Export entries** use generic `read_text` and
+`write_text` capabilities, appended to the public service vocabulary without
+changing existing numeric kinds. They carry owned UTF-8 content and a maximum
+64 KiB limit. Application code receives no filesystem path, browser File or
+native dialog. Import parses one printable-ASCII entry per line, supports CRLF,
+and commits the complete replacement only after every record passes core
+validation. Existing record IDs are not reused. A malformed/oversized import
+leaves the collection unchanged; service IDs reject duplicate or stale replies.
+Export uses the same core records and rejects content exceeding the service limit.
+
+FLTK and Rev composition roots inject [`FileServices`](../gui/host/file_services.hpp)
+through `NativeSession`. Their generic modal path prompt keeps paths on the host
+side. One worker owns the selected path/content; the UI polls a value-only result.
+Export exclusively creates a sibling temporary file and replaces the destination
+only after a complete successful write. Failures/cancellation before that commit
+remove the temporary file and preserve the destination. Cancellation after commit
+cannot undo it or report it as unperformed. This is not a crash-durability promise.
+Byte bounds and cancellation checks do not bound a stalled filesystem call;
+shutdown deliberately joins it instead of detaching a writer. Applications needing
+hard deadlines for hostile filesystems require a separately owned process or a
+platform-specific cancellable I/O service. The generic embedding `Session` imports
+no filesystem provider; terminal/framebuffer/SDL adapters report unavailable file
+content services unless the embedding supplies one.
+
+Browsers offer an explicit file input and Download button. The host bounds bytes
+before decoding, rejects invalid UTF-8, preserves a leading BOM as content just
+as the native reader does, aborts withdrawn dialogs and ignores late reads. Export success means a download was offered, not that the user saved it.
+The shared status deliberately says “Export handed to host”. Both hosted and
+single-file Wasm paths use the same helper with no network dependency.
+
+## Browser presentation scheduling
+
+Both transports accept receipts and authoritative state immediately, while the
+presenter coalesces replaceable visual snapshots into one animation frame.
+Service changes, errors, initial state and close flush ordering boundaries; actions,
+service replies and acknowledgments are never dropped. Editor/focus completion
+uses accepted state even before painting. Measurements reuse one probe, prune
+obsolete cache identities and yield after 64 probes or 4 ms; stale continuations
+cannot publish after replacement/close. List rows and cells retain their keyed
+DOM identity across selection and content updates. These are general responsiveness
+examples, independent of application-specific high-frame-rate computation.
 
 ## Complete offline GUI input group
 

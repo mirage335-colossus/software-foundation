@@ -73,6 +73,15 @@ fetch is needed. Each existing job repeats only the cheap local selector, so
 independent feedback jobs keep starting in parallel without a new setup barrier.
 Candidate regression and certification never use this selector.
 
+A separate automatic **Affected complete infrastructure suites** job selects
+whole tooling suites using conservative source-reference dependencies and explicit
+coupled domains. A shared, unknown, deleted or workflow input falls back to the
+complete inventory. It runs at most two suites concurrently through the strict
+case-outcome runner and process-tree owner, with individual deadlines and retained
+receipts. Skips, orphaned writers, missing cases and timeouts cannot count as passes.
+This protects SDK/release/coordination tooling on ordinary PR/main feedback without
+forcing its complete suites into each local core iteration.
+
 ## Workflow structure
 
 Use reusable workflows for repeated platform setup and a small explicit matrix

@@ -21,7 +21,8 @@ class PackageWasmTests(unittest.TestCase):
         for name in package_wasm.ASSETS:
             (self.assets / name).write_text('// local fixture\n')
         (self.assets / 'gui_web_wasm.wasm').write_bytes(b'\0asm\x01\0\0\0')
-        (self.assets / 'boot.mjs').write_text("import './renderer.mjs';import './browser_lifecycle.mjs';import './wasm_transport.mjs';")
+        (self.assets / 'boot.mjs').write_text("import './renderer.mjs';import './browser_lifecycle.mjs';import './browser_presenter.mjs';import './wasm_transport.mjs';")
+        (self.assets / 'renderer.mjs').write_text("import './file_services.mjs';")
         (self.assets / 'index.html').write_text('<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/style.css"><div id="status"></div><script type="module" src="/boot.mjs"></script>')
         self.notice = self.root / 'LICENSE'
         self.notice.write_text('Example notice <safe> </script>')
@@ -64,6 +65,16 @@ class PackageWasmTests(unittest.TestCase):
     def test_module_and_html_contract_drift_rejected(self):
         (self.assets / 'boot.mjs').write_text("import './other.mjs'")
         with self.assertRaisesRegex(ValueError, 'dependency changed'):
+            self.make()
+
+    def test_nested_renderer_dependency_is_required_and_embedded(self):
+        self.make()
+        html = (self.output / package_wasm.HTML_NAME).read_text()
+        self.assertIn('"renderer.mjs":["file_services.mjs"]', html)
+        self.assertIn('JSON.stringify(moduleURL(dependency))', html)
+        self.assertIn("await import(moduleURL('boot.mjs'))", html)
+        (self.assets / 'renderer.mjs').write_text('// missing dependency')
+        with self.assertRaisesRegex(ValueError, 'renderer.mjs -> file_services.mjs'):
             self.make()
 
     def test_unsafe_css_and_bad_wasm_rejected(self):

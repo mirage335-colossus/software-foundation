@@ -1,6 +1,7 @@
 #pragma once
 #include "contract.hpp"
 #include "framebuffer_touch.hpp"
+#include "framebuffer_surface.hpp"
 #include <gui/framebuffer.hpp>
 
 namespace foundation::host {

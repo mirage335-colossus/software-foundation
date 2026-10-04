@@ -39,6 +39,34 @@ class SDKTests(unittest.TestCase):
 
     def tearDown(self): self.temp.cleanup()
 
+    def test_every_sdk_consumer_rejects_and_producer_clears_the_same_overrides(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from unittest.mock import patch
+        import build, test_plan, sdk_verify, sdk_environment
+        self.assertTrue({'GCC_EXEC_PREFIX', 'COMPILER_PATH', 'OBJC_INCLUDE_PATH',
+                         'LD_LIBRARY_PATH', 'LD_PRELOAD', 'LD_AUDIT'} <= set(sdk_environment.HOST_OVERRIDES))
+        for name in sdk_environment.HOST_OVERRIDES:
+            with self.subTest(name=name), patch.dict('os.environ', {name: '/unexpected/host-input'}, clear=True):
+                self.assertNotIn(name, sdk.clean_environment())
+                with patch.object(sdk_verify, 'verify_sdk') as verify, \
+                        patch.object(sys, 'argv', ['sdk_verify.py', str(self.tree)]), \
+                        self.assertRaisesRegex(ValueError, name):
+                    sdk_verify.main()
+                verify.assert_not_called()
+                with patch.object(build, 'run') as execute, redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                    build.main(['build', '--sdk', str(self.tree)])
+                execute.assert_not_called()
+                with patch.object(build, 'cache_identity', return_value={'FOUNDATION_SDK_ROOT':str(self.tree)}), \
+                        self.assertRaisesRegex(ValueError, name):
+                    test_plan.build_inputs(self.root / 'unconfigured')
+                with patch.object(build, 'cache_identity', return_value={'FOUNDATION_SDK_ROOT':str(self.tree)}), \
+                        self.assertRaisesRegex(ValueError, name):
+                    test_plan.execution_context(self.root / 'unconfigured')
+        for producer in ('distro_sdk', 'sdk_wasm', 'sdk_windows'):
+            module = __import__(producer)
+            self.assertIn('sdk_environment.py', module.TOOLS, 'offline source groups must retain imported helpers')
+
     def test_unknown_or_incompatible_sdk_path_policy_is_rejected(self):
         from dependency_archive import LINUX_SDK_PATHS, sdk_path_policy
         from unittest.mock import patch

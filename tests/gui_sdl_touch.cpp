@@ -16,6 +16,13 @@ struct Session {
 };
 }
 int main(int, char**) {try {
+    // A nonempty SDL queue yields to presentation after one bounded batch.
+    check(SDL_Init(SDL_INIT_EVENTS)==0,"SDL event subsystem unavailable");
+    for(unsigned i=0;i<512;++i) {SDL_Event queued{};queued.type=SDL_USEREVENT;check(SDL_PushEvent(&queued)==1,"Queue injection failed");}
+    foundation::host::EventBudget budget;SDL_Event queued{};unsigned consumed=0;
+    while(budget.take()&&SDL_PollEvent(&queued))++consumed;
+    check(consumed<=127&&SDL_HasEvent(SDL_USEREVENT),"Input flood consumed presentation opportunity");
+    SDL_Quit();
     Session session;foundation::host::FramebufferTouch pointer;
     auto finger=[&](Uint32 type,SDL_FingerID id,float x,float y) {
         SDL_Event input{};input.type=type;input.tfinger.touchId=17;input.tfinger.fingerId=id;input.tfinger.x=x;input.tfinger.y=y;

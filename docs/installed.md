@@ -55,3 +55,13 @@ requirements. Use the matching source tree's `tools/release.py verify` and
 `recover` commands to check and restore those inputs without consulting a base
 store. The release's compatibility evidence applies to exact archived bytes;
 changing a private library or mixing files from different releases invalidates it.
+
+## Desktop and browser launchers
+
+New Debian/Arch/Gentoo packages install desktop entries for the FLTK, Rev and SDL
+windows and the terminal UI. The hosted-web package also supplies
+`foundation-gui-browser` when its complete asset closure is present. This starts
+a private loopback server on an available port, opens the system browser and
+prints the URL. Keep its terminal open; Ctrl+C closes the server and sessions.
+Core and the framebuffer PPM-output example have no desktop entry. These wrapper
+files are verified package contents; they reuse the selected compiled payload.

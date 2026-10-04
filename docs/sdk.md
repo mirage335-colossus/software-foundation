@@ -36,6 +36,24 @@ its compatibility baseline. Neither is an application runtime prerequisite.
 These commands require a valid prepared SDK matching the toolchain file's
 metadata contract. A foreign target requires a suitable test executor or native
 test machine; do not run its executables on the build host by assumption.
+Ordinary native SDK development executables now use the private static GNU
+language runtime and an audited per-executable `.sdk-runtime/TARGET` closure.
+Inherited `$ORIGIN` paths resolve transitive private libraries; the target libc
+and loader remain host requirements and never enter that closure. Build-time
+provider hashes remain bound to the configured SDK inventory. Selected executable
+builds verify their existing private output even when no relink is needed; missing
+closures are restaged, while changed or unowned output fails. Installation retains
+its separate notice/provenance and portable-package audits. Current project
+libraries are static; a future project-owned shared library needs explicit provider
+registration rather than an arbitrary build-directory search.
+
+The shared [`sdk_environment.py`](../tools/sdk_environment.py) policy rejects
+ambient compiler/include/library/loader overrides before consuming an SDK, and
+clears them during explicit SDK production. This includes `GCC_EXEC_PREFIX`,
+`COMPILER_PATH`, `LD_PRELOAD`, `LD_LIBRARY_PATH` and `LD_AUDIT`. Ordinary builds
+never repair or download an SDK. New producer recipes retain the shared helper;
+previous retained groups keep their original identities and bytes.
+
 The current consumer implementation and required fields are in
 [`cmake/toolchains/sdk.cmake`](../cmake/toolchains/sdk.cmake).
 

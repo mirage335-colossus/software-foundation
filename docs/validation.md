@@ -13,6 +13,81 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
+## General-purpose transfer implementation (2026-10-04)
+
+The final implementation before this validation entry has source-tree SHA-256
+`f70de93b8e941a7dbc028e70cd0f1c2154ffb1919dc2a6e61b32856de7a2a6da`
+(350 files, including new untracked source). Changes remain local; they do not
+supersede the earlier public delivery evidence below. The pinned GUI supplier
+revision is unchanged. The checked-in retained group was regenerated to include
+the reviewed service and browser patches; normal native configuration still
+requires no supplier checkout or download.
+
+The transfer adds native owned background work, bounded transactional content
+services behind the host boundary, browser measurement/presentation scheduling,
+retained DOM rows, framebuffer stride/pixel conversion, bounded SDL event draining,
+exact named-test selection, conservative affected-suite CI, desktop launchers,
+a verified portable-package entry point, and retained-SDK development runtime
+closure/environment checks. Application features remain in the shared application;
+platform hosts implement generic capabilities. DSP and simulation implementations
+were not imported.
+
+Qualification used isolated copies of all selected source, including uncommitted
+new files, with before/after inventories and two compilation/test workers. Relevant
+source identities were compared before reusing results. The full native snapshot
+was `d1b608cf001aa06a3f18f835497fd21df3cbdae4081e39955b07409d5b860eef`;
+the native GUI snapshot was
+`2ef361d23985c3cfec79f10134569217237416ed34fd3d9defd4d129bd1f8e10`.
+The final browser/file/sanitizer snapshot was
+`1068ca5d2790ce76a663028f0ea07e4bc1b95382ce0461f3f207d341a6d8be08`.
+The final differences are documented fixes/tests below, documentation, and SDK/CI
+changes covered by their final native/tooling checks; unrelated earlier GUI
+results are reused only for unchanged relevant code and dependencies.
+
+| Scope | Observed result |
+| --- | --- |
+| Native full wrapper | Initially 55/56 CTest entries; 1,335/1,336 executed Python cases passed, with two explicit native Windows exclusions and no skips. The sole failed synthetic header-mirror fixture lacked its new runtime-header input. After adding that input, its entire 34-case suite passed with all byte, timestamp and stale-output assertions preserved. The earlier failed aggregate remains failed; the repaired suite completes the required local coverage alongside the other unchanged 55 entries. |
+| Native GUI | Clang 19 built all selected hosts using retained distro toolkit inputs. Initially 46/47 GUI CTests passed with no skips; the sole failure was the same repaired header fixture. Actual FLTK, Rev, SDL, terminal/framebuffer/hosted smoke, scaled/clipboard, touch, embedding and visual checks passed. |
+| SDK/build iteration | 115 focused cases passed, with one explicit native Windows exclusion; two additional runtime-closure probes passed using retained `patchelf`. Coverage includes environment injection, exact selection/fixtures, transitive private runtime closure, missing closure recovery and changed output rejection even without relinking. |
+| Package/CI helpers | 221 cases across nine strict suites passed; after completing the browser asset inventory, all 76 APT/distro/distribution cases passed again. Historical package schema recipes retain their original verified bytes. |
+| Portable package | The explicit wrapper produced a TGZ, verified relocation, ran its CLI and built an external installed CMake consumer. Runtime closure audit passed. This native Trixie build records observed GLIBC 2.38 requirements; it is not a Bookworm binary qualification. |
+| Retained Wasm SDK | Release build and offline HTML generation passed without preparing or downloading an SDK. Nine selected core/Worker/browser/Wasm CTests passed; the affected file-helper and package checks passed again after the BOM correction. |
+| Browser execution | Actual Firefox 153.4.0 passed hosted, Wasm and single-file offline checks against the final helper: editing, accessible names, geometry, retained rows, bounded import, atomic rejection, export dialog, pagehide/navigation and cleanup. Offline execution reported no HTTP(S) resources and enforced its no-connect CSP. |
+| Sanitizers | Four address/undefined/leak-sanitized lifecycle, native worker, file-content and framebuffer embedding tests passed, including the final BOM regression. |
+| Static checks | Python 3.9 grammar, GUI boundary guard, documentation links/JSON, workflow syntax with retained actionlint 1.7.12, and diff whitespace passed. |
+
+Read-only review found that the browser decoder discarded a leading UTF-8 BOM
+while the native reader preserved it. The browser now preserves that character;
+the same BOM-prefixed content is rejected by shared printable-ASCII validation.
+Node preservation and native atomic-rejection regressions passed. Review also
+caught and repaired missing runtime-integrity checking on no-relink SDK builds.
+
+The initial display/browser attempts were blocked by the execution sandbox's
+socket policy before browser assertions. The initial sanitizer attempt failed
+because LeakSanitizer cannot operate under the restricted tracer. Socket-enabled
+and unrestricted sanitizer repeats passed without disabling checks; failures are
+retained separately. All launched browser, display, compiler and test children
+were joined before releasing their owners.
+
+Limits: this change has no new hosted GitHub run, stock Bookworm execution,
+native Windows/ARM run, or native Debian/Arch/Gentoo installation qualification.
+The retained Wasm consumer was exercised; new SDK producer identities were not
+built or published. Real native toolkit controls/prompts and the host file service
+with a fake selector/real files were tested separately; actual FLTK/Rev file
+import/export dialogs were not exercised end to end. Browser export qualification
+opened and cancelled the Download dialog; Node tests exercised download offering,
+not a user saving a file. Touch and display-driver fixtures do not establish
+physical touchscreen, VR or Arduino support. Native regular-file operations are
+byte-bounded but a stalled OS call can delay joined shutdown, as documented in
+the GUI guide.
+
+Raw receipts, source inventories and failure diagnostics remain under
+`.agent-work/artifacts/transfer-root-v1/`, the referenced worker artifact trees,
+and `build/agents/transfer-root-v1/`. The maintained implementation and limits are
+in the [GUI guide](gui-boundary.md), [SDK guide](sdk.md),
+[build guide](building.md), [testing guide](testing.md), and
+[development-speed guide](development-speed.md).
+
 ## Offline checkout and retained SDK inputs (2026-10-03)
 
 The completed implementation snapshot before this validation entry has source-tree

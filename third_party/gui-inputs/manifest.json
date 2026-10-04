@@ -1,5 +1,5 @@
 {
-  "archive_sha256": "cddea95167261e4019e8dd6536a6a2c2312ebc4f64ece29a27536ce16462f43d",
+  "archive_sha256": "15d6f7b714a8b57cb9f3440b70c34e19ac10b4c07da2f9aaf9b6506b3ff5ef2c",
   "files": {
     "foundation/gui/patches/adapter-portability.patch": {
       "mode": 420,
@@ -15,6 +15,11 @@
       "mode": 420,
       "sha256": "853f0e8ec4f1ae8e5fe1c0041abd3bc2ef5fe96d0abb624c89e78a662f0c99d0",
       "size": 1009
+    },
+    "foundation/gui/patches/file-services.patch": {
+      "mode": 420,
+      "sha256": "58f24048de1c00e64aec2c9733622a318ee1d7442ae373274691daa73150c767",
+      "size": 2182
     },
     "foundation/gui/patches/fltk-appearance.patch": {
       "mode": 420,
@@ -43,8 +48,8 @@
     },
     "foundation/gui/patches/sdl-runner.patch": {
       "mode": 420,
-      "sha256": "a342c12e5e4a116a747cbb5f615e091d2bbceb33ec24f7454e2c48631f4f5fc9",
-      "size": 10080
+      "sha256": "62e8bfa88d8ec88a4c7ce352b963153301435ae505e4f80d5af590a04e24f202",
+      "size": 10184
     },
     "foundation/gui/patches/terminal-runner.patch": {
       "mode": 420,
@@ -68,8 +73,13 @@
     },
     "foundation/gui/patches/web-assets.patch": {
       "mode": 420,
-      "sha256": "e0fc56312d72cbf6805b88997982f8cc32c3549460580345eb66bcc4d4dd7e81",
-      "size": 875
+      "sha256": "8d8a9e8a7ebf81ead62d118c9ae08d5b36e8a73d83b6e5c23d4b9b3b068aac1e",
+      "size": 1077
+    },
+    "foundation/gui/patches/web-file-services.patch": {
+      "mode": 420,
+      "sha256": "f50d7c094bf873007873a0aa85e39a3e869ae6f2b1a70ad6cdff0aaa66c9c5f9",
+      "size": 866
     },
     "foundation/gui/patches/web-lifecycle.patch": {
       "mode": 420,
@@ -86,6 +96,16 @@
       "sha256": "cf76e0b56b4e36d14a10c020bbfe96a319558c3b05e45bd5c91449561e4a6711",
       "size": 14259
     },
+    "foundation/gui/patches/web-presentation.patch": {
+      "mode": 420,
+      "sha256": "9a70ad91a9941bfe4dafa8bac3be35aaa0b956e9eac4ce5fed9c08a5edfa2c98",
+      "size": 4049
+    },
+    "foundation/gui/patches/web-responsiveness.patch": {
+      "mode": 420,
+      "sha256": "6bc6bdbec4b11bb3e5db15b52684ce36406d7afabe42690d118ab4aa9e4ca507",
+      "size": 10161
+    },
     "foundation/gui/patches/web-tick.patch": {
       "mode": 420,
       "sha256": "4c3bda2e1b239debb201a672fac1792bbc31d2d77e989a683f51f7ebe6edad43",
@@ -93,8 +113,8 @@
     },
     "foundation/third_party/gui-boundary.lock.json": {
       "mode": 420,
-      "sha256": "f1735841327a7d219f4604921a64366a6f387d4831811841bc7896b00c5760e5",
-      "size": 12137
+      "sha256": "47e067ec1e4d43b629c94dc9ab091f555de2c70b937bd073973740b64d2cc71b",
+      "size": 12523
     },
     "upstream/.github/workflows/screenshots.yml": {
       "mode": 420,

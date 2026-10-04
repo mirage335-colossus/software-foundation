@@ -11,6 +11,7 @@ import importlib.util
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import shutil
@@ -202,6 +203,79 @@ def browser_workspace(output):
             shutil.rmtree(directory)
 
 
+BROWSER_MODULES=('renderer.mjs','boot.mjs','browser_lifecycle.mjs','browser_presenter.mjs',
+                 'file_services.mjs','wasm_worker.mjs','wasm_transport.mjs')
+
+
+def embedded_module_identity(path):
+    payloads=re.findall(r'<script type="application/json" id="foundation-assets">([^<]*)</script>',
+                        path.read_text(encoding='utf-8'))
+    if len(payloads)!=1:raise ValueError('Offline qualification needs exactly one embedded asset inventory')
+    assets=json.loads(payloads[0])
+    return {name:hashlib.sha256(base64.b64decode(assets[name],validate=True)).hexdigest()
+            for name in BROWSER_MODULES}
+
+
+def choose_action(browser, action):
+    browser.script('const m=Array.from(document.querySelectorAll("select")).find(x=>x.getAttribute("aria-label")==="Actions");'
+                   'm.value='+json.dumps(action)+';m.dispatchEvent(new Event("change",{bubbles:true}));')
+
+
+def row_labels(browser):
+    return browser.script('return Array.from(document.querySelectorAll(".record[role=option]")).map(x=>x.getAttribute("aria-label"));')
+
+
+def import_file(browser, contents):
+    choose_action(browser,'import')
+    browser.wait('return Boolean(document.querySelector("dialog[open] input[type=file]"));')
+    browser.script('const input=document.querySelector("dialog[open] input[type=file]");'
+                   'const transfer=new DataTransfer();transfer.items.add(new File(['+json.dumps(contents)+'],"entries.txt",{type:"text/plain"}));'
+                   'input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));'
+                   'input.closest("form").requestSubmit();')
+
+
+def qualify_content_services(browser):
+    # The native row object must survive a selection acknowledgment and repaint.
+    browser.script('window.foundationFixtureRow=document.querySelector(".record[role=option]");'
+                   'window.foundationFixtureRow.click();')
+    browser.wait('return window.foundationFixtureRow?.getAttribute("aria-selected")==="true";')
+    if browser.script('return document.querySelector(".record[role=option]")===window.foundationFixtureRow;') is not True:
+        raise RuntimeError('Selection replaced the retained record DOM node')
+    imported=['Imported one','Imported two']
+    import_file(browser,'\n'.join(imported)+'\n')
+    browser.wait('return Array.from(document.querySelectorAll(".widget")).some(x=>x.textContent==="Entries imported");')
+    if row_labels(browser)!=imported:raise RuntimeError('File import did not replace the collection')
+    # A later invalid record must roll back the whole shared-model transaction.
+    import_file(browser,'Valid replacement\né\n')
+    browser.wait('return Array.from(document.querySelectorAll(".widget")).some(x=>x.textContent==="text must contain printable ASCII only");')
+    if row_labels(browser)!=imported:raise RuntimeError('Invalid file partially changed the collection')
+    import_file(browser,'x'*65537)
+    browser.wait('return document.querySelector("dialog[open] [role=status]")?.textContent.includes("no larger than 65536 bytes");')
+    if row_labels(browser)!=imported:raise RuntimeError('Oversized file changed the collection')
+    browser.script('Array.from(document.querySelectorAll("dialog button")).find(x=>x.textContent==="Cancel").click();')
+    browser.wait('return !document.querySelector("dialog[open]");')
+    choose_action(browser,'export')
+    browser.wait('return Array.from(document.querySelectorAll("dialog[open] button")).some(x=>x.textContent==="Download");')
+    if browser.script('return Boolean(document.querySelector("dialog[open] input[type=file]"));'):
+        raise RuntimeError('Export offered an import selector')
+    # Offering export does not claim that the browser saved a file to disk.
+    browser.script('Array.from(document.querySelectorAll("dialog button")).find(x=>x.textContent==="Cancel").click();')
+    browser.wait('return !document.querySelector("dialog[open]");')
+    if row_labels(browser)!=imported:raise RuntimeError('Cancelled export changed the collection')
+
+
+def qualify_pagehide(browser):
+    choose_action(browser,'import')
+    browser.wait('return Boolean(document.querySelector("dialog[open] input[type=file]"));')
+    previous=row_labels(browser)
+    # Drive the real pagehide handler while the old DOM is still observable.
+    # The following navigation also exercises teardown on document replacement.
+    browser.script('window.dispatchEvent(new PageTransitionEvent("pagehide",{persisted:false}));')
+    browser.wait('return !document.querySelector("dialog[open]");')
+    if row_labels(browser)!=previous:raise RuntimeError('Pagehide cancellation changed the collection')
+    browser.command('WebDriver:Navigate',{'url':'about:blank'})
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--firefox',default='firefox');parser.add_argument('--server',type=Path)
@@ -222,12 +296,17 @@ def main():
     args.output.mkdir(parents=True,exist_ok=False)
     inputs=[Path(__file__).resolve(),PROCESS_TREE_PATH]
     if args.server:
-        inputs.extend([args.server,*(args.server.parent/name for name in ('host.py','renderer.mjs','boot.mjs','browser_lifecycle.mjs','wasm_worker.mjs','wasm_transport.mjs','style.css','index.html'))])
+        inputs.extend([args.server,*(args.server.parent/name for name in ('host.py',*BROWSER_MODULES,'style.css','index.html'))])
     if 'offline' in modes:inputs.append(args.offline_html)
     if 'hosted' in modes:inputs.append(args.executable)
     if 'wasm' in modes:inputs.extend(args.wasm_dir/name for name in ('gui_web_wasm.js','gui_web_wasm.wasm'))
     identify=lambda:{str(path.resolve()):hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}
     expected_inputs=identify()
+    embedded_inputs=embedded_module_identity(args.offline_html) if 'offline' in modes else {}
+    if args.server:
+        for name,digest in embedded_inputs.items():
+            if digest!=expected_inputs[str((args.server.parent/name).resolve())]:
+                raise RuntimeError('Offline module differs from qualified browser assets: '+name)
     host=thread=None
     if any(mode!='offline' for mode in modes):
         spec=importlib.util.spec_from_file_location('server',args.server);server=importlib.util.module_from_spec(spec);spec.loader.exec_module(server)
@@ -266,11 +345,13 @@ def main():
                     browser.wait('return Boolean(document.querySelector("dialog[open]"));')
                     browser.script('Array.from(document.querySelectorAll("dialog button")).find(x=>x.textContent==="Cancel").click();')
                     browser.wait('return !document.querySelector("dialog[open]");')
+                    qualify_content_services(browser)
                     if mode=='offline':
                         external=browser.script('return performance.getEntriesByType("resource").filter(x=>/^https?:/.test(x.name)).map(x=>x.name);')
                         if external:raise RuntimeError('Offline package loaded external resources: '+str(external))
                         if browser.script('return document.querySelector("meta[http-equiv=Content-Security-Policy]").content.includes("connect-src \'none\'");') is not True:
                             raise RuntimeError('Offline package did not disable network connections')
+                    qualify_pagehide(browser)
                 if any(layout!=layouts[0] for layout in layouts):raise RuntimeError('Browser transport DOM geometry differs')
                 (args.output/'geometry.json').write_text(json.dumps(layouts[0],indent=2)+'\n')
                 browser_version=browser.capabilities['browserVersion']
@@ -280,15 +361,15 @@ def main():
     if thread is not None and thread.is_alive():raise RuntimeError('Browser host thread did not stop')
     if identify()!=expected_inputs:raise RuntimeError('Browser qualification inputs changed while running')
     receipt={'schema_version':1,'status':'passed','engine':args.browser,'browser_version':browser_version,
-             'mode':args.mode,'executed_modes':list(modes),'checks':['editing','accessible-names','shared-geometry','prompt-cancel','bounded-task','capture','cleanup']+(['offline-no-network'] if 'offline' in modes else []),
+             'mode':args.mode,'executed_modes':list(modes),'checks':['editing','accessible-names','shared-geometry','prompt-cancel','bounded-task','capture','cleanup','retained-record-dom','bounded-file-import','atomic-invalid-import','export-offered','pagehide-prompt-cancel','navigation']+(['offline-no-network'] if 'offline' in modes else []),
              'offline_network_resources':False if 'offline' in modes else None,
-             'inputs':expected_inputs,
+             'inputs':expected_inputs,'embedded_modules':embedded_inputs,
              'browser_arguments':args.browser_argument}
     temporary=args.output/'qualification.tmp'
     with temporary.open('x') as stream:
         stream.write(json.dumps(receipt,indent=2)+'\n');stream.flush();os.fsync(stream.fileno())
     temporary.replace(args.output/'qualification.json')
-    print('Actual '+args.browser+' '+args.mode+' editing, accessibility labels, geometry, prompt cancellation and captures passed')
+    print('Actual '+args.browser+' '+args.mode+' editing, geometry, retained rows, bounded import, export offering, pagehide cleanup and captures passed')
 
 
 if __name__=='__main__':main()

@@ -45,6 +45,18 @@ def source_group(root, version='1.0.0', release=1, backends=(), backend='core', 
         data.update({'prefix/lib/runtime/private.so': (b'fixture shared runtime\n', 0o755),
                      'prefix/lib/cmake/Foundation/FoundationConfig.cmake': (b'# fixture SDK export\n', 0o644),
                      'prefix/share/software-foundation/web/serve.py': (b'# fixture shared resource\n', 0o644)})
+    if 'hosted-web' in backends:
+        data.update({'prefix/share/software-foundation/web/' + name: (b'# fixture asset\n', 0o644)
+                     for name in ('host.py', 'index.html', 'boot.mjs', 'renderer.mjs', 'style.css',
+                                  'browser_lifecycle.mjs', 'wasm_transport.mjs', 'browser_presenter.mjs',
+                                  'file_services.mjs', 'wasm_worker.mjs')})
+    if backends and schema >= 3:
+        gui = 'prefix/share/doc/Foundation/gui-boundary/'
+        terms = b'Fixture GUI terms\n'
+        data[gui + 'LICENSE'] = (terms, 0o644)
+        data[gui + 'gui-boundary.lock.json'] = (d.encoded({'redistribution': {'approved': True, 'license_files': ['LICENSE']},
+            'files': {'LICENSE': d.digest(terms)}}), 0o644)
+        data['prefix/share/doc/Foundation/dependency-notices/index.json'] = (d.encoded({'schema_version': 1, 'providers': [], 'files': {}}), 0o644)
     archive.write_bytes(d.tar_bytes(data))
     manifest = root / 'archive.json'
     manifest.write_bytes(d.encoded(d.artifact.describe(archive)))
@@ -57,8 +69,10 @@ def source_group(root, version='1.0.0', release=1, backends=(), backend='core', 
         'archive_sha256': identity, 'license_files': ['share/doc/Foundation/LICENSE'],
         'redistribution_approved': True, 'application_source': reference('a'), 'sdk': reference('b'),
         'packaging_tool': reference('c'),
-        'dependencies': [], 'runtime_dependencies': {'arch': ['glibc>=2.36'], 'gentoo': ['>=sys-libs/glibc-2.36']},
+        'dependencies': [], 'runtime_dependencies': d.runtime_policy(backend) if schema >= 3 else {'arch': ['glibc>=2.36'], 'gentoo': ['>=sys-libs/glibc-2.36']},
     }
+    if schema >= 3:
+        specification['license_files'] = d.required_license_files({p.removeprefix('prefix/'): v for p,v in data.items()})
     spec_path = root / 'spec.json'
     spec_path.write_bytes(d.encoded(specification))
     group = root / 'group'
@@ -72,6 +86,7 @@ class RecipeTests(unittest.TestCase):
             1: 'e352499fc2964a14546b6a22db432378b8c4730999622792e882ef7571a5d16d',
             2: '3ed74ffbb3a93e6e93833adb8ee6f68fb61b533bd0a46f7be8223a85fbba61b0',
             3: 'ed88f35210be2e9e0c4acae680629cd43ca9caa82678c5f0a3ecbf9dddadd076',
+            4: 'b8629dcbd0025917d77ebdee59d16f871e7cfd82f12671cd8a339f281f2d0dd9',
         }
         with tempfile.TemporaryDirectory() as temporary:
             for schema, digest in expected.items():
@@ -100,6 +115,29 @@ class RecipeTests(unittest.TestCase):
                         installed = {entry.name:(bundle.extractfile(entry).read(),entry.mode)
                             for entry in bundle if entry.isfile() and not entry.name.startswith('.')}
                     self.execute_recipes(root/'execute-current',group,complete,installed,'core')
+
+
+    def test_current_desktop_and_browser_files_match_both_executable_recipes(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(d, 'require_gui_terms'):
+            root = Path(temporary)
+            for backend in ('terminal', 'fltk', 'rev', 'sdl', 'hosted-web', 'framebuffer'):
+                with self.subTest(backend=backend):
+                    group = source_group(root/backend, backends=(backend,), backend=backend, schema=d.CURRENT_SCHEMA)
+                    original = root/backend/'application.tar.gz'
+                    _, complete = d.archive_payload(original, d.document((group/'portable-manifest.json').read_bytes()))
+                    generated, _ = d.expected_package(d.tree(group))
+                    archive = next(v[0] for n,v in generated.items() if n.endswith('.pkg.tar.gz'))
+                    with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as bundle:
+                        installed = {e.name: (bundle.extractfile(e).read(), e.mode)
+                                     for e in bundle if e.isfile() and not e.name.startswith('.')}
+                    expected = 'usr/share/applications/software-foundation-' + backend + '.desktop'
+                    self.assertEqual(expected in installed, backend != 'framebuffer')
+                    self.assertEqual('usr/bin/foundation-gui-browser' in installed, backend == 'hosted-web')
+                    self.execute_recipes(root/('execute-' + backend), group, complete, installed, backend)
+                    old_spec = dict(d.document((group/'spec.json').read_bytes()), schema_version=4)
+                    old = d.recipe_files(dict(old_spec, archive_size=original.stat().st_size,
+                        archive_sha512=d.hashlib.sha512(original.read_bytes()).hexdigest()), 'prefix', complete, original.name)
+                    self.assertFalse(any(path.endswith('.desktop') or path.endswith('/foundation-gui-browser') for path in old))
 
     def test_current_recipes_require_complete_authenticated_notice_inventory(self):
         gui='share/doc/Foundation/gui-boundary/';deps='share/doc/Foundation/dependency-notices/'
@@ -213,7 +251,7 @@ src_install
                        env=dict(os.environ, D=str(gentoo), WORKDIR=str(source), FILESDIR=str(ebuild.parent / 'files')),
                        check=True, capture_output=True, timeout=20)
         self.assertEqual(d.tree(gentoo), {path: value for path, value in installed.items()
-                                       if path.startswith(('opt/', 'usr/bin/', 'usr/share/man/'))})
+                                       if path.startswith(('opt/', 'usr/bin/', 'usr/share/man/', 'usr/share/applications/'))})
 
     def test_combined_projection_rejects_unknown_missing_bad_mode_and_receipt_collision(self):
         base = {'bin/foundation-cli': (b'cli', 0o755), 'bin/foundation-gui-fltk': (b'gui', 0o755),

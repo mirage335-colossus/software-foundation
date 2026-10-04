@@ -76,3 +76,30 @@ jobs:
       - name: Compile shared application once and check generic hosts
         if: steps.changes.outputs.gui == 'true'
         run: python3 -B tools/build.py test dev --gui --gui-backends terminal,framebuffer,hosted-web --host-tests --label gui --test-jobs 2
+
+  changed-tools:
+    name: Affected complete infrastructure suites
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Select conservative feedback scope from local Git
+        id: changes
+        run: python3 -B tools/ci_changes.py
+      - name: Require an explicit selection
+        env:
+          SELECTED: ${{ steps.changes.outputs.tools }}
+        run: test "$SELECTED" = true || test "$SELECTED" = false
+      - name: Run affected whole tooling suites with strict case outcomes
+        if: steps.changes.outputs.tools == 'true'
+        run: python3 -B tools/ci_changes.py --run-tool-suites --tool-jobs 2 --tool-output build/changed-tools
+      - name: Preserve complete tooling outcome receipts
+        if: always() && steps.changes.outputs.tools == 'true'
+        uses: ./.github/actions/ci-evidence-publish
+        with:
+          name: evidence-batch-feedback-${{ github.run_attempt }}
+          slot: 0
+          paths: build/changed-tools/*.json

@@ -12,6 +12,7 @@ from dependency_archive import (archive_tree, digest, encoded, extract, file_inv
                                 probe_case_sensitive, inspect_manifest_archive, require_linux_case_host, sdk_temporary_directory)
 from dependency_store import create_sums, names, verify_group
 from sdk_manifest import verify_sdk
+from sdk_environment import sanitized
 from verify_abi import audit, SDK_RUNTIME_NAMES
 
 
@@ -111,10 +112,7 @@ def export_group(tree, sources, output, epoch=0):
 
 
 def clean_environment(root=None):
-    env = dict(os.environ)
-    for name in ('CC', 'CXX', 'CFLAGS', 'CXXFLAGS', 'LDFLAGS', 'CPATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH',
-                 'LIBRARY_PATH', 'PKG_CONFIG_PATH', 'LD_LIBRARY_PATH', 'LD_PRELOAD', 'GCC_EXEC_PREFIX', 'COMPILER_PATH'):
-        env.pop(name, None)
+    env = sanitized()
     env['LC_ALL'] = 'C'
     env['PYTHONDONTWRITEBYTECODE'] = '1'
     if root: env['PATH'] = str(Path(root) / 'bin') + os.pathsep + '/usr/bin:/bin'

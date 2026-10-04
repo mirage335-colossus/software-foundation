@@ -27,7 +27,29 @@ struct Display {
     void present(const gui::Frame& frame) {if(fail)throw std::runtime_error("display unavailable");frames.push_back(frame);}
 };
 }
+void surface_formats() {
+    using namespace foundation::host;
+    gui::Frame frame{2,2,6,1,0,{1,0,1,2},std::make_shared<const std::vector<std::uint8_t>>(
+        std::vector<std::uint8_t>{1,2,3,255,128,0,4,5,6,0,255,255})};
+    std::vector<unsigned char> output(24,42);
+    copy_frame(frame,{output,2,2,12,PixelFormat::bgra8888});
+    check(output[0]==42&&output[4]==0&&output[5]==128&&output[6]==255&&output[7]==255&&
+          output[8]==42&&output[16]==255&&output[17]==255&&output[18]==0,"BGRA damage or stride copy differs");
+    std::fill(output.begin(),output.end(),42);
+    copy_frame(frame,{output,2,2,12,PixelFormat::rgb565le});
+    check(output[0]==42&&output[2]==0&&output[3]==252&&output[14]==255&&output[15]==7,
+          "RGB565 byte order or channel reduction differs");
+    auto before=output;frame.damage={2,0,1,1};bool rejected=false;
+    try {copy_frame(frame,{output,2,2,12,PixelFormat::rgba8888});}catch(const std::invalid_argument&){rejected=true;}
+    check(rejected&&output==before,"Invalid damage wrote destination before validation");
+    frame.damage={0,0,2,2};rejected=false;
+    try {copy_frame(frame,{output,2,2,3,PixelFormat::rgb24});}catch(const std::invalid_argument&){rejected=true;}
+    check(rejected&&output==before,"Invalid stride wrote destination");
+    copy_frame(frame,{output,2,2,12,PixelFormat::rgba8888});
+    check(output[0]==1&&output[1]==2&&output[2]==3&&output[3]==255,"RGBA channels differ");
+}
 int main() {try {
+    surface_formats();
     foundation::host::FramebufferHost<App> host;Display display;
     using C=foundation::host::Contact;using P=foundation::host::ContactPhase;const C finger{C::Source::touch,0,1};
     check(host.present(display)&&display.frames.size()==1,"First frame missing");

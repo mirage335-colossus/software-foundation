@@ -27,7 +27,12 @@ The Debian wrapper accepts a combined native archive. Each package contains only
 entries, nonexecutable programs, a missing selected host and generated receipt-path
 collisions fail before an output package directory is published. Public CLI
 launchers gain the backend suffix; each GUI launcher keeps its distinct executable
-name. No source recompilation or relinking occurs.
+name. New packages add desktop entries for FLTK, Rev and SDL, and a terminal
+entry for the TUI. A complete hosted-web payload also gets `foundation-gui-browser`,
+a visible terminal launcher that opens a loopback server at an ephemeral port and
+the system browser. Ctrl+C closes its server and sessions; it prints the URL when
+automatic browser opening is unavailable. Core and file-output framebuffer packages
+have no desktop entry. No source recompilation or relinking occurs.
 
 All files outside `bin/` remain byte-for-byte present, including the complete
 private runtime, resources, developer export and notices. This deliberately retains
@@ -36,7 +41,9 @@ requires its GUI redistribution terms, because shared resources remain present.
 The complete original archive receives the ABI/loader audit; selection only removes
 known application executables and preserves every runtime-provider path.
 
-New Debian payload receipts use schema version `2`. They bind the original archive
+New Debian payload receipts use schema version `3`, adding desktop/browser
+launch files to the exact generated public inventory. Schema `2` remains readable
+with its unchanged historical template. They bind the original archive
 manifest and digest, its complete source-file inventory, selected and omitted
 executable identities, and every retained file. An installed
 `share/doc/Foundation/debian-selection.json` records the same selection. Verification

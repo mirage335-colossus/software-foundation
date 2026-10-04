@@ -338,3 +338,19 @@ A single slow suite can eventually use internal case/seed partitioning and origi
 raw-result aggregation as described in [testing](testing.md). Add that mechanism
 only when current timings justify it. Existing CTest-level parallelism remains the
 default; no cases, statistical gates or real-time deadlines are weakened.
+
+## Exact local checks and infrastructure feedback
+
+Use `./build.sh test dev --test core.store` (repeat `--test` for multiple names)
+when one registered contract discriminates the issue. Fixture dependencies and
+compiled prerequisites are resolved from the same configured CTest graph; no
+second miniature project is created. Broaden to the affected full label and normal
+candidate coverage after the fix. Automatic changed-infrastructure feedback uses
+whole suites and conservative dependency closure; it is independent of local
+core/GUI feedback and cannot substitute for required release coverage.
+
+`./build.sh portable-package` is the deliberate Release + portable runtime +
+relocated archive/installed-consumer verification operation. It does not add
+packaging or full regression work to ordinary builds. Native SDK runtime output
+checks hash only the selected executable/private closure during incremental
+validation, while the existing shared SDK input guard retains full-input authority.

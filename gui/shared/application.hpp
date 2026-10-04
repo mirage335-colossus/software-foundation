@@ -11,7 +11,7 @@ namespace foundation::ui {
 // Only the composition root knows which concrete adapter is supplied.
 class Application {
 public:
-    explicit Application(gui::Adapter& adapter);
+    explicit Application(gui::Adapter& adapter, std::unique_ptr<TaskExecutor> executor = make_task_executor());
     const gui::Snapshot& view() const noexcept { return view_; }
     void handle(gui::Event event);
     void retry_presentation();
@@ -42,7 +42,7 @@ private:
     bool remove_feature_ = false;
     std::string status_ = "Ready";
     bool status_error_ = false;
-    TextTask task_;
+    std::unique_ptr<TaskExecutor> task_;
     TaskUpdate task_progress_;
     bool task_running_ = false;
     std::string task_status_ = "Task ready";

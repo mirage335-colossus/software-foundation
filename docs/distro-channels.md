@@ -35,7 +35,7 @@ Every specification contains exactly these fields:
 
 | Field | Required meaning |
 | --- | --- |
-| `schema_version` | Integer `4` for new packages: combined-archive selection, enforced host services, complete retained notices and the mandatory Gentoo preparation hook. Versions `1`–`3` remain readable with their exact historical templates. |
+| `schema_version` | Integer `5` for new packages: desktop/browser launch files, combined-archive selection, enforced host services, complete retained notices and the mandatory Gentoo preparation hook. Versions `1`–`4` remain readable with their exact historical templates. |
 | `version` | Three canonical numeric components, such as `1.2.3`. |
 | `package_release` | Integer `1` through `999999`; increase for a packaging-only change. |
 | `architecture`, `backend` | One of the explicit identities above. |
@@ -79,7 +79,7 @@ archive = reference('application.tar.gz')
 _, payload = channel.archive_payload(root / 'application.tar.gz',
     json.loads((root / 'application.tar.gz.json').read_text()))
 spec = {
-    'schema_version': 4, 'version': '0.1.0', 'package_release': 1,
+    'schema_version': 5, 'version': '0.1.0', 'package_release': 1,
     'architecture': 'x86_64', 'backend': 'core',
     'archive_url': archive['url'], 'archive_sha256': archive['sha256'],
     'license_files': channel.required_license_files(payload),
@@ -131,7 +131,7 @@ for backend in ('core', 'terminal', 'fltk'):
     specification = root / ('spec-' + backend + '.json')
     runtime = {manager: sorted(set(base['runtime_dependencies'][manager]) | set(required))
                for manager, required in channel.runtime_policy(backend).items()}
-    current = dict(base, schema_version=4, backend=backend, runtime_dependencies=runtime)
+    current = dict(base, schema_version=5, backend=backend, runtime_dependencies=runtime)
     specification.write_text(json.dumps(current, indent=2) + '\n')
     subprocess.run([sys.executable, 'tools/distro_channel.py', 'package',
                     '--archive', str(root / 'application.tar.gz'),
@@ -185,7 +185,12 @@ files, public launchers and combined retained notices. Each backend lives under
 `/opt/software-foundation/BACKEND`. The core launcher is `foundation-cli`; another
 variant gets `foundation-cli-BACKEND` plus its distinct `foundation-gui-*` launcher.
 No private library enters a system library directory. The launcher executes the
-private binary directly and preserves its arguments.
+private binary directly and preserves its arguments. New schema-5 recipes also
+install desktop entries for FLTK, Rev, SDL and the TUI. A complete hosted-web
+payload gets `foundation-gui-browser` and a terminal-owned browser desktop entry;
+it binds loopback to an ephemeral port and closes with Ctrl+C. Core and the
+file-output framebuffer host have no desktop entry. Historical schema templates
+retain their original exact public files.
 Public manual pages follow the same coexistence rule: `foundation-cli.1` belongs
 to core, `foundation-cli-BACKEND.1` belongs to other variants, and each has
 `software-foundation-BACKEND.7`. The generated Arch/Gentoo install bodies use

@@ -64,7 +64,7 @@ retains supplier notices; it grants no general downstream supplier permission.
   transports, disconnects resize observation and cancels outstanding prompts on
   navigation. Wasm releases its application; the hosted transport releases its
   process. Restored pages create a fresh session.
-- `web-assets.patch` adds exactly the retained lifecycle module to the server's
+- `web-assets.patch` adds exactly the retained lifecycle, Worker transport, presenter and file-service modules to the server's
   static allowlist. Host/Origin, token and path checks remain unchanged.
 
 The terminal runner calls the same application tick as the other hosts. No task
@@ -74,3 +74,12 @@ identity or progress calculation appears in any runner, adapter or browser asset
   the fixture's existing logical-to-physical transform. The unmodified check
   fails at scale 1.25 despite correct rendering; color and clipping assertions
   are unchanged. Both ordinary and scaled native runs remain required.
+
+- `file-services.patch` appends bounded owned-content read/write capabilities to
+  the public service contract; old path-selection kinds keep their meanings.
+- `web-file-services.patch` delegates only those generic content capabilities to
+  the host helper. Paths and browser File objects never enter shared features.
+- `web-responsiveness.patch` bounds measurement batches, reuses/prunes probes and
+  retains keyed row/cell DOM nodes. It follows the ordering patch exactly.
+- `web-presentation.patch` accepts authoritative state immediately and coalesces
+  visual snapshots with explicit service/error/close boundaries and owned teardown.

@@ -2,18 +2,24 @@
 
 #include <gui/layout.hpp>
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <limits>
 #include <type_traits>
 
 namespace foundation::ui {
 
-Application::Application(gui::Adapter& adapter) : adapter_(adapter) {
+Application::Application(gui::Adapter& adapter, std::unique_ptr<TaskExecutor> executor)
+    : adapter_(adapter), task_(std::move(executor)) {
+    if (!task_) throw std::invalid_argument("Task executor is required");
     view_.title = "Entry list";
     for (const auto& definition : view_definition)
         if (!definition.remove_extension) add(definition);
     get("entries.editor").spec.text_policy = {false, false, foundation::Store::max_text_bytes, gui::SubmitKey::enter};
     get("entries.options").state.options = {{"clear", "Clear entries", "", true},
-                                           {"heading", "Change heading", "", true}};
+                                           {"heading", "Change heading", "", true},
+                                           {"import", "Import entries", "", true},
+                                           {"export", "Export entries", "", true}};
     auto& entries = get("entries.list");
     entries.spec.row_height = 32;
     entries.spec.follow_tail = true;
@@ -86,11 +92,11 @@ void Application::handle(gui::Event event) {
                 else if (widget->target.id == "entries.task.start") {
                     std::vector<std::string> input;
                     for (const auto& entry : entries_.snapshot()) input.push_back(entry.text);
-                    task_progress_ = task_.start(std::move(input));
+                    task_progress_ = task_->start(std::move(input));
                     task_running_ = true;
                     task_status_ = "Processed 0 / " + std::to_string(task_progress_.total) + " bytes";
                 } else if (widget->target.id == "entries.task.cancel") {
-                    task_.cancel(); task_running_ = false; task_status_ = "Task cancelled";
+                    task_->cancel(); task_running_ = false; task_status_ = "Task cancelled";
                 } else if (widget->target.id == "entries.remove") {
                     auto& list = get("entries.list").state;
                     for (const auto& record : entries_.snapshot())
@@ -107,15 +113,22 @@ void Application::handle(gui::Event event) {
                     get("entries.list").state.selected.reset();
                     status_ = "Entries cleared";
                     status_error_ = false;
-                } else if (input.id == "heading") {
+                } else if (input.id == "heading" || input.id == "import" || input.id == "export") {
                     if (next_service_ == std::numeric_limits<std::uint64_t>::max())
                         throw std::overflow_error("Service identity exhausted");
                     gui::ServiceRequest request;
                     request.id = next_service_;
-                    request.kind = gui::ServiceKind::prompt;
-                    request.title = "Change heading";
-                    request.value = get("entries.heading").state.text;
-                    request.byte_limit = 80;
+                    request.kind = input.id == "heading" ? gui::ServiceKind::prompt :
+                        input.id == "import" ? gui::ServiceKind::read_text : gui::ServiceKind::write_text;
+                    request.title = input.id == "heading" ? "Change heading" : input.id == "import" ? "Import entries" : "Export entries";
+                    request.byte_limit = input.id == "heading" ? 80 : 65536;
+                    if (input.id == "heading") request.value = get("entries.heading").state.text;
+                    if (input.id == "export") {
+                        for (const auto& record : entries_.snapshot()) request.value += record.text + "\n";
+                        if (request.value.size() > request.byte_limit) {
+                            status_ = "Export exceeds the 64 KiB limit"; status_error_ = true; return;
+                        }
+                    }
                     if (!services_.enqueue(std::move(request)))
                         throw std::logic_error("Service request rejected");
                     ++next_service_;
@@ -177,7 +190,8 @@ void Application::qualify(const std::function<void()>& present) {
     handle(gui::WidgetEvent{{"entries.task.cancel",1},gui::Activate{}});
     require(!task_running_, "Qualification did not cancel shared task");
     activate("entries.task.start");
-    for (unsigned turns=0;task_running_&&turns<8;++turns) step();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (task_running_ && std::chrono::steady_clock::now() < deadline) { step(); std::this_thread::yield(); }
     require(!task_running_&&task_progress_.complete&&task_progress_.result==11,
             "Qualification did not complete bounded shared work");
 }
@@ -187,22 +201,43 @@ std::optional<gui::ServiceRequest> Application::next_service() {
 }
 
 bool Application::complete_service(gui::ServiceResult result) {
+    const auto request = services_.current();
     if (!services_.complete(result)) return false;
-    if (result.status == gui::ServiceStatus::success)
-        get("entries.heading").state.text = std::move(result.value);
-    else if (result.status == gui::ServiceStatus::error)
-        get("entries.heading").state.text = std::move(result.error);
+    status_error_ = result.status == gui::ServiceStatus::error;
+    if (status_error_) status_ = std::move(result.error);
+    else if (result.status == gui::ServiceStatus::cancelled) status_ = "Service cancelled";
+    else if (request->kind == gui::ServiceKind::prompt) get("entries.heading").state.text = std::move(result.value);
+    else if (request->kind == gui::ServiceKind::write_text) status_ = "Export handed to host";
+    else if (request->kind == gui::ServiceKind::read_text) {
+        try {
+            auto replacement = entries_; // Commit all records together; preserve ID monotonicity.
+            for (const auto& record : replacement.snapshot()) replacement.erase(record.id);
+            std::size_t begin = 0;
+            while (begin < result.value.size()) {
+                const auto end = result.value.find('\n', begin);
+                auto line = std::string_view(result.value).substr(begin,
+                    end == std::string::npos ? end : end - begin);
+                if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+                replacement.add(line);
+                if (end == std::string::npos) break;
+                begin = end + 1;
+            }
+            entries_ = std::move(replacement);
+            get("entries.list").state.selected.reset();
+            status_ = "Entries imported";
+        } catch (const std::exception& error) { status_ = error.what(); status_error_ = true; }
+    }
     publish();
     return true;
 }
 
 void Application::shutdown() noexcept {
-    task_.shutdown(); task_running_ = false; services_.shutdown();
+    task_->shutdown(); task_running_ = false; services_.shutdown();
 }
 
 void Application::tick() {
     if (adapter_.closed()) { shutdown(); return; }
-    if (const auto update = task_.advance()) complete_task(*update);
+    if (const auto update = task_->advance()) complete_task(*update);
     retry_presentation();
 }
 

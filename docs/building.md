@@ -27,6 +27,8 @@ runtimes still apply. GUI integration is optional and has separate prerequisites
 ./build.sh test asan
 ./build.sh package release
 ./build.sh package release --verify-package
+./build.sh portable-package
+./build.sh test dev --test core.store --test core.cli
 ```
 
 On Windows, start a terminal with the intended compiler environment initialized
@@ -77,13 +79,19 @@ Release configuration and all selected dependencies and notices.
 `package --verify-package` also creates an inventory beside each generated archive,
 verifies it after safe extraction into a fresh location, runs the installed CLI
 and builds a separate consumer of the installed CMake export. Verification failure
-fails the command. This is an opt-in local package check; hosted release producers
+fails the command. `portable-package` selects Release, the portable CPU/runtime policy and this
+verification together. Ordinary `package release` retains its existing explicit
+portability choice. This is an opt-in local package check; hosted release producers
 already perform these checks through their existing delivery path. It does not
 install anything into the host or establish other-platform qualification.
 
 `test` builds prerequisites before invoking CTest. Its default runs the complete
 enabled local test suite. `--label fast`, `core`, `tools`, `integration`, or
-`gui` selects a focused scope. A label that selects nothing must fail. An
+`gui` selects a focused scope. A label that selects nothing must fail. Repeat `--test NAME` to select exact
+registered CTest names instead; typos and empty selections fail. CTest fixture
+setup/cleanup dependencies join the selection, and the wrapper builds the union
+of their registered prerequisites in the same graph. It never falls back to
+a whole-project build because an exact selection resolved no targets. An
 optional feature's tests exist only when the feature is configured.
 Each test must call `foundation_test_prerequisites(NAME [TARGET ...])` after
 registration. Omit targets explicitly for scripts needing no compiled executable.

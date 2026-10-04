@@ -480,6 +480,23 @@ class CandidateInventoryTests(unittest.TestCase):
 
 
 class PrerequisiteInventoryTests(unittest.TestCase):
+    def test_exact_selection_requires_registry_and_rejects_unregistered_expansion(self):
+        from unittest.mock import patch
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            build = Path(directory)
+            complete = json.dumps({'tests':[{'name':'selected'}]})
+            with patch.object(plan.subprocess, 'check_output', return_value=complete), \
+                    patch.object(plan.builder, 'cache_identity', return_value={}):
+                with self.assertRaisesRegex(ValueError, 'complete registered'):
+                    plan.named_selection(build, ['selected'], {'ctest':'ctest'}, {})
+                (build / 'test-prerequisites.json').write_text(json.dumps({
+                    'schema_version':1, 'tests':{'selected':[]}}))
+                selected = json.dumps({'tests':[{'name':'selected'}, {'name':'unexpected'}]})
+                with patch.object(plan.subprocess, 'check_output', side_effect=[complete, selected]):
+                    with self.assertRaisesRegex(ValueError, 'differs from.*inventory'):
+                        plan.named_selection(build, ['selected'], {'ctest':'ctest'}, {})
+
     def fixture(self, root, *, omitted=False, unknown=False):
         import shutil, subprocess
         source = root / 'source'; source.mkdir()
