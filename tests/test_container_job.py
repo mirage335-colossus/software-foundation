@@ -32,6 +32,7 @@ class ContainerJobs(unittest.TestCase):
         self.assertNotIn('GH_TOKEN', command)
         self.assertIn('build-essential', command[-3])
         self.assertNotIn('chown', command[-3]); self.assertNotIn('chmod', command[-3])
+        self.assertNotIn('--init', command)
         self.assertEqual(command[-2:], ['container-job', 'sdk-produce'])
         for uid, gid in ((0, 1001), (1001, 0), ('1001', 1002), (True, 1002)):
             with self.assertRaises(ValueError): job.command('sdk-produce', self.root, uid, gid, {})
@@ -252,12 +253,24 @@ class OfflineContainers(unittest.TestCase):
         self.assertIn('CCACHE_DISABLE=1', command); self.assertIn('HOME=/output/home', command)
         self.assertIn('xvfb-run', command)
 
+    def test_native_display_execution_uses_bundled_init_before_xvfb(self):
+        for target in ('linux-x86_64', 'linux-aarch64'):
+            with self.subTest(target=target):
+                command = self.command(target=target)
+                self.assertIn('--init', command[:command.index(self.image)])
+                self.assertEqual(command[command.index(self.image) + 1:command.index(self.image) + 3],
+                                 ['xvfb-run', '-a'])
+                self.assertEqual(command[command.index('--user') + 1], '1001:1002')
+                self.assertNotIn('--privileged', command)
+
     def test_stage_and_wasm_do_not_require_a_display_or_mount_an_unrestored_sdk(self):
         stage = self.command('stage')
         self.assertNotIn('xvfb-run', stage)
+        self.assertNotIn('--init', stage)
         self.assertEqual(sum(value == '--mount' for value in stage), 3)
         wasm = self.command(target='browser-wasm32')
         self.assertNotIn('xvfb-run', wasm)
+        self.assertNotIn('--init', wasm)
         (self.output / 'sdk/sdk.json').unlink()
         with self.assertRaisesRegex(ValueError, 'completed SDK restoration'): self.command()
         self.command('stage')

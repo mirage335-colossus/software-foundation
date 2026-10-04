@@ -255,7 +255,8 @@ def linux():
         with phase('linux.docker-commit'):
             image = subprocess.check_output(['docker', 'commit', name], text=True).strip()
             if not re.fullmatch(r'sha256:[0-9a-f]{64}', image): raise ValueError('invalid prepared Bookworm image identity')
-        command = ['docker', 'run', '--rm', '--pull=never', '--user', f'{os.getuid()}:{os.getgid()}',
+        # Xvfb does not send its readiness signal to a PID1 xvfb-run parent.
+        command = ['docker', 'run', '--init', '--rm', '--pull=never', '--user', f'{os.getuid()}:{os.getgid()}',
                    '-v', str(ROOT) + ':/work', '-w', '/work', '--tmpfs', '/tmp:rw,mode=1777']
         for key in ('TARGET', 'RECIPE', 'FOUNDATION_OPTIONAL_PROVIDER_RECIPE', 'JOBS', 'GITHUB_SHA'):
             command += ['-e', key]

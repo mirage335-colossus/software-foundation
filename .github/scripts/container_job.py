@@ -136,6 +136,9 @@ def offline_command(source, output, group, uid, gid, image, phase, *, target, ru
             '--tmpfs', '/tmp:rw,nosuid,nodev,mode=1777', '-w', '/work']
     prefix = 'stage-' if phase == 'stage' else ''
     display = phase == 'execute' and target.startswith('linux-')
+    if display:
+        # Xvfb's readiness handshake requires its xvfb-run parent to be non-PID1.
+        argv += ['--init']
     for name, value in {'HOME': '/output/' + prefix + 'home', 'TMPDIR': '/output/' + prefix + 'tmp', 'XDG_CACHE_HOME': '/output/' + prefix + 'cache',
                         'PATH': '/usr/bin:/bin', 'LC_ALL': 'C', 'PYTHONUTF8': '1', 'PYTHONDONTWRITEBYTECODE': '1',
                         'CCACHE_DISABLE': '1', 'CCACHE_DIR': '/output/' + prefix + 'cache/ccache', 'LIBGL_ALWAYS_SOFTWARE': '1'}.items():

@@ -78,6 +78,10 @@ class RustWorkflowTests(unittest.TestCase):
                     ('Rust qualification phase start: ' + name, 'Rust qualification phase end: ' + name)])
                 commands = [item.args[0] for item in run.call_args_list]
                 qualify, replay = commands[2:4]
+                self.assertIn('--init', qualify[:qualify.index('sha256:' + 'a' * 64)])
+                self.assertEqual(qualify[qualify.index('--user') + 1], '1000:1000')
+                self.assertNotIn('--privileged', qualify)
+                self.assertNotIn('--init', replay)
                 self.assertIn('--network=none', replay)
                 self.assertIn('--read-only', replay)
                 for command in (qualify, replay):
