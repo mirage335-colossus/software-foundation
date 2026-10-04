@@ -61,7 +61,9 @@ class ImportWasmTests(unittest.TestCase):
         build = source / 'build'
         def run(*args):
             return subprocess.run(list(args), capture_output=True, text=True, timeout=60)
-        configured = run('cmake', '-S', str(source), '-B', str(build),
+        # Match the supported single-config preset, rather than an ambient host generator.
+        configured = run('cmake', '-S', str(source), '-B', str(build), '-G', 'Ninja',
+                         '-DCMAKE_BUILD_TYPE=Release',
                          '-DFOUNDATION_WASM_PACKAGE=' + str(self.output), '-DFOUNDATION_WASM_PACKAGE_SHA256=' + identity)
         self.assertEqual(configured.returncode, 0, configured.stdout + configured.stderr)
         built = run('cmake', '--build', str(build), '--target', 'foundation_core', '--parallel', '2')

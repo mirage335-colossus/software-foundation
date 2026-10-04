@@ -103,8 +103,13 @@ runs passed the retry and package suites; import passed both applicable cases
 with two explicit Unix-only exclusions. Its outer diagnostic owner correctly
 rejected a surviving MSVC telemetry helper. Compiler-capable Windows diagnostics
 now use the existing exact-toolkit private build-session owner, with a retained
-completion receipt; generic process completion remains strict. Native reruns of
-this owner and the planner correction remain necessary.
+completion receipt; generic process completion remains strict. The [native planner rerun](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174039430)
+passed all 37 cases and exact compiler cleanup on `7040420`. The import rerun
+correctly rejected a different surviving `MSBuild.exe` worker: its fixture had
+implicitly selected the ambient Visual Studio generator. The fixture now selects
+the project's supported Ninja/Release configuration while preserving every
+positive and negative import assertion. The complete local import suite passed;
+its final native rerun remains required. The helper allowlist was not broadened.
 
 The [implementation feedback run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171429379)
 passed all four jobs. The [GUI maintenance run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171470282)
