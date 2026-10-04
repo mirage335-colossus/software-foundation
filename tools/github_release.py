@@ -666,12 +666,21 @@ class Remote:
 
     def wait_find(self, tag, *, release_id=None):
         """Bounded observation after initialization; never repeat a mutation."""
+        if release_id is not None and not positive(release_id):
+            raise DeliveryError('positive release identity required')
         for delay in (0, .25, .5, 1, 2, 4, 8):
             if delay: time.sleep(delay)
-            found = self.find(tag, required=False)
+            if release_id is None:
+                found = self.find(tag, required=False)
+            else:
+                # A confirmed creation response already identifies the resource.
+                # Unrelated draft inserts must not shift its observation pages.
+                found = self.transport.json(self.base + '/releases/' + str(release_id), missing=True)
+                if found is not None:
+                    self.info(found, tag)
+                    if found['id'] != release_id:
+                        raise DeliveryError('observed release ID differs from creation response')
             if found is not None:
-                if release_id is not None and found['id'] != release_id:
-                    raise DeliveryError('observed release ID differs from creation response')
                 return found
         raise DeliveryError('release is not visible; preserve initialization state and reconcile')
 

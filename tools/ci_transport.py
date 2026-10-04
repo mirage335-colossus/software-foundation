@@ -166,19 +166,31 @@ def _store(remote, context, repository_id, *, create=False, release_id=None):
             except delivery.DeliveryError:
                 if remote.reference(tag, missing=True) != context['source_commit']: raise
         creation_error = None
+        created_id = None
         if owns_initialization:
             try:
-                remote.change('/releases', body={'tag_name': tag, 'target_commitish': context['source_commit'],
+                created = remote.change('/releases', body={'tag_name': tag, 'target_commitish': context['source_commit'],
                     'name': tag, 'body': archive.encoded(identity).decode(), 'draft': True,
                     'prerelease': True, 'make_latest': 'false'})
             except delivery.DeliveryError as error:
                 creation_error = error
-        # A successful creation can precede its appearance in the list endpoint.
-        # Reconcile by bounded reads only; never repeat the uncertain mutation.
-        for delay in (0, .25, .5, 1, 2, 4, 8):
-            if delay: time.sleep(delay)
-            info = remote.find(tag, required=False)
-            if info is not None: break
+            else:
+                remote.info(created, tag)
+                if (created['draft'] is not True or created['prerelease'] is not True or
+                        created['name'] != tag or created.get('target_commitish') != context['source_commit'] or
+                        delivery.parse(created.get('body', 'null')) != identity):
+                    raise TransportError('created transport release identity or lifecycle differs')
+                created_id = created['id']
+        # Observe a confirmed creation by its exact ID. A lost response or a
+        # competing initializer still requires strict complete discovery; neither
+        # path can repeat the creation mutation.
+        if created_id is not None:
+            info = remote.wait_find(tag, release_id=created_id)
+        else:
+            for delay in (0, .25, .5, 1, 2, 4, 8):
+                if delay: time.sleep(delay)
+                info = remote.find(tag, required=False)
+                if info is not None: break
         if info is None:
             if creation_error is not None: raise creation_error
             raise TransportError('transport draft is not visible; preserve initialization state and reconcile')

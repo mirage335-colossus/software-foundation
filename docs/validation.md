@@ -109,7 +109,21 @@ correctly rejected a different surviving `MSBuild.exe` worker: its fixture had
 implicitly selected the ambient Visual Studio generator. The fixture now selects
 the project's supported Ninja/Release configuration while preserving every
 positive and negative import assertion. The complete local import suite passed;
-its final native rerun remains required. The helper allowlist was not broadened.
+its final native execution on `ca255290` passed with exact compiler-helper
+termination and join. The [workflow](https://github.com/mirage335-colossus/software-foundation/actions/runs/37174242327)
+remains failed because evidence retention rejected an inconsistent release
+inventory after draft creation; no payload bytes were uploaded. The helper
+allowlist was not broadened.
+
+That retention failure identified an unnecessary global-history reread after a
+confirmed draft creation. The transport now validates the complete creation
+response and observes its exact release ID with bounded read-only visibility
+checks. Lost responses and competing initialization retain strict discovery;
+uncertain creation is never repeated. All 111 release and 66 transport cases
+passed, including unstable unrelated pagination, identity/lifecycle mismatch,
+delayed visibility, access failure and lost-response controls. Two negative
+controls fail the earlier implementation. Actual final retention remains a
+separate hosted observation.
 
 The [implementation feedback run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171429379)
 passed all four jobs. The [GUI maintenance run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171470282)

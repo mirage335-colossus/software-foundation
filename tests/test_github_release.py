@@ -1425,14 +1425,57 @@ class TransportTests(unittest.TestCase):
     def test_created_release_visibility_waits_by_read_only_and_exact_id(self):
         remote=G.Remote('example/project',FakeGitHub())
         row=dict(id=7,tag_name='new',name='new',draft=True,prerelease=True)
-        with mock.patch.object(remote,'find',side_effect=[None,None,row]) as read, mock.patch.object(G.time,'sleep'):
+        with mock.patch.object(remote.transport,'json',side_effect=[None,None,row]) as read, \
+                mock.patch.object(remote.transport,'pages',side_effect=AssertionError('unrelated inventory')), \
+                mock.patch.object(G.time,'sleep') as sleep:
             self.assertEqual(row,remote.wait_find('new',release_id=7))
-        self.assertEqual(3,read.call_count);self.assertFalse(remote.transport.mutations)
-        with mock.patch.object(remote,'find',return_value=row), self.assertRaisesRegex(G.DeliveryError,'ID differs'):
-            remote.wait_find('new',release_id=8)
-        with mock.patch.object(remote,'find',return_value=None), mock.patch.object(G.time,'sleep'), \
-                self.assertRaisesRegex(G.DeliveryError,'not visible'):
+        self.assertEqual(read.call_args_list,[mock.call('repos/example/project/releases/7',missing=True)]*3)
+        self.assertEqual(sleep.call_args_list,[mock.call(.25),mock.call(.5)])
+        self.assertFalse(remote.transport.mutations)
+
+    def test_created_release_observation_rejects_wrong_identity_and_lifecycle(self):
+        remote=G.Remote('example/project',FakeGitHub())
+        row=dict(id=7,tag_name='new',name='new',draft=True,prerelease=True)
+        for change in ({'id':8},{'tag_name':'other'},{'draft':1},{'prerelease':None},{'name':None}):
+            with self.subTest(change=change), mock.patch.object(remote.transport,'json',return_value=dict(row,**change)) as read, \
+                    mock.patch.object(remote.transport,'pages',side_effect=AssertionError('inventory fallback')), \
+                    self.assertRaises(G.DeliveryError):
+                remote.wait_find('new',release_id=7)
+            self.assertEqual(read.call_count,1)
+        for identity in (True,0,-1,'7'):
+            with self.subTest(identity=identity), mock.patch.object(remote.transport,'json') as read, \
+                    self.assertRaisesRegex(G.DeliveryError,'positive release identity'):
+                remote.wait_find('new',release_id=identity)
+            read.assert_not_called()
+        self.assertFalse(remote.transport.mutations)
+
+    def test_created_release_missing_visibility_is_bounded_without_discovery_fallback(self):
+        remote=G.Remote('example/project',FakeGitHub())
+        with mock.patch.object(remote.transport,'json',return_value=None) as read, \
+                mock.patch.object(remote.transport,'pages',side_effect=AssertionError('inventory fallback')), \
+                mock.patch.object(G.time,'sleep') as sleep, self.assertRaisesRegex(G.DeliveryError,'not visible'):
             remote.wait_find('new',release_id=7)
+        self.assertEqual(read.call_count,7)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list],[.25,.5,1,2,4,8])
+        self.assertFalse(remote.transport.mutations)
+
+    def test_created_release_access_error_is_not_missing_visibility(self):
+        remote=G.Remote('example/project',FakeGitHub())
+        with mock.patch.object(remote.transport,'json',side_effect=G.DeliveryError('access denied')) as read, \
+                mock.patch.object(G.time,'sleep') as sleep, self.assertRaisesRegex(G.DeliveryError,'access denied'):
+            remote.wait_find('new',release_id=7)
+        self.assertEqual(read.call_count,1);sleep.assert_not_called();self.assertFalse(remote.transport.mutations)
+
+    def test_unknown_release_observation_keeps_strict_complete_inventory(self):
+        remote=G.Remote('example/project',FakeGitHub())
+        row=dict(id=7,tag_name='new',name='new',draft=True,prerelease=True)
+        with mock.patch.object(remote.transport,'pages',side_effect=[[],[row]]) as read, \
+                mock.patch.object(G.time,'sleep'):
+            self.assertEqual(row,remote.wait_find('new'))
+        self.assertEqual(read.call_count,2)
+        with mock.patch.object(remote.transport,'pages',return_value=[row,row]), \
+                self.assertRaisesRegex(G.DeliveryError,'duplicate release inventory'):
+            remote.wait_find('new')
         self.assertFalse(remote.transport.mutations)
 
     def test_access_failure_is_never_a_cache_miss(self):

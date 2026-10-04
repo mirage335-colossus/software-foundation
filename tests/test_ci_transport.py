@@ -312,6 +312,85 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(['tool'], list(two['manifest']['files']))
         self.assertEqual((self.root / 'restored/tool').read_bytes(), (self.root / 'proof/tool').read_bytes())
 
+    def test_confirmed_creation_uses_exact_id_despite_unstable_unrelated_inventory(self):
+        remote=t.delivery.Remote('example/project',self.remote)
+        original=self.remote.pages
+        def unstable(endpoint):
+            if endpoint.endswith('/releases?per_page=100') and self.remote.releases:
+                # Insertion between paginated reads can repeat an unrelated row.
+                other=dict(self.remote.releases[0],id=88,tag_name='unrelated')
+                return [other,other,*self.remote.releases]
+            return original(endpoint)
+        with patch.object(self.remote,'pages',side_effect=unstable):
+            found=t._store(remote,self.context,7,create=True)
+        self.assertEqual(found['id'],9)
+        self.assertEqual(1,self.remote.calls.count(('pages','repos/example/project/releases?per_page=100')))
+        self.assertEqual(1,self.remote.calls.count(('GET','repos/example/project/releases/9')))
+        self.assertEqual(1,self.remote.calls.count(('POST','repos/example/project/releases')))
+        self.assertEqual(self.remote.refs['ci-12-attempt-2'],self.context['source_commit'])
+
+    def test_creation_response_requires_complete_transport_identity_before_id_observation(self):
+        changes=({'id':True},{'tag_name':'other'},{'draft':False},{'prerelease':False},
+                 {'name':'other'},{'body':'{}'},{'target_commitish':'b'*40})
+        for change in changes:
+            with self.subTest(change=change):
+                self.remote=FakeGitHub();remote=t.delivery.Remote('example/project',self.remote)
+                original=self.remote.json
+                def changed(endpoint,**kwargs):
+                    value=original(endpoint,**kwargs)
+                    return dict(value,**change) if endpoint.endswith('/releases') and kwargs.get('method')=='POST' else value
+                with patch.object(self.remote,'json',side_effect=changed),self.assertRaises(t.delivery.DeliveryError) as caught:
+                    t.delivery.run_mutation(remote,lambda:t._store(remote,self.context,7,create=True))
+                self.assertTrue(caught.exception.uncertain)
+                self.assertNotIn(('GET','repos/example/project/releases/9'),self.remote.calls)
+                self.assertEqual(1,self.remote.calls.count(('POST','repos/example/project/releases')))
+
+    def test_known_id_visibility_limit_and_observed_identity_fail_without_recreation(self):
+        changes=(None,{'id':10},{'tag_name':'other'},{'draft':False},{'prerelease':False},
+                 {'name':'other'},{'body':'{}'},{'source_ref':'b'*40})
+        for change in changes:
+            with self.subTest(change=change):
+                self.remote=FakeGitHub();remote=t.delivery.Remote('example/project',self.remote);original=self.remote.json
+                def observe(endpoint,**kwargs):
+                    value=original(endpoint,**kwargs)
+                    if endpoint.endswith('/releases/9'):
+                        if change is None:return None
+                        if 'source_ref' in change:self.remote.refs['ci-12-attempt-2']=change['source_ref'];return value
+                        return dict(value,**change)
+                    return value
+                with patch.object(self.remote,'json',side_effect=observe),patch.object(t.time,'sleep'), \
+                        self.assertRaises(t.delivery.DeliveryError) as caught:
+                    t.delivery.run_mutation(remote,lambda:t._store(remote,self.context,7,create=True))
+                self.assertTrue(caught.exception.uncertain)
+                self.assertEqual(7 if change is None else 1,self.remote.calls.count(('GET','repos/example/project/releases/9')))
+                self.assertEqual(1,self.remote.calls.count(('pages','repos/example/project/releases?per_page=100')))
+                self.assertEqual(1,self.remote.calls.count(('POST','repos/example/project/releases')))
+
+    def test_lost_creation_response_keeps_strict_discovery_and_never_repeats_write(self):
+        for observed in ('visible','missing','duplicate'):
+            with self.subTest(observed=observed):
+                self.remote=FakeGitHub();remote=t.delivery.Remote('example/project',self.remote)
+                original_json=self.remote.json;original_pages=self.remote.pages
+                def lose(endpoint,**kwargs):
+                    value=original_json(endpoint,**kwargs)
+                    if endpoint.endswith('/releases') and kwargs.get('method')=='POST':
+                        raise t.delivery.DeliveryError('response lost after creation',True)
+                    return value
+                def inventory(endpoint):
+                    rows=original_pages(endpoint)
+                    if endpoint.endswith('/releases?per_page=100') and rows:
+                        return [] if observed=='missing' else rows*2 if observed=='duplicate' else rows
+                    return rows
+                with patch.object(self.remote,'json',side_effect=lose),patch.object(self.remote,'pages',side_effect=inventory),patch.object(t.time,'sleep'):
+                    if observed=='visible':self.assertEqual(9,t._store(remote,self.context,7,create=True)['id'])
+                    else:
+                        with self.assertRaises(t.delivery.DeliveryError) as caught:
+                            t.delivery.run_mutation(remote,lambda:t._store(remote,self.context,7,create=True))
+                        self.assertTrue(caught.exception.uncertain)
+                        self.assertIn('response lost' if observed=='missing' else 'duplicate release inventory',str(caught.exception))
+                self.assertNotIn(('GET','repos/example/project/releases/9'),self.remote.calls)
+                self.assertEqual(1,self.remote.calls.count(('POST','repos/example/project/releases')))
+
     def test_preexisting_uninitialized_tag_never_grants_draft_creation(self):
         self.remote.refs['ci-12-attempt-2'] = self.context['source_commit']
         with patch.object(t.time, 'sleep'), self.assertRaisesRegex(ValueError, 'not visible'):
@@ -432,25 +511,30 @@ class TransportTests(unittest.TestCase):
         self.remote.complete(); self.fetch()
 
     def test_created_draft_visibility_is_reconciled_with_reads_only(self):
-        original = self.remote.pages; hidden = 3
-        def delayed(endpoint):
+        original = self.remote.json; hidden = 3
+        def delayed(endpoint, **kwargs):
             nonlocal hidden
-            if endpoint.endswith('/releases?per_page=100') and self.remote.releases and hidden:
+            value = original(endpoint, **kwargs)
+            if endpoint.endswith('/releases/9') and hidden:
+                self.assertTrue(kwargs.get('missing'))
                 hidden -= 1
-                return []
-            return original(endpoint)
-        with patch.object(self.remote, 'pages', side_effect=delayed), patch.object(t.time, 'sleep') as sleep:
+                return None
+            return value
+        with patch.object(self.remote, 'json', side_effect=delayed), patch.object(t.time, 'sleep') as sleep:
             self.publish()
         self.assertEqual(0, hidden); self.assertEqual(3, sleep.call_count)
         self.assertEqual(1, len([c for c in self.remote.calls if c == ('POST', 'repos/example/project/releases')]))
         self.remote.complete(); self.fetch()
 
     def test_unobserved_created_draft_fails_without_repeating_mutation(self):
-        original = self.remote.pages
-        def hidden(endpoint):
-            if endpoint.endswith('/releases?per_page=100'): return []
-            return original(endpoint)
-        with patch.object(self.remote, 'pages', side_effect=hidden), patch.object(t.time, 'sleep'), \
+        original = self.remote.json
+        def hidden(endpoint, **kwargs):
+            value = original(endpoint, **kwargs)
+            if endpoint.endswith('/releases/9'):
+                self.assertTrue(kwargs.get('missing'))
+                return None
+            return value
+        with patch.object(self.remote, 'json', side_effect=hidden), patch.object(t.time, 'sleep'), \
                 self.assertRaisesRegex(ValueError, 'not visible'):
             self.publish()
         self.assertEqual(1, len(self.remote.releases))
