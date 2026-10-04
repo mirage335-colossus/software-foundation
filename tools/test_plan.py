@@ -158,6 +158,11 @@ def normalize_locations(value, build):
         if path.is_absolute():
             spellings.add(str(path))
         replacements.extend((spelling, marker) for spelling in spellings)
+    # CMake lowercases the Windows drive in CMAKE_CACHEFILE_DIR even when
+    # other generated roots preserve it. Only that drive letter is equivalent;
+    # preserve case-sensitive directory components and unrelated input values.
+    replacements += [(path[0].swapcase() + path[1:], marker)
+                     for path, marker in replacements if re.match(r"^[A-Za-z]:[/\\]", path)]
     replacements = sorted(set((spelling, marker) for path, marker in replacements
                              for spelling in (path, path.replace("\\", "/"))), key=lambda item:len(item[0]), reverse=True)
     # A root must end at a path component or a generated CMake delimiter.

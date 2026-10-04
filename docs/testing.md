@@ -260,9 +260,16 @@ executables exist. Ordinary shards use the same complete prerequisite registry. 
 ## Focused host diagnostics
 
 The manual [Host contract diagnostics workflow](../.github/workflows/host-contracts.yml)
-runs one complete `process_tree`, `windows_graphics`, `ci_plan`, `github_release`
-or `ci_transport` unit suite directly on a Windows x64, Linux x64 or Linux ARM64
-runner. The opt-in `windows_hosts` suite requires Windows and exercises the actual
+runs one complete `process_tree`, `windows_graphics`, `ci_plan`, `github_release`,
+`ci_transport`, `test_plan`, `ci_retry`, `package_wasm` or `import_wasm` unit suite
+directly on a Windows x64, Linux x64 or Linux ARM64 runner. The last four bind the
+complete maintained source inventory before and after execution. On Windows they
+select the installed native compiler and own a fresh private MSVC build session,
+retaining its exact helper identity and joined-completion receipt. This permits
+small configure/compile fixtures without rebuilding application GUI backends or
+acquiring an SDK. These diagnostic receipts never qualify a release.
+
+The opt-in `windows_hosts` suite requires Windows and exercises the actual
 installed MSVC compiler and Firefox. It compiles the same native probe with the
 same arguments and process owner as graphics qualification. It also runs two
 simultaneous compiler clients with distinct private PDB-service endpoints, requires

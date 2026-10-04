@@ -90,13 +90,21 @@ recipe, runtime auditor or application/backend contract changed.
 
 The Windows run passed 87/91 CTests. Three remaining fixture failures now retain
 exact checksum/evidence bytes and accept CMake diagnostics from either output
-stream. The fourth, independent-build configuration identity, remains under
-investigation: a bounded structural diagnostic reports the actual digest inputs
-without weakening equality. Optional host diagnostics now select any of these
+stream. A bounded structural diagnostic identified the fourth failure precisely:
+CMake lowercases the Windows drive in `CMAKE_CACHEFILE_DIR`, unlike the supplied
+root. Known source/build drive-letter aliases now normalize without folding
+directory components, external paths or other cache values; strict identity
+equality remains required. Optional host diagnostics now select any of these
 four complete tooling suites with the installed native compiler, binding the full
 maintained source inventory. They require no repeated GUI build and cannot qualify
 a release. The focused diagnostic helper suite passed after an independent review
-added detection of newly introduced source inputs. Native reruns remain necessary.
+added detection of newly introduced source inputs. The first native targeted
+runs passed the retry and package suites; import passed both applicable cases
+with two explicit Unix-only exclusions. Its outer diagnostic owner correctly
+rejected a surviving MSVC telemetry helper. Compiler-capable Windows diagnostics
+now use the existing exact-toolkit private build-session owner, with a retained
+completion receipt; generic process completion remains strict. Native reruns of
+this owner and the planner correction remain necessary.
 
 The [implementation feedback run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171429379)
 passed all four jobs. The [GUI maintenance run](https://github.com/mirage335-colossus/software-foundation/actions/runs/37171470282)

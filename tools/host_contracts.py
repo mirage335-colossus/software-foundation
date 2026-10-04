@@ -14,6 +14,7 @@ import time
 import process_tree
 import run_tests
 import source_identity
+import windows_compiler
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {'windows-x86_64': ('Windows', 'x64'), 'linux-x86_64': ('Linux', 'x64'),
@@ -109,11 +110,18 @@ def repetition(executable, suite, folder, timeout, environment):
     command = [str(executable), '-B', str(ROOT / 'tools/run_tests.py'), '--suite', suite,
                '--output', str(folder / 'cases.json')]
     result = {'command': command, 'status': 'failed'}
+    compiler = (windows_compiler.BuildSession(environment)
+                if platform.system() == 'Windows' and suite in BUILD_SUITES else None)
+    if compiler is not None:
+        environment = compiler.environment
     with (folder / 'console.log').open('wb') as stream:
         owner = process_tree.launch(command, ROOT, stream, env=environment)
         try:
             result['returncode'] = owner.wait(timeout=timeout)
-            owner.finish()
+            if compiler is not None and result['returncode'] == 0:
+                result['compiler_completion'] = compiler.finish(owner)
+            else:
+                owner.finish()
         except subprocess.TimeoutExpired:
             result['error'] = 'suite exceeded its bounded execution time'
             owner.terminate()

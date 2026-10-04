@@ -105,6 +105,46 @@ class CoverageTests(unittest.TestCase):
             normalized=plan.normalize_locations(value,Path.cwd()/'build')
         self.assertEqual(normalized,{'path':r'<SOURCE>\main.cpp','command':['<SOURCE>/test.py',r'C:\external\compiler.exe']})
 
+    def test_windows_drive_case_normalizes_only_known_roots(self):
+        from pathlib import PureWindowsPath
+        from unittest.mock import patch
+        class LexicalWindowsPath(PureWindowsPath):
+            def absolute(self):return self
+            def resolve(self):return self
+        source=LexicalWindowsPath('D:/work/Source')
+        build=LexicalWindowsPath('D:/work/Build')
+        values={'cache': 'd:/work/Build', 'command': r'd:\work\Build\probe.exe',
+                'source': 'd:/work/Source/file.cpp',
+                'external': ['d:/external/compiler.exe', 'd:/work/Build-tools/compiler.exe',
+                             'd:/work/build/probe.exe', 'd:work/Build']}
+        with patch.object(plan,'Path',LexicalWindowsPath),patch.object(plan,'ROOT',source):
+            normalized=plan.normalize_locations(values,build)
+        self.assertEqual(normalized['cache'],'<BUILD>')
+        self.assertEqual(normalized['command'],r'<BUILD>\probe.exe')
+        self.assertEqual(normalized['source'],'<SOURCE>/file.cpp')
+        self.assertEqual(normalized['external'],values['external'])
+
+    def test_configuration_identity_normalizes_drive_case_without_hiding_external_changes(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            build=Path(temporary).resolve();(build/'build-info.txt').write_text('fixture')
+            inputs={'cache': {'CMAKE_HOME_DIRECTORY': 'd:/work/Source',
+                              'EXTERNAL_TOOL': 'd:/external/Compiler.exe'}}
+            commands={'CTestTestfile.cmake': 'add_test(probe "d:/work/Source/probe")'}
+            with patch.object(plan,'ROOT',r'D:\work\Source'), \
+                    patch.object(plan,'test_definitions',return_value=[{'name':'probe'}]), \
+                    patch.object(plan,'_prerequisites',return_value=None), \
+                    patch.object(plan,'build_inputs',return_value=inputs), \
+                    patch.object(plan,'ctest_declarations',return_value=commands):
+                first=plan.configuration_id(build,declared_commands=True)
+                inputs['cache']['CMAKE_HOME_DIRECTORY']='D:/work/Source'
+                self.assertEqual(first,plan.configuration_id(build,declared_commands=True))
+                inputs['cache']['EXTERNAL_TOOL']='d:/external/compiler.exe'
+                self.assertNotEqual(first,plan.configuration_id(build,declared_commands=True))
+                inputs['cache']['EXTERNAL_TOOL']='d:/external/Compiler.exe'
+                inputs['cache']['CMAKE_HOME_DIRECTORY']='d:/work/source'
+                self.assertNotEqual(first,plan.configuration_id(build,declared_commands=True))
+
     def test_location_normalization_includes_supplied_and_resolved_roots(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as temporary:

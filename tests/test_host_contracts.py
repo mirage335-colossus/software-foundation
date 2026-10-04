@@ -322,6 +322,49 @@ class HostContracts(unittest.TestCase):
             'third_party/sdk/windows-toolchain.json', '.github/workflows/host-contracts.yml'})
         self.assertTrue(all((ROOT / path).is_file() for path in paths))
 
+    def test_compiler_capable_windows_suite_owns_private_services_and_receipt(self):
+        owner = mock.Mock(); owner.wait.return_value = 0
+        session = mock.Mock(environment={'_MSPDBSRV_ENDPOINT_': 'private-fixture'})
+        session.finish.return_value = {'policy': 'private-msvc-build-session', 'helpers': []}
+        with mock.patch.object(HOST.platform, 'system', return_value='Windows'), \
+             mock.patch.object(HOST.windows_compiler, 'BuildSession', return_value=session) as select, \
+             mock.patch.object(HOST.process_tree, 'launch', return_value=owner) as launch, \
+             mock.patch.object(HOST, 'complete_report', return_value=True):
+            row = HOST.repetition(Path(sys.executable), 'import_wasm', self.root / 'owned', 120, {'PATH': 'toolkit'})
+        self.assertEqual(row['status'], 'passed')
+        self.assertEqual(row['compiler_completion'], session.finish.return_value)
+        self.assertEqual(select.call_args.args[0]['PATH'], 'toolkit')
+        self.assertEqual(launch.call_args.kwargs['env'], session.environment)
+        session.finish.assert_called_once_with(owner)
+        owner.finish.assert_not_called(); owner.close.assert_called_once_with()
+
+    def test_compiler_owner_rejects_unknown_helper_and_cannot_turn_failure_into_pass(self):
+        for code, error in ((0, HOST.process_tree.ProcessTreeError('unknown helper')), (1, None)):
+            owner = mock.Mock(); owner.wait.return_value = code
+            session = mock.Mock(environment={}); session.finish.side_effect = error
+            with mock.patch.object(HOST.platform, 'system', return_value='Windows'), \
+                 mock.patch.object(HOST.windows_compiler, 'BuildSession', return_value=session), \
+                 mock.patch.object(HOST.process_tree, 'launch', return_value=owner), \
+                 mock.patch.object(HOST, 'complete_report') as report:
+                row = HOST.repetition(Path(sys.executable), 'test_plan', self.root / str(code), 120, {})
+            self.assertEqual(row['status'], 'failed'); report.assert_not_called()
+            owner.close.assert_called_once_with()
+            if code:
+                session.finish.assert_not_called(); owner.finish.assert_called_once_with()
+            else:
+                self.assertIn('unknown helper', row['error']); owner.terminate.assert_called_once_with()
+
+    def test_other_diagnostics_keep_generic_process_completion(self):
+        for system, suite in (('Windows', 'process_tree'), ('Linux', 'test_plan')):
+            owner = mock.Mock(); owner.wait.return_value = 0
+            with mock.patch.object(HOST.platform, 'system', return_value=system), \
+                 mock.patch.object(HOST.windows_compiler, 'BuildSession') as select, \
+                 mock.patch.object(HOST.process_tree, 'launch', return_value=owner), \
+                 mock.patch.object(HOST, 'complete_report', return_value=True):
+                row = HOST.repetition(Path(sys.executable), suite, self.root / system, 120, {})
+            self.assertEqual(row['status'], 'passed'); self.assertNotIn('compiler_completion', row)
+            select.assert_not_called(); owner.finish.assert_called_once_with(); owner.close.assert_called_once_with()
+
     def test_new_source_input_during_diagnostic_invalidates_inventory(self):
         executable = Path(sys.executable).resolve()
         with mock.patch.object(HOST, 'interpreter', return_value=executable), \
