@@ -32,13 +32,27 @@ void native_prompt_focus_contract() {
     Fl_Return_Button* accept=nullptr;
     for(int i=0;i<Fl::modal()->children();++i)
         if(auto* candidate=dynamic_cast<Fl_Return_Button*>(Fl::modal()->child(i)))accept=candidate;
-    fixture::check(accept,"Missing native prompt accept button");accept->do_callback();sync();
+    fixture::check(accept,"Missing native prompt accept button");accept->do_callback();
+    // Native dialog teardown can deliver focus to the former main-window child
+    // before the service completion is synchronized (notably on Windows).
+    for(const auto& key:{editor,gui::WidgetKey{"entries.options",1},list}) {
+        adapter.native_widget(key)->handle(FL_FOCUS);
+        fixture::check(adapter.focused()==list,"Background native focus changed retained focus during prompt completion");
+    }
+    sync();
     fixture::check(!adapter.service_active()&&fixture::widget(session.application.view(),"entries.heading").state.text==heading,
         "Native prompt did not apply pasted heading");
     fixture::check(Fl::focus()==adapter.native_widget(list),"Native focus was not restored after prompt completion");
+    fixture::check(adapter.native_widget(editor)->take_focus()&&adapter.focused()==editor,
+        "Native user focus did not resume after prompt completion");
     input=open();fixture::check(Fl::focus()==input,"Reopened native prompt lost input focus");
     adapter.focus(std::nullopt);sync();fixture::check(Fl::focus()==input,"Clearing main-window focus changed active prompt focus");
-    Fl::modal()->do_callback();sync();
+    Fl::modal()->do_callback();
+    for(const auto& key:{editor,gui::WidgetKey{"entries.options",1},list}) {
+        adapter.native_widget(key)->handle(FL_FOCUS);
+        fixture::check(!adapter.focused(),"Background native focus restored cleared retained focus during prompt cancellation");
+    }
+    sync();
     fixture::check(!adapter.service_active()&&Fl::focus()==nullptr,"Cancelled prompt did not restore cleared main-window focus");
     fixture::check(fixture::widget(session.application.view(),"entries.heading").state.text==heading,
         "Cancelled native prompt changed the heading");

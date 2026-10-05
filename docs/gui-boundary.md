@@ -622,8 +622,11 @@ polling, surfaces, transport and resources; shared code owns all feature decisio
 
 Native FLTK prompts retain keyboard and clipboard focus while the main window
 synchronizes; acceptance or cancellation restores the main window's retained
-focus. This generic adapter behavior also applies to the example's Change heading
-service. The editor's inline Open/New path fields instead belong to its own
+focus. Native focus feedback from main-window controls cannot replace that retained
+selection while a prompt is active, including when Windows reactivates a saved
+child during dialog teardown. Ordinary user focus resumes after completion. This
+generic adapter behavior also applies to the example's Change heading service.
+The editor's inline Open/New path fields instead belong to its own
 shared application layout. Editor-specific naming, examples and canvas hints do
 not alter the entry-list application's feature code.
 

@@ -42,9 +42,12 @@ identity inside a renderer.
 - `fltk-service-focus.patch` leaves keyboard and clipboard focus with the active
   native prompt while ordinary main-window state synchronizes. Retained focus
   changes still apply, and native main-window focus resumes after acceptance or
-  cancellation. The ordinary application's Change heading fixture checks native
-  paste, repeated ticks, programmatic focus changes and completion. Remove the
-  patch when the pinned upstream provides this behavior and passes those checks.
+  cancellation. Main-window controls also ignore native focus feedback while
+  the prompt owns focus, including saved-child reactivation during Windows dialog
+  teardown. The ordinary application's Change heading fixture checks native
+  paste, repeated ticks, programmatic focus changes, background focus feedback,
+  completion and subsequent user focus. Remove the patch when the pinned upstream
+  provides this behavior and passes those checks.
 
 - `contract-portability.patch` makes the upstream synchronous text acknowledgment
   test capture an explicitly declared pointer, then assigns it after construction.

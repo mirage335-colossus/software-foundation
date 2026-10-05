@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -347,27 +348,60 @@ class PreviousCleanupTests(unittest.TestCase):
 
     def test_workflow_wiring_marks_only_full_nonpreserved_terminal_paths(self):
         root = Path(__file__).resolve().parents[1]
-        import yaml
-        workflow = yaml.safe_load((root / '.github/workflows/cleanup-previous-run.yml').read_text())
-        sources = workflow['on']['workflow_run']['workflows']
-        self.assertEqual(workflow['permissions'], dict(contents='write', actions='write'))
-        steps = workflow['jobs']['cleanup']['steps']
-        self.assertEqual(steps[0]['with']['ref'], '${{ github.event.repository.default_branch }}')
-        for source in cleanup.WORKFLOWS:
-            value = yaml.safe_load((root / '.github/workflows' / source).read_text())
-            self.assertIn(value['name'], sources)
-            names = [step for definition in value['jobs'].values() for step in definition.get('steps', [])
-                     if step.get('name') == cleanup.MARKER]
-            self.assertEqual(len(names), 1)
-            self.assertIn('!inputs.preserve_artifacts', names[0]['if'])
-            self.assertIn('success()', names[0]['if'])
-            if source == 'candidate.yml':
-                self.assertIn('!inputs.devfast', names[0]['if'])
-                self.assertIn('inputs.include_arm', names[0]['if'])
-            else:
-                self.assertIn('inputs.execute', names[0]['if'])
-            if source == 'sdk-application.yml':
-                self.assertIn('inputs.require_regression', names[0]['if'])
+        # These maintained workflows use fixed indentation. Bound each assertion
+        # to its actual section/job/step; actionlint separately checks YAML syntax.
+        # Portable unit suites require only the standard library, including on
+        # retained SDKs and native Windows hosts without optional Python packages.
+        def section(text, header):
+            self.assertEqual(len(re.findall('(?m)^' + re.escape(header) + '$', text)), 1)
+            return re.search('(?ms)^' + re.escape(header) + r'\n(.*?)(?=^\S|\Z)', text).group(1)
+
+        def job_block(text, identity):
+            jobs = section(text, 'jobs:')
+            header = '  ' + identity + ':'
+            self.assertEqual(len(re.findall('(?m)^' + re.escape(header) + '$', jobs)), 1)
+            return re.search('(?ms)^' + re.escape(header) + r'\n(.*?)(?=^  \S|\Z)', jobs).group(1)
+
+        workflow = (root / '.github/workflows/cleanup-previous-run.yml').read_text()
+        trigger = section(workflow, "'on':")
+        self.assertIn('  workflow_run:\n    workflows:\n', trigger)
+        source_list = re.search(r'^    workflows:\n((?:    - [^\n]+\n)+)', trigger, re.M).group(1)
+        sources = re.findall(r'^    - (.+)$', source_list, re.M)
+        permissions = re.findall(r'^  (\w+): (.+)$', section(workflow, 'permissions:'), re.M)
+        self.assertEqual(len(permissions), 2)
+        self.assertEqual(dict(permissions), dict(contents='write', actions='write'))
+        cleanup_job = job_block(workflow, 'cleanup')
+        self.assertEqual(cleanup_job.count('    steps:\n'), 1)
+        steps = cleanup_job.split('    steps:\n', 1)[1]
+        first_step = steps.split('\n    - ', 1)[0]
+        self.assertTrue(first_step.startswith('    - uses: actions/checkout@'))
+        checkout_settings = re.findall(r'(?ms)^      with:\n(.*?)(?=^      \S|\Z)', first_step)
+        self.assertEqual(len(checkout_settings), 1)
+        self.assertEqual(re.findall(r'^        ref: (.+)$', checkout_settings[0], re.M),
+                         ['${{ github.event.repository.default_branch }}'])
+        terminal_jobs = {'candidate.yml': 'verdict', '_release-latest.yml': 'final',
+                         'certify.yml': 'verdict', 'sdk-application.yml': 'assemble'}
+        self.assertEqual(set(terminal_jobs), set(cleanup.WORKFLOWS))
+        for source, identity in terminal_jobs.items():
+            with self.subTest(workflow=source):
+                text = (root / '.github/workflows' / source).read_text()
+                self.assertEqual(len(re.findall(r'^name: (.+)$', text, re.M)), 1)
+                self.assertIn(re.search(r'^name: (.+)$', text, re.M).group(1), sources)
+                self.assertEqual(text.count('name: ' + cleanup.MARKER), 1)
+                terminal = job_block(text, identity)
+                job_names = re.findall(r'^    name: (.+)$', terminal, re.M)
+                self.assertLessEqual(len(job_names), 1)
+                self.assertEqual(job_names[0] if job_names else identity, cleanup.WORKFLOWS[source])
+                marker = '    - name: ' + cleanup.MARKER + '\n'
+                marker_matches = list(re.finditer('(?m)^' + re.escape(marker), terminal))
+                self.assertEqual(len(marker_matches), 1)
+                marker_step = terminal[marker_matches[0].end():].split('\n    - ', 1)[0]
+                condition = 'success() && inputs.execute && !inputs.preserve_artifacts'
+                if source == 'candidate.yml':
+                    condition = 'success() && !inputs.devfast && inputs.include_arm && !inputs.preserve_artifacts'
+                elif source == 'sdk-application.yml':
+                    condition = 'success() && inputs.execute && inputs.require_regression && !inputs.preserve_artifacts'
+                self.assertEqual(re.findall(r'^      if: (.+)$', marker_step, re.M), [condition])
 
 
 if __name__ == '__main__':

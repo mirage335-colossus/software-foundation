@@ -70,6 +70,27 @@ retaining at least 100 MiB private Free reserve.
 Source budget evidence is in `build/further-capacity-source-budget-20261005/`.
 The unsuccessful run and its skipped downstream stages are not qualification.
 
+The capacity repair was pushed as `b6d192d`; development feedback
+[37359628830](https://github.com/mirage335-colossus/software-foundation/actions/runs/37359628830)
+passed all four jobs. Fresh Latest
+[37359677255](https://github.com/mirage335-colossus/software-foundation/actions/runs/37359677255)
+passed source handoff and nineteen jobs, but application production and Windows
+tooling failed before publication. Linux x64, ARM64, Wasm and Windows tooling
+logs identified an undeclared PyYAML import in the cleanup workflow wiring test.
+Its repaired standard-library wiring checks pass all 21 cases with site packages
+disabled and reject eleven unsafe workflow mutations. Windows application diagnostics
+also exposed a mocked assembly fixture inheriting `PACKAGE_REPOSITORY=true`;
+explicit fixture isolation passed all 39 workflow-storage cases under that hostile
+ambient setting. Production package gates remain unchanged. The real FLTK failure
+was traced to three inbound native focus handlers overwriting retained focus while
+a prompt closed. The repaired native fixture and supplier checks passed 2/2 with
+Rust and a retained SDK; the final teardown regression fails against the original
+adapter. GUI boundary (39 cases) and source-group (25 cases) checks passed. The new
+verified GUI group is `bf9a364b252e94ed507a4f8af66e9e48c4b29f64357ee171a256f1108206650b`.
+Evidence is in `.agent-work/artifacts/further-windows-focus-20261005/completion.json`.
+Cloud GUI input publication and fresh Windows GUI qualification remain required
+before another complete release. The failed run does not qualify the changed source.
+
 Remaining authorized work is a fresh `_release-latest.yml` from the repaired
 pushed source, all-gui/Rust, package revision 6, the two accepted exact predecessor
 selectors, retained SDK recipes and pinned Windows graphics input. Complete

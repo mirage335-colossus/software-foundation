@@ -30,7 +30,7 @@ does not restore or verify this optional group.
 `gui-inputs/` contains byte-identical `gui-inputs.tar.gz`, `manifest.json` and
 `SHA256SUMS` from the reviewed group for gui-boundary revision
 `7a704f73e563a167ea335dd23ccd9f383ebec274`. The manifest SHA-256 is
-`2dcef6393d9ad9a4c41c8a819f3e836ace78af4c19eb4be7496b9ca41fac78cd`.
+`bf9a364b252e94ed507a4f8af66e9e48c4b29f64357ee171a256f1108206650b`.
 It preserves the complete supplier tree, notices, retained Rev/GLEW/FreeType
 inputs, and this project's exact integration lock and patches. FLTK and SDL2 for
 ordinary Linux builds come from distribution development packages; prepared SDK

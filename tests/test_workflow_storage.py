@@ -287,7 +287,8 @@ class StorageLayoutTests(unittest.TestCase):
         events = []
         previous = Path.cwd()
         try:
-            with patch.dict(os.environ, PROFILE='core', EXPERIMENT='false', CORE_PROVIDER='cpp'), \
+            with patch.dict(os.environ, PROFILE='core', EXPERIMENT='false', CORE_PROVIDER='cpp',
+                            PACKAGE_REPOSITORY='false'), \
                     patch.object(lifecycle.evidence, 'load', side_effect=[recipes, {}]), \
                     patch.object(lifecycle.delivery, 'fetch_bases',
                                  side_effect=lambda *args: events.append('fetched')) as fetch, \

@@ -1,5 +1,5 @@
 {
-  "archive_sha256": "f2adcdc012f058cf010cf22e43eee89bcc01c6f444feddf133f8ecc53237afe6",
+  "archive_sha256": "e77ed3649430a5807ce4b86320671e0a696ff69e43b5bd6885f837d000884a6f",
   "files": {
     "foundation/gui/patches/adapter-portability.patch": {
       "mode": 420,
@@ -33,8 +33,8 @@
     },
     "foundation/gui/patches/fltk-service-focus.patch": {
       "mode": 420,
-      "sha256": "5bd7c28202adddabbd5fa5d8aca2c9d78b8c9d90957ceaebf641efecb0997d8a",
-      "size": 1496
+      "sha256": "9c0dc8035757a39b90d6f5fab394dcfc71d8b7797135565447330bcccb36be3e",
+      "size": 3190
     },
     "foundation/gui/patches/rev-build.patch": {
       "mode": 420,
