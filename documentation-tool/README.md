@@ -24,6 +24,10 @@ python3 -m venv ../software-foundation-docmap-env
 ../software-foundation-docmap-env/bin/python -m pip install -r documentation-tool/requirements.txt
 ```
 
+Virtual environments contain local absolute paths. Create this external
+environment afresh on each computer; never copy or commit it. Only the dependency
+list in `requirements.txt` is versioned.
+
 Then invoke explicitly whenever new documentation is wanted:
 
 ```sh
@@ -311,7 +315,7 @@ of this document. For a separately copied tool directory outside the checkout:
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install --only-binary=:all: -r requirements.txt
-.venv/bin/python -B docmap.py --source /path/to/software-foundation
+.venv/bin/python -B docmap.py --source ../software-foundation
 ```
 
 On Windows use `.venv\Scripts\python.exe` in place of `.venv/bin/python`.

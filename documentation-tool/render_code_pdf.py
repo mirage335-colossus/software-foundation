@@ -49,7 +49,6 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
         from reportlab.lib.pagesizes import landscape, letter
         from reportlab.lib.styles import ParagraphStyle
         from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
         from reportlab.platypus import BaseDocTemplate, Flowable, Frame, PageBreak, PageTemplate, Paragraph, Spacer, Table, TableStyle
     except ImportError as exc:
         raise ImportError("Code-flowchart PDF output needs ReportLab. Install the documentation "
@@ -72,20 +71,10 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
     blue = colors.HexColor("#256b91")
     edge_colors = {"call": "#2f719b", "process": "#3f7a58", "conditional": "#a37123",
                    "return": "#627987", "event": "#8063a5", "step": "#526773", "dependency": "#768995"}
+    # A standard PDF font keeps layout independent of installed system fonts.
+    # Unsupported source glyphs retain the explicit escapes used below.
     mono_font = "Courier"
     mono_glyphs: set[int] = set(range(128))
-    for candidate in (
-        Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"),
-        Path("/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf"),
-        Path("/Library/Fonts/Courier New.ttf"),
-        Path("C:/Windows/Fonts/consola.ttf"),
-    ):
-        if candidate.is_file():
-            mono_font = "DocmapCodeMono"
-            if mono_font not in pdfmetrics.getRegisteredFontNames():
-                pdfmetrics.registerFont(TTFont(mono_font, str(candidate)))
-            mono_glyphs = set(pdfmetrics.getFont(mono_font).face.charWidths)
-            break
     code_size, code_leading = 9.2, 11.6
     char_w = pdfmetrics.stringWidth("M", mono_font, code_size)
     styles = {

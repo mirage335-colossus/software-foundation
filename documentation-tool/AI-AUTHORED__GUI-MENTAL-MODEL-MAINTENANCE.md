@@ -45,8 +45,15 @@ This rebuilds the main explorer, separate AI-authored explorer page, all six
 default PDFs, and the source snapshot. The tool prints their new locations.
 Use `--no-pdf` for an HTML/JSON-only preview. With `--output`, always select a new
 directory outside the source checkout; an existing directory is refused.
-For a read-only capture of another checkout, supply `--source /path/to/checkout`.
+For a read-only capture of a sibling checkout, supply `--source ../other-checkout`.
 Neither form builds, tests or runs that application.
+
+Keep machine-specific paths out of versioned documentation and configuration.
+The external virtual environment contains absolute interpreter and installation
+paths, so recreate it from `requirements.txt` on each computer. Never commit the
+environment. Generated snapshots also record an absolute source-root path as
+capture metadata; keep them outside the repository. Their navigation uses local
+relative links, so that metadata does not require the original checkout location.
 
 Open the new `AI-AUTHORED__GUI-MENTAL-MODEL.html` and its same-named PDF in `pdf/`.
 Keep the complete output directory together: its links need the main explorer,
