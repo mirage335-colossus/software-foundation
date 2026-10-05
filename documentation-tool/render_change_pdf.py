@@ -125,6 +125,17 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
     def paragraph(value: Any, style: str = "body", raw: bool = False) -> Any:
         return Paragraph(str(value) if raw else _esc(value), styles[style])
 
+    def printable_reference(reference: dict[str, Any]) -> str:
+        printed = model.get("print_references", {})
+        target = printed.get("locations", {}).get(f"{reference.get('file_id')}:{reference.get('line')}")
+        target = target or printed.get("symbols", {}).get(reference.get("symbol_id"))
+        if not isinstance(target, dict):
+            return ""
+        name, page = target.get("pdf", ""), target.get("page")
+        if not re.fullmatch(r"[A-Za-z0-9_-]+\.pdf", str(name)) or type(page) is not int or page < 1:
+            return ""
+        return link("Read in PDF (p. " + str(page) + ")", str(name) + "#page=" + str(page))
+
     def ref_text(reference: dict[str, Any]) -> str:
         path, line = reference.get("path", ""), reference.get("line")
         status = reference.get("status", "verified" if path and line else "missing")
@@ -133,11 +144,15 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
             return "<b>Review required:</b> " + _esc(label or "source location was not captured")
         if status == "proposed":
             if path and line and reference.get("file_id"):
-                return "<b>Existing source/example:</b> " + link(label, _source_url(reference))
+                printed = printable_reference(reference)
+                return "<b>Existing source/example:</b> " + link(label, _source_url(reference)) + (" | " + printed if printed else "")
             return "<b>Planned addition:</b> " + _esc(label or "new application code to add")
         rendered = link(label, _source_url(reference)) if path else "Source location not supplied"
         if reference.get("symbol_id"):
             rendered += " | " + link("symbol", _symbol_url(reference))
+        printed = printable_reference(reference)
+        if printed:
+            rendered += " | " + printed
         prefix = "Read-only supplier evidence" if str(path).startswith("@") else "Source"
         return "<b>" + prefix + ":</b> " + rendered
 
@@ -165,7 +180,7 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
                              title=f"{model.get('title', 'Software foundation')}: edit paths",
                              author="Local source-map generator",
                              subject="Prospective edits and verified source navigation")
-            self.current_map = maps[0]
+            self.current_map = {"id": "overview", "title": "Practical edit paths and PDF collection"}
             self.parameter_section = False
             self.current_guide: dict[str, Any] | None = None
             full = Frame(margin, 37, body_w, body_h, leftPadding=0,
@@ -212,9 +227,12 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
                 c.linkRect("", _dest("chart", self.current_map["id"]),
                            (margin, 13, margin + 48, 24), relative=1)
                 explorer_x = margin + 65
-                explorer_url = "../index.html#change/" + quote(self.current_map["id"], safe="")
+                explorer_url = "../index.html" if self.current_map["id"] == "overview" else "../index.html#change/" + quote(self.current_map["id"], safe="")
             c.drawString(explorer_x, 16, "Offline explorer")
             c.linkURL(explorer_url, (explorer_x, 13, explorer_x + 62, 24), relative=1)
+            c.drawString(explorer_x + 77, 16, "Task index")
+            c.linkRect("", _dest("chart", "overview"),
+                       (explorer_x + 77, 13, explorer_x + 120, 24), relative=1)
             generated = _plain(model.get("generated_at", "unknown date"))
             c.setFillColor(muted)
             c.drawRightString(page_w - margin, 16,
@@ -240,6 +258,7 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
 
         def draw(self) -> None:
             self._doctemplate.current_map = self.map
+            self._doctemplate.parameter_section = False
 
     class SetGuide(Flowable):
         def __init__(self, guide: dict[str, Any] | None) -> None:
@@ -316,7 +335,7 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
             going_right = tc >= sc
             gutter_x = (sc + 1) * cell_w - 5 if going_right else sc * cell_w + 5
             start = (sx + sw, smy) if going_right else (sx, smy)
-            corridor_y = grid_top - tr * cell_h + 5
+            corridor_y = grid_top - tr * cell_h
             if corridor_y > grid_top + 3:
                 corridor_y = grid_top + 3
             end = (tmx, ty + th)
@@ -344,7 +363,7 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
             grid_top, grid_bottom = self.height - 43, 31
             grid_h = grid_top - grid_bottom
             cell_w, cell_h = grid_w / cols, grid_h / rows
-            gap_x, gap_y = 17, 17
+            gap_x, gap_y = 17, 26 if rows == 2 else 17
             box_w, box_h = cell_w - gap_x, cell_h - gap_y
             placed = {}
             for node in nodes:
@@ -352,11 +371,24 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
                 x, y = column * cell_w + gap_x / 2, grid_top - (row + 1) * cell_h + gap_y / 2
                 placed[node["id"]] = {"node": node, "column": column, "row": row,
                                       "box": (x, y, box_w, box_h)}
+            badges = []
             for index, edge in enumerate(self.map.get("edges", []), 1):
                 if edge.get("from") not in placed or edge.get("to") not in placed:
                     continue
                 points, badge = self.route(placed[edge["from"]], placed[edge["to"]], index,
                                            cell_w, cell_h, grid_top)
+                # Branches may share a row corridor. Keep their numbered keys
+                # separated on that corridor instead of painting one over another.
+                if len(points) > 2:
+                    lo, hi = sorted([points[-3][0], points[-2][0]])
+                    for delta in (0, 22, -22, 44, -44, 66, -66):
+                        candidate = (badge[0] + delta, badge[1])
+                        if lo + 8 <= candidate[0] <= hi - 8 and all(
+                                abs(candidate[0] - bx) >= 20 or abs(candidate[1] - by) >= 12
+                                for bx, by in badges):
+                            badge = candidate
+                            break
+                badges.append(badge)
                 self.arrow(points, edge, index, badge)
             for data in placed.values():
                 node = data["node"]
@@ -444,6 +476,8 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
         action = node.get("action") or node.get("summary", "")
         if action:
             parts.append(paragraph("<b>Action:</b> " + _esc(action), raw=True))
+        if node.get("why"):
+            parts.append(paragraph("<b>Why here:</b> " + _esc(node["why"]), "small", raw=True))
         references = []
         if node.get("path") or status in {"missing", "proposed"}:
             references.append(primary_reference(node))
@@ -465,7 +499,7 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
             if guide_links:
                 parts.append(paragraph("<b>Parameters and filled examples:</b> " + " | ".join(guide_links), "small", raw=True))
         parts.append(paragraph(link("Up to chart", "#" + _dest("chart", map_value["id"])) + " | " +
-                               link("Full rationale in explorer", "../index.html#change/" + quote(map_value["id"], safe="") + "/" + quote(node["id"], safe="")) +
+                               link("Explore this step", "../index.html#change/" + quote(map_value["id"], safe="") + "/" + quote(node["id"], safe="")) +
                                " | " + _esc(node["id"]),
                                "small", raw=True))
         return [KeepTogether(parts), Spacer(1, 2)]
@@ -545,14 +579,26 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
             parts.append(KeepTogether(example_parts))
         return parts
 
-    story = []
+    story = [Heading("Choose the change you want to make", _dest("chart", "overview"), 0, chapter=True),
+             paragraph("Start with a task chart, follow a card to its action and rationale, then follow Read in PDF to the captured implementation. "
+                       "NEW marks proposed additions; REUSE marks existing support. The runtime example describes existing behavior."),
+             paragraph("This is a manually generated navigation snapshot. Check current source before editing; the documentation may be stale.", "small")]
+    task_rows = [["Edit path", "Question it answers"]]
+    for map_value in maps:
+        task_rows.append([link(map_value.get("title", map_value["id"]), "#" + _dest("chart", map_value["id"])),
+                          _esc(map_value.get("question", map_value.get("summary", "")))])
+    story += [reference_table(task_rows, [260, body_w - 260]), Spacer(1, 9),
+              paragraph("<b>Deeper printable reference:</b> " +
+                        " | ".join(link(pdf["title"], pdf["name"]) for pdf in model.get("pdfs", [])
+                                   if pdf["name"] in {"01-code-walkthroughs.pdf", "02-compiler-reference.pdf"}), raw=True)]
+    if parameter_guides:
+        story.append(paragraph(link("Parameter reference: synopsis, named fields, and filled examples", "#parameter-index"), "small", raw=True))
     doc = EditDoc()
-    for index, map_value in enumerate(maps):
-        if index:
-            # Set the next header before the new page begins. Changing it in
-            # the new page's body would leave that page's header on the old map.
-            story += [SetMap(map_value), NextPageTemplate("chart"), PageBreak()]
-        story += [SetMap(map_value), Chart(map_value), NextPageTemplate("details"), PageBreak(),
+    for map_value in maps:
+        # Set the next header before the new page begins. Changing it in
+        # the new page's body would leave that page's header on the old map.
+        story += [SetMap(map_value), NextPageTemplate("chart"), PageBreak(),
+                  Chart(map_value), NextPageTemplate("details"), PageBreak(),
                   Heading("Actions behind this path", _dest("details", map_value["id"]), 1, chapter=True),
                   paragraph(map_value.get("summary", "Follow the linked cards to source before making a change."), "small"),
                   paragraph(link("Up to chart", "#" + _dest("chart", map_value["id"])) +

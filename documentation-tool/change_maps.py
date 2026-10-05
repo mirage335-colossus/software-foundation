@@ -438,8 +438,9 @@ def make_change_maps(files: list[dict]) -> list[dict]:
             edge('page-focus', 'tab-widget', 'extend content'),
         ])
     from parameter_guides import GUIDE_LINKS, make_parameter_guides
+    from behavior_paths import make_behavior_maps
     guides = make_parameter_guides(ref)
-    maps = [widget, placement, tabs, source, runtime]
+    maps = [widget, placement, tabs, source, *make_behavior_maps(ref, node, edge, finish), runtime]
     for change_map in maps:
         for step in change_map['nodes']:
             step['parameter_guides'] = [guides[key] for key in

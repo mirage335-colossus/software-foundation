@@ -38,7 +38,11 @@ TEXT_NAMES = {'COMPILE', 'COMPILE-gui', 'COMPILE-web', 'RELEASE', 'SCREENSHOTS',
               '.editorconfig'}
 PARSER_PACKAGES = ['tree-sitter', 'tree-sitter-cpp', 'tree-sitter-rust',
                    'tree-sitter-python', 'tree-sitter-javascript', 'tree-sitter-bash']
-PDFS = [{'name': '00-edit-paths.pdf', 'title': 'What to edit: widgets, tabs, layout, and source files', 'category': 'changes'}]
+PDFS = [
+    {'name': '00-edit-paths.pdf', 'title': 'What to edit: practical development paths', 'category': 'changes'},
+    {'name': '01-code-walkthroughs.pdf', 'title': 'Code walkthroughs: ownership, control, and full source', 'category': 'walkthroughs'},
+    {'name': '02-compiler-reference.pdf', 'title': 'Compiler and configuration reference', 'category': 'build'},
+]
 REFERENCE_PDFS = [
     {'name': '00-start-here.pdf', 'title': 'Start here', 'category': 'overview'},
     {'name': '01-toolchain.pdf', 'title': 'Toolchain and configuration', 'category': 'build'},
@@ -255,7 +259,7 @@ def make_model(source: Path, max_bytes: int, excludes: list[str], pdfs: bool,
                          'CMake control outlines are lexical and unevaluated; other configuration/text-only files have source views.',
                          'Per-file captured bytes are embedded. Concurrent edits or newly added files may prevent a single atomic snapshot.',
                      ]},
-        'generator': {'name': 'software-foundation-docmap', 'version': '2.0',
+        'generator': {'name': 'software-foundation-docmap', 'version': '2.1',
                       'packages': {name: importlib.metadata.version(name) for name in PARSER_PACKAGES}},
     }
 
@@ -265,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--source', type=Path, default=default_source(), help='Source tree to read (never written); defaults to the containing checkout when installed as documentation-tool')
     parser.add_argument('--output', type=Path, help='New output directory outside source; existing paths are refused')
     parser.add_argument('--no-pdf', action='store_true', help='Generate offline HTML/JSON only, without ReportLab')
-    parser.add_argument('--reference-handbooks', action='store_true', help='Also print the six longer reference inventories; default PDF is the concise edit-path guide')
+    parser.add_argument('--reference-handbooks', action='store_true', help='Also print six broad reference inventories in addition to the three default development handbooks')
     parser.add_argument('--exclude', action='append', default=[], metavar='RELATIVE_PATH', help='Additional source-relative file/directory to skip; repeatable')
     parser.add_argument('--max-file-mb', type=int, default=4, help='Per-file read limit; skipped files are reported (default 4 MiB)')
     args = parser.parse_args(argv)
@@ -301,19 +305,26 @@ def main(argv: list[str] | None = None) -> int:
     # Deliberately no deletion or overwrite mode. Every invocation produces a
     # distinct snapshot; a failed rendering stays inspectable at its output path.
     output.mkdir(parents=True, exist_ok=False)
-    (output / 'atlas.json').write_text(json.dumps(model, ensure_ascii=False, indent=2), encoding='utf-8')
-    from render_html import render_html
-    render_html(model, output)
     if not args.no_pdf:
+        # Render references first so the charts and explorer can link to exact
+        # printable pages. These modules only consume the captured model.
+        from render_walkthrough_pdf import render_walkthrough_pdf
+        from render_compiler_pdf import render_compiler_pdf
         from render_change_pdf import render_change_pdfs
+        render_walkthrough_pdf(model, output)
+        render_compiler_pdf(model, output)
         render_change_pdfs(model, output)
         if args.reference_handbooks:
             from render_pdf import render_pdfs
             render_pdfs(model, output)
+    (output / 'atlas.json').write_text(json.dumps(model, ensure_ascii=False, indent=2), encoding='utf-8')
+    from render_html import render_html
+    render_html(model, output)
     print(f"Created {model['coverage']['files']} files / {model['coverage']['symbols']} symbols")
     print(f"Open: {output / 'index.html'}")
     if not args.no_pdf:
-        print(f"Print: {output / 'pdf' / '00-edit-paths.pdf'}")
+        for pdf in model['pdfs']:
+            print(f"Print: {output / 'pdf' / pdf['name']}")
     print(f"Capture SHA256: {model['fingerprint']}")
     if model['warnings']:
         print(f"{len(model['warnings'])} analysis warnings are recorded in the snapshot.")

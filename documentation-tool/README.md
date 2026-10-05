@@ -3,7 +3,7 @@
 A separate, manually invoked documentation generator answering **what do I edit
 to make this change?** in a changing `software-foundation` checkout. Its starting
 view is a graphical edit path, with source details underneath. It produces an
-offline HTML explorer, a concise PDF of edit maps, and a machine-readable source
+offline HTML explorer, three linked PDF handbooks, and a machine-readable source
 snapshot. It requires no AI, API
 key, service, compiler, CMake configuration, compile database, or application build.
 
@@ -93,6 +93,31 @@ keep focus consistent, and reuse generic adapter rendering. Once that shared
 support exists, another tab adds a page entry and its owned content. This means
 page tabs, not the keyboard Tab key used to move focus.
 
+**Change validation or a business rule.** Follow the public contract, Store's
+validation before mutation, equivalent Rust/C++ text providers, mirrored limits,
+and the existing error/status consumers. Provider and capacity edits are
+conditional on which rule changes.
+
+**Edit the selected entry.** Add shared Update intent and resolve selection to a
+stable record ID, then reuse the existing `Store::update` operation. Handle its
+false return and invalid-input exception, and project the result. This avoids
+mistaking a copied snapshot or a row index for the authoritative record.
+
+**Add a menu command or keyboard shortcut.** Declare an option, route it to one
+shared helper, and optionally reuse that helper from a button and a supported
+key binding. The chart identifies normalization, current-button requirements,
+and the pinned shortcut vocabulary.
+
+**Change background work, cancellation and progress.** Follow the result contract,
+bounded computation, owned input capture, executor scheduling, completion guards
+and shared lifecycle. A different result meaning may require changing guards
+that currently assume a byte count.
+
+**Change import/export format.** Follow shared serialization and atomic parsing,
+transfer bounds and freshness checks, generic byte transport, and honest status.
+The chart explains why import preserves monotonic IDs and export completion
+means host handoff rather than a durable-save guarantee.
+
 Click a box to see **what to change, why it belongs there, the exact source
 location, and an existing code example**. Follow the deeper links to the actual
 function, its callers/callees, or captured source. The companion runtime diagram
@@ -102,8 +127,9 @@ traces the existing Add button through `append_entry`, `Store::add`, and
 Dense examples have **Parameters explained** guides next to the relevant edit
 steps. Each guide includes a readable synopsis, numbered field names, types,
 meanings and defaults, followed by a filled multiline example with labels beside
-its values. The initial guides cover `ViewDefinition`, `gui::Page`, `gui::Rect`,
-widget page/parent assignments, and CMake `target_sources`. The PDF links each
+its values. The guides cover `ViewDefinition`, `gui::Page`, `gui::Rect`,
+widget page/parent assignments, CMake `target_sources`, `gui::KeyBinding`, and
+`Store::update`. The PDF links each
 step to a deduplicated parameter-reference appendix and back again.
 
 Reading notation is labeled separately from usable C++/CMake fragments. C++
@@ -115,7 +141,7 @@ shows a review warning. Their explanations are curated local data in
 
 These edit recipes encode project ownership deliberately; an arbitrary desired
 feature cannot be inferred reliably from syntax alone. The separate
-`change_maps.py` contains these small, reviewable recipes. Generation resolves
+`change_maps.py` and `behavior_paths.py` contain these small, reviewable recipes. Generation resolves
 their source anchors and snippets against the captured code, without AI.
 Missing or ambiguous anchors display **Source anchor changed; review required**.
 The arrows distinguish prospective edit dependencies from the existing runtime
@@ -134,11 +160,28 @@ example. They do not claim every marked function must change for every feature.
 - Use the extension guide to find the existing targets for a new C++ file, the
   Rust module boundary, shared GUI feature ownership, and runtime entry points.
 
-The default print output is `pdf/00-edit-paths.pdf`: the task flow charts and
-their linked edit instructions. It is the primary printable entry point.
-Add `--reference-handbooks` only when you also want the six longer volumes for
-toolchain, core/CLI, GUI/browser, developer tools, tests/examples, and inventory.
-Detailed function views in the explorer can also be printed using the browser.
+The default print collection has three linked volumes:
+
+- `pdf/00-edit-paths.pdf` starts with a task index, then provides the charts,
+  actions, ownership rationales, source links and parameter reference. It is the
+  primary printable entry point.
+- `pdf/01-code-walkthroughs.pdf` follows the chart references into captured
+  functions and types: signatures, ownership/member information, full bodies,
+  structural control outlines, and named caller/callee candidates. It also
+  provides source context for chart anchors outside those symbols. The scope is
+  the edit paths, with links to the full explorer inventory.
+- `pdf/02-compiler-reference.pdf` provides declared targets with source/link
+  arguments, options/defaults, toolchain assignments, presets, Cargo data,
+  helper declarations and compiler/link configuration context. Conditions and
+  variables remain symbolic, just as they do in the explorer.
+
+The edit steps and explorer offer **Read in PDF** links to exact reference pages
+where available. The reference books link back to the edit guide and to their
+explorer views. Full source bodies and control outlines are retained in the
+walkthroughs; candidate-call tables identify any display limits explicitly.
+Add `--reference-handbooks` only when you also want six broad inventory volumes
+for toolchain, core/CLI, GUI/browser, developer tools, tests/examples, and the
+overall file inventory. Detailed explorer views can also be browser-printed.
 Keep the `pdf/` folder beside `index.html`; relative cross-file
 links depend on PDF viewer support and may require downloading/opening locally.
 
@@ -211,22 +254,25 @@ documentation.
 
 `docmap.py` owns read-only collection, snapshot metadata, conservative candidate
 call linking, and output-path checks. `syntax_scan.py` reads syntax trees;
-`build_map.py` inventories build declarations; `change_maps.py` supplies the
+`build_map.py` inventories build declarations; `change_maps.py` and `behavior_paths.py` supply the
 task-first edit paths and verifies source anchors; `parameter_guides.py` explains
 dense examples with labeled fields and values; `navigation_guide.py` supplies
 project navigation guidance with evidence lines resolved against the snapshot.
 `render_html.py`, `explorer.js`, and `explorer.css` provide the browser explorer;
 `supplier_reference.py` captures the bounded retained GUI contract evidence.
-`render_change_pdf.py` creates the primary edit-path guide, while `render_pdf.py`
-creates the optional reference volumes. `atlas.json` retains the complete
+`render_change_pdf.py` creates the primary edit-path guide;
+`render_walkthrough_pdf.py` and `render_compiler_pdf.py` create its deeper linked
+references. `render_pdf.py` creates the optional inventory volumes.
+`atlas.json` retains the complete
 analysis and captured text without requiring either presentation layer.
 
 ## Snapshots and verification
 
 Generated snapshots are deliberately not committed. Each output has `index.html`
-and, by default, `pdf/00-edit-paths.pdf`. The prepared external tool directory
+and, by default, the three PDFs described above. The prepared external tool directory
 also retains earlier snapshots, including `2026-10-04-edit-paths` and the expanded
-`2026-10-04-placement-tabs` guide.
+`2026-10-04-placement-tabs` guide. `2026-10-04-developer-handbooks` contains the
+expanded three-volume collection and the five behavior workflows.
 
 Generator-only checks passed for source/output isolation, symlink and FIFO
 handling, parser fixtures, unique symbol IDs, source spans, call targets, guide
@@ -234,6 +280,13 @@ references, HTML route logic and escaping, cross-file class membership, PDF
 bookmarks, and reference links. Representative final PDF pages were rendered
 and visually inspected. Eight C++ files contain recoverable syntax limitations;
 the coverage report also records lexical CMake notices and symbolic-build limits.
+
+The expanded collection was generated through the packaged CLI; HTML-only mode
+was also checked. All ten maps, seven parameter guides, exact PDF page mappings,
+cross-file PDF links, internal bookmarks, source routes, and annotation bounds
+passed focused checks. Full selected source bodies and indexed flow labels were
+checked for presence; call-table omission counts are explicit. The application
+source fingerprint was unchanged by generation.
 
 The available in-app browser blocked local `file:` URLs, so live browser layout
 and interaction were not visually verified here. JavaScript syntax and route

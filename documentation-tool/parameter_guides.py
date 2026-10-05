@@ -187,7 +187,94 @@ def make_parameter_guides(ref) -> dict[str, dict]:
              'target_sources(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/hosts/windows_gui_entry.cpp")'),
          ref('Shared GUI target declaration', 'gui/CMakeLists.txt',
              'add_library(foundation_gui_application STATIC shared/application.cpp ${foundation_task_executor})')])
-    return {item['id']: item for item in (view, page, rect, membership, sources)}
+    binding = guide(
+        'key-binding', 'gui::KeyBinding: key, button target, and modifiers',
+        'A shared shortcut targets a current button WidgetKey. Normalization converts the shortcut to that button\'s Activate event.',
+        'gui::KeyBinding{ key, target, [control, [shift, [alt]]] }',
+        'Reading notation: square brackets mark optional trailing modifier fields. target is a nested WidgetKey aggregate with its own id and generation.',
+        [
+            field(1, 'key', 'gui::ShortcutKey', 'Supported key: escape, enter, or f1 through f12.', 'gui::ShortcutKey::escape', 'gui::ShortcutKey::f2'),
+            field(2, 'target', 'gui::WidgetKey', 'The exact identity of a current button: widget ID plus matching generation.',
+                  'Empty ID and generation 1 until a target is supplied; an empty target is invalid for a binding.',
+                  'gui::WidgetKey{"entries.update", 1}'),
+            field(3, 'control', 'bool', 'Whether the Control modifier must match this binding.', 'false', 'false'),
+            field(4, 'shift', 'bool', 'Whether the Shift modifier must match this binding.', 'false', 'false'),
+            field(5, 'alt', 'bool', 'Whether the Alt modifier must match this binding.', 'false', 'false'),
+        ],
+        'Filled example: F2 activates the proposed Update button after it exists',
+        'view_.key_bindings.push_back(gui::KeyBinding{\n'
+        '    gui::ShortcutKey::f2,    // 1. key\n'
+        '    gui::WidgetKey{          // 2. target\n'
+        '        "entries.update",   //    current button ID\n'
+        '        1                   //    matching current generation\n'
+        '    },\n'
+        '    false,                   // 3. control\n'
+        '    false,                   // 4. shift\n'
+        '    false                    // 5. alt\n'
+        '});',
+        ['entries.update is a proposed button ID, not a control currently present in the application. Declare/create that button and route its Activate event before adding this binding.',
+         'The target must exist in the same snapshot and have Kind::button. A menu option ID is not a shortcut target.',
+         'Generation 1 matches newly declared ordinary widgets in the current example. If the widget identity changes, use its actual current generation.',
+         'The combination of key, control, shift and alt must be unique. false means that modifier is not pressed; it does not mean ignore the modifier.',
+         'This pinned enum has no arbitrary letter-key values. Disabled or unavailable button input still follows normal event normalization.'],
+        [ref('Complete retained KeyBinding declaration', contract,
+             'struct KeyBinding {\n    ShortcutKey key=ShortcutKey::escape;\n    WidgetKey target;\n'
+             '    bool control=false,shift=false,alt=false;\n};'),
+         ref('Complete supported shortcut vocabulary', contract,
+             'enum class ShortcutKey { escape,enter,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12 };'),
+         ref('WidgetKey field order and initial generation', contract,
+             'struct WidgetKey {\n    std::string id;\n    std::uint64_t generation=1;\n'
+             '    bool operator==(const WidgetKey&) const = default;\n};'),
+         ref('Current-button target validation', contract,
+             'require(target&&target->spec.kind==Kind::button,"Shortcut must target a current button");'),
+         ref('Unique key/modifier combination', contract,
+             'require(strokes.emplace(binding.key,binding.control,binding.shift,binding.alt).second,"Duplicate shortcut");'),
+         ref('Shortcut becomes button activation', contract, 'event=WidgetEvent{*target,Activate{}};')])
+
+    update = guide(
+        'store-update', 'Store::update: stable record ID and replacement text',
+        'Replace text on an existing record while retaining its ID. The bool distinguishes successful replacement from a missing record when the replacement text is valid.',
+        'bool Store::update(RecordId id, std::string_view text)',
+        'This is the existing function signature. Unlike the aggregate examples, parentheses contain two function arguments; neither argument has a default.',
+        [
+            field(1, 'id', 'foundation::RecordId (std::uint64_t)', 'Existing stable record identity, such as the ID returned by add. It is not a row index.',
+                  'Required', 'id'),
+            field(2, 'text', 'std::string_view', 'Replacement text: 1 through 256 printable ASCII bytes. The Store prepares an owning string for successful replacement.',
+                  'Required', '"Revised text"'),
+        ],
+        'Filled example: update a record using the ID returned by add',
+        'foundation::Store store;\n'
+        'const foundation::RecordId id = store.add("Original text");\n'
+        '\n'
+        'const bool changed = store.update(\n'
+        '    id,               // 1. stable ID returned by add\n'
+        '    "Revised text"    // 2. replacement text\n'
+        ');\n'
+        '// Here changed is true, and get(id) still uses the same ID.',
+        ['This illustrates the existing API with a local Store; it is not the proposed GUI selection handler. Resolve the selected record string to its actual RecordId before calling update in that handler.',
+         'Return true means the existing record text was replaced. Return false means no record has that ID, after the replacement text has passed validation.',
+         'Invalid replacement text throws std::invalid_argument before the missing-ID lookup. A nonexistent ID combined with invalid text therefore throws rather than returning false.',
+         'The implementation prepares a replacement string before swapping it into stored state. A failed operation preserves the collection and IDs; allocation or component failures can also propagate.',
+         'Do not implement editing by erase followed by add: that creates a different ID. get and snapshot return copies, so modifying their returned text does not mutate Store.',
+         'Callers serialize access to each Store instance, as the existing public contract requires.'],
+        [ref('Existing public update signature', 'include/foundation/store.hpp',
+             '    bool update(RecordId id, std::string_view text);'),
+         ref('Stable ID type', 'include/foundation/store.hpp', 'using RecordId = std::uint64_t;'),
+         ref('Input and failure contract', 'include/foundation/store.hpp',
+             '// Text is 1..256 printable ASCII bytes; duplicates are allowed.\n'
+             '    // Invalid input throws invalid_argument; a full store throws length_error.\n'
+             '    // A failed operation leaves the collection and next ID unchanged.'),
+         ref('Complete current update implementation', 'src/store.cpp',
+             'bool Store::update(RecordId id, std::string_view text) {\n'
+             '    validate(text);\n'
+             '    const auto found = std::find_if(records_.begin(), records_.end(),\n'
+             '        [id](const Record& row) { return row.id == id; });\n'
+             '    if (found == records_.end()) return false;\n'
+             '    std::string replacement(text);\n'
+             '    found->text.swap(replacement);\n'
+             '    return true;\n'
+             '}')])
+    return {item['id']: item for item in (view, page, rect, membership, sources, binding, update)}
 
 
 GUIDE_LINKS = {
@@ -204,4 +291,6 @@ GUIDE_LINKS = {
     ('source-files', 'gui-cpp'): ['target-sources'],
     ('source-files', 'cli-cpp'): ['target-sources'],
     ('source-files', 'host-cpp'): ['target-sources'],
+    ('commands', 'command-binding'): ['key-binding'],
+    ('core-operation', 'edit-update'): ['store-update'],
 }
