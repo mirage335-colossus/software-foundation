@@ -9,25 +9,8 @@ from __future__ import annotations
 
 
 def make_change_maps(files: list[dict]) -> list[dict]:
-    records = {f['path']: f for f in files}
-
-    def ref(label: str, path: str, needle: str) -> dict:
-        f = records.get(path)
-        result = dict(label=label, path=path, line=None, file_id=None,
-                      symbol_id=None, snippet='', status='missing')
-        if not f or f['text'].count(needle) != 1:
-            result['note'] = 'Source anchor changed; review required'
-            return result
-        line = f['text'].count('\n', 0, f['text'].index(needle)) + 1
-        candidates = [s for s in f['symbols'] if s['line'] <= line <= s['end_line']
-                      and s['kind'] in {'function', 'method', 'class', 'struct'}]
-        symbol = min(candidates, key=lambda s: s['end_line'] - s['line'], default=None)
-        lines = f['text'].splitlines()
-        start, stop = max(0, line - 2), min(len(lines), line + 6)
-        result.update(line=line, file_id=f['id'], symbol_id=symbol['id'] if symbol else None,
-                      snippet='\n'.join(f'{n+1:4}  {lines[n]}' for n in range(start, stop)),
-                      status='verified')
-        return result
+    from source_anchors import make_source_ref
+    ref = make_source_ref(files)
 
     button = ref('Existing button row', 'gui/shared/view_definition.hpp',
                  'ViewDefinition{"entries.add", gui::Kind::button')

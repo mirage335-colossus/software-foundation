@@ -17,10 +17,10 @@
     build: {label: "Build configuration", icon: "⚙", description: "Targets, source lists, options, and compiler configuration."},
     other: {label: "Other files", icon: "▤", description: "Supporting source and configuration outside the main modules."}
   };
-  const state = {graphLimits: {}, categoryFilter: "all", symbolFilter: "all", searchTerm: "", selectedChangeNodes: {}, activeChangeMap: "widget", lastChangeMap: null};
+  const state = {graphLimits: {}, categoryFilter: "all", symbolFilter: "all", searchTerm: "", selectedChangeNodes: {}, activeChangeMap: "widget", lastChangeMap: null, selectedFlowNodes: {}, activeFlowMap: "startup", lastFlowMap: null, navigationContext: null};
   const parameterById = new Map();
   const parameterContexts = new Map();
-  (data.change_maps || []).forEach(map => (map.nodes || []).forEach(node => (node.parameter_guides || []).forEach(guide => {
+  [...(data.change_maps || []), ...(data.flow_maps || [])].forEach(map => (map.nodes || []).forEach(node => (node.parameter_guides || []).forEach(guide => {
     const id = String(guide.id);
     if (!parameterById.has(id) || (parameterById.get(id).status === "missing" && guide.status === "verified")) parameterById.set(id, guide);
     if (!parameterContexts.has(id)) parameterContexts.set(id, []);
@@ -61,6 +61,11 @@
     const reference = safePrintReference((data.print_references?.build_targets || {})[String(index)]);
     return reference ? `<a class="button" href="${reference.href}" title="Open compiler reference at page ${reference.page}">Read target in PDF</a>` : "";
   }
+  function printFlowLink(map, node, className = "button") {
+    const references = data.print_references || {};
+    const reference = safePrintReference(node ? (references.flow_nodes || {})[map.id + "/" + node.id] : (references.flow_maps || {})[map.id]);
+    return reference ? `<a class="${esc(className)}" href="${reference.href}" title="Open execution-flow handbook at page ${reference.page}">${node ? "Read step in PDF" : "Read scenario in PDF"}</a>` : "";
+  }
   function sourceFile(path, declaredIn) {
     const normalized = normalizePath(path);
     if (declaredIn && !/[${}<>]/.test(normalized)) {
@@ -99,6 +104,7 @@
   function renderNavigation() {
     const list = [
       `<a class="nav-link" data-nav="home" href="#home"><span class="nav-icon">◈</span>Edit task maps</a>`,
+      ...((data.flow_maps || []).length ? ['<a class="nav-link" data-nav="flows" href="#flows"><span class="nav-icon">⇢</span>What runs when…</a>'] : []),
       `<a class="nav-link" data-nav="inventory" href="#inventory"><span class="nav-icon">▤</span>Code inventory<span class="count">${files.length}</span></a>`,
       `<a class="nav-link" data-nav="build" href="#build"><span class="nav-icon">⚙</span>Compiler & toolchain</a>`,
       `<a class="nav-link" data-nav="symbols" href="#symbols"><span class="nav-icon">ƒ</span>Functions & classes<span class="count">${symbols.length}</span></a>`,
@@ -139,6 +145,10 @@
 
   function changeMap(id) { return (data.change_maps || []).find(map => String(map.id) === String(id)); }
   function changeRoute(map, node) { return "#change/" + encode(map.id) + (node ? "/" + encode(node.id) : ""); }
+  function flowMap(id) { return (data.flow_maps || []).find(map => String(map.id) === String(id)); }
+  function flowRoute(map, node) { return "#flow/" + encode(map.id) + (node ? "/" + encode(node.id) : ""); }
+  function chartRoute(map, node) { return map.kind === "execution" ? flowRoute(map, node) : changeRoute(map, node); }
+  function executionMap(map) { return map.kind === "execution"; }
   function wrappedText(value, width = 24, maxLines = 3) {
     const words = String(value || "").split(/\s+/);
     const lines = [];
@@ -168,7 +178,13 @@
     const behaviorActive = behavior.some(choice => String(choice.id) === String(activeId));
     const structureHtml = structure.length && (home || !behaviorActive) ? `<div class="task-choice-group"><div class="task-group-label">Structure & widgets</div><nav class="task-choices" aria-label="Structure and widget edit tasks">${structure.map(choice => `<a href="${home ? "#home/" + encode(choice.id) : changeRoute(choice.map)}" class="task-choice${String(choice.id) === String(activeId) ? " active" : ""}"${String(choice.id) === String(activeId) ? ' aria-current="page"' : ""}><span class="task-choice-icon" aria-hidden="true">${choice.icon}</span><span><strong>${esc(choice.title)}</strong><small>${esc(choice.subtitle)}</small></span><span class="task-choice-arrow" aria-hidden="true">→</span></a>`).join("")}</nav></div>` : "";
     const behaviorHtml = behavior.length && (home || behaviorActive) ? `<div class="task-choice-group behavior-task-group"><div class="task-group-label">Behavior workflows <span>Follow the change through the application</span></div><nav class="behavior-task-choices" aria-label="Behavior workflow edit tasks">${behavior.map(choice => `<a href="${home ? "#home/" + encode(choice.id) : changeRoute(choice.map)}" class="behavior-task-choice${String(choice.id) === String(activeId) ? " active" : ""}"${String(choice.id) === String(activeId) ? ' aria-current="page"' : ""}><strong>${esc(choice.title)}</strong><span aria-hidden="true">→</span></a>`).join("")}</nav></div>` : "";
-    return `<div class="task-discovery">${structureHtml}${behaviorHtml}</div>`;
+    return `<div class="task-discovery">${structureHtml}${behaviorHtml}${home ? scenarioChoices(null, true) : ""}</div>`;
+  }
+  function scenarioChoices(activeId, embedded = false) {
+    const maps = data.flow_maps || [];
+    if (!maps.length) return "";
+    const labels = {compile: "Compile", test: "Test", release: "Release", startup: "Startup", "button-click": "Button click", import: "Import", export: "Export"};
+    return `<section class="flow-discovery${embedded ? " embedded" : ""}"><div class="task-group-label">What runs when… ${embedded ? '<a href="#flows">Explore execution scenarios →</a>' : '<span>Named calls, events, returns & process boundaries</span>'}</div><nav class="scenario-choices" aria-label="Execution scenarios">${maps.map(map => `<a class="scenario-choice${String(map.id) === String(activeId) ? " active" : ""}" href="${flowRoute(map)}" title="${esc(map.question || map.title)}"${String(map.id) === String(activeId) ? ' aria-current="page"' : ""}>${esc(labels[map.id] || map.title)}<span aria-hidden="true">⇢</span></a>`).join("")}</nav></section>`;
   }
   function anchorData(anchor) {
     const file = fileById.get(String(anchor.file_id || "")) || sourceFile(anchor.path);
@@ -197,7 +213,7 @@
   }
   function mapParameterGuides(map) {
     const guides = unique((map.nodes || []).flatMap(node => node.parameter_guides || []), guide => String(guide.id));
-    return guides.length ? `<div class="map-parameter-print"><h2>Parameter reference for this edit path</h2>${guides.map(guide => parameterGuide(parameterById.get(String(guide.id)) || guide, null, null, false)).join("")}</div>` : "";
+    return guides.length ? `<div class="map-parameter-print"><h2>${executionMap(map) ? "Parameter reference for this scenario" : "Parameter reference for this edit path"}</h2>${guides.map(guide => parameterGuide(parameterById.get(String(guide.id)) || guide, null, null, false)).join("")}</div>` : "";
   }
   function renderParameters(id, mapId, nodeId) {
     const guide = parameterById.get(String(id));
@@ -208,16 +224,23 @@
       return;
     }
     const contexts = parameterContexts.get(String(id)) || [];
-    const context = contexts.find(item => String(item.map.id) === String(mapId) && String(item.node.id) === String(nodeId)) || contexts.find(item => item.map.id === state.lastChangeMap && item.node.id === state.selectedChangeNodes[item.map.id]) || contexts[0];
-    if (context) {state.lastChangeMap = context.map.id; state.selectedChangeNodes[context.map.id] = context.node.id;}
-    const up = context ? `<a class="button" href="${changeRoute(context.map, context.node)}">↑ ${esc(short(context.node.title, 40))}</a>` : '<a class="button" href="#home">↑ Edit task overview</a>';
-    main.innerHTML = `${crumbs([{label: "Parameter guides", href: "#parameters"}, {label: guide.title}])}${pageHeading("Readable code reference", guide.title, "Read the named fields before looking at the positional source syntax.", up)}${context ? `<div class="parameter-context">Used in <a href="${changeRoute(context.map, context.node)}">${esc(context.node.title)}</a> · ${esc(context.map.title)}</div>` : ""}${parameterGuide(guide, context?.map, context?.node, false)}${contexts.length > 1 ? section("Edit steps that use this guide", `<div class="guide-links">${contexts.map(item => `<a href="${changeRoute(item.map, item.node)}">${esc(item.node.title)} <span class="muted">(${esc(item.map.title)})</span></a>`).join("")}</div>`) : ""}`;
+    const context = contexts.find(item => String(item.map.id) === String(mapId) && String(item.node.id) === String(nodeId)) || contexts.find(item => item.map.id === state.navigationContext?.mapId && item.node.id === state.navigationContext?.nodeId) || contexts[0];
+    if (context) {
+      if (executionMap(context.map)) {state.lastFlowMap = context.map.id; state.selectedFlowNodes[context.map.id] = context.node.id;}
+      else {state.lastChangeMap = context.map.id; state.selectedChangeNodes[context.map.id] = context.node.id;}
+      state.navigationContext = {kind: executionMap(context.map) ? "execution" : "edit", mapId: context.map.id, nodeId: context.node.id};
+    }
+    const up = context ? `<a class="button" href="${chartRoute(context.map, context.node)}">↑ ${esc(short(context.node.title, 40))}</a>` : '<a class="button" href="#home">↑ Edit task overview</a>';
+    main.innerHTML = `${crumbs([{label: "Parameter guides", href: "#parameters"}, {label: guide.title}])}${pageHeading("Readable code reference", guide.title, "Read the named fields before looking at the positional source syntax.", up)}${context ? `<div class="parameter-context">Used in <a href="${chartRoute(context.map, context.node)}">${esc(context.node.title)}</a> · ${esc(context.map.title)}</div>` : ""}${parameterGuide(guide, context?.map, context?.node, false)}${contexts.length > 1 ? section("Steps that use this guide", `<div class="guide-links">${contexts.map(item => `<a href="${chartRoute(item.map, item.node)}">${esc(item.node.title)} <span class="muted">(${esc(item.map.title)})</span></a>`).join("")}</div>`) : ""}`;
   }
   function actionDetails(map, node, forPrint = false) {
     if (!node) return empty("Choose a node to see the exact edit location and its source context.");
     const references = node.references || [];
-    const role = ["EDIT", "REUSE", "DECISION", "NEW", "JUMP"].includes(node.role) ? node.role : "EDIT";
-    return `<article class="change-action${forPrint ? " change-print-action" : ""}"><div class="change-action-heading"><span class="change-role role-${role.toLowerCase()}">${role}</span>${node.optional ? '<span class="badge unresolved">Optional branch</span>' : ""}${node.status === "proposed" ? '<span class="badge entry">Proposed addition</span>' : ""}</div><h2>${esc(node.title)}</h2>${node.summary ? `<p class="change-action-summary">${esc(node.summary)}</p>` : ""}<div class="change-instruction"><h3>${role === "REUSE" ? "Follow or reuse" : role === "DECISION" ? "Decide this first" : role === "JUMP" ? "Follow this path" : "What to change"}</h3><p>${esc(node.action || node.summary || "Inspect the linked source before editing.")}</p></div>${node.why ? `<p class="change-why"><strong>Why here:</strong> ${esc(node.why)}</p>` : ""}${node.status === "proposed" && references.some(reference => reference.status === "verified" && reference.file_id === node.file_id && reference.line === node.line) ? `<p class="small muted">Existing edit context below; the proposed addition is not implemented here.</p>${anchorControls({...node, status: "verified"})}` : anchorControls(node)}${nodeParameterGuides(node, map, forPrint)}${node.snippet ? `<div class="change-snippet-label">${node.status === "proposed" ? "Existing pattern in captured source" : "Captured source context"}</div><pre class="change-snippet">${esc(node.snippet)}</pre>` : ""}${references.length ? `<div class="change-references"><h3>Related edit locations</h3>${references.map(reference => `<div class="change-reference"><strong>${esc(reference.label || reference.path || "Source context")}</strong>${anchorControls(reference, true)}${reference.snippet && (!forPrint || reference.snippet !== node.snippet) ? `<details class="change-reference-snippet"${forPrint ? " open" : ""}><summary>Show source context</summary><pre class="change-snippet">${esc(reference.snippet)}</pre></details>` : ""}</div>`).join("")}</div>` : ""}${node.link_map && changeMap(node.link_map) ? `<a class="change-drilldown" href="${changeRoute(changeMap(node.link_map))}">Open ${esc(changeMap(node.link_map).title)} →</a>` : ""}</article>`;
+    const running = executionMap(map);
+    const roles = running ? ["ENTRY", "CALL", "PROCESS", "DECISION", "EVENT", "OUTPUT"] : ["EDIT", "REUSE", "DECISION", "NEW", "JUMP"];
+    const role = roles.includes(node.role) ? node.role : running ? "CALL" : "EDIT";
+    const linkedMap = node.link_map ? (running ? flowMap(node.link_map) || changeMap(node.link_map) : changeMap(node.link_map) || flowMap(node.link_map)) : null;
+    return `<article class="change-action${running ? " execution-action" : ""}${forPrint ? " change-print-action" : ""}"><div class="change-action-heading"><span class="change-role role-${role.toLowerCase()}">${role}</span>${node.optional ? '<span class="badge unresolved">Optional branch</span>' : ""}${node.status === "proposed" ? `<span class="badge entry">${running ? "Illustrative step" : "Proposed addition"}</span>` : ""}</div><h2>${esc(node.title)}</h2>${node.summary ? `<p class="change-action-summary">${esc(node.summary)}</p>` : ""}<div class="change-instruction"><h3>${running ? "What runs" : role === "REUSE" ? "Follow or reuse" : role === "DECISION" ? "Decide this first" : role === "JUMP" ? "Follow this path" : "What to change"}</h3><p>${esc(node.action || node.summary || (running ? "Inspect the linked source to follow this step." : "Inspect the linked source before editing."))}</p></div>${node.why ? `<p class="change-why"><strong>Why here:</strong> ${esc(node.why)}</p>` : ""}${node.status === "proposed" && references.some(reference => reference.status === "verified" && reference.file_id === node.file_id && reference.line === node.line) ? `<p class="small muted">${running ? "Existing source context for this illustrative scenario step." : "Existing edit context below; the proposed addition is not implemented here."}</p>${anchorControls({...node, status: "verified"})}` : anchorControls(node)}${running ? printFlowLink(map, node) : ""}${nodeParameterGuides(node, map, forPrint)}${node.snippet ? `<div class="change-snippet-label">${!running && node.status === "proposed" ? "Existing pattern in captured source" : "Captured source context"}</div><pre class="change-snippet">${esc(node.snippet)}</pre>` : ""}${references.length ? `<div class="change-references"><h3>${running ? "Source & call context" : "Related edit locations"}</h3>${references.map(reference => `<div class="change-reference"><strong>${esc(reference.label || reference.path || "Source context")}</strong>${anchorControls(reference, true)}${reference.snippet && (!forPrint || reference.snippet !== node.snippet) ? `<details class="change-reference-snippet"${forPrint ? " open" : ""}><summary>Show source context</summary><pre class="change-snippet">${esc(reference.snippet)}</pre></details>` : ""}</div>`).join("")}</div>` : ""}${linkedMap ? `<a class="change-drilldown" href="${chartRoute(linkedMap)}">Open ${esc(linkedMap.title)} →</a>` : ""}</article>`;
   }
   function taskPath(from, to, boxes, boxWidth, boxHeight, columnPitch, rowPitch, width, height) {
     const sameRow = Math.abs(from.y - to.y) < 8;
@@ -266,7 +289,10 @@
   }
   function taskDiagram(map, selected) {
     const nodes = map.nodes || [];
-    if (!nodes.length) return empty("No edit steps were generated for this task.");
+    const running = executionMap(map);
+    const edgeKinds = running ? ["call", "process", "conditional", "return", "event", "step"] : ["edit-dependency", "runtime", "conditional"];
+    const roles = running ? ["ENTRY", "CALL", "PROCESS", "DECISION", "EVENT", "OUTPUT"] : ["EDIT", "REUSE", "DECISION", "NEW", "JUMP"];
+    if (!nodes.length) return empty(running ? "No execution steps were generated for this scenario." : "No edit steps were generated for this task.");
     const boxWidth = 190, boxHeight = 106, columnPitch = 270, rowPitch = 160;
     const columns = Math.max(...nodes.map(node => Number(node.column) || 0)) + 1;
     const rows = Math.max(...nodes.map(node => Number(node.row) || 0)) + 1;
@@ -278,18 +304,19 @@
       const from = positions.get(String(edge.from)), to = positions.get(String(edge.to));
       if (!from || !to) return "";
       const {path, labelX, labelY, narrow} = taskPath(from, to, [...positions.values()], boxWidth, boxHeight, columnPitch, rowPitch, width, height);
-      const kind = ["edit-dependency", "runtime", "conditional"].includes(edge.kind) ? edge.kind : "edit-dependency";
+      const kind = edgeKinds.includes(edge.kind) ? edge.kind : running ? "call" : "edit-dependency";
       const labels = wrappedText(edge.label || "", narrow ? 13 : 23, 2);
       const labelWidth = Math.min(narrow ? 72 : 150, Math.max(36, Math.max(...labels.map(line => line.length), 1) * 5.2 + 10));
       return `<g class="task-edge edge-${kind}"><path d="${path}" marker-end="url(#${marker}-${kind})"><title>${esc(edge.label || "")}</title></path>${labels.length ? `<g class="task-edge-label"><rect x="${labelX - labelWidth / 2}" y="${labelY - 10}" width="${labelWidth}" height="${labels.length * 13 + 5}" rx="4"></rect>${labels.map((label, i) => `<text x="${labelX}" y="${labelY + 1 + i * 13}" text-anchor="middle">${esc(label)}</text>`).join("")}</g>` : ""}</g>`;
     }).join("");
     const nodeSvg = nodes.map(node => {
       const pos = positions.get(String(node.id));
-      const role = ["EDIT", "REUSE", "DECISION", "NEW", "JUMP"].includes(node.role) ? node.role : "EDIT";
+      const role = roles.includes(node.role) ? node.role : running ? "CALL" : "EDIT";
       const titleLines = wrappedText(node.title, 24, 3);
-      return `<a href="${changeRoute(map, node)}" class="task-node role-${role.toLowerCase()}${selected && String(selected.id) === String(node.id) ? " selected" : ""}${node.optional ? " optional" : ""}" data-task-node="${esc(node.id)}" aria-label="${esc(role + ": " + node.title)}"><title>${esc(node.title)} · ${esc(node.summary || node.action || "Click to inspect this step")}</title><rect class="task-node-box" x="${pos.x}" y="${pos.y}" width="${boxWidth}" height="${boxHeight}" rx="8"></rect><rect class="task-role-chip" x="${pos.x + 12}" y="${pos.y + 11}" width="${role.length * 6 + 15}" height="17" rx="4"></rect><text class="task-node-role" x="${pos.x + 19}" y="${pos.y + 23}">${role}</text>${node.optional ? `<text class="task-optional-label" x="${pos.x + boxWidth - 12}" y="${pos.y + 22}" text-anchor="end">optional</text>` : ""}${titleLines.map((line, i) => `<text class="task-node-title" x="${pos.x + 12}" y="${pos.y + 47 + i * 15}">${esc(line)}</text>`).join("")}<text class="task-node-hint" x="${pos.x + 12}" y="${pos.y + boxHeight - 11}">${node.status === "missing" ? "Anchor needs review" : node.status === "proposed" ? "Proposed addition · click for context" : node.path ? esc(short(String(node.path).split("/").pop(), 26)) + (node.line ? " · L" + esc(node.line) : "") : "Click for the edit guidance"}</text></a>`;
+      return `<a href="${chartRoute(map, node)}" class="task-node role-${role.toLowerCase()}${selected && String(selected.id) === String(node.id) ? " selected" : ""}${node.optional ? " optional" : ""}" data-task-node="${esc(node.id)}" aria-label="${esc(role + ": " + node.title)}"><title>${esc(node.title)} · ${esc(node.summary || node.action || "Click to inspect this step")}</title><rect class="task-node-box" x="${pos.x}" y="${pos.y}" width="${boxWidth}" height="${boxHeight}" rx="8"></rect><rect class="task-role-chip" x="${pos.x + 12}" y="${pos.y + 11}" width="${role.length * 6 + 15}" height="17" rx="4"></rect><text class="task-node-role" x="${pos.x + 19}" y="${pos.y + 23}">${role}</text>${node.optional ? `<text class="task-optional-label" x="${pos.x + boxWidth - 12}" y="${pos.y + 22}" text-anchor="end">optional</text>` : ""}${titleLines.map((line, i) => `<text class="task-node-title" x="${pos.x + 12}" y="${pos.y + 47 + i * 15}">${esc(line)}</text>`).join("")}<text class="task-node-hint" x="${pos.x + 12}" y="${pos.y + boxHeight - 11}">${node.status === "missing" ? "Anchor needs review" : node.status === "proposed" ? (running ? "Illustrative step · click for context" : "Proposed addition · click for context") : node.path ? esc(short(String(node.path).split("/").pop(), 26)) + (node.line ? " · L" + esc(node.line) : "") : running ? "Click for source & call context" : "Click for the edit guidance"}</text></a>`;
     }).join("");
-    return `<div class="task-diagram-canvas"><svg class="task-diagram graph-svg" id="task-diagram" role="group" aria-label="${esc(map.title + ": graphical edit path")}" viewBox="0 0 ${width} ${height}" data-width="${width}" data-height="${height}"><defs>${["edit-dependency", "runtime", "conditional"].map(kind => `<marker id="${marker}-${kind}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 8 4 L 0 8 z" class="marker-${kind}"></path></marker>`).join("")}</defs>${edgeSvg}${nodeSvg}</svg></div><div class="task-diagram-controls"><span>Click an edit step for its exact location and source context.</span><div class="graph-buttons"><button type="button" data-graph="task-diagram" data-zoom="in" aria-label="Zoom edit diagram in">+</button><button type="button" data-graph="task-diagram" data-zoom="out" aria-label="Zoom edit diagram out">−</button><button type="button" data-graph="task-diagram" data-zoom="reset">Fit</button></div></div><div class="task-diagram-legend"><span><i class="task-key edit-dependency"></i>Edit dependency / next edit</span><span><i class="task-key runtime"></i>Runtime call / event</span><span><i class="task-key conditional"></i>Conditional or optional branch</span></div>`;
+    const legend = running ? `<span><i class="task-key call"></i>Direct call</span><span><i class="task-key process"></i>Process boundary</span><span><i class="task-key conditional"></i>Conditional branch</span><span><i class="task-key event"></i>Event / dispatch</span><span><i class="task-key return"></i>Return / resume caller</span><span><i class="task-key step"></i>Local step / sequence</span>` : `<span><i class="task-key edit-dependency"></i>Edit dependency / next edit</span><span><i class="task-key runtime"></i>Runtime call / event</span><span><i class="task-key conditional"></i>Conditional or optional branch</span>`;
+    return `<div class="task-diagram-canvas"><svg class="task-diagram${running ? " execution-diagram" : ""} graph-svg" id="task-diagram" role="group" aria-label="${esc(map.title + (running ? ": graphical execution scenario" : ": graphical edit path"))}" viewBox="0 0 ${width} ${height}" data-width="${width}" data-height="${height}"><defs>${edgeKinds.map(kind => `<marker id="${marker}-${kind}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 8 4 L 0 8 z" class="marker-${kind}"></path></marker>`).join("")}</defs>${edgeSvg}${nodeSvg}</svg></div><div class="task-diagram-controls"><span>${running ? "Click a step to inspect its calls, events, process boundary, and source." : "Click an edit step for its exact location and source context."}</span><div class="graph-buttons"><button type="button" data-graph="task-diagram" data-zoom="in" aria-label="${running ? "Zoom execution diagram in" : "Zoom edit diagram in"}">+</button><button type="button" data-graph="task-diagram" data-zoom="out" aria-label="${running ? "Zoom execution diagram out" : "Zoom edit diagram out"}">−</button><button type="button" data-graph="task-diagram" data-zoom="reset">Fit</button></div></div><div class="task-diagram-legend">${legend}</div>`;
   }
   function renderChange(mapId, nodeId, home = false) {
     const map = changeMap(mapId) || changeMap("widget") || (data.change_maps || [])[0];
@@ -299,10 +326,27 @@
     const nodes = map.nodes || [];
     const selected = nodes.find(node => String(node.id) === String(nodeId || state.selectedChangeNodes[map.id] || "")) || nodes[0];
     if (selected) state.selectedChangeNodes[map.id] = selected.id;
+    state.navigationContext = {kind: "edit", mapId: map.id, nodeId: selected?.id};
     const runtime = changeMap("widget-runtime");
     main.innerHTML = `${home ? crumbs([]) : crumbs([{label: "Edit task maps", href: "#home"}, {label: map.title}])}${pageHeading(home ? "Edit the foundation" : "Edit task map", home ? "Where should I edit?" : map.title, home ? "Choose a change. Follow the chart, then click a step to see the file, line, and code to edit." : map.summary, home ? '<a class="button" href="#inventory">Browse code inventory →</a>' : '<a class="button" href="#home">↑ Edit task overview</a>')}${taskChoices(map.id, home)}<section class="change-map-section"><div class="change-map-heading"><div><h2>${esc(map.question || map.title)}</h2><p>${esc(map.edge_meaning || "Arrows show the next edit dependency; they do not imply execution order.")}</p></div>${map.id === "widget" && runtime ? `<a class="button" href="${changeRoute(runtime)}">Trace existing Add click →</a>` : home ? `<a class="button" href="${changeRoute(map)}">Open this task map ↗</a>` : ""}</div><div class="change-layout"><div class="change-chart panel">${taskDiagram(map, selected)}</div><aside class="change-detail-panel panel" id="change-detail" aria-label="Selected edit step">${actionDetails(map, selected)}</aside></div><div class="change-snapshot"><span>Source snapshot · ${esc(niceDate())} · code may have changed since.</span><a href="#inventory">Find another function or file →</a></div></section><section class="change-print-details print-only">${mapParameterGuides(map)}<h2>All edit steps & source anchors</h2>${nodes.map(node => actionDetails(map, node, true)).join("")}</section>${pdfLinks("changes") || pdfLinks("change-maps") || pdfLinks("edit-paths") ? section("Print these edit paths", pdfLinks("changes") || pdfLinks("change-maps") || pdfLinks("edit-paths")) : ""}`;
   }
   function renderHome(mapId) { renderChange(mapId || state.activeChangeMap, null, true); }
+  function renderFlow(mapId, nodeId, overview = false) {
+    const maps = data.flow_maps || [];
+    if (!maps.length) {
+      main.innerHTML = `${crumbs([{label: "Execution scenarios"}])}${pageHeading("Execution", "What runs when…", "This snapshot does not include execution scenarios.", '<a class="button" href="#home">↑ Edit task overview</a>')}`;
+      return;
+    }
+    const map = flowMap(mapId || state.activeFlowMap) || flowMap("startup") || maps[0];
+    if (mapId && !flowMap(mapId)) return renderMissing("Execution scenario");
+    state.activeFlowMap = map.id;
+    state.lastFlowMap = map.id;
+    const nodes = map.nodes || [];
+    const selected = nodes.find(node => String(node.id) === String(nodeId || state.selectedFlowNodes[map.id] || "")) || nodes[0];
+    if (selected) state.selectedFlowNodes[map.id] = selected.id;
+    state.navigationContext = {kind: "execution", mapId: map.id, nodeId: selected?.id};
+    main.innerHTML = `${overview ? crumbs([{label: "Execution scenarios"}]) : crumbs([{label: "Execution scenarios", href: "#flows"}, {label: map.title}])}${pageHeading("Existing execution scenarios", overview ? "What runs when…" : map.title, overview ? "Choose a scenario. Follow its named calls, events, returns, and process boundaries, then inspect the captured source." : map.summary, overview ? '<a class="button" href="#home">↑ Edit task overview</a>' : '<a class="button" href="#flows">↑ Execution scenarios</a>')}${scenarioChoices(map.id)}<section class="change-map-section execution-map-section"><div class="change-map-heading"><div><h2>${esc(map.question || map.title)}</h2><p>${esc(map.edge_meaning || "Arrows identify source-curated calls and ordering in this scenario. They are not a complete execution trace.")}</p></div>${printFlowLink(map)}</div><div class="change-layout"><div class="change-chart panel">${taskDiagram(map, selected)}</div><aside class="change-detail-panel panel" id="change-detail" aria-label="Selected execution step">${actionDetails(map, selected)}</aside></div><div class="change-snapshot"><span>Source-curated scenario · ${esc(niceDate())} · code may have changed since.</span><a href="#home">Find an edit task →</a></div></section><section class="change-print-details print-only">${mapParameterGuides(map)}<h2>All execution steps & source anchors</h2>${nodes.map(node => actionDetails(map, node, true)).join("")}</section>${pdfLinks("flows") ? section("Print execution scenarios", pdfLinks("flows")) : ""}`;
+  }
 
   function renderInventory() {
     const entries = prioritizeEntries(symbols.filter(s => s.entry_reason));
@@ -650,6 +694,8 @@
     switch (parts[0]) {
       case "home": renderHome(parts[1]); break;
       case "change": renderChange(parts[1], parts[2]); break;
+      case "flows": renderFlow(null, null, true); break;
+      case "flow": renderFlow(parts[1], parts[2]); break;
       case "inventory": renderInventory(); break;
       case "parameters": renderParameters(parts[1], parts[2], parts[3]); break;
       case "category": renderCategory(parts[1] || "core"); break;
@@ -663,14 +709,18 @@
       default: renderMissing("Page");
     }
     document.title = `${main.querySelector("h1")?.textContent || "Overview"} · ${data.title || "Code atlas"}`;
-    let active = parts[0] === "category" ? "category/" + parts[1] : parts[0] === "change" ? "home" : parts[0];
+    let active = parts[0] === "category" ? "category/" + parts[1] : parts[0] === "change" ? "home" : parts[0] === "flow" ? "flows" : parts[0];
     const file = parts[0] === "file" || parts[0] === "source" ? fileById.get(parts[1]) : parts[0] === "symbol" ? symbolById.get(parts[1])?.file : null;
     if (file) active = "category/" + (file.category || "other");
     if (file?.origin === "supplier-reference") {
       const provenance = file.provenance || {};
       main.insertAdjacentHTML("afterbegin", `<div class="notice supplier-notice"><strong>Read-only supplier reference</strong><p>Pinned upstream source captured from the retained archive. Use this reference to understand the supplier contract; follow the task map for application edit locations.</p><div class="supplier-provenance"><span>Archive: <code>${esc(provenance.archive || "retained supplier archive")}</code></span><span>Member: <code>${esc(provenance.member || file.path)}</code></span>${provenance.revision ? `<span>Pinned revision: <code>${esc(short(provenance.revision, 16))}</code></span>` : ""}${provenance.patches_applied === false ? '<span>No patches applied to this captured member.</span>' : ""}</div></div>`);
     }
-    if (file && state.lastChangeMap && changeMap(state.lastChangeMap)) {
+    if (file && state.navigationContext?.kind === "execution" && flowMap(state.navigationContext.mapId)) {
+      const map = flowMap(state.navigationContext.mapId);
+      const node = (map.nodes || []).find(item => item.id === state.navigationContext.nodeId);
+      main.insertAdjacentHTML("afterbegin", `<div class="return-to-change return-to-flow"><a href="${flowRoute(map, node)}">↑ Back to ${esc(node ? node.title : map.title)}</a><span>Execution scenario · ${esc(map.title)}</span></div>`);
+    } else if (file && state.lastChangeMap && changeMap(state.lastChangeMap)) {
       const map = changeMap(state.lastChangeMap);
       const node = (map.nodes || []).find(item => item.id === state.selectedChangeNodes[map.id]);
       main.insertAdjacentHTML("afterbegin", `<div class="return-to-change"><a href="${changeRoute(map, node)}">↑ Back to ${esc(node ? node.title : map.title)}</a><span>in ${esc(map.title)}</span></div>`);
@@ -679,7 +729,7 @@
     document.querySelector(".sidebar").classList.remove("open");
     document.getElementById("menu-button").setAttribute("aria-expanded", "false");
     attachGraphs();
-    if (parts[0] === "change" && parts[2] && window.innerWidth < 1600) requestAnimationFrame(() => document.getElementById("change-detail")?.scrollIntoView({block: "start"}));
+    if ((parts[0] === "change" || parts[0] === "flow") && parts[2] && window.innerWidth < 1600) requestAnimationFrame(() => document.getElementById("change-detail")?.scrollIntoView({block: "start"}));
     if (scroll && !(parts[0] === "build" && parts[1] === "target")) window.scrollTo(0, 0);
   }
 

@@ -3,7 +3,7 @@
 A separate, manually invoked documentation generator answering **what do I edit
 to make this change?** in a changing `software-foundation` checkout. Its starting
 view is a graphical edit path, with source details underneath. It produces an
-offline HTML explorer, three linked PDF handbooks, and a machine-readable source
+offline HTML explorer, four linked PDF handbooks, and a machine-readable source
 snapshot. It requires no AI, API
 key, service, compiler, CMake configuration, compile database, or application build.
 
@@ -147,6 +147,26 @@ Missing or ambiguous anchors display **Source anchor changed; review required**.
 The arrows distinguish prospective edit dependencies from the existing runtime
 example. They do not claim every marked function must change for every feature.
 
+## Follow what runs when
+
+The explorer's **What runs when…** scenarios illustrate existing code paths for
+compilation, testing, release, startup, an Add-button click, import and export.
+Choose a scenario, then follow its arrows and click a function or process box
+for the captured implementation and source evidence. Source and function views
+provide a return link to the originating scenario step.
+
+The charts distinguish a direct **function call**, a **subprocess/command**,
+an **event or asynchronous completion**, a **conditional branch**, a
+**return**, and a **local step/sequence**. For example, `append_entry` calls `Store::add`;
+publication occurs after returning to `Application::handle`. File transfer
+crosses a host-service boundary before `complete_service` processes the result.
+The release scenario distinguishes local packaging from hosted publication.
+
+These are curated, source-backed representative paths, not recorded executions.
+Compiler target selection and platform branches remain conditional. Missing
+source anchors remain visible as review items. Generating the charts never
+invokes any command shown in them, including builds, tests, or release tools.
+
 ## Supporting reference views
 
 - From the task maps, open the reference inventory and entry points, then drill down through
@@ -160,7 +180,7 @@ example. They do not claim every marked function must change for every feature.
 - Use the extension guide to find the existing targets for a new C++ file, the
   Rust module boundary, shared GUI feature ownership, and runtime entry points.
 
-The default print collection has three linked volumes:
+The default print collection has four linked volumes:
 
 - `pdf/00-edit-paths.pdf` starts with a task index, then provides the charts,
   actions, ownership rationales, source links and parameter reference. It is the
@@ -174,6 +194,9 @@ The default print collection has three linked volumes:
   arguments, options/defaults, toolchain assignments, presets, Cargo data,
   helper declarations and compiler/link configuration context. Conditions and
   variables remain symbolic, just as they do in the explorer.
+- `pdf/03-execution-flows.pdf` provides the **What runs when…** flowcharts, with
+  named calls and process/event boundaries, a scenario index, linked explanations
+  and source evidence. It is a graphical companion to the code walkthroughs.
 
 The edit steps and explorer offer **Read in PDF** links to exact reference pages
 where available. The reference books link back to the edit guide and to their
@@ -255,24 +278,29 @@ documentation.
 `docmap.py` owns read-only collection, snapshot metadata, conservative candidate
 call linking, and output-path checks. `syntax_scan.py` reads syntax trees;
 `build_map.py` inventories build declarations; `change_maps.py` and `behavior_paths.py` supply the
-task-first edit paths and verifies source anchors; `parameter_guides.py` explains
+task-first edit paths; `source_anchors.py` verifies curated source references.
+`flow_maps.py`, `workflow_flows.py`, and `runtime_flows.py` supply the existing
+call/process/event scenarios. `parameter_guides.py` explains
 dense examples with labeled fields and values; `navigation_guide.py` supplies
 project navigation guidance with evidence lines resolved against the snapshot.
 `render_html.py`, `explorer.js`, and `explorer.css` provide the browser explorer;
 `supplier_reference.py` captures the bounded retained GUI contract evidence.
 `render_change_pdf.py` creates the primary edit-path guide;
 `render_walkthrough_pdf.py` and `render_compiler_pdf.py` create its deeper linked
-references. `render_pdf.py` creates the optional inventory volumes.
+references. `render_flow_pdf.py` creates the graphical execution companion.
+`render_pdf.py` creates the optional inventory volumes.
 `atlas.json` retains the complete
 analysis and captured text without requiring either presentation layer.
 
 ## Snapshots and verification
 
 Generated snapshots are deliberately not committed. Each output has `index.html`
-and, by default, the three PDFs described above. The prepared external tool directory
+and, by default, the four PDFs described above. The prepared external tool directory
 also retains earlier snapshots, including `2026-10-04-edit-paths` and the expanded
 `2026-10-04-placement-tabs` guide. `2026-10-04-developer-handbooks` contains the
 expanded three-volume collection and the five behavior workflows.
+`2026-10-04-execution-flows` adds the fourth volume and seven source-backed
+execution scenarios to the explorer.
 
 Generator-only checks passed for source/output isolation, symlink and FIFO
 handling, parser fixtures, unique symbol IDs, source spans, call targets, guide
@@ -282,7 +310,7 @@ and visually inspected. Eight C++ files contain recoverable syntax limitations;
 the coverage report also records lexical CMake notices and symbolic-build limits.
 
 The expanded collection was generated through the packaged CLI; HTML-only mode
-was also checked. All ten maps, seven parameter guides, exact PDF page mappings,
+was also checked. All ten edit maps, seven execution scenarios, seven parameter guides, exact PDF page mappings,
 cross-file PDF links, internal bookmarks, source routes, and annotation bounds
 passed focused checks. Full selected source bodies and indexed flow labels were
 checked for presence; call-table omission counts are explicit. The application
