@@ -510,6 +510,13 @@ only copies an existing exact group: it cannot build, download or choose a newer
 recipe. The local base format can be transported to a durable release store by
 an explicitly authorized publisher. These tools never publish remotely.
 
+Publishing a new verified group to GitHub `base` now retires older complete
+groups in the same SDK family/host/target/profile, after readback succeeds.
+This keeps base inventories short without replacing immutable asset names or
+moving the base tag. Other profiles and application release copies remain intact.
+Old base recipe hashes may therefore become unavailable: update configured recipe
+selectors when replacing an SDK. See the precise [base lifecycle](github-delivery.md#dependency-base-lifecycle).
+
 Application producer jobs use `fetch-sdk-binary`: the binary archive and complete
 pair checksum are transferred, and all three immutable remote asset identities
 and digests are reconciled before activation. The binary's recipe and complete

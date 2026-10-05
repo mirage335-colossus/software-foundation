@@ -26,7 +26,7 @@ import github_release as delivery
 
 CHUNK_BYTES = 512 * 1024 * 1024
 MAX_BYTES = 64 * 1024**3
-MAX_FILES = 10000
+MAX_FILES = 16000
 MAX_MANIFEST = 8 * 1024 * 1024
 MAX_PARTS = 256
 MAX_BUNDLES = 128
@@ -344,7 +344,7 @@ def _stage_bundle(stage, context, root, paths, *, metadata=None, allow_missing=F
     with ExitStack() as stack:
         stream = stack.enter_context(bundle.open('wb'))
         if compress:
-            stream = stack.enter_context(gzip.GzipFile(filename='', mode='wb', fileobj=stream, compresslevel=1, mtime=0))
+            stream = stack.enter_context(gzip.GzipFile(filename='', mode='wb', fileobj=stream, compresslevel=6, mtime=0))
         output = stack.enter_context(tarfile.open(fileobj=stream, mode='w', format=tarfile.PAX_FORMAT))
         for relative, item in files.items():
             header = tarfile.TarInfo(relative); header.size = item['size']; header.mode = item['mode']; header.mtime = 0

@@ -36,7 +36,7 @@ def sibling(name):
 apt = sibling('apt_repo')
 artifact = sibling('artifact')
 archive_tools = sibling('dependency_archive')
-MAX_BYTES = 256 * 1024 * 1024
+MAX_BYTES = 320 * 1024 * 1024
 MAX_FILES = 10000
 BACKENDS = {'core', 'terminal', 'framebuffer', 'fltk', 'rev', 'sdl', 'hosted-web'}
 GUI_EXECUTABLES = {'foundation-gui-' + ('web' if backend == 'hosted-web' else backend)

@@ -3,7 +3,8 @@
 
 Callers serialize publication and retain one reviewed input snapshot throughout
 an operation. A failed mutation has an unknown remote outcome: reconcile exact
-IDs and bytes before a new attempt. This helper never deletes or replaces assets.
+IDs and bytes before a new attempt. New verified base groups retire superseded
+groups in the same SDK slot; application assets are never deleted or replaced.
 """
 import argparse
 import atexit
@@ -20,6 +21,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -41,6 +43,7 @@ coverage = certification.coverage
 NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.+-]{0,180}\Z')
 OID = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})\Z')
 SHA = re.compile(r'[0-9a-f]{64}\Z')
+BASE_CLEANUP_GROUP_LIMIT = 64
 # Dynamic adapters may load this file under several module names. Share one
 # process-wide gate so nested four-worker pools still run at most four CLI
 # requests at once; backoff and local hashing do not hold a request slot.
@@ -1022,13 +1025,111 @@ def fetch_rust_bases(repository, recipes, output, *, transport=None):
                               binary_only=False, single=False, group_store=rust_sdk)
 
 
+def _base_sdk_slot(binary, group_store):
+    """Conservative consumer slot from already verified archive metadata."""
+    rust = group_store is rust_sdk
+    data, _ = archive.inspect_manifest_archive(binary, 'rust-sdk.json' if rust else 'sdk.json', sdk_archive=not rust)
+    kind = data.get('kind')
+    if kind not in (('rust-extension',) if rust else ('source-build', 'windows-dependencies', 'retained-upstream')):
+        return None
+    target = data.get('target', {})
+    if not isinstance(target, dict) or any(not isinstance(target.get(key), str) or not target[key] for key in ('system', 'processor', 'triple')):
+        return None
+    slot = dict(kind=kind, target={key: target[key] for key in ('system', 'processor', 'triple')})
+    if kind == 'windows-dependencies':
+        toolchain = data.get('external_toolchain', {})
+        toolset = toolchain.get('toolset') if isinstance(toolchain, dict) else None
+        if target['system'] != 'Windows' or not isinstance(toolset, str) or not toolset: return None
+        slot['toolset'] = toolset
+        provenance = data.get('provenance', {})
+        policy = ('triplet', 'configurations', 'crt_linkage', 'library_linkage', 'lto', 'ports')
+        if not isinstance(provenance, dict) or any(key not in provenance for key in policy): return None
+        slot['policy'] = {key: provenance[key] for key in policy}
+    else:
+        host = data.get('host', {})
+        if not isinstance(host, dict) or any(not isinstance(host.get(key), str) or not host[key] for key in ('system', 'processor')): return None
+        slot['host'] = host
+    if kind in ('source-build', 'windows-dependencies'):
+        capabilities = data.get('capabilities')
+        if (not isinstance(capabilities, list) or not capabilities or
+                any(not isinstance(item, str) or not item for item in capabilities)): return None
+        slot.update(capabilities=sorted(capabilities), baseline=data.get('baseline'),
+                    runtime_host_services=data.get('runtime_host_services', []))
+    elif kind == 'retained-upstream':
+        if target['system'] != 'Emscripten' or not isinstance(data.get('cache_options'), list): return None
+        slot['cache_options'] = data['cache_options']
+    else:
+        compiler = data.get('compiler', {})
+        slot['compiler_host'] = compiler.get('host') if isinstance(compiler, dict) else None
+        if not isinstance(slot['compiler_host'], str) or not slot['compiler_host']: return None
+    return archive.encoded(slot)
+
+
+def _retire_base_groups(remote, info, assets, reference, recipe, group, group_store):
+    """Verify every removal before deleting exact IDs under the publisher lock."""
+    slot = _base_sdk_slot(Path(group) / group_store.names(recipe)[0], group_store)
+    binary = group_store.names(recipe)[0]
+    if archive.digest(Path(group) / binary) != assets[binary]['digest'][7:]:
+        raise DeliveryError('local published SDK changed before base cleanup')
+    if slot is None: return {}
+    prefix = 'rust-sdk-' if group_store is rust_sdk else 'sdk-'
+    pattern = re.compile(re.escape(prefix) + r'([0-9a-f]{64})-(?:binary\.tar\.gz|sources\.tar\.gz|SHA256SUMS)\Z')
+    recipes = sorted({match[1] for name in assets if (match := pattern.fullmatch(name)) and match[1] != recipe})
+    if len(recipes) > BASE_CLEANUP_GROUP_LIMIT:
+        raise DeliveryError('base cleanup exceeds its bounded group inventory; preserve old groups for inspection')
+    removed = {}
+    for identity in recipes:
+        binary, source, checksum = names = group_store.names(identity)
+        if not set(names) <= assets.keys(): continue  # Partial groups are never cleanup authority.
+        with tempfile.TemporaryDirectory(prefix='base-retire-') as temporary:
+            destination = Path(temporary)
+            remote.download(assets[binary], destination / binary)
+            try:
+                if _base_sdk_slot(destination / binary, group_store) != slot: continue
+            except (ValueError, tarfile.TarError):
+                continue  # Unknown or malformed archived metadata is preserved.
+            download_files(remote, assets, [(name, destination / name, None) for name in (source, checksum)])
+            try:
+                files = group_store.verify_group(destination, identity)
+                if any(assets[name]['digest'] != 'sha256:' + files[name] for name in names): continue
+            except (ValueError, tarfile.TarError):
+                continue
+        # Retire the complete-group marker first. Interrupted cleanup cannot
+        # leave a checksum advertising archives that no longer exist.
+        removed.update((name, assets[name]) for name in (checksum, binary, source))
+    return retire_base_assets(remote, info, assets, reference, removed)
+
+
+def retire_base_assets(remote, info, assets, reference, removed):
+    """Delete verified base IDs once, with prompt failure and exact reconciliation."""
+    if not removed: return {}
+    if any(assets.get(name) != row for name, row in removed.items()):
+        raise DeliveryError('base cleanup selection differs from frozen asset inventory')
+    transport = remote.transport
+    limits = dict(WRITE_HEADROOM=0, MAX_ATTEMPTS=3, REQUEST_DEADLINE=60, COMMAND_TIMEOUT=60)
+    previous = {key: getattr(transport, key) for key in limits} if isinstance(transport, GitHub) else {}
+    try:
+        for key in previous: setattr(transport, key, limits[key])
+        remote.unchanged('base', info, assets, reference); remote.not_latest(info)
+        expected = dict(assets)
+        for name, row in removed.items():
+            if remote.change('/releases/assets/' + str(row['id']), method='DELETE') is not None:
+                raise DeliveryError('base asset deletion returned an unexpected response')
+            del expected[name]
+            remote.unchanged('base', info, expected, reference)
+        remote.not_latest(info)
+        return removed
+    finally:
+        for key, value in previous.items(): setattr(transport, key, value)
+
+
 def _publish_base_group(repository, recipe, group, source_commit, *, execute, transport,
                         group_store, operation):
     files = group_store.verify_group(group, recipe)
     if not OID.fullmatch(source_commit):
         raise DeliveryError('complete source commit required')
     result = plan(operation, repository, recipe=recipe, source_commit=source_commit, files=files,
-                  lifecycle='prerelease; never Latest; immutable complete group')
+                  lifecycle='prerelease; never Latest; immutable complete group; retire superseded matching SDK slots')
     if not execute:return result
     remote = Remote(repository, transport)
     def act():
@@ -1080,7 +1181,8 @@ def _publish_base_group(repository, recipe, group, source_commit, *, execute, tr
             raise DeliveryError('base finalization could not be verified')
         remote.not_latest(final)
         if remote.reference('base') != reference:raise DeliveryError('base tag identity changed')
-        return dict(result, execute=True, reused=False, release_id=final['id'])
+        removed = _retire_base_groups(remote, final, assets, reference, recipe, group, group_store)
+        return dict(result, execute=True, reused=False, release_id=final['id'], removed_assets=removed)
     return run_mutation(remote, act)
 
 

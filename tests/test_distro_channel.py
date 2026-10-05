@@ -85,6 +85,34 @@ def source_group(root, version='1.0.0', release=1, backends=(), backend='core', 
     return group
 
 
+class CapacityTests(unittest.TestCase):
+    def test_channel_growth_preserves_complete_aggregate_boundary(self):
+        class SizedPayload:
+            def __init__(self, size): self.size = size
+            def __len__(self): return self.size
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            for name in ('a', 'b'): (root / name).write_bytes(b'fixture')
+            # Model retained package sizes without allocating hundreds of MiB.
+            first = SizedPayload(208957183)
+            second = SizedPayload(320 * 1024 * 1024 - len(first))
+            with patch.object(d, 'ordinary', side_effect=[(first, 0o644), (second, 0o644)]):
+                self.assertEqual(set(d.tree(root)), {'a', 'b'})
+            second.size += 1
+            with patch.object(d, 'ordinary', side_effect=[(first, 0o644), (second, 0o644)]), \
+                    self.assertRaisesRegex(ValueError, 'bounded example size'):
+                d.tree(root)
+
+    def test_oversized_individual_channel_file_fails_before_reading(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'oversized'
+            with path.open('wb') as stream: stream.truncate(320 * 1024 * 1024 + 1)
+            with patch.object(d.os, 'open', side_effect=AssertionError('oversized input was opened')), \
+                    self.assertRaisesRegex(ValueError, 'bounded singly linked regular file'):
+                d.ordinary(path)
+
+
 class RecipeTests(unittest.TestCase):
     def test_historical_recipe_inventories_remain_byte_identical(self):
         expected = {

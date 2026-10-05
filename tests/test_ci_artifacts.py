@@ -85,8 +85,9 @@ class EvidenceArtifacts(unittest.TestCase):
 
     def test_names_have_finite_storage_bound_and_overflow_uses_release(self):
         self.assertEqual(artifacts.MAX_ARTIFACTS, 79)
-        self.assertEqual(artifacts.MAX_RUN_BYTES, 378 * artifacts.MIB)
-        self.assertLess(artifacts.MAX_RUN_BYTES, 384 * artifacts.MIB)
+        self.assertEqual(artifacts.MAX_RUN_BYTES, 458 * artifacts.MIB)
+        self.assertLess(artifacts.MAX_RUN_BYTES, 460 * artifacts.MIB)
+        self.assertEqual(artifacts.MAX_FILES, ci_transport.MAX_FILES)
         for target in artifacts.TARGETS:
             for scope in artifacts.SCOPES:
                 name = 'source-' + target + '-' + scope + '-2'
@@ -105,6 +106,29 @@ class EvidenceArtifacts(unittest.TestCase):
         self.assertIn('byte budget', result['reason'])
         self.assertEqual((self.source / 'nested/test.log').read_bytes(), data)
         self.assertFalse(any(self.root.glob('stage-*')))
+
+    def test_private_full_workflow_budget_counts_predecessor_and_failed_retry(self):
+        # Current all-GUI Latest: 23 qualification + 8 native package batches.
+        # Candidate preparation is mutually exclusive with executed publication.
+        selected = [slot for slot in artifacts.FIXED_SLOTS if slot != 'candidate']
+        selected += ['evidence-' + str(index).zfill(2) for index in range(31)]
+        complete = sum(artifacts.SLOT_BUDGETS[slot] for slot in selected)
+        consumed = ['source'] + ['application-' + target for target in artifacts.APPLICATION_TARGETS]
+        consumed += ['package-' + target for target in artifacts.TARGETS]
+        late_peak = complete - sum(artifacts.SLOT_BUDGETS[slot] for slot in consumed)
+        predecessor = late_peak - artifacts.SLOT_BUDGETS['certificate']
+        self.assertEqual((complete, late_peak, predecessor),
+                         tuple(value * artifacts.MIB for value in (343, 199, 159)))
+        # Failed cleanup/quota-recalculation delay keeps the predecessor charged.
+        projected = late_peak + predecessor + (40 + 2) * artifacts.MIB
+        self.assertLessEqual(projected, (500 - 100) * artifacts.MIB)
+        # An extra retry or concurrent workflow cannot fit that same Free budget.
+        self.assertGreater(projected + complete, (500 - 100) * artifacts.MIB)
+        self.assertGreater(projected + late_peak, (500 - 100) * artifacts.MIB)
+        # Existing Team allowance can cover two active + two fully retained attempts.
+        team_peak = 2 * late_peak + 2 * artifacts.MAX_RUN_BYTES + (256 + 2) * artifacts.MIB
+        self.assertEqual(team_peak, 1572 * artifacts.MIB)
+        self.assertGreaterEqual(2048 * artifacts.MIB - team_peak, 400 * artifacts.MIB)
 
     def test_expanded_file_and_manifest_budgets_choose_release(self):
         for limit, value in (('MAX_EXPANDED_BYTES', 1), ('MAX_FILES', 1), ('MAX_MANIFEST_BYTES', 1)):
@@ -223,25 +247,50 @@ class EvidenceArtifacts(unittest.TestCase):
 
     def test_realistic_certificate_above_old_limit_stays_native(self):
         self.name = 'certificate-2'
-        data = os.urandom(18 * artifacts.MIB)
+        data = os.urandom(26 * artifacts.MIB)
         (self.source / 'nested/test.log').write_bytes(data)
         target = self.stage()
         total = sum(path.stat().st_size for path in target.iterdir())
-        self.assertGreater(total, 16 * artifacts.MIB)
-        self.assertLess(total, 24 * artifacts.MIB)
+        self.assertGreater(total, 24 * artifacts.MIB)
+        self.assertLess(total, 40 * artifacts.MIB)
         self.fetch()
         self.assertEqual((self.root / 'result/nested/test.log').read_bytes(), data)
 
+    def test_growing_check_evidence_roundtrips_without_using_receipt_budget(self):
+        data = os.urandom(2 * artifacts.MIB + artifacts.MIB // 4)
+        (self.source / 'nested/test.log').write_bytes(data)
+        target = self.stage()
+        self.assertGreater(sum(path.stat().st_size for path in target.iterdir()), 2 * artifacts.MIB)
+        self.fetch()
+        self.assertEqual((self.root / 'result/nested/test.log').read_bytes(), data)
+        with self.assertRaisesRegex(ValueError, 'byte budget'):
+            self.prepare(name='candidate-delivery-2')
+
+    def test_source_and_linux_payload_growth_keeps_other_targets_bounded(self):
+        data = os.urandom(18 * artifacts.MIB)
+        (self.source / 'nested/test.log').write_bytes(data)
+        for name in ('source-2', 'application-linux-x86_64-2', 'application-linux-aarch64-2'):
+            with self.subTest(name=name):
+                self.name = name
+                target = self.stage()
+                self.assertGreater(sum(path.stat().st_size for path in target.iterdir()), 16 * artifacts.MIB)
+                self.fetch()
+                self.assertEqual((self.root / 'result/nested/test.log').read_bytes(), data)
+                shutil.rmtree(self.root / 'result')
+        for target in ('windows-x86_64', 'browser-wasm32'):
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, 'byte budget'):
+                self.prepare(name='application-' + target + '-2')
+
     def test_complete_certificate_file_inventory_above_old_manifest_limit_roundtrips(self):
         self.name = 'certificate-2'
-        for index in range(4096):
+        for index in range(10001):
             name = 'check-' + str(index).zfill(4) + '-' + 'x' * 128 + '.json'
             (self.source / 'nested' / name).write_text(json.dumps({'case': index}))
         target = self.stage()
-        self.assertGreater((target / 'manifest.json').stat().st_size, artifacts.MIB)
-        self.assertLess((target / 'manifest.json').stat().st_size, 2 * artifacts.MIB)
+        self.assertGreater((target / 'manifest.json').stat().st_size, 2 * artifacts.MIB)
+        self.assertLess((target / 'manifest.json').stat().st_size, 4 * artifacts.MIB)
         result = self.fetch()
-        self.assertEqual(len(result['manifest']['files']), 4098)
+        self.assertEqual(len(result['manifest']['files']), 10003)
         for source in (self.source / 'nested').iterdir():
             self.assertEqual((self.root / 'result/nested' / source.name).read_bytes(), source.read_bytes())
 

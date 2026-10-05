@@ -17,7 +17,7 @@ installation root and an executable `bin/foundation-cli`. Files keep their bytes
 executable files receive mode `0755`, other files `0644`, and directories `0755`.
 Only regular files and required directories are accepted. Links, special entries,
 privileged modes, ambiguous names, empty directories and unexpected executables
-are rejected. The bounded example accepts at most 10,000 entries and 256 MiB of
+are rejected. The bounded example accepts at most 10,000 entries and 320 MiB of
 total channel file content. A channel retains several copies of package bytes;
 raise limits only with corresponding resource and failure tests.
 

@@ -202,7 +202,7 @@ if(BUILD_TESTING)
     foundation_test_prerequisites(docs.links)
   endif()
   # Only explicitly named suites run; adding one requires registering its label.
-  set(_tool_suites browser_bundle package_wasm import_wasm ci_retry build build_capacity rev_probe ci_changes package_notices agent_board test_plan artifact gui_boundary gui_source_group gui_visual coverage certification ci_plan qualification_tasks process_tree host_contracts sdk sdk_retention rust_build rust_sdk rust_workflow dependencies source_identity release portability release_check run_tests github_release ci_transport ci_artifacts ci_cleanup ci_cleanup_repository workflow_storage legacy_artifacts verify_legacy_preservation screenshots gallery_browser latest_release windows_graphics windows_compiler)
+  set(_tool_suites browser_bundle package_wasm import_wasm ci_retry build build_capacity rev_probe ci_changes package_notices agent_board test_plan artifact gui_boundary gui_source_group gui_visual coverage certification ci_plan qualification_tasks process_tree host_contracts sdk sdk_retention rust_build rust_sdk rust_workflow dependencies source_identity release portability release_check run_tests github_release ci_transport ci_artifacts ci_cleanup ci_cleanup_repository ci_cleanup_previous ci_cleanup_drafts workflow_storage legacy_artifacts verify_legacy_preservation screenshots gallery_browser latest_release windows_graphics windows_compiler)
   set(_platform_exclusions "{}")
   # Docker account IDs, ownership and privilege fixtures apply to Linux hosts.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

@@ -29,7 +29,7 @@ class FakeGitHub:
 
     @property
     def mutations(self):
-        return [x for x in self.calls if x[0] in ('POST','PATCH','upload')]
+        return [x for x in self.calls if x[0] in ('POST','PATCH','DELETE','upload')]
 
     def json(self,endpoint,method='GET',body=None,missing=False):
         self.calls.append((method,endpoint,copy.deepcopy(body)))
@@ -69,6 +69,11 @@ class FakeGitHub:
         if path=='/releases' and method=='POST':
             row=dict(body,id=self.next_id,assets=[]);self.next_id+=1;self.releases.append(row)
             return copy.deepcopy(row)
+        if path.startswith('/releases/assets/') and method=='DELETE':
+            aid=int(path.rsplit('/',1)[1])
+            row=next(r for r in self.releases if any(a['id']==aid for a in r['assets']))
+            row['assets']=[a for a in row['assets'] if a['id']!=aid];self.data.pop(aid)
+            return None
         if path.startswith('/releases/') and method=='PATCH':
             rid=int(path.rsplit('/',1)[1]);row=next(r for r in self.releases if r['id']==rid)
             row.update(body)
@@ -187,8 +192,8 @@ class RustBaseTests(unittest.TestCase):
     def test_rust_batch_fetch_uses_one_inventory_for_distinct_complete_groups(self):
         recipe, group = self.group_fixture('second')
         self.publish(execute=True)
-        G.publish_rust_base('example/project', recipe, group, 'a' * 40,
-                            execute=True, transport=self.remote)
+        # Historical inventories may contain several recipes for the same slot.
+        for name in G.rust_sdk.group_names(recipe): self.remote.upload('base', group / name)
         self.remote.calls.clear()
         output = self.root / 'batch'
         result = G.fetch_rust_bases('example/project', [self.recipe, recipe], output,
@@ -200,6 +205,17 @@ class RustBaseTests(unittest.TestCase):
             self.assertEqual(result[identity]['payload'], 'complete')
         self.assertEqual(sum(call[0] in ('GET', 'pages') for call in self.remote.calls), 7)
         self.assertEqual(sum(call[0] == 'download' for call in self.remote.calls), 6)
+
+    def test_new_rust_publication_retires_the_previous_complete_slot(self):
+        self.publish(execute=True)
+        before = copy.deepcopy(self.remote.releases[0]['assets'])
+        recipe, group = self.group_fixture('replacement')
+        result = G.publish_rust_base('example/project', recipe, group, 'b' * 40,
+                                    execute=True, transport=self.remote)
+        self.assertEqual({row['id'] for row in result['removed_assets'].values()}, {row['id'] for row in before})
+        self.assertEqual({row['name'] for row in self.remote.releases[0]['assets']}, set(G.rust_sdk.names(recipe)))
+        self.assertEqual(self.remote.refs['base'], 'a' * 40)
+        G.fetch_rust_base('example/project', recipe, self.root / 'replacement-fetched', transport=self.remote)
 
     def test_rust_has_no_binary_only_fetch_shortcut(self):
         with self.assertRaises(TypeError):
@@ -317,6 +333,118 @@ class PublicFakeGitHub(FakeGitHub):
         Path(path).write_bytes(self.data[asset['id']])
         callback=self.change_download;self.change_download=None
         if callback:callback()
+
+
+class BaseRetirementTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name); self.remote = FakeGitHub()
+        self.old = self.group('a'); self.new = self.group('b')
+
+    def group(self, digit, *, capabilities=None, processor='x86_64', kind='source-build'):
+        recipe, tree, _, group = release_fixtures.fixture(self.root / digit, recipe=digit * 64)
+        metadata = G.archive.read_json(tree / 'sdk.json')
+        metadata.update(kind=kind, capabilities=capabilities or ['core', 'terminal', 'framebuffer', 'hosted-web'])
+        metadata['host']['processor'] = metadata['target']['processor'] = processor
+        metadata['target']['triple'] = processor + '-linux-gnu'
+        G.archive.write_json(tree / 'sdk.json', metadata)
+        binary, _, checksum = G.store.names(recipe)
+        (group / binary).unlink()
+        G.archive.archive_tree(tree, group / binary)
+        (group / checksum).unlink(); G.store.create_sums(group, recipe)
+        return recipe, group
+
+    def publish(self, item, *, execute=True):
+        recipe, group = item
+        return G.publish_base('example/project', recipe, group, 'a' * 40,
+                              execute=execute, transport=self.remote)
+
+    def deletions(self):
+        return [call for call in self.remote.calls if call[0] == 'DELETE']
+
+    def test_retires_only_verified_matching_slot_and_preserves_application_copies(self):
+        self.publish(self.old)
+        old = {row['name']: copy.deepcopy(row) for row in self.remote.releases[0]['assets']}
+        self.publish(self.group('c', capabilities=['core', 'fltk', 'sdl', 'rev']))
+        self.publish(self.group('d', processor='aarch64'))
+        self.publish(self.group('e', kind='diagnostic'))
+        # Other namespaces and incomplete historical groups stay untouched.
+        for name in ('README.txt', 'rust-sdk-' + 'f' * 64 + '-SHA256SUMS', G.store.names('f' * 64)[0]):
+            path = self.root / name; path.write_bytes(b'retained'); self.remote.upload('base', path)
+        self.remote.json('repos/example/project/releases', method='POST',
+                         body=dict(tag_name='v1', name='v1', draft=False, prerelease=False))
+        for name in G.store.names(self.old[0]): self.remote.upload('v1', self.old[1] / name)
+        self.remote.latest = 2
+        application = copy.deepcopy(self.remote.releases[1]); preserved = {
+            row['name']: copy.deepcopy(row) for row in self.remote.releases[0]['assets'] if row['name'] not in old}
+        result = self.publish(self.new)
+        self.assertEqual(result['removed_assets'], old)
+        self.assertEqual(self.remote.releases[1], application)
+        self.assertEqual(self.remote.latest, 2); self.assertEqual(self.remote.refs['base'], 'a' * 40)
+        remaining = {row['name']: row for row in self.remote.releases[0]['assets']}
+        self.assertTrue(all(remaining[name] == row for name, row in preserved.items()))
+        self.assertTrue(set(G.store.names(self.new[0])) <= remaining.keys())
+        checksum = G.store.names(self.old[0])[-1]
+        self.assertEqual(self.deletions()[0][1].rsplit('/', 1)[-1], str(old[checksum]['id']))
+        ids = {row['id']: row['name'] for row in old.values()}
+        downloaded = {ids[call[1]] for call in self.remote.calls if call[0] == 'download' and call[1] in ids}
+        self.assertEqual(downloaded, set(old))
+
+    def test_plans_and_exact_reuse_do_not_delete_historical_groups(self):
+        self.assertFalse(self.publish(self.new, execute=False)['execute']); self.assertFalse(self.remote.calls)
+        self.publish(self.new)
+        for name in G.store.names(self.old[0]): self.remote.upload('base', self.old[1] / name)
+        before = copy.deepcopy(self.remote.releases[0]); self.remote.calls.clear()
+        self.assertTrue(self.publish(self.new)['reused'])
+        self.assertEqual(self.remote.releases[0], before); self.assertFalse(self.remote.mutations)
+        self.assertFalse(any(call[0] == 'download' for call in self.remote.calls))
+
+    def test_malformed_binary_source_and_checksums_are_preserved(self):
+        for name in G.store.names(self.old[0]):
+            with self.subTest(member=name):
+                self.remote = FakeGitHub(); self.publish(self.old)
+                self.remote.replace_asset(name, b'invalid retained bytes')
+                old = copy.deepcopy(self.remote.releases[0]['assets'])
+                result = self.publish(self.new)
+                self.assertEqual(result['removed_assets'], {}); self.assertFalse(self.deletions())
+                self.assertEqual(self.remote.releases[0]['assets'][:3], old)
+
+    def test_failed_new_upload_preserves_all_old_groups(self):
+        self.publish(self.old); old = copy.deepcopy(self.remote.releases[0]['assets'])
+        self.remote.fail_upload = G.store.names(self.new[0])[0]
+        with self.assertRaises(G.DeliveryError): self.publish(self.new)
+        self.assertEqual(self.remote.releases[0]['assets'][:3], old); self.assertFalse(self.deletions())
+
+    def test_cleanup_reconciles_the_complete_inventory_before_any_deletion(self):
+        self.publish(self.old); old_binary = G.store.names(self.old[0])[0]
+        old_id = next(row['id'] for row in self.remote.releases[0]['assets'] if row['name'] == old_binary)
+        original = self.remote.download
+        def drift(identity, path):
+            original(identity, path)
+            if identity == old_id: self.remote.replace_asset(G.store.names(self.old[0])[1])
+        self.remote.download = drift
+        with self.assertRaisesRegex(G.DeliveryError, 'identities changed') as caught: self.publish(self.new)
+        self.assertTrue(caught.exception.uncertain); self.assertFalse(self.deletions())
+
+    def test_uncertain_delete_stops_after_the_checksum_without_replay(self):
+        self.publish(self.old); original = self.remote.json
+        def lose_response(endpoint, method='GET', body=None, missing=False):
+            result = original(endpoint, method, body, missing)
+            if method == 'DELETE': raise G.DeliveryError('injected deletion response loss')
+            return result
+        self.remote.json = lose_response
+        with self.assertRaises(G.DeliveryError) as caught: self.publish(self.new)
+        self.assertTrue(caught.exception.uncertain); self.assertEqual(len(self.deletions()), 1)
+        remaining = {row['name'] for row in self.remote.releases[0]['assets']}
+        binary, source, checksum = G.store.names(self.old[0])
+        self.assertTrue({binary, source} <= remaining); self.assertNotIn(checksum, remaining)
+        self.assertTrue(set(G.store.names(self.new[0])) <= remaining)
+
+    def test_cleanup_inventory_limit_fails_before_deleting_old_groups(self):
+        self.publish(self.old)
+        with mock.patch.object(G, 'BASE_CLEANUP_GROUP_LIMIT', 0), self.assertRaisesRegex(G.DeliveryError, 'bounded group'):
+            self.publish(self.new)
+        self.assertFalse(self.deletions())
 
 
 class DeliveryTests(unittest.TestCase):

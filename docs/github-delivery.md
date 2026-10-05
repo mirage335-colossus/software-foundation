@@ -6,8 +6,10 @@ inventory, append-only certification attempts and a separately controlled Latest
 pointer. The implementation uses the authenticated `gh` executable through argument
 arrays. Pagination consumes the complete concatenated JSON page stream and does
 not require the newer `gh api --slurp` option; older distro-provided CLI versions
-remain usable. Empty, malformed, truncated and failed page streams are rejected. It never builds missing inputs, deletes assets, force-updates a tag or
-uploads with overwrite enabled.
+remain usable. Empty, malformed, truncated and failed page streams are rejected.
+It never builds missing inputs, force-updates a tag or uploads with overwrite
+enabled. Newly verified base SDK groups retire superseded groups in the same
+consumer slot; published application assets remain untouched.
 
 The transport adapter has **offline transport tests** and concrete
 [hosted lifecycle workflows](ci.md#executable-hosted-lifecycle). Those tests do not
@@ -139,9 +141,24 @@ local group and comparing every remote asset size and SHA-256. This reuse does n
 download unchanged bytes again; the original publication still requires full
 readback. Binary/source uploads and readback are bounded parallel operations, with
 the checksum uploaded after both payloads finish. A partial group, changed bytes or incompatible release state fails
-without overwrite. Existing groups and their remote IDs remain unchanged while
-a new group is appended. The base tag's current commit is frozen and rechecked;
+without overwrite. Once a new group passes complete readback, publication verifies
+older complete groups and removes only those matching its SDK family, host,
+target and capability/configuration profile. Rust and C++ groups remain separate.
+Unknown, partial, corrupt and differently targeted groups are preserved. Cleanup
+uses exact reconciled asset IDs, removes each checksum marker before its payloads,
+and stops on a changed inventory or uncertain mutation without retrying deletion.
+Discovery is bounded to 64 groups per SDK family. Existing recipes reused without
+publication are not a cleanup trigger. Application release copies remain intact;
+old base-only recipe selectors must be updated or restored from an independently
+retained complete group. The base tag's current commit is frozen and rechecked;
 adding a later group does not move that tag to the new recipe's source commit.
+
+GUI input publication applies the same rule to complete older groups with the
+same kind, upstream and license. It verifies their own retained foundation locks
+and patches before retiring exact IDs. Legacy SDKs have no small target/profile
+index, so classification downloads their binary archives; matching removals also
+verify source/checksum bytes. This happens only when publishing a new group,
+not during ordinary builds or exact group reuse.
 
 Fetching validates repository visibility, base state, tag and the complete paged
 asset inventory. Missing recipes fail clearly. Authentication failures and unknown
@@ -429,7 +446,7 @@ it stays private, is never Latest and is not a qualified dependency base. Its
 manifest-last bundles permit same-byte reconciliation after an interrupted upload.
 This is deliberately a separate protocol from immutable candidate publication:
 the product publisher does not adopt arbitrary partial drafts. Text evidence can
-use deterministic gzip at a low compression level; consumers also accept existing
+use deterministic gzip at level 6; consumers also accept existing
 uncompressed tar bundles. Independent chunks download concurrently with a maximum
 of four workers, then reassemble in the manifest's exact order. Every worker joins
 before cleanup or local publication, including after a failed download. A batch
@@ -446,10 +463,15 @@ live in job outputs and summaries. Routine application payloads and diagnostics
 use bounded native artifacts; explicitly retained large inputs use draft bundles.
 Reference a bundle by repository, exact producer and manifest ID/digest when reusing
 another run. See [SDK retention and legacy migration](sdk.md#retain-complete-sdk-bytes-after-a-consumer-failure).
-Draft cleanup is an explicit reviewed operation after all consumers and durable
-copies are accounted for. This draft policy is separate from automatic cleanup
-of native artifacts after their final consumer. Native artifacts expire after one
-day when explicitly preserved or when bounded cleanup cannot finish.
+Marked successful full application/regression/certification workflows now trigger
+bounded cleanup of their current and preceding full run's exact transient draft
+stores and unchanged tags, after consumers have finished. SDK/legacy retention,
+unknown namespaces, partial stores and unrelated releases remain excluded. Failed,
+preparation-only, preserved and rerun attempts do not trigger it; historical
+unmarked drafts still require explicit review. See the precise
+[completion cleanup policy](ci.md#storage-caches-and-sdk-reuse). Native artifacts
+expire after one day when preserved or when cleanup cannot finish; draft releases
+have no corresponding automatic expiry.
 
 GitHub's [release API permission rules](https://docs.github.com/en/rest/releases/releases#create-a-release)
 require additional workflow-write authorization when the target commit changes

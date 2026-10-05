@@ -2014,6 +2014,62 @@ class GuiInputDeliveryTests(unittest.TestCase):
         self.assertEqual(self.remote.mutations, [])
 
 
+class GuiInputRetirementTests(unittest.TestCase):
+    def setUp(self):
+        from types import SimpleNamespace
+        import test_gui_source_group as fixtures
+        import test_github_release
+        fixture = fixtures.SourceGroupTests(); fixture.setUp(); self.addCleanup(fixture.doCleanups)
+        self.fixture = fixture; self.verifier = fixtures.subject
+        fixture.lock.update(license='CC0-1.0', redistribution={'approved': True, 'license_files': ['api.hpp']})
+        self.verifier.archive.write_json(fixture.foundation / 'third_party/gui-boundary.lock.json', fixture.lock)
+        self.old = fixture.root / 'old'; self.verifier.export(fixture.source, self.old, fixture.foundation)
+        def verify(group, redistribution=False, foundation_root=None):
+            return self.verifier.verify(group, redistribution, foundation_root or fixture.foundation)
+        adapter = SimpleNamespace(verify=verify, MAX_TOTAL=self.verifier.MAX_TOTAL)
+        mocked = patch.object(ci, 'gui_group_module', return_value=adapter); mocked.start(); self.addCleanup(mocked.stop)
+        self.remote = test_github_release.FakeGitHub()
+        self.publish(self.old)
+        (fixture.foundation / 'gui/patches/host.patch').write_bytes(b'updated reviewed patch\n')
+        self.new = fixture.root / 'new'; self.verifier.export(fixture.source, self.new, fixture.foundation)
+
+    def publish(self, group):
+        return ci.publish_gui_group('example/project', group, 'a' * 40, execute=True, transport=self.remote)
+
+    def test_new_gui_group_verifies_old_frozen_inputs_before_retiring_exact_ids(self):
+        old = {row['name']: copy.deepcopy(row) for row in self.remote.releases[0]['assets']}
+        old_manifest = self.verifier.archive.read_json(self.old / 'manifest.json')
+        old_manifest['upstream'] = 'https://example.invalid/other-gui'
+        raw = self.verifier.archive.encoded(old_manifest); other = ci.module('github_release').sha(raw)
+        path = self.fixture.root / ci.gui_group_names(other)['manifest.json']; path.write_bytes(raw)
+        self.remote.upload('base', path)
+        for local, name in ci.gui_group_names(other).items():
+            if local == 'manifest.json': continue
+            path = self.fixture.root / name; path.write_bytes((self.old / local).read_bytes()); self.remote.upload('base', path)
+        partial = self.fixture.root / ci.gui_group_names('c' * 64)['SHA256SUMS']; partial.write_bytes(b'partial')
+        self.remote.upload('base', partial)
+        preserved = {row['name']: copy.deepcopy(row) for row in self.remote.releases[0]['assets'] if row['name'] not in old}
+        result = self.publish(self.new)
+        self.assertEqual(result['removed_assets'], old)
+        remaining = {row['name']: row for row in self.remote.releases[0]['assets']}
+        self.assertTrue(all(remaining[name] == row for name, row in preserved.items()))
+        identity = self.verifier.archive.digest(self.new / 'manifest.json')
+        self.assertTrue(set(ci.gui_group_names(identity).values()) <= remaining.keys())
+        self.assertFalse(set(old) & remaining.keys()); self.assertEqual(self.remote.refs['base'], 'a' * 40)
+        self.assertIsNone(self.remote.latest)
+        first = next(call for call in self.remote.calls if call[0] == 'DELETE')
+        checksum = next(row for name, row in old.items() if name.endswith('-SHA256SUMS'))
+        self.assertEqual(first[1].rsplit('/', 1)[-1], str(checksum['id']))
+
+    def test_failed_gui_publication_preserves_the_previous_complete_group(self):
+        old = copy.deepcopy(self.remote.releases[0]['assets'])
+        identity = self.verifier.archive.digest(self.new / 'manifest.json')
+        self.remote.fail_upload = ci.gui_group_names(identity)['gui-inputs.tar.gz']
+        with self.assertRaises(ValueError): self.publish(self.new)
+        self.assertEqual(self.remote.releases[0]['assets'][:3], old)
+        self.assertFalse(any(call[0] == 'DELETE' for call in self.remote.calls))
+
+
 
 if __name__ == "__main__":
     unittest.main()

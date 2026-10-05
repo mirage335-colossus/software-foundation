@@ -243,6 +243,9 @@ jobs:
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as report:
             report.write('Selected source scopes and applicable native package checks passed.\n')
             report.write('Prepared SDK, old-runtime, all-GUI and exact release certification remain separate required qualification scopes.\n')
+    - name: Confirm complete workflow cleanup eligibility
+      if: success() && !inputs.devfast && inputs.include_arm && !inputs.preserve_artifacts
+      run: echo 'Full candidate passed; preceding full-run temporary evidence may be pruned after this run completes.'
 'on':
   workflow_dispatch:
     inputs:

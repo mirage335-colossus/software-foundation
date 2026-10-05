@@ -20,10 +20,10 @@ import dependency_archive as archive
 import github_release as delivery
 
 MIB = 1024 * 1024
-MAX_BUNDLE_BYTES = 2 * MIB  # Default receipt/evidence slot; larger classes below.
-MAX_MANIFEST_BYTES = 2 * MIB
+MAX_BUNDLE_BYTES = 3 * MIB  # Check evidence; small receipt slots remain 2 MiB.
+MAX_MANIFEST_BYTES = 4 * MIB
 MAX_EXPANDED_BYTES = 512 * MIB
-MAX_FILES = 10000
+MAX_FILES = bundles.MAX_FILES
 MAX_EVIDENCE_SLOTS = 48
 TARGETS = ('linux-x86_64', 'linux-aarch64', 'windows-x86_64')
 APPLICATION_TARGETS = TARGETS + ('browser-wasm32',)
@@ -32,14 +32,15 @@ CONTROLS = ('qualification-inputs', 'certificate', 'certification-delivery',
             'candidate-coverage', 'apt-mechanism')
 SLOT_BUDGETS = {('source-' + target + '-' + scope): 2 * MIB for target in TARGETS for scope in SCOPES}
 SLOT_BUDGETS.update({name: 2 * MIB for name in CONTROLS})
-SLOT_BUDGETS.update({'certificate': 24 * MIB, 'source': 16 * MIB, 'candidate': 64 * MIB,
+SLOT_BUDGETS.update({'certificate': 40 * MIB, 'source': 24 * MIB, 'candidate': 64 * MIB,
                      'candidate-delivery': 2 * MIB, 'latest-verification': 2 * MIB,
                      'promotion-inputs': 2 * MIB, 'promotion-delivery': 2 * MIB})
 SLOT_BUDGETS.update({'application-' + target: 16 * MIB for target in APPLICATION_TARGETS})
+SLOT_BUDGETS.update({'application-' + target: 20 * MIB for target in TARGETS if target.startswith('linux-')})
 SLOT_BUDGETS.update({'application-evidence-' + target: 8 * MIB for target in APPLICATION_TARGETS})
 SLOT_BUDGETS.update({'package-' + target: 16 * MIB for target in TARGETS})
 FIXED_SLOTS = tuple(SLOT_BUDGETS)
-SLOT_BUDGETS.update({'evidence-' + str(index).zfill(2): 2 * MIB for index in range(MAX_EVIDENCE_SLOTS)})
+SLOT_BUDGETS.update({'evidence-' + str(index).zfill(2): MAX_BUNDLE_BYTES for index in range(MAX_EVIDENCE_SLOTS)})
 SLOTS = tuple(SLOT_BUDGETS)
 MAX_ARTIFACTS = len(SLOTS)
 MAX_RUN_BYTES = sum(SLOT_BUDGETS.values())

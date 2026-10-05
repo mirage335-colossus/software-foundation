@@ -384,6 +384,9 @@ jobs:
       timeout-minutes: 1
       with:
         artifact-ids: ${{ steps.cleanup_inputs.outputs.ids }}
+    - name: Confirm complete workflow cleanup eligibility
+      if: success() && inputs.execute && inputs.require_regression && !inputs.preserve_artifacts
+      run: echo 'Full candidate publication passed; preceding full-run temporary evidence may be pruned after this run completes.'
     permissions:
       contents: write
       actions: write

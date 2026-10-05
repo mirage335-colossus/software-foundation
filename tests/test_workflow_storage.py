@@ -517,7 +517,8 @@ class WorkflowContractTests(unittest.TestCase):
         candidate = (ROOT/'.github/workflows/candidate.yml').read_text()
         certify = (ROOT/'.github/workflows/certify.yml').read_text()
         self.assertEqual(candidate.count('uses: ./.github/actions/ci-evidence-publish'), 3)
-        self.assertEqual(certify.count('uses: ./.github/actions/ci-evidence-publish'), 4)
+        # Preparation, checks, native package checks, certificate and attachment.
+        self.assertEqual(certify.count('uses: ./.github/actions/ci-evidence-publish'), 5)
         self.assertLess(candidate.index('uses: ./.github/actions/ci-evidence-download'),
                         candidate.index('lifecycle.py candidate-aggregate'))
         self.assertIn('slot: ${{ strategy.job-index }}', certify)
@@ -527,7 +528,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("CERTIFICATION_JOBS: ${{ vars.FOUNDATION_CERTIFICATION_JOBS || '0' }}", certify)
         self.assertIn('build/prerequisites/', certify)
         self.assertIn('build/attachment-plan.json', certify)
-        self.assertEqual(certify.count('uses: ./.github/actions/ci-evidence-download'), 3)
+        self.assertEqual(certify.count('uses: ./.github/actions/ci-evidence-download'), 4)
         for workflow in ('sdk-maintenance', 'sdk-import'):
             self.assertNotIn('uses: ./.github/actions/ci-evidence-publish',
                              (ROOT/f'.github/workflows/{workflow}.yml').read_text())

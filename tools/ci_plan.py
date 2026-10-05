@@ -1438,6 +1438,40 @@ def fetch_gui_group(repository, identity, output, transport=None):
     return {'group_sha256': identity, 'fetched': True}
 
 
+def _retire_gui_groups(remote, info, assets, reference, identity, manifest, verifier):
+    import tempfile
+    import tarfile
+    g = module('github_release'); a = module('dependency_archive')
+    fields = ('kind', 'upstream', 'license')
+    if any(not isinstance(manifest.get(key), str) or not manifest[key] for key in fields): return {}
+    slot = {key: manifest[key] for key in fields}
+    identities = sorted({match[1] for name in assets if
+        (match := re.fullmatch(r'gui-([0-9a-f]{64})-(?:inputs\.tar\.gz|manifest\.json|SHA256SUMS)', name)) and match[1] != identity})
+    if len(identities) > g.BASE_CLEANUP_GROUP_LIMIT: raise ValueError('GUI base cleanup exceeds bounded group inventory')
+    removed = {}
+    for old in identities:
+        names = gui_group_names(old)
+        if not set(names.values()) <= assets.keys(): continue
+        with tempfile.TemporaryDirectory(prefix='gui-base-retire-') as temporary:
+            root = Path(temporary); group = root / 'group'; group.mkdir()
+            remote.download(assets[names['manifest.json']], group / 'manifest.json')
+            try:
+                data = a.read_json(group / 'manifest.json')
+                if a.digest(group / 'manifest.json') != old or not isinstance(data, dict): continue
+                if {key: data.get(key) for key in fields} != slot: continue
+            except ValueError:
+                continue
+            g.download_files(remote, assets, [(names[name], group / name, None) for name in ('gui-inputs.tar.gz', 'SHA256SUMS')])
+            try:
+                # Previous groups bind their own retained lock and patches.
+                frozen = a.extract(group / 'gui-inputs.tar.gz', root / 'frozen', max_bytes=getattr(verifier, 'MAX_TOTAL', 2 * 1024**3))
+                verifier.verify(group, redistribution=True, foundation_root=frozen / 'foundation')
+            except (ValueError, OSError, tarfile.TarError):
+                continue
+        removed.update((names[name], assets[names[name]]) for name in ('SHA256SUMS', 'manifest.json', 'gui-inputs.tar.gz'))
+    return g.retire_base_assets(remote, info, assets, reference, removed)
+
+
 def publish_gui_group(repository, group, source_commit, execute=False, transport=None):
     import shutil
     import tempfile
@@ -1448,7 +1482,7 @@ def publish_gui_group(repository, group, source_commit, execute=False, transport
     files = {remote_name: c.sha(group / local) for local, remote_name in names.items()}
     result = g.plan('publish-gui-inputs', repository, group_sha256=identity, files=files,
                     source_commit=source_commit, redistributable=manifest['redistributable'],
-                    lifecycle='immutable complete GUI input group; base prerelease; never Latest')
+                    lifecycle='immutable complete GUI input group; base prerelease; never Latest; retire superseded matching GUI inputs')
     if not execute: return result
     remote = g.Remote(repository, transport)
     def act():
@@ -1494,7 +1528,8 @@ def publish_gui_group(repository, group, source_commit, execute=False, transport
                 raise ValueError('base finalization unconfirmed')
             remote.not_latest(final)
             if remote.reference('base') != reference: raise ValueError('base reference changed')
-            return dict(result, execute=True, reused=False, release_id=final['id'])
+            removed = _retire_gui_groups(remote, final, assets, reference, identity, manifest, verifier)
+            return dict(result, execute=True, reused=False, release_id=final['id'], removed_assets=removed)
     return g.run_mutation(remote, act)
 
 

@@ -193,3 +193,6 @@ jobs:
               'Preparation passed. No public candidate, release certification or Latest change was requested.')
         with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
           out.write(text+'\n\nSource: `'+value['source_commit']+'`\n\nInventory: `'+value['inventory_sha256']+'`\n')
+    - name: Confirm complete workflow cleanup eligibility
+      if: success() && inputs.execute && !inputs.preserve_artifacts
+      run: echo 'Full Latest publication passed; preceding full-run temporary evidence may be pruned after this run completes.'

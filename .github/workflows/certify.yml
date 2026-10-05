@@ -384,6 +384,9 @@ jobs:
         required=['prepare','check','record'] + (['attach'] if os.environ['EXECUTE']=='true' else [])
         if os.environ['PACKAGE_ENABLED']=='true': required.append('packages')
         if any(results[k]['result'] != 'success' for k in required): raise SystemExit('Incomplete or failed exact qualification; inspect retained evidence')
+    - name: Confirm complete workflow cleanup eligibility
+      if: success() && inputs.execute && !inputs.preserve_artifacts
+      run: echo 'Full attached certification passed; preceding full-run temporary evidence may be pruned after this run completes.'
 
 env:
   GH_TOKEN: ${{ github.token }}

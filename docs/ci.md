@@ -185,16 +185,89 @@ published application/certification assets use release storage. Small handoffs n
 longer create private releases or re-query producer jobs through REST.
 
 Each native artifact contains a complete hashed archive and manifest. There are
-79 immutable slots per run attempt, with **378 MiB maximum combined content**
-across their individual budgets, plus ZIP metadata overhead. Ordinary receipts
-and individual check batches allow 2 MiB; source, application and native package
-slots allow 16 MiB; complete certificates allow 24 MiB; application diagnostic
-slots allow 8 MiB. Native file manifests allow 2 MiB within each slot's total
-budget. The optional SDK-free candidate slot allows 64 MiB. SDK archives are
-excluded. These are ceilings, not reserved storage or expected consumption. A
-complete Rust all-GUI certificate handoff measured 23,500,974 bytes (about
-22.4 MiB), including its 1,470,211-byte manifest and all 6,016 retained files.
-Bound browser fixtures and screenshots remain part of the complete evidence.
+79 immutable slots per run attempt, with **458 MiB maximum combined content**
+across their individual budgets, plus ZIP metadata overhead. This union includes
+mutually exclusive preparation/publication paths; it is not a private-account
+storage reservation. The 2026-10-05 limits use measured growth by resource class:
+
+| Resource | Measured retained size | Selected bound |
+| --- | --- | --- |
+| Individual check evidence | 2,050,496 bytes, nearly the former 2 MiB cap | 3 MiB per slot; still 48 slots |
+| Complete certificate | 23,500,974 bytes, including manifest | 40 MiB |
+| Certificate inventory | 6,016 files; 1,470,211-byte manifest | 16,000 files; 4 MiB manifest, included in the complete slot budget |
+| Source archive | 13,570,953 bytes | 24 MiB |
+| Linux application archives | 13,063,595 / 13,002,687 bytes | 20 MiB per architecture |
+| Windows / Wasm application archives | 6,922,103 / 2,817,900 bytes | Unchanged 16 MiB each |
+| Source-scope evidence / small controls | Largest observed source-scope handoff 145,495 bytes | Unchanged 2 MiB |
+| Application diagnostics | Largest observed 323,174 bytes | Unchanged 8 MiB |
+| Native package / optional SDK-free candidate | Separate complete payload paths | Unchanged 16 / 64 MiB |
+
+SDK archives remain excluded. The 512 MiB expanded-artifact bound already exceeds
+the measured 111,930,014-byte certificate inventory fourfold. General transport
+remains capped at 64 GiB, 512 MiB parts and an 8 MiB manifest; its file count now
+matches the native producer and consumer. Metadata/pointers remain 64 KiB.
+SDK archive limits, API concurrency/retry guards and security/gallery bounds stay
+unchanged. Signed distribution channels use release storage and allow 320 MiB,
+against a measured 208,957,183 bytes; their consumers share the same bound.
+
+Deterministic gzip level 6 reduced the complete certificate to 19,116,894 bytes
+including its unchanged manifest, and the largest batch to 1,684,127 bytes.
+Recompressing the retained certificate took 1.85 seconds locally. Archives retain
+every original file, browser fixture and screenshot; outer Actions compression
+remains disabled to avoid recompressing them again.
+
+### Private-account storage budget
+
+On 2026-10-05, read-only GitHub APIs reported organization **Free**, with the
+repository and all 16 visible owner repositories public. Free private repositories
+share **500 MiB** of Actions/Packages storage; Team includes 2 GiB and Enterprise
+Cloud 50 GiB. Caches have a separate allowance. Release assets use separate
+storage, with each asset below 2 GiB and at most 1,000 assets per release.
+See [included allowances](https://docs.github.com/en/billing/reference/product-usage-included),
+[pooled storage billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+and [release limits](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
+
+The live inventory was 385 artifacts / 137,194,926 bytes (130.839 MiB) here and
+1,065 artifacts / 12,256,576,107 bytes across the visible owner repositories,
+mostly public `pumpModem` artifacts. These public inventories do **not** establish
+private billed usage. The accessible October billing report showed $0 net charges;
+private package inventory was inaccessible (`read:packages` missing). Existing
+Actions $945 and Packages $85 stopping budgets are account settings, **not spending
+authorization**. This change authorizes no paid storage and changes no billing
+setting. Before private operation, verify the pooled current storage and configure
+a zero-overage stopping budget with the billing owner; the existing nonzero caps
+do not enforce included-only use. See [budget controls](https://docs.github.com/en/billing/how-tos/set-up-budgets).
+
+For the current all-GUI Latest shape (31 evidence slots, including eight package
+checks), successful final-consumer deletion gives conservative phase ceilings of
+**198 MiB during production** and **199 MiB during certification**, before ZIP
+overhead. A finished run can leave up to 159 MiB of smaller evidence until cleanup
+or expiry. Disabling early deletion allows 343 MiB across that executed shape;
+arbitrary failed attempts must be charged their complete retained inventory, up
+to the 458 MiB union bound. A measured standalone certificate run retained
+44.502 MiB; these observations are not a substitute for the ceiling calculation.
+
+Count every current workflow, predecessor awaiting cleanup, failed/preserved
+retry, other repository and private package. Count deleted bytes again as pending
+until quota reporting catches up (documented delay 6–12 hours); deletion does not
+erase previously accrued monthly usage. Keep **at least 100 MiB reserve on Free**:
+
+| Included budget | Example planned peak, including 2 MiB ZIP allowance | Reserve / operating condition |
+| --- | --- | --- |
+| Free, 500 MiB | One active full run 199 + one prior retained run 159 + other pooled storage 40 + overhead 2 = 400 MiB | 100 MiB; serialize new full runs/retries if another retained or delayed-accounting copy would exceed this |
+| Free, 500 MiB | Two active phases 398 + overhead 2 = 400 MiB | 100 MiB only when no predecessor, failed attempt or other pooled storage remains; not the default |
+| Team, 2,048 MiB | Two active 398 + two failed/preserved whole attempts 916 + other storage 256 + overhead 2 = 1,572 MiB | 476 MiB; only if Team is already included in the account plan |
+
+Use `preserve_artifacts=false`, keep one-day retention, and keep full workflow
+dispatches within that envelope. Reconcile/expire failed attempts before another
+retry when necessary; do not increase billing or silently relay failed uploads.
+The job-count variable `FOUNDATION_CERTIFICATION_JOBS` limits concurrent jobs,
+not retained storage. Repository workflow concurrency is not an account-wide
+storage lock: these are operating budgets, not an atomic admission guarantee.
+For another included allowance, use `active phase bytes + retained/failed bytes +
+other pooled bytes + pending deletions + ZIP overhead <= allowance - reserve`;
+do not count one physical or pending copy twice. A larger plan does not require
+larger payload limits. Unknown account usage is not evidence of available quota.
 
 Consumers download only the relevant slots from their exact executing Actions
 run. Immutable artifact names and explicit workflow `needs` establish producer
@@ -227,10 +300,37 @@ no artifact listing. Distinct application matrix output names keep every target'
 ID; assembly validates a complete map for its actual core or all-GUI inventory
 before deletion. No missing ID causes a repository search or broader cleanup.
 The complete all-GUI release deletes nine archives, leaving its 44 smaller artifacts
-to expire. Each cleanup step is best-effort, limited to one minute, and never waits
-for quota headroom or retries a mutation. There is no final sweep or extra cleanup
-runner. Workflow history, unrelated artifacts and release assets remain intact.
+to expire. Each final-consumer cleanup step is best-effort, limited to one minute,
+and never waits for quota headroom or retries a mutation.
 Concurrent runs and preexisting artifacts still share the account allowance.
+
+After a marked full manual `candidate.yml`, `_release-latest.yml`, `certify.yml`
+or `sdk-application.yml` run finishes successfully, `cleanup-previous-run.yml`
+removes artifacts of the nearest earlier marked full successful run of that exact
+workflow. It retains the current run's Actions evidence. The completion marker
+requires normal full candidate coverage or executed publication/attachment,
+with `preserve_artifacts=false`. Preparation, failed runs, preserved evidence,
+all rerun attempts and unmarked historical runs are excluded. The first marked
+run establishes the baseline; this is not a historical repository sweep.
+
+The cleanup job executes only default-branch code, freezes fully paginated exact
+artifact IDs, rechecks repository/source/run identity and refuses other active
+workflows. It allows at most 512 artifacts, 1,000 history entries and 20 candidate
+predecessors, spaces deletes by one second, and has a nine-minute artifact loop
+budget. Unknown deletion outcomes stop without replay. Its summary records
+confirmed counts/bytes and any remaining work; automatic one-day artifact expiry
+still applies when cleanup is blocked or fails.
+
+The same completion barrier removes only the selected current/prior
+`ci-RUN_ID-attempt-ATTEMPT` draft stores and their unchanged direct tags, after
+checking exact transport provenance and a complete temporary-bundle inventory.
+Stores containing SDK, migration, unknown or incomplete namespaces are preserved.
+Draft cleanup is bounded to two selected stores and two minutes, and rechecks for
+active consumers before deletion. Published application releases, `base`, workflow
+runs and normal logs remain intact. GitHub draft releases have no one-day artifact
+expiry: a blocked draft cleanup needs a later successful cleanup retry or explicit
+review; it is never treated as reclaimed storage. The new completion hook becomes
+active only after these workflow files are on the repository's default branch.
 
 Unknown slots, oversize bundles and failed uploads fail visibly without silently
 starting the expensive release relay. The composite actions expose an explicit
