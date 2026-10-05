@@ -2,21 +2,23 @@
 
 ## View screenshots
 
-**Historical source snapshot — 2026-10-02.** These seven fresh initial views
-come from source commit
-[`b925598f3e57b034c83ac441c929ce900b283a53`](https://github.com/mirage335-colossus/software-foundation/commit/b925598f3e57b034c83ac441c929ce900b283a53),
-the [published screenshot release](https://github.com/mirage335-colossus/software-foundation/releases/tag/screenshots-36977734580-attempt-1)
-and [capture run 36977734580, attempt 1](https://github.com/mirage335-colossus/software-foundation/actions/runs/36977734580/attempts/1).
-The date is the source commit date. This is a historical view of that source,
-not a claim that the images show the current revision.
+**Cloud-built source snapshot — 2026-10-05.** These seven fresh initial views
+show the Rust/C++ application built on GitHub-hosted Actions from source commit
+[`946007da9328e78cdc1380cd0238c9740f435042`](https://github.com/mirage335-colossus/software-foundation/commit/946007da9328e78cdc1380cd0238c9740f435042).
+The [published screenshot release](https://github.com/mirage335-colossus/software-foundation/releases/tag/screenshots-37352058694-attempt-1)
+and [capture run 37352058694, attempt 1](https://github.com/mirage335-colossus/software-foundation/actions/runs/37352058694/attempts/1)
+record the exact hosted execution.
+The date is the source commit date. The images document that exact source;
+later documentation commits do not change the capture's identity.
 
-The original gallery's PNGs and provenance files total about 100 KB and can be
+The gallery's PNGs and provenance files total about 100 KB and can be
 viewed offline in a Markdown viewer. Read [BUILD.txt](screenshots/BUILD.txt) for
 the capture summary, [screenshots.json](screenshots/screenshots.json) for exact
-source, SDK, runtime, binary and image identities, and
-[SHA256SUMS](screenshots/SHA256SUMS) for the original checksums. The
-[public delivery evidence](validation.md#current-public-delivery-evidence-2026-10-03)
-records the publication and independent readback. These images document appearance;
+source, SDK, Rust compiler, runtime, binary and image identities, and
+[SHA256SUMS](screenshots/SHA256SUMS) for the unaltered gallery checksums.
+Native and Wasm builds both use their verified retained Rust extensions.
+All ten downloaded release assets matched their public SHA-256 identities before
+the complete gallery was checked in. These images document appearance;
 functional release qualification remains separate.
 
 ### FLTK
@@ -39,30 +41,14 @@ SDL native window: 640 by 480 client pixels, 96 DPI, scale one.
 
 ### Terminal
 
-**Caret correction — 2026-10-04 local verification.** The terminal now inverts
-the caret cell's colors while preserving its character. The complete placeholder
-reads “Type an entry”; moving the caret through entered text preserves every glyph.
-This additional terminal-only capture uses the working source based on
-`9335ddf21a8a31e6b8f61a124a13cf31c0acf5b0` with the
-[reviewed caret patch](../gui/patches/terminal-caret.patch).
-[Capture provenance](terminal-caret/capture.json) records the patch, source tree,
-executable and image digests, tool settings and four passing focused checks.
-It is separate from the historical seven-host release gallery.
+![Fresh terminal Entry list application showing the complete Type an entry placeholder with an inverse-color caret on the T.](screenshots/terminal.png)
 
-![Corrected terminal Entry list application showing the complete Type an entry placeholder with an inverse-color caret on the T.](terminal-caret/terminal.png)
-
-<details>
-<summary>Original published terminal capture</summary>
-
-![Fresh Entry list application in xterm, showing its empty list, controls, status row and terminal border.](screenshots/terminal.png)
-
-This older image shows the `|` caret replacing the initial “T”. Its original
-bytes and release provenance remain unchanged.
-
-</details>
-
-Both terminal captures use xterm at 80 by 31 cells, captured at 644 by 531 pixels
-with the status row and border retained. Neither image was cropped or resampled.
+The cloud capture includes the [reviewed caret correction](../gui/patches/terminal-caret.patch):
+the caret cell's colors invert while its character remains visible. Xterm uses
+80 by 31 cells, captured at 644 by 531 pixels with the status row and border
+retained. The image was neither cropped nor resampled. The earlier
+[2026-10-04 local verification](terminal-caret/capture.json) and its
+[terminal image](terminal-caret/terminal.png) remain historical evidence.
 
 ### Framebuffer
 
@@ -97,7 +83,7 @@ To download this exact public snapshot from the repository root, use a fresh
 temporary directory and the existing verifier:
 
 ```sh
-gallery_tag=screenshots-36977734580-attempt-1
+gallery_tag=screenshots-37352058694-attempt-1
 gallery_download="$(mktemp -d)"
 gh release download "$gallery_tag" \
   --repo mirage335-colossus/software-foundation --dir "$gallery_download"
@@ -115,7 +101,7 @@ cp "$gallery_download/"*.png "$gallery_download/BUILD.txt" \
 python3 -B tools/screenshots.py verify docs/screenshots
 ```
 
-Update the historical source date, source commit and release/run links above in
+Update the capture source date, source commit and release/run links above in
 the same change. Keep exactly the seven PNGs and three original companion files
 in `docs/screenshots/`; the verifier rejects extra files and altered bytes.
 

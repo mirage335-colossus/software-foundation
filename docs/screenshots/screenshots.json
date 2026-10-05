@@ -1,14 +1,14 @@
 {
   "attempt": 1,
   "binaries": {
-    "native/gui/foundation-gui-fltk": "f1346a89a0238a591320f5de986df2f551c820a03c6011c7d490ba2095c64b60",
-    "native/gui/foundation-gui-framebuffer": "9894bb7af5b5425c825067c483a1bb9deaac2c522f789326399218b9fbfd5ef4",
-    "native/gui/foundation-gui-rev": "7d3c9b1a27a8e356fffc967572ab2e1e62cba5e8bc9219d6efa2a2e27fbeb115",
-    "native/gui/foundation-gui-sdl": "069afb49cfbd88329d732ca735362903f8a567c512a96c39d3f08c52a24b5742",
-    "native/gui/foundation-gui-terminal": "8bf9b427376ac18eff50268879e9ac9cd86381fb2f250411a5f0d4c3b7e0f37b",
-    "native/gui/foundation-gui-web": "20fa4741eeb8c392c6875487c049f8e09f12ab905d33adda49fb85a1cd0f67fe",
-    "wasm/gui/gui_web_wasm.js": "a1e4756f926cb56b253546d6fac1064bd3069ed67356c6813c3c258a3aaa58b0",
-    "wasm/gui/gui_web_wasm.wasm": "50ffb824ea71d5c2163cea46204f7ea0ae801692cdb6494889cca7aef39f2de6"
+    "native/gui/foundation-gui-fltk": "ac1fa594cafd7e8ef850c18af66ad4bcfee00d1729e00f74ec93881b3ded40b7",
+    "native/gui/foundation-gui-framebuffer": "8daa57131abdb81cd7ed216624e4cce4da0a4a0bf1a856b32eb15bed38b3eefa",
+    "native/gui/foundation-gui-rev": "59e44c35987630f97608e595a23960ee5a34cb8d79428dbcfe30aa48b496990c",
+    "native/gui/foundation-gui-sdl": "e07493f468a12002ab820d5ed507c78036e9fd166c880efb008db8ae55670315",
+    "native/gui/foundation-gui-terminal": "7ac1151d793fc758b0955036f8adedf1a46a174276de268d9ea981a90da87350",
+    "native/gui/foundation-gui-web": "e074a34b183f8a4d80ae0da82641e9b15f59889e59d5173a018b2d3330176b0e",
+    "wasm/gui/gui_web_wasm.js": "bff4e025359db42610ebcd5dfc2c77fbd80a04c42933058b0d2ff4f264a6d1ac",
+    "wasm/gui/gui_web_wasm.wasm": "e7cc3015b8a0f6f7dc3f3f7b24cfa6b42d5b1a4fc5b0dbe8e40e7e90ad6c4ad1"
   },
   "captures": {
     "browser": {
@@ -54,7 +54,7 @@
       }
     },
     "fltk": {
-      "colors": 1810,
+      "colors": 1696,
       "height": 480,
       "surface": "native-window",
       "width": 640
@@ -186,7 +186,7 @@
       "width": 640
     },
     "terminal": {
-      "colors": 2209,
+      "colors": 2218,
       "height": 531,
       "surface": "native-window",
       "width": 644
@@ -300,16 +300,17 @@
       "width": 640
     }
   },
+  "core_provider": "rust",
   "dependencies": {
     "native": {
-      "sdk-bdd39974a891e6161d667bbaa0ff2c1894fe9f188ed76d47d1ad6c896972c9f8-SHA256SUMS": "d772d3f8902e4507d2372877d51ad130b11888b20326bd0bbf00d4b3b47eb304",
-      "sdk-bdd39974a891e6161d667bbaa0ff2c1894fe9f188ed76d47d1ad6c896972c9f8-binary.tar.gz": "2714d7f09cbb6abe3a1f8c640f95948a47f23231a9221f50a1e4f28020fca368",
-      "sdk-bdd39974a891e6161d667bbaa0ff2c1894fe9f188ed76d47d1ad6c896972c9f8-sources.tar.gz": "77b6ef65e4119cf231f16dac8811db28abce71bac995296e869f64bab8196c5d"
+      "sdk-3e7438a4b5ee7a4baf5d7abacbdd320087aab42f24ea021f0f023b61db55bb33-SHA256SUMS": "13de860c7888f996fbbeae8df714a728b590bd37918a951e0005be84eee55909",
+      "sdk-3e7438a4b5ee7a4baf5d7abacbdd320087aab42f24ea021f0f023b61db55bb33-binary.tar.gz": "806c37b93379c0d40b7ec6b34a421fd9cebe175cd64a1f29cb196d4c0f8e87d2",
+      "sdk-3e7438a4b5ee7a4baf5d7abacbdd320087aab42f24ea021f0f023b61db55bb33-sources.tar.gz": "8d65f6d11d1e3d70ad51c507b6692bee3b576ac6318927bf85e619578686a72a"
     },
     "wasm": {
-      "sdk-783adcbd828ccd3dce72fefa575755d0d94f4eec528634bd4a9bdce7341356d5-SHA256SUMS": "7e881bb0c29a35112177733ccb9413fc95940813e22c2e0cce4254a6c509bab3",
-      "sdk-783adcbd828ccd3dce72fefa575755d0d94f4eec528634bd4a9bdce7341356d5-binary.tar.gz": "9b98de1958aa8e3501ed19dd4525d66ed94212113a6675830992ce9e65b3c1d4",
-      "sdk-783adcbd828ccd3dce72fefa575755d0d94f4eec528634bd4a9bdce7341356d5-sources.tar.gz": "f75488b3c13e263b9f204ddde23d47f95057c9d203f00e7367534f81122a1830"
+      "sdk-74f5153e31c23f899f01d8340ffa4aba7f5a8ed81b0db206e6da8a1b38ece541-SHA256SUMS": "f94388c4d18c981675145868baccc96bcaa83cc709b5d075de117ade4e0d5c71",
+      "sdk-74f5153e31c23f899f01d8340ffa4aba7f5a8ed81b0db206e6da8a1b38ece541-binary.tar.gz": "1fa09b1f4f418beae45aa6bba76396fef1eb6bad9d103ab69a676f1ce701e928",
+      "sdk-74f5153e31c23f899f01d8340ffa4aba7f5a8ed81b0db206e6da8a1b38ece541-sources.tar.gz": "9713293c582293ecf734ceb18f3f16fed936f872085bc614ff6161ed9ab6d37b"
     }
   },
   "display_dpi": 96,
@@ -330,9 +331,9 @@
     "VERSION_ID": "24.04"
   },
   "gui_group": {
-    "archive_sha256": "85ab372a4ac621fbb1f5e0dc9cd7c28547f6facf587bd2cdcae839bbda88a2e9",
+    "archive_sha256": "f2adcdc012f058cf010cf22e43eee89bcc01c6f444feddf133f8ecc53237afe6",
     "license": "CC0-1.0",
-    "manifest_sha256": "dd7989ab07af4fb7d8ad8ebb95367b9b1eecb2d98171642e3290fc2762c49eda",
+    "manifest_sha256": "2dcef6393d9ad9a4c41c8a819f3e836ace78af4c19eb4be7496b9ca41fac78cd",
     "redistributable": true,
     "revision": "7a704f73e563a167ea335dd23ccd9f383ebec274",
     "source_tree": "2b8c513263e5eb531f9985dc2c6e1173b2b37d0e",
@@ -351,8 +352,8 @@
         640,
         480
       ],
-      "sha256": "d97c17a3ba6bd09694e115e1ecc5c702129cedb1340bd726d5e933e1dcdafc32",
-      "size": 14335
+      "sha256": "f6a459900c99d50f25bc281d9d385cf8f99f124c53c985d086d340e6664a73d0",
+      "size": 13764
     },
     "framebuffer.png": {
       "dimensions": [
@@ -391,8 +392,8 @@
         644,
         531
       ],
-      "sha256": "d84f321eebfe4001b8e1a585ae0c0ae224b93e4844b5100f1ea3efe8b6a6e5de",
-      "size": 19535
+      "sha256": "c29bb07da0dfd89db6fe031c299c8b3d732528adc1d5d3c557397d3b38bd6927",
+      "size": 19593
     },
     "wasm.png": {
       "dimensions": [
@@ -410,66 +411,58 @@
   ],
   "origins": {
     "native": {
-      "origin": "retained",
-      "publication_approved": false,
-      "qualification": "unqualified",
-      "recipe": "bdd39974a891e6161d667bbaa0ff2c1894fe9f188ed76d47d1ad6c896972c9f8",
-      "request": {
-        "attempt": 1,
-        "group": {
-          "manifest_id": 604383324,
-          "manifest_sha256": "ad10a31c16a95941eac02afb4e9d2c446730941fa5748aa8f5450b8a72894963"
-        },
-        "job_id": 110638469518,
-        "profile": "all-gui",
-        "proof": {
-          "manifest_id": 604383550,
-          "manifest_sha256": "2e553c9de0505e9fd2b8e8cf807c4fe9b942b02eb127819376fbada0db85500d"
-        },
-        "recipe_id": "bdd39974a891e6161d667bbaa0ff2c1894fe9f188ed76d47d1ad6c896972c9f8",
-        "repository": "mirage335-colossus/software-foundation",
-        "run_id": 36942956015,
-        "schema_version": 2,
-        "source_commit": "2332d31e77e5b632e3f7d8a7b5031153e794e9dc",
-        "target": "linux-x86_64",
-        "workflow": "sdk-import.yml"
-      }
+      "origin": "base",
+      "recipe": "3e7438a4b5ee7a4baf5d7abacbdd320087aab42f24ea021f0f023b61db55bb33"
     },
     "wasm": {
-      "origin": "retained",
-      "publication_approved": false,
-      "qualification": "unqualified",
-      "recipe": "783adcbd828ccd3dce72fefa575755d0d94f4eec528634bd4a9bdce7341356d5",
-      "request": {
-        "attempt": 1,
-        "group": {
-          "manifest_id": 604385616,
-          "manifest_sha256": "ed16151d4aaceef128163f1ff6ac263121da9806962e72a136b4f7f9930053bb"
-        },
-        "job_id": 110638428931,
-        "profile": "all-gui",
-        "proof": {
-          "manifest_id": 604385799,
-          "manifest_sha256": "e27d41b099b0bb0be24cc24286adc5a6b36a63de62883b6da6f4dee63f86ddef"
-        },
-        "recipe_id": "783adcbd828ccd3dce72fefa575755d0d94f4eec528634bd4a9bdce7341356d5",
-        "repository": "mirage335-colossus/software-foundation",
-        "run_id": 36942942745,
-        "schema_version": 2,
-        "source_commit": "2332d31e77e5b632e3f7d8a7b5031153e794e9dc",
-        "target": "browser-wasm32",
-        "workflow": "sdk-import.yml"
-      }
+      "origin": "base",
+      "recipe": "74f5153e31c23f899f01d8340ffa4aba7f5a8ed81b0db206e6da8a1b38ece541"
     }
   },
   "recipes": {
-    "native": "bdd39974a891e6161d667bbaa0ff2c1894fe9f188ed76d47d1ad6c896972c9f8",
-    "wasm": "783adcbd828ccd3dce72fefa575755d0d94f4eec528634bd4a9bdce7341356d5"
+    "native": "3e7438a4b5ee7a4baf5d7abacbdd320087aab42f24ea021f0f023b61db55bb33",
+    "wasm": "74f5153e31c23f899f01d8340ffa4aba7f5a8ed81b0db206e6da8a1b38ece541"
   },
-  "run_id": "36977734580",
-  "schema_version": 1,
-  "source_commit": "b925598f3e57b034c83ac441c929ce900b283a53",
-  "source_sha256": "9e9c0aee505caf96072f883940dd381c00d74132b3358036a87d7b3d60966ad2",
+  "run_id": "37352058694",
+  "rust": {
+    "native": {
+      "core_provider": "rust",
+      "group_files": {
+        "rust-sdk-888eaacdca83ecc2d518a2062e13b65d43fdbe6188ee6daaf29713f2aabb13cd-SHA256SUMS": "8f5e7ece7978ae5e02c7deea1939460483e1e00d26346ba00c50a711e8be22fe",
+        "rust-sdk-888eaacdca83ecc2d518a2062e13b65d43fdbe6188ee6daaf29713f2aabb13cd-binary.tar.gz": "da56c68ab8c93891c873194fe1dc07669a1b2d11e441dd8ff726c371c7f0f876",
+        "rust-sdk-888eaacdca83ecc2d518a2062e13b65d43fdbe6188ee6daaf29713f2aabb13cd-sources.tar.gz": "6a985fce3dbb8f50c070704f82e42192362cb7d6f99fe99fbfa5b15f6cd99db2"
+      },
+      "origin": {
+        "origin": "base",
+        "recipe": "888eaacdca83ecc2d518a2062e13b65d43fdbe6188ee6daaf29713f2aabb13cd"
+      },
+      "rust_compiler_sha256": "ee914b3ecc3b4c754dc05ac1219ac80e1890a705b56d381a4f21d157b0ec0091",
+      "rust_compiler_version": "1.63.0",
+      "rust_sdk_manifest_sha256": "2718fb5977a22e9c4ed13bf435e5b221dc98282c81b95affa5082747c615f650",
+      "rust_sdk_recipe_id": "888eaacdca83ecc2d518a2062e13b65d43fdbe6188ee6daaf29713f2aabb13cd",
+      "rust_target": "x86_64-unknown-linux-gnu"
+    },
+    "wasm": {
+      "core_provider": "rust",
+      "group_files": {
+        "rust-sdk-f9e35b94f0f7c65b7f2c7fe6d8af2c93fee6056d572ed2943c2dc6ea81f609f4-SHA256SUMS": "05f0ebab8bd01170a998c2874d9b88bc861e5bb6781900c65727d62ea3160256",
+        "rust-sdk-f9e35b94f0f7c65b7f2c7fe6d8af2c93fee6056d572ed2943c2dc6ea81f609f4-binary.tar.gz": "0dd70ae1adcb1d313e82cefd0821534d8d9408f50511e7a2007b7612239d39fc",
+        "rust-sdk-f9e35b94f0f7c65b7f2c7fe6d8af2c93fee6056d572ed2943c2dc6ea81f609f4-sources.tar.gz": "5a03101615817a5f06e16c8deb8a1fb4d1ef4a54f96cab29221435f465a52568"
+      },
+      "origin": {
+        "origin": "base",
+        "recipe": "f9e35b94f0f7c65b7f2c7fe6d8af2c93fee6056d572ed2943c2dc6ea81f609f4"
+      },
+      "rust_compiler_sha256": "ee914b3ecc3b4c754dc05ac1219ac80e1890a705b56d381a4f21d157b0ec0091",
+      "rust_compiler_version": "1.63.0",
+      "rust_sdk_manifest_sha256": "b62531d299c5423dd4bc86d78dab7be8dee2bff2ef33a7b808142579e81a0933",
+      "rust_sdk_recipe_id": "f9e35b94f0f7c65b7f2c7fe6d8af2c93fee6056d572ed2943c2dc6ea81f609f4",
+      "rust_target": "wasm32-unknown-emscripten"
+    }
+  },
+  "schema_version": 2,
+  "source_commit": "946007da9328e78cdc1380cd0238c9740f435042",
+  "source_sha256": "b648530872a585964cbfb61d03a0574155e5b4d16e93cd4508289cabfea9a2b2",
   "state": "fresh initial application",
   "terminal": "80x31 cells; DejaVu Sans Mono 10pt; status row and terminal border retained",
   "tools": {

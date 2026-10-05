@@ -13,9 +13,9 @@ logic; the present application remains predominantly C++.
 
 ## One application, seven backends
 
-Each host presents the same shared **Entry list** application. The six graphical
-captures show the 2026-10-02 source snapshot; the TUI uses the corrected
-2026-10-04 local capture. Select an image to view it at full size.
+Each host presents the same shared **Entry list** application. All seven cloud
+captures show the Rust/C++ application from the 2026-10-05 source snapshot.
+Select an image to view it at full size.
 
 | FLTK native window | Rev native window |
 | --- | --- |
@@ -23,11 +23,11 @@ captures show the 2026-10-02 source snapshot; the TUI uses the corrected
 | **SDL window** | **Framebuffer** |
 | [<img src="docs/screenshots/sdl.png" alt="SDL window displaying the Entry list framebuffer" width="400">](docs/screenshots/sdl.png) | [<img src="docs/screenshots/framebuffer.png" alt="Entry list rendered to the software framebuffer" width="400">](docs/screenshots/framebuffer.png) |
 | **Hosted browser** | **Browser Wasm** |
-| [<img src="docs/screenshots/hosted-web.png" alt="Entry list in a browser backed by native C++" width="400">](docs/screenshots/hosted-web.png) | [<img src="docs/screenshots/wasm.png" alt="Entry list running as WebAssembly in a browser" width="400">](docs/screenshots/wasm.png) |
+| [<img src="docs/screenshots/hosted-web.png" alt="Entry list in a browser backed by native Rust/C++" width="400">](docs/screenshots/hosted-web.png) | [<img src="docs/screenshots/wasm.png" alt="Entry list running as WebAssembly in a browser" width="400">](docs/screenshots/wasm.png) |
 
 **Terminal UI**
 
-[<img src="docs/terminal-caret/terminal.png" alt="Terminal Entry list application showing the complete Type an entry placeholder and inverse-color caret" width="640">](docs/terminal-caret/terminal.png)
+[<img src="docs/screenshots/terminal.png" alt="Terminal Entry list application showing the complete Type an entry placeholder and inverse-color caret" width="640">](docs/screenshots/terminal.png)
 
 [Capture details and provenance](docs/screenshots.md#view-screenshots) identify
 the exact source and image bytes. [SCREENSHOTS](SCREENSHOTS) points to the
@@ -122,7 +122,7 @@ GUI sources already retained in this checkout.
 | GUI | All seven hosts consume one application widget-definition table; native appearance, browser and Wasm fixtures | [GUI audit](docs/gui-audit.md) records actual coverage and the scoped supplier permissions |
 | SDK | Source producer, strict prepared-input archives, source replay, relocation, host/target checks, Windows and browser recipes | Cold Linux SDK production requires the declared Bookworm builder |
 | Packages | Native TGZ/ZIP, full member inventory, runtime closure/ABI audits, relocation and external consumer | A native build alone cannot establish an older runtime floor |
-| CI | Disjoint scopes, reusable lifecycle workflows, explicit faster pools, draft release transport with no Actions artifact uploads | Exact hosted executions and remaining limits appear in [validation](docs/validation.md) |
+| CI | Disjoint scopes, reusable lifecycle workflows, explicit faster pools, bounded Actions handoffs and diagnostics, retained SDK draft bundles | Exact hosted executions and remaining limits appear in [validation](docs/validation.md) |
 | Coordination | Scoped review, guarded saves, descriptor-relative atomic publication, handoffs, lifecycle and concurrency tests | Unsupported filesystem APIs require a qualified adapter or enforced private checkouts |
 | Releases | Immutable complete groups, mandatory per-release copies, offline recovery and exact-byte certification | Publication, certification attachment and promotion are explicit protected operations |
 | Distribution | Debian, Arch and Gentoo wrapping, signed indexes, payload verification, atomic update/rollback checks | Disposable native APT, pacman and Portage checks; initial installation and true version upgrades have separate qualification evidence |
@@ -133,10 +133,11 @@ actual GUI hosts in the same initial state. The [signed package workflow](docs/d
 retains certified inputs and exposes immutable APT, Arch and Gentoo channels.
 Each has explicit publication gates.
 
-Large CI outputs use verified private draft release bundles; routine PR feedback
-uses bounded logs. Compiler SDKs contain build inputs, while installed browsers,
-display services and drivers remain explicit host prerequisites. Routine builds
-consume prepared groups and binary releases carry exact copies for recovery.
+Routine CI handoffs and diagnostics use bounded Actions artifacts; retained SDK
+inputs use verified private draft release bundles. Compiler SDKs contain build
+inputs, while installed browsers, display services and drivers remain explicit
+host prerequisites. Routine builds consume prepared groups and binary releases
+carry exact copies for recovery.
 
 [Validation](docs/validation.md) records what has actually run and what remains
 unverified. Planned platforms and release gates are requirements, not claimed passes.
