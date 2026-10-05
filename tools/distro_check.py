@@ -547,7 +547,7 @@ def accept(selected, records, environment, output):
         if body != desired or info['prerelease']:
             remote.change('/releases/'+str(info['id']), method='PATCH', body={
                 'body': json.dumps(desired, sort_keys=True), 'prerelease': False, 'make_latest': 'false'})
-        final = remote.find(selected['tag'])
+        final = remote.by_id(info['id'], selected['tag'])
         if final['id'] != info['id'] or final['draft'] or final['prerelease'] or remote.assets(final) != assets or release.delivery.parse(final['body']) != desired:
             raise ValueError('native channel acceptance outcome differs; inspect remote state')
         remote.not_latest(final)

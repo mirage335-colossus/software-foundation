@@ -750,7 +750,7 @@ def publish(directory, policy, trusted, *, execute=False, transport=None):
             remote.unchanged(tag, existing, rows, req['packager_commit'])
             if existing['draft']:
                 remote.change('/releases/' + str(existing['id']), method='PATCH', body={'draft': False, 'prerelease': True, 'make_latest': 'false'})
-            final = remote.find(tag)
+            final = remote.by_id(existing['id'], tag)
             if (final['id'] != existing['id'] or final['draft'] or final['prerelease'] != existing['prerelease'] or remote.assets(final) != rows or
                     remote.reference(tag) != req['packager_commit'] or final.get('body') != body):
                 raise ValueError('published channel state differs')

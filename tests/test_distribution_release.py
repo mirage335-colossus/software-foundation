@@ -519,6 +519,33 @@ class SignedDistributionTests(unittest.TestCase):
         self.assertFalse(any(call[0] == 'upload' for call in self.remote.calls))
         self.assertEqual(['delivery.json'], [application_names[call[1]] for call in self.remote.calls if call[0] == 'download'])
 
+    def test_publish_final_readback_ignores_unstable_release_history(self):
+        application = copy.deepcopy(self.remote.releases[0])
+        self.remote.latest = application['id']
+        pages = self.remote.pages
+        def unstable_history(endpoint):
+            rows = pages(endpoint)
+            if endpoint.endswith('/releases?per_page=100') and any(
+                    row['tag_name'] == d.tag_for(self.req) and not row['draft']
+                    for row in self.remote.releases):
+                return rows + [copy.deepcopy(rows[0])]
+            return rows
+        self.remote.calls.clear()
+        with patch.object(self.remote, 'pages', side_effect=unstable_history):
+            result = d.publish(self.prepared, self.policy, self.trusted,
+                               execute=True, transport=self.remote)
+        channel = self.remote.releases[-1]
+        self.assertEqual(channel['id'], result['release_id'])
+        self.assertFalse(channel['draft'])
+        self.assertTrue(channel['prerelease'])
+        self.assertEqual(application, self.remote.releases[0])
+        self.assertEqual(application['id'], self.remote.latest)
+        patches = [i for i, call in enumerate(self.remote.calls) if call[0] == 'PATCH']
+        self.assertEqual(1, len(patches))
+        final_reads = self.remote.calls[patches[0] + 1:]
+        self.assertIn(('GET', 'repos/example/project/releases/' + str(channel['id']), None), final_reads)
+        self.assertNotIn(('pages', 'repos/example/project/releases?per_page=100'), final_reads)
+
     def test_native_projection_keeps_signed_complete_inventory_without_sdk_downloads(self):
         d.publish(self.prepared, self.policy, self.trusted, execute=True, transport=self.remote)
         self.remote.calls.clear()
@@ -586,7 +613,18 @@ class SignedDistributionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'exact signed channel'):
                 distro_check.accept(selected,bad,env,self.work/'bad-evidence')
             self.assertTrue(channel['prerelease'])
-            distro_check.accept(selected,records,env,self.work/'accepted')
+            pages = self.remote.pages
+            def unstable_history(endpoint):
+                rows = pages(endpoint)
+                if endpoint.endswith('/releases?per_page=100') and not channel['prerelease']:
+                    return rows + [copy.deepcopy(channel)]
+                return rows
+            with patch.object(self.remote, 'pages', side_effect=unstable_history):
+                distro_check.accept(selected,records,env,self.work/'accepted')
+            last_patch = max(i for i, call in enumerate(self.remote.calls) if call[0] == 'PATCH')
+            final_reads = self.remote.calls[last_patch + 1:]
+            self.assertIn(('GET', 'repos/example/project/releases/' + str(channel['id']), None), final_reads)
+            self.assertNotIn(('pages', 'repos/example/project/releases?per_page=100'), final_reads)
             self.assertFalse(channel['prerelease'])
             saved=copy.deepcopy(channel)
             distro_check.accept(selected,records,env,self.work/'accepted-retry')
