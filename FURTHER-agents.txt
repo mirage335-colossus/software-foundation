@@ -43,3 +43,24 @@ Test parallelism follow-ups (separate discussion)
   every backend receipt, failure aggregation and cleanup before evidence publication.
   Keep operations with real ordering or host-wide state requirements, such as
   package upgrades and firewall changes, ordered or isolated on separate hosts.
+
+
+Release discovery resilience follow-up (separate discussion)
+----------------------------------------------------------
+
+- Make initial GitHub release discovery tolerate transient pagination instability
+  when concurrent publication changes the release list. Reuse the existing
+  tools/github_release.py transport retry machinery and shared deadline/wait
+  budgets; bound attempts and restart the complete inventory after an inconsistent
+  read, discarding every prior page. Retry only specifically identified transient
+  inconsistencies, such as a repeated release ID across pages; do not silently
+  deduplicate results, accept partial inventories or weaken validation. Persistent
+  inconsistencies, malformed records, authentication/permission failures and
+  genuinely ambiguous matching tags must still fail with useful diagnostics.
+  Use exact release-ID reads once identity is known, preserving all source, asset,
+  digest and signature checks. Keep recovery read-only: never repeat a mutation
+  because discovery failed or infer absence from an unsuccessful read. Add focused
+  tests for transient inconsistency followed by success, persistent inconsistency,
+  exhausted budgets, discarded partial results and unchanged publication safeguards.
+  Successful first-attempt discovery should incur no extra wait. This follow-up is
+  separate from the current fix to final publication/native-acceptance readback.
