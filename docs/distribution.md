@@ -86,7 +86,10 @@ source URI to that exact tag. Run `apt-get update` and install the explicitly
 selected package version; retain the preceding assets for rollback investigation
 and clients still using them. Signed hashes reject substituted bytes, but cannot
 make a moving URL retain an older payload. A continuously updated repository needs
-a separate publishing design that preserves every indexed payload. Do not use
+a publishing design that preserves every indexed payload; the
+[stable package mirrors](distribution-release.md#stable-package-mirrors) retain
+versioned packages while replacing signed indexes and await native stable-URL
+qualification. Do not use
 `trusted=yes`, disable validity checking, or install private libraries into system
 library directories.
 

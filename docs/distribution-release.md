@@ -201,6 +201,48 @@ native pacman or Portage install/update qualification. The native workflow below
 provides those checks; report its actual result for the exact release before
 advertising support. Public service behavior requires hosted execution.
 
+## Stable package mirrors
+
+Stable mirrors are not yet deployed or qualified through native clients. Their
+outstanding [native stable-URL upgrade check](../.agent-pending/stable-package-mirrors.md)
+is separate from the recorded immutable-channel qualification.
+
+[`distribution_mirror.py`](../tools/distribution_mirror.py) runs once after the
+existing native `check.accept` operation, under the same release-lifecycle lock.
+It requires the accepted channel's application to match the current application
+Latest. Permanent public tags `packages-x86_64` and `packages-aarch64` mirror the
+accepted signed APT assets unchanged, with Arch also available on qualified
+x86_64; they never become Latest. The
+original immutable distribution releases, schemas and recovery closures remain
+unchanged. Signature, independent key trust and metadata expiry checks still apply.
+
+The mirror retains its verification key and every published versioned package and
+package signature. It replaces repository indexes only after their referenced
+immutable payloads are available, so a client holding an older index can still
+retrieve its exact package. A retained ledger and pending publication state permit
+recovery of the same accepted input and reject a different input while recovery is
+unfinished. Publication does not rebuild packages or generate new signatures.
+GitHub replaces individual index assets, so publication is not atomic: a client
+may need to retry a failed authenticated refresh. Interrupted publication remains
+visible as pending until the exact input is reconciled and read back successfully.
+Complete a pending update before advancing application Latest. If Latest has
+already advanced, automatic retry stops for manual reconciliation; it does not
+activate an older channel or silently discard the interrupted generation.
+
+Each mirror's `INSTALL.md` gives the permanent APT and pacman URLs, for example
+`https://github.com/OWNER/REPOSITORY/releases/download/packages-x86_64/`.
+After independently trusting the key and configuring those URLs once, ordinary
+`apt-get update` and `pacman -Syu` retrieve the signed repository directly. The
+application Latest body links to these mirror instructions; historical immutable
+`INSTALL.md` assets are preserved. Gentoo continues using the installed trusted
+`distro_client.py install-portage` adapter with `selection: {"track":"qualified"}`
+and normal `emaint sync`, as described below.
+
+The reviewed [Data Pump example](https://github.com/mirage335-colossus/pumpModem/blob/2bbd92c63e22490e7708c6bc3d878eb4d1fe09e7/tools/apt-release.py#L306)
+also separates stable index discovery from fixed package bytes. Its packages are
+certified inside the application inventory; these mirrors preserve Foundation's
+existing separate-channel certification, signing and expiry contracts.
+
 ## Native acceptance and normal updates
 
 The [native client workflow](../.github/workflows/distro-check.yml) fetches the exact

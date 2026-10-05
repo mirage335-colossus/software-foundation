@@ -135,7 +135,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
-    - name: Verify all native receipts and mark channel eligible for tracked updates
+    - name: Accept native qualification and publish the stable package repository
       shell: python
       run: |
         import os, sys
@@ -153,3 +153,6 @@ jobs:
                 'distro-'+row['id']+'-'+os.environ['GITHUB_RUN_ATTEMPT'], root)
             records.append(check.release.archive.read_json(root/'native/result.json'))
         check.accept(request, records, os.environ, Path('build/accepted-channel'))
+        import distribution_mirror
+        distribution_mirror.publish(Path('build/accepted-channel'), Path('docs/release-policy.json'),
+            os.environ['TRUSTED_FINGERPRINT'], execute=True)
