@@ -48,19 +48,21 @@ Test parallelism follow-ups (separate discussion)
 Release discovery resilience follow-up (separate discussion)
 ----------------------------------------------------------
 
-- Make initial GitHub release discovery tolerate transient pagination instability
-  when concurrent publication changes the release list. Reuse the existing
-  tools/github_release.py transport retry machinery and shared deadline/wait
-  budgets; bound attempts and restart the complete inventory after an inconsistent
-  read, discarding every prior page. Retry only specifically identified transient
-  inconsistencies, such as a repeated release ID across pages; do not silently
-  deduplicate results, accept partial inventories or weaken validation. Persistent
-  inconsistencies, malformed records, authentication/permission failures and
-  genuinely ambiguous matching tags must still fail with useful diagnostics.
-  Use exact release-ID reads once identity is known, preserving all source, asset,
-  digest and signature checks. Keep recovery read-only: never repeat a mutation
-  because discovery failed or infer absence from an unsuccessful read. Add focused
-  tests for transient inconsistency followed by success, persistent inconsistency,
-  exhausted budgets, discarded partial results and unchanged publication safeguards.
-  Successful first-attempt discovery should incur no extra wait. This follow-up is
-  separate from the current fix to final publication/native-acceptance readback.
+- Narrowly improve initial GitHub release discovery when concurrent publication
+  shifts pagination: retry a repeated release ID across distinct response pages,
+  after validating the records. Reuse tools/github_release.py transport machinery
+  with one shared attempt, time and API-request budget across transport and
+  inventory retries; do not nest independent retry loops. Explicitly bound extra
+  full-inventory reads and their request cost. Restart the complete inventory and
+  discard every prior page; never silently deduplicate or accept partial results.
+  Persistent repeated IDs must fail with useful diagnostics. Malformed records,
+  authentication/permission failures and genuinely ambiguous matching tags must
+  remain errors, without gaining retries from this change. Preserve existing API
+  savings, shared discovery and all source, asset, digest and signature checks.
+  Recovery stays read-only: never repeat a mutation because discovery failed or
+  infer absence from an unsuccessful read. Add focused tests for a repeated ID
+  followed by success, persistent repetition, exhausted shared budgets, discarded
+  partial results and unchanged publication safeguards. Assert zero extra API calls
+  or waits on successful first-attempt discovery and bounded request counts on
+  failures. Exact-ID final publication/native-acceptance readback was implemented
+  in c45f8f3; retain that fix rather than reopening it as future work.
