@@ -574,6 +574,8 @@ def check_batch():
             browser = ci.needs_browser_prerequisite(item['backend'], item['scope'])
             environment = dict(os.environ, CHECK=check_id, CHECK_IMAGE=batch['image'],
                                CHECK_BROWSER='yes' if browser else 'no')
+            # Transport attempts select retained inputs, not source-test execution.
+            environment.pop('CONTROL_ATTEMPT', None)
             lifecycle = [sys.executable, str(ROOT / '.github/scripts/lifecycle.py')]
             commands = ([[sys.executable, str(ROOT / '.github/scripts/container_job.py'), 'check', '--prepared-image', prepared]]
                         if batch['image'] else

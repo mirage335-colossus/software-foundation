@@ -69,6 +69,34 @@ class ContainerJobs(unittest.TestCase):
                 self.assertIn('iproute2', selected)
                 self.assertEqual(job.bootstrap_script(selected).split().count('iproute2'), 1)
 
+    def test_browser_archive_fixture_generator_is_bootstrapped_without_build_tools(self):
+        for backend in ('hosted-web', 'wasm'):
+            item = {'scope': 'archive', 'backend': backend}
+            with self.subTest(backend=backend):
+                selected = job.packages('check', {'PROFILE': 'all-gui'}, item)
+                self.assertIn('nodejs', selected)
+                self.assertNotIn('build-essential', selected)
+                self.assertNotIn('libx11-dev', selected)
+                environment = {'PROFILE': 'all-gui', 'CHECK_IMAGE': 'debian:bookworm'}
+                with patch.object(job, 'selection', return_value=item):
+                    command = job.command('check', self.root, 1001, 1002, environment)
+                self.assertEqual(command[-3].split(';', 1)[0].split().count('nodejs'), 1)
+                calls = []
+                identity = 'sha256:' + 'c' * 64
+                def run(argv, **options):
+                    calls.append(argv)
+                    return subprocess.CompletedProcess(argv, 0, identity + '\n' if argv[1] == 'commit' else '')
+                with patch.object(job.subprocess, 'run', side_effect=run):
+                    with job.prepared_checks(self.root, 'debian:bookworm',
+                            [{'scope': 'archive', 'backend': 'fltk'}, item], environment):
+                        pass
+                self.assertEqual(calls[0][-1].split().count('nodejs'), 1)
+                self.assertNotIn('build-essential', calls[0][-1].split())
+        for backend in ('core', 'terminal', 'framebuffer', 'fltk', 'rev', 'sdl'):
+            with self.subTest(nonbrowser_backend=backend):
+                self.assertNotIn('nodejs', job.packages('check', {'PROFILE': 'all-gui'},
+                    {'scope': 'archive', 'backend': backend}))
+
     def test_batch_setup_is_committed_once_and_each_case_uses_a_fresh_run(self):
         calls=[]; identity='sha256:'+'d'*64
         def run(argv, **options):

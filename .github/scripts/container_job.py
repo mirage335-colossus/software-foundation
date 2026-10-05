@@ -34,6 +34,9 @@ def packages(action, environment, item=None):
     gui = action == 'native-gui-check' or environment.get('SDK_PROFILE' if action == 'sdk-produce' else 'PROFILE') == 'all-gui'
     if gui or action == 'check' and item and item['backend'] != 'core': selected += GUI_RUNTIME
     if action == 'sdk-produce' and gui: selected += GUI_BUILD
+    # Browser archive checks generate adversarial renderer fixtures with Node.
+    if action == 'check' and item and item['scope'] == 'archive' and item['backend'] in ('wasm', 'hosted-web'):
+        selected.append('nodejs')
     return tuple(dict.fromkeys(selected))
 
 

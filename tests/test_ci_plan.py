@@ -1356,6 +1356,28 @@ class QualificationBatchTests(unittest.TestCase):
         self.assertEqual([call.args[0][-1] for call in run.call_args_list], ['check', 'check'])
         self.assertEqual([call.kwargs['env']['CHECK'] for call in run.call_args_list], ['case-0', 'case-1'])
 
+    def test_windows_source_checks_exclude_transport_attempt_without_changing_parent(self):
+        for scope in ('source', 'recovery'):
+            with self.subTest(scope=scope):
+                plan = self.plan(('terminal',), 'windows-x86_64', 'windows-2022')
+                plan.pop('id'); plan['checks'][0]['scope'] = scope
+                plan = ci.module('coverage').freeze(plan)
+                (self.root / 'build/check-plan.json').write_text(json.dumps(plan))
+                batch = ci.qualification_batches(plan)['include'][0]
+                with patch.object(self.helper, 'ROOT', self.root), \
+                        patch.object(self.helper.ci.platform, 'system', return_value='Windows'), \
+                        patch.dict(self.helper.os.environ, BATCH=batch['id'], CHECK_IMAGE='',
+                                   CONTROL_ATTEMPT='1', GITHUB_RUN_ATTEMPT='2'), \
+                        patch.object(self.helper.subprocess, 'run') as run:
+                    self.helper.check_batch()
+                    self.assertEqual(self.helper.os.environ['CONTROL_ATTEMPT'], '1')
+                    self.assertEqual(self.helper.os.environ['GITHUB_RUN_ATTEMPT'], '2')
+                run.assert_called_once()
+                environment = run.call_args.kwargs['env']
+                self.assertNotIn('CONTROL_ATTEMPT', set(environment))
+                self.assertEqual(environment['GITHUB_RUN_ATTEMPT'], '2')
+                self.assertEqual(environment['CHECK'], 'case-0')
+
     def test_batch_selection_rejects_unknown_id_image_and_changed_frozen_input_before_launch(self):
         plan = self.plan(); batch = ci.qualification_batches(plan)['include'][0]
         with patch.object(self.helper, 'ROOT', self.root), patch.object(self.helper.ci.platform, 'system', return_value='Linux'), \
