@@ -17,7 +17,7 @@
     build: {label: "Build configuration", icon: "⚙", description: "Targets, source lists, options, and compiler configuration."},
     other: {label: "Other files", icon: "▤", description: "Supporting source and configuration outside the main modules."}
   };
-  const state = {graphLimits: {}, categoryFilter: "all", symbolFilter: "all", searchTerm: "", selectedChangeNodes: {}, activeChangeMap: "widget", lastChangeMap: null, selectedFlowNodes: {}, activeFlowMap: "startup", lastFlowMap: null, navigationContext: null};
+  const state = {graphLimits: {}, categoryFilter: "all", symbolFilter: "all", searchTerm: "", selectedChangeNodes: {}, activeChangeMap: "widget", lastChangeMap: null, selectedFlowNodes: {}, activeFlowMap: "startup", lastFlowMap: null, codeOrigins: {}, selectedCodeNodes: {}, navigationContext: null};
   const parameterById = new Map();
   const parameterContexts = new Map();
   [...(data.change_maps || []), ...(data.flow_maps || [])].forEach(map => (map.nodes || []).forEach(node => (node.parameter_guides || []).forEach(guide => {
@@ -65,6 +65,14 @@
     const references = data.print_references || {};
     const reference = safePrintReference(node ? (references.flow_nodes || {})[map.id + "/" + node.id] : (references.flow_maps || {})[map.id]);
     return reference ? `<a class="${esc(className)}" href="${reference.href}" title="Open execution-flow handbook at page ${reference.page}">${node ? "Read step in PDF" : "Read scenario in PDF"}</a>` : "";
+  }
+  function codePrintReference(map, node) {
+    const references = data.print_references || {};
+    return safePrintReference(node ? (references.code_nodes || {})[map.id + "/" + node.id] : (references.code_maps || {})[map.id]);
+  }
+  function printCodeLink(map) {
+    const reference = codePrintReference(map);
+    return reference ? `<a class="button" href="${reference.href}" title="Open code-flowchart handbook at page ${reference.page}">Read code diagram in PDF</a>` : "";
   }
   function sourceFile(path, declaredIn) {
     const normalized = normalizePath(path);
@@ -147,7 +155,13 @@
   function changeRoute(map, node) { return "#change/" + encode(map.id) + (node ? "/" + encode(node.id) : ""); }
   function flowMap(id) { return (data.flow_maps || []).find(map => String(map.id) === String(id)); }
   function flowRoute(map, node) { return "#flow/" + encode(map.id) + (node ? "/" + encode(node.id) : ""); }
-  function chartRoute(map, node) { return map.kind === "execution" ? flowRoute(map, node) : changeRoute(map, node); }
+  function codeMap(id) { return (data.code_maps || []).find(map => String(map.id) === String(id)); }
+  function codeRoute(map, node) { return "#code/" + encode(typeof map === "object" ? map.id : map) + (node ? "/" + encode(typeof node === "object" ? node.id : node) : ""); }
+  function childCode(node) { return node?.child && codeMap(node.child.map) ? {map: codeMap(node.child.map), node: node.child.node} : null; }
+  function chartRoute(map, node) {
+    const child = executionMap(map) && childCode(node);
+    return child ? codeRoute(child.map, child.node) : map.kind === "code" ? codeRoute(map, node) : executionMap(map) ? flowRoute(map, node) : changeRoute(map, node);
+  }
   function executionMap(map) { return map.kind === "execution"; }
   function wrappedText(value, width = 24, maxLines = 3) {
     const words = String(value || "").split(/\s+/);
@@ -313,10 +327,12 @@
       const pos = positions.get(String(node.id));
       const role = roles.includes(node.role) ? node.role : running ? "CALL" : "EDIT";
       const titleLines = wrappedText(node.title, 24, 3);
-      return `<a href="${chartRoute(map, node)}" class="task-node role-${role.toLowerCase()}${selected && String(selected.id) === String(node.id) ? " selected" : ""}${node.optional ? " optional" : ""}" data-task-node="${esc(node.id)}" aria-label="${esc(role + ": " + node.title)}"><title>${esc(node.title)} · ${esc(node.summary || node.action || "Click to inspect this step")}</title><rect class="task-node-box" x="${pos.x}" y="${pos.y}" width="${boxWidth}" height="${boxHeight}" rx="8"></rect><rect class="task-role-chip" x="${pos.x + 12}" y="${pos.y + 11}" width="${role.length * 6 + 15}" height="17" rx="4"></rect><text class="task-node-role" x="${pos.x + 19}" y="${pos.y + 23}">${role}</text>${node.optional ? `<text class="task-optional-label" x="${pos.x + boxWidth - 12}" y="${pos.y + 22}" text-anchor="end">optional</text>` : ""}${titleLines.map((line, i) => `<text class="task-node-title" x="${pos.x + 12}" y="${pos.y + 47 + i * 15}">${esc(line)}</text>`).join("")}<text class="task-node-hint" x="${pos.x + 12}" y="${pos.y + boxHeight - 11}">${node.status === "missing" ? "Anchor needs review" : node.status === "proposed" ? (running ? "Illustrative step · click for context" : "Proposed addition · click for context") : node.path ? esc(short(String(node.path).split("/").pop(), 26)) + (node.line ? " · L" + esc(node.line) : "") : running ? "Click for source & call context" : "Click for the edit guidance"}</text></a>`;
+      const child = running && childCode(node);
+      const origin = child ? ` data-code-parent-kind="flow" data-code-parent-map="${esc(map.id)}" data-code-parent-node="${esc(node.id)}" data-code-child="${esc(child.map.id)}"` : "";
+      return `<a href="${chartRoute(map, node)}" class="task-node role-${role.toLowerCase()}${selected && String(selected.id) === String(node.id) ? " selected" : ""}${node.optional ? " optional" : ""}" data-task-node="${esc(node.id)}"${origin} aria-label="${esc(role + ": " + node.title + (child ? ". Open code diagram" : ""))}"><title>${esc(node.title)} · ${esc(node.summary || node.action || "Click to inspect this step")}</title><rect class="task-node-box" x="${pos.x}" y="${pos.y}" width="${boxWidth}" height="${boxHeight}" rx="8"></rect><rect class="task-role-chip" x="${pos.x + 12}" y="${pos.y + 11}" width="${role.length * 6 + 15}" height="17" rx="4"></rect><text class="task-node-role" x="${pos.x + 19}" y="${pos.y + 23}">${role}</text>${node.optional ? `<text class="task-optional-label" x="${pos.x + boxWidth - 12}" y="${pos.y + 22}" text-anchor="end">optional</text>` : ""}${titleLines.map((line, i) => `<text class="task-node-title" x="${pos.x + 12}" y="${pos.y + 47 + i * 15}">${esc(line)}</text>`).join("")}<text class="task-node-hint" x="${pos.x + 12}" y="${pos.y + boxHeight - 11}">${child ? "Open code diagram →" : node.status === "missing" ? "Anchor needs review" : node.status === "proposed" ? (running ? "Illustrative step · click for context" : "Proposed addition · click for context") : node.path ? esc(short(String(node.path).split("/").pop(), 26)) + (node.line ? " · L" + esc(node.line) : "") : running ? "Click for source & call context" : "Click for the edit guidance"}</text></a>`;
     }).join("");
     const legend = running ? `<span><i class="task-key call"></i>Direct call</span><span><i class="task-key process"></i>Process boundary</span><span><i class="task-key conditional"></i>Conditional branch</span><span><i class="task-key event"></i>Event / dispatch</span><span><i class="task-key return"></i>Return / resume caller</span><span><i class="task-key step"></i>Local step / sequence</span>` : `<span><i class="task-key edit-dependency"></i>Edit dependency / next edit</span><span><i class="task-key runtime"></i>Runtime call / event</span><span><i class="task-key conditional"></i>Conditional or optional branch</span>`;
-    return `<div class="task-diagram-canvas"><svg class="task-diagram${running ? " execution-diagram" : ""} graph-svg" id="task-diagram" role="group" aria-label="${esc(map.title + (running ? ": graphical execution scenario" : ": graphical edit path"))}" viewBox="0 0 ${width} ${height}" data-width="${width}" data-height="${height}"><defs>${edgeKinds.map(kind => `<marker id="${marker}-${kind}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 8 4 L 0 8 z" class="marker-${kind}"></path></marker>`).join("")}</defs>${edgeSvg}${nodeSvg}</svg></div><div class="task-diagram-controls"><span>${running ? "Click a step to inspect its calls, events, process boundary, and source." : "Click an edit step for its exact location and source context."}</span><div class="graph-buttons"><button type="button" data-graph="task-diagram" data-zoom="in" aria-label="${running ? "Zoom execution diagram in" : "Zoom edit diagram in"}">+</button><button type="button" data-graph="task-diagram" data-zoom="out" aria-label="${running ? "Zoom execution diagram out" : "Zoom edit diagram out"}">−</button><button type="button" data-graph="task-diagram" data-zoom="reset">Fit</button></div></div><div class="task-diagram-legend">${legend}</div>`;
+    return `<div class="task-diagram-canvas"><svg class="task-diagram${running ? " execution-diagram" : ""} graph-svg" id="task-diagram" role="group" aria-label="${esc(map.title + (running ? ": graphical execution scenario" : ": graphical edit path"))}" viewBox="0 0 ${width} ${height}" data-width="${width}" data-height="${height}"><defs>${edgeKinds.map(kind => `<marker id="${marker}-${kind}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 8 4 L 0 8 z" class="marker-${kind}"></path></marker>`).join("")}</defs>${edgeSvg}${nodeSvg}</svg></div><div class="task-diagram-controls"><span>${running ? (nodes.some(childCode) ? "Click a step to open its code diagram. Follow calls into deeper diagrams." : "Click a step to inspect its calls, events, process boundary, and source.") : "Click an edit step for its exact location and source context."}</span><div class="graph-buttons"><button type="button" data-graph="task-diagram" data-zoom="in" aria-label="${running ? "Zoom execution diagram in" : "Zoom edit diagram in"}">+</button><button type="button" data-graph="task-diagram" data-zoom="out" aria-label="${running ? "Zoom execution diagram out" : "Zoom edit diagram out"}">−</button><button type="button" data-graph="task-diagram" data-zoom="reset">Fit</button></div></div><div class="task-diagram-legend">${legend}</div>`;
   }
   function renderChange(mapId, nodeId, home = false) {
     const map = changeMap(mapId) || changeMap("widget") || (data.change_maps || [])[0];
@@ -339,13 +355,119 @@
     }
     const map = flowMap(mapId || state.activeFlowMap) || flowMap("startup") || maps[0];
     if (mapId && !flowMap(mapId)) return renderMissing("Execution scenario");
+    const explicitNode = (map.nodes || []).find(node => String(node.id) === String(nodeId));
+    const explicitChild = explicitNode && childCode(explicitNode);
+    if (explicitChild) return renderCode(explicitChild.map.id, explicitChild.node, {kind: "flow", map: map.id, node: explicitNode.id});
     state.activeFlowMap = map.id;
     state.lastFlowMap = map.id;
     const nodes = map.nodes || [];
     const selected = nodes.find(node => String(node.id) === String(nodeId || state.selectedFlowNodes[map.id] || "")) || nodes[0];
+    const hierarchy = nodes.some(childCode);
     if (selected) state.selectedFlowNodes[map.id] = selected.id;
     state.navigationContext = {kind: "execution", mapId: map.id, nodeId: selected?.id};
-    main.innerHTML = `${overview ? crumbs([{label: "Execution scenarios"}]) : crumbs([{label: "Execution scenarios", href: "#flows"}, {label: map.title}])}${pageHeading("Existing execution scenarios", overview ? "What runs when…" : map.title, overview ? "Choose a scenario. Follow its named calls, events, returns, and process boundaries, then inspect the captured source." : map.summary, overview ? '<a class="button" href="#home">↑ Edit task overview</a>' : '<a class="button" href="#flows">↑ Execution scenarios</a>')}${scenarioChoices(map.id)}<section class="change-map-section execution-map-section"><div class="change-map-heading"><div><h2>${esc(map.question || map.title)}</h2><p>${esc(map.edge_meaning || "Arrows identify source-curated calls and ordering in this scenario. They are not a complete execution trace.")}</p></div>${printFlowLink(map)}</div><div class="change-layout"><div class="change-chart panel">${taskDiagram(map, selected)}</div><aside class="change-detail-panel panel" id="change-detail" aria-label="Selected execution step">${actionDetails(map, selected)}</aside></div><div class="change-snapshot"><span>Source-curated scenario · ${esc(niceDate())} · code may have changed since.</span><a href="#home">Find an edit task →</a></div></section><section class="change-print-details print-only">${mapParameterGuides(map)}<h2>All execution steps & source anchors</h2>${nodes.map(node => actionDetails(map, node, true)).join("")}</section>${pdfLinks("flows") ? section("Print execution scenarios", pdfLinks("flows")) : ""}`;
+    main.innerHTML = `${overview ? crumbs([{label: "Execution scenarios"}]) : crumbs([{label: "Execution scenarios", href: "#flows"}, {label: map.title}])}${pageHeading("Existing execution scenarios", overview ? "What runs when…" : map.title, overview ? (hierarchy ? "Choose a scenario, then click a step to open a diagram containing its actual source lines." : "Choose a scenario. Follow its named calls, events, returns, and process boundaries, then inspect the captured source.") : map.summary, overview ? '<a class="button" href="#home">↑ Edit task overview</a>' : '<a class="button" href="#flows">↑ Execution scenarios</a>')}${scenarioChoices(map.id)}<section class="change-map-section execution-map-section"><div class="change-map-heading"><div><h2>${esc(map.question || map.title)}</h2><p>${esc(map.edge_meaning || "Arrows identify source-curated calls and ordering in this scenario. They are not a complete execution trace.")}</p></div>${printFlowLink(map)}</div><div class="change-layout${hierarchy ? " hierarchical-flow-layout" : ""}"><div class="change-chart panel">${taskDiagram(map, selected)}</div>${hierarchy ? "" : `<aside class="change-detail-panel panel" id="change-detail" aria-label="Selected execution step">${actionDetails(map, selected)}</aside>`}</div><div class="change-snapshot"><span>Source-curated scenario · ${esc(niceDate())} · code may have changed since.</span><a href="#home">Find an edit task →</a></div></section>${hierarchy ? "" : `<section class="change-print-details print-only">${mapParameterGuides(map)}<h2>All execution steps & source anchors</h2>${nodes.map(node => actionDetails(map, node, true)).join("")}</section>`}${pdfLinks("flows") ? section("Print execution scenarios", pdfLinks("flows")) : ""}`;
+  }
+
+  function validCodeParent(parent) {
+    return parent && (parent.kind === "flow" ? !!flowMap(parent.map) : parent.kind === "code" ? !!codeMap(parent.map) : false);
+  }
+  function codeParent(map, explicit) {
+    if (validCodeParent(explicit)) state.codeOrigins[map.id] = explicit;
+    if (validCodeParent(state.codeOrigins[map.id])) return state.codeOrigins[map.id];
+    const previous = state.navigationContext;
+    const parents = (map.parents || []).filter(validCodeParent);
+    const matching = parents.find(parent => parent.map === previous?.mapId && parent.kind === (previous?.kind === "execution" ? "flow" : previous?.kind));
+    const parent = matching || parents[0] || null;
+    if (parent) state.codeOrigins[map.id] = parent;
+    return parent;
+  }
+  function codeParentLink(parent) {
+    return parent?.kind === "flow" ? flowRoute(flowMap(parent.map)) : parent?.kind === "code" ? codeRoute(codeMap(parent.map), parent.node) : "#flows";
+  }
+  function codeBreadcrumbs(map, parent) {
+    const path = [], visited = new Set([String(map.id)]);
+    let current = parent;
+    while (validCodeParent(current)) {
+      const entry = current.kind === "flow" ? flowMap(current.map) : codeMap(current.map);
+      if (current.kind === "code" && visited.has(String(entry.id))) break;
+      path.unshift({label: entry.title, href: codeParentLink(current)});
+      if (current.kind === "flow") break;
+      visited.add(String(entry.id));
+      current = state.codeOrigins[entry.id] || (entry.parents || []).find(validCodeParent);
+    }
+    return crumbs([{label: "Execution scenarios", href: "#flows"}, ...path, {label: map.title}]);
+  }
+  function expandedCodeText(value) {
+    let result = "";
+    for (const character of String(value == null ? "" : value)) result += character === "\t" ? " ".repeat(4 - result.length % 4) : character;
+    return result;
+  }
+  function completeWrappedText(value, width) {
+    const pieces = String(value || "").split(/\s+/).flatMap(word => word.length > width ? Array.from({length: Math.ceil(word.length / width)}, (_, i) => word.slice(i * width, (i + 1) * width)) : [word]);
+    return wrappedText(pieces.join(" "), width, Infinity);
+  }
+  function codeRows(node) {
+    const rows = [];
+    (node.code_lines || []).forEach(source => {
+      const characters = Array.from(expandedCodeText(source.text));
+      const chunks = characters.length ? Array.from({length: Math.ceil(characters.length / 63)}, (_, i) => characters.slice(i * 63, (i + 1) * 63).join("")) : [""];
+      chunks.forEach((text, i) => rows.push({line: source.line, text, original: source.text, first: i === 0}));
+    });
+    return rows;
+  }
+  function codeDiagram(map, selected) {
+    const nodes = map.nodes || [];
+    if (!nodes.length) return empty("No captured code blocks were generated for this diagram.");
+    const edgeKinds = ["call", "process", "conditional", "return", "event", "step", "dependency"];
+    const rowsById = new Map(nodes.map(node => [String(node.id), codeRows(node)]));
+    const notesById = new Map(nodes.map(node => [String(node.id), completeWrappedText(node.note || "", 77)]));
+    const codeHeight = Math.max(1, ...[...rowsById.values()].map(rows => rows.length)) * 18;
+    const noteHeight = Math.max(1, ...[...notesById.values()].map(rows => rows.length)) * 13;
+    const edgeLabels = (map.edges || []).map(edge => completeWrappedText(edge.label || "", 20));
+    const edgeLabelHeight = Math.max(1, ...edgeLabels.map(lines => lines.length)) * 13 + 6;
+    const boxWidth = 560, boxHeight = 154 + codeHeight + noteHeight, columnPitch = 710, rowPitch = boxHeight + Math.max(100, edgeLabelHeight * 2 + 32);
+    const columns = Math.max(...nodes.map(node => Number(node.column) || 0)) + 1, rows = Math.max(...nodes.map(node => Number(node.row) || 0)) + 1;
+    const width = columns * columnPitch - (columnPitch - boxWidth) + 72, height = rows * rowPitch - (rowPitch - boxHeight) + 80;
+    const positions = new Map(nodes.map(node => [String(node.id), {x: 36 + (Number(node.column) || 0) * columnPitch, y: 40 + (Number(node.row) || 0) * rowPitch}]));
+    const marker = "code-arrow-" + (++graphSequence);
+    const edges = (map.edges || []).map(edge => {
+      const from = positions.get(String(edge.from)), to = positions.get(String(edge.to));
+      if (!from || !to) return "";
+      const routed = taskPath(from, to, [...positions.values()], boxWidth, boxHeight, columnPitch, rowPitch, width, height);
+      const kind = edgeKinds.includes(edge.kind) ? edge.kind : "step";
+      const labels = completeWrappedText(edge.label || "", routed.narrow ? 20 : 42);
+      const labelWidth = Math.max(42, Math.max(...labels.map(label => label.length), 1) * 5.6 + 14);
+      return `<g class="task-edge code-edge edge-${kind} emphasis-${edge.emphasis === "supporting" ? "supporting" : "primary"}"><path d="${routed.path}" marker-end="url(#${marker}-${kind})"><title>${esc(edge.label || "")}</title></path>${labels.length ? `<g class="task-edge-label"><rect x="${routed.labelX - labelWidth / 2}" y="${routed.labelY - 10}" width="${labelWidth}" height="${labels.length * 13 + 6}" rx="4"></rect>${labels.map((label, i) => `<text x="${routed.labelX}" y="${routed.labelY + 1 + i * 13}" text-anchor="middle">${esc(label)}</text>`).join("")}</g>` : ""}</g>`;
+    }).join("");
+    const nodeSvg = nodes.map(node => {
+      const pos = positions.get(String(node.id)), code = rowsById.get(String(node.id));
+      const child = childCode(node), primary = node.emphasis !== "supporting";
+      const role = String(node.role || "CODE"), roleClass = role.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const source = anchorData(node), pdf = codePrintReference(map, node);
+      const titles = wrappedText(node.title, 55, 2);
+      const origin = child ? ` data-code-parent-kind="code" data-code-parent-map="${esc(map.id)}" data-code-parent-node="${esc(node.id)}" data-code-child="${esc(child.map.id)}"` : "";
+      const tag = child ? "a" : "g";
+      const opening = child ? `<a href="${codeRoute(child.map, child.node)}"${origin} class="code-node-body" aria-label="${esc(node.title + ". Open deeper code diagram")}">` : '<g class="code-node-body">';
+      const noteLines = notesById.get(String(node.id));
+      const body = `${opening}<title>${esc(node.title)}${child ? " · open deeper code diagram" : ""}</title><rect class="code-node-box" x="${pos.x}" y="${pos.y}" width="${boxWidth}" height="${boxHeight}" rx="9"></rect><text class="code-role" x="${pos.x + 16}" y="${pos.y + 24}">${esc(role)}</text><text class="code-emphasis" x="${pos.x + boxWidth - 16}" y="${pos.y + 24}" text-anchor="end">${primary ? "PRIMARY PATH" : "SUPPORTING"}</text>${titles.map((title, i) => `<text class="code-node-title" x="${pos.x + 16}" y="${pos.y + 47 + i * 17}">${esc(title)}</text>`).join("")}<text class="code-source-path" x="${pos.x + 16}" y="${pos.y + 82}">${esc(short(node.path || "Captured source", 78))}${node.line ? ":" + esc(node.line) + (node.end_line && node.end_line !== node.line ? "–" + esc(node.end_line) : "") : ""}</text><rect class="code-code-background" x="${pos.x + 12}" y="${pos.y + 94}" width="${boxWidth - 24}" height="${Math.max(1, code.length) * 18 + 18}" rx="5"></rect>${code.length ? code.map((row, i) => `<g class="code-line" data-source-line="${esc(row.line)}"${row.first ? ` data-code-text="${esc(row.original)}"` : ""}><text class="code-line-number" x="${pos.x + 49}" y="${pos.y + 115 + i * 18}" text-anchor="end">${row.first ? esc(row.line) : "↳"}</text><text class="code-line-text" x="${pos.x + 60}" y="${pos.y + 115 + i * 18}" xml:space="preserve">${esc(row.text)}</text></g>`).join("") : `<text class="code-line-text code-missing" x="${pos.x + 24}" y="${pos.y + 115}">Source anchor changed; review required</text>`}${node.status === "missing" ? `<text class="code-missing" x="${pos.x + 16}" y="${pos.y + 128 + codeHeight}">Source anchor changed; review required</text>` : noteLines.map((line, i) => `<text class="code-note" x="${pos.x + 16}" y="${pos.y + 128 + codeHeight + i * 13}">${esc(line)}</text>`).join("")}${child ? `<rect class="code-deeper-button" x="${pos.x + 16}" y="${pos.y + boxHeight - 30}" width="184" height="21" rx="4"></rect><text class="code-deeper-label" x="${pos.x + 25}" y="${pos.y + boxHeight - 16}">Open deeper code diagram →</text>` : `<text class="code-leaf-label" x="${pos.x + 16}" y="${pos.y + boxHeight - 16}">Captured code at this level</text>`}</${tag}>`;
+      const sourceLink = source.usable ? `<a class="code-source-link" href="${routeSource(source.file, node.line || 1)}" data-code-source-map="${esc(map.id)}" data-code-source-node="${esc(node.id)}" aria-label="${esc("Open captured source " + (node.path || source.file.path) + " line " + (node.line || 1))}"><rect x="${pos.x + boxWidth - 153}" y="${pos.y + boxHeight - 30}" width="${pdf ? 82 : 137}" height="21" rx="4"></rect><text x="${pos.x + boxWidth - 143}" y="${pos.y + boxHeight - 16}">Source L${esc(node.line || 1)} ↗</text></a>` : "";
+      const pdfLink = pdf ? `<a class="code-pdf-link" href="${pdf.href}" aria-label="Code block in PDF page ${pdf.page}"><rect x="${pos.x + boxWidth - 66}" y="${pos.y + boxHeight - 30}" width="50" height="21" rx="4"></rect><text x="${pos.x + boxWidth - 60}" y="${pos.y + boxHeight - 16}">PDF ${pdf.page}</text></a>` : "";
+      return `<g class="code-node role-${roleClass} emphasis-${primary ? "primary" : "supporting"}${selected && String(selected.id) === String(node.id) ? " selected" : ""}" data-code-node="${esc(node.id)}">${body}${sourceLink}${pdfLink}</g>`;
+    }).join("");
+    return `<div class="code-chart-canvas" style="--code-min-width:${Math.min(width, 1140)}px"><svg class="code-diagram execution-diagram graph-svg" id="code-diagram" role="group" aria-label="${esc(map.title + ": actual code flowchart")}" viewBox="0 0 ${width} ${height}" data-width="${width}" data-height="${height}"><defs>${edgeKinds.map(kind => `<marker id="${marker}-${kind}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 8 4 L 0 8 z" class="marker-${kind}"></path></marker>`).join("")}</defs>${edges}${nodeSvg}</svg></div><div class="code-chart-controls"><span>Click a call card to open its next diagram. Source is secondary. Long lines wrap at ↳; all captured text is shown.</span><div class="graph-buttons"><button type="button" data-graph="code-diagram" data-zoom="in" aria-label="Zoom code diagram in">+</button><button type="button" data-graph="code-diagram" data-zoom="out" aria-label="Zoom code diagram out">−</button><button type="button" data-graph="code-diagram" data-zoom="reset">Fit</button></div></div><div class="task-diagram-legend code-diagram-legend"><span><i class="code-primary-key"></i>Primary path</span><span><i class="code-support-key"></i>Supporting code / context</span><span><i class="task-key call"></i>Direct call</span><span><i class="task-key step"></i>Local step / sequence</span><span><i class="task-key return"></i>Return / resume caller</span><span><i class="task-key conditional"></i>Conditional branch</span><span><i class="task-key process"></i>Process boundary</span><span><i class="task-key event"></i>Event / dispatch</span><span><i class="task-key dependency"></i>Build / data dependency</span></div>`;
+  }
+  function renderCode(mapId, nodeId, explicitParent) {
+    const map = codeMap(mapId);
+    if (!map) return renderMissing("Code diagram");
+    const parent = codeParent(map, explicitParent);
+    if (parent?.kind === "flow" && parent.node) {state.selectedFlowNodes[parent.map] = parent.node; state.activeFlowMap = parent.map;}
+    const nodes = map.nodes || [];
+    const selected = nodes.find(node => String(node.id) === String(nodeId || state.selectedCodeNodes[map.id] || "")) || nodes.find(node => node.emphasis === "primary") || nodes[0];
+    if (selected) state.selectedCodeNodes[map.id] = selected.id;
+    state.navigationContext = {kind: "code", mapId: map.id, nodeId: selected?.id};
+    const parentTitle = parent ? (parent.kind === "flow" ? flowMap(parent.map) : codeMap(parent.map)).title : "Execution scenarios";
+    const otherParents = unique((map.parents || []).filter(validCodeParent), item => item.kind + "/" + item.map);
+    main.innerHTML = `${codeBreadcrumbs(map, parent)}${pageHeading("Code diagram", map.title, "", `<a class="button" href="${codeParentLink(parent)}">↑ ${esc(short(parentTitle, 55))}</a>${printCodeLink(map)}`)}<div class="code-map-meta">${map.scope ? `<span>${esc(map.scope)}</span>` : ""}<span>Captured code · ${esc(niceDate())}</span><span>Source-curated paths; code may have changed since.</span></div>${map.summary ? `<p class="code-map-summary">${esc(map.summary)}</p>` : ""}<section class="code-chart panel">${codeDiagram(map, selected)}</section>${otherParents.length > 1 ? `<nav class="code-other-parents" aria-label="Other parent diagrams"><span>Also reached from:</span>${otherParents.map(item => `<a href="${codeParentLink(item)}">${esc((item.kind === "flow" ? flowMap(item.map) : codeMap(item.map)).title)}</a>`).join("")}</nav>` : ""}${pdfLinks("code") || pdfLinks("code-flows") ? section("Print code flowcharts", pdfLinks("code") || pdfLinks("code-flows")) : ""}`;
   }
 
   function renderInventory() {
@@ -679,6 +801,15 @@
       svg.addEventListener("pointerup", endDrag); svg.addEventListener("pointercancel", endDrag);
     });
     document.querySelectorAll("[data-zoom]").forEach(button => button.addEventListener("click", () => {const svg = document.getElementById(button.dataset.graph); if (svg && svg._zoom) svg._zoom(button.dataset.zoom);}));
+    document.querySelectorAll("[data-code-parent-kind]").forEach(link => link.addEventListener("click", () => {
+      const parent = {kind: link.dataset.codeParentKind, map: link.dataset.codeParentMap, node: link.dataset.codeParentNode};
+      if (validCodeParent(parent) && codeMap(link.dataset.codeChild)) state.codeOrigins[link.dataset.codeChild] = parent;
+    }));
+    document.querySelectorAll("[data-code-source-map]").forEach(link => link.addEventListener("click", () => {
+      const map = codeMap(link.dataset.codeSourceMap);
+      const node = (map?.nodes || []).find(item => String(item.id) === String(link.dataset.codeSourceNode));
+      if (node) {state.selectedCodeNodes[map.id] = node.id; state.navigationContext = {kind: "code", mapId: map.id, nodeId: node.id};}
+    }));
     document.querySelectorAll("[data-expand-graph]").forEach(button => button.addEventListener("click", () => {
       const key = button.dataset.expandGraph; state.graphLimits[key] = "all"; renderRoute(false);
     }));
@@ -696,6 +827,7 @@
       case "change": renderChange(parts[1], parts[2]); break;
       case "flows": renderFlow(null, null, true); break;
       case "flow": renderFlow(parts[1], parts[2]); break;
+      case "code": renderCode(parts[1], parts[2]); break;
       case "inventory": renderInventory(); break;
       case "parameters": renderParameters(parts[1], parts[2], parts[3]); break;
       case "category": renderCategory(parts[1] || "core"); break;
@@ -709,14 +841,18 @@
       default: renderMissing("Page");
     }
     document.title = `${main.querySelector("h1")?.textContent || "Overview"} · ${data.title || "Code atlas"}`;
-    let active = parts[0] === "category" ? "category/" + parts[1] : parts[0] === "change" ? "home" : parts[0] === "flow" ? "flows" : parts[0];
+    let active = parts[0] === "category" ? "category/" + parts[1] : parts[0] === "change" ? "home" : parts[0] === "flow" || parts[0] === "code" ? "flows" : parts[0];
     const file = parts[0] === "file" || parts[0] === "source" ? fileById.get(parts[1]) : parts[0] === "symbol" ? symbolById.get(parts[1])?.file : null;
     if (file) active = "category/" + (file.category || "other");
     if (file?.origin === "supplier-reference") {
       const provenance = file.provenance || {};
       main.insertAdjacentHTML("afterbegin", `<div class="notice supplier-notice"><strong>Read-only supplier reference</strong><p>Pinned upstream source captured from the retained archive. Use this reference to understand the supplier contract; follow the task map for application edit locations.</p><div class="supplier-provenance"><span>Archive: <code>${esc(provenance.archive || "retained supplier archive")}</code></span><span>Member: <code>${esc(provenance.member || file.path)}</code></span>${provenance.revision ? `<span>Pinned revision: <code>${esc(short(provenance.revision, 16))}</code></span>` : ""}${provenance.patches_applied === false ? '<span>No patches applied to this captured member.</span>' : ""}</div></div>`);
     }
-    if (file && state.navigationContext?.kind === "execution" && flowMap(state.navigationContext.mapId)) {
+    if (file && state.navigationContext?.kind === "code" && codeMap(state.navigationContext.mapId)) {
+      const map = codeMap(state.navigationContext.mapId);
+      const node = (map.nodes || []).find(item => String(item.id) === String(state.navigationContext.nodeId));
+      main.insertAdjacentHTML("afterbegin", `<div class="return-to-change return-to-code"><a href="${codeRoute(map, node)}">↑ Back to code diagram: ${esc(map.title)}</a><span>${node ? esc(node.title) : "Captured code"}</span></div>`);
+    } else if (file && state.navigationContext?.kind === "execution" && flowMap(state.navigationContext.mapId)) {
       const map = flowMap(state.navigationContext.mapId);
       const node = (map.nodes || []).find(item => item.id === state.navigationContext.nodeId);
       main.insertAdjacentHTML("afterbegin", `<div class="return-to-change return-to-flow"><a href="${flowRoute(map, node)}">↑ Back to ${esc(node ? node.title : map.title)}</a><span>Execution scenario · ${esc(map.title)}</span></div>`);

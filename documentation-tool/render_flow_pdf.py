@@ -126,6 +126,17 @@ def render_flow_pdf(model: dict[str, Any], output: Path) -> str:
             return ""
         return link(f"Read in PDF, p{record['page']}", record["pdf"] + "#page=" + str(record["page"]))
 
+    def child_link(node: dict[str, Any]) -> str:
+        child = node.get("child") or {}
+        if not child.get("map"):
+            return ""
+        printed = model.get("print_references", {})
+        record = printed.get("code_nodes", {}).get(child["map"] + "/" + child["node"]) if child.get("node") else None
+        record = record or printed.get("code_maps", {}).get(child["map"])
+        # The first overview pass establishes parent pages before the code
+        # book is paginated. Its second pass fills these exact child pages.
+        return (record["pdf"] + "#page=" + str(record["page"])) if record else "04-code-flowcharts.pdf"
+
     def ref_text(reference: dict[str, Any]) -> str:
         path, line = reference.get("path", ""), reference.get("line")
         label = reference.get("label", "")
@@ -365,7 +376,11 @@ def render_flow_pdf(model: dict[str, Any], output: Path) -> str:
                 c.setStrokeColor(border)
                 c.setLineWidth(.95)
                 c.roundRect(x, y, w, h, 5, fill=1, stroke=1)
-                c.linkRect("", _dest("node", self.map["id"], node["id"]), (x, y, x + w, y + h), relative=1)
+                child_target = child_link(node)
+                if child_target:
+                    c.linkURL(child_target, (x, y, x + w, y + h), relative=1)
+                else:
+                    c.linkRect("", _dest("node", self.map["id"], node["id"]), (x, y, x + w, y + h), relative=1)
                 top = y + h - 8
                 c.setFont("Helvetica-Bold", 9)
                 c.setFillColor(border)
@@ -388,6 +403,8 @@ def render_flow_pdf(model: dict[str, Any], output: Path) -> str:
                     location = '<link href="' + _esc(_source_url(node)) + '" color="#256b91">' + path_label + "</link><br/><b>L" + _esc(node.get("line") or 1) + "</b>"
                     if str(path).startswith("@"):
                         location = "Read-only evidence:<br/>" + location
+                if child_target:
+                    location += "<br/>" + link("Evidence notes", "#" + _dest("node", self.map["id"], node["id"]))
                 loc = p(location, "node-source", True)
                 _, loc_h = loc.wrap(w - 14, h)
                 summary = node.get("summary") or node.get("action", "")
@@ -421,7 +438,9 @@ def render_flow_pdf(model: dict[str, Any], output: Path) -> str:
                 legend_x += 76 if role not in {"PROCESS", "DECISION"} else 93
             c.setFillColor(muted)
             c.setFont("Helvetica", 9)
-            c.drawRightString(self.width, legend_y, "Click a box for captured behavior")
+            c.drawRightString(self.width, legend_y,
+                              "Click a box for its code diagram" if any(n.get("child") for n in nodes)
+                              else "Click a box for captured behavior")
 
     def node_details(map_value: dict[str, Any], node: dict[str, Any], number: int) -> list[Any]:
         parts = [Heading(f"N{number} | {node.get('role', 'CALL')} | {node.get('title', '')}",
@@ -438,6 +457,8 @@ def render_flow_pdf(model: dict[str, Any], output: Path) -> str:
                 references.setdefault((ref.get("path"), ref.get("line")), ref)
         if references:
             parts.append(p("<br/>".join(ref_text(ref) for ref in references.values()), "small", True))
+        if child_link(node):
+            parts.append(p(link("Open the code-level flowchart", child_link(node)), "small", True))
         snippet = str(node.get("snippet", ""))
         if snippet and (node.get("role") == "DECISION" or node.get("print_excerpt")):
             lines = snippet.splitlines()

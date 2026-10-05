@@ -43,6 +43,7 @@ PDFS = [
     {'name': '01-code-walkthroughs.pdf', 'title': 'Code walkthroughs: ownership, control, and full source', 'category': 'walkthroughs'},
     {'name': '02-compiler-reference.pdf', 'title': 'Compiler and configuration reference', 'category': 'build'},
     {'name': '03-execution-flows.pdf', 'title': 'What runs when: calls, commands, and event handoffs', 'category': 'flows'},
+    {'name': '04-code-flowcharts.pdf', 'title': 'Inside the steps: actual code and configuration flowcharts', 'category': 'code-flows'},
 ]
 REFERENCE_PDFS = [
     {'name': '00-start-here.pdf', 'title': 'Start here', 'category': 'overview'},
@@ -214,6 +215,7 @@ def make_model(source: Path, max_bytes: int, excludes: list[str], pdfs: bool,
     from navigation_guide import make_guide
     from change_maps import make_change_maps
     from flow_maps import make_flow_maps
+    from code_maps import make_code_maps
     from supplier_reference import capture_supplier_references, recheck_supplier_references
     files, skipped = collect_files(source, max_bytes, excludes)
     supplier_files, supplier_provenance, warnings = capture_supplier_references(source, max_bytes, read_regular)
@@ -238,6 +240,8 @@ def make_model(source: Path, max_bytes: int, excludes: list[str], pdfs: bool,
         warnings.append('Some inputs changed during capture. This is a mixed-time navigation snapshot: ' + ', '.join(changed))
     fingerprint = hashlib.sha256(''.join(f"{f['path']}\0{f['sha256']}\n" for f in files).encode()).hexdigest()
     languages = Counter(f['language'] for f in files)
+    flows = make_flow_maps(files)
+    code_maps = make_code_maps(files, flows)
     return {
         'schema_version': 2, 'title': 'software-foundation | What to edit',
         'generated_at': datetime.now().astimezone().isoformat(timespec='seconds'),
@@ -246,7 +250,8 @@ def make_model(source: Path, max_bytes: int, excludes: list[str], pdfs: bool,
         'supplier_references': supplier_provenance,
         'files': files, 'build': build, 'guide': make_guide(files),
         'change_maps': make_change_maps(files),
-        'flow_maps': make_flow_maps(files),
+        'flow_maps': flows,
+        'code_maps': code_maps,
         'pdfs': (PDFS + (REFERENCE_PDFS if reference_handbooks else [])) if pdfs else [],
         'coverage': {'files': len(files), 'languages': dict(languages),
                      'symbols': sum(len(f['symbols']) for f in files),
@@ -262,7 +267,7 @@ def make_model(source: Path, max_bytes: int, excludes: list[str], pdfs: bool,
                          'CMake control outlines are lexical and unevaluated; other configuration/text-only files have source views.',
                          'Per-file captured bytes are embedded. Concurrent edits or newly added files may prevent a single atomic snapshot.',
                      ]},
-        'generator': {'name': 'software-foundation-docmap', 'version': '2.2',
+        'generator': {'name': 'software-foundation-docmap', 'version': '2.3',
                       'packages': {name: importlib.metadata.version(name) for name in PARSER_PACKAGES}},
     }
 
@@ -272,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--source', type=Path, default=default_source(), help='Source tree to read (never written); defaults to the containing checkout when installed as documentation-tool')
     parser.add_argument('--output', type=Path, help='New output directory outside source; existing paths are refused')
     parser.add_argument('--no-pdf', action='store_true', help='Generate offline HTML/JSON only, without ReportLab')
-    parser.add_argument('--reference-handbooks', action='store_true', help='Also print six broad reference inventories in addition to the four default development handbooks')
+    parser.add_argument('--reference-handbooks', action='store_true', help='Also print six broad reference inventories in addition to the five default development handbooks')
     parser.add_argument('--exclude', action='append', default=[], metavar='RELATIVE_PATH', help='Additional source-relative file/directory to skip; repeatable')
     parser.add_argument('--max-file-mb', type=int, default=4, help='Per-file read limit; skipped files are reported (default 4 MiB)')
     args = parser.parse_args(argv)
@@ -315,9 +320,19 @@ def main(argv: list[str] | None = None) -> int:
         from render_compiler_pdf import render_compiler_pdf
         from render_change_pdf import render_change_pdfs
         from render_flow_pdf import render_flow_pdf
+        from render_code_pdf import render_code_pdf
         render_walkthrough_pdf(model, output)
         render_compiler_pdf(model, output)
         render_flow_pdf(model, output)
+        parent_pages = {group: dict(model['print_references'][group])
+                        for group in ('flow_maps', 'flow_nodes')}
+        render_code_pdf(model, output)
+        # The first overview pass establishes exact parent pages. The code
+        # book establishes child pages; this final pass resolves both ways.
+        render_flow_pdf(model, output)
+        if any(model['print_references'][group] != pages
+               for group, pages in parent_pages.items()):
+            raise ValueError('Execution PDF pagination changed while linking code diagrams; parent links need review')
         render_change_pdfs(model, output)
         if args.reference_handbooks:
             from render_pdf import render_pdfs
