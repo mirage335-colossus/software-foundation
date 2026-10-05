@@ -85,7 +85,7 @@ class EvidenceArtifacts(unittest.TestCase):
 
     def test_names_have_finite_storage_bound_and_overflow_uses_release(self):
         self.assertEqual(artifacts.MAX_ARTIFACTS, 79)
-        self.assertEqual(artifacts.MAX_RUN_BYTES, 370 * artifacts.MIB)
+        self.assertEqual(artifacts.MAX_RUN_BYTES, 378 * artifacts.MIB)
         self.assertLess(artifacts.MAX_RUN_BYTES, 384 * artifacts.MIB)
         for target in artifacts.TARGETS:
             for scope in artifacts.SCOPES:
@@ -222,11 +222,28 @@ class EvidenceArtifacts(unittest.TestCase):
         self.assertIn('transport=actions', output.read_text())
 
     def test_realistic_certificate_above_old_limit_stays_native(self):
-        (self.source / 'nested/test.log').write_bytes(os.urandom(9 * artifacts.MIB))
-        result = self.prepare(name='certificate-2')
-        self.assertEqual(result['transport'], 'actions')
-        self.assertGreater(result['bytes'], 9 * artifacts.MIB)
-        self.assertLess(result['bytes'], 16 * artifacts.MIB)
+        self.name = 'certificate-2'
+        data = os.urandom(18 * artifacts.MIB)
+        (self.source / 'nested/test.log').write_bytes(data)
+        target = self.stage()
+        total = sum(path.stat().st_size for path in target.iterdir())
+        self.assertGreater(total, 16 * artifacts.MIB)
+        self.assertLess(total, 24 * artifacts.MIB)
+        self.fetch()
+        self.assertEqual((self.root / 'result/nested/test.log').read_bytes(), data)
+
+    def test_complete_certificate_file_inventory_above_old_manifest_limit_roundtrips(self):
+        self.name = 'certificate-2'
+        for index in range(4096):
+            name = 'check-' + str(index).zfill(4) + '-' + 'x' * 128 + '.json'
+            (self.source / 'nested' / name).write_text(json.dumps({'case': index}))
+        target = self.stage()
+        self.assertGreater((target / 'manifest.json').stat().st_size, artifacts.MIB)
+        self.assertLess((target / 'manifest.json').stat().st_size, 2 * artifacts.MIB)
+        result = self.fetch()
+        self.assertEqual(len(result['manifest']['files']), 4098)
+        for source in (self.source / 'nested').iterdir():
+            self.assertEqual((self.root / 'result/nested' / source.name).read_bytes(), source.read_bytes())
 
     def test_sdk_archives_are_excluded_and_oversize_does_not_silently_relay(self):
         (self.source / 'nested/sdk-example-binary.tar.gz').write_bytes(b'sdk bytes')

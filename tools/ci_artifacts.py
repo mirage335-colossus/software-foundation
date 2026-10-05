@@ -21,7 +21,7 @@ import github_release as delivery
 
 MIB = 1024 * 1024
 MAX_BUNDLE_BYTES = 2 * MIB  # Default receipt/evidence slot; larger classes below.
-MAX_MANIFEST_BYTES = MIB
+MAX_MANIFEST_BYTES = 2 * MIB
 MAX_EXPANDED_BYTES = 512 * MIB
 MAX_FILES = 10000
 MAX_EVIDENCE_SLOTS = 48
@@ -32,7 +32,7 @@ CONTROLS = ('qualification-inputs', 'certificate', 'certification-delivery',
             'candidate-coverage', 'apt-mechanism')
 SLOT_BUDGETS = {('source-' + target + '-' + scope): 2 * MIB for target in TARGETS for scope in SCOPES}
 SLOT_BUDGETS.update({name: 2 * MIB for name in CONTROLS})
-SLOT_BUDGETS.update({'certificate': 16 * MIB, 'source': 16 * MIB, 'candidate': 64 * MIB,
+SLOT_BUDGETS.update({'certificate': 24 * MIB, 'source': 16 * MIB, 'candidate': 64 * MIB,
                      'candidate-delivery': 2 * MIB, 'latest-verification': 2 * MIB,
                      'promotion-inputs': 2 * MIB, 'promotion-delivery': 2 * MIB})
 SLOT_BUDGETS.update({'application-' + target: 16 * MIB for target in APPLICATION_TARGETS})

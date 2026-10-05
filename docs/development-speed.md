@@ -250,8 +250,8 @@ prerequisites follow the actual action and test scope, avoiding development
 packages for archive or ABI-only checks.
 
 Routine same-run source, package, receipt and certificate transfers use native
-Actions artifacts. Their finite slot budgets total at most 370 MiB per attempt;
-the complete certificate can use a 16 MiB slot. Producer/consumer REST provenance
+Actions artifacts. Their finite slot budgets total at most 378 MiB per attempt;
+the complete certificate can use a 24 MiB slot. Producer/consumer REST provenance
 queries are replaced by the exact executing Actions context, immutable names,
 workflow dependencies and explicit outcomes. Complete local hash and safe archive
 validation remain. SDK archives stay in release storage.
@@ -376,7 +376,7 @@ accounting; it never runs automatically after development work.
 
 One day is the [minimum automatic artifact retention](https://github.com/actions/upload-artifact/blob/v4.6.2/action.yml);
 shorter lifetimes require explicit deletion. The maximum allowed content across
-all 79 slots is 370 MiB per attempt, plus small outer archive overhead; ordinary
+all 79 slots is 378 MiB per attempt, plus small outer archive overhead; ordinary
 runs use fewer slots and bytes. Early deletion shortens archive storage duration,
 but retained receipts and concurrent attempts can still accumulate storage.
 

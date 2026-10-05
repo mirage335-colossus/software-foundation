@@ -185,13 +185,16 @@ published application/certification assets use release storage. Small handoffs n
 longer create private releases or re-query producer jobs through REST.
 
 Each native artifact contains a complete hashed archive and manifest. There are
-79 immutable slots per run attempt, with **370 MiB maximum combined content**
+79 immutable slots per run attempt, with **378 MiB maximum combined content**
 across their individual budgets, plus ZIP metadata overhead. Ordinary receipts
-and individual check batches allow 2 MiB; source, application, native package and
-complete certificate slots allow 16 MiB; application diagnostic slots allow 8 MiB.
-The optional SDK-free candidate slot allows 64 MiB. SDK archives are excluded.
-These are ceilings, not reserved storage or expected consumption. The complete
-retained certificate was about 9.8 MB compressed, including its file manifest.
+and individual check batches allow 2 MiB; source, application and native package
+slots allow 16 MiB; complete certificates allow 24 MiB; application diagnostic
+slots allow 8 MiB. Native file manifests allow 2 MiB within each slot's total
+budget. The optional SDK-free candidate slot allows 64 MiB. SDK archives are
+excluded. These are ceilings, not reserved storage or expected consumption. A
+complete Rust all-GUI certificate handoff measured 23,500,974 bytes (about
+22.4 MiB), including its 1,470,211-byte manifest and all 6,016 retained files.
+Bound browser fixtures and screenshots remain part of the complete evidence.
 
 Consumers download only the relevant slots from their exact executing Actions
 run. Immutable artifact names and explicit workflow `needs` establish producer
