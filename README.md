@@ -157,7 +157,9 @@ navigation. It is checked for missing references, and does not substitute for th
 5. Reuse the [GUI boundary](docs/gui-boundary.md) and the
    [shared-workspace protocol](docs/agent-coordination.md) when applicable.
 
-The code and documentation authored in this repository use the [MIT license](LICENSE).
+Author: mirage335. The code and documentation authored in this repository are
+dedicated to the public domain under [CC0 1.0 Universal](LICENSE); attribution
+is not required.
 External dependencies retain their own terms; the [inventory](third_party/README.md)
 records the GUI dependency's CC0 dedication and separate supplier terms. The
 recorded Rev permission covers this repository; downstream projects must establish
