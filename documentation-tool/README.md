@@ -1,18 +1,48 @@
-# software-foundation edit maps
+# software-foundation documentation
 
-A separate, manually invoked documentation generator answering **what do I edit
-to make this change?** in a changing `software-foundation` checkout. Its starting
-view is a graphical edit path, with source details underneath. It produces an
-offline HTML explorer, five linked source-reference PDF handbooks, a distinctly
-marked AI-authored conceptual guide in HTML/PDF, and a machine-readable source
-snapshot. Running the generator requires no AI, API
-key, service, compiler, CMake configuration, compile database, or application build.
+The included documentation answers **where do I start, and what do I edit to
+make this change?** through graphical edit paths, nested code diagrams, source
+references, and linked PDFs. It includes a separately labeled AI-authored guide
+for a simple first look at the GUI design.
+
+## Read the included documentation
+
+Open [the code explorer](published/index.html) directly in your browser, or start
+with the [AI-authored GUI mental model](published/AI-AUTHORED__GUI-MENTAL-MODEL.html).
+These are committed reader files in **`published/`**. Reading them needs no
+rebuild, Python setup, AI, web server, or application checkout at its original
+capture location.
+Use a local clone or downloaded copy for the HTML explorer; GitHub's file view
+shows HTML source. The PDF links can also be read on GitHub.
+
+The six included PDF volumes are:
+
+- [Edit paths](published/pdf/00-edit-paths.pdf): where to change widgets, behavior,
+  and source-file registration.
+- [Code walkthroughs](published/pdf/01-code-walkthroughs.pdf): referenced functions,
+  ownership, control structures, and full source.
+- [Compiler reference](published/pdf/02-compiler-reference.pdf): source lists,
+  targets, options, and toolchain declarations.
+- [Execution flows](published/pdf/03-execution-flows.pdf): what runs during build,
+  startup, clicks, import, and export.
+- [Code flowcharts](published/pdf/04-code-flowcharts.pdf): numbered source lines
+  inside diagrams, with links to deeper calls and parent diagrams.
+- [AI-authored GUI mental model](published/pdf/AI-AUTHORED__GUI-MENTAL-MODEL.pdf):
+  simple conceptual diagrams with links to the detailed source views.
+
+Keep the complete `published/` directory together; it contains the local HTML
+assets, captured source data, `atlas.json`, and `pdf/` links. PDF cross-file links
+depend on viewer support and work best with the collection opened locally.
+The files are a documentation snapshot and may not be kept up to date.
 
 The generator is versioned in the separate **`documentation-tool/` directory**.
-Its virtual environment and generated snapshots stay outside the application
-repository. Running it never edits application code, build definitions, CI
-workflows, regression tests, Git state, or agent coordination records. There is
-deliberately no build hook, watcher, scheduled job, or automatic refresh.
+Fresh captures and its virtual environment stay outside the application
+checkout. An explicit export places reviewed reader artifacts in `published/`
+for versioning. Source capture never edits application code, build definitions,
+CI workflows, regression tests, Git metadata, or agent coordination records.
+There is deliberately no build hook, watcher, scheduled job, or automatic refresh.
+Generation requires no AI, API key, service, compiler, CMake configuration,
+compile database, or application build.
 
 ## Run only when a new snapshot is wanted
 
@@ -25,8 +55,8 @@ python3 -m venv ../software-foundation-docmap-env
 ```
 
 Virtual environments contain local absolute paths. Create this external
-environment afresh on each computer; never copy or commit it. Only the dependency
-list in `requirements.txt` is versioned.
+environment afresh on each computer; never copy or commit it. Its dependency list
+in `requirements.txt` is versioned.
 
 Then invoke explicitly whenever new documentation is wanted:
 
@@ -54,9 +84,10 @@ To choose the locations explicitly:
 
 Existing output directories are refused, even if empty. Output inside the source
 tree, or a parent containing the source tree, is refused. These checks also
-resolve symlinks. The versioned tool can read its containing checkout; it cannot
-write documentation into it. Keep the Python environment outside the checkout
-and use `-B` as shown above.
+resolve symlinks. The capture generator can read its containing checkout, but its
+new snapshot output must remain outside that checkout. The separate export step
+can copy a reviewed reader bundle into `documentation-tool/published/`.
+Keep the Python environment outside the checkout and use `-B` as shown above.
 
 For HTML/JSON only, add `--no-pdf`. Additional exclusions can be specified as
 source-relative paths, for example `--exclude tests --exclude .github`.
@@ -67,6 +98,10 @@ Regenerate explicitly when its broad map stops being useful. It records the
 capture time, per-file hashes, parser versions, coverage gaps, and a combined
 hash of the captured files. It detects edits to captured files during collection,
 but it cannot guarantee an atomic repository snapshot while other agents work.
+
+To update the committed reader files, export a reviewed external snapshot into a
+fresh staging directory and follow the scoped replacement procedure in the
+[maintenance note](AI-AUTHORED__GUI-MENTAL-MODEL-MAINTENANCE.md#update-the-committed-reader-bundle).
 
 ## Start with the change you want
 
@@ -354,24 +389,18 @@ PDF pass records parent pages; a final pass links to exact code-diagram pages.
 `conceptual_guide.py` loads and validates the clearly named AI-authored JSON;
 `render_concept_html.py` and `render_concept_pdf.py` render that fixed explanation.
 `render_pdf.py` creates the optional inventory volumes.
-`atlas.json` retains the complete
-analysis and captured text without requiring either presentation layer.
+`atlas.json` retains the complete analysis and captured text without requiring
+either presentation layer. `export_snapshot.py` copies a reviewed snapshot into
+a fresh portable reader directory, including its compact `atlas.json` and
+complete `data.js`; it does not run the generator or application tooling.
 
 ## Snapshots and verification
 
-Generated snapshots are deliberately not committed. Each output has `index.html`
-and, by default, the six PDFs described above. The prepared external tool directory
-also retains earlier snapshots, including `2026-10-04-edit-paths` and the expanded
-`2026-10-04-placement-tabs` guide. `2026-10-04-developer-handbooks` contains the
-expanded three-volume collection and the five behavior workflows.
-`2026-10-04-execution-flows` adds the fourth volume and seven source-backed
-execution scenarios to the explorer.
-`2026-10-04-code-flowcharts` adds the literal-code diagram hierarchy and fifth
-volume; the overview boxes now open diagrams instead of prose summaries.
-`2026-10-04-main-to-widgets` makes the entry-to-declaration path directly
-discoverable and adds diagrams for actual widget rows and field defaults.
-`2026-10-04-ai-gui-concepts` adds the explicitly AI-authored conceptual HTML/PDF
-companion while retaining the source-reference collection.
+The reviewed reader snapshot is committed in `published/`, including `index.html`,
+the AI-authored companion HTML, and all six default PDFs. Raw working captures
+remain outside the source checkout; exporting selects the reader collection to
+version. Neither generation nor export refreshes it automatically. Its capture
+date, hashes, coverage notes, and source data remain available in the bundle.
 
 Generator-only checks passed for source/output isolation, symlink and FIFO
 handling, parser fixtures, unique symbol IDs, source spans, call targets, guide

@@ -3,6 +3,9 @@
 For developers specifically revising or regenerating the static conceptual guide.
 This note lives beside its [authored source](AI-AUTHORED__GUI-MENTAL-MODEL.json)
 and renderers; it is not part of the generated explorer or PDF collection.
+To read the included documentation, use the
+[published reader links](README.md#read-the-included-documentation). They need no
+rebuild or development environment.
 
 The diagrams explain mechanisms that usually survive changes to the example's
 features. They need editorial attention when those mechanisms change or an
@@ -30,7 +33,9 @@ Keep the source-reference diagrams literal and source-backed. Put deliberately
 simplified explanations in the conspicuously named AI-authored companion.
 Do not edit a generated `index.html`, `data.js`, `atlas.json` or PDF as the lasting
 fix: the next generation would discard that edit. Commit the generator and
-authored JSON changes; generated snapshots remain outside the source checkout.
+authored JSON changes, and update the reviewed `published/` reader bundle when
+that snapshot update is requested. Keep raw working captures outside the source
+checkout.
 
 ## Rebuild saved content without AI
 
@@ -51,9 +56,11 @@ Neither form builds, tests or runs that application.
 Keep machine-specific paths out of versioned documentation and configuration.
 The external virtual environment contains absolute interpreter and installation
 paths, so recreate it from `requirements.txt` on each computer. Never commit the
-environment. Generated snapshots also record an absolute source-root path as
-capture metadata; keep them outside the repository. Their navigation uses local
-relative links, so that metadata does not require the original checkout location.
+environment. Raw captures also record an absolute source-root path as capture
+metadata; keep those working outputs external. The explicit export described
+below replaces that host path with portable metadata in the reader bundle. Its
+navigation uses local relative links and captured source data, so readers do not
+need the original checkout location.
 
 Open the new `AI-AUTHORED__GUI-MENTAL-MODEL.html` and its same-named PDF in `pdf/`.
 Keep the complete output directory together: its links need the main explorer,
@@ -66,6 +73,50 @@ still correct. Review changed-source markers, and review the explanation when
 an ownership rule, interface or control path changes. Leave `authored_at`
 unchanged for a render-only rebuild; update it when the authored explanation
 is revised. The generated `generated_at` records the separate capture time.
+
+## Update the committed reader bundle
+
+The included `published/` directory is a reviewed static snapshot, not an
+automatic build product. Update it only when a new committed reader snapshot is
+explicitly requested:
+
+1. Generate a fresh external capture with the command above. Inspect the new
+   explorer, conceptual guide and all six PDFs; review missing anchors and
+   changed-source markers. This step does not run application builds or tests.
+2. Export into a fresh sibling staging directory. Run from the isolated
+   documentation checkout's repository root, replacing the snapshot path:
+
+   ```sh
+   python3 -B documentation-tool/export_snapshot.py \
+     --snapshot ../path/to/external-snapshot \
+     --output documentation-tool/published-staging
+   ```
+
+   The exporter refuses an existing output directory. Choose another fresh
+   staging name if this one already exists. It copies the reader collection
+   without recapturing source or rerendering HTML/PDFs. It writes compact
+   `atlas.json` and the complete model in `data.js`, with portable source-root
+   metadata; other reader artifacts keep their existing bytes. Keep
+   `atlas.json`: the compiler PDF links to it.
+   Export supports the default six PDF volumes. Capture without
+   `--reference-handbooks`: those optional inventory covers contain the original
+   source-root path and are refused by this copy-only exporter.
+3. Open the staged `index.html`, the AI-authored HTML, and the six PDFs. Check
+   navigation, source and diagram links, dates and the included file collection.
+   Keep the complete directory together, including assets and captured source
+   data. Cross-PDF navigation also depends on the reader's PDF viewer.
+4. Once the requested snapshot is reviewed, replace only
+   `documentation-tool/published/` with that staged reader bundle. Preserve the
+   generator, authored JSON and all application files. Include the reviewed
+   bundle and any intentional documentation-tool source changes in the
+   authorized documentation commit; do not merge or push unless requested.
+
+If there is no included bundle yet, the same export command can use
+`--output documentation-tool/published` directly. Export is also useful for
+relocating an existing reader collection: it accepts its `atlas.json`, or safely
+extracts the JSON from its `data.js` without evaluating JavaScript. Pass that
+collection's directory to `--snapshot`, not an individual file. Re-exporting
+an old collection does not refresh its capture date or source content.
 
 ## Prompts you can reuse
 
@@ -82,7 +133,8 @@ agent coordination records or the active application's Git state. Do not run
 application builds, scripts, tests or release commands. Keep generation local,
 manual and independent of AI. Preserve the explicit AI-authored labels.
 Write new snapshots outside the source checkout. Commit only documentation-tool
-changes in the authorized isolated documentation branch; do not merge or push.
+changes in the authorized isolated documentation branch; include a reviewed
+published/ reader bundle only when its update is requested. Do not merge or push.
 Report what changed, the output paths, checks actually performed and limitations.
 ```
 
@@ -94,6 +146,17 @@ external snapshot directory. Do not revise the authored explanations or
 application. Generate the main explorer, AI-authored conceptual explorer and
 PDF collection. Report missing source anchors separately from successful
 rendering, and give me links to the new outputs.
+```
+
+**Update the included reader snapshot:**
+
+```text
+Generate a fresh external documentation snapshot from [source checkout]. Export
+it to a fresh documentation-tool/published-staging directory, inspect the main
+explorer, AI-authored HTML, all six PDFs and their links, then replace only
+documentation-tool/published with the reviewed bundle. Include those artifacts
+in the authorized isolated documentation commit. Do not change the application,
+run its tools, merge or push. Report the capture date, exported paths and checks.
 ```
 
 **Add or clarify one conceptual model:**
