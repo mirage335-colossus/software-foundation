@@ -209,6 +209,12 @@ is separate from the recorded immutable-channel qualification.
 
 [`distribution_mirror.py`](../tools/distribution_mirror.py) runs once after the
 existing native `check.accept` operation, under the same release-lifecycle lock.
+For an already accepted channel, manually dispatch `distro-check.yml` with its
+exact `channel` selector and `mirror_only: true`, leaving `accept: false`,
+`previous` empty and `distro: all`. This separate protected job has a 15-minute
+limit, skips the native matrix and preserves the original acceptance marker. It
+only verifies and copies existing signed bytes, then reads them back; it neither
+requalifies packages nor replaces their installation/upgrade evidence.
 It requires the accepted channel's application to match the current application
 Latest. Permanent public tags `packages-x86_64` and `packages-aarch64` mirror the
 accepted signed APT assets unchanged, with Arch also available on qualified

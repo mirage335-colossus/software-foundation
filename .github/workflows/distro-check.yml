@@ -19,6 +19,10 @@ name: Native signed package install and update
         description: Mark this immutable channel qualified after every required native check
         type: boolean
         default: false
+      mirror_only:
+        description: Publish stable URLs from an already accepted channel; no builds or native matrix
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       channel:
@@ -47,6 +51,7 @@ env:
   TRUSTED_FINGERPRINT: ${{ vars.DISTRIBUTION_SIGNING_FINGERPRINT }}
 jobs:
   plan:
+    if: ${{ !inputs.mirror_only }}
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -156,3 +161,36 @@ jobs:
         import distribution_mirror
         distribution_mirror.publish(Path('build/accepted-channel'), Path('docs/release-policy.json'),
             os.environ['TRUSTED_FINGERPRINT'], execute=True)
+  mirror:
+    if: ${{ inputs.mirror_only }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release-publisher
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: foundation-release-lifecycle
+      cancel-in-progress: false
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Publish and read back an already accepted signed channel at its stable URL
+      shell: python
+      run: |
+        import json, os, sys
+        from pathlib import Path
+        sys.path.insert(0, 'tools')
+        import distro_check as check
+        import distribution_mirror
+        if os.environ['ACCEPT_CHANNEL'] == 'true' or os.environ['PREVIOUS'] or os.environ['DISTRO'] != 'all':
+            raise ValueError('mirror-only publication requires accept=false, no previous channel and distro=all')
+        request = check.selection(os.environ['CHANNEL'])
+        directory = Path('build/accepted-channel'); policy = Path('docs/release-policy.json')
+        trusted = os.environ['TRUSTED_FINGERPRINT']
+        value = check.release.fetch(os.environ['GITHUB_REPOSITORY'], request['tag'], request['manifest_sha256'],
+            directory, policy, trusted, native_only=True)
+        if value['request']['target'] != request['target']:
+            raise ValueError('fetched target differs')
+        print(json.dumps(distribution_mirror.publish(directory, policy, trusted, execute=True), sort_keys=True))
