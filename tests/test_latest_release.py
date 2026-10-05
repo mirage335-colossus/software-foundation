@@ -337,12 +337,17 @@ class WorkflowOverlapTests(unittest.TestCase):
         code = step.split('      run: |-\n', 1)[1].split('      id: result\n', 1)[0]
         code = '\n'.join(line[8:] for line in code.splitlines())
         program = compile(code, 'protected-package-assembly', 'exec')
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(os, 'putenv', side_effect=AssertionError('synthetic signing fixture must not modify the native environment')) as native_write:
             runner_temp = Path(directory).resolve()
             environment = {'PACKAGE_REPOSITORY': 'true', 'RUNNER_TEMP': str(runner_temp)}
-            for private in ('', 'x' * (1024 * 1024 + 1)):
+            oversized = 'x' * (1024 * 1024 + 1)
+            original_environment = os.environ
+            before = dict(original_environment)
+            # Guard inputs remain ordinary Python data, including oversized keys.
+            for private in ('', oversized):
                 with self.subTest(key_available=bool(private)), \
-                        mock.patch.dict(os.environ, dict(environment, SIGNING_PRIVATE_KEY=private), clear=True), \
+                        mock.patch.object(os, 'environ', dict(environment, SIGNING_PRIVATE_KEY=private)), \
                         mock.patch.object(subprocess, 'run') as run, \
                         mock.patch.object(tempfile, 'TemporaryDirectory') as private_directory:
                     with self.assertRaisesRegex(ValueError, 'bounded protected distribution signing key required'):
@@ -367,7 +372,7 @@ class WorkflowOverlapTests(unittest.TestCase):
                     if child_fails:
                         raise subprocess.CalledProcessError(1, command)
                 with self.subTest(child_fails=child_fails), \
-                        mock.patch.dict(os.environ, dict(environment, SIGNING_PRIVATE_KEY='synthetic private key fixture'), clear=True), \
+                        mock.patch.object(os, 'environ', dict(environment, SIGNING_PRIVATE_KEY='synthetic private key fixture')), \
                         mock.patch.object(subprocess, 'run', side_effect=assemble) as run:
                     if child_fails:
                         with self.assertRaises(subprocess.CalledProcessError):
@@ -379,13 +384,16 @@ class WorkflowOverlapTests(unittest.TestCase):
                 self.assertEqual(len(keys), 1)
                 self.assertFalse(keys[0].exists())
                 self.assertEqual(list(runner_temp.iterdir()), [])
-            with mock.patch.dict(os.environ, dict(environment, PACKAGE_REPOSITORY='false', SIGNING_PRIVATE_KEY=''), clear=True), \
+            with mock.patch.object(os, 'environ', dict(environment, PACKAGE_REPOSITORY='false', SIGNING_PRIVATE_KEY='')), \
                     mock.patch.object(subprocess, 'run') as run, \
                     mock.patch.object(tempfile, 'TemporaryDirectory') as private_directory:
                 exec(program, {})
                 run.assert_called_once_with([sys.executable, '.github/scripts/lifecycle.py', 'assemble'], check=True)
                 private_directory.assert_not_called()
                 self.assertNotIn('SIGNING_PRIVATE_KEY', os.environ)
+            self.assertEqual(native_write.call_count, 0)
+            self.assertIs(os.environ, original_environment)
+            self.assertTrue(dict(original_environment) == before)
 
     def test_certification_restores_exact_frozen_payloads_once_and_keeps_diagnostics(self):
         root = Path(__file__).resolve().parents[1]

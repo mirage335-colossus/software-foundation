@@ -341,7 +341,7 @@ executables exist. Ordinary shards use the same complete prerequisite registry. 
 
 The manual [Host contract diagnostics workflow](../.github/workflows/host-contracts.yml)
 runs one complete `process_tree`, `windows_graphics`, `ci_plan`, `github_release`,
-`ci_transport`, `agent_board`, `test_plan`, `ci_retry`, `package_wasm` or `import_wasm` unit suite
+`ci_transport`, `latest_release`, `agent_board`, `test_plan`, `ci_retry`, `package_wasm` or `import_wasm` unit suite
 directly on a Windows x64, Linux x64 or Linux ARM64 runner. The last four bind the
 complete maintained source inventory before and after execution. On Windows they
 select the installed native compiler and own a fresh private MSVC build session,
@@ -350,6 +350,9 @@ small configure/compile fixtures without rebuilding application GUI backends or
 acquiring an SDK. The `agent_board` selection runs the complete compatibility-board
 suite, including its eight independent writers, with the exact helper and runner
 source bound before/after each diagnostic. It requires no compiler or GUI build.
+The `latest_release` selection also binds the complete maintained source inventory
+because its orchestration fixtures inspect workflow and helper files. It requires
+no compiler setup, application build or SDK acquisition.
 These diagnostic receipts never qualify a release.
 
 The opt-in `windows_hosts` suite requires Windows and exercises the actual

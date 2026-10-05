@@ -3,6 +3,7 @@ import importlib.util
 import json
 from pathlib import Path, PureWindowsPath
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -355,13 +356,13 @@ class HostContracts(unittest.TestCase):
                 self.assertIn('unknown helper', row['error']); owner.terminate.assert_called_once_with()
 
     def test_other_diagnostics_keep_generic_process_completion(self):
-        for system, suite in (('Windows', 'process_tree'), ('Linux', 'test_plan')):
+        for system, suite in (('Windows', 'process_tree'), ('Windows', 'latest_release'), ('Linux', 'test_plan')):
             owner = mock.Mock(); owner.wait.return_value = 0
             with mock.patch.object(HOST.platform, 'system', return_value=system), \
                  mock.patch.object(HOST.windows_compiler, 'BuildSession') as select, \
                  mock.patch.object(HOST.process_tree, 'launch', return_value=owner), \
                  mock.patch.object(HOST, 'complete_report', return_value=True):
-                row = HOST.repetition(Path(sys.executable), suite, self.root / system, 120, {})
+                row = HOST.repetition(Path(sys.executable), suite, self.root / (system + '-' + suite), 120, {})
             self.assertEqual(row['status'], 'passed'); self.assertNotIn('compiler_completion', row)
             select.assert_not_called(); owner.finish.assert_called_once_with(); owner.close.assert_called_once_with()
 
@@ -403,6 +404,29 @@ class HostContracts(unittest.TestCase):
                 self.assertEqual(set(paths), {'tools/host_contracts.py', 'tools/run_tests.py',
                     'tools/process_tree.py', 'tests/test_agent_board.py', 'tools/agent_board.py',
                     '.github/workflows/host-contracts.yml'})
+
+    def test_latest_release_diagnostic_binds_complete_source_without_compiler_setup(self):
+        self.assertIn('latest_release', HOST.SUITES)
+        self.assertNotIn('latest_release', HOST.BUILD_SUITES)
+        workflow = (ROOT / '.github/workflows/host-contracts.yml').read_text()
+        choices = workflow.split('      suite:\n', 1)[1].split('      interpreter:\n', 1)[0]
+        options = re.search(r'^        options: \[([^\]\n]+)\]$', choices, re.M).group(1)
+        self.assertIn('latest_release', [value.strip() for value in options.split(',')])
+        compiler_options = re.search(r"contains\(fromJSON\('(\[[^\n]+\])'\), inputs.suite\)", workflow).group(1)
+        self.assertNotIn('latest_release', json.loads(compiler_options))
+        maintained = set(HOST.source_identity.snapshot_paths(ROOT))
+        for target, (system, _) in HOST.TARGETS.items():
+            with self.subTest(target=target):
+                name, case = HOST.run_tests.suite_source('latest_release', system)
+                self.assertEqual(name, 'test_latest_release')
+                self.assertEqual(case, ROOT / 'tests/test_latest_release.py')
+                paths = HOST.source_files('latest_release', target)
+                self.assertEqual(len(paths), len(set(paths)))
+                self.assertEqual(set(paths), maintained)
+                for required in ('tests/test_latest_release.py', 'tools/latest_release.py',
+                                 'tools/github_release.py', '.github/workflows/_release-latest.yml',
+                                 '.github/workflows/host-contracts.yml'):
+                    self.assertIn(required, paths)
 
     def test_arbitrary_commands_counts_and_reused_output_are_rejected(self):
         for target, suite, interpreter, count in ((self.target, '../run', '3.12', 1),

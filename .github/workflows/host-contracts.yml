@@ -12,7 +12,7 @@ run-name: Host ${{ inputs.target }} / Python ${{ inputs.interpreter }} / ${{ inp
         description: Complete registered suite or opt-in Windows host probes
         type: choice
         default: process_tree
-        options: [process_tree, windows_graphics, ci_plan, github_release, ci_transport, windows_hosts, agent_board, test_plan, ci_retry, package_wasm, import_wasm]
+        options: [process_tree, windows_graphics, ci_plan, github_release, ci_transport, latest_release, windows_hosts, agent_board, test_plan, ci_retry, package_wasm, import_wasm]
       interpreter:
         description: Already installed Python; explicit versions require the runner cache
         type: choice

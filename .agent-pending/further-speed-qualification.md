@@ -140,6 +140,27 @@ evidence is retained. Certification and promotion did not execute; the
 failed run is not release qualification. Exact failure evidence is retained in
 `.agent-work/artifacts/further-release-audit-20261005/latest-37383219288-attempt-1-failure-analysis.json`.
 
+The signing repair was pushed as `d4a94574129165264bce8b43b000a5ff0cbcb4da`;
+development feedback [37385962730](https://github.com/mirage335-colossus/software-foundation/actions/runs/37385962730)
+passed all four jobs. Fresh full Latest
+[37385992507](https://github.com/mirage335-colossus/software-foundation/actions/runs/37385992507)
+then exposed a Windows-only setup error in the newly added signing-guard test:
+the synthetic oversized key exceeded Windows' 32,767-character environment
+variable limit before the production guard executed. The repaired fixture uses
+an isolated dictionary, preserving every assertion and the production key bound;
+all 20 cases passed locally, and a discriminating probe confirms zero native
+environment writes. Remaining producers were cancelled after the mandatory
+regression failed; this run cannot qualify a release. Validate the repaired suite
+with the bounded native host diagnostic before another full release.
+
+Intermediate diagnostic-source CI [37385654742](https://github.com/mirage335-colossus/software-foundation/actions/runs/37385654742)
+also exposed a timing-dependent test isolation bug: its global sleep mock counted
+GPG subprocess polling as network retry waits. A scoped transport clock preserves
+all assertions without changing subprocess timing; the complete signed-client
+suite passed 57/57 with no exclusions. This test-only correction is included with
+the portable signing fixture. Production transport and signing behavior remain
+unchanged.
+
 Refreshed screenshot
 [37383282720](https://github.com/mirage335-colossus/software-foundation/actions/runs/37383282720)
 on the same source passed all three jobs and published

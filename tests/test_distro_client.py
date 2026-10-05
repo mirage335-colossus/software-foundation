@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 from urllib.parse import quote
@@ -847,10 +848,12 @@ class SignedClientTests(unittest.TestCase):
         # 150 seconds exceeds the public 120-second wait budget but fits its
         # 180-second request deadline. Freeze elapsed time and jitter so this
         # assertion tests budget exhaustion independently of deadline precedence.
+        # Bind the transport's clock without changing stdlib subprocess/GPG waits.
+        sleep = Mock()
+        clock = SimpleNamespace(monotonic=lambda: 100, time=client.release.delivery.time.time, sleep=sleep)
         with patch.object(client, 'urlopen', side_effect=error) as request, \
                 patch.object(client, 'build_opener') as download, \
-                patch.object(client.time, 'monotonic', return_value=100), \
-                patch.object(client.time, 'sleep') as sleep, \
+                patch.object(client.release.delivery, 'time', clock), \
                 patch.object(client.release.delivery.random, 'uniform', return_value=0):
             with self.assertRaisesRegex(ValueError, 'wait budget exhausted'):
                 client.refresh(self.value, self.f.policy)

@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {'windows-x86_64': ('Windows', 'x64'), 'linux-x86_64': ('Linux', 'x64'),
            'linux-aarch64': ('Linux', 'arm64')}
 BUILD_SUITES = ('test_plan', 'ci_retry', 'package_wasm', 'import_wasm')
-SUITES = ('process_tree', 'windows_graphics', 'ci_plan', 'github_release', 'ci_transport', 'windows_hosts', 'agent_board') + BUILD_SUITES
+SUITES = ('process_tree', 'windows_graphics', 'ci_plan', 'github_release', 'ci_transport', 'latest_release', 'windows_hosts', 'agent_board') + BUILD_SUITES
 INTERPRETERS = ('runner-default', '3.12', '3.14')
 REPETITIONS = (1, 5, 20)
 CASE_SECONDS = 120
@@ -144,8 +144,8 @@ def repetition(executable, suite, folder, timeout, environment):
 def source_files(suite, target):
     """Name every maintained input consumed by the optional native host probes."""
     _, case_file = run_tests.suite_source(suite, TARGETS[target][0])
-    if suite in BUILD_SUITES:
-        # These fixtures configure, package or hash source trees. Bind their complete
+    if suite in BUILD_SUITES or suite == 'latest_release':
+        # These fixtures configure, package, hash or inspect maintained source inputs. Bind their complete
         # maintained input inventory without adding a GUI build to the diagnostic.
         return sorted(source_identity.snapshot_paths(ROOT))
     paths = ['tools/host_contracts.py', 'tools/run_tests.py', 'tools/process_tree.py',
