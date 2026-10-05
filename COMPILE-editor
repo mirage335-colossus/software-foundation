@@ -1,0 +1,27 @@
+Software Foundation — build and run the optional graphical editor
+
+Run from the repository root on a Linux desktop with a working display.
+Rust is not required.
+
+Compile and run with the retained native Linux C++ SDK in this checkout:
+./build.sh editor build dev --backend fltk --sdk build/agents/rust-package-qualification/sdk --build-dir build/editor-fltk-sdk
+./build/editor-fltk-sdk/foundation-editor-fltk
+
+Substitute your verified native SDK path if stored elsewhere; this path is not auto-selected.
+Use a fresh build directory when switching between SDK and system builds.
+
+System-toolchain alternative: Git, CMake >=3.24, Ninja, Python >=3.9, C++20 and FLTK.
+Debian 12 preparation, if needed:
+sudo apt-get install git build-essential cmake ninja-build python3 libfltk1.3-dev
+./build.sh editor build dev --backend fltk --build-dir build/editor-fltk
+./build/editor-fltk/foundation-editor-fltk
+
+Choose New for a project directory, or Open for a project JSON file.
+Double-click a widget or flow block to edit its ordinary source file.
+To open the editor's own design, append --project editor/self/project.json --root .
+
+Framebuffers use the existing SDL2 display/input host: install libsdl2-dev,
+then use --backend framebuffer and build/editor-framebuffer; run foundation-editor-framebuffer.
+Rev uses --backend rev and build/editor-rev; its existing prepared module toolchain is required.
+Commands use retained GUI inputs and download nothing. Rebuild after editing source.
+Details, local tests, recipes and platform limits: editor/README.md.

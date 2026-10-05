@@ -22,6 +22,56 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(result['scope'], 'documents')
         self.assertFalse(any(result[field] for field in ('build', 'gui', 'workflow_lint')))
 
+    def test_isolated_editor_sources_build_entry_and_local_tests_omit_application_work(self):
+        paths = ['editor/CMakeLists.txt', 'editor/ui/main.cpp', 'editor/tests/test_model.py',
+                 'editor/self/generated/layout.cpp', 'editor/PLAN.md', 'COMPILE-editor']
+        for selected in ([path] for path in paths):
+            with self.subTest(paths=selected):
+                result = ci.classify(selected)
+                self.assertEqual(result['scope'], 'editor')
+                self.assertFalse(any(result[field] for field in ('build', 'gui', 'workflow_lint')))
+                self.assertEqual(result['tool_suites'], [])
+        self.assertEqual(ci.infrastructure_suites(paths), [])
+
+    def test_editor_and_reviewed_narrative_documents_keep_the_editor_scope(self):
+        for paths in (['editor/ui/main.cpp', 'README.md', 'docs/ci.md'],
+                      ['docs/README.md', 'COMPILE-editor']):
+            with self.subTest(paths=paths):
+                result = ci.classify(paths)
+                self.assertEqual(result['scope'], 'editor')
+                self.assertEqual(result['changed_paths'], paths)
+                self.assertFalse(any(result[field] for field in ('build', 'gui', 'workflow_lint')))
+                self.assertEqual(result['tool_suites'], [])
+
+    def test_editor_changes_cannot_waive_application_runtime_shared_or_policy_checks(self):
+        for path in ('src/main.cpp', 'include/foundation/store.hpp', 'runtime/graph.cpp',
+                     'visual/flow_runtime.cpp', 'gui/shared/application.cpp', 'tools/build.py',
+                     'tests/test_build.py', 'cmake/Dependencies.cmake', 'CMakeLists.txt',
+                     '.github/workflows/ci.yml', 'docs/release-policy.json', 'docs/new-editor.md'):
+            with self.subTest(path=path):
+                result = ci.classify(['editor/ui/main.cpp', path])
+                self.assertEqual(result['scope'], 'full')
+                self.assertTrue(all(result[field] for field in ('build', 'gui', 'workflow_lint')))
+                self.assertEqual(result['tool_suites'], ci.infrastructure_suites([path]))
+
+    def test_editor_exclusion_requires_canonical_case_sensitive_relative_paths(self):
+        all_suites = ci.infrastructure_suites([])
+        for path in ('', 'editor', 'editor/', 'editor//main.cpp', 'editor/./main.cpp',
+                     './editor/main.cpp', 'editor/../src/main.cpp', '../editor/main.cpp',
+                     'editor/ui/../../src/main.cpp', 'src/../editor/main.cpp', 'tests/./fixture.cpp',
+                     'editor\\main.cpp', '/editor/main.cpp',
+                     '//editor/main.cpp', 'C:/editor/main.cpp', 'C:\\editor\\main.cpp',
+                     'editor/main.cpp\nREADME.md', 'editor/main\t.cpp', 'editor/main\0.cpp',
+                     'editor/main\x7f.cpp', 'editor/main\u0085.cpp', 'Editor/main.cpp',
+                     'editors/main.cpp', 'COMPILE-editor/child', 'COMPILE-editor.bak',
+                     './COMPILE-editor', None, 1, []):
+            with self.subTest(path=path):
+                result = ci.classify(['editor/ui/main.cpp', path])
+                self.assertEqual(result['scope'], 'full')
+                self.assertTrue(all(result[field] for field in ('build', 'gui', 'workflow_lint')))
+                self.assertEqual(result['tool_suites'], all_suites)
+                self.assertEqual(ci.infrastructure_suites([path]), all_suites)
+
     def test_policy_manual_installed_config_unknown_and_source_paths_remain_full(self):
         for path in ('docs/release-policy.json', 'docs/installed.md', 'docs/man/foundation-cli.1',
                      'docs/templates/session.json', 'docs/new-feature.md', 'docs/ci.md/new',
@@ -51,6 +101,9 @@ class ClassificationTests(unittest.TestCase):
             self.assertEqual(ci.select(ROOT, 'push', event, 'a' * 40)['scope'], 'full')
         with patch.object(ci, 'git', side_effect=[b'a' * 40 + b'\n', b'\xff\0']):
             self.assertEqual(ci.select(ROOT, 'push', event, 'a' * 40)['scope'], 'full')
+        for raw in (b'editor/main.cpp\0\0', b'\0editor/main.cpp\0'):
+            with self.subTest(raw=raw), patch.object(ci, 'git', side_effect=[b'a' * 40 + b'\n', raw]):
+                self.assertEqual(ci.select(ROOT, 'push', event, 'a' * 40)['scope'], 'full')
 
 
     def test_changed_domains_run_whole_affected_suites(self):
@@ -193,6 +246,30 @@ class GitSelectionTests(unittest.TestCase):
         self.assertEqual(result['scope'], 'full')
         self.assertEqual(set(result['changed_paths']), {'README.md', 'src/main.cpp'})
 
+    def test_renamed_shared_source_cannot_hide_behind_editor_destination(self):
+        (self.root / 'editor').mkdir()
+        self.git('mv', 'src/main.cpp', 'editor/main.cpp')
+        head = self.save()
+        result = self.push(self.base, head)
+        self.assertEqual(result['scope'], 'full')
+        self.assertTrue(all(result[field] for field in ('build', 'gui', 'workflow_lint')))
+        self.assertEqual(set(result['changed_paths']), {'editor/main.cpp', 'src/main.cpp'})
+
+    def test_editor_addition_deletion_and_editor_rename_remain_isolated(self):
+        self.write('editor/main.cpp', 'editor source\n')
+        first = self.save()
+        result = self.push(self.base, first)
+        self.assertEqual(result['scope'], 'editor')
+        self.assertEqual(result['tool_suites'], [])
+        self.git('mv', 'editor/main.cpp', 'editor/window.cpp')
+        second = self.save()
+        renamed = self.push(first, second)
+        self.assertEqual(renamed['scope'], 'editor')
+        self.assertEqual(set(renamed['changed_paths']), {'editor/main.cpp', 'editor/window.cpp'})
+        (self.root / 'editor/window.cpp').unlink()
+        third = self.save()
+        self.assertEqual(self.push(second, third)['scope'], 'editor')
+
     def test_deleted_runtime_source_requires_full_feedback(self):
         (self.root / 'src/main.cpp').unlink()
         head = self.save()
@@ -257,6 +334,27 @@ class GitSelectionTests(unittest.TestCase):
                                  '--root', str(self.root), '--event', str(event), '--event-name', 'push',
                                  '--head', head], check=True, capture_output=True, text=True, timeout=20)
         self.assertEqual(json.loads(result.stdout)['scope'], 'full')
+
+    def test_cli_editor_selection_omits_tooling_and_explains_local_checks(self):
+        self.write('editor/tests/test_model.py', 'editor local check\n')
+        self.write('COMPILE-editor', 'explicit editor command\n')
+        self.write('docs/ci.md', 'updated editor documentation\n')
+        head = self.save()
+        event = self.area / 'event.json'
+        event.write_text(json.dumps({'before': self.base, 'after': head}))
+        output = self.area / 'output'
+        summary = self.area / 'summary'
+        result = subprocess.run([sys.executable, '-B', str(ROOT / 'tools/ci_changes.py'),
+                                 '--root', str(self.root), '--event', str(event), '--event-name', 'push',
+                                 '--head', head, '--github-output', str(output), '--summary', str(summary),
+                                 '--run-tool-suites', '--tool-output', str(self.area / 'tool-output')],
+                                check=True, capture_output=True, text=True, timeout=20)
+        self.assertEqual(json.loads(result.stdout)['scope'], 'editor')
+        self.assertEqual(output.read_text().splitlines(),
+                         ['build=false', 'gui=false', 'workflow_lint=false', 'tools=false', 'scope=editor'])
+        self.assertFalse((self.area / 'tool-output').exists())
+        self.assertIn('Editor checks remain explicit and local.', summary.read_text())
+        self.assertIn('does not qualify', summary.read_text())
 
 
 class FeedbackWorkflowTests(unittest.TestCase):

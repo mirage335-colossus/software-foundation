@@ -74,9 +74,13 @@ the selected real backends with complete prepared inputs.
 
 The development feedback workflow always starts and keeps its focused and
 workflow-syntax check names conclusive. A local Git selector omits compilation,
-GUI input downloads and workflow lint only when every changed path belongs to
-its explicit list of non-installed narrative documents. It still checks document
-links and JSON. Installed instructions, manuals, release policy, build scripts,
+GUI input downloads and workflow lint when every changed path belongs to
+its explicit list of non-installed narrative documents, or only the optional
+`editor/` tree and `COMPILE-editor` (with those narrative documents) changed.
+Editor-only changes select no application tooling suites; editor checks are local
+and explicit. Shared GUI/build helpers and adopted `visual/` runtime sources keep
+full feedback. The workflow still checks document links and JSON. Installed
+instructions, manuals, release policy, build scripts,
 workflows, unknown paths, unavailable history and malformed events select full
 feedback. PR selection compares the tested merge against its verified base
 parent; moves include both old and new paths. No GitHub API listing or history

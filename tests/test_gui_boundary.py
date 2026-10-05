@@ -204,7 +204,10 @@ const CHAR: char = 'x';
             self.assertIn('nested.hpp',result.stdout+result.stderr)
 
     def test_direct_group_configure_dependencies_have_no_path_aliases(self):
-        selection = (ROOT/'gui/CMakeLists.txt').read_text().split('option(FOUNDATION_GUI_FLTK',1)[0]
+        inputs = (ROOT/'cmake/GuiInputs.cmake').read_text()
+        selection = inputs.split('macro(foundation_gui_inputs)', 1)[1].split('if(NOT IS_DIRECTORY', 1)[0]
+        # The fixture relocates the reviewed helper's explicit GUI module root.
+        selection = 'set(foundation_gui_module_root "${CMAKE_CURRENT_SOURCE_DIR}")\n' + selection
         with tempfile.TemporaryDirectory(prefix='direct retained inputs ') as temporary:
             source=Path(temporary)/'source';(source/'gui').mkdir(parents=True)
             group=source/'third_party/gui-inputs';group.mkdir(parents=True)
@@ -298,9 +301,9 @@ const CHAR: char = 'x';
             self.assertTrue(any('bridge.hpp' in failure for failure in _guard.tree_violations(root)))
 
     def test_header_mirror_uses_final_patch_bytes_and_preserves_incremental_outputs(self):
-        cmake = (ROOT / 'gui/CMakeLists.txt').read_text()
-        patcher = 'function(foundation_gui_patch' + cmake.split('function(foundation_gui_patch',1)[1].split('endfunction()',1)[0] + 'endfunction()\n'
-        mirror = '# Quoted sibling includes' + cmake.split('# Quoted sibling includes',1)[1].split('# Keep the browser',1)[0]
+        inputs = (ROOT / 'cmake/GuiInputs.cmake').read_text()
+        patcher = 'function(foundation_gui_patch' + inputs.split('function(foundation_gui_patch',1)[1].split('endfunction()',1)[0] + 'endfunction()\n'
+        mirror = inputs.split('macro(foundation_gui_headers)', 1)[1].split('endmacro()', 1)[0]
         with tempfile.TemporaryDirectory(prefix='patched header mirror ') as temporary:
             root = Path(temporary); source = root / 'source'; source.mkdir()
             upstream = source / 'upstream/include/gui'; upstream.mkdir(parents=True)
@@ -320,6 +323,7 @@ const CHAR: char = 'x';
                 ''.join('static_assert('+name+'_value==2);\n' for name,_ in names)+'int main(){return 0;}\n')
             project = 'cmake_minimum_required(VERSION 3.24)\nproject(HeaderMirror LANGUAGES CXX)\nfind_package(Python3 REQUIRED COMPONENTS Interpreter)\n'
             project += 'set(FOUNDATION_GUI_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/upstream")\n'
+            project += 'set(foundation_gui_module_root "${CMAKE_CURRENT_SOURCE_DIR}")\n'
             project += 'file(GLOB verified_files "${FOUNDATION_GUI_SOURCE}/include/gui/*")\n'
             project += patcher + mirror + 'foundation_gui_patch(include/gui/web.hpp web-tick.patch include/gui/web.hpp)\n'
             project += 'add_executable(mirror main.cpp)\ntarget_compile_features(mirror PRIVATE cxx_std_20)\n'
@@ -394,8 +398,9 @@ const CHAR: char = 'x';
         # Windows uses its actual platform header; other hosts reproduce only
         # that header's conditional min/max definitions for the same compile test.
         cmake = (ROOT / "gui/CMakeLists.txt").read_text()
-        boundary = "add_library(foundation_gui_boundary INTERFACE)" + cmake.split(
-            "add_library(foundation_gui_boundary INTERFACE)", 1)[1].split("file(GLOB_RECURSE", 1)[0]
+        inputs = (ROOT / "cmake/GuiInputs.cmake").read_text()
+        boundary = "add_library(foundation_gui_boundary INTERFACE)" + inputs.split(
+            "add_library(foundation_gui_boundary INTERFACE)", 1)[1].split("endmacro()", 1)[0]
         application = "add_library(foundation_gui_application STATIC" + cmake.split(
             "add_library(foundation_gui_application STATIC", 1)[1].split("function(gui_warnings", 1)[0]
         host = "function(foundation_gui_executable" + cmake.split(
@@ -528,7 +533,7 @@ endfunction()
 
     def sdl_link_fixture(self, *, portable, static_available=True, remove_selection=False):
         cmake = (ROOT / "gui/CMakeLists.txt").read_text()
-        block = "if(FOUNDATION_GUI_SDL)\n" + cmake.split("if(FOUNDATION_GUI_SDL)\n", 1)[1].split(
+        block = (ROOT / "cmake/GuiNativeBackends.cmake").read_text() + "\nif(FOUNDATION_GUI_SDL)\n" + cmake.split("if(FOUNDATION_GUI_SDL)\n", 1)[1].split(
             "\nif(FOUNDATION_GUI_REV)", 1)[0]
         native_test = "foundation_gui_executable(foundation_gui_sdl_test" + cmake.split(
             "foundation_gui_executable(foundation_gui_sdl_test", 1)[1].split(
@@ -594,7 +599,7 @@ endfunction()
         # the toolkit build, so this stays independent of native SDK availability.
         cmake = (ROOT / "gui/CMakeLists.txt").read_text()
         block = cmake.split("if(FOUNDATION_GUI_REV)\n", 1)[1].split("\nif(BUILD_TESTING)", 1)[0]
-        block = "if(FOUNDATION_GUI_REV)\n" + block
+        block = (ROOT / "cmake/GuiNativeBackends.cmake").read_text() + "\nif(FOUNDATION_GUI_REV)\n" + block
         with tempfile.TemporaryDirectory(prefix="rev dependency ") as directory:
             root = Path(directory)
             source = root / "source"; source.mkdir()
@@ -655,7 +660,7 @@ endfunction()
         # Model the SDK's autotools FindFLTK result: the static archive itself
         # omits its Xft closure. Every imported edge must reach the final link.
         cmake = (ROOT / "gui/CMakeLists.txt").read_text()
-        block = "if(FOUNDATION_GUI_FLTK)\n" + cmake.split("if(FOUNDATION_GUI_FLTK)\n", 1)[1].split(
+        block = (ROOT / "cmake/GuiNativeBackends.cmake").read_text() + "\nif(FOUNDATION_GUI_FLTK)\n" + cmake.split("if(FOUNDATION_GUI_FLTK)\n", 1)[1].split(
             "\nif(FOUNDATION_GUI_SDL)", 1)[0]
         with tempfile.TemporaryDirectory(prefix="fltk dependency ") as directory:
             root = Path(directory); source = root / "source"; source.mkdir()
@@ -728,7 +733,8 @@ endfunction()
         # Full behavior stays in the upstream executable tests; this fixture
         # detects compiling the unchanged supplier file or losing patch inputs.
         cmake = (ROOT / "gui/CMakeLists.txt").read_text()
-        patch_function = "function(foundation_gui_patch" + cmake.split(
+        inputs = (ROOT / "cmake/GuiInputs.cmake").read_text()
+        patch_function = "function(foundation_gui_patch" + inputs.split(
             "function(foundation_gui_patch", 1)[1].split("endfunction()", 1)[0] + "endfunction()\n"
         tests = "foreach(test_name contract " + cmake.split(
             "foreach(test_name contract ", 1)[1].split("endforeach()", 1)[0] + "endforeach()\n"
@@ -763,6 +769,7 @@ function(foundation_gui_check)
 endfunction()
 """
             project += 'set(Python3_EXECUTABLE "' + Path(sys.executable).as_posix() + '")\n'
+            project += 'set(foundation_gui_module_root "${CMAKE_CURRENT_SOURCE_DIR}")\n'
             project += patch_function + tests
             for name in ("contract", "adapter", "bitmap"):
                 project += 'get_target_property(selected foundation_gui_upstream_' + name + ' SOURCES)\n'

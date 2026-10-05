@@ -1,8 +1,11 @@
 # Optional graphical editor — architecture and implementation plan
 
-Status: proposal, 2026-10-05. No editor executable, new build command, runtime,
-or support claim is implemented by this document. Repository inspection used
-`45a1aa7993214d407f7f1775a1ad3d3e825856e1`.
+Status: first implementation, 2026-10-05. See [the editor guide](README.md) for
+implemented commands, editing and source integration, and
+[pending qualification](../.agent-pending/editor-platform-qualification.md) for
+execution limits. The following architecture plan retains its original design
+decisions; proposed extensions are not additional implementation/support claims.
+Initial repository inspection used `45a1aa7993214d407f7f1775a1ad3d3e825856e1`.
 
 Build a small, optional native authoring application with two visual workspaces:
 **Forms** for GUI layout and event bindings, and **Flows** for stream processing.

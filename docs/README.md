@@ -14,7 +14,7 @@ what was observed. A proposed platform or procedure is not execution evidence.
 | Dependency maintenance | [Dependency requirements](dependencies.md), [inventory](../third_party/README.md) |
 | Installed manuals | [Manual sources and preview](man/README.md) |
 | Interfaces | [GUI contract and integration](gui-boundary.md), [browser embedding](browser-embedding.md), [GUI audit](gui-audit.md), [Windows graphics prerequisite](windows-graphics.md), [core source](../include/foundation/store.hpp) |
-| Optional graphical editor proposal | [Architecture, editing workflow, code/stream contracts and build isolation](../editor/PLAN.md) — planning only; no editor executable yet |
+| Optional graphical editor | [Build/run commands](../COMPILE-editor), [editing, ordinary-source integration and local checks](../editor/README.md), [architecture decisions](../editor/PLAN.md), [pending native qualification](../.agent-pending/editor-platform-qualification.md) |
 | Collaboration | [Agent requirements](../AGENTS.md), [coordination](agent-coordination.md), [checked operation recipes](agent-recipes.md), [lifecycle](agent-lifecycle.md), [optional cooperation evaluation](agent-evaluation.md) |
 | Delivery | [Release requirements](releases.md), [certification](certification.md), [Debian distribution](distribution.md), [Arch and Gentoo channels](distro-channels.md), [GitHub delivery](github-delivery.md), [signed package release workflow and native clients](distribution-release.md), [Latest workflow](latest-release.md), [screenshots](screenshots.md), [browser prerequisite](gallery-browser.md), [installed package instructions](installed.md), [RELEASE](../RELEASE) |
 | Sustained maintenance | [Engineering practices](maintenance.md), [documentation rules](documentation.md) |

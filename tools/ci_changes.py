@@ -11,8 +11,8 @@ import re
 import subprocess
 import sys
 
-# Only reviewed, non-installed narrative documents may omit compile/GUI work.
-# New paths, manuals, release policies, schemas and installed text stay full.
+# Reviewed narrative documents and the isolated optional editor may omit
+# application work. Shared helpers, application runtime and unknown paths stay full.
 DOCUMENTS = frozenset({
     'README.md', 'AGENTS.md', 'COMPILE', 'RELEASE',
     'docs/README.md', 'docs/architecture.md', 'docs/ci.md',
@@ -35,6 +35,19 @@ TOOL_DOMAINS = (
 )
 
 
+def repository_path(path):
+    """Only canonical relative Git paths can authorize an omission."""
+    return (isinstance(path, str) and bool(path) and '\\' not in path and
+            not re.match(r'[A-Za-z]:', path) and
+            not any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in path) and
+            all(part not in ('', '.', '..') for part in path.split('/')))
+
+
+def editor_path(path):
+    """Editor sources and local checks are outside the application graph."""
+    return repository_path(path) and (path == 'COMPILE-editor' or path.startswith('editor/'))
+
+
 def infrastructure_suites(paths, root=ROOT):
     """Select whole suites; unknown/deleted infrastructure requires every suite.
 
@@ -52,7 +65,9 @@ def infrastructure_suites(paths, root=ROOT):
         return all_suites
     changed, direct = set(), set()
     for path in paths:
-        if path in DOCUMENTS:
+        if not repository_path(path):
+            return all_suites
+        if path in DOCUMENTS or editor_path(path):
             continue
         if path.startswith('tools/') and Path(path).suffix == '.py' and path.count('/') == 1:
             name = Path(path).stem
@@ -158,12 +173,17 @@ def run_tool_suites(suites, output, jobs=2, root=ROOT):
 def classify(paths):
     """An absent/incomplete change inventory never authorizes omitted work."""
     paths = list(paths)
-    docs_only = bool(paths) and all(path in DOCUMENTS for path in paths)
-    return {'schema_version': 1, 'scope': 'documents' if docs_only else 'full',
-            'build': not docs_only, 'gui': not docs_only, 'workflow_lint': not docs_only,
+    canonical = bool(paths) and all(repository_path(path) for path in paths)
+    docs_only = canonical and all(path in DOCUMENTS for path in paths)
+    editor_only = canonical and all(path in DOCUMENTS or editor_path(path) for path in paths)
+    scope = 'documents' if docs_only else 'editor' if editor_only else 'full'
+    reason = {'documents': 'Only reviewed narrative documents changed.',
+              'editor': 'Only isolated optional editor paths and reviewed narrative documents changed.',
+              'full': 'Source, policy, unknown paths or an empty change set require full feedback.'}
+    return {'schema_version': 1, 'scope': scope,
+            'build': scope == 'full', 'gui': scope == 'full', 'workflow_lint': scope == 'full',
             'changed_paths': paths, 'tool_suites': infrastructure_suites(paths),
-            'reason': 'Only reviewed narrative documents changed.' if docs_only
-                      else 'Source, policy, unknown paths or an empty change set require full feedback.'}
+            'reason': reason[scope]}
 
 
 def git(root, *args):
@@ -203,7 +223,12 @@ def changed_paths(root, event_name, event, expected_head):
     raw = git(root, 'diff', '--name-only', '--no-renames', '-z', base, head, '--')
     if raw and not raw.endswith(b'\0'):
         raise ValueError('incomplete changed-path output')
-    return [item.decode('utf-8', errors='strict') for item in raw.split(b'\0') if item]
+    if not raw:
+        return []
+    items = raw[:-1].split(b'\0')
+    if not all(items):
+        raise ValueError('empty changed-path record')
+    return [item.decode('utf-8', errors='strict') for item in items]
 
 
 def select(root, event_name, event, expected_head):
@@ -243,6 +268,8 @@ def main(argv=None):
             stream.write('Development feedback: ' + result['scope'] + '. ' + result['reason'] + '\n')
             if result['scope'] == 'documents':
                 stream.write('Documentation checks run; compile, GUI and workflow syntax work omitted.\n')
+            elif result['scope'] == 'editor':
+                stream.write('Documentation checks run; application compile, GUI, workflow syntax and tooling suites omitted. Editor checks remain explicit and local.\n')
             stream.write('This selection does not qualify a candidate or release.\n')
     print(json.dumps(result, sort_keys=True))
     if args.run_tool_suites and result['tool_suites']:
