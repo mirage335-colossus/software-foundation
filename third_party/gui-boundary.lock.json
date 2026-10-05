@@ -15,6 +15,7 @@
     "gui/patches/rev-pointer-probe.patch: native phase input seam for focused retained Rev gesture qualification",
     "gui/patches/fltk-appearance.patch: generic flat shared-palette controls and matching monospaced font class; native event handling retained",
     "gui/patches/fltk-pointer.patch: physical raw pointer phases with stable capture and transparent inert text; ordinary toolkit controls retain native input",
+    "gui/patches/fltk-service-focus.patch: active native prompt retains keyboard and clipboard focus across synchronization; main-window focus resumes after completion",
     "gui/patches/contract-portability.patch: explicit callback target binding for portable synchronous acknowledgment test; assertions retained",
     "gui/patches/adapter-portability.patch: explicit metrics callback target binding; mutation and recursion assertions retained",
     "gui/patches/web-ordering.patch: only adjacent compatible browser edits coalesce; commands preserve ordering barriers",

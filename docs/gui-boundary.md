@@ -50,6 +50,15 @@ is consumed by both widget construction and layout: control identity, kind, text
 font role, order and height have one declaration. Its [header](../gui/shared/application.hpp) exposes only
 `gui::Adapter`. No native object crosses into application code.
 
+Changing this application-owned definition and shared behavior changes every
+selected host: terminal, framebuffer, FLTK, SDL, Rev, hosted browser and Wasm
+browser. Existing widget capabilities need no per-backend feature layout.
+The [optional editor](../editor/README.md#source-and-application-integration)
+can edit these ordinary files with the repository as its project root. Its Forms
+view edits design JSON and generates layouts using the same public Snapshot
+contract; it does not import the example's handwritten C++ layout automatically.
+The editor itself uses the abstraction with FLTK, Rev and SDL/framebuffer hosts.
+
 The shared library is linked into every selected executable. Fresh configurations
 use Rust for the Store's bounded text validation through its private C ABI;
 allocation, application state and public C++ interfaces retain their existing
@@ -110,6 +119,12 @@ target, a modal transition, focus loss, resize or close revokes the old gesture.
 A standard button activates once on a valid release; pressing or cancellation
 cannot activate it. Raw pointer surfaces receive phases through the same public
 contract, without application commands inside a renderer.
+
+The generic FLTK and Rev pointer patches apply to every application using those
+adapters. They let declared raw surfaces receive gestures through inert labels
+and retain gesture ownership during a drag. The graphical editor's block-moving
+and wiring logic remains editor code; the entry-list example does not implement
+those features. Ordinary toolkit controls retain their native input handling.
 
 The SDL runner translates finger events into logical client coordinates. It
 filters synthetic mouse events from touch and retains one contact across a drag.
@@ -604,6 +619,13 @@ event handling, presentation retry and queued service request/completion. Native
 sessions centralize service pumping and shutdown. [The browser runtime](../gui/host/browser.hpp)
 is shared by the native bridge and Wasm composition roots. Hosts own platform
 polling, surfaces, transport and resources; shared code owns all feature decisions.
+
+Native FLTK prompts retain keyboard and clipboard focus while the main window
+synchronizes; acceptance or cancellation restores the main window's retained
+focus. This generic adapter behavior also applies to the example's Change heading
+service. The editor's inline Open/New path fields instead belong to its own
+shared application layout. Editor-specific naming, examples and canvas hints do
+not alter the entry-list application's feature code.
 
 Pinned terminal and SDL mechanics become typed runners through
 [reviewed exact patches](../gui/patches/README.md). SDL test observers inject input

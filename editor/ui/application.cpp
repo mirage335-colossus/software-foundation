@@ -203,7 +203,7 @@ struct Application::Impl {
         saved_design=write_project(project); history.reset(project); code.reset(); modal.clear(); ++generation;
         if(mode=="forms"&&project.forms.empty()&&!project.flows.empty())mode="flows";
         else if(mode=="flows"&&project.flows.empty()&&!project.forms.empty())mode="forms";
-        fields["project.path"]=path.string(); choose_document(); refresh_files();
+        fields["project.path"]=path.string();fields["file.path"].clear(); choose_document(); refresh_files();
         log=diagnostics(parsed.diagnostics); success("Opened "+project.name);
     }
     void create(std::filesystem::path root,bool keep_design=false) {
@@ -218,7 +218,7 @@ struct Application::Impl {
         if(project.flows.empty())project.flows.push_back(Flow{"flow1","Main flow"});
         files=std::move(next); design_path="design/project.json"; design_original=std::move(original);
         saved_design.clear(); history.reset(project); ++generation; modal.clear(); code.reset();
-        fields["project.path"]=(root/design_path).string(); choose_document(); save(); refresh_files();
+        fields["project.path"]=(root/design_path).string();fields["file.path"].clear(); choose_document(); save(); refresh_files();
     }
     void save() {
         if(!files||!design_original)throw std::runtime_error("Create or open a project before saving.");
@@ -306,6 +306,7 @@ struct Application::Impl {
     void select(std::string id) {
         const bool different=selected!=id;
         selected=std::move(id);
+        if(mode=="files")fields["file.path"]=selected;
         if(auto* c=control();c&&different) {
             if(c->kind=="text")event="text_changed";
             else if(c->kind=="choice"||c->kind=="menu")event="choose";
@@ -585,6 +586,7 @@ struct Application::Impl {
         if(id=="editor.open")require_clean("open");
         else if(id=="editor.new")require_clean("new");
         else if(id=="editor.example")require_clean("example");
+        else if(id=="example.c")open_example("simple-c");
         else if(id=="example.simple")open_example("simple");
         else if(id=="example.rust")open_example("rust-dsp");
         else if(id=="example.demo")open_example("demo");
@@ -604,7 +606,7 @@ struct Application::Impl {
         else if(id=="prompt.accept")accept_prompt();
         else if(id=="prompt.cancel"){modal=std::exchange(prompt_previous_modal,{});prompt_action.clear();reveal_prompt=false;success("Cancelled.");}
         else if(id=="editor.apply")apply_properties();
-        else if(id=="editor.details")begin_details();
+        else if(id=="editor.details"||id=="editor.properties.details")begin_details();
         else if(id=="editor.code")edit_code();
         else if(id=="editor.zoom.in")zoom=std::min(3.0,zoom*1.2);
         else if(id=="editor.zoom.out")zoom=std::max(.25,zoom/1.2);
@@ -638,7 +640,8 @@ struct Application::Impl {
     }
     gui::Widget& input(std::string id,std::string label,gui::Rect area,bool multi=false,std::string parent="editor.root") {
         auto& w=add(gui::Kind::text,id,std::move(label),area,std::move(parent));w.state.text=fields[id];
-        w.spec.text_policy={multi,false,multi?8U*1024U*1024U:4096U,gui::SubmitKey::none};return w;
+        const bool submit=!multi&&(id.starts_with("property.")||id=="file.path"||id=="code.find");
+        w.spec.text_policy={multi,false,multi?8U*1024U*1024U:4096U,submit?gui::SubmitKey::enter:gui::SubmitKey::none};return w;
     }
     void label(std::string text,double x,double y,double width,std::string parent="editor.root") {
         add(gui::Kind::label,"label."+std::to_string(view.widgets.size()),std::move(text),{x,y,width,22},std::move(parent));
@@ -651,19 +654,21 @@ struct Application::Impl {
     void draw_modal(double width,double height) {
         const bool compact=modal=="prompt"||modal=="examples";
         const auto w=compact?std::min(760.0,width-32):std::max(380.0,width*.86);
-        const auto x=std::max(8.0,(width-w)/2),y=std::max(55.0,height*.06),h=modal=="examples"?310.0:compact?230.0:std::max(300.0,height-y-45);
+        const auto x=std::max(8.0,(width-w)/2),y=std::max(55.0,height*.06),h=modal=="examples"?360.0:compact?230.0:std::max(300.0,height-y-45);
         const std::string parent="modal.root";
         auto& group=add(gui::Kind::group,parent,"",{x,y,w,h});group.state.content_size={w,h};
         view.modal_root=group.spec.key;
         if(modal=="examples") {
             label("Choose an editable example",x+12,y+12,w-24,parent);
-            button("example.simple","Simple C++",x+12,y+48,158,parent);
-            label("Start here: form events and a source, gain and collector.",x+184,y+52,w-196,parent);
-            button("example.rust","Rust DSP",x+12,y+98,158,parent);
-            label("Stateful FIR filter and decimation in ordinary Rust.",x+184,y+102,w-196,parent);
-            button("example.demo","Advanced MIMO",x+12,y+148,158,parent);
-            label("Two inputs, four outputs and unequal stream rates.",x+184,y+152,w-196,parent);
-            label("Opening runs no code. Save edits the example's files.",x+12,y+208,w-24,parent);
+            button("example.c","Simple C",x+12,y+48,158,parent);
+            label("Start here: C functions with small C++ adapters.",x+184,y+52,w-196,parent);
+            button("example.simple","Simple C++",x+12,y+98,158,parent);
+            label("Form events and a source, gain and collector in C++.",x+184,y+102,w-196,parent);
+            button("example.rust","Rust DSP",x+12,y+148,158,parent);
+            label("Stateful FIR filter and decimation in ordinary Rust.",x+184,y+152,w-196,parent);
+            button("example.demo","Advanced MIMO",x+12,y+198,158,parent);
+            label("Two inputs, four outputs and unequal stream rates.",x+184,y+202,w-196,parent);
+            label("Opening runs no code. Save edits the example's files.",x+12,y+258,w-24,parent);
             button("example.cancel","Cancel",x+12,y+h-46,100,parent);
             view.key_bindings.push_back({gui::ShortcutKey::escape,{"example.cancel",generation}});
         } else if(modal=="prompt") {
@@ -688,7 +693,8 @@ struct Application::Impl {
             button("code.find.next","Find next",x+w-108,y+74,96,parent);
             auto& text=input("code.text","Source code",{x+12,y+112,w-24,h-156},true,parent);
             text.state.font.size=14; text.state.wrap=gui::TextWrap::none;
-            label("Ordinary source file. Generated application code is separate.",x+12,y+h-34,w-24,parent);
+            label("Ordinary source file. F3 saves; Escape closes. Enter in Find searches.",x+12,y+h-34,w-24,parent);
+            view.key_bindings.push_back({gui::ShortcutKey::f3,{"code.save",generation}});
             view.key_bindings.push_back({gui::ShortcutKey::escape,{"code.close",generation}});
         } else if(modal=="details") {
             label("Details: "+selected,x+12,y+8,w-24,parent);
@@ -808,8 +814,9 @@ struct Application::Impl {
             for(auto& w:view.widgets)if(w.spec.key.id=="editor.zoom.reset")w.state.label=number(std::round(zoom*100))+"%";
         } else {
             label("Double-click a source file to edit it.",210,145,std::max(160.0,right-225));
-            input("file.path","Relative path",{210,180,std::max(120.0,right-225),32});button("editor.file.open","Open file",210,222,110);
-            label("C++, Rust and build files remain ordinary text files.",210,270,std::max(160.0,right-225));
+            input("file.path","Relative path",{210,180,std::max(120.0,right-225),32});
+            button("editor.file.open","Open file",210,222,110).state.enabled=files&&!fields["file.path"].empty();
+            label("C, C++, Rust and build files are ordinary text files.",210,270,std::max(160.0,right-225));
         }
         if(mode!="files") {
             label("Properties",right,body_y,210);
@@ -822,18 +829,28 @@ struct Application::Impl {
                     label("Size: width, height",right,body_y+180,210);input("property.size","Size",{right,body_y+204,216,30});
                     choice("editor.event","Event",{right,body_y+292,216,30},{{"activate","Activate / click"},{"text_changed","Text changed"},{"submit","Submit text"},{"choose","Choice changed"},{"checked","Toggle changed"},{"select_record","Row selected"},{"activate_record","Row activated"},{"pointer","Pointer"},{"action","Named action"}},event);
                 } else {
-                    label("Details: ports and source",right,body_y+186,216);
-                    label("Auto-sized to fit ports.",right,body_y+212,216);
+                    button("editor.properties.details","Ports and source...",right,body_y+186,216);
+                    label("Auto-sized to fit ports.",right,body_y+222,216);
                 }
                 button("editor.apply","Apply",right,body_y+248,100);button("editor.code","Edit code",right+110,body_y+248,106);
                 button("editor.duplicate","Duplicate",right,body_y+338,100);
+                if(mode=="forms")button("editor.properties.details","Widget / event details",right,body_y+388,216);
             }
             if(!selected.empty())button("editor.remove","Delete",right+110,body_y+338,106);
             if(connection||pressed_port)button("editor.connection.cancel","Cancel link",right,body_y+388,216);
         }
         if(mode=="forms")choice("editor.palette","Widget",{12,height-136,174,30},{{"button","Button"},{"label","Label"},{"text","Text"},{"choice","Dropdown"},{"toggle","Toggle"},{"list","List"},{"bitmap","Bitmap"},{"menu","Menu"},{"group","Group"}},palette);
         if(mode!="files")button("editor.add",mode=="flows"?"Add block":"Add widget",198,height-136,112).state.enabled=mode=="forms"?form()!=nullptr:flow()!=nullptr;
-        std::string help=mode=="files"?"Open any ordinary source file; use External for your preferred editor.":preview?"Preview: code is inactive. Choose Preview again to edit.":mode=="flows"?"Drag headers. Click or drag port names to connect. Double-click for code.":"Drag to move; use the corner to resize. Double-click for event code.";
+        std::string help;
+        if(mode=="files")help="Select a file, then Open file or press Enter in its path. Double-click also opens it.";
+        else if(preview)help="Preview: code is inactive. Choose Preview again to edit.";
+        else if((mode=="forms"&&!form())||(mode=="flows"&&!flow()))
+            help=!files?"Choose New for a project directory, or Examples to explore.":mode=="forms"?"Choose New form above, then add a widget.":"Choose New flow above, then add a block.";
+        else if(mode=="forms"&&form()->controls.empty())help="Choose a widget below, then Add widget. Double-click it for event code.";
+        else if(mode=="flows"&&std::none_of(project.blocks.begin(),project.blocks.end(),[&](const auto& b){return b.flow==document;}))
+            help="Add block, then Ports and source to define its inputs, outputs and code.";
+        else help=mode=="flows"?"Drag headers. Click or drag port names to connect. Double-click for code.":"Drag to move; use the corner to resize. Double-click for event code.";
+        if(mode!="files"&&!preview&&(control()||block()))help+=" Enter applies property edits.";
         if(const auto origin=connection?connection:pressed_port)help="Link from "+origin->object+"."+origin->port+": choose an "+(origin->direction==PortDirection::output?"input":"output")+"; Escape cancels.";
         auto& help_widget=add(gui::Kind::label,"editor.help","",{322,height-141,width-340,44});
         help_widget.state.text=std::move(help);help_widget.state.wrap=gui::TextWrap::word;
@@ -905,6 +922,9 @@ void Application::handle(gui::Event event){
                     p.fields[id]=input.value;
                 } else if constexpr(std::is_same_v<T,gui::SubmitText>){
                     if(id=="prompt.value")p.action("prompt.accept");
+                    else if(id.starts_with("property."))p.action("editor.apply");
+                    else if(id=="file.path")p.action("editor.file.open");
+                    else if(id=="code.find")p.action("code.find.next");
                 } else if constexpr(std::is_same_v<T,gui::ChooseOption>){
                     if(id=="editor.mode"){p.mode=input.id;p.choose_document();}
                     else if(id=="editor.document"){p.document=input.id;p.choose_document();}

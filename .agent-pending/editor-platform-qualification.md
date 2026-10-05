@@ -94,6 +94,37 @@ are in `build/editor-gesture-checks/interaction-validation.json`,
 its upstream revision is unchanged. These are focused development checks, with
 no added SDK package, editor distribution step or application release dependency.
 
+Focused C starter and usability follow-up from commit
+`0e1e8085d68ec54ae51772d6c34525089ca8c832`, 2026-10-05:
+
+- All ten local editor suites passed in `build/editor-c-qol-checks`. Focused
+  regressions cover Enter actions and validation preservation, contextual Details,
+  first-use hints, F3 source saving, and C source navigation through C++ bindings.
+  The application capture run also passed; changed views were inspected.
+- The new C starter compiled its behavior as C17 and its GUI/stream boundaries
+  as C++20. Its independent build, project Build/Run recipes, generated form/event
+  dispatch, numeric output, bounded buffer and failure recovery checks passed.
+- Rebuilt `build/editor-fltk-sdk/foundation-editor-fltk` through the supported
+  editor wrapper with the same native SDK recorded above. No SDK package or
+  editor/application CI, packaging or release dependency was added.
+- A native before/after probe reproduced and fixed shared FLTK prompt focus loss
+  in the ordinary application's Change heading dialog. The supported-wrapper
+  `foundation.gui.fltk-host` test passed 1/1, including clipboard paste, repeated
+  synchronization, deferred focus and accept/cancel restoration, plus its existing
+  pointer/control checks. Native modal policy is unchanged. Probe/display process
+  groups joined. An earlier build whose source identity changed during parallel
+  editing reached zero test assertions; only the stable-source rerun is passing
+  evidence. The shared GUI source-boundary guard passed.
+
+Exact source and output identities are recorded in
+`build/editor-c-qol-checks/interaction-validation.json`,
+`build/editor-simple-c-check/check-receipt.json` and
+`build/shared-prompt-focus-check/qualification-receipt.json`.
+The refreshed GUI input manifest is
+`2dcef6393d9ad9a4c41c8a819f3e836ace78af4c19eb4be7496b9ca41fac78cd`;
+its upstream revision and the SDK are unchanged. These focused checks do not
+expand the platform or disconnected-operation claims below.
+
 The outstanding broader scope is qualification of actual editor use on selected
 native targets/backends: Windows source file/process adapters, native ARM64,
 and disconnected editor builds/runtime using an already retained matching native

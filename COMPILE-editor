@@ -16,15 +16,16 @@ sudo apt-get install git build-essential cmake ninja-build python3 libfltk1.3-de
 ./build.sh editor build dev --backend fltk --build-dir build/editor-fltk
 ./build/editor-fltk/foundation-editor-fltk
 
-Choose Examples, then Simple C++, Rust DSP, or Advanced MIMO.
+Choose Examples, then Simple C, Simple C++, Rust DSP, or Advanced MIMO.
 Start with the simple form and Source -> Gain -> Collector flow, or launch it directly:
-./build/editor-fltk-sdk/foundation-editor-fltk --project editor/examples/simple/project.json
+./build/editor-fltk-sdk/foundation-editor-fltk --project editor/examples/simple-c/project.json
 Examples are editable; Save updates the chosen example's files.
 Choose New or Open, paste the directory or JSON path, and press Enter; Escape cancels.
 New form/flow asks for its name; Rename beside the document picker changes it later.
 Drag a flow block by its body; click or drag between output and input port names/sockets.
 Escape or Cancel link cancels wiring. Flows fit automatically; Fit restores the whole view.
 Double-click a widget or flow block to edit its ordinary source file.
+Enter applies property edits or opens the typed file path. F3 saves; F2 edits selected code.
 To open the editor's own design, append --project editor/self/project.json --root .
 
 Framebuffers use the existing SDL2 display/input host: install libsdl2-dev,

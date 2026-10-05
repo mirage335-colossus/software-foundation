@@ -1,5 +1,5 @@
 {
-  "archive_sha256": "a046f702c75f4dba404f0d75e1e4589aec74c901f1dd87b0e5d093c12d5d58e8",
+  "archive_sha256": "f2adcdc012f058cf010cf22e43eee89bcc01c6f444feddf133f8ecc53237afe6",
   "files": {
     "foundation/gui/patches/adapter-portability.patch": {
       "mode": 420,
@@ -30,6 +30,11 @@
       "mode": 420,
       "sha256": "f5bee29f80652a504c5b9f7e875f21fb12071b8f1e5756317684eec18a3dad26",
       "size": 9041
+    },
+    "foundation/gui/patches/fltk-service-focus.patch": {
+      "mode": 420,
+      "sha256": "5bd7c28202adddabbd5fa5d8aca2c9d78b8c9d90957ceaebf641efecb0997d8a",
+      "size": 1496
     },
     "foundation/gui/patches/rev-build.patch": {
       "mode": 420,
@@ -148,8 +153,8 @@
     },
     "foundation/third_party/gui-boundary.lock.json": {
       "mode": 420,
-      "sha256": "8452fde15be1da13d91e9fecbb539cf78447b412f67fa795a32184aa098fb178",
-      "size": 13463
+      "sha256": "7b7d549d70d456f607462c6a6b82dc661bf0f9d9dab394a54a0ea473f75419d4",
+      "size": 13633
     },
     "upstream/.github/workflows/screenshots.yml": {
       "mode": 420,

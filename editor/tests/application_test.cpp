@@ -123,6 +123,11 @@ struct Session {
     void edit(std::string_view id, std::string value) {
         send(id, gui::EditText{std::move(value), widget(view(), id).state.text});
     }
+    void submit(std::string_view id, bool expect_success = true) {
+        require(widget(view(), id).spec.text_policy.submit == gui::SubmitKey::enter,
+                "Enter submission is unavailable for " + std::string(id));
+        send(id, gui::SubmitText{}, expect_success);
+    }
     void select(std::string value) { send("editor.objects", gui::SelectRecord{std::move(value)}); }
     void pointer(gui::Point position, gui::PointerKind kind = gui::PointerKind::click, bool expect_success = true) {
         gui::PointerInput input; input.kind = kind; input.position = position;
@@ -750,6 +755,130 @@ void document_name_regressions(const std::filesystem::path& root, const std::fil
     require(widget(reloaded.view(), "prompt.value").state.text == "Filtered capture", "Reload lost a named flow");
     reloaded.activate("prompt.cancel");
 }
+void small_action_regressions(const std::filesystem::path& root, const std::filesystem::path& captures) {
+    write(root / "design/project.json", write_project(initial_project()));
+    const std::string source = "void alpha(void) {}\nvoid beta(void) {}\n";
+    write(root / "src/helpers.c", source);
+    write(root / "src/handlers.hpp", "#pragma once\n// Ordinary on_start source.\n");
+    Session session(root / "design/project.json", root);
+    require(!find(session.view(), "editor.properties.details"),
+            "Contextual Details appeared without an editable selection");
+    session.select("start");
+    session.edit("property.label", "Capture"); session.submit("property.label");
+    require(widget(session.view(), "canvas.control.start").state.text == "Capture",
+            "Enter in Label did not apply the selected widget's label");
+    session.edit("property.position", "40, 56"); session.submit("property.position");
+    session.edit("property.size", "150, 44"); session.submit("property.size");
+    session.activate("editor.save");
+    auto saved = saved_project(root);
+    require(saved.forms.front().controls.front().label == "Capture" &&
+            saved.forms.front().controls.front().layout == Rect{40, 56, 150, 44},
+            "Enter did not retain the selected widget's position or size");
+    const auto before = inventory(root);
+    const auto label_bounds = widget(session.view(), "canvas.control.start").state.bounds;
+    session.edit("property.label", "Pending label");
+    session.edit("property.position", "not a coordinate");
+    session.submit("property.position", false);
+    require(widget(session.view(), "property.position").state.text == "not a coordinate" &&
+            widget(session.view(), "property.label").state.text == "Pending label" &&
+            widget(session.view(), "canvas.control.start").state.text == "Capture" &&
+            widget(session.view(), "canvas.control.start").state.bounds == label_bounds && inventory(root) == before,
+            "Invalid Enter submission lost property text, changed the widget or wrote files");
+    session.send("property.position", gui::EditText{"60, 72", "not a coordinate"}, false);
+    session.send("property.size", gui::EditText{"2, 44", "150, 44"}, false);
+    session.submit("property.size", false);
+    require(widget(session.view(), "property.size").state.text == "2, 44" &&
+            widget(session.view(), "canvas.control.start").state.text == "Capture" &&
+            widget(session.view(), "canvas.control.start").state.bounds == label_bounds && inventory(root) == before,
+            "Rejected widget size partially applied the label or position");
+    session.send("property.size", gui::EditText{"160, 48", "2, 44"}, false);
+    session.submit("property.size");
+    session.activate("editor.properties.details");
+    require(find(session.view(), "detail.options") &&
+            widget(session.view(), "detail.file").state.text == "src/handlers.hpp",
+            "Contextual Details did not open the selected widget's ordinary bindings and options");
+    session.activate("detail.cancel"); capture(session.view(), captures, "editor-properties");
+    session.activate("editor.save"); saved = saved_project(root);
+    require(saved.forms.front().controls.front().label == "Pending label" &&
+            saved.forms.front().controls.front().layout == Rect{60, 72, 160, 48},
+            "Correcting rejected properties did not complete Enter submission");
+    session.choose("editor.mode", "flows");
+    require(widget(session.view(), "editor.help").state.text.find("Add block") != std::string::npos,
+            "Empty flow instructions did not explain the next editing action");
+    session.activate("editor.add");
+    session.edit("property.label", "Ordinary source"); session.submit("property.label");
+    session.edit("property.position", "80, 100"); session.submit("property.position");
+    session.activate("editor.properties.details");
+    require(find(session.view(), "detail.inputs") && find(session.view(), "detail.outputs") &&
+            find(session.view(), "detail.anchor"), "Contextual block Details omitted ports or ordinary source navigation");
+    session.activate("detail.cancel");
+    session.choose("editor.mode", "files");
+    session.select("src/helpers.c");
+    require(widget(session.view(), "file.path").state.text == "src/helpers.c" && !session.view().modal_root,
+            "Selecting an ordinary file did not fill its path without opening a source window");
+    capture(session.view(), captures, "editor-files");
+    const auto files_before = inventory(root);
+    session.edit("file.path", "src/missing.c"); session.submit("file.path", false);
+    require(widget(session.view(), "file.path").state.text == "src/missing.c" && !session.view().modal_root &&
+            inventory(root) == files_before, "Invalid file Enter submission lost input or modified the project");
+    session.send("file.path", gui::EditText{"src/helpers.c", "src/missing.c"}, false);
+    session.submit("file.path");
+    require(widget(session.view(), "code.text").state.text == source && inventory(root) == files_before,
+            "Enter did not open the ordinary C file without modifying source");
+    session.edit("code.find", "beta"); session.submit("code.find");
+    const auto& code_widget = widget(session.view(), "code.text");
+    const auto selection = session.adapter.text_selection(code_widget.spec.key);
+    const auto match = source.find("beta");
+    require(selection.anchor == match && selection.caret == match + 4,
+            "Enter in Find did not select the source match");
+    require(std::any_of(session.view().key_bindings.begin(), session.view().key_bindings.end(), [](const auto& binding) {
+        return binding.key == gui::ShortcutKey::f3 && binding.target.id == "code.save";
+    }), "The source window omitted its F3 Save shortcut");
+    const auto design_bytes = read(root / "design/project.json");
+    const auto amended = source + "// Saved through the source window's F3 shortcut.\n";
+    session.edit("code.text", amended);
+    require(session.adapter.send(gui::ShortcutEvent{gui::ShortcutKey::f3}) == gui::Delivery::delivered,
+            "F3 source Save was not delivered through the shared shortcut contract");
+    session.healthy("F3 source Save");
+    require(read(root / "src/helpers.c") == amended && read(root / "design/project.json") == design_bytes,
+            "F3 did not save the ordinary source independently of unsaved flow edits");
+    session.activate("code.close");
+    require(read(root / "src/helpers.c") == amended, "Closing the source window lost its explicitly saved C file");
+}
+void first_use_regressions(const std::filesystem::path& root, const std::filesystem::path& captures) {
+    {
+        Session unopened;
+        const auto& help = widget(unopened.view(), "editor.help").state.text;
+        require(help.find("Choose New") != std::string::npos && help.find("Examples") != std::string::npos &&
+                !widget(unopened.view(), "editor.add").state.enabled,
+                "Editor startup omitted the first-use project or example instructions");
+        capture(unopened.view(), captures, "editor-first-use");
+    }
+    write(root / "design/project.json", write_project(empty_project("Empty project")));
+    Session session(root / "design/project.json", root);
+    require(widget(session.view(), "editor.help").state.text.find("New form") != std::string::npos &&
+            !widget(session.view(), "editor.add").state.enabled,
+            "Project without forms omitted the first-use New form instructions");
+    session.activate("editor.document.new"); session.edit("prompt.value", "First form"); session.submit("prompt.value");
+    require(widget(session.view(), "editor.help").state.text.find("Add widget") != std::string::npos &&
+            widget(session.view(), "editor.add").state.enabled,
+            "Empty form instructions did not explain adding its first widget");
+    capture(session.view(), captures, "editor-empty-form");
+    session.activate("editor.add");
+    require(widget(session.view(), "editor.help").state.text.find("Drag") != std::string::npos,
+            "Populated form retained first-use instructions instead of editing gestures");
+    session.choose("editor.mode", "flows");
+    require(widget(session.view(), "editor.help").state.text.find("New flow") != std::string::npos &&
+            !widget(session.view(), "editor.add").state.enabled,
+            "Project without flows omitted the first-use New flow instructions");
+    session.activate("editor.document.new"); session.edit("prompt.value", "First flow"); session.submit("prompt.value");
+    require(widget(session.view(), "editor.help").state.text.find("Add block") != std::string::npos &&
+            widget(session.view(), "editor.add").state.enabled,
+            "Empty flow instructions did not explain adding its first block");
+    session.activate("editor.add");
+    require(widget(session.view(), "editor.help").state.text.find("Drag") != std::string::npos,
+            "Populated flow retained first-use instructions instead of editing gestures");
+}
 void example_regressions(const std::filesystem::path& root, const std::filesystem::path& captures) {
     // Discovery must work when the editor is launched outside the repository,
     // using its executable's ancestors rather than the process working directory.
@@ -757,7 +886,7 @@ void example_regressions(const std::filesystem::path& root, const std::filesyste
     const auto bundle = root / "bundle";
     const auto demo = bundle / "editor/examples/demo";
     std::filesystem::create_directories(demo.parent_path());
-    for (const auto name : {"demo", "simple", "rust-dsp"})
+    for (const auto name : {"demo", "simple", "simple-c", "rust-dsp"})
         std::filesystem::copy(original_examples / name, demo.parent_path() / name,
                               std::filesystem::copy_options::recursive);
     const auto executable = bundle / "build/editor-fixture/foundation-editor-fixture";
@@ -797,9 +926,9 @@ void example_regressions(const std::filesystem::path& root, const std::filesyste
             "Cancelling Example discarded the ordinary source buffer");
     session.activate("code.discard");
     session.activate("editor.example");
-    require(session.view().modal_root && find(session.view(), "example.simple") &&
+    require(session.view().modal_root && find(session.view(), "example.simple") && find(session.view(), "example.c") &&
             find(session.view(), "example.rust") && find(session.view(), "example.demo"),
-            "Example did not offer the simple C++, Rust DSP and advanced MIMO designs");
+            "Example did not offer the simple C/C++, Rust DSP and advanced MIMO designs");
     capture(session.view(), captures, "editor-example-picker");
     session.activate("example.cancel");
     require(!session.view().modal_root && session.objects() == 1 && inventory(root) == original,
@@ -851,6 +980,36 @@ void example_regressions(const std::filesystem::path& root, const std::filesyste
             widget(session.view(), "code.find").state.text == "apply_gain",
             "Unchanged Details Apply lost navigation to the simple processing function");
     session.activate("code.close"); capture(session.view(), captures, "editor-simple-flow");
+    session.activate("editor.example"); session.activate("example.c");
+    const auto c_root = demo.parent_path() / "simple-c";
+    require(widget(session.view(), "editor.mode").state.selected == "forms" &&
+            widget(session.view(), "editor.document").state.selected == "simple_c.controls",
+            "Simple C example did not begin with its shared form controls");
+    session.select("simple_c.run"); session.activate("editor.properties.details");
+    require(widget(session.view(), "detail.file").state.text == "events.c" &&
+            widget(session.view(), "detail.header").state.text == "event_adapter.hpp" &&
+            widget(session.view(), "detail.symbol").state.text == "c_starter::on_run",
+            "C widget did not retain an ordinary C file with its C++ boundary declaration");
+    session.activate("detail.apply"); session.activate("editor.code");
+    require(widget(session.view(), "code.text").state.text == read(c_root / "events.c") &&
+            widget(session.view(), "code.find").state.text == "simple_c_on_run",
+            "Unchanged widget Details lost navigation to its ordinary C event function");
+    capture(session.view(), captures, "editor-c-event-source");
+    session.activate("code.close"); session.choose("editor.mode", "flows");
+    require(widget(session.view(), "editor.document").state.selected == "simple_c.processing",
+            "Simple C example did not expose its shared processing flow");
+    session.select("simple_c.gain"); session.activate("editor.properties.details");
+    require(widget(session.view(), "detail.anchor").state.text == "simple_c_apply_gain" &&
+            widget(session.view(), "detail.file").state.text == "signal.c" &&
+            widget(session.view(), "detail.header").state.text == "flow_adapter.hpp" &&
+            widget(session.view(), "detail.symbol").state.text == "c_starter::make_gain",
+            "C block did not retain separate ordinary C navigation and C++ flow factory references");
+    session.activate("detail.apply"); session.activate("editor.code");
+    require(widget(session.view(), "code.text").state.text == read(c_root / "signal.c") &&
+            widget(session.view(), "code.find").state.text == "simple_c_apply_gain",
+            "Unchanged block Details lost navigation to its ordinary C signal function");
+    capture(session.view(), captures, "editor-c-signal-source");
+    session.activate("code.close"); capture(session.view(), captures, "editor-c-flow");
     session.activate("editor.example"); session.activate("example.rust");
     require(widget(session.view(), "editor.mode").state.selected == "flows" &&
             widget(session.view(), "editor.document").state.selected == "rust-dsp.processing",
@@ -960,12 +1119,14 @@ int main(int argc, char** argv) {
         editing_regressions(root / "editing-regressions");
         path_prompt_regressions(root / "path-prompt-regressions", captures);
         document_name_regressions(root / "document-name-regressions", captures);
+        small_action_regressions(root / "small-action-regressions", captures);
+        first_use_regressions(root / "first-use-regressions", captures);
         gesture_regressions(root / "gesture-regressions", captures);
         example_regressions(root / "example-regressions", captures);
 #if defined(__linux__)
         recipe_regressions(root / "recipe-regressions", std::filesystem::canonical(argv[0]));
 #endif
-        std::cout << "editor application: shell, same-window prompts, document names, example picker, C++/Rust source navigation, block dragging, port wiring, fitted flows, generated dispatch, forms, ordinary source, conflicts, arbitrary MIMO, preview, native smoke: ok\n";
+        std::cout << "editor application: shell, same-window prompts, document names, first-use hints, Enter actions, contextual Details, example picker, C/C++/Rust source navigation, block dragging, port wiring, fitted flows, generated dispatch, forms, ordinary source, conflicts, arbitrary MIMO, preview, native smoke: ok\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

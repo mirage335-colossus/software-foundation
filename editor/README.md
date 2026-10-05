@@ -1,11 +1,12 @@
 # Optional graphical editor
 
 The C++20 editor combines a small form designer, event-source editor and typed
-stream-flow designer. Complex behavior stays in ordinary C++, headers, Rust
+stream-flow designer. Complex behavior stays in ordinary C, C++, headers, Rust
 wrappers and normal compiler tools. Start with [COMPILE-editor](../COMPILE-editor)
-and the [simple C++ example](examples/simple/README.md). The
-[Rust DSP example](examples/rust-dsp/README.md) offers a processing-language
-alternative; the [advanced MIMO example](examples/demo/README.md) demonstrates
+and the [simple C example](examples/simple-c/README.md), which uses C++ at the
+GUI and stream boundaries. The [simple C++ example](examples/simple/README.md) and
+[Rust DSP example](examples/rust-dsp/README.md) provide language alternatives;
+the [advanced MIMO example](examples/demo/README.md) demonstrates
 more integration features. The editor also has its
 [own editable design](self/README.md).
 
@@ -65,7 +66,7 @@ cannot be reused for the editor.
 
 ## Normal editing
 
-1. Choose **Examples**, then **Simple C++**, **Rust DSP**, or **Advanced MIMO**.
+1. Choose **Examples**, then **Simple C**, **Simple C++**, **Rust DSP**, or **Advanced MIMO**.
    Choose **New** for a project directory or
    **Open** for a project JSON file.
    New/Open and Save-as use a path field inside the editor window: type or paste
@@ -79,16 +80,17 @@ cannot be reused for the editor.
    the repository root if it cannot locate the examples.
 2. Choose **Forms**, a form, a widget kind and **Add widget**. Select an element,
    drag it to move, resize with its handle, or change its label/position/size and
-   **Apply**. **New form** asks for a name; **Rename** beside the document picker
+   **Apply**, or press Enter in a property field. **New form** asks for a name;
+   **Rename** beside the document picker
    changes the selected form's displayed name while keeping its stable ID.
    **Duplicate**, **Delete**, **Undo** and **Redo** provide the small set of layout
    operations. Wheel scroll pans; Ctrl+wheel zooms.
 3. Choose an **Event** and double-click the widget, or use **Edit code**. The
    modal window edits the complete ordinary source file. A missing binding gets
    a new header and a small typed handler skeleton on this explicit action.
-   Existing functions can be assigned through **Details** using the source path,
+   Existing functions can be assigned through **Widget / event details** using the source path,
    declaration header and C++ symbol. Source files remain independently editable.
-4. **Details** also sets initial text, enabled state, parent group, text
+4. **Widget / event details** also sets initial text, enabled state, parent group, text
    multiline/read-only behavior and dropdown options. Option rows use
    `ID | label | value`; IDs give stable selections. Other schema fields can be
    edited directly in the JSON document.
@@ -96,9 +98,9 @@ cannot be reused for the editor.
    **Rename** changes the selected flow's displayed name and preserves its ID.
    Drag a block by its body or header. Flows fit the canvas when opened;
    **Fit** restores the whole view after moving blocks or zooming.
-   **Details** sets its C++ factory, source/header paths, **Source symbol (optional)**,
+   **Ports and source...** sets its C++ factory, source/header paths, **Source symbol (optional)**,
    input/output lists and parameters. The source search text can name the useful
-   C++ or Rust processing function separately from its factory. Port rows use
+   C, C++ or Rust processing function separately from its factory. Port rows use
    `name : C++ type`, one per line; parameter rows use `name = value`.
    Click an output port name or socket, then an input port, or drag between them
    to connect. The selected origin stays highlighted while wiring; choose a
@@ -112,14 +114,18 @@ cannot be reused for the editor.
    **Build** and **Run** use explicit project recipes; Run builds first and only
    starts the application after a successful build. **Stop** cancels owned work.
 
-**Files** lists ordinary source/build/design files. Double-click a file or enter
-a project-relative path and choose **Open file**. The list is bounded to 1,500
+**Files** lists ordinary source/build/design files. Selecting a file fills its
+path. Double-click it, choose **Open file**, or press Enter in the path field.
+The list is bounded to 1,500
 matches from 10,000 visited entries and skips hidden/dependency/build directories;
 Open file still accepts an explicit valid project-relative path. The code window supplies Save,
-Undo/Redo, Find, Reload, External, Close and Discard. Reload requires a clean
+Undo/Redo, Find, Reload, External, Close and Discard. Enter in Find searches;
+F3 saves the source buffer. Escape closes a clean buffer; save or discard edits
+before closing. Outside the source window, F3 saves the design, F2 opens selected
+widget/block code, and F5 builds and runs the project. Reload requires a clean
 buffer; a save conflict preserves unsaved text. **External** uses an `edit`
 recipe or an `EDITOR` executable path, then Reload imports the external change.
-There is no C++/Rust parser or special source-region ownership convention.
+There is no C/C++/Rust parser or special source-region ownership convention.
 
 The source window accepts UTF-8 files without zero bytes up to 8 MiB and preserves
 untouched bytes, including line endings and BOM. Project paths stay within the selected root;
@@ -135,6 +141,23 @@ The default `generated/visual/` directory owns `forms.hpp`, `events.hpp`,
 Generation never rewrites handwritten handlers or processing implementations.
 The generator recognizes ordinary type names and simple templates; use a
 header-defined alias for more elaborate C++ types.
+
+Each generated form has one application-side layout using the existing
+`gui::Snapshot` contract. An adopting application can present it through any
+supported GUI adapter, including terminal and browser adapters; the editor's
+own hosts remain FLTK, Rev and SDL/framebuffer. Layout and event decisions stay
+above that boundary. Adding a widget kind or input capability requires a shared
+contract and adapter support, rather than backend-specific application layouts.
+
+The Forms view edits design JSON; it does not import arbitrary handwritten C++
+layouts. The main software-foundation example currently defines its unified
+widgets in [`gui/shared/view_definition.hpp`](../gui/shared/view_definition.hpp)
+and behavior in [`gui/shared/application.cpp`](../gui/shared/application.cpp).
+To edit those files here, open the editor's self project with `--root .` as
+shown below, choose **Files**, and open either repository-relative path. Rebuild
+the application through its usual commands; every selected backend consumes
+the changed shared definition. See [GUI ownership](../docs/gui-boundary.md)
+for the existing application boundary and its backend qualification limits.
 
 Generated forms construct `gui::Snapshot` values; generated event registration
 calls typed ordinary handlers with `(services, ui, input)`. An explicit C++
@@ -157,7 +180,9 @@ Applications adopt only the optional `visual/ui` and/or `visual/flow` runtime
 source they need, together with retained generated headers and the existing GUI
 boundary. They build with their normal compiler and CMake files, without linking
 the editor model, generator, file services or process runner. The
-[simple example](examples/simple/README.md) keeps event and sample-processing
+[simple C example](examples/simple-c/README.md) keeps events and processing in
+ordinary C17, with small C++ adapters for the GUI and stream runtime. The
+[simple C++ example](examples/simple/README.md) keeps event and sample-processing
 functions short, with flow plumbing in a separate source file. The
 [Rust DSP example](examples/rust-dsp/README.md) implements a stateful FIR filter
 and decimation in ordinary Rust behind a small C ABI adapter; it builds with

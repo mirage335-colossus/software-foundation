@@ -4,6 +4,48 @@
 #include <iostream>
 
 namespace {
+void native_prompt_focus_contract() {
+    foundation::host::Session<foundation::ui::Application,gui::fltk::Adapter> session;
+    auto& adapter=session.adapter;adapter.show();
+    auto sync=[&]{session.tick();Fl::check();Fl::flush();};sync();
+    const gui::WidgetKey editor{"entries.editor",1},list{"entries.list",1};
+    fixture::check(adapter.focus(editor),"Missing main-window focus before prompt");
+    auto open=[&] {
+        adapter.policy().send(gui::WidgetEvent{{"entries.options",1},gui::ChooseOption{"heading"}});sync();
+        auto* window=Fl::modal();
+        fixture::check(adapter.service_active()&&window&&window!=&adapter.window(),"Missing native heading prompt");
+        Fl_Input* input=nullptr;
+        for(int i=0;i<window->children();++i)if(auto* candidate=dynamic_cast<Fl_Input*>(window->child(i)))input=candidate;
+        fixture::check(input,"Missing native prompt input");
+        return input;
+    };
+    auto* input=open();
+    fixture::check(Fl::focus()==input,"Initial native prompt focus was stolen");
+    for(unsigned tick=0;tick<120;++tick) {
+        sync();fixture::check(Fl::focus()==input,"Main-window synchronization stole native prompt focus");
+    }
+    const std::string heading="Pasted heading";
+    input->position(input->size(),0);Fl::copy(heading.data(),int(heading.size()),1);Fl::paste(*Fl::focus(),1);sync();
+    fixture::check(std::string(input->value())==heading,"Native clipboard paste missed the heading prompt");
+    fixture::check(adapter.focus(list)&&adapter.focused()==list,"Retained focus did not update during prompt");
+    sync();fixture::check(Fl::focus()==input,"Programmatic main-window focus stole native prompt input");
+    Fl_Return_Button* accept=nullptr;
+    for(int i=0;i<Fl::modal()->children();++i)
+        if(auto* candidate=dynamic_cast<Fl_Return_Button*>(Fl::modal()->child(i)))accept=candidate;
+    fixture::check(accept,"Missing native prompt accept button");accept->do_callback();sync();
+    fixture::check(!adapter.service_active()&&fixture::widget(session.application.view(),"entries.heading").state.text==heading,
+        "Native prompt did not apply pasted heading");
+    fixture::check(Fl::focus()==adapter.native_widget(list),"Native focus was not restored after prompt completion");
+    input=open();fixture::check(Fl::focus()==input,"Reopened native prompt lost input focus");
+    adapter.focus(std::nullopt);sync();fixture::check(Fl::focus()==input,"Clearing main-window focus changed active prompt focus");
+    Fl::modal()->do_callback();sync();
+    fixture::check(!adapter.service_active()&&Fl::focus()==nullptr,"Cancelled prompt did not restore cleared main-window focus");
+    fixture::check(fixture::widget(session.application.view(),"entries.heading").state.text==heading,
+        "Cancelled native prompt changed the heading");
+    fixture::check(adapter.error().empty(),"Native prompt callback failed");
+    adapter.close();adapter.sync();
+}
+
 void raw_pointer_contract() {
     std::vector<gui::WidgetEvent> events;
     gui::fltk::Adapter adapter([&](const gui::Event& event) {
@@ -57,6 +99,7 @@ void raw_pointer_contract() {
 }
 
 int main(){try{
+    native_prompt_focus_contract();
     raw_pointer_contract();
     foundation::host::Session<foundation::ui::Application,gui::fltk::Adapter> session;
     auto& adapter=session.adapter;adapter.show();

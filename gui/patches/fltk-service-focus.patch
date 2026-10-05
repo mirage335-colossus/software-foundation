@@ -1,0 +1,27 @@
+--- a/backends/fltk/adapter.hpp
++++ b/backends/fltk/adapter.hpp
+@@ -649,14 +649,20 @@
+             page->button->color(color(tab->selected?palette.selection:palette.surface));page->button->labelcolor(color(palette.text));
+             window_->remove(page->button);window_->add(page->button);
+         }
+-        if(const auto key=focused();key) {if(auto* native=native_widget(*key);native&&Fl::focus()!=native)native->take_focus();}
+-        else if(Fl::focus()&&window_->contains(Fl::focus()))Fl::focus(nullptr);
++        // A native prompt owns keyboard/clipboard focus until its completion.
++        // Keep retained main-window focus current and restore it afterward.
++        if(!service_) {
++            if(const auto key=focused();key) {if(auto* native=native_widget(*key);native&&Fl::focus()!=native)native->take_focus();}
++            else if(Fl::focus()&&window_->contains(Fl::focus()))Fl::focus(nullptr);
++        }
+         window_->redraw();
+     }
+     bool focus(std::optional<WidgetKey> key) override {
+         if(!RetainedAdapter::focus(key))return false;
+-        if(key) { if(auto* native=native_widget(*key))native->take_focus(); }
+-        else if(Fl::focus()&&window_->contains(Fl::focus()))Fl::focus(nullptr);
++        if(!service_) {
++            if(key) { if(auto* native=native_widget(*key))native->take_focus(); }
++            else if(Fl::focus()&&window_->contains(Fl::focus()))Fl::focus(nullptr);
++        }
+         window_->redraw();
+         return true;
+     }
