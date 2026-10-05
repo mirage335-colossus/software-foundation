@@ -1,6 +1,7 @@
 """Changed-path decisions must preserve feedback when evidence is incomplete."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import shutil
@@ -198,6 +199,66 @@ class ClassificationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ci.run_tool_suites([], root/'empty', root=root)
 
+    def test_tool_workers_use_capacity_and_subdivide_nested_allowance(self):
+        cases = [(None, {}, 6, 2), (4, {}, 4, 1), (1, {}, 1, 1),
+                 (None, {'CTEST_PARALLEL_LEVEL': '6'}, 6, 1),
+                 (3, {'CTEST_PARALLEL_LEVEL': '6'}, 3, 1),
+                 ('auto', {'CTEST_PARALLEL_LEVEL': '4'}, 6, 2)]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'tools').mkdir(); (root/'tests').mkdir()
+            suites = ['fixture' + str(index) for index in range(6)]
+            for name in suites:
+                (root/'tests'/('test_' + name + '.py')).write_text('')
+            for index, (jobs, inherited, workers, budget) in enumerate(cases):
+                owners, environments = [], []
+                def launch(argv, cwd, log, *, env):
+                    self.assertEqual(cwd, root)
+                    receipt = Path(argv[argv.index('--output') + 1])
+                    receipt.write_text(json.dumps({'status': 'passed'}))
+                    owner = Mock(); owner.finish.return_value = 0
+                    owners.append(owner); environments.append(env)
+                    return owner
+                supervisor = SimpleNamespace(launch=launch, ProcessTreeError=RuntimeError)
+                environment = {'PATH': 'selected-toolkit', **inherited}
+                with self.subTest(jobs=jobs, inherited=inherited), \
+                        patch.dict(os.environ, environment, clear=True), \
+                        patch.object(ci.build_capacity, 'default_jobs', return_value=12), \
+                        patch.object(ci, 'load_supervisor', return_value=supervisor), \
+                        patch.object(ci, 'ThreadPoolExecutor', wraps=ci.ThreadPoolExecutor) as pool:
+                    result = ci.run_tool_suites(suites, root/('output' + str(index)), jobs, root=root)
+                    pool.assert_called_once_with(max_workers=workers)
+                    self.assertEqual(dict(os.environ), environment)
+                self.assertEqual(result['status'], 'passed')
+                self.assertEqual([row['suite'] for row in result['suites']], suites)
+                self.assertEqual(len(owners), len(suites))
+                for child, owner in zip(environments, owners):
+                    self.assertEqual(child['PATH'], environment['PATH'])
+                    self.assertEqual(child['FOUNDATION_WORKER_BUDGET'], str(budget))
+                    self.assertEqual(child['CMAKE_BUILD_PARALLEL_LEVEL'], str(budget))
+                    self.assertEqual(child['CTEST_PARALLEL_LEVEL'], str(budget))
+                    owner.wait.assert_called_once_with(timeout=900)
+                    owner.close.assert_called_once_with()
+
+    def test_invalid_concurrency_and_suite_inventory_fail_before_creating_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'tests').mkdir()
+            (root/'tests/test_fixture.py').write_text('')
+            output = root/'output'
+            for jobs in (0, -1, True, 'unknown'):
+                with self.subTest(jobs=jobs), self.assertRaises(ValueError):
+                    ci.run_tool_suites(['fixture'], output, jobs, root=root)
+                self.assertFalse(output.exists())
+            for suites in ([], ['fixture', 'fixture'], ['missing']):
+                with self.subTest(suites=suites), self.assertRaises(ValueError):
+                    ci.run_tool_suites(suites, output, root=root)
+                self.assertFalse(output.exists())
+        self.assertEqual(ci.tool_jobs('auto'), 'auto')
+        self.assertEqual(ci.tool_jobs('7'), 7)
+        import argparse
+        for value in ('', '0', '-1', 'unknown'):
+            with self.subTest(value=value), self.assertRaises(argparse.ArgumentTypeError):
+                ci.tool_jobs(value)
+
 
 class GitSelectionTests(unittest.TestCase):
     def setUp(self):
@@ -371,7 +432,7 @@ class FeedbackWorkflowTests(unittest.TestCase):
         self.assertIn('Focused checks (not release qualification)', workflow)
         tooling = workflow.split('  changed-tools:\n')[1]
         self.assertNotIn('    needs:', tooling)
-        self.assertIn('--run-tool-suites --tool-jobs 2', tooling)
+        self.assertIn('--run-tool-suites --tool-jobs auto', tooling)
         self.assertIn("steps.changes.outputs.tools == 'true'", tooling)
         self.assertIn('uses: ./.github/actions/ci-evidence-publish', tooling)
         self.assertEqual(workflow.count("if: steps.changes.outputs.gui == 'true'"), 2)

@@ -310,6 +310,18 @@ reviewed administrative procedure, or choose a fresh release identity while
 preserving the incident evidence. A failed promotion can already have changed
 Latest, so verify the pointer before deciding the next authorized action.
 
+Initial release discovery tolerates one narrowly defined pagination race: a
+validated release ID repeated across distinct pages can restart the complete
+inventory at most twice, discarding every earlier page. Explicit authenticated
+page reads follow validated `Link` headers, with no extra request or wait on a
+successful first inventory. Transport failures and inventory restarts share the
+existing eight-attempt, deadline and cumulative-wait limits. Each inventory is
+bounded to 256 pages and 16 MiB; all attempts together admit at most 768 page
+requests. Persistent repetition, same-page duplicates, malformed records or links,
+authentication/permission failures and distinct releases matching the same tag
+remain errors. This read-only recovery never retries publication. Exact-ID final
+publication and native-acceptance readback remain unchanged.
+
 The helper rejects missing server SHA-256 digests, incomplete upload states,
 duplicate asset IDs/names, malformed JSON and incomplete pagination. It bounds
 parsed JSON to 16 MiB. Repositories beyond those limits need a reviewed extension;

@@ -4,7 +4,9 @@
 Reserve one usable logical CPU and some available RAM. This is an admission
 heuristic, not a per-process memory limit or a prediction of compiler RSS.
 Only callers with no explicit job count should use this policy.
-Testing uses the same resource admission limits with an independent four-job cap.
+Testing uses the same resource admission limits. Parallel parents divide an
+inherited worker budget before launching children, so automatic nested work does
+not independently claim all available resources.
 """
 import ctypes
 import os
@@ -15,6 +17,7 @@ import sys
 
 MIB = 1024 * 1024
 MEMORY_PER_JOB = 768 * MIB
+WORKER_BUDGET = 'FOUNDATION_WORKER_BUDGET'
 
 
 def read_text(path):
@@ -180,7 +183,18 @@ def select_jobs(cpus, memory):
     return min(cpu_jobs, max(1, (memory - reserve) // MEMORY_PER_JOB))
 
 
+def worker_budget(environment=None):
+    """Read a parent's admission ceiling; malformed ceilings fail closed."""
+    value = (os.environ if environment is None else environment).get(WORKER_BUDGET)
+    if value is None:
+        return None
+    if not re.fullmatch(r'[0-9]+', str(value)) or int(value) < 1:
+        raise ValueError(WORKER_BUDGET + ' must be a positive integer')
+    return int(value)
+
+
 def default_jobs():
+    budget = worker_budget()
     try:
         cpus, memory = usable_cpus(), available_memory()
         if sys.platform.startswith('linux'):
@@ -188,16 +202,17 @@ def default_jobs():
             cpus = min([cpus, *quotas])
             if headrooms:
                 memory = min(headrooms + ([] if memory is None else [memory]))
-        return select_jobs(cpus, memory)
+        selected = select_jobs(cpus, memory)
     except Exception:
         # Advisory detection must never prevent a build on an unfamiliar OS.
         # Explicit --jobs/--build-jobs remain available for such environments.
-        return 1
+        selected = 1
+    return min(selected, budget) if budget is not None else selected
 
 
 def default_test_jobs():
     """Bound independent test workers without bypassing CPU or memory limits."""
-    return min(4, default_jobs())
+    return default_jobs()
 
 
 def compile_jobs(value=None):
@@ -207,6 +222,45 @@ def compile_jobs(value=None):
     if isinstance(value, bool) or not re.fullmatch(r"[0-9]+", str(value)) or int(value) < 1:
         raise ValueError("compile jobs must be auto or a positive integer")
     return int(value)
+
+
+def test_jobs(value=None):
+    """Resolve automatic test admission or an explicit operator override."""
+    if value is None or value in ('', 'auto'):
+        return default_test_jobs()
+    if isinstance(value, bool) or not re.fullmatch(r'[0-9]+', str(value)) or int(value) < 1:
+        raise ValueError('test jobs must be auto or a positive integer')
+    return int(value)
+
+
+def worker_environment(environment, workers, *, capacity=None):
+    """Divide a parent allowance among concurrent children without mutating it.
+
+    Inherited CMake/CTest settings describe the parent's scope, including an
+    automatic count resolved earlier by CI. Scope those settings to each child;
+    an explicit child command-line override remains authoritative. ``capacity``
+    supplies the parent's already-selected compile/test allowance, superseding
+    its raw CMake/CTest environment settings after operator precedence resolves.
+    """
+    workers = test_jobs(workers)
+    available = default_jobs()
+    inherited = worker_budget(environment)
+    if inherited is not None:
+        available = min(available, inherited)
+    if capacity is not None:
+        available = min(available, compile_jobs(capacity))
+    else:
+        for key, selector in (('CMAKE_BUILD_PARALLEL_LEVEL', compile_jobs),
+                              ('CTEST_PARALLEL_LEVEL', test_jobs)):
+            if environment.get(key) not in (None, '', 'auto'):
+                available = min(available, selector(environment[key]))
+    allowance = max(1, available // workers)
+    child = dict(environment)
+    child[WORKER_BUDGET] = str(allowance)
+    # Direct CMake/CTest descendants also need the inherited admission ceiling.
+    child['CMAKE_BUILD_PARALLEL_LEVEL'] = str(allowance)
+    child['CTEST_PARALLEL_LEVEL'] = str(allowance)
+    return child
 
 
 if __name__ == '__main__':

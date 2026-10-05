@@ -26,7 +26,7 @@ import tempfile
 import threading
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qsl, quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 sys.dont_write_bytecode = True
@@ -146,7 +146,7 @@ HTTP_JSON_LIMIT = 16 * 1024 * 1024
 RATE_HEADERS = {'retry-after', 'x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset', 'x-ratelimit-resource'}
 
 
-def response_head(stream):
+def response_head(stream, *, pagination=False):
     """Read one bounded gh --include header; never normalize binary body bytes."""
     lines, size = [], 0
     while True:
@@ -166,11 +166,12 @@ def response_head(stream):
         if not separator or not re.fullmatch(rb"[!#$%&'*+.^_`|~0-9A-Za-z-]+", key):
             raise DeliveryError('invalid GitHub response header')
         key = key.decode('ascii').lower()
-        if key in RATE_HEADERS:
+        if key in RATE_HEADERS or pagination and key == 'link':
+            kind = 'pagination' if key == 'link' else 'rate-limit'
             if key in headers:
-                raise DeliveryError('ambiguous GitHub rate-limit headers')
+                raise DeliveryError('ambiguous GitHub ' + kind + ' headers')
             try:headers[key] = value.decode('ascii').strip()
-            except UnicodeError:raise DeliveryError('invalid GitHub rate-limit header') from None
+            except UnicodeError:raise DeliveryError('invalid GitHub ' + kind + ' header') from None
     return int(status[1]), headers
 
 
@@ -203,6 +204,10 @@ class HTTPFailure(DeliveryError):
                     or message.startswith('You have exceeded a secondary rate limit.')
                     or message.startswith('You have triggered an abuse detection mechanism.'))
             except (UnicodeError, ValueError):pass
+
+
+class ReleaseInventoryShift(DeliveryError):
+    """Only validated release IDs repeated across distinct pages are recoverable."""
 
 
 class PublicReleaseRedirects(HTTPRedirectHandler):
@@ -250,6 +255,9 @@ class GitHub:
     REQUEST_DEADLINE = 180 * 60
     COMMAND_TIMEOUT = 10 * 60
     MAX_ATTEMPTS = 8
+    RELEASE_INVENTORY_RETRIES = 2
+    RELEASE_PAGE_LIMIT = 256
+    RELEASE_REQUEST_LIMIT = 768
     WRITE_HEADROOM = 128
     QUOTA_MAX_AGE = 30
     TRANSIENT_STATUS = frozenset((500, 502, 503, 504))
@@ -345,21 +353,37 @@ class GitHub:
                                 rate_diagnostic(error.status, error.headers) + ')') from None
         self._wait(delay, rate_diagnostic(error.status, error.headers), deadline)
 
-    def _read(self, operation, *, deadline=None):
+    def _read(self, operation, *, deadline=None, inventory_retries=0, check_retry_budget=None):
         deadline = deadline if deadline is not None else time.monotonic() + self.REQUEST_DEADLINE
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
             self._timeout(deadline)
             try:return operation(deadline)
-            except HTTPFailure as error:self._wait_after_failure(error, attempt, deadline)
+            except HTTPFailure as error:
+                # Permission and unrelated failures retain their original error,
+                # even when this read has also used its inventory request budget.
+                if self._retry_delay(error, attempt) is None:raise
+                if check_retry_budget is not None:check_retry_budget()
+                self._wait_after_failure(error, attempt, deadline)
+            except ReleaseInventoryShift as error:
+                if inventory_retries <= 0:
+                    raise DeliveryError('GitHub release inventory retry limit exhausted; '
+                                        'repeated release ID across response pages') from None
+                if attempt == self.MAX_ATTEMPTS:
+                    raise DeliveryError('GitHub read-retry attempt limit exhausted; '
+                                        'repeated release ID across response pages') from None
+                if check_retry_budget is not None:check_retry_budget()
+                inventory_retries -= 1
+                self._wait(min(2 * 2 ** (attempt - 1), 60), str(error), deadline)
 
-    def _json_once(self, endpoint, method, body, missing, deadline):
+    def _json_once(self, endpoint, method, body, missing, deadline, *, response_metadata=None):
         arguments = ['api', '--hostname', 'github.com', '--include', '--method', method, endpoint]
         if body is not None:arguments += ['--input', '-']
         result = self._run(arguments, body=body, timeout=self._timeout(deadline))
         if len(result.stdout) > HTTP_JSON_LIMIT:
             raise DeliveryError('remote JSON exceeds supported inventory limit')
         stream = io.BytesIO(result.stdout)
-        status, headers = response_head(stream);payload = stream.read()
+        status, headers = response_head(stream, pagination=response_metadata is not None);payload = stream.read()
+        if response_metadata is not None:response_metadata.update(headers=headers, size=len(result.stdout))
         self._observe(headers, quota_probe=endpoint == 'rate_limit')
         if missing and status == 404 and result.returncode:return None
         if not 200 <= status < 300:raise HTTPFailure(status, headers, payload)
@@ -489,6 +513,89 @@ class GitHub:
                 raise DeliveryError('complete remote pagination failed; invalid or incomplete response stream') from None
             return [item for page in pages for item in page]
         return self._read(attempt)
+
+    def release_inventory(self, tag):
+        """Initial discovery only, with bounded complete-inventory recovery.
+
+        Explicit Link-driven requests admit each page against one shared API
+        budget. No trailing empty-page probe is needed on a successful read.
+        Transport failures and validated pagination shifts share _read's attempt,
+        deadline and cumulative wait budgets; neither starts a nested retry loop.
+        """
+        endpoint = f'repos/{self.repository}/releases?per_page=100'
+        requests = 0
+        def check_budget():
+            if requests >= self.RELEASE_REQUEST_LIMIT:
+                raise DeliveryError('GitHub release discovery API-request budget exhausted')
+        def attempt(deadline):
+            nonlocal requests
+            rows, seen, matches = [], set(), set()
+            shifted, size, page_number = False, 0, 1
+            while True:
+                self._timeout(deadline);check_budget()
+                if page_number > self.RELEASE_PAGE_LIMIT:
+                    raise DeliveryError('GitHub release inventory page limit exhausted')
+                metadata = {};requests += 1
+                page = self._json_once(endpoint if page_number == 1 else endpoint + '&page=' + str(page_number),
+                                       'GET', None, False, deadline, response_metadata=metadata)
+                size += metadata['size']
+                if size > HTTP_JSON_LIMIT:
+                    raise DeliveryError('remote pagination exceeds supported inventory limit')
+                if not isinstance(page, list):raise DeliveryError('expected every page of a remote array')
+                page_ids = set()
+                for row in page:
+                    if not isinstance(row, dict) or not positive(row.get('id')):
+                        raise DeliveryError('invalid or duplicate release inventory entry')
+                    if not isinstance(row.get('tag_name'), str):
+                        raise DeliveryError('incomplete release inventory')
+                    Remote.info(row, row['tag_name'])
+                    identity = row['id']
+                    if identity in page_ids:
+                        raise DeliveryError('invalid or duplicate release inventory entry')
+                    page_ids.add(identity)
+                    if identity in seen:shifted = True
+                    seen.add(identity)
+                    if row['tag_name'] == tag:matches.add(identity)
+                    if len(matches) > 1:raise DeliveryError('duplicate release tags require inspection')
+                rows.extend(page)
+                if not self._next_release_page(metadata['headers'], page_number):break
+                page_number += 1
+            # Validate the entire inventory before granting recovery. Later
+            # malformed rows or ambiguous tags cannot be concealed by a shift.
+            if shifted:raise ReleaseInventoryShift('repeated release ID across response pages')
+            return rows
+        return self._read(attempt, inventory_retries=self.RELEASE_INVENTORY_RETRIES,
+                          check_retry_budget=check_budget)
+
+    def _next_release_page(self, headers, page_number):
+        value = headers.get('link')
+        if value is None:return False
+        relations = {}
+        for entry in value.split(','):
+            link = re.fullmatch(r'\s*<([^<>]+)>;\s*rel="(next|prev|first|last)"\s*', entry)
+            if link is None or link[2] in relations:
+                raise DeliveryError('invalid or ambiguous GitHub release pagination link')
+            try:
+                url = urlsplit(link[1])
+                query = parse_qsl(url.query, strict_parsing=True)
+            except ValueError:
+                raise DeliveryError('invalid GitHub release pagination destination') from None
+            fields = dict(query)
+            if (url.scheme != 'https' or url.netloc != 'api.github.com' or url.fragment or
+                    url.path.casefold() != ('/repos/' + self.repository + '/releases').casefold() and
+                    re.fullmatch(r'/repositories/[1-9][0-9]*/releases', url.path) is None or
+                    len(query) != 2 or set(fields) != {'per_page', 'page'} or fields['per_page'] != '100' or
+                    not re.fullmatch(r'[1-9][0-9]{0,8}', fields['page'])):
+                raise DeliveryError('invalid GitHub release pagination destination')
+            relations[link[2]] = int(fields['page'])
+        if 'next' in relations and relations['next'] != page_number + 1:
+            raise DeliveryError('GitHub release pagination did not advance exactly one page')
+        if ('first' in relations and relations['first'] != 1 or
+                'prev' in relations and relations['prev'] != page_number - 1 or
+                'last' in relations and relations['last'] < relations.get('next', page_number) or
+                'last' in relations and relations['last'] > page_number and 'next' not in relations):
+            raise DeliveryError('inconsistent or incomplete GitHub release pagination links')
+        return 'next' in relations
 
     def upload(self, tag, path):
         self._headroom()
@@ -648,7 +755,10 @@ class Remote:
                 self._public_assets[row['id']] = url
 
     def find(self, tag, required=True):
-        rows = self.transport.pages(self.base + '/releases?per_page=100')
+        if hasattr(self.transport, 'release_inventory'):
+            rows = self.transport.release_inventory(tag)
+        else:
+            rows = self.transport.pages(self.base + '/releases?per_page=100')
         seen = set()
         matches = []
         for row in rows:

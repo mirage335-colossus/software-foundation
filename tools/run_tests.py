@@ -156,19 +156,35 @@ def suite_source(suite, system=None):
     return name, path
 
 
+def load_suite(suite, system=None):
+    name, path = suite_source(suite, system)
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    previous = sys.modules.get(name)
+    # unittest resolves module fixtures through sys.modules. Register before
+    # import, as a normal import does, so setUpModule/tearDownModule actually run.
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if previous is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
+        raise
+    return unittest.defaultTestLoader.loadTestsFromModule(module)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--suite', required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    name, path = suite_source(args.suite)
+    suite_source(args.suite)
     args.output.unlink(missing_ok=True)
     # Test modules can import local fixtures and maintained tools explicitly.
     sys.path.insert(0, str(ROOT / 'tests'))
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    result = execute(unittest.defaultTestLoader.loadTestsFromModule(module))
+    result = execute(load_suite(args.suite))
     publish(args.output, result)
     return 0 if result['status'] == 'passed' else 1
 

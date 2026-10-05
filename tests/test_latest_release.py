@@ -210,7 +210,7 @@ L.main()
             with mock.patch.dict(os.environ, CORE_PROVIDER='cpp'):
                 self.assertEqual(L.environment_request()['core_provider'], 'cpp')
             with mock.patch.dict(os.environ, PREVIOUS_PACKAGES='{"linux-x86_64":{},"linux-x86_64":{}}'):
-                with self.assertRaisesRegex(ValueError, 'duplicate JSON key'):
+                with self.assertRaisesRegex(ValueError, 'duplicate JSON field: linux-x86_64'):
                     L.environment_request()
 
     def test_unresolved_gui_redistribution_fails_before_remote_work(self):
@@ -358,14 +358,17 @@ class WorkflowOverlapTests(unittest.TestCase):
         outer_app = latest.split('  application:\n', 1)[1].split('  certification:\n', 1)[0]
         self.assertIn('    needs: prepare\n', outer_app)
         self.assertIn('      require_regression: true', outer_app)
-        nested = application.split('jobs:\n', 1)[1].split('  prepare:\n', 1)[0]
+        # Anchor the job inventory: an input such as build_jobs also ends in
+        # "jobs:" and must never be interpreted as a workflow job boundary.
+        nested = application.split('\njobs:\n', 1)[1].split('  prepare:\n', 1)[0]
         self.assertIn('uses: ./.github/workflows/candidate.yml', nested)
-        self.assertNotIn('needs:', nested)
+        self.assertIn('    needs: prepare\n', nested)
+        self.assertNotIn('needs: application', nested)
         assembly = application.split('  assemble:\n', 1)[1].split('\nenv:\n', 1)[0]
         self.assertIn('needs: [prepare, application, regression]', assembly)
         self.assertIn("inputs.require_regression && needs.regression.result == 'success'", assembly)
         self.assertIn("!inputs.require_regression && needs.regression.result == 'skipped'", assembly)
-        self.assertIn('environment: ${{ inputs.execute', assembly)
+        self.assertIn("environment: ${{ (inputs.execute || inputs.package_repository) && 'release-publisher' || '' }}", assembly)
         self.assertIn('group: foundation-release-lifecycle', assembly)
         self.assertIn('publish-candidate', assembly)
         self.assertIn('regression_result: ${{ needs.regression.result }}', assembly)

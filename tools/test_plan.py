@@ -579,10 +579,11 @@ def candidate_prerequisite_inputs(build):
     return source_id(build), build_inputs(build), declarations
 
 
-def candidate_run(build, scope, output, jobs=2, *, build_jobs=None, summary=None):
+def candidate_run(build, scope, output, jobs=None, *, build_jobs=None, summary=None):
     """Freeze all tests; unlabelled new tests automatically belong to core."""
-    if scope not in CANDIDATE_SCOPES or jobs < 1 or (build_jobs is not None and build_jobs < 1):
+    if scope not in CANDIDATE_SCOPES or (build_jobs is not None and build_jobs < 1):
         raise ValueError("invalid candidate scope or concurrency")
+    jobs = build_capacity.test_jobs(jobs if jobs is not None else os.environ.get("CTEST_PARALLEL_LEVEL"))
     output = Path(output)
     if output.exists():
         raise ValueError("candidate receipt must name a new attempt")
@@ -601,6 +602,8 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None, summary=None
     if candidate_plan(build) != frozen:
         raise ValueError("candidate inventory changed during prerequisite compilation")
     names = frozen["scopes"][scope]
+    test_environment = build_capacity.worker_environment(environment, min(jobs, len(names)),
+                                                        capacity=max(compile_jobs, jobs))
     junit = output.with_suffix(".junit.xml").resolve()
     if junit.exists():
         raise ValueError("candidate JUnit must name a new attempt")
@@ -608,7 +611,7 @@ def candidate_run(build, scope, output, jobs=2, *, build_jobs=None, summary=None
     try:
         exit_code = windows_compiler.run([programs["ctest"], "--test-dir", str(build), "--no-tests=error", "--output-on-failure",
             "--parallel", str(jobs), "-R", "^(" + "|".join(re.escape(name) for name in names) + ")$",
-            "--output-junit", str(junit)], env=environment).returncode
+            "--output-junit", str(junit)], env=test_environment).returncode
     except subprocess.CalledProcessError as error:
         # The owner raises this only after a nonzero command and its children
         # have joined. Ownership and timeout failures must bypass report creation.
@@ -698,7 +701,7 @@ def main():
     candidate_cmd = sub.add_parser("candidate-run")
     candidate_cmd.add_argument("--build", type=Path, required=True)
     candidate_cmd.add_argument("--scope", choices=CANDIDATE_SCOPES, required=True)
-    candidate_cmd.add_argument("--jobs", type=builder.positive, default=2, help="test concurrency")
+    candidate_cmd.add_argument("--jobs", type=builder.positive, help="explicit test concurrency; default is resource-aware")
     candidate_cmd.add_argument("--build-jobs", type=builder.positive)
     candidate_cmd.add_argument("--output", type=Path, required=True)
     candidate_cmd.add_argument("--summary", type=Path, help="append timing to the hosted job summary")
@@ -759,6 +762,10 @@ def main():
                 raise ValueError("invalid shard or concurrency")
             require_current(args.build, plan)
             expected = plan["shards"][args.shard]
+            test_concurrency = build_capacity.test_jobs(args.jobs if args.jobs is not None
+                                                       else os.environ.get("CTEST_PARALLEL_LEVEL"))
+            test_environment = build_capacity.worker_environment(environment, min(test_concurrency, len(expected)),
+                                                                capacity=max(compile_concurrency, test_concurrency))
             args.output.parent.mkdir(parents=True, exist_ok=True)
             junit = args.output.with_name(args.output.name + ".junit.xml").resolve()
             # Prevent stale JUnit data from surviving a failed test launch.
@@ -766,8 +773,8 @@ def main():
             testing_at = time.monotonic()
             try:
                 exit_code = windows_compiler.run([programs["ctest"], "--test-dir", str(args.build), "--no-tests=error", "--output-on-failure",
-                    "--parallel", str(args.jobs or 2), "-R", "^(" + "|".join(re.escape(x) for x in expected) + ")$",
-                    "--output-junit", str(junit)], env=environment).returncode
+                    "--parallel", str(test_concurrency), "-R", "^(" + "|".join(re.escape(x) for x in expected) + ")$",
+                    "--output-junit", str(junit)], env=test_environment).returncode
             except subprocess.CalledProcessError as error:
                 exit_code = error.returncode
             tested_at = time.monotonic()

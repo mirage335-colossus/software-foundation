@@ -1,7 +1,11 @@
 import importlib.util
 import io
 from pathlib import Path
+import sys
+import tempfile
+from types import ModuleType
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('run_tests', Path(__file__).resolve().parents[1] / 'tools/run_tests.py')
 runner = importlib.util.module_from_spec(spec)
@@ -34,6 +38,78 @@ class RunnerTests(unittest.TestCase):
         case = unittest.FunctionTestCase(lambda: None)
         with self.assertRaises(ValueError):
             runner.execute(unittest.TestSuite([case, case]), stream=io.StringIO())
+
+    def test_registered_module_and_class_fixtures_run_once_in_order(self):
+        source = '''import sys
+import unittest
+assert sys.modules[__name__].__dict__ is globals()
+events = []
+def setUpModule():
+    events.append('module setup')
+def tearDownModule():
+    events.append('module teardown')
+class First(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        events.append('first setup')
+    @classmethod
+    def tearDownClass(cls):
+        events.append('first teardown')
+    def test_one(self):
+        self.assertEqual(events, ['module setup', 'first setup'])
+        events.append('one')
+    def test_two(self):
+        self.assertEqual(events[-1], 'one')
+        events.append('two')
+class Second(unittest.TestCase):
+    def test_three(self):
+        self.assertEqual(events[-1], 'first teardown')
+        events.append('three')
+'''
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(sys.modules):
+            root = Path(temporary); (root / 'tests').mkdir()
+            (root / 'tests/test_fixture.py').write_text(source)
+            with patch.object(runner, 'ROOT', root):
+                result = runner.execute(runner.load_suite('fixture'), stream=io.StringIO())
+            self.assertEqual(result['status'], 'passed')
+            self.assertEqual(len(result['results']), 3)
+            self.assertEqual(sys.modules['test_fixture'].events,
+                             ['module setup', 'first setup', 'one', 'two',
+                              'first teardown', 'three', 'module teardown'])
+
+    def test_failed_module_import_restores_previous_registration(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(sys.modules):
+            root = Path(temporary); (root / 'tests').mkdir()
+            (root / 'tests/test_fixture.py').write_text("raise ImportError('fixture import failed')\n")
+            for previous in (None, ModuleType('previous_fixture')):
+                if previous is None:
+                    sys.modules.pop('test_fixture', None)
+                else:
+                    sys.modules['test_fixture'] = previous
+                with patch.object(runner, 'ROOT', root), self.assertRaisesRegex(ImportError, 'fixture import failed'):
+                    runner.load_suite('fixture')
+                if previous is None:
+                    self.assertNotIn('test_fixture', sys.modules)
+                else:
+                    self.assertIs(sys.modules['test_fixture'], previous)
+
+    def test_module_setup_failure_cannot_certify_unexecuted_cases(self):
+        source = '''import unittest
+def setUpModule():
+    raise RuntimeError('fixture setup failed')
+class Case(unittest.TestCase):
+    def test_unexecuted(self):
+        raise AssertionError('test must not execute after fixture failure')
+'''
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(sys.modules):
+            root = Path(temporary); (root / 'tests').mkdir()
+            (root / 'tests/test_fixture.py').write_text(source)
+            with patch.object(runner, 'ROOT', root):
+                result = runner.execute(runner.load_suite('fixture'), stream=io.StringIO())
+            self.assertEqual(result['status'], 'failed')
+            self.assertEqual(result['inventory'], ['test_fixture.Case.test_unexecuted'])
+            self.assertNotIn(result['inventory'][0], result['results'])
+            self.assertTrue(all(item['status'] == 'failed' for item in result['results'].values()))
 
     def test_platform_exclusion_is_explicit_and_narrow(self):
         class Named:

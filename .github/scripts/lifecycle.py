@@ -20,6 +20,7 @@ import dependency_store
 import coverage as evidence
 import qualification_tasks
 import ci_retry
+import build_capacity
 from process_tree import ProcessTreeError
 
 
@@ -552,7 +553,7 @@ def container_bootstrap(root, image, items, environment):
 
 
 def check_batch():
-    """Run independent frozen executions, retaining failed and later outcomes."""
+    """Run isolated Linux cases concurrently and join every case before cleanup."""
     plan = evidence.load(ROOT / 'build/check-plan.json')
     evidence.validate(plan)
     selected = [batch for batch in ci.qualification_batches(plan, runners=selected_runners())['include'] if batch['id'] == value('BATCH')]
@@ -564,16 +565,21 @@ def check_batch():
     if ci.platform.system() != expected_system:
         raise ValueError('batch requires its selected native host')
     checks = {item['id']: item for item in evidence.executions(plan)}
-    failures = []
+    # Native Windows graphics and host browser resources remain ordered. Package
+    # manager scopes remain ordered even when their host is disposable.
+    isolated = bool(batch['image']) and all(checks[name]['scope'] in ('archive', 'source', 'recovery', 'abi')
+                                           for name in batch['checks'])
+    workers = min(len(batch['checks']), build_capacity.test_jobs(os.environ.get('FOUNDATION_CHECK_JOBS', 'auto'))) if isolated else 1
+    child_environment = build_capacity.worker_environment(os.environ, workers)
     if batch['image']:
         bootstrap = container_bootstrap(ROOT, batch['image'], [checks[name] for name in batch['checks']], os.environ)
     else:
         bootstrap = nullcontext(None)
     with bootstrap as prepared:
-        for check_id in batch['checks']:
+        def execute(check_id):
             item = checks[check_id]
             browser = ci.needs_browser_prerequisite(item['backend'], item['scope'])
-            environment = dict(os.environ, CHECK=check_id, CHECK_IMAGE=batch['image'],
+            environment = dict(child_environment, CHECK=check_id, CHECK_IMAGE=batch['image'],
                                CHECK_BROWSER='yes' if browser else 'no')
             # Transport attempts select retained inputs, not source-test execution.
             environment.pop('CONTROL_ATTEMPT', None)
@@ -585,9 +591,20 @@ def check_batch():
             try:
                 for command in commands:
                     subprocess.run(command, cwd=ROOT, env=environment, check=True)
-            except (OSError, subprocess.CalledProcessError) as error:
-                failures.append(check_id)
+            except (OSError, subprocess.SubprocessError) as error:
                 print('Qualification execution failed: ' + check_id + ': ' + str(error), file=sys.stderr)
+                return check_id
+            return None
+        if workers == 1:
+            outcomes = [execute(check_id) for check_id in batch['checks']]
+        else:
+            # The executor joins all writers on success and after any exception;
+            # only then may the prepared image and its setup container be removed.
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = [pool.submit(execute, check_id) for check_id in batch['checks']]
+                outcomes = [future.result() for future in futures]
+    evidence.check_inputs(plan, ROOT, check_ids=batch['checks'])
+    failures = [name for name in outcomes if name is not None]
     if failures:
         raise ValueError('required batch executions failed: ' + ', '.join(failures))
 

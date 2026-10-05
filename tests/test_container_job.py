@@ -23,6 +23,161 @@ class ContainerJobs(unittest.TestCase):
         self.environment = {'FOUNDATION_HOST_UID': '1001', 'FOUNDATION_HOST_GID': '1002',
                             'FOUNDATION_DISPOSABLE_CHECK': '1', 'CHECK': 'browser-archive'}
 
+    def test_private_check_mounts_share_only_readonly_inputs_and_forward_nested_budget(self):
+        (self.root / 'build').mkdir()
+        item = {'id': 'one', 'scope': 'archive', 'backend': 'fltk'}
+        environment = {'CHECK_IMAGE': 'debian:bookworm', 'FOUNDATION_WORKER_BUDGET': '2',
+                       'CMAKE_BUILD_PARALLEL_LEVEL': '2', 'CTEST_PARALLEL_LEVEL': '2'}
+        with job.check_workspace(self.root, item) as workspace, patch.object(job, 'selection', return_value=item):
+            command = job.command('check', self.root, 1001, 1002, environment,
+                                  prepared_image='sha256:' + 'a'*64, workspace=workspace)
+            mounts = [command[index + 1] for index, argument in enumerate(command) if argument == '-v']
+            self.assertEqual(mounts, [str(self.root) + ':/work:ro',
+                                     str(workspace / 'evidence') + ':/work/build/evidence',
+                                     str(workspace / 'prerequisites') + ':/work/build/prerequisites'])
+            self.assertIn('FOUNDATION_PRIVATE_CHECK=1', command)
+            for name in ('FOUNDATION_WORKER_BUDGET', 'CMAKE_BUILD_PARALLEL_LEVEL', 'CTEST_PARALLEL_LEVEL'):
+                self.assertIn(name, command)
+            self.assertFalse(any(mount.split(':')[1].startswith('/tmp') or '.X11' in mount for mount in mounts))
+            self.assertTrue((self.root / 'build/evidence').is_dir())
+            self.assertTrue((self.root / 'build/prerequisites').is_dir())
+        self.assertFalse(workspace.exists())
+
+    def test_two_private_cases_publish_after_completion_and_preserve_failed_case_bytes(self):
+        (self.root / 'build').mkdir()
+        input_file = self.root / 'frozen-sdk'; input_file.write_bytes(b'original SDK')
+        one = {'id': 'one'}; two = {'id': 'two'}
+        with job.check_workspace(self.root, one) as first:
+            with self.assertRaisesRegex(ValueError, 'case assertions failed'):
+                with job.check_workspace(self.root, two) as second:
+                    self.assertNotEqual(first, second)
+                    for workspace, item in ((first, one), (second, two)):
+                        directory = workspace / 'evidence' / item['id']; directory.mkdir()
+                        (directory / 'console.log').write_bytes(item['id'].encode())
+                    self.assertFalse((self.root / 'build/evidence/one').exists())
+                    self.assertFalse((self.root / 'build/evidence/two').exists())
+                    raise ValueError('case assertions failed')
+            self.assertFalse(second.exists())
+            self.assertEqual((self.root / 'build/evidence/two/console.log').read_bytes(), b'two')
+            self.assertFalse((self.root / 'build/evidence/one').exists())
+        self.assertFalse(first.exists())
+        self.assertEqual((self.root / 'build/evidence/one/console.log').read_bytes(), b'one')
+        self.assertEqual(input_file.read_bytes(), b'original SDK')
+
+    def test_uncertain_container_shutdown_retains_unpublished_workspace(self):
+        (self.root / 'build').mkdir()
+        with self.assertRaises(job.ContainerCleanupError):
+            with job.check_workspace(self.root, {'id': 'one'}) as workspace:
+                directory = workspace / 'evidence/one'; directory.mkdir()
+                (directory / 'console.log').write_bytes(b'cleanup failed')
+                raise job.ContainerCleanupError('still running')
+        self.assertTrue(workspace.exists())
+        self.assertFalse((self.root / 'build/evidence/one').exists())
+        self.assertEqual((workspace / 'evidence/one/console.log').read_bytes(), b'cleanup failed')
+
+    def test_private_output_scope_links_and_collisions_fail_without_overwriting_evidence(self):
+        (self.root / 'build').mkdir()
+        for invalid in ('outside', 'link', 'hardlink', 'collision'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                with job.check_workspace(self.root, {'id': 'one'}) as workspace:
+                    directory = workspace / 'evidence' / ('other' if invalid == 'outside' else 'one')
+                    directory.mkdir(); (directory / 'console.log').write_bytes(b'private')
+                    if invalid == 'link': (directory / 'alias').symlink_to('console.log')
+                    if invalid == 'hardlink': os.link(directory / 'console.log', directory / 'alias')
+                    if invalid == 'collision':
+                        target = self.root / 'build/evidence/one'; target.mkdir()
+                        (target / 'console.log').write_bytes(b'existing owner')
+            self.assertTrue(workspace.exists())
+            if invalid == 'collision':
+                self.assertEqual((self.root / 'build/evidence/one/console.log').read_bytes(), b'existing owner')
+            else:
+                self.assertFalse((self.root / 'build/evidence/one').exists())
+
+    def test_private_handoff_never_changes_readonly_input_ancestors(self):
+        directory = self.root / 'build/evidence/one'; directory.mkdir(parents=True)
+        (directory / 'receipt.json').write_text('{}')
+        with patch.object(job.os, 'chown') as chown:
+            job.handoff(self.root, ('build/evidence/one',), 1001, 1002, private_check=True)
+        paths = {call.args[0] for call in chown.call_args_list}
+        self.assertNotIn(self.root, paths); self.assertNotIn(self.root / 'build', paths)
+        self.assertEqual(paths, {self.root / 'build/evidence', directory, directory / 'receipt.json'})
+
+    def test_failed_output_handoff_keeps_remaining_diagnostics_and_cannot_pass(self):
+        (self.root / 'build').mkdir(); original = job.Path.rename
+        def rename(source, target):
+            if source.parent.name == 'prerequisites': raise OSError('prerequisite handoff failed')
+            return original(source, target)
+        with patch.object(job.Path, 'rename', autospec=True, side_effect=rename), \
+                self.assertRaisesRegex(OSError, 'prerequisite handoff failed'):
+            with job.check_workspace(self.root, {'id': 'one'}) as workspace:
+                for name in ('evidence', 'prerequisites'):
+                    directory = workspace / name / 'one'; directory.mkdir()
+                    (directory / 'console.log').write_bytes(name.encode())
+        self.assertTrue(workspace.exists())
+        self.assertEqual((workspace / 'prerequisites/one/console.log').read_bytes(), b'prerequisites')
+        self.assertEqual((self.root / 'build/evidence/one/console.log').read_bytes(), b'evidence')
+
+    def test_bounded_container_timeout_kills_and_joins_before_removal(self):
+        calls = []; states = iter([{'Running': True, 'Status': 'running'}, {'Running': False, 'Status': 'exited'}])
+        def run(argv, **options):
+            calls.append((argv, options))
+            if argv[1] == 'start': raise subprocess.TimeoutExpired(argv, options['timeout'])
+            stdout = json.dumps(next(states)) if argv[1] == 'inspect' else ''
+            return subprocess.CompletedProcess(argv, 0, stdout)
+        with patch.object(job.subprocess, 'run', side_effect=run):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                job.run_check_container(['docker', 'run', '--rm', 'image', 'case'], 77)
+        self.assertEqual([argv[1] for argv, _ in calls], ['create', 'start', 'inspect', 'kill', 'inspect', 'rm'])
+        self.assertEqual(calls[1][1]['timeout'], 77)
+        self.assertTrue(all(options['timeout'] > 0 for _, options in calls))
+        self.assertNotIn('--rm', calls[0][0]); self.assertNotIn('--force', calls[-1][0])
+        name = calls[0][0][3]
+        self.assertTrue(all(argv[-1] == name for argv, _ in calls[1:]))
+
+    def test_container_cleanup_uncertainty_prevents_workspace_publication(self):
+        calls = []
+        def run(argv, **options):
+            calls.append(argv)
+            if argv[1] == 'inspect': raise subprocess.CalledProcessError(1, argv)
+            return subprocess.CompletedProcess(argv, 0)
+        with patch.object(job.subprocess, 'run', side_effect=run), self.assertRaises(job.ContainerCleanupError):
+            job.run_check_container(['docker', 'run', '--rm', 'image', 'case'], 77)
+        self.assertEqual([argv[1] for argv in calls], ['create', 'start', 'inspect'])
+
+    def test_container_actual_exit_code_and_outlived_writers_cannot_pass_launcher_zero(self):
+        for states, error in (
+                ([{'Running': False, 'Status': 'exited', 'ExitCode': 7}], subprocess.CalledProcessError),
+                ([{'Running': True, 'Status': 'running'},
+                  {'Running': False, 'Status': 'exited', 'ExitCode': 0}], ValueError),
+                ([{'Running': False, 'Status': 'created', 'ExitCode': 0}], ValueError),
+                ([{'Running': False, 'Status': 'exited', 'ExitCode': True}], ValueError)):
+            calls = []; remaining = iter(states)
+            def run(argv, **options):
+                calls.append(argv)
+                stdout = json.dumps(next(remaining)) if argv[1] == 'inspect' else ''
+                return subprocess.CompletedProcess(argv, 0, stdout)
+            with self.subTest(states=states), patch.object(job.subprocess, 'run', side_effect=run), self.assertRaises(error):
+                job.run_check_container(['docker', 'run', '--rm', 'image', 'case'], 77)
+            self.assertEqual(calls[-1][1], 'rm')
+
+    def test_container_main_joins_and_removes_before_exposing_private_result(self):
+        (self.root / 'build').mkdir(); item = {'id': 'one', 'timeout_seconds': 77}
+        def run(argv, timeout):
+            mounts = [argv[index + 1] for index, argument in enumerate(argv) if argument == '-v']
+            evidence = Path(next(mount.split(':')[0] for mount in mounts if mount.endswith(':/work/build/evidence')))
+            directory = evidence / 'one'; directory.mkdir()
+            (directory / 'result.json').write_bytes(b'actual receipt')
+            self.assertFalse((self.root / 'build/evidence/one').exists())
+            self.assertEqual(timeout, 677)
+        with patch.object(job, 'ROOT', self.root), patch.object(job, 'selection', return_value=item), \
+                patch.object(job.os, 'getuid', return_value=1001), patch.object(job.os, 'getgid', return_value=1002), \
+                patch.object(job, 'command', wraps=job.command), \
+                patch.dict(job.os.environ, CHECK_IMAGE='debian:bookworm'), \
+                patch.object(job, 'run_check_container', side_effect=run):
+            self.assertEqual(job.main(['check', '--prepared-image', 'sha256:' + 'a'*64]), 0)
+        self.assertEqual((self.root / 'build/evidence/one/result.json').read_bytes(), b'actual receipt')
+        self.assertEqual(list((self.root / 'build').glob('.check-work-*')), [])
+
     def test_host_ids_are_explicit_and_bootstrap_does_not_change_tree_permissions(self):
         command = job.command('sdk-produce', self.root, 1001, 1002, {'TARGET': 'linux-x86_64', 'GH_TOKEN': 'private'})
         self.assertIn('FOUNDATION_HOST_UID=1001', command)

@@ -548,6 +548,13 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
                         if retained:
                             expected.pop('vcpkg_disable_metrics')
                             expected['VCPKG_DISABLE_METRICS'] = '1'
+                        if call.args[0][0] == 'ctest':
+                            # Two parent slots divide into one slot per child.
+                            # Compiler ownership and retained-toolkit hooks stay
+                            # identical across the test scheduling boundary.
+                            expected.update(FOUNDATION_WORKER_BUDGET='1',
+                                            CMAKE_BUILD_PARALLEL_LEVEL='1',
+                                            CTEST_PARALLEL_LEVEL='1')
                         self.assertEqual(child, expected)
                     # Neither library/CRT relaxation nor altered export metadata
                     # may reach configuration under this consumer policy.

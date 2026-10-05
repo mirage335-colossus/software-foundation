@@ -99,6 +99,17 @@ class Capacity(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 c.compile_jobs(value)
 
+    def test_auto_and_explicit_test_limits(self):
+        with patch.object(c, 'default_test_jobs', return_value=7) as automatic:
+            for value in (None, '', 'auto'):
+                self.assertEqual(c.test_jobs(value), 7)
+            for value in (1, '2', 9):
+                self.assertEqual(c.test_jobs(value), int(value))
+            self.assertEqual(automatic.call_count, 3)
+        for value in (0, '0', '-1', '1.5', 'many', True):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                c.test_jobs(value)
+
     def test_memory_reserve_and_cpu_headroom_are_independent(self):
         self.assertEqual(c.select_jobs(16, c.MEMORY_PER_JOB * 3), 2)
         self.assertEqual(c.select_jobs(2, 32 * 1024**3), 1)
@@ -106,19 +117,21 @@ class Capacity(unittest.TestCase):
         self.assertEqual(c.select_jobs(32, 0), 1)
 
     def test_default_uses_tightest_container_limits(self):
-        with patch.object(c.sys, 'platform', 'linux'), patch.object(c, 'usable_cpus', return_value=32), \
+        with patch.dict(os.environ, {}, clear=True), \
+             patch.object(c.sys, 'platform', 'linux'), patch.object(c, 'usable_cpus', return_value=32), \
              patch.object(c, 'available_memory', return_value=64*1024**3), \
              patch.object(c, 'linux_limits', return_value=([4,2],[c.MEMORY_PER_JOB*2])):
             self.assertEqual(c.default_jobs(),1)
         with patch.object(c, 'usable_cpus', side_effect=ValueError('unavailable')):
             self.assertEqual(c.default_jobs(),1)
 
-    def test_automatic_test_workers_observe_resources_and_four_worker_cap(self):
-        for cpus, memory, expected in [(16, 32 * 1024**3, 4),
+    def test_automatic_test_workers_observe_resources_without_fixed_cap(self):
+        for cpus, memory, expected in [(16, 32 * 1024**3, 15),
                                       (3, 32 * 1024**3, 2),
                                       (16, c.MEMORY_PER_JOB * 3, 2),
                                       (16, None, 2), (1, 0, 1)]:
             with self.subTest(cpus=cpus, memory=memory), \
+                    patch.dict(os.environ, {}, clear=True), \
                     patch.object(c.sys, 'platform', 'linux'), \
                     patch.object(c, 'usable_cpus', return_value=cpus), \
                     patch.object(c, 'available_memory', return_value=memory), \
@@ -126,6 +139,108 @@ class Capacity(unittest.TestCase):
                 self.assertEqual(c.default_test_jobs(), expected)
         with patch.object(c, 'usable_cpus', side_effect=OSError('unavailable')):
             self.assertEqual(c.default_test_jobs(), 1)
+
+    def test_cpu_affinity_restricts_the_host_count(self):
+        with patch.object(c.os, 'cpu_count', return_value=32), \
+                patch.object(c.os, 'sched_getaffinity', return_value={2, 4}, create=True), \
+                patch.object(c.sys, 'platform', 'linux'):
+            self.assertEqual(c.usable_cpus(), 2)
+            self.assertEqual(c.select_jobs(c.usable_cpus(), 32 * 1024**3), 1)
+
+    def test_nested_automatic_limits_keep_parent_budget_and_explicit_overrides(self):
+        args = argparse.Namespace(build_jobs=None, test_jobs=None, jobs=None)
+        with patch.dict(os.environ, {c.WORKER_BUDGET: '3'}, clear=True), \
+                patch.object(c.sys, 'platform', 'linux'), \
+                patch.object(c, 'usable_cpus', return_value=64), \
+                patch.object(c, 'available_memory', return_value=64 * 1024**3), \
+                patch.object(c, 'linux_limits', return_value=([], [])):
+            self.assertEqual(c.default_jobs(), 3)
+            self.assertEqual(c.default_test_jobs(), 3)
+            self.assertEqual(b.job_limits(args), (3, 3))
+            args.jobs = 9
+            self.assertEqual(b.job_limits(args), (9, 9))
+            args.jobs = None
+            with patch.dict(os.environ, {'CMAKE_BUILD_PARALLEL_LEVEL': '7',
+                                         'CTEST_PARALLEL_LEVEL': '5'}):
+                self.assertEqual(b.job_limits(args), (7, 5))
+
+    def test_malformed_inherited_budget_never_becomes_full_host_capacity(self):
+        for value in ('', 'auto', '0', '-1', '1.5', 'many'):
+            with self.subTest(value=value), patch.dict(os.environ, {c.WORKER_BUDGET: value}), \
+                    self.assertRaisesRegex(ValueError, c.WORKER_BUDGET):
+                c.default_jobs()
+        with patch.dict(os.environ, {c.WORKER_BUDGET: 'invalid'}):
+            # A direct operator override does not invoke automatic admission.
+            self.assertEqual(c.compile_jobs(5), 5)
+            self.assertEqual(c.test_jobs(7), 7)
+
+    def test_child_budget_divides_once_and_cannot_grow_at_a_nested_layer(self):
+        parent = {'UNCHANGED': 'value'}
+        with patch.object(c, 'default_jobs', return_value=15):
+            child = c.worker_environment(parent, 4)
+            grandchild = c.worker_environment(child, 2)
+        self.assertEqual(parent, {'UNCHANGED': 'value'})
+        self.assertEqual(child, {'UNCHANGED': 'value', c.WORKER_BUDGET: '3',
+                                'CMAKE_BUILD_PARALLEL_LEVEL': '3', 'CTEST_PARALLEL_LEVEL': '3'})
+        self.assertEqual(grandchild, {'UNCHANGED': 'value', c.WORKER_BUDGET: '1',
+                                     'CMAKE_BUILD_PARALLEL_LEVEL': '1', 'CTEST_PARALLEL_LEVEL': '1'})
+        self.assertLessEqual(4 * int(child[c.WORKER_BUDGET]), 15)
+        self.assertLessEqual(2 * int(grandchild[c.WORKER_BUDGET]), 3)
+
+    def test_child_budget_scopes_parent_explicit_and_resolved_defaults(self):
+        for environment, capacity, expected in (
+                ({}, 4, '1'),
+                ({'CMAKE_BUILD_PARALLEL_LEVEL': '8'}, None, '2'),
+                ({'CMAKE_BUILD_PARALLEL_LEVEL': 'auto'}, None, '3'),
+                ({'CTEST_PARALLEL_LEVEL': '4'}, None, '1'),
+                ({'CMAKE_BUILD_PARALLEL_LEVEL': '1', 'CTEST_PARALLEL_LEVEL': '1'}, 8, '2'),
+                ({c.WORKER_BUDGET: '8'}, None, '2')):
+            with self.subTest(environment=environment, capacity=capacity), \
+                    patch.object(c, 'default_jobs', return_value=15):
+                child = c.worker_environment(environment, 4, capacity=capacity)
+            for key in (c.WORKER_BUDGET, 'CMAKE_BUILD_PARALLEL_LEVEL', 'CTEST_PARALLEL_LEVEL'):
+                self.assertEqual(child[key], expected)
+        with patch.object(c, 'default_jobs', return_value=1):
+            self.assertEqual(c.worker_environment({}, 20)[c.WORKER_BUDGET], '1')
+        for environment in ({c.WORKER_BUDGET: 'bad'}, {'CMAKE_BUILD_PARALLEL_LEVEL': 'bad'},
+                            {'CTEST_PARALLEL_LEVEL': 'bad'}):
+            with self.subTest(environment=environment), self.assertRaises(ValueError):
+                c.worker_environment(environment, 2)
+
+    def test_child_process_receives_budget_without_changing_parent(self):
+        parent = dict(os.environ)
+        child = c.worker_environment(parent, 1, capacity=1)
+        program = ('import sys; sys.path.insert(0, sys.argv[1]); import build_capacity as c; '
+                   'print(c.default_jobs(), c.default_test_jobs(), c.compile_jobs(5), c.test_jobs(7))')
+        actual = subprocess.check_output([sys.executable, '-B', '-c', program,
+                                          str(Path(c.__file__).parent)], env=child, text=True)
+        self.assertEqual(actual.strip(), '1 1 5 7')
+        self.assertEqual(dict(os.environ), parent)
+
+    def test_build_wrapper_preserves_parent_overrides_and_scopes_only_test_children(self):
+        import source_identity
+        parent = {'CMAKE_BUILD_PARALLEL_LEVEL': '8', 'CTEST_PARALLEL_LEVEL': '4',
+                  'UNCHANGED': 'value'}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            with patch.dict(os.environ, parent, clear=True), \
+                    patch.object(c, 'default_jobs', return_value=15), \
+                    patch.object(b, 'ROOT', root), patch.object(b, 'run') as run, \
+                    patch.object(b, 'cache_identity', return_value={}), \
+                    patch.object(source_identity, 'source_tree', return_value={}):
+                self.assertEqual(b.main(['test', 'dev', '--core-provider', 'cpp', '--jobs', '2']), 0)
+                self.assertEqual(dict(os.environ), parent)
+            calls = run.call_args_list
+            self.assertEqual(len(calls), 3)
+            self.assertEqual(calls[0].kwargs['env'], parent)
+            self.assertEqual(calls[1].kwargs['env'], parent)
+            compile_command = calls[1].args[0]
+            test_command = calls[2].args[0]
+            self.assertEqual(compile_command[compile_command.index('--parallel') + 1], '2')
+            self.assertEqual(test_command[test_command.index('--parallel') + 1], '2')
+            self.assertEqual(calls[2].kwargs['env'], {'UNCHANGED': 'value', c.WORKER_BUDGET: '1',
+                                                    'CMAKE_BUILD_PARALLEL_LEVEL': '1',
+                                                    'CTEST_PARALLEL_LEVEL': '1'})
 
     def test_parent_cgroup_memory_and_quota_are_observed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -149,9 +264,11 @@ class Capacity(unittest.TestCase):
                 self.assertEqual(b.job_limits(args),(5,3))
                 with patch.dict(b.os.environ,{'CMAKE_BUILD_PARALLEL_LEVEL':'auto'}), patch.object(c,'default_jobs',return_value=9):
                     self.assertEqual(b.job_limits(args),(9,3))
+                with patch.dict(b.os.environ,{'CTEST_PARALLEL_LEVEL':'auto'}):
+                    self.assertEqual(b.job_limits(args),(5,4))
                 args.jobs=4;self.assertEqual(b.job_limits(args),(4,4))
                 args.build_jobs=8;args.test_jobs=1;self.assertEqual(b.job_limits(args),(8,1))
-                self.assertEqual(automatic_tests.call_count,1)
+                self.assertEqual(automatic_tests.call_count,2)
             args.jobs=None;args.test_jobs=None
             self.assertEqual(b.job_limits(args),(8,4))
 

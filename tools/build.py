@@ -29,11 +29,11 @@ def default_jobs():
 
 
 def job_limits(args):
-    from build_capacity import compile_jobs, default_test_jobs
+    from build_capacity import compile_jobs, test_jobs
     environment = os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL")
     build = args.build_jobs or args.jobs or (compile_jobs(environment) if environment else default_jobs())
     test_environment = os.environ.get("CTEST_PARALLEL_LEVEL")
-    tests = args.test_jobs or args.jobs or (positive(test_environment) if test_environment else default_test_jobs())
+    tests = args.test_jobs or args.jobs or test_jobs(test_environment)
     return build, tests
 
 
@@ -482,6 +482,9 @@ def execute(args, parser, timings):
     if timings.call("source_verification", source_tree, ROOT, args.gui_source) != source_before:
         raise ValueError("source changed during compilation; rebuild a stable candidate")
     if args.action == "test":
+        from build_capacity import worker_environment
+        test_environment = worker_environment(child_environment, test_jobs,
+                                               capacity=max(jobs, test_jobs))
         command = [programs["ctest"], "--test-dir", str(build), "--output-on-failure",
                    "--no-tests=error", "--parallel", str(test_jobs)]
         if args.junit:
@@ -503,8 +506,8 @@ def execute(args, parser, timings):
                 probe += ["-R", exact_selection["pattern"]]
             # Discovery runs no tests and never substitutes for the real execution.
             timings.call("test_startup_probe", subprocess.check_output, probe, cwd=ROOT,
-                         env=child_environment, timeout=60)
-        timings.call("test_execution", run, command, env=child_environment)
+                         env=test_environment, timeout=60)
+        timings.call("test_execution", run, command, env=test_environment)
     elif args.action == "package":
         timings.call("package", run, [programs["cpack"], "--config", str(build / "CPackConfig.cmake"), "-C", "Release"], env=child_environment)
         if args.verify_package:

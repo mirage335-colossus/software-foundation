@@ -153,8 +153,9 @@ host checks still reject a wrong operating system or architecture.
 The same validated pool selection is exposed by Latest, prepared-SDK application
 production, SDK maintenance, native GUI and screenshot workflows. `jobs=auto`
 uses each producer's available CPUs and RAM; a positive override remains explicit.
-Feedback and sanitizer compilation also use automatic capacity while test
-concurrency stays at two. Two independent distribution fixture suites can run
+Feedback tooling suites use the same automatic capacity and divide child worker
+budgets; focused application and sanitizer test commands retain their explicit
+two-worker selections. Two independent distribution fixture suites can run
 concurrently on their existing runner, retain separate complete receipts and
 join before the required distribution gate. No package assertion is omitted.
 

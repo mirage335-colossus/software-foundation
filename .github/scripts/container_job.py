@@ -2,20 +2,24 @@
 """Disposable Linux jobs with host-owned outputs and explicit privilege boundaries."""
 import argparse
 from contextlib import contextmanager
+import json
 import uuid
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 ACTIONS = ('sdk-produce', 'application-build', 'native-gui-check', 'check', 'apt-native-smoke')
 IMAGES = ('debian:bookworm', 'debian:trixie', 'ubuntu:24.04')
 ENVIRONMENT = ('SDK_PROFILE', 'PROFILE', 'JOBS', 'TARGET', 'RECIPE', 'GITHUB_REPOSITORY', 'GITHUB_SHA',
                'CHECK', 'CHECK_IMAGE', 'CHECK_BROWSER', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'SDK_DEVELOPMENT',
-               'CORE_PROVIDER', 'FOUNDATION_PROVIDER_RECIPE')
+               'CORE_PROVIDER', 'FOUNDATION_PROVIDER_RECIPE', 'FOUNDATION_WORKER_BUDGET',
+               'CMAKE_BUILD_PARALLEL_LEVEL', 'CTEST_PARALLEL_LEVEL')
 COMMON = 'ca-certificates python3 git file binutils gnupg openssl curl xz-utils unzip xvfb xauth fonts-dejavu-core'.split()
 # Full source suites verify the offline namespace adapter against the real ip tool.
 BUILD = 'build-essential cmake ninja-build cpio rsync wget patch bc bzip2 perl gawk libncurses-dev dpkg-dev apt-utils nodejs iproute2'.split()
@@ -81,7 +85,7 @@ def account_id(value):
     return value
 
 
-def command(action, root, uid, gid, environment, *, prepared_image=None):
+def command(action, root, uid, gid, environment, *, prepared_image=None, workspace=None):
     if action not in ACTIONS:
         raise ValueError('unsupported disposable container operation')
     uid, gid = account_id(uid), account_id(gid)
@@ -93,6 +97,10 @@ def command(action, root, uid, gid, environment, *, prepared_image=None):
         raise ValueError('unsupported bind mount path')
     if prepared_image is not None and (action != 'check' or not re.fullmatch(r'sha256:[0-9a-f]{64}', prepared_image)):
         raise ValueError('only checks may use an immutable batch bootstrap image')
+    if workspace is not None:
+        workspace = Path(workspace).resolve(strict=True)
+        if action != 'check' or ':' in str(workspace) or '\n' in str(workspace):
+            raise ValueError('only checks may use a private writable workspace')
     item = selection(root, environment) if action == 'check' else None
     script = '' if prepared_image else bootstrap_script(packages(action, environment, item)) + '; '
     argv = ['docker', 'run', '--rm']
@@ -101,9 +109,117 @@ def command(action, root, uid, gid, environment, *, prepared_image=None):
             argv += ['-e', name]
     argv += ['-e', 'FOUNDATION_HOST_UID=' + str(uid), '-e', 'FOUNDATION_HOST_GID=' + str(gid),
              '-e', 'FOUNDATION_DISPOSABLE_CHECK=1', '-e', 'PYTHONUTF8=1', '-e', 'PYTHONDONTWRITEBYTECODE=1',
-             '-v', str(root) + ':/work', '-w', '/work', prepared_image or image, 'bash', '-euc',
+             '-v', str(root) + ':/work' + (':ro' if workspace is not None else '')]
+    if workspace is not None:
+        argv += ['-e', 'FOUNDATION_PRIVATE_CHECK=1']
+        for name in ('evidence', 'prerequisites'):
+            argv += ['-v', str(workspace / name) + ':/work/build/' + name]
+    argv += ['-w', '/work', prepared_image or image, 'bash', '-euc',
              script + 'exec python3 -B .github/scripts/container_job.py --inside "$1"', 'container-job', action]
     return argv
+
+
+class ContainerCleanupError(ValueError):
+    """The private writable workspace must remain owned until reconciliation."""
+
+
+def _check_outputs(directory, check_id):
+    """Only one case's ordinary single-link evidence may leave its workspace."""
+    entries = list(directory.iterdir())
+    if any(path.name != check_id for path in entries):
+        raise ValueError('private check wrote outside its selected evidence scope')
+    for parent, directories, files in os.walk(directory, followlinks=False):
+        for path in [Path(parent), *[Path(parent) / name for name in directories + files]]:
+            info = path.lstat()
+            if (not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)) or
+                    stat.S_ISREG(info.st_mode) and info.st_nlink != 1):
+                raise ValueError('private check evidence contains links or special entries')
+    return entries
+
+
+@contextmanager
+def check_workspace(root, item):
+    """Share frozen inputs read-only; publish only after the container is gone.
+
+    The container also owns its account, package database, /tmp and Xvfb display.
+    Large immutable SDK groups are never duplicated for each archive backend.
+    Failed cases retain their real diagnostic outputs, never an invented receipt.
+    """
+    root = Path(root).resolve(strict=True)
+    if not re.fullmatch(r'[A-Za-z0-9._-]+', item['id']):
+        raise ValueError('invalid private check identity')
+    build = root / 'build'
+    if build.is_symlink() or not build.is_dir():
+        raise ValueError('private checks require an ordinary build directory')
+    for name in ('evidence', 'prerequisites'):
+        parent = build / name
+        if parent.is_symlink() or parent.exists() and not parent.is_dir():
+            raise ValueError('check output parent must be an ordinary directory')
+        target = parent / item['id']
+        if target.exists() or target.is_symlink():
+            raise ValueError('check outputs must be a fresh attempt')
+        parent.mkdir(exist_ok=True)  # Mount targets must exist below the read-only input bind.
+        if parent.is_symlink() or not parent.is_dir():
+            raise ValueError('check output mount point changed before launch')
+    workspace = Path(tempfile.mkdtemp(prefix='.check-work-', dir=build))
+    retain = False
+    try:
+        for name in ('evidence', 'prerequisites'):
+            (workspace / name).mkdir()
+        try:
+            yield workspace
+        except ContainerCleanupError:
+            retain = True
+            print('Container cleanup uncertain; retain private workspace: ' + str(workspace), file=sys.stderr)
+            raise
+        finally:
+            if not retain:
+                # Preflight both trees before exposing any case output.
+                try:
+                    outputs = [(entry, build / name / entry.name)
+                               for name in ('evidence', 'prerequisites')
+                               for entry in _check_outputs(workspace / name, item['id'])]
+                    if any(target.exists() or target.is_symlink() for _, target in outputs):
+                        raise ValueError('check output collided before publication')
+                    for source, target in outputs:
+                        target.parent.mkdir(exist_ok=True)
+                        source.rename(target)
+                except BaseException:
+                    retain = True
+                    raise
+    finally:
+        if not retain:
+            shutil.rmtree(workspace)
+
+
+def run_check_container(argv, timeout):
+    """Bound the launcher and prove container shutdown before output handoff."""
+    name = 'foundation-check-' + uuid.uuid4().hex
+    create = ['docker', 'create', '--name', name, *argv[3:]]
+    outlived = False
+    try:
+        subprocess.run(create, check=True, timeout=120)
+        subprocess.run(['docker', 'start', '--attach', name], check=True, timeout=timeout)
+    finally:
+        try:
+            inspect = lambda: subprocess.run(['docker', 'inspect', '--format', '{{json .State}}', name],
+                                             check=True, capture_output=True, text=True, timeout=60)
+            state = json.loads(inspect().stdout)
+            if not isinstance(state, dict) or type(state.get('Running')) is not bool:
+                raise ValueError('container completion lacks its running state')
+            if state['Running']:
+                outlived = True
+                subprocess.run(['docker', 'kill', name], check=True, timeout=60)
+                state = json.loads(inspect().stdout)
+            if not isinstance(state, dict) or state.get('Running') is not False or state.get('Status') not in ('exited', 'dead', 'created'):
+                raise ValueError('container descendants have not stopped')
+            subprocess.run(['docker', 'rm', name], check=True, timeout=60)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            raise ContainerCleanupError('container cleanup remains unconfirmed: ' + name) from error
+    if outlived or state['Status'] != 'exited' or type(state.get('ExitCode')) is not int:
+        raise ValueError('container execution did not reach an ordinary completed outcome')
+    if state['ExitCode'] != 0:
+        raise subprocess.CalledProcessError(state['ExitCode'], ['docker', 'start', '--attach', name])
 
 
 def offline_restored_sdk(output, name, manifest):
@@ -196,7 +312,7 @@ def output_roots(action, item=None):
     return ()
 
 
-def handoff(root, names, uid, gid):
+def handoff(root, names, uid, gid, *, private_check=False):
     """Transfer only ordinary evidence entries; preserve bytes and permission bits."""
     root = Path(root).resolve(strict=True)
     for name in names:
@@ -227,6 +343,8 @@ def handoff(root, names, uid, gid):
                     raise ValueError('ownership handoff rejects links and special evidence entries')
                 entries.append((child, (info.st_dev, info.st_ino, info.st_mode)))
         for path, identity in entries:
+            if private_check and path in (root, root / 'build'):
+                continue  # Shared frozen input ancestors are mounted read-only.
             before = path.lstat()
             if (before.st_dev, before.st_ino, before.st_mode) != identity:
                 raise ValueError('evidence entry changed before ownership handoff')
@@ -247,13 +365,15 @@ def inside(action, root=ROOT, environment=None):
     lifecycle = [sys.executable, '-B', str(root / '.github/scripts/lifecycle.py')]
     item = selection(root, environment) if action == 'check' else None
     roots = output_roots(action, item)
+    private_check = action == 'check' and environment.get('FOUNDATION_PRIVATE_CHECK') == '1'
+    extra = {'private_check': True} if private_check else {}
     privileged = action == 'apt-native-smoke' or action == 'check' and item['scope'] == 'apt'
     try:
         if action == 'check':
             subprocess.run([*lifecycle, 'check-prerequisites'], cwd=root, check=True)
             # Root setup writes a receipt; the ordinary user must read it and
             # the host uploader must retain it, even when later assertions fail.
-            handoff(root, ('build/prerequisites/' + item['id'],), uid, gid)
+            handoff(root, ('build/prerequisites/' + item['id'],), uid, gid, **extra)
         if privileged:
             subprocess.run(['git', 'config', '--global', '--add', 'safe.directory', str(root)], check=True)
             subprocess.run(['xvfb-run', '-a', *lifecycle, action], cwd=root, check=True)
@@ -263,7 +383,7 @@ def inside(action, root=ROOT, environment=None):
     finally:
         # Root-only package-manager scopes also leave private 0600 receipts.
         # No source, SDK, dependency or archive tree is recursively reassigned.
-        handoff(root, roots, uid, gid)
+        handoff(root, roots, uid, gid, **extra)
 
 
 def diagnostic(error):
@@ -286,13 +406,22 @@ def main(argv=None):
     else:
         if not hasattr(os, 'getuid') or not hasattr(os, 'getgid'):
             raise ValueError('container launcher requires a Linux host')
-        subprocess.run(command(args.action, ROOT, os.getuid(), os.getgid(), os.environ, prepared_image=args.prepared_image), check=True)
+        if args.action == 'check':
+            item = selection(ROOT, os.environ)
+            with check_workspace(ROOT, item) as workspace:
+                argv = command(args.action, ROOT, os.getuid(), os.getgid(), os.environ,
+                               prepared_image=args.prepared_image, workspace=workspace)
+                # Browser prerequisite inspection/setup precedes the bounded case.
+                run_check_container(argv, item['timeout_seconds'] + 600)
+        else:
+            subprocess.run(command(args.action, ROOT, os.getuid(), os.getgid(), os.environ,
+                                   prepared_image=args.prepared_image), check=True)
     return 0
 
 
 if __name__ == '__main__':
     try:
         sys.exit(main())
-    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
         print('container job: ' + diagnostic(error), file=sys.stderr)
         sys.exit(1)

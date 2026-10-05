@@ -27,7 +27,13 @@ exact prerequisites and target recipes.
 Compilation automatically uses the available CPU and memory budget. Explicit
 `--build-jobs N` overrides it; `--test-jobs N` controls test concurrency separately.
 `--jobs N` remains an explicit override for both. Without a test override, the
-resource detector admits up to four workers; smaller CPU/memory budgets reduce it.
+resource detector selects workers from usable CPUs and available RAM, including
+affinity and container limits, while retaining CPU and memory headroom.
+Concurrent parents divide a worker allowance among their children through
+`FOUNDATION_WORKER_BUDGET` and scoped CMake/CTest environment settings. Explicit
+top-level overrides remain available; an explicit child command can override its
+inherited allowance. The same policy selects local planner and tooling-feedback
+workers, without changing the test inventory or logical shard count.
 Keep tests bounded for their
 actual memory, process and real-time requirements. A faster machine alone does
 not justify changing an assertion or deadline.
@@ -189,6 +195,14 @@ one job so an executing release does not upload and download a complete temporar
 candidate between those steps. Diagnostic preparation can still retain a private
 candidate. Cold SDK maintenance uses explicit runner selection and the same
 automatic compiler budget as ordinary application builds.
+
+Within a Linux certification batch, independent source, recovery, archive and
+ABI cases use resource-aware concurrency. Each container sees shared inputs
+read-only and receives private writable evidence and prerequisite directories;
+outputs are handed off only after confirmed container shutdown. Native Windows,
+host-browser and package-manager operations remain ordered. Set
+`FOUNDATION_CHECK_JOBS` to a positive count to override automatic batch admission.
+This does not change the separate outer `FOUNDATION_CERTIFICATION_JOBS` limit.
 
 Certification retries can adopt authenticated, successful whole batches from a
 prior attempt while executing incomplete batches again. Original controls and

@@ -1163,6 +1163,7 @@ class QualificationBatchTests(unittest.TestCase):
             if options['env']['CHECK'] == 'case-1': raise subprocess.CalledProcessError(1, command)
         with patch.object(self.helper, 'ROOT', self.root), patch.object(self.helper.ci.platform, 'system', return_value='Linux'), \
                 patch.dict(self.helper.os.environ, BATCH=batch['id'], CHECK_IMAGE=batch['image']), \
+                patch.object(self.helper.build_capacity, 'test_jobs', return_value=1), \
                 patch.object(self.helper.subprocess, 'run', side_effect=run), \
                 patch.object(self.helper, 'container_bootstrap', return_value=nullcontext('sha256:' + 'd'*64)) as bootstrap:
             with self.assertRaisesRegex(ValueError, 'required batch executions failed: case-1'):
@@ -1172,6 +1173,100 @@ class QualificationBatchTests(unittest.TestCase):
         bootstrap.assert_called_once()
         self.assertTrue(all(options['cwd'] == self.root and options['check'] for command, options in seen))
         self.assertFalse((self.root / 'build/evidence').exists())  # No fabricated success or empty output root.
+
+    def test_container_cases_overlap_keep_complete_failures_and_join_before_image_cleanup(self):
+        import threading
+        from contextlib import contextmanager
+        plan = self.plan(); batch = ci.qualification_batches(plan)['include'][0]
+        barrier = threading.Barrier(3); completed = []; cleanup = []; environments = []
+        lock = threading.Lock()
+        def run(command, **options):
+            identity = options['env']['CHECK']
+            with lock: environments.append(options['env'])
+            barrier.wait(timeout=5)
+            with lock: completed.append(identity)
+            if identity != 'case-0': raise subprocess.CalledProcessError(1, command)
+        @contextmanager
+        def bootstrap(*args):
+            try: yield 'sha256:' + 'd'*64
+            finally: cleanup.append(set(completed))
+        with patch.object(self.helper, 'ROOT', self.root), \
+                patch.object(self.helper.ci.platform, 'system', return_value='Linux'), \
+                patch.dict(self.helper.os.environ, BATCH=batch['id'], CHECK_IMAGE=batch['image'],
+                           FOUNDATION_CHECK_JOBS='3', FOUNDATION_WORKER_BUDGET='6',
+                           CMAKE_BUILD_PARALLEL_LEVEL='6', CTEST_PARALLEL_LEVEL='6'), \
+                patch.object(self.helper.build_capacity, 'default_jobs', return_value=6), \
+                patch.object(self.helper.subprocess, 'run', side_effect=run), \
+                patch.object(self.helper, 'container_bootstrap', side_effect=bootstrap):
+            with self.assertRaisesRegex(ValueError, 'required batch executions failed: case-1, case-2'):
+                self.helper.check_batch()
+            self.assertEqual(self.helper.os.environ['FOUNDATION_WORKER_BUDGET'], '6')
+        self.assertEqual(cleanup, [{'case-0', 'case-1', 'case-2'}])
+        self.assertEqual({row['CHECK'] for row in environments}, {'case-0', 'case-1', 'case-2'})
+        self.assertTrue(all(row['FOUNDATION_WORKER_BUDGET'] == '2' and
+                            row['CMAKE_BUILD_PARALLEL_LEVEL'] == '2' and
+                            row['CTEST_PARALLEL_LEVEL'] == '2' for row in environments))
+
+    def test_private_case_pool_respects_worker_limit_and_rechecks_frozen_inputs(self):
+        import threading
+        plan = self.plan(tuple('backend-' + str(index) for index in range(5)))
+        batch = ci.qualification_batches(plan)['include'][0]
+        barrier = threading.Barrier(2); lock = threading.Lock(); running = [0]; peak = [0]; completed = []
+        def run(command, **options):
+            identity = options['env']['CHECK']
+            with lock:
+                running[0] += 1; peak[0] = max(peak[0], running[0])
+            if identity in ('case-0', 'case-1'): barrier.wait(timeout=5)
+            with lock:
+                completed.append(identity); running[0] -= 1
+        with patch.object(self.helper, 'ROOT', self.root), \
+                patch.object(self.helper.ci.platform, 'system', return_value='Linux'), \
+                patch.dict(self.helper.os.environ, BATCH=batch['id'], CHECK_IMAGE=batch['image'], FOUNDATION_CHECK_JOBS='2'), \
+                patch.object(self.helper.subprocess, 'run', side_effect=run), \
+                patch.object(self.helper.evidence, 'check_inputs') as check_inputs, \
+                patch.object(self.helper, 'container_bootstrap', return_value=nullcontext('sha256:' + 'd'*64)):
+            self.helper.check_batch()
+        self.assertEqual(peak[0], 2)
+        self.assertEqual(set(completed), set(batch['checks']))
+        self.assertEqual(check_inputs.call_count, 2)
+        self.assertTrue(all(call.kwargs == {'check_ids': batch['checks']} for call in check_inputs.call_args_list))
+
+    def test_package_manager_and_windows_shared_resource_cases_remain_ordered(self):
+        import threading
+        caller = threading.get_ident()
+        for platform, target, environment, scope in (
+                ('Linux', 'linux-x86_64', 'debian-12', 'apt'),
+                ('Windows', 'windows-x86_64', 'windows-2022', 'archive')):
+            with self.subTest(platform=platform):
+                plan = self.plan(('terminal', 'rev'), target, environment)
+                plan.pop('id')
+                for item in plan['checks']: item['scope'] = scope
+                plan = ci.module('coverage').freeze(plan)
+                (self.root / 'build/check-plan.json').write_text(json.dumps(plan))
+                batch = ci.qualification_batches(plan)['include'][0]; seen = []; threads = []
+                def run(command, **options):
+                    seen.append(options['env']['CHECK']); threads.append(threading.get_ident())
+                with patch.object(self.helper, 'ROOT', self.root), \
+                        patch.object(self.helper.ci.platform, 'system', return_value=platform), \
+                        patch.dict(self.helper.os.environ, BATCH=batch['id'], CHECK_IMAGE=batch['image'], FOUNDATION_CHECK_JOBS='999'), \
+                        patch.object(self.helper, 'ThreadPoolExecutor', side_effect=AssertionError('shared resource pool')) as pool, \
+                        patch.object(self.helper.subprocess, 'run', side_effect=run), \
+                        patch.object(self.helper, 'container_bootstrap', return_value=nullcontext('sha256:' + 'd'*64)):
+                    self.helper.check_batch()
+                    pool.assert_not_called()
+                self.assertEqual(seen, batch['checks'])
+                self.assertEqual(threads, [caller] * len(batch['checks']))
+
+    def test_invalid_private_case_budget_fails_before_bootstrap_or_launch(self):
+        plan = self.plan(); batch = ci.qualification_batches(plan)['include'][0]
+        with patch.object(self.helper, 'ROOT', self.root), \
+                patch.object(self.helper.ci.platform, 'system', return_value='Linux'), \
+                patch.dict(self.helper.os.environ, BATCH=batch['id'], CHECK_IMAGE=batch['image'], FOUNDATION_CHECK_JOBS='0'), \
+                patch.object(self.helper.subprocess, 'run') as run, \
+                patch.object(self.helper, 'container_bootstrap') as bootstrap:
+            with self.assertRaisesRegex(ValueError, 'positive integer'):
+                self.helper.check_batch()
+        run.assert_not_called(); bootstrap.assert_not_called()
 
     def test_parallel_operations_join_remaining_writers_after_earlier_failure(self):
         import threading

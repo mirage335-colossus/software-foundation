@@ -1,5 +1,5 @@
-Not implemented
-===============
+Optional follow-ups
+==================
 
 Optional improvements for later work; these are not pending qualification or
 authorization to execute. Reuse existing mechanisms and preserve their safeguards.
@@ -17,15 +17,22 @@ authorization to execute. Reuse existing mechanisms and preserve their safeguard
 - Thin agent-operation wrappers if necessary to remove repeated bookkeeping while
   preserving ownership checks, supervised completion and failure handling.
 
+2026-10-05 review: existing same-job assembly/publication already avoids a full
+candidate relay, and authenticated certification retries already reuse successful
+whole batches. Extending either to older application producers or publication-only
+adoption needs new source/configuration/provider and consumer-evidence binding.
+Keep those extensions optional; this iteration preserves the established release
+path. Existing preflight dependencies, final evidence summaries and checked agent
+helpers remain preferable to duplicate diagnostics/reporting/bookkeeping layers.
+
 
 Test parallelism follow-ups (separate discussion)
 -----------------------------------------------
 
-- Replace fixed two/four-worker test defaults with CPU- and RAM-aware concurrency,
-  reusing tools/build_capacity.py and the existing test planners. Respect CPU
-  affinity/container limits, explicit operator overrides and shared-resource locks.
-  Coordinate nested build/test workers so each child does not independently claim
-  the whole machine. Preserve complete coverage and operation on standard runners.
+- Implemented: automatic test/planner/tooling workers use CPU/RAM capacity,
+  preserving affinity/container limits, explicit overrides, CPU/RAM headroom,
+  shared-resource locks and the complete inventory. Parallel parents scope nested
+  worker allowances instead of letting each child claim the entire machine.
 
 - Parallelize the slow Python suites with isolated worker processes, using existing
   timing receipts to select useful partitions rather than spawning a process for
@@ -33,22 +40,22 @@ Test parallelism follow-ups (separate discussion)
   mechanisms while preserving module/class fixture semantics, per-case results and
   explicit platform exclusions. Reject missing, duplicate, skipped or failed cases;
   retain bounded execution, descendant cleanup and complete diagnostic evidence.
+  Deferred after measuring five slow suites: the two dominant suites spend 92%
+  and 97% in one class; balanced suites offer about three seconds of theoretical
+  class-level savings. Existing whole-suite scheduling remains the useful first
+  step. Module fixture registration was repaired and regression-tested separately.
 
-- Run independent backend checks concurrently within certification batches.
-  Extend the existing check_batch/prepared_checks machinery: Linux already creates
-  a fresh container per case, but batch execution is sequential. Reuse verified
-  inputs and prepared images while giving concurrent checks separate writable
-  workspaces, evidence directories, temporary resources and owned displays. Handle
-  native Windows shared resources explicitly. Preserve source/recovery separation,
-  every backend receipt, failure aggregation and cleanup before evidence publication.
-  Keep operations with real ordering or host-wide state requirements, such as
-  package upgrades and firewall changes, ordered or isolated on separate hosts.
+- Implemented: independent Linux source/recovery/archive/ABI batch cases share
+  verified read-only inputs and prepared images, with private writable outputs,
+  containers, temporary resources and displays. Output handoff requires confirmed
+  container shutdown; all failures aggregate. Native Windows/host-browser and
+  package-manager operations remain ordered. Source/recovery evidence stays separate.
 
 
-Release discovery resilience follow-up (separate discussion)
-----------------------------------------------------------
+Release discovery resilience (implemented)
+-----------------------------------------
 
-- Narrowly improve initial GitHub release discovery when concurrent publication
+- Initial GitHub release discovery now handles the narrow case where concurrent publication
   shifts pagination: retry a repeated release ID across distinct response pages,
   after validating the records. Reuse tools/github_release.py transport machinery
   with one shared attempt, time and API-request budget across transport and
@@ -65,4 +72,4 @@ Release discovery resilience follow-up (separate discussion)
   partial results and unchanged publication safeguards. Assert zero extra API calls
   or waits on successful first-attempt discovery and bounded request counts on
   failures. Exact-ID final publication/native-acceptance readback was implemented
-  in c45f8f3; retain that fix rather than reopening it as future work.
+  in c45f8f3; that fix is retained.

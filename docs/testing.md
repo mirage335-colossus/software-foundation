@@ -265,7 +265,10 @@ Local `test_plan.py run` compiles selected prerequisites with automatic CPU/RAM
 capacity. Planning needs no compile in a registered tree; legacy external trees
 still build the complete prerequisite target.
 Use `--build-jobs N` for an explicit compile limit; an explicit legacy `--jobs N`
-continues to set compile/test concurrency. Test execution defaults to two.
+continues to set compile/test concurrency. Automatic test execution uses the
+CPU/RAM policy, or an explicit `CTEST_PARALLEL_LEVEL`. Concurrent parents divide
+their inherited worker allowance before starting children; configured resource
+locks and complete case inventories remain required.
 Both `run` and `candidate-run` accept `--summary PATH`.
 
 Candidate scope receipts retain each case's measured JUnit duration and declared
@@ -308,11 +311,19 @@ ignored coordination directory for transient investigation notes.
 ## Unit-case evidence and release attempts
 
 CMake runs each Python suite through [`run_tests.py`](../tools/run_tests.py).
-The helper discovers its complete case inventory, records each outcome and exposes
+The helper registers the imported module so module and class fixtures execute
+with normal unittest semantics, discovers its complete case inventory, records each outcome and exposes
 narrow platform exclusions separately. Missing fixture privileges or tools are
 incomplete coverage and return failure. Unittest's successful process exit after
 an internal skip cannot become a complete passing receipt. Optimized C++ tests use
 explicit checks rather than assertions removed by the compiler.
+
+Whole Python suites remain the unit of parallel scheduling. Measurements of the
+five slow suites on 2026-10-05 found single classes owning 92% and 97% of the
+`github_release` and `gui_boundary` times; even the more balanced suites offered
+only about three seconds of theoretical class-level savings in isolation.
+Additional intra-suite process orchestration is deferred until timings justify
+its fixture, aggregation and cleanup complexity.
 
 For multi-environment release work use [the frozen coverage and certification
 protocol](certification.md). Its immutable attempt directories and supervised

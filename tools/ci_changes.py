@@ -22,6 +22,8 @@ DOCUMENTS = frozenset({
 })
 COMMIT = re.compile(r'[0-9a-f]{40}')
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
+import build_capacity
 # Domains cover dependencies expressed through command lines, generated recipes,
 # fixtures and retained inputs, in addition to the source-reference closure below.
 TOOL_DOMAINS = (
@@ -128,20 +130,34 @@ def load_supervisor():
     return module
 
 
-def run_tool_suites(suites, output, jobs=2, root=ROOT):
+def tool_jobs(value):
+    if value == 'auto':
+        return value
+    if value == '':
+        raise argparse.ArgumentTypeError('test jobs must be auto or a positive integer')
+    try:
+        return build_capacity.test_jobs(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
+def run_tool_suites(suites, output, jobs=None, root=ROOT):
     """Bounded parallel whole-suite execution with the qualification runner policy."""
-    if not suites or len(set(suites)) != len(suites) or jobs not in (1, 2):
-        raise ValueError('nonempty unique suites and one or two workers required')
+    if not suites or len(set(suites)) != len(suites):
+        raise ValueError('nonempty unique suites required')
+    jobs = build_capacity.test_jobs(jobs if jobs is not None else os.environ.get('CTEST_PARALLEL_LEVEL'))
     known = {p.stem[5:] for p in (root / 'tests').glob('test_*.py')}
     if not set(suites) <= known:
         raise ValueError('unknown tooling suite')
+    workers = min(jobs, len(suites))
+    environment = build_capacity.worker_environment(os.environ, workers, capacity=jobs)
     output.mkdir(parents=True, exist_ok=False)
     processes = load_supervisor()
     def execute(name):
         receipt = output / (name + '.json')
         with (output / (name + '.log')).open('wb') as log:
             owner = processes.launch([sys.executable, '-B', str(root / 'tools/run_tests.py'),
-                                      '--suite', name, '--output', str(receipt)], root, log)
+                                      '--suite', name, '--output', str(receipt)], root, log, env=environment)
             try:
                 owner.wait(timeout=900)
                 code = owner.finish()
@@ -162,8 +178,8 @@ def run_tool_suites(suites, output, jobs=2, root=ROOT):
         if not passed:
             print((output / (name + '.log')).read_text(errors='replace'), flush=True)
         return {'suite': name, 'status': 'passed' if passed else 'failed'}
-    with ThreadPoolExecutor(max_workers=jobs) as workers:
-        results = list(workers.map(execute, suites))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(execute, suites))
     summary = {'schema_version': 1, 'scope': 'development-feedback', 'suites': results,
                'status': 'passed' if all(r['status'] == 'passed' for r in results) else 'failed'}
     (output / 'summary.json').write_text(json.dumps(summary, sort_keys=True, indent=2) + '\n')
@@ -250,7 +266,8 @@ def main(argv=None):
     parser.add_argument('--summary', type=Path, default=os.environ.get('GITHUB_STEP_SUMMARY'))
     parser.add_argument('--run-tool-suites', action='store_true')
     parser.add_argument('--tool-output', type=Path, default=Path('build/changed-tools'))
-    parser.add_argument('--tool-jobs', type=int, choices=(1, 2), default=2)
+    parser.add_argument('--tool-jobs', type=tool_jobs,
+                        help='auto or a positive worker count; default is resource-aware')
     args = parser.parse_args(argv)
     try:
         event = json.loads(args.event.read_text(encoding='utf-8')) if args.event else {}

@@ -98,6 +98,49 @@ class CoverageTests(unittest.TestCase):
                     self.assertEqual(plan.main(),0)
                     self.assertEqual(run.call_args.args[0][-2:], ['--parallel',str(expected)])
 
+    def test_candidate_workers_share_capacity_and_preserve_explicit_overrides(self):
+        import subprocess, sys
+        from unittest.mock import patch
+        names = ['core.a', 'core.b', 'core.c', 'core.d']
+        frozen = {'scopes': {'core': names}, 'timeouts': dict.fromkeys(names), 'id': 'fixture'}
+        cases = [([], {}, 12, 12, 12, 3),
+                 ([], {'CTEST_PARALLEL_LEVEL': '8'}, 12, 12, 8, 3),
+                 (['--jobs', '3'], {'CTEST_PARALLEL_LEVEL': '8'}, 12, 12, 3, 4),
+                 (['--build-jobs', '2'], {}, 12, 2, 12, 3),
+                 (['--jobs', '3', '--build-jobs', '2'], {}, 12, 2, 3, 1),
+                 ([], {'FOUNDATION_WORKER_BUDGET': '4'}, 4, 4, 4, 1)]
+        with tempfile.TemporaryDirectory() as directory:
+            build = Path(directory)
+            for index, (flags, inherited, capacity, compile_jobs, test_jobs, budget) in enumerate(cases):
+                output = build / (str(index) + '.json')
+                environment = {'PATH': 'selected-toolkit', **inherited}
+                calls = []
+                def owned(argv, **options):
+                    calls.append((argv, options['env']))
+                    if '--output-junit' in argv:
+                        Path(argv[argv.index('--output-junit') + 1]).write_text(
+                            '<testsuite>' + ''.join('<testcase name="' + name + '"/>' for name in names) + '</testsuite>')
+                    return subprocess.CompletedProcess(argv, 0)
+                with self.subTest(flags=flags, inherited=inherited), \
+                        patch.dict(os.environ, inherited, clear=True), \
+                        patch.object(plan.build_capacity, 'default_jobs', return_value=capacity), \
+                        patch.object(plan, 'candidate_prerequisite_inputs', return_value=()), \
+                        patch.object(plan, '_candidate_observation', return_value=(frozen, None)), \
+                        patch.object(plan, 'candidate_plan', return_value=frozen), \
+                        patch.object(plan, 'execution_context', return_value=({'cmake': 'cmake', 'ctest': 'ctest'}, environment)), \
+                        patch.object(plan.windows_compiler, 'run', side_effect=owned), \
+                        patch.object(sys, 'argv', ['test_plan.py', 'candidate-run', '--build', str(build),
+                                                  '--scope', 'core', '--output', str(output), *flags]):
+                    self.assertEqual(plan.main(), 0)
+                self.assertEqual(calls[0][0][-2:], ['--parallel', str(compile_jobs)])
+                self.assertEqual(calls[0][1], environment)
+                test_command, child = calls[1]
+                self.assertEqual(test_command[test_command.index('--parallel') + 1], str(test_jobs))
+                self.assertEqual(child['FOUNDATION_WORKER_BUDGET'], str(budget))
+                self.assertEqual(child['CMAKE_BUILD_PARALLEL_LEVEL'], str(budget))
+                self.assertEqual(child['CTEST_PARALLEL_LEVEL'], str(budget))
+                self.assertEqual(environment, {'PATH': 'selected-toolkit', **inherited})
+
     def test_location_normalization_precedes_windows_json_escaping(self):
         from unittest.mock import patch
         value={'path':r'C:\work\source\main.cpp','command':['C:/work/source/test.py',r'C:\external\compiler.exe']}
@@ -618,6 +661,43 @@ class InputIdentityTests(unittest.TestCase):
                 plan.main()
         self.assertFalse(output.exists())
 
+    def test_shard_uses_automatic_capacity_and_explicit_jobs_without_repartitioning(self):
+        import json, subprocess, sys
+        from unittest.mock import patch
+        frozen = self.freeze()
+        recipe = self.root / 'frozen-plan.json'; recipe.write_text(json.dumps(frozen))
+        for index, (flags, inherited, compile_jobs, test_jobs, budget) in enumerate([
+                ([], {}, 12, 12, 12),
+                ([], {'CTEST_PARALLEL_LEVEL': '6'}, 12, 6, 12),
+                (['--jobs', '3'], {'CTEST_PARALLEL_LEVEL': '1'}, 3, 3, 3),
+                (['--jobs', '3', '--build-jobs', '7'], {}, 7, 3, 7)]):
+            output = self.root / (str(index) + '.json')
+            environment = {'PATH': 'selected-toolkit', **inherited}
+            calls = []
+            def owned(argv, **options):
+                calls.append((argv, options['env']))
+                if '--output-junit' in argv:
+                    Path(argv[argv.index('--output-junit') + 1]).write_text(
+                        '<testsuite><testcase name="core.store"/></testsuite>')
+                return subprocess.CompletedProcess(argv, 0)
+            with self.subTest(flags=flags, inherited=inherited), \
+                    patch.dict(os.environ, inherited, clear=True), \
+                    patch.object(plan.build_capacity, 'default_jobs', return_value=12), \
+                    patch.object(plan, 'execution_context', return_value=({'cmake': 'cmake', 'ctest': 'ctest'}, environment)), \
+                    patch.object(plan.windows_compiler, 'run', side_effect=owned), \
+                    patch.object(sys, 'argv', ['test_plan.py', 'run', '--build', str(self.build), '--plan', str(recipe),
+                                              '--shard', '0', '--output', str(output), *flags]):
+                self.assertEqual(plan.main(), 0)
+            self.assertEqual(calls[0][0][-2:], ['--parallel', str(compile_jobs)])
+            test_command, child = calls[1]
+            self.assertEqual(test_command[test_command.index('--parallel') + 1], str(test_jobs))
+            self.assertEqual(child['FOUNDATION_WORKER_BUDGET'], str(budget))
+            self.assertEqual(child['CMAKE_BUILD_PARALLEL_LEVEL'], str(budget))
+            self.assertEqual(child['CTEST_PARALLEL_LEVEL'], str(budget))
+            self.assertEqual(json.loads(recipe.read_text()), frozen)
+            self.assertEqual(json.loads(output.read_text())['results'], {'core.store': 'passed'})
+            self.assertEqual(environment, {'PATH': 'selected-toolkit', **inherited})
+
     def owned_route(self, route, output):
         import json, sys
         from unittest.mock import patch
@@ -648,12 +728,17 @@ class InputIdentityTests(unittest.TestCase):
                 output = self.root / (route + '-failed.json')
                 calls = []
                 def owned(argv, **options):
-                    calls.append(argv); self.assertEqual(options, {'env': environment})
+                    calls.append(argv)
                     if argv[0] == programs['ctest']:
+                        self.assertEqual(options['env']['PATH'], environment['PATH'])
+                        self.assertGreaterEqual(int(options['env']['FOUNDATION_WORKER_BUDGET']), 1)
+                        self.assertEqual(options['env']['CMAKE_BUILD_PARALLEL_LEVEL'], options['env']['FOUNDATION_WORKER_BUDGET'])
+                        self.assertEqual(options['env']['CTEST_PARALLEL_LEVEL'], options['env']['FOUNDATION_WORKER_BUDGET'])
                         junit = Path(argv[argv.index('--output-junit') + 1])
                         junit.write_text('<testsuite><testcase name="core.store"><failure/></testcase></testsuite>')
                         raise subprocess.CalledProcessError(8, argv)
                     self.assertEqual(argv[0], programs['cmake'])
+                    self.assertEqual(options, {'env': environment})
                     self.assertIn('foundation-tests-core' if route == 'candidate' else 'foundation-tests', argv)
                     return subprocess.CompletedProcess(argv, 0)
                 with patch.object(plan, 'execution_context', return_value=(programs, environment)), \

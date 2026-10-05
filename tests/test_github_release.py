@@ -1734,6 +1734,230 @@ class TransportTests(unittest.TestCase):
         with mock.patch.object(transport,'_run',return_value=self.response(payload=b'{"assets":[]}')):
             with self.assertRaises(ValueError):transport.pages('endpoint')
 
+    @staticmethod
+    def release_row(identity, tag='other'):
+        return dict(id=identity, tag_name=tag, name=tag, draft=True, prerelease=True)
+
+    def release_page(self, rows, next_page=None, **headers):
+        if next_page is not None:
+            headers['Link'] = ('<https://api.github.com/repos/example/project/releases?per_page=100&page='
+                               + str(next_page) + '>; rel="next"')
+        return self.response(payload=json.dumps(rows).encode(), headers=headers)
+
+    def test_initial_release_discovery_preserves_successful_request_count_and_never_waits(self):
+        for responses in ([self.release_page([self.release_row(7, 'new')])],
+                          [self.release_page([self.release_row(1)], 2),
+                           self.release_page([self.release_row(7, 'new')])]):
+            with self.subTest(pages=len(responses)):
+                metrics = G.RequestMetrics(); transport = G.GitHub('example/project', metrics=metrics)
+                remote = G.Remote('example/project', transport)
+                with mock.patch.object(transport, '_run', side_effect=responses) as call:
+                    self.assertEqual(remote.find('new'), self.release_row(7, 'new'))
+                self.assertEqual(call.call_count, len(responses))
+                self.assertEqual(metrics.snapshot()['api_responses'], len(responses))
+                self.assertEqual(call.call_args_list[0].args[0][-1],
+                                 'repos/example/project/releases?per_page=100')
+                if len(responses) > 1:
+                    self.assertEqual(call.call_args_list[1].args[0][-1],
+                                     'repos/example/project/releases?per_page=100&page=2')
+                self.assertTrue(all('--paginate' not in item.args[0] and
+                                    item.args[0][item.args[0].index('--method') + 1] == 'GET'
+                                    for item in call.call_args_list))
+        self.assertFalse(self.sleeps)
+
+    def test_repeated_release_id_restarts_complete_discovery_and_discards_all_prior_pages(self):
+        transport = G.GitHub('example/project'); remote = G.Remote('example/project', transport)
+        responses = [self.release_page([self.release_row(1), self.release_row(7, 'new')], 2),
+                     self.release_page([self.release_row(1)]),
+                     self.release_page([self.release_row(2)], 2),
+                     self.release_page([self.release_row(9, 'new')])]
+        with mock.patch.object(transport, '_run', side_effect=responses) as call:
+            self.assertEqual(remote.find('new'), self.release_row(9, 'new'))
+        self.assertEqual(call.call_count, 4); self.assertEqual(self.sleeps, [3])
+        self.assertEqual(call.call_args_list[0].args, call.call_args_list[2].args)
+        self.assertEqual(call.call_args_list[1].args, call.call_args_list[3].args)
+        self.assertIn('repeated release ID across response pages', self.diagnostics.getvalue())
+
+    def test_release_repetition_is_bounded_and_never_establishes_absence(self):
+        transport = G.GitHub('example/project'); remote = G.Remote('example/project', transport)
+        responses = [self.release_page([self.release_row(1)], 2),
+                     self.release_page([self.release_row(1)])] * 3
+        with mock.patch.object(transport, '_run', side_effect=responses) as call:
+            with self.assertRaisesRegex(G.DeliveryError, 'inventory retry limit exhausted'):
+                remote.find('new', required=False)
+        self.assertEqual(call.call_count, 6); self.assertEqual(self.sleeps, [3, 5])
+        self.assertEqual(transport.wait_remaining, transport.WAIT_BUDGET - 8)
+
+    def test_discarded_release_match_cannot_survive_a_successful_absence_read(self):
+        transport = G.GitHub('example/project'); remote = G.Remote('example/project', transport)
+        responses = [self.release_page([self.release_row(7, 'new')], 2),
+                     self.release_page([self.release_row(7, 'new')]), self.release_page([])]
+        with mock.patch.object(transport, '_run', side_effect=responses) as call:
+            self.assertIsNone(remote.find('new', required=False))
+        self.assertEqual(call.call_count, 3); self.assertEqual(self.sleeps, [3])
+
+    def test_same_page_release_duplicates_remain_nonretryable(self):
+        transport = G.GitHub('example/project')
+        response = self.release_page([self.release_row(1), self.release_row(1)])
+        with mock.patch.object(transport, '_run', return_value=response) as call:
+            with self.assertRaisesRegex(G.DeliveryError, 'duplicate release inventory'):
+                G.Remote('example/project', transport).find('new', required=False)
+        self.assertEqual(call.call_count, 1); self.assertFalse(self.sleeps)
+
+    def test_malformed_release_records_never_gain_inventory_retries(self):
+        invalid = [None, dict(self.release_row(1), id=True), dict(self.release_row(1), tag_name=None),
+                   dict(self.release_row(1), name=None), dict(self.release_row(1), draft=1),
+                   dict(self.release_row(1), prerelease=None)]
+        for row in invalid:
+            for late in (False, True):
+                with self.subTest(row=row, late=late):
+                    transport = G.GitHub('example/project')
+                    responses = ([self.release_page([self.release_row(1)], 2),
+                                  self.release_page([self.release_row(1), row])] if late
+                                 else [self.release_page([row], 2)])
+                    with mock.patch.object(transport, '_run', side_effect=responses) as call:
+                        with self.assertRaises(G.DeliveryError):
+                            G.Remote('example/project', transport).find('new', required=False)
+                    self.assertEqual(call.call_count, len(responses))
+        self.assertFalse(self.sleeps)
+
+    def test_ambiguous_release_tags_remain_errors_despite_an_unrelated_page_shift(self):
+        transport = G.GitHub('example/project')
+        responses = [self.release_page([self.release_row(1), self.release_row(7, 'new')], 2),
+                     self.release_page([self.release_row(1), self.release_row(9, 'new')])]
+        with mock.patch.object(transport, '_run', side_effect=responses) as call:
+            with self.assertRaisesRegex(G.DeliveryError, 'duplicate release tags require inspection'):
+                G.Remote('example/project', transport).find('new')
+        self.assertEqual(call.call_count, 2); self.assertFalse(self.sleeps)
+
+    def test_release_access_and_malformed_stream_failures_do_not_retry_a_seen_page_shift(self):
+        for final in (self.response(401, code=1), self.response(403, code=1),
+                      self.response(payload=b'{'), self.response(payload=b'[{"id":1,"id":2}]')):
+            with self.subTest(final=final.stdout):
+                transport = G.GitHub('example/project')
+                responses = [self.release_page([self.release_row(1)], 2),
+                             self.release_page([self.release_row(1)], 3), final]
+                with mock.patch.object(transport, '_run', side_effect=responses) as call:
+                    with self.assertRaises(G.DeliveryError):
+                        G.Remote('example/project', transport).find('new', required=False)
+                self.assertEqual(call.call_count, 3)
+        self.assertFalse(self.sleeps)
+
+    def test_release_transport_and_inventory_retries_share_one_attempt_limit(self):
+        transport = G.GitHub('example/project'); transport.MAX_ATTEMPTS = 4
+        responses = [self.response(503, code=1), self.release_page([self.release_row(1)], 2),
+                     self.release_page([self.release_row(1)]), self.response(503, code=1),
+                     self.release_page([self.release_row(2)], 2), self.release_page([self.release_row(2)])]
+        with mock.patch.object(transport, '_run', side_effect=responses) as call:
+            with self.assertRaisesRegex(G.DeliveryError, 'attempt limit exhausted'):
+                G.Remote('example/project', transport).find('new', required=False)
+        self.assertEqual(call.call_count, 6); self.assertEqual(self.sleeps, [3, 5, 9])
+
+    def test_release_transport_and_inventory_retries_share_one_request_budget(self):
+        for final in ('http', 'inventory'):
+            with self.subTest(final=final):
+                self.elapsed = 0; self.sleeps.clear()
+                transport = G.GitHub('example/project')
+                responses = [self.release_page([self.release_row(1)], 2),
+                             self.release_page([self.release_row(1)])]
+                if final == 'http':responses.append(self.response(503, code=1))
+                else:responses += [self.release_page([self.release_row(2)], 2),
+                                   self.release_page([self.release_row(2)])]
+                transport.RELEASE_REQUEST_LIMIT = len(responses)
+                with mock.patch.object(transport, '_run', side_effect=responses) as call:
+                    with self.assertRaisesRegex(G.DeliveryError, 'API-request budget exhausted'):
+                        G.Remote('example/project', transport).find('new', required=False)
+                self.assertEqual(call.call_count, len(responses)); self.assertEqual(self.sleeps, [3])
+
+    def test_release_inventory_deadline_and_shared_wait_budget_stop_recovery(self):
+        for limit in ('deadline', 'wait'):
+            with self.subTest(limit=limit):
+                transport = G.GitHub('example/project')
+                if limit == 'deadline':transport.REQUEST_DEADLINE = 2
+                else:transport.wait_remaining = 2
+                responses = [self.release_page([self.release_row(1)], 2),
+                             self.release_page([self.release_row(1)])]
+                with mock.patch.object(transport, '_run', side_effect=responses) as call:
+                    with self.assertRaisesRegex(G.DeliveryError, 'deadline exhausted' if limit == 'deadline'
+                                                else 'wait budget exhausted'):
+                        G.Remote('example/project', transport).find('new', required=False)
+                self.assertEqual(call.call_count, 2)
+        self.assertFalse(self.sleeps)
+
+    def test_inventory_wait_and_transport_wait_charge_the_same_remaining_budget(self):
+        transport = G.GitHub('example/project'); transport.wait_remaining = 4
+        responses = [self.release_page([self.release_row(1)], 2),
+                     self.release_page([self.release_row(1)]), self.response(503, code=1)]
+        with mock.patch.object(transport, '_run', side_effect=responses) as call:
+            with self.assertRaisesRegex(G.DeliveryError, 'wait budget exhausted'):
+                G.Remote('example/project', transport).find('new', required=False)
+        self.assertEqual(call.call_count, 3); self.assertEqual(self.sleeps, [3])
+        self.assertEqual(transport.wait_remaining, 1)
+
+    def test_release_inventory_page_and_complete_response_size_limits_are_not_retried(self):
+        transport = G.GitHub('example/project'); transport.RELEASE_PAGE_LIMIT = 2
+        responses = [self.release_page([self.release_row(1)], 2),
+                     self.release_page([self.release_row(2)], 3)]
+        with mock.patch.object(transport, '_run', side_effect=responses) as call:
+            with self.assertRaisesRegex(G.DeliveryError, 'page limit exhausted'):
+                G.Remote('example/project', transport).find('new', required=False)
+        self.assertEqual(call.call_count, 2)
+        transport = G.GitHub('example/project')
+        responses = [self.release_page([self.release_row(1)], 2), self.release_page([self.release_row(2)])]
+        with mock.patch.object(transport, '_run', side_effect=responses) as call, \
+                mock.patch.object(G, 'HTTP_JSON_LIMIT', max(len(row.stdout) for row in responses)):
+            with self.assertRaisesRegex(G.DeliveryError, 'pagination exceeds supported inventory limit'):
+                G.Remote('example/project', transport).find('new', required=False)
+        self.assertEqual(call.call_count, 2); self.assertFalse(self.sleeps)
+
+    def test_release_pagination_links_cannot_escape_or_skip_the_bounded_inventory(self):
+        links = ['<https://api.github.com/repos/example/project/releases?per_page=100&page=3>; rel="next"',
+                 '<https://untrusted.invalid/releases?per_page=100&page=2>; rel="next"',
+                 '<https://api.github.com/repos/other/project/releases?per_page=100&page=2>; rel="next"',
+                 '<https://api.github.com/repos/example/project/releases?per_page=99&page=2>; rel="next"',
+                 '<https://api.github.com/repos/example/project/releases?per_page=100&page=2&page=3>; rel="next"',
+                 '<https://api.github.com/repos/example/project/releases?per_page=100&page>; rel="next"',
+                 '<https://api.github.com/repos/example/project/releases?per_page=100&page=9>; rel="last"',
+                 '<https://api.github.com/repos/example/project/releases?per_page=100&page=2>; rel="next", '
+                 '<https://api.github.com/repos/example/project/releases?per_page=100&page=1>; rel="last"',
+                 '<https://api.github.com/repos/example/project/releases?per_page=100&page=2>; rel="first"',
+                 '<https://api.github.com/repos/example/project/releases?per_page=100&page=1>; rel="prev"',
+                 'opaque private header']
+        links.append(links[0] + ', ' + links[0])
+        for link in links:
+            with self.subTest(link=link):
+                transport = G.GitHub('example/project')
+                with mock.patch.object(transport, '_run', return_value=self.release_page([], Link=link)) as call:
+                    with self.assertRaises(G.DeliveryError) as caught:
+                        G.Remote('example/project', transport).find('new', required=False)
+                self.assertEqual(call.call_count, 1); self.assertNotIn('private', str(caught.exception))
+        self.assertFalse(self.sleeps)
+
+    def test_release_pagination_repository_id_links_preserve_safe_endpoint_and_no_trailing_call(self):
+        transport = G.GitHub('example/project')
+        link = ('<https://api.github.com/repositories/123/releases?page=2&per_page=100>; rel="next", '
+                '<https://api.github.com/repositories/123/releases?page=2&per_page=100>; rel="last"')
+        final = '<https://api.github.com/repositories/123/releases?page=1&per_page=100>; rel="prev"'
+        responses = [self.release_page([self.release_row(1)], Link=link),
+                     self.release_page([self.release_row(7, 'new')], Link=final)]
+        with mock.patch.object(transport, '_run', side_effect=responses) as call:
+            self.assertEqual(G.Remote('example/project', transport).find('new'), self.release_row(7, 'new'))
+        self.assertEqual(call.call_count, 2)
+        self.assertEqual(call.call_args_list[1].args[0][-1],
+                         'repos/example/project/releases?per_page=100&page=2')
+        self.assertFalse(self.sleeps)
+
+    def test_release_pagination_canonical_repository_case_preserves_safe_endpoint(self):
+        transport = G.GitHub('Example/Project')
+        responses = [self.release_page([self.release_row(1)], 2),
+                     self.release_page([self.release_row(7, 'new')])]
+        with mock.patch.object(transport, '_run', side_effect=responses) as call:
+            self.assertEqual(G.Remote('Example/Project', transport).find('new'), self.release_row(7, 'new'))
+        self.assertEqual(call.call_count, 2)
+        self.assertEqual(call.call_args_list[1].args[0][-1],
+                         'repos/Example/Project/releases?per_page=100&page=2')
+        self.assertFalse(self.sleeps)
+
     def test_pagination_rejects_partial_or_ambiguous_complete_output(self):
         transport=G.GitHub('example/project')
         for raw in (b'["\xff"]', b'', b'[] trailing', b'[] {"id":1}', b'[{"id":1}] [{"id":2,"id":3}]',
