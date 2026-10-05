@@ -10,7 +10,8 @@ namespace foundation::editor {
 
 // Startup configuration is set by the composition root before constructing a
 // session. Project code is never loaded or executed by opening a design.
-void configure_launch(std::filesystem::path project = {}, std::filesystem::path root = {});
+void configure_launch(std::filesystem::path project = {}, std::filesystem::path root = {},
+                      std::filesystem::path executable = {});
 
 class Application {
 public:

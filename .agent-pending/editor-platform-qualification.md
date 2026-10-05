@@ -46,6 +46,19 @@ Local evidence is in `build/editor-build-dev/` (build logs, shared-suite receipt
 they are not passing evidence. Build outputs are local ignored files, not a new
 artifact retention or publication requirement.
 
+Focused usability follow-up from commit `4bff975f0b3cec536f8f7defd438adbdc1e52b41`,
+2026-10-05: all ten local editor suites passed after moving path entry into the
+editor window and adding named form/flow creation, Rename and Example access.
+The rebuilt FLTK SDK editor is `build/editor-fltk-sdk/foundation-editor-fltk`.
+A native FLTK probe verified clipboard paste/replacement, stable focus through
+repeated ticks, invalid-path correction and cancellation. Under an isolated KWin
+window manager on Xvfb, minimizing and restoring the open path-entry window
+preserved the pasted text and subsequent paste behavior. Evidence and exact
+source/library identities are in `build/editor-usability-probe/compile-receipt.json`,
+`result.json` and `wm-result.json`; UI captures are in
+`build/editor-app-checks/usability-captures/`. This focused check adds no SDK,
+application CI or release dependency and does not expand the platform claims below.
+
 The outstanding broader scope is qualification of actual editor use on selected
 native targets/backends: Windows source file/process adapters, native ARM64,
 and disconnected editor builds/runtime using an already retained matching native

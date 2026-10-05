@@ -137,7 +137,7 @@
       "outputs": [],
       "params": {},
       "symbol": "foundation::editor::demo::sum_sink",
-      "x": 568,
+      "x": 648,
       "y": 24
     },
     {
@@ -159,7 +159,7 @@
       "outputs": [],
       "params": {},
       "symbol": "foundation::editor::demo::difference_sink",
-      "x": 568,
+      "x": 648,
       "y": 124
     },
     {
@@ -181,7 +181,7 @@
       "outputs": [],
       "params": {},
       "symbol": "foundation::editor::demo::trace_sink",
-      "x": 568,
+      "x": 648,
       "y": 224
     },
     {
@@ -203,7 +203,7 @@
       "outputs": [],
       "params": {},
       "symbol": "foundation::editor::demo::metric_sink",
-      "x": 568,
+      "x": 648,
       "y": 324
     }
   ],

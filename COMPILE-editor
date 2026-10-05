@@ -16,7 +16,11 @@ sudo apt-get install git build-essential cmake ninja-build python3 libfltk1.3-de
 ./build.sh editor build dev --backend fltk --build-dir build/editor-fltk
 ./build/editor-fltk/foundation-editor-fltk
 
-Choose New for a project directory, or Open for a project JSON file.
+Choose Example for a receiver form and a 2-input/4-output flow, or launch it directly:
+./build/editor-fltk-sdk/foundation-editor-fltk --project editor/examples/demo/project.json
+The example is editable; Save updates its files in editor/examples/demo.
+Choose New or Open, paste the directory or JSON path, and press Enter; Escape cancels.
+New form/flow asks for its name; Rename beside the document picker changes it later.
 Double-click a widget or flow block to edit its ordinary source file.
 To open the editor's own design, append --project editor/self/project.json --root .
 

@@ -62,13 +62,23 @@ cannot be reused for the editor.
 
 ## Normal editing
 
-1. Choose **New** and a project directory, or **Open** and a project JSON file.
-   A project directory selects `design/project.json`. The command line accepts
+1. Choose **Example** to open the [receiver form and MIMO flow](examples/demo/README.md),
+   **New** for a project directory, or **Open** for a project JSON file.
+   New/Open and Save-as use a path field inside the editor window: type or paste
+   a path and press Enter to accept or Escape to cancel. The window remains
+   minimizable while entering a path. A project directory selects
+   `design/project.json`. The command line accepts
    `--project PATH` and an optional `--root PATH` for a wider existing project.
+   Example opens the actual editable `editor/examples/demo` project; Save changes
+   its design/generated files, and saving source changes its ordinary C++ files.
+   Opening it executes no project code and writes no files. Run the editor from
+   the repository root if it cannot locate the example.
 2. Choose **Forms**, a form, a widget kind and **Add widget**. Select an element,
    drag it to move, resize with its handle, or change its label/position/size and
-   **Apply**. **New form**, **Duplicate**, **Delete**, **Undo** and **Redo** provide
-   the small set of layout operations. Wheel scroll pans; Ctrl+wheel zooms.
+   **Apply**. **New form** asks for a name; **Rename** beside the document picker
+   changes the selected form's displayed name while keeping its stable ID.
+   **Duplicate**, **Delete**, **Undo** and **Redo** provide the small set of layout
+   operations. Wheel scroll pans; Ctrl+wheel zooms.
 3. Choose an **Event** and double-click the widget, or use **Edit code**. The
    modal window edits the complete ordinary source file. A missing binding gets
    a new header and a small typed handler skeleton on this explicit action.
@@ -78,7 +88,9 @@ cannot be reused for the editor.
    multiline/read-only behavior and dropdown options. Option rows use
    `ID | label | value`; IDs give stable selections. Other schema fields can be
    edited directly in the JSON document.
-5. Choose **Flows**, a flow and **Add block**. **Details** sets its factory,
+5. Choose **Flows**, a flow and **Add block**. **New flow** asks for a name;
+   **Rename** changes the selected flow's displayed name and preserves its ID.
+   **Details** sets its factory,
    source/header paths, input/output lists and parameters. Port rows use
    `name : C++ type`, one per line; parameter rows use `name = value`.
    Select an output and an input to connect them. Select a wire to delete it.

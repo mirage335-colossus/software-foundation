@@ -21,7 +21,7 @@ inline bool configure(int argc, char** argv) {
         else if (argument == "--smoke-test" || argument == "--self-check" || argument == "--smoke") smoke = true;
         else throw std::invalid_argument("Usage: foundation-editor-HOST [--project PATH] [--root PATH] [--smoke-test]");
     }
-    configure_launch(project, root);
+    configure_launch(project, root, utf8_path(argv[0]));
     return smoke;
 }
 // The existing generic runners receive only their supported physical-host flags.

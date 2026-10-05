@@ -20,7 +20,7 @@
 
 namespace foundation::editor {
 namespace {
-std::filesystem::path launch_project, launch_root;
+std::filesystem::path launch_project, launch_root, launch_executable;
 std::string number(double n) { std::ostringstream s; s << std::setprecision(8) << n; return s.str(); }
 std::string trim(std::string s) {
     const auto a = s.find_first_not_of(" \t\r\n");
@@ -59,8 +59,8 @@ std::string display_log(std::string_view raw) {
     return out;
 }
 }
-void configure_launch(std::filesystem::path project,std::filesystem::path root) {
-    launch_project=std::move(project); launch_root=std::move(root);
+void configure_launch(std::filesystem::path project,std::filesystem::path root,std::filesystem::path executable) {
+    launch_project=std::move(project); launch_root=std::move(root);launch_executable=std::move(executable);
 }
 
 struct Application::Impl {
@@ -77,15 +77,14 @@ struct Application::Impl {
     std::unique_ptr<CodeBuffer> code;
     ProcessRunner process;
     ProcessStatus process_status;
-    gui::ServiceQueue services;
-    std::uint64_t service_id=0, epoch=1, generation=1;
+    std::uint64_t epoch=1, generation=1;
     std::map<std::string,std::string> fields;
     std::vector<std::string> file_names;
     std::string mode="forms", document, selected, palette="button", event="activate";
     std::string modal, status="Open a project, or create a new one.", log, prompt_action;
-    std::string saved_design, pending_action, previous_modal;
+    std::string saved_design, pending_action, previous_modal, prompt_previous_modal;
     bool error=false, pending=false, stopped=false, preview=false, run_after_build=false;
-    bool reveal_code=false;
+    bool reveal_code=false, reveal_prompt=false;
     struct WidgetLife { gui::WidgetSpec spec; bool active=false; std::uint64_t scene=0; };
     std::map<std::string,WidgetLife> widget_lives;
     std::uint64_t widget_generation=0;
@@ -110,6 +109,17 @@ struct Application::Impl {
     Form* form() {
         for(auto& f:project.forms) if(f.id==document) return &f;
         return nullptr;
+    }
+    Flow* flow() { for(auto& f:project.flows)if(f.id==document)return &f;return nullptr; }
+    std::string document_name() {
+        if(mode=="forms"&&form())return form()->label;
+        if(mode=="flows"&&flow())return flow()->label;
+        throw std::runtime_error("Select a form or flow first.");
+    }
+    void restore_history(Project restored) {
+        project=std::move(restored);
+        if((mode=="forms"&&!form())||(mode=="flows"&&!flow()))choose_document();
+        else sync_fields();
     }
     Control* control() {
         for(auto& f:project.forms) for(auto& c:f.controls) if(c.id==selected) return &c;
@@ -199,7 +209,7 @@ struct Application::Impl {
         auto original=next->inspect("design/project.json");
         if(original.identity.exists)throw std::runtime_error("That project already exists. Use Open.");
         if(!keep_design)project=empty_project(root.filename().string());
-        if(project.forms.empty())project.forms.push_back(Form{"form1","Main"});
+        if(project.forms.empty()){Form f;f.id="form1";f.label="Main";project.forms.push_back(std::move(f));}
         if(project.flows.empty())project.flows.push_back(Flow{"flow1","Main flow"});
         files=std::move(next); design_path="design/project.json"; design_original=std::move(original);
         saved_design.clear(); history.reset(project); ++generation; modal.clear(); code.reset();
@@ -221,10 +231,57 @@ struct Application::Impl {
         success("Saved design and generated C++."); refresh_files();
     }
     void prompt(std::string action,std::string title,std::string value={}) {
-        prompt_action=std::move(action);
-        gui::ServiceRequest req; req.id=++service_id; req.kind=gui::ServiceKind::prompt;
-        req.title=std::move(title); req.value=std::move(value); req.byte_limit=4096;
-        if(!services.enqueue(std::move(req)))throw std::runtime_error("Another prompt is active.");
+        if(modal=="prompt")throw std::runtime_error("Finish the current prompt first.");
+        prompt_action=std::move(action);fields["prompt.title"]=std::move(title);fields["prompt.value"]=std::move(value);
+        prompt_previous_modal=modal;modal="prompt";reveal_prompt=true;
+        success(fields["prompt.title"]);
+    }
+    void accept_prompt() {
+        const auto action=prompt_action;
+        const auto value=fields["prompt.value"];
+        if(value.empty()||trim(value).empty())throw std::invalid_argument("Enter a name or path first.");
+        if(action=="open")open(value);
+        else if(action=="new")create(value);
+        else if(action=="save_as") {
+            create(value,true);
+            if(!error&&!pending_action.empty()) {
+                auto next=std::exchange(pending_action,{});
+                prompt_action.clear();prompt_previous_modal.clear();
+                require_clean(next);return; // The continuation may open another prompt.
+            }
+        } else if(action=="rename"||action=="new_document") {
+            const auto name=trim(value);
+            if(name.size()>256)throw std::invalid_argument("Use a name of at most 256 UTF-8 bytes.");
+            if(action=="new_document") {
+                if(mode=="flows"){Flow f{unique("flow"),name};document=f.id;project.flows.push_back(std::move(f));}
+                else if(mode=="forms"){Form f;f.id=unique("form");f.label=name;document=f.id;project.forms.push_back(std::move(f));}
+                else throw std::runtime_error("Choose Forms or Flows first.");
+                selected.clear();connection.reset();pan={};
+            } else if(mode=="forms"&&form())form()->label=name;
+            else if(mode=="flows"&&flow())flow()->label=name;
+            else throw std::runtime_error("Select a form or flow first.");
+            modal=prompt_previous_modal;changed();sync_fields();success(action=="rename"?"Renamed to "+name:"Created "+name);
+        }
+        prompt_action.clear();prompt_previous_modal.clear();
+    }
+    void open_example() {
+        std::vector<std::filesystem::path> starts{std::filesystem::current_path()};
+        if(!launch_executable.empty())starts.push_back(std::filesystem::absolute(launch_executable).parent_path());
+        if(!launch_root.empty())starts.push_back(std::filesystem::absolute(launch_root));
+        if(files)starts.push_back(files->root());
+        for(auto path:starts) {
+            path=path.lexically_normal();
+            while(!path.empty()) {
+                const auto example=path/"editor/examples/demo/project.json";
+                if(std::filesystem::is_regular_file(example)) {
+                    open(example);mode="forms";choose_document();
+                    success("Example opened. Choose Forms or Flows; double-click an element for C++ source.");
+                    return;
+                }
+                const auto parent=path.parent_path();if(parent==path)break;path=parent;
+            }
+        }
+        throw std::runtime_error("Example not found. Run from the software-foundation directory, or Open editor/examples/demo/project.json.");
     }
     void require_clean(std::string action) {
         if(dirty()||(code&&code->dirty())) {
@@ -234,6 +291,7 @@ struct Application::Impl {
         }
         if(action=="open")prompt("open","Open project JSON or directory",fields["project.path"]);
         else if(action=="new")prompt("new","New project directory");
+        else if(action=="example")open_example();
         else { owner.shutdown(); adapter.close(); }
     }
     void select(std::string id) {
@@ -359,6 +417,13 @@ struct Application::Impl {
         if(snapshot.text.find('\0')!=std::string::npos)
             throw std::runtime_error("The source contains zero bytes; use an external binary editor. No bytes were changed.");
         code=std::make_unique<CodeBuffer>(std::move(snapshot)); modal="code";
+        // Definitions inside a namespace usually spell only the last part of
+        // a qualified symbol. Navigation is a hint, never an opening failure.
+        if(!anchor.empty()&&code->find(anchor)==std::string::npos) {
+            const auto separator=anchor.rfind("::");
+            if(separator!=std::string::npos)anchor=anchor.substr(separator+2);
+            if(anchor.empty()||code->find(anchor)==std::string::npos)anchor.clear();
+        }
         fields["code.find"]=std::move(anchor);fields["code.text"]=code->text();
         reveal_code=true;
         success("Editing "+path.generic_string());
@@ -473,9 +538,10 @@ struct Application::Impl {
     void action(std::string_view id) {
         if(id=="editor.open")require_clean("open");
         else if(id=="editor.new")require_clean("new");
+        else if(id=="editor.example")require_clean("example");
         else if(id=="editor.save"){if(files)save();else prompt("save_as","Save project in directory");}
-        else if(id=="editor.undo") {if(auto p=history.undo()){project=std::move(*p);sync_fields();success("Undone.");}}
-        else if(id=="editor.redo") {if(auto p=history.redo()){project=std::move(*p);sync_fields();success("Redone.");}}
+        else if(id=="editor.undo") {if(auto p=history.undo()){restore_history(std::move(*p));success("Undone.");}}
+        else if(id=="editor.redo") {if(auto p=history.redo()){restore_history(std::move(*p));success("Redone.");}}
         else if(id=="editor.preview"){preview=!preview;success(preview?"Layout preview; application code is not executed.":"Design mode.");}
         else if(id=="editor.build")build(false);
         else if(id=="editor.run")build(true);
@@ -483,7 +549,10 @@ struct Application::Impl {
         else if(id=="editor.add")add_item();
         else if(id=="editor.remove")remove();
         else if(id=="editor.duplicate")duplicate();
-        else if(id=="editor.document.new") {if(mode=="flows"){Flow f{unique("flow"),"New flow"};document=f.id;project.flows.push_back(std::move(f));}else{Form f;f.id=unique("form");f.label="New form";document=f.id;project.forms.push_back(std::move(f));}selected.clear();changed();sync_fields();}
+        else if(id=="editor.document.new")prompt("new_document",mode=="flows"?"New flow name":"New form name",mode=="flows"?"New flow":"New form");
+        else if(id=="editor.document.rename")prompt("rename",mode=="flows"?"Rename flow":"Rename form",document_name());
+        else if(id=="prompt.accept")accept_prompt();
+        else if(id=="prompt.cancel"){modal=std::exchange(prompt_previous_modal,{});prompt_action.clear();reveal_prompt=false;success("Cancelled.");}
         else if(id=="editor.apply")apply_properties();
         else if(id=="editor.details")begin_details();
         else if(id=="editor.code")edit_code();
@@ -528,11 +597,25 @@ struct Application::Impl {
         if(std::any_of(values.begin(),values.end(),[&](const auto& v){return v.first==value;}))w.state.selected=value;
     }
     void draw_modal(double width,double height) {
-        const auto x=std::max(8.0,width*.07),y=std::max(55.0,height*.06),w=std::max(380.0,width-2*x),h=std::max(300.0,height-y-45);
+        const bool compact=modal=="prompt";
+        const auto w=compact?std::min(760.0,width-32):std::max(380.0,width*.86);
+        const auto x=std::max(8.0,(width-w)/2),y=std::max(55.0,height*.06),h=compact?230.0:std::max(300.0,height-y-45);
         const std::string parent="modal.root";
         auto& group=add(gui::Kind::group,parent,"",{x,y,w,h});group.state.content_size={w,h};
         view.modal_root=group.spec.key;
-        if(modal=="code"&&code) {
+        if(modal=="prompt") {
+            const bool naming=prompt_action=="rename"||prompt_action=="new_document";
+            label(fields["prompt.title"],x+12,y+12,w-24,parent);
+            auto& value=input("prompt.value",naming?"Name":"Project path",{x+12,y+44,w-24,32},false,parent);
+            value.spec.text_policy.submit=gui::SubmitKey::enter;
+            auto& message=add(gui::Kind::label,"prompt.message","",{x+12,y+88,w-24,74},parent);
+            message.state.text=error?status:naming?"Enter the displayed name of the form or flow.":prompt_action=="open"?"Paste a project JSON filename or a directory containing design/project.json.":"Enter the directory for the new project.";
+            message.state.wrap=gui::TextWrap::word;
+            message.state.font.tone=error?gui::Tone::error:gui::Tone::muted;
+            button("prompt.accept",prompt_action=="open"?"Open":prompt_action=="rename"?"Rename":prompt_action=="save_as"?"Save":"Create",x+12,y+h-46,100,parent);
+            button("prompt.cancel","Cancel",x+124,y+h-46,100,parent);
+            view.key_bindings.push_back({gui::ShortcutKey::escape,{"prompt.cancel",generation}});
+        } else if(modal=="code"&&code) {
             label(code->path().generic_string()+(code->dirty()?"  (modified)":""),x+12,y+8,w-24,parent);
             double bx=x+12;
             for(const auto& [id,text]:std::array<std::pair<const char*,const char*>,7>{{{"code.save","Save"},{"code.undo","Undo"},{"code.redo","Redo"},{"code.reload","Reload"},{"code.external","External"},{"code.close","Close"},{"code.discard","Discard"}}}) {
@@ -591,6 +674,7 @@ struct Application::Impl {
             if(widget.spec.parent.empty())widget.spec.parent="editor.root";
             view.widgets.push_back(std::move(widget));
         }
+        button("editor.example","Example",710,8,90);
         const bool running=process.running();
         for(auto& widget:view.widgets) {
             if(widget.spec.key.id=="editor.stop")widget.state.enabled=running;
@@ -605,6 +689,8 @@ struct Application::Impl {
         else for(const auto& f:project.forms)docs.emplace_back(f.id,f.label);
         choice("editor.document","Document",{198,74,260,30},docs,document);
         button("editor.document.new",mode=="flows"?"New flow":"New form",468,74,100);
+        auto& rename=button("editor.document.rename","Rename",580,74,94);
+        rename.state.enabled=(mode=="forms"&&form())||(mode=="flows"&&flow());
         button("editor.zoom.out","-",width-120,74,30);button("editor.zoom.reset",number(zoom*100)+"%",width-85,74,66);
         button("editor.zoom.in","+",width-155,74,30);
         const double body_y=120,body_h=std::max(230.0,height-270),right=width-235;
@@ -661,6 +747,11 @@ struct Application::Impl {
         for(auto& key:view.key_bindings)key.target=widget_lives.at(key.target.id).spec.key;
         ++view.revision;
         adapter.present(view);pending=false;
+        if(reveal_prompt&&modal=="prompt") {
+            reveal_prompt=false;
+            const auto key=widget_lives.at("prompt.value").spec.key;
+            adapter.focus(key);adapter.text_selection(key,{0,fields["prompt.value"].size()});
+        }
         if(reveal_code&&modal=="code") {
             reveal_code=false;
             if(!fields["code.find"].empty())source_find();
@@ -676,17 +767,12 @@ std::uint64_t Application::input_epoch()const noexcept{return impl_->epoch;}
 void Application::retry_presentation(){if(impl_->pending)impl_->publish();}
 void Application::shutdown()noexcept{
     if(!impl_||impl_->stopped)return;
-    impl_->stopped=true;impl_->services.shutdown();
+    impl_->stopped=true;
     try{if(impl_->process.running())(void)impl_->process.cancel();}catch(...){}
 }
 void Application::invoke(std::string_view action){impl_->action(action);}
-std::optional<gui::ServiceRequest> Application::next_service(){return impl_->services.begin_next();}
-bool Application::complete_service(gui::ServiceResult result){
-    auto& p=*impl_;if(!p.services.complete(result))return false;
-    if(result.status==gui::ServiceStatus::success){try{if(p.prompt_action=="open")p.open(result.value);else if(p.prompt_action=="new")p.create(result.value);else if(p.prompt_action=="save_as"){p.create(result.value,true);if(!p.pending_action.empty()){auto next=std::exchange(p.pending_action,{});p.require_clean(next);}}}catch(const std::exception& e){p.failure(e.what());}}
-    else if(result.status==gui::ServiceStatus::error)p.failure(result.error);
-    p.prompt_action.clear();p.publish();return true;
-}
+std::optional<gui::ServiceRequest> Application::next_service(){return std::nullopt;}
+bool Application::complete_service(gui::ServiceResult){return false;}
 void Application::handle(gui::Event event){
     auto& p=*impl_;if(p.stopped||p.adapter.closed())return;
     if(std::holds_alternative<gui::CloseEvent>(event)) {
@@ -702,6 +788,8 @@ void Application::handle(gui::Event event){
                 if constexpr(std::is_same_v<T,gui::EditText>){
                     if(id=="code.text"&&p.code)p.code->set_text(input.value);
                     p.fields[id]=input.value;
+                } else if constexpr(std::is_same_v<T,gui::SubmitText>){
+                    if(id=="prompt.value")p.action("prompt.accept");
                 } else if constexpr(std::is_same_v<T,gui::ChooseOption>){
                     if(id=="editor.mode"){p.mode=input.id;p.choose_document();}
                     else if(id=="editor.document"){p.document=input.id;p.choose_document();}
@@ -753,6 +841,8 @@ void Application::qualify(const std::function<void()>& present){
     activate("editor.redo");require(p.form()->controls.size()==count+1,"Editor redo failed.");
     activate("editor.preview");require(p.preview,"Editor preview failed.");activate("editor.preview");
     p.saved_design=write_project(p.project); // Smoke uses memory only, never writes a project.
-    p.code.reset();p.modal.clear();present();
+    p.code.reset();p.modal.clear();
+    activate("editor.open");require(p.modal=="prompt"&&!next_service(),"Editor path entry used a native modal service.");
+    activate("prompt.cancel");require(p.modal.empty(),"Editor path entry did not cancel.");present();
 }
 } // namespace foundation::editor

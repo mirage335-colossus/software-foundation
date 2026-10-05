@@ -50,6 +50,14 @@ struct Temporary {
         std::filesystem::remove_all(root, error);
     }
 };
+struct WorkingDirectory {
+    std::filesystem::path previous = std::filesystem::current_path();
+    explicit WorkingDirectory(const std::filesystem::path& path) { std::filesystem::current_path(path); }
+    ~WorkingDirectory() {
+        std::error_code error;
+        std::filesystem::current_path(previous, error);
+    }
+};
 const gui::Widget* find(const gui::Snapshot& snapshot, std::string_view id) {
     const auto item = std::find_if(snapshot.widgets.begin(), snapshot.widgets.end(),
         [&](const auto& widget) { return widget.spec.key.id == id; });
@@ -87,8 +95,9 @@ struct Session {
                               64 * 1024 * 1024,
                               [this](const gui::TextMeasureRequest& request) { return metrics.measure_text(request); }};
     std::unique_ptr<Application> application;
-    explicit Session(const std::filesystem::path& project = {}, const std::filesystem::path& root = {}) {
-        configure_launch(project, root);
+    explicit Session(const std::filesystem::path& project = {}, const std::filesystem::path& root = {},
+                     const std::filesystem::path& executable = {}) {
+        configure_launch(project, root, executable);
         application = std::make_unique<Application>(adapter);
         healthy("initial presentation");
     }
@@ -412,6 +421,232 @@ void editing_regressions(const std::filesystem::path& root) {
             new_binding->file != "src/legacy.hpp" && read(root / "src/legacy.hpp") == legacy_bytes,
             "New event source is not independent of the retained legacy handler");
 }
+void path_prompt_regressions(const std::filesystem::path& root, const std::filesystem::path& captures) {
+    write(root / "design/project.json", write_project(initial_project()));
+    write(root / "src/handlers.hpp", "#pragma once\n// Existing ordinary source.\n");
+    const auto before = inventory(root);
+    Session session(root / "design/project.json", root);
+    session.activate("editor.open");
+    require(session.view().modal_root && session.view().modal_root->id == "modal.root" &&
+            find(session.view(), "prompt.value") && find(session.view(), "prompt.accept") &&
+            find(session.view(), "prompt.cancel"), "Open did not use the editor's same-window prompt");
+    require(!session.application->next_service(), "Open queued a native prompt that can block the host window manager");
+    capture(session.view(), captures, "editor-open-prompt");
+    const auto add_key = widget(session.view(), "editor.add").spec.key;
+    require(session.adapter.send(gui::WidgetEvent{add_key, gui::Activate{}}) == gui::Delivery::ignored,
+            "Same-window prompt left background project editing active");
+    session.activate("prompt.cancel");
+    require(!session.view().modal_root && session.objects() == 1 && inventory(root) == before,
+            "Cancelling Open changed the current project or source files");
+    session.activate("editor.open");
+    const auto invalid = (root / "does-not-exist/project.json").string();
+    session.edit("prompt.value", invalid);
+    session.activate("prompt.accept", false);
+    require(find(session.view(), "prompt.value") && widget(session.view(), "prompt.value").state.text == invalid &&
+            session.view().modal_root && inventory(root) == before,
+            "Invalid Open path closed the prompt, lost its input or changed project files");
+    session.activate("prompt.cancel");
+    session.activate("editor.new");
+    require(find(session.view(), "prompt.value") && !session.application->next_service(),
+            "New project did not use the same-window path prompt");
+    session.edit("prompt.value", (root / "cancelled-new").string());
+    session.activate("prompt.cancel");
+    require(session.objects() == 1 && inventory(root) == before && !std::filesystem::exists(root / "cancelled-new"),
+            "Cancelling New replaced the open project or created a directory");
+    session.activate("editor.open");
+    session.edit("prompt.value", root.string());
+    session.activate("prompt.accept");
+    require(!session.view().modal_root && session.objects() == 1 && inventory(root) == before,
+            "Open did not accept a project directory without modifying ordinary files");
+    {
+        Session unsaved;
+        unsaved.activate("editor.save");
+        require(find(unsaved.view(), "prompt.value") && !unsaved.application->next_service(),
+                "Save-as queued a native path prompt");
+        const auto destination = root / "saved-new";
+        unsaved.edit("prompt.value", destination.string());
+        unsaved.activate("prompt.accept");
+        require(!unsaved.view().modal_root && std::filesystem::is_regular_file(destination / "design/project.json"),
+                "Same-window Save-as did not persist the new project");
+    }
+    {
+        Session unsaved;
+        unsaved.activate("editor.document.new"); unsaved.edit("prompt.value", "Unsaved memory form"); unsaved.activate("prompt.accept");
+        unsaved.activate("editor.open"); unsaved.activate("unsaved.save");
+        const auto destination = root / "saved-before-open";
+        unsaved.edit("prompt.value", destination.string()); unsaved.activate("prompt.accept");
+        require(find(unsaved.view(), "prompt.value") && !unsaved.application->next_service() &&
+                std::filesystem::is_regular_file(destination / "design/project.json"),
+                "Saving an unsaved design did not resume its pending Open prompt");
+        unsaved.edit("prompt.value", root.string()); unsaved.activate("prompt.accept");
+        require(!unsaved.view().modal_root && unsaved.objects() == 1 &&
+                widget(unsaved.view(), "editor.document").state.selected == "main" &&
+                saved_project(destination).forms.front().label == "Unsaved memory form",
+                "Resumed Open prompt lost its action or failed to retain the saved memory form");
+    }
+}
+void document_name_regressions(const std::filesystem::path& root, const std::filesystem::path& captures) {
+    auto project = initial_project();
+    Block source; source.id = "source"; source.label = "Source"; source.flow = "main_flow";
+    source.factory = "fixture::source"; source.header = "src/blocks.hpp"; source.file = source.header;
+    source.outputs = {{"out", "float", true}};
+    Block sink; sink.id = "sink"; sink.label = "Sink"; sink.flow = "main_flow";
+    sink.factory = "fixture::sink"; sink.header = "src/blocks.hpp"; sink.file = sink.header;
+    sink.inputs = {{"in", "float", true}};
+    project.blocks = {source, sink}; project.edges.push_back({"samples", "source", "out", "sink", "in", 16, 0});
+    write(root / "design/project.json", write_project(project));
+    write(root / "src/handlers.hpp", "#pragma once\n// on_start remains ordinary source.\n");
+    write(root / "src/blocks.hpp", "#pragma once\n// source and sink remain ordinary source.\n");
+    const auto handler_bytes = read(root / "src/handlers.hpp");
+    const auto block_bytes = read(root / "src/blocks.hpp");
+    std::string new_form_id, new_flow_id;
+    {
+        Session session(root / "design/project.json", root);
+        session.activate("editor.document.new");
+        require(widget(session.view(), "prompt.value").state.text == "New form" && !session.application->next_service(),
+                "New form omitted its editable name prompt");
+        session.activate("prompt.cancel");
+        require(widget(session.view(), "editor.document").state.options.size() == 1,
+                "Cancelled form-name prompt created a form");
+        session.activate("editor.document.new");
+        session.edit("prompt.value", "  "); session.activate("prompt.accept", false);
+        require(find(session.view(), "prompt.value") && widget(session.view(), "prompt.value").state.text == "  " &&
+                widget(session.view(), "editor.document").state.options.size() == 1,
+                "Empty form name closed the prompt, lost input or created a form");
+        session.send("prompt.value", gui::EditText{"Device settings", "  "}, false);
+        session.send("prompt.value", gui::SubmitText{});
+        new_form_id = widget(session.view(), "editor.document").state.selected.value_or("");
+        require(!new_form_id.empty() && new_form_id != "main" && session.objects() == 0,
+                "Named form creation did not select a new stable identity");
+        session.activate("editor.undo");
+        require(widget(session.view(), "editor.document").state.options.size() == 1 &&
+                widget(session.view(), "editor.document").state.selected == "main",
+                "Undo of form creation did not restore a valid selected document");
+        session.activate("editor.redo"); session.choose("editor.document", new_form_id);
+        session.activate("editor.document.rename");
+        require(widget(session.view(), "prompt.value").state.text == "Device settings",
+                "Rename form did not prefill the selected form's name");
+        capture(session.view(), captures, "editor-name-prompt");
+        session.edit("prompt.value", "Device controls"); session.activate("prompt.accept");
+        require(widget(session.view(), "editor.document").state.selected == new_form_id,
+                "Renaming a form changed its stable identity");
+        session.activate("editor.undo"); session.activate("editor.document.rename");
+        require(widget(session.view(), "prompt.value").state.text == "Device settings", "Undo did not restore the form name");
+        session.activate("prompt.cancel"); session.activate("editor.redo");
+        session.activate("editor.document.rename");
+        require(widget(session.view(), "prompt.value").state.text == "Device controls", "Redo did not restore the form name");
+        session.activate("prompt.cancel");
+        session.choose("editor.document", "main"); session.activate("editor.document.rename");
+        session.edit("prompt.value", "Primary controls"); session.activate("prompt.accept");
+        session.choose("editor.mode", "flows");
+        session.activate("editor.document.new");
+        require(widget(session.view(), "prompt.value").state.text == "New flow", "New flow omitted its editable name prompt");
+        session.edit("prompt.value", "Capture processing"); session.activate("prompt.accept");
+        new_flow_id = widget(session.view(), "editor.document").state.selected.value_or("");
+        require(!new_flow_id.empty() && new_flow_id != "main_flow", "Named flow creation did not select a stable identity");
+        session.activate("editor.undo");
+        require(widget(session.view(), "editor.document").state.options.size() == 1 &&
+                widget(session.view(), "editor.document").state.selected == "main_flow",
+                "Undo of flow creation did not restore a valid selected document");
+        session.activate("editor.redo"); session.choose("editor.document", new_flow_id);
+        session.activate("editor.document.rename"); session.edit("prompt.value", "Filtered capture"); session.activate("prompt.accept");
+        session.activate("editor.undo"); session.activate("editor.document.rename");
+        require(widget(session.view(), "prompt.value").state.text == "Capture processing", "Undo did not restore the flow name");
+        session.activate("prompt.cancel"); session.activate("editor.redo");
+        session.activate("editor.document.rename");
+        require(widget(session.view(), "prompt.value").state.text == "Filtered capture" &&
+                widget(session.view(), "editor.document").state.selected == new_flow_id,
+                "Redo lost the renamed flow or its stable identity");
+        session.activate("prompt.cancel");
+        session.choose("editor.document", "main_flow"); session.activate("editor.document.rename");
+        session.edit("prompt.value", "Main sample processing"); session.activate("prompt.accept");
+        require(session.objects() == 3, "Renaming a populated flow lost its blocks or edge");
+        session.activate("editor.save");
+    }
+    const auto saved = saved_project(root);
+    require(saved.forms.size() == 2 && saved.forms.at(0).id == "main" && saved.forms.at(0).label == "Primary controls" &&
+            saved.forms.at(0).controls.at(0).id == "start" && saved.forms.at(0).controls.at(0).binding == "on_start" &&
+            saved.bindings.at(0).file == "src/handlers.hpp" && saved.forms.at(1).id == new_form_id &&
+            saved.forms.at(1).label == "Device controls", "Saving renamed forms changed control/binding identities or lost names");
+    require(saved.flows.size() == 2 && saved.flows.at(0).id == "main_flow" && saved.flows.at(0).label == "Main sample processing" &&
+            saved.flows.at(1).id == new_flow_id && saved.flows.at(1).label == "Filtered capture" &&
+            saved.blocks.size() == 2 && saved.blocks.at(0).flow == "main_flow" && saved.blocks.at(1).flow == "main_flow" &&
+            saved.edges.size() == 1 && saved.edges.at(0).id == "samples" && saved.edges.at(0).from_block == "source" &&
+            saved.edges.at(0).to_block == "sink", "Saving renamed flows changed graph identities or lost names");
+    require(read(root / "src/handlers.hpp") == handler_bytes && read(root / "src/blocks.hpp") == block_bytes,
+            "Document naming rewrote ordinary source files");
+    Session reloaded(root / "design/project.json", root);
+    reloaded.choose("editor.document", new_form_id); reloaded.activate("editor.document.rename");
+    require(widget(reloaded.view(), "prompt.value").state.text == "Device controls", "Reload lost a named form");
+    reloaded.activate("prompt.cancel"); reloaded.choose("editor.mode", "flows");
+    reloaded.choose("editor.document", new_flow_id); reloaded.activate("editor.document.rename");
+    require(widget(reloaded.view(), "prompt.value").state.text == "Filtered capture", "Reload lost a named flow");
+    reloaded.activate("prompt.cancel");
+}
+void example_regressions(const std::filesystem::path& root, const std::filesystem::path& captures) {
+    // Discovery must work when the editor is launched outside the repository,
+    // using its executable's ancestors rather than the process working directory.
+    const auto original_demo = std::filesystem::path(__FILE__).parent_path().parent_path() / "examples/demo";
+    const auto bundle = root / "bundle";
+    const auto demo = bundle / "editor/examples/demo";
+    std::filesystem::create_directories(demo.parent_path());
+    std::filesystem::copy(original_demo, demo, std::filesystem::copy_options::recursive);
+    const auto executable = bundle / "build/editor-fixture/foundation-editor-fixture";
+    write(executable, "Executable location fixture.\n");
+    const auto current = root / "unrelated-project";
+    write(current / "design/project.json", write_project(initial_project()));
+    write(current / "src/handlers.hpp", "#pragma once\n// Existing on_start current-project handler.\n");
+    const auto original = inventory(root);
+    WorkingDirectory outside_repository(current);
+    Session session(current / "design/project.json", current, executable);
+    session.activate("editor.add"); const auto dirty_objects = session.objects();
+    session.activate("editor.example");
+    require(find(session.view(), "unsaved.cancel"), "Example bypassed the current design's unsaved-changes prompt");
+    session.activate("unsaved.cancel");
+    require(session.objects() == dirty_objects && inventory(root) == original, "Cancelling Example lost unsaved project work");
+    session.activate("editor.undo"); session.select("start"); session.activate("editor.code");
+    const auto source = widget(session.view(), "code.text").state.text;
+    session.edit("code.text", source + "// Unsaved ordinary code.\n");
+    session.application->invoke("editor.example");
+    // Ordinary generated handlers invoke actions inside handle(). This direct
+    // facade probe needs a harmless host event to publish the changed snapshot.
+    require(session.adapter.send(gui::ResizeEvent{session.view().client_size, session.view().display_scale}) == gui::Delivery::delivered,
+            "Example facade probe could not present the unsaved prompt");
+    session.healthy("Example requested from an open source buffer");
+    require(find(session.view(), "unsaved.cancel"), "Example bypassed dirty ordinary source");
+    session.activate("unsaved.cancel");
+    require(find(session.view(), "code.text") && widget(session.view(), "code.text").state.text == source + "// Unsaved ordinary code.\n",
+            "Cancelling Example discarded the ordinary source buffer");
+    session.activate("code.discard");
+    session.activate("editor.example");
+    const auto demo_project = parse_project(read(demo / "project.json"));
+    require(bool(demo_project) && !demo_project.project->forms.empty() && !demo_project.project->flows.empty(),
+            "Retained example omits a form or flow");
+    const auto& form = demo_project.project->forms.front();
+    require(widget(session.view(), "editor.mode").state.selected == "forms" &&
+            widget(session.view(), "editor.document").state.selected == form.id && session.objects() == form.controls.size(),
+            "Example did not open its form through the normal editor workspace");
+    capture(session.view(), captures, "editor-example-form");
+    const auto bound = std::find_if(form.controls.begin(), form.controls.end(), [](const auto& control) { return !control.binding.empty(); });
+    require(bound != form.controls.end(), "Example form has no ordinary event binding");
+    const auto binding = std::find_if(demo_project.project->bindings.begin(), demo_project.project->bindings.end(),
+        [&](const auto& value) { return value.id == bound->binding; });
+    require(binding != demo_project.project->bindings.end(), "Example event has no source reference");
+    session.select(bound->id); session.activate("editor.code");
+    require(widget(session.view(), "code.text").state.text == read(demo / binding->file), "Example event did not open ordinary source");
+    session.activate("code.close"); session.choose("editor.mode", "flows");
+    const auto& flow = demo_project.project->flows.front();
+    require(widget(session.view(), "editor.document").state.selected == flow.id && session.objects() >= 3,
+            "Example did not expose an editable connected flow");
+    capture(session.view(), captures, "editor-example-flow");
+    const auto block = std::find_if(demo_project.project->blocks.begin(), demo_project.project->blocks.end(),
+        [&](const auto& value) { return value.flow == flow.id && !value.file.empty(); });
+    require(block != demo_project.project->blocks.end(), "Example flow has no ordinary processing source");
+    session.select(block->id); session.activate("editor.code");
+    require(widget(session.view(), "code.text").state.text == read(demo / block->file), "Example block did not open ordinary processing source");
+    session.activate("code.close");
+    require(inventory(root) == original, "Opening the Example or its source wrote files or ran a project recipe");
+}
 #if defined(__linux__)
 template<class Predicate> void await(Session& session, Predicate&& finished) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -481,7 +716,7 @@ int main(int argc, char** argv) {
 #endif
     try {
         std::filesystem::path captures;
-        if (argc == 3 && std::string_view(argv[1]) == "--capture-dir") captures = argv[2];
+        if (argc == 3 && std::string_view(argv[1]) == "--capture-dir") captures = std::filesystem::absolute(argv[2]);
         else require(argc == 1, "Usage: foundation-editor-application_test [--capture-dir PATH]");
         Temporary temporary;
         const auto root = temporary.root;
@@ -495,10 +730,13 @@ int main(int argc, char** argv) {
         }
         smoke_without_writes(root);
         editing_regressions(root / "editing-regressions");
+        path_prompt_regressions(root / "path-prompt-regressions", captures);
+        document_name_regressions(root / "document-name-regressions", captures);
+        example_regressions(root / "example-regressions", captures);
 #if defined(__linux__)
         recipe_regressions(root / "recipe-regressions", std::filesystem::canonical(argv[0]));
 #endif
-        std::cout << "editor application: shell, generated dispatch, forms, ordinary source, conflicts, arbitrary MIMO, preview, native smoke: ok\n";
+        std::cout << "editor application: shell, same-window prompts, document names, editable example, generated dispatch, forms, ordinary source, conflicts, arbitrary MIMO, preview, native smoke: ok\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -20,8 +20,23 @@ by `main.cpp`, used by factories in `blocks.cpp`, and return ordinary values.
 posting owned commands without borrowing the GUI model. Services outlive the
 graph and its callbacks; the composition root joins before destruction.
 
-Open `project.json` in the editor with this directory as workspace root. Form
-widgets and flow blocks open `handlers.cpp` and `blocks.cpp` on double-click.
+Choose **Example** in the editor to open this project, or run from the repository
+root with the existing SDK build:
+
+```sh
+./build/editor-fltk-sdk/foundation-editor-fltk --project editor/examples/demo/project.json
+```
+
+In **Forms**, choose **Receiver panel** for dropdown, Refresh inputs, Start/Stop
+and status widgets. In **Flows**, choose **Unequal-rate MIMO processing** for
+two sources feeding a four-output processing block and separate collectors.
+Use the minus zoom button or Ctrl+wheel to bring the entire chain into view.
+Double-click an event button or flow block to open `handlers.cpp` or `blocks.cpp`.
+**Rename** beside the document picker changes the selected form/flow name.
+
+This opens the actual editable example directory as workspace root. Opening or
+previewing executes no project code and writes no files; Save changes this
+example's design/generated files, and source Save changes its ordinary C++ files.
 After design changes, Save/Generate before building. Editing ordinary C++ source
 requires only the normal build. CMake compiles retained headers directly and never
 runs the editor or generation; handwritten code is excluded from regeneration.
