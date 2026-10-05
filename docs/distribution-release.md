@@ -203,9 +203,13 @@ advertising support. Public service behavior requires hosted execution.
 
 ## Stable package mirrors
 
-Stable mirrors are not yet deployed or qualified through native clients. Their
-outstanding [native stable-URL upgrade check](../.agent-pending/stable-package-mirrors.md)
-is separate from the recorded immutable-channel qualification.
+Stable mirrors are live: [x86_64 installation instructions](https://github.com/mirage335-colossus/software-foundation/releases/download/packages-x86_64/INSTALL.md)
+cover APT, Arch and the existing Gentoo qualified-channel adapter;
+[aarch64 instructions](https://github.com/mirage335-colossus/software-foundation/releases/download/packages-aarch64/INSTALL.md)
+cover APT. Public signed refresh/download checks and exact publication provenance
+are recorded in [validation](validation.md#stable-package-repository-urls-2026-10-05).
+The outstanding [native stable-URL upgrade check](../.agent-pending/stable-package-mirrors.md)
+is separate from the completed immutable-channel installation/upgrade qualification.
 
 [`distribution_mirror.py`](../tools/distribution_mirror.py) runs once after the
 existing native `check.accept` operation, under the same release-lifecycle lock.

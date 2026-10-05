@@ -13,6 +13,79 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
+## Stable package repository URLs (2026-10-05)
+
+The permanent [x86_64 repository](https://github.com/mirage335-colossus/software-foundation/releases/download/packages-x86_64/INSTALL.md)
+and [aarch64 repository](https://github.com/mirage335-colossus/software-foundation/releases/download/packages-aarch64/INSTALL.md)
+are public and linked from application Latest. Release IDs are `403414270`
+(40 assets) and `403416008` (22 assets). All signed mirror assets match the accepted
+immutable channels identified below; no package was rebuilt or resigned. Both
+mirror ledgers have `pending: null`. Application Latest remains `403269840`, with
+39 assets and the same application inventory and successful certificate digests.
+
+The manual `mirror_only` route was added in
+`e5022ab7a748d1fdba0b047bdb8902db02e0d5f6`, following mirror implementation
+`84a599e2d4608bd7b6acbd992939f62b574c7c73`. It uses the protected publisher
+environment, existing lifecycle lock and a 15-minute job ceiling. The sole required
+job is `mirror`; its every step passed. `plan`, `install` and `accept` were
+intentionally excluded and reported skipped, not counted as new qualification.
+Original exact-package native acceptance remains run `37253584672` for x86_64 and
+run `37257537261` for ARM, with their original source identities and receipts.
+No build, certification or long native matrix was launched for this publication.
+
+| Publication | Successful workflow, attempt 1 | Job duration |
+| --- | --- | --- |
+| x86_64 initial mirror | [37271199227](https://github.com/mirage335-colossus/software-foundation/actions/runs/37271199227), job `111638369959`, source e5022ab | 109 seconds |
+| ARM APT mirror | [37271430425](https://github.com/mirage335-colossus/software-foundation/actions/runs/37271430425), job `111639079457`, source e5022ab | 108 seconds |
+| x86_64 instructions correction | [37271683693](https://github.com/mirage335-colossus/software-foundation/actions/runs/37271683693), job `111639833170`, source c3b889b | 93 seconds |
+
+Live inspection found that the original Arch instruction template stripped its
+trailing slash, so the mirror's URL substitution missed its `Server` line. Fix
+`c3b889b5327397828ce3bcb75594b092913c816b` corrects the prefix substitution and
+permits only generated `INSTALL.md` corrections within the same generation,
+using the existing pending-state recovery. Both new regression checks reject the
+old helper; nine mirror cases and one real signed acceptance fixture passed with
+zero skips. YAML, embedded Python, route isolation and documentation checks passed.
+Final remote reconciliation confirmed that only `INSTALL.md` changed asset ID;
+all 39 other x86_64 asset IDs, sizes and digests were preserved. Its corrected
+instruction SHA256 is `f2e765b09e89230636cb454b9ec04054bfe9e1ebb2c9add6111385002ab0ca42`.
+
+Short public client checks used isolated state on Debian 13.7 x86_64. APT 3.0.3
+performed signed `apt-get update` and downloaded all seven variants for each of
+amd64 `0.1.0+r4` and arm64 `0.1.0+r3`. All 14 package identities, `InRelease`
+and decoded `Packages` matched the authenticated signed inventories. Each update
+or download operation took under four seconds. Extracted pacman 7.0.0/libalpm
+15.0.0 refreshed the signed stable database twice and downloaded all seven
+`0.1.0-4` packages in 18.918 seconds. `Required DatabaseRequired` stayed enabled;
+independent GPG checks also verified the database and seven package signatures.
+Existing fakeroot satisfied pacman's UID check without OS privilege; all paths
+were isolated, downloader privilege transitions disabled, and dependency
+resolution omitted for download-only scope. No package was installed or launched.
+Gentoo's public `track: qualified` discovery and authenticated native refresh
+passed in 65.56 seconds, verifying all seven overlay recipes and generated sync
+configuration. No new Portage execution occurred.
+
+Initial sandbox DNS failures were setup failures, then resolved through authorized
+network access. APT's absent empty preferences directory warning and pacman's
+legacy public-keyring warning did not bypass signatures; exact-byte and independent
+signature checks passed. These checks establish repository discovery, signatures
+and downloads. They do not establish native ARM execution or new installation/
+upgrade coverage. The existing native qualification is recorded below. A real
+production stable-URL A-to-B update, including retrieval of an older retained
+payload after index replacement, remains [pending](../.agent-pending/stable-package-mirrors.md).
+Arch/Gentoo support remains x86_64 only. Metadata expiry and non-atomic index
+replacement retain the [documented limits](distribution-release.md#stable-package-mirrors).
+
+Exact local evidence remains under `.agent-work/artifacts/stable-package-mirrors-live-20261005/`:
+
+| Evidence | SHA256 |
+| --- | --- |
+| `final-audit.json` | `014438ae0fb0c2f7594b6b8c48771891f16539b74332466176ed8f334a22792a` |
+| `instruction-validation.json` (final nine mirror cases, signed fixture and regression logs) | `a6ab0cba5f273c01ae704934b8a4f9e3c613e4de48439a3d238a69fe418ab92d` |
+| `apt-probe/final-index.json` | `5ccf7f7cfcadd045632d97b482ffe6be853b7294e23e463425e013e4decc186c` |
+| `arch-probe/result.json` | `98d7315a0c304c03d01d3832c996f33556d92fb691098c7c081c916b796bf816` |
+| `gentoo-probe/result.json` | `d49e00cd7c16449ede63e905e9834ac4c92d283d597c2617f99c2012210f5b64` |
+
 ## Rust-enabled portable release and signed channels (2026-10-05)
 
 The Rust/all-GUI application is certified and promoted to ordinary public Latest.

@@ -3,18 +3,20 @@
 Implementation starts from `1ad167aa741c07d9f8d33b56239b271913cd66d5`.
 The [stable mirror design](../docs/distribution-release.md#stable-package-mirrors)
 preserves the accepted immutable signed channels and their existing qualification.
-The new mirrors are not yet deployed; native installation and upgrade through their
-permanent URLs have not been executed. Focused implementation results belong with
-the final integration revision and do not establish native qualification.
+Both mirrors are deployed. Their signed assets match the accepted immutable
+channels, whose original native installation/upgrade qualification remains valid.
+Fresh public APT and pacman refresh/download checks and Gentoo authenticated
+qualified-channel refresh passed. Native installation and upgrade through two
+generations of the permanent URLs have not been executed. See the exact
+[publication and validation record](../docs/validation.md#stable-package-repository-urls-2026-10-05).
 
-Local validation on 2026-10-05 passed nine focused cases with no skips: eight
-offline mirror lifecycle cases and the existing native-acceptance fixture extended
-through mirror publication using real disposable GPG signatures and Debian package
-bytes. GitHub transport was mocked. Workflow YAML, embedded Python, acceptance
-ordering and repository documentation checks passed. The tested helper SHA256 is
-`977026bfac26f3d47e014d6025b20ee0da800527647d7ddea11c690c6867934e`;
-`tests/test_distribution_release.py` SHA256 is
-`68c6e5dbe3a34671432130c00dbb0bc9e0546ba93ee526ed70dc15b48c344cee`.
+Implementation `84a599e2d4608bd7b6acbd992939f62b574c7c73` was followed by the
+bounded manual publication route in `e5022ab7a748d1fdba0b047bdb8902db02e0d5f6`
+and the Arch instruction correction in `c3b889b5327397828ce3bcb75594b092913c816b`.
+Final local validation on 2026-10-05 passed nine mirror cases and one real signed
+native-acceptance fixture, with no skips. Workflow isolation, YAML, embedded Python
+and documentation checks passed. These focused checks do not establish native
+stable-URL upgrade qualification.
 
 One qualification obligation remains: run the existing required native A-to-B
 installation and upgrade procedure with APT on its declared x86_64 and aarch64
@@ -26,6 +28,9 @@ older versioned payload after index replacement. Use the existing
 and retain exact application/channel identities, mirror state, qualifier revision
 and workflow evidence. This does not add an ARM64 Arch support claim.
 
-Next manual action: request native stable-URL A-to-B qualification after the
-implementation and deployment are ready. This record does not request or authorize
-a workflow launch or live publication now.
+Next manual action: explicitly request native stable-URL A-to-B qualification
+when the next accepted generation is ready. Do not roll application Latest or
+production repository indexes backward to manufacture a historical transition.
+The user explicitly excluded long Actions jobs from the current publication;
+only three publication jobs ran, each under two minutes. No further workflow
+launch is requested by this record.
