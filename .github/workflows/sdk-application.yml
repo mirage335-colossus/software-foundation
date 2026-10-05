@@ -126,6 +126,10 @@ name: Prepared SDK application and candidate
         description: Exact retained GUI manifest SHA-256 for all-gui; empty for core
         type: string
         required: false
+    secrets:
+      DISTRIBUTION_SIGNING_KEY:
+        description: Optional caller input; the protected job environment supplies the signing key
+        required: false
     outputs:
       tag:
         description: Verified tag

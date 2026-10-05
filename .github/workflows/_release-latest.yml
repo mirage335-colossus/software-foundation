@@ -114,6 +114,8 @@ jobs:
       contents: write
       actions: write
     uses: ./.github/workflows/sdk-application.yml
+    secrets:
+      DISTRIBUTION_SIGNING_KEY: ${{ secrets.DISTRIBUTION_SIGNING_KEY }}
     with:
       preserve_artifacts: ${{ inputs.preserve_artifacts }}
       core_provider: ${{ inputs.core_provider }}

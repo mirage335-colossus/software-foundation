@@ -307,6 +307,86 @@ L.main()
 
 
 class WorkflowOverlapTests(unittest.TestCase):
+    def test_package_signing_secret_is_explicitly_forwarded_and_optional(self):
+        root = Path(__file__).resolve().parents[1]
+        latest = (root/'.github/workflows/_release-latest.yml').read_text()
+        application = (root/'.github/workflows/sdk-application.yml').read_text()
+        caller = latest.split('\njobs:\n', 1)[1].split('  application:\n', 1)[1].split('  certification:\n', 1)[0]
+        self.assertIn('    uses: ./.github/workflows/sdk-application.yml\n', caller)
+        self.assertIn('    secrets:\n      DISTRIBUTION_SIGNING_KEY: ${{ secrets.DISTRIBUTION_SIGNING_KEY }}\n', caller)
+        self.assertEqual(caller.count('    secrets:\n'), 1)
+        self.assertNotIn('secrets: inherit', latest)
+        contract = application.split('  workflow_call:\n', 1)[1].split('\npermissions:\n', 1)[0]
+        secrets = contract.split('    secrets:\n', 1)[1].split('    outputs:\n', 1)[0]
+        self.assertEqual([line.strip() for line in secrets.splitlines()
+                          if line.startswith('      ') and not line.startswith('        ')],
+                         ['DISTRIBUTION_SIGNING_KEY:'])
+        self.assertIn('        required: false\n', secrets)
+        dispatch = application.split('  workflow_dispatch:\n', 1)[1].split('  workflow_call:\n', 1)[0]
+        package_input = dispatch.split('      package_repository:\n', 1)[1].split('      package_release:\n', 1)[0]
+        self.assertIn('        default: false\n', package_input)
+        assembly = application.split('  assemble:\n', 1)[1].split('\nenv:\n', 1)[0]
+        self.assertIn("environment: ${{ (inputs.execute || inputs.package_repository) && 'release-publisher' || '' }}", assembly)
+        self.assertIn("SIGNING_PRIVATE_KEY: ${{ inputs.package_repository && secrets.DISTRIBUTION_SIGNING_KEY || '' }}", assembly)
+
+    def test_package_signing_guard_keeps_key_private_and_optional(self):
+        root = Path(__file__).resolve().parents[1]
+        application = (root/'.github/workflows/sdk-application.yml').read_text()
+        assembly = application.split('  assemble:\n', 1)[1].split('\nenv:\n', 1)[0]
+        step = assembly.split('    - shell: python\n      env:\n        SIGNING_PRIVATE_KEY:', 1)[1]
+        code = step.split('      run: |-\n', 1)[1].split('      id: result\n', 1)[0]
+        code = '\n'.join(line[8:] for line in code.splitlines())
+        program = compile(code, 'protected-package-assembly', 'exec')
+        with tempfile.TemporaryDirectory() as directory:
+            runner_temp = Path(directory).resolve()
+            environment = {'PACKAGE_REPOSITORY': 'true', 'RUNNER_TEMP': str(runner_temp)}
+            for private in ('', 'x' * (1024 * 1024 + 1)):
+                with self.subTest(key_available=bool(private)), \
+                        mock.patch.dict(os.environ, dict(environment, SIGNING_PRIVATE_KEY=private), clear=True), \
+                        mock.patch.object(subprocess, 'run') as run, \
+                        mock.patch.object(tempfile, 'TemporaryDirectory') as private_directory:
+                    with self.assertRaisesRegex(ValueError, 'bounded protected distribution signing key required'):
+                        exec(program, {})
+                    run.assert_not_called()
+                    private_directory.assert_not_called()
+                    self.assertNotIn('SIGNING_PRIVATE_KEY', os.environ)
+                self.assertEqual(list(runner_temp.iterdir()), [])
+            for child_fails in (False, True):
+                keys = []
+                def assemble(command, *, check, env):
+                    self.assertEqual(command, [sys.executable, '.github/scripts/lifecycle.py', 'assemble'])
+                    self.assertTrue(check)
+                    self.assertNotIn('SIGNING_PRIVATE_KEY', os.environ)
+                    self.assertNotIn('SIGNING_PRIVATE_KEY', env)
+                    key = Path(env['PACKAGE_SIGNING_KEY'])
+                    keys.append(key)
+                    self.assertTrue(key.is_relative_to(runner_temp))
+                    self.assertEqual(key.read_text(), 'synthetic private key fixture')
+                    if os.name == 'posix':
+                        self.assertEqual(key.stat().st_mode & 0o777, 0o600)
+                    if child_fails:
+                        raise subprocess.CalledProcessError(1, command)
+                with self.subTest(child_fails=child_fails), \
+                        mock.patch.dict(os.environ, dict(environment, SIGNING_PRIVATE_KEY='synthetic private key fixture'), clear=True), \
+                        mock.patch.object(subprocess, 'run', side_effect=assemble) as run:
+                    if child_fails:
+                        with self.assertRaises(subprocess.CalledProcessError):
+                            exec(program, {})
+                    else:
+                        exec(program, {})
+                    run.assert_called_once()
+                    self.assertNotIn('SIGNING_PRIVATE_KEY', os.environ)
+                self.assertEqual(len(keys), 1)
+                self.assertFalse(keys[0].exists())
+                self.assertEqual(list(runner_temp.iterdir()), [])
+            with mock.patch.dict(os.environ, dict(environment, PACKAGE_REPOSITORY='false', SIGNING_PRIVATE_KEY=''), clear=True), \
+                    mock.patch.object(subprocess, 'run') as run, \
+                    mock.patch.object(tempfile, 'TemporaryDirectory') as private_directory:
+                exec(program, {})
+                run.assert_called_once_with([sys.executable, '.github/scripts/lifecycle.py', 'assemble'], check=True)
+                private_directory.assert_not_called()
+                self.assertNotIn('SIGNING_PRIVATE_KEY', os.environ)
+
     def test_certification_restores_exact_frozen_payloads_once_and_keeps_diagnostics(self):
         root = Path(__file__).resolve().parents[1]
         workflow = (root/'.github/workflows/certify.yml').read_text()

@@ -127,10 +127,16 @@ retained SDK recipes and pinned Windows graphics input. All four application
 producers and the full regression passed, but assembly failed before signing or
 candidate publication because its signing-key expression resolved empty. The
 named secret exists only in the protected `release-publisher` environment, and
-deployment metadata confirms that assembly selected that environment. No secret
-value was read during diagnosis. A bounded hosted availability probe will
-distinguish reusable-workflow secret declaration and named-mapping behavior
-before another full release. Certification and promotion did not execute; the
+deployment metadata confirms that assembly selected that environment. Diagnosis
+inspected only secret metadata and availability booleans. Bounded hosted availability probe
+[37385671588](https://github.com/mirage335-colossus/software-foundation/actions/runs/37385671588)
+on `cfcab000c8fcb96f8bf42677c7881ef6b3efafd9` passed all five jobs. Direct protected
+access succeeded; both undeclared and declared reusable calls without a mapping
+reported absence; the declared call with an explicit named mapping succeeded.
+Only presence/agreement booleans were emitted. The repair preserves the protected
+environment and bounded key guard, adding only the demonstrated named handoff
+and optional declaration. Temporary probe workflows are removed after this
+evidence is retained. Certification and promotion did not execute; the
 failed run is not release qualification. Exact failure evidence is retained in
 `.agent-work/artifacts/further-release-audit-20261005/latest-37383219288-attempt-1-failure-analysis.json`.
 

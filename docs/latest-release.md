@@ -126,6 +126,15 @@ on the trusted manual run. Never expose these jobs to untrusted pull-request
 source. The orchestrator uses a different concurrency key from its child
 publishers, so waiting for a child cannot deadlock the parent-held lock.
 
+The application call explicitly maps only `DISTRIBUTION_SIGNING_KEY`, and the
+reusable application workflow declares that optional secret. Its protected
+assembly environment still supplies the configured environment key and the
+bounded key check remains mandatory for signed packages. A hosted availability
+probe found that the environment binding and declaration alone left this key
+empty in a reusable call; the named mapping restored availability. Preserve this
+handoff without inheriting unrelated secrets or moving the key out of its
+protected environment.
+
 The entry point intentionally offers no experiment switch or shortened test
 mode. Experiments use the separate candidate workflow and remain ineligible for
 Latest. A failed or uncertain remote mutation must be inspected under the same
