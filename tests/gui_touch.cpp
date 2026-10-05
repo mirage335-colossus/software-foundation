@@ -54,6 +54,19 @@ void raw_double_click() {
     f.pointer(gui::PointerKind::press,{90,20});f.adapter.pointer({gui::PointerKind::cancel,{90,20},0,0,false,false,false,9,2});
     check(f.events.size()==5&&std::get<gui::PointerInput>(std::get<gui::WidgetEvent>(f.events.back()).input).kind==gui::PointerKind::cancel,"Cancel synthesized raw double-click");
 }
+void transparent_raw_labels() {
+    Fixture f;gui::Widget label;label.spec.key={"annotation",1};label.spec.kind=gui::Kind::label;
+    label.state.bounds={85,5,45,25};label.state.text="Sample";
+    f.view.widgets.push_back(label);f.adapter.present(f.view);
+    f.adapter.pointer({gui::PointerKind::wheel,{90,20},0,1});
+    f.adapter.pointer({gui::PointerKind::move,{90,20}});
+    check(f.events.size()==2,"Inert text swallowed raw surface wheel or hover");
+    for(const auto& event:f.events)check(std::get<gui::WidgetEvent>(event).target.id=="raw","Inert text changed raw target");
+    f.pointer(gui::PointerKind::press,{90,20});
+    f.view.widgets.back().state.bounds={140,60,45,25};f.adapter.present(f.view);
+    f.pointer(gui::PointerKind::move,{170,80});f.pointer(gui::PointerKind::release,{170,80});
+    check(f.events.size()==5,"Moving inert text revoked the surface capture");
+}
 void changing_targets_and_prompt() {
     Fixture f;gui::Widget list;list.spec.key={"rows",1};list.spec.kind=gui::Kind::list;list.spec.row_height=20;list.state.bounds={0,50,100,40};
     list.state.records={{"old","Old",{},true,true},{"next","Next",{},true,true}};f.view.widgets.push_back(list);f.adapter.present(f.view);
@@ -133,4 +146,4 @@ void driver_ownership() {
     check(retained.pixels&&retained.pixels->size()==retained.stride_bytes*retained.height,"Retained frame invalidated by close");
 }
 }
-int main() {try{semantic_release();raw_capture();raw_double_click();changing_targets_and_prompt();web_capture();popup_revokes_capture();web_modal_and_resize();driver_ownership();std::cout<<"Touch ownership and capture passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main() {try{semantic_release();raw_capture();raw_double_click();transparent_raw_labels();changing_targets_and_prompt();web_capture();popup_revokes_capture();web_modal_and_resize();driver_ownership();std::cout<<"Touch ownership and capture passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

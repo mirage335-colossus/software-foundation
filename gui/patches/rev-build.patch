@@ -47,8 +47,8 @@
  
 -add_library(gui_rev_adapter STATIC backends/rev/adapter.cpp backends/rev/clipboard.cpp)
 -target_include_directories(gui_rev_adapter PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/backends/rev")
-+add_library(gui_rev_adapter STATIC "${FOUNDATION_GUI_SOURCE}/backends/rev/adapter.cpp" "${FOUNDATION_GUI_SOURCE}/backends/rev/clipboard.cpp")
-+target_include_directories(gui_rev_adapter PUBLIC "${FOUNDATION_GUI_SOURCE}/backends/rev")
++add_library(gui_rev_adapter STATIC "${CMAKE_CURRENT_BINARY_DIR}/rev/adapter.cpp" "${FOUNDATION_GUI_SOURCE}/backends/rev/clipboard.cpp")
++target_include_directories(gui_rev_adapter PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/rev" "${FOUNDATION_GUI_SOURCE}/backends/rev")
  target_link_libraries(gui_rev_adapter PUBLIC gui_boundary PRIVATE gui_rev_toolkit)
  set_target_properties(gui_rev_adapter PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES
      CXX_EXTENSIONS OFF CXX_SCAN_FOR_MODULES ON)

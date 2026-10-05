@@ -53,7 +53,7 @@ public:
     gui::Rect bounds() const { return options_.viewport; }
 private:
     struct Object { std::string id; gui::Rect area; bool resizable = false, group = false; };
-    struct Endpoint { Hit hit; gui::Point point; };
+    struct Endpoint { Hit hit; gui::Point point; gui::Rect label; };
     struct Wire { std::string id; std::vector<gui::Point> points; };
     CanvasOptions options_;
     std::vector<Object> objects_;

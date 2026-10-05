@@ -139,7 +139,9 @@ gui::Kind kind(std::string_view name) {
 gui::Widget label(std::string id,std::string text,gui::Rect bounds,gui::Rect clip,double zoom,bool bold=false,gui::Tone tone=gui::Tone::normal) {
     gui::Widget w;
     w.spec.key={std::move(id),1};w.spec.kind=gui::Kind::label;
-    w.spec.parent="canvas.viewport";w.spec.pointer_input=true;
+    // The stable bitmap owns gestures. Moving a label must not revoke a drag's
+    // captured target, and labels retain their normal accessible text role.
+    w.spec.parent="canvas.viewport";
     w.state.bounds=gui::intersect(bounds,clip);w.state.text=std::move(text);
     w.state.accessible_name=w.state.text;
     w.state.font={std::clamp(13.0*zoom,8.0,28.0),bold,tone};
@@ -173,7 +175,7 @@ std::optional<Hit> Canvas::hit_test(gui::Point point) const {
     if(options_.preview||!finite(point)||!gui::contains(options_.viewport,point))return {};
     // Ports take precedence over their parent block and nearby wires.
     for(auto it=endpoints_.rbegin();it!=endpoints_.rend();++it)
-        if(distance(point,it->point)<=std::max(7.0,6.0*options_.zoom))return it->hit;
+        if(distance(point,it->point)<=std::max(7.0,6.0*options_.zoom)||gui::contains(it->label,point))return it->hit;
     for(auto it=objects_.rbegin();it!=objects_.rend();++it){
         if(it->resizable&&it->id==options_.selected){
             const auto r=it->area;
@@ -324,7 +326,10 @@ std::vector<gui::Widget> Canvas::render(const Project& project,const CanvasOptio
                 const auto& ports=direction==PortDirection::input?block.inputs:block.outputs;
                 for(std::size_t i=0;i<ports.size();++i){
                     const auto point=model_to_view({block.x+(direction==PortDirection::input?0:width),block.y+block_header+port_row*(i+.5)});
-                    endpoints_.push_back({Hit{block.id,ports[i].id,direction},point});
+                    const auto& layout=block_layouts.at(block.id);
+                    const auto label_area=gui::Rect{direction==PortDirection::input?area.x+layout.padding:area.x+layout.padding+layout.input_width+layout.gap,
+                        point.y-10*options_.zoom,direction==PortDirection::input?layout.input_width:layout.output_width,20*options_.zoom};
+                    endpoints_.push_back({Hit{block.id,ports[i].id,direction},point,gui::intersect(label_area,options_.viewport)});
                     ports_by_id.emplace(PortKey{block.id,ports[i].id,direction},PortState{point,ports[i].type});
                 }
             }
@@ -370,7 +375,7 @@ std::vector<gui::Widget> Canvas::render(const Project& project,const CanvasOptio
                     const auto& port_state=ports_by_id.at({block.id,port.id,direction});
                     const auto point=port_state.point;
                     const bool pending=options_.pending_port&&options_.pending_port->object==block.id&&options_.pending_port->port==port.id&&options_.pending_port->direction==direction;
-                    const auto color=(!port_state.compatible||(!port_state.connected&&port.required))?error:pending?accent:ink;
+                    const auto color=pending?accent:(!port_state.compatible||(!port_state.connected&&port.required))?error:ink;
                     raster.fill({point.x-4,point.y-4,8,8},color);
                     if(pending)raster.frame({point.x-7,point.y-7,14,14},accent,2);
                     const auto text_area=gui::Rect{direction==PortDirection::input?area.x+layout.padding:area.x+layout.padding+layout.input_width+layout.gap,

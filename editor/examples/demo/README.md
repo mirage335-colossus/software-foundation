@@ -1,4 +1,9 @@
-# Adopted ordinary-source example
+# Advanced C++ MIMO example
+
+Begin with the [simple C++ starter](../simple/README.md) for shorter event and
+processing functions, or the [Rust DSP example](../rust-dsp/README.md) for a
+stateful Rust processing alternative. This example shows more advanced C++
+integration and independent input/output rates.
 
 This small independent project consumes retained generated C++ from a form and
 a flow. Build it without an editor executable, toolkit or Rust compiler:
@@ -20,7 +25,7 @@ by `main.cpp`, used by factories in `blocks.cpp`, and return ordinary values.
 posting owned commands without borrowing the GUI model. Services outlive the
 graph and its callbacks; the composition root joins before destruction.
 
-Choose **Example** in the editor to open this project, or run from the repository
+Choose **Examples**, then **Advanced MIMO**, or run from the repository
 root with the existing SDK build:
 
 ```sh
@@ -30,7 +35,9 @@ root with the existing SDK build:
 In **Forms**, choose **Receiver panel** for dropdown, Refresh inputs, Start/Stop
 and status widgets. In **Flows**, choose **Unequal-rate MIMO processing** for
 two sources feeding a four-output processing block and separate collectors.
-Use the minus zoom button or Ctrl+wheel to bring the entire chain into view.
+Flows fit automatically when opened; use **Fit** to restore the whole view.
+Drag a block by its body/header. Click or drag between an output and an input
+port name/socket to connect them; Escape or **Cancel link** cancels wiring.
 Double-click an event button or flow block to open `handlers.cpp` or `blocks.cpp`.
 **Rename** beside the document picker changes the selected form/flow name.
 

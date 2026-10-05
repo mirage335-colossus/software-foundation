@@ -31,6 +31,8 @@ class SourceGroupTests(unittest.TestCase):
         (self.foundation / 'gui/patches/apply.py').write_bytes(b'apply = True\n')
         (self.foundation / 'gui/patches/host.patch').write_bytes(b'reviewed patch\n')
         (self.source / 'api.hpp').write_bytes(b'int result();\n')
+        (self.source / 'include/gui').mkdir(parents=True)
+        (self.source / 'include/gui/contract.hpp').write_bytes(b'int fixture_contract();\n')
         (self.source / 'retained.txt').write_bytes(b'Complete retained source\n')
         (self.source / 'run.sh').write_bytes(b'#!/bin/sh\nexit 0\n'); (self.source / 'run.sh').chmod(0o755)
         def git(*args):
@@ -77,16 +79,20 @@ class SourceGroupTests(unittest.TestCase):
         self.assertTrue(manifest['redistributable'])
 
     def cmake_input_fixture(self):
-        # Execute the real selection/restore block with tiny retained inputs;
-        # no compiler, toolkit, SDK, sibling checkout or network is required.
-        cmake = (ROOT / 'gui/CMakeLists.txt').read_text().split('option(FOUNDATION_GUI_FLTK', 1)[0]
-        (self.foundation / 'gui/CMakeLists.txt').write_text(cmake)
+        # Execute the maintained input module with tiny retained inputs. CMake
+        # initializes C++/Threads, but builds no compiler or toolkit target.
+        (self.foundation / 'cmake').mkdir()
+        shutil.copyfile(ROOT / 'cmake/GuiInputs.cmake', self.foundation / 'cmake/GuiInputs.cmake')
+        (self.foundation / 'gui/CMakeLists.txt').write_text(
+            'foundation_register_build_directory()\n'
+            'include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/GuiInputs.cmake")\n'
+            'foundation_gui_inputs()\n')
         (self.foundation / 'tools').mkdir()
         shutil.copyfile(ROOT / 'gui/source_group.py', self.foundation / 'gui/source_group.py')
         shutil.copyfile(ROOT / 'tools/dependency_archive.py', self.foundation / 'tools/dependency_archive.py')
         shutil.copytree(self.group, self.foundation / 'third_party/gui-inputs')
         (self.foundation / 'CMakeLists.txt').write_text(
-            'cmake_minimum_required(VERSION 3.24)\nproject(InputSelection NONE)\n'
+            'cmake_minimum_required(VERSION 3.24)\nproject(InputSelection LANGUAGES CXX)\n'
             'function(foundation_register_build_directory)\nendfunction()\n'
             'add_subdirectory(gui)\n'
             'file(WRITE "${CMAKE_BINARY_DIR}/selected.txt" "${FOUNDATION_GUI_SOURCE}")\n')
@@ -190,7 +196,7 @@ class SourceGroupTests(unittest.TestCase):
         result = subject.restore(self.group, output, self.foundation)
         original = subject.archive.file_inventory(output)
         expected_dirs = {'foundation', 'foundation/gui', 'foundation/gui/patches',
-                         'foundation/third_party', 'upstream'}
+                         'foundation/third_party', 'upstream', 'upstream/include', 'upstream/include/gui'}
         self.assertEqual(expected_dirs, {p.relative_to(output).as_posix()
                                        for p in output.rglob('*') if p.is_dir()})
         logical_names = self.verify()['files']

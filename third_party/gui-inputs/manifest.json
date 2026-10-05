@@ -1,5 +1,5 @@
 {
-  "archive_sha256": "d9ee81629c4d75ed7a29f25c6a886d31fb03a3801b53e16c7971f32ecdb0d019",
+  "archive_sha256": "a046f702c75f4dba404f0d75e1e4589aec74c901f1dd87b0e5d093c12d5d58e8",
   "files": {
     "foundation/gui/patches/adapter-portability.patch": {
       "mode": 420,
@@ -26,10 +26,15 @@
       "sha256": "cb206470c4254ebb21033299ce9dd8ef1f9f91b8ba6ff442b03e58a5142290f9",
       "size": 12106
     },
+    "foundation/gui/patches/fltk-pointer.patch": {
+      "mode": 420,
+      "sha256": "f5bee29f80652a504c5b9f7e875f21fb12071b8f1e5756317684eec18a3dad26",
+      "size": 9041
+    },
     "foundation/gui/patches/rev-build.patch": {
       "mode": 420,
-      "sha256": "fb02fb41f9adf21651630657b7b71bf5ad4f6764f84121381cf4faf0ed244f61",
-      "size": 4246
+      "sha256": "fce352fa06aa589ea7c6023338c53089f85d356f4e2216df0ad7e83a608058d9",
+      "size": 4274
     },
     "foundation/gui/patches/rev-clipboard-ownership.patch": {
       "mode": 420,
@@ -45,6 +50,16 @@
       "mode": 420,
       "sha256": "334468d9002189f5d420f7b93d487bd826588c3e46a1dc0d3de250826a87bbc6",
       "size": 446
+    },
+    "foundation/gui/patches/rev-pointer-probe.patch": {
+      "mode": 420,
+      "sha256": "b9333202b0ac145dd05073ef69ea725c56619df29f986f1d31eeb41e914a51d6",
+      "size": 613
+    },
+    "foundation/gui/patches/rev-pointer.patch": {
+      "mode": 420,
+      "sha256": "459110f5201f904fd3ea5925d75ebc0686c58b6e048356a9dcb5348b3bd2c47a",
+      "size": 12948
     },
     "foundation/gui/patches/sdl-runner.patch": {
       "mode": 420,
@@ -68,8 +83,8 @@
     },
     "foundation/gui/patches/touch-interaction.patch": {
       "mode": 420,
-      "sha256": "1aefcc60601caf1ca36a5b437146a7690cc88af9056990ff4bcd7c34bce7b96e",
-      "size": 7484
+      "sha256": "76295d02b7fd4062c42ada73ceaac24022f75aecda158b0bcf5d9f3cc89cb0e4",
+      "size": 8115
     },
     "foundation/gui/patches/touch-memory.patch": {
       "mode": 420,
@@ -133,8 +148,8 @@
     },
     "foundation/third_party/gui-boundary.lock.json": {
       "mode": 420,
-      "sha256": "fd4516822efdfcc0efbd3768438361ef40d452f0622487b689ca5baf9e4ed2d4",
-      "size": 13027
+      "sha256": "8452fde15be1da13d91e9fecbb539cf78447b412f67fa795a32184aa098fb178",
+      "size": 13463
     },
     "upstream/.github/workflows/screenshots.yml": {
       "mode": 420,

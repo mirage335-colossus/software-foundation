@@ -3,7 +3,61 @@
 #include "tests/fixture.hpp"
 #include <iostream>
 
+namespace {
+void raw_pointer_contract() {
+    std::vector<gui::WidgetEvent> events;
+    gui::fltk::Adapter adapter([&](const gui::Event& event) {
+        if(const auto* value=std::get_if<gui::WidgetEvent>(&event))events.push_back(*value);
+    });
+    gui::Snapshot view;view.client_size={320,220};
+    gui::Widget surface;surface.spec.key={"fixture.surface",1};surface.spec.kind=gui::Kind::bitmap;
+    surface.spec.pointer_input=true;surface.state.bounds={20,20,220,140};
+    surface.state.bitmap={"fixture.surface",1,gui::solid_bitmap(240,240,240)};
+    gui::Widget label;label.spec.key={"fixture.annotation",1};label.spec.kind=gui::Kind::label;
+    label.state.bounds={40,40,120,24};label.state.text="Samples";
+    view.widgets={surface,label};adapter.present(view);adapter.show();adapter.sync();Fl::check();
+    struct Restore {
+        int x=Fl::e_x,y=Fl::e_y,keysym=Fl::e_keysym,state=Fl::e_state,clicks=Fl::e_clicks;
+        ~Restore(){Fl::e_x=x;Fl::e_y=y;Fl::e_keysym=keysym;Fl::e_state=state;Fl::e_clicks=clicks;}
+    } restore;
+    auto pointer=[&](int event,int x,int y) {
+        Fl::e_x=x;Fl::e_y=y;Fl::e_keysym=FL_Button+FL_LEFT_MOUSE;
+        Fl::e_state=event==FL_RELEASE?0:FL_BUTTON1;Fl::e_clicks=0;
+        adapter.window().handle(event);
+    };
+    pointer(FL_PUSH,60,50);
+    Fl::e_keysym=FL_Button+FL_MIDDLE_MOUSE;Fl::e_state=FL_BUTTON1;
+    adapter.window().handle(FL_RELEASE);
+    fixture::check(events.size()==1,"Foreign mouse release ended the left-button gesture");
+    view.widgets.back().state.bounds={140,80,120,24};adapter.present(view);adapter.sync();
+    pointer(FL_DRAG,280,200);pointer(FL_RELEASE,280,200);
+    fixture::check(events.size()==3,"Native raw gesture lost phase or synthesized an extra click");
+    const gui::PointerKind phases[]{gui::PointerKind::press,gui::PointerKind::move,gui::PointerKind::release};
+    for(unsigned i=0;i<3;++i) {
+        const auto* input=std::get_if<gui::PointerInput>(&events[i].input);
+        fixture::check(events[i].target==surface.spec.key&&input&&input->kind==phases[i]&&input->pointer_id!=0,
+            "Native raw gesture changed target or pointer owner");
+    }
+    fixture::check(std::get<gui::PointerInput>(events.back().input).position==gui::Point{280,200},"Captured release coordinates were clipped");
+    pointer(FL_PUSH,60,50);Fl::e_keysym=FL_Escape;adapter.window().handle(FL_KEYDOWN);
+    fixture::check(events.size()==5&&std::get<gui::PointerInput>(events.back().input).kind==gui::PointerKind::cancel,
+        "Escape did not cancel the native raw gesture");
+    pointer(FL_RELEASE,60,50);fixture::check(events.size()==5,"Cancelled native gesture later released");
+    pointer(FL_PUSH,60,50);view.widgets[0].spec.key.generation=2;adapter.present(view);adapter.sync();
+    const auto count=events.size();pointer(FL_RELEASE,60,50);
+    fixture::check(events.size()==count,"Replaced native raw target inherited pointer ownership");
+    pointer(FL_PUSH,60,50);
+    gui::Widget overlay;overlay.spec.key={"fixture.overlay",1};overlay.spec.kind=gui::Kind::button;
+    overlay.state.label="Cover";overlay.state.bounds={40,40,120,24};view.widgets.push_back(overlay);
+    adapter.present(view);adapter.sync();const auto obscured=events.size();pointer(FL_RELEASE,60,50);
+    fixture::check(events.size()==obscured,"Obscured native raw surface retained pointer ownership");
+    adapter.close();adapter.sync();
+    fixture::check(adapter.error().empty(),"Native raw gesture callback failed");
+}
+}
+
 int main(){try{
+    raw_pointer_contract();
     foundation::host::Session<foundation::ui::Application,gui::fltk::Adapter> session;
     auto& adapter=session.adapter;adapter.show();
     auto sync=[&]{session.tick();Fl::check();Fl::flush();};sync();

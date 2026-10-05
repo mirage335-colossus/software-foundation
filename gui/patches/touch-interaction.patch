@@ -72,7 +72,17 @@
          if(prompt_) {
              if(input.kind==PointerKind::click) {
                  if(contains(prompt_cancel_bounds(),input.position))finish_prompt(ServiceStatus::cancelled);
-@@ -281,6 +313,7 @@
+@@ -237,6 +269,9 @@
+                 if(input.kind==PointerKind::click||input.kind==PointerKind::double_click)focus(id);
+                 policy().send(WidgetEvent{id,input});return;
+             }
++            // Inert text may overlay a raw canvas; hovering or wheeling over
++            // that text must reach the same surface as physical gestures.
++            if(widget.spec.kind==Kind::label)continue;
+             if(input.kind==PointerKind::wheel) {scroll_hit(widget,input);return;}
+             if(input.kind!=PointerKind::click&&input.kind!=PointerKind::double_click)return;
+             if(!focusable(widget))continue;
+@@ -281,6 +316,7 @@
          if(!runtime_detail::input_error(request,request.value).empty()||!valid_utf8(request.title))
              throw std::invalid_argument("Invalid prompt request");
          if(popup_) {const auto target=popup_->key;close_popup(target);}
@@ -80,7 +90,7 @@
          prompt_selection_={0,request.value.size()};prompt_=std::move(request);completion_=std::move(completion);return true;
      }
      double line_height(const Font& font={}) const {
-@@ -379,6 +412,44 @@
+@@ -379,6 +415,44 @@
          return gui::prompt_accept_bounds(snapshot().client_size);
      }
  private:

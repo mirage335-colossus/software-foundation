@@ -68,6 +68,9 @@ const gui::Widget& widget(const gui::Snapshot& snapshot, std::string_view id) {
     if (!value) throw std::runtime_error("Missing editor control " + std::string(id));
     return *value;
 }
+gui::Point center(gui::Rect bounds) {
+    return {bounds.x + bounds.width / 2, bounds.y + bounds.height / 2};
+}
 std::map<std::string, std::string> inventory(const std::filesystem::path& root) {
     std::map<std::string, std::string> result;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(root))
@@ -121,9 +124,11 @@ struct Session {
         send(id, gui::EditText{std::move(value), widget(view(), id).state.text});
     }
     void select(std::string value) { send("editor.objects", gui::SelectRecord{std::move(value)}); }
-    void pointer(gui::Point position, gui::PointerKind kind = gui::PointerKind::click) {
+    void pointer(gui::Point position, gui::PointerKind kind = gui::PointerKind::click, bool expect_success = true) {
         gui::PointerInput input; input.kind = kind; input.position = position;
-        send("canvas.surface", input);
+        if (kind == gui::PointerKind::press || kind == gui::PointerKind::move ||
+            kind == gui::PointerKind::release || kind == gui::PointerKind::cancel) input.pointer_id = 1;
+        send("canvas.surface", input, expect_success);
     }
     std::size_t objects() const { return widget(view(), "editor.objects").state.records.size(); }
 };
@@ -227,7 +232,8 @@ void source_and_forms(Session& session, const std::filesystem::path& root, const
 gui::Point port_position(const Project& project, const Session& session, std::string_view block,
                          std::string_view port, PortDirection direction) {
     Canvas canvas; CanvasOptions options;
-    options.mode = CanvasMode::flows; options.document = "main_flow";
+    options.mode = CanvasMode::flows;
+    options.document = widget(session.view(), "editor.document").state.selected.value_or("");
     options.viewport = widget(session.view(), "canvas.viewport").state.bounds;
     options.measure_text = [&](const gui::TextMeasureRequest& request) { return session.adapter.measure_text(request); };
     (void)canvas.render(project, options);
@@ -253,7 +259,9 @@ void flows(Session& session, const std::filesystem::path& root, const std::files
     require(widget(session.view(), "editor.status").state.font.tone == gui::Tone::error,
             "Incomplete block factory did not leave an actionable draft diagnostic");
     require(saved_project(root).blocks.size() == 1, "Incomplete flow draft could not be saved");
-    session.pointer({232, 162}, gui::PointerKind::double_click);
+    session.pointer(center(widget(session.view(), "canvas.block." +
+                    widget(session.view(), "editor.objects").state.selected.value_or("")).state.bounds),
+                    gui::PointerKind::double_click);
     require(session.view().modal_root.has_value(), "Source block double-click did not open ordinary factory code");
     session.activate("code.close");
     session.activate("editor.add");
@@ -264,7 +272,9 @@ void flows(Session& session, const std::filesystem::path& root, const std::files
     session.edit("detail.inputs", "in : float\nstate : int\n");
     session.edit("detail.outputs", "result : double\n");
     session.activate("detail.apply");
-    session.pointer({598, 230}, gui::PointerKind::double_click);
+    session.pointer(center(widget(session.view(), "canvas.block." +
+                    widget(session.view(), "editor.objects").state.selected.value_or("")).state.bounds),
+                    gui::PointerKind::double_click);
     require(session.view().modal_root.has_value(), "Sink block double-click did not open ordinary factory code");
     session.activate("code.close");
     session.activate("editor.save", false);
@@ -279,6 +289,9 @@ void flows(Session& session, const std::filesystem::path& root, const std::files
             "Block Details constrained the arbitrary MIMO port lists");
     require(source.params.at("gain") == "2", "Block Details lost a project-owned parameter");
     const auto source_id = source.id, sink_id = sink.id;
+    session.activate("editor.zoom.reset", false);
+    require(widget(session.view(), "editor.status").state.font.tone == gui::Tone::error,
+            "Changing canvas zoom discarded the unresolved flow draft diagnostic");
     session.pointer(port_position(design, session, source_id, "out", PortDirection::output));
     session.pointer(port_position(design, session, sink_id, "in", PortDirection::input));
     require(session.objects() == 3, "Pointer port gesture did not create an edge");
@@ -292,7 +305,7 @@ void flows(Session& session, const std::filesystem::path& root, const std::files
     capture(session.view(), captures, "editor-flows");
     // Selecting an element retains the useful unresolved draft diagnostic.
     session.send("editor.objects", gui::SelectRecord{source_id}, false);
-    session.pointer({232, 162}, gui::PointerKind::double_click);
+    session.pointer(center(widget(session.view(), "canvas.block." + source_id).state.bounds), gui::PointerKind::double_click);
     require(session.view().modal_root.has_value(), "Double-click did not open the block source file");
     const auto source_path = root / design.blocks.front().file;
     require(std::filesystem::is_regular_file(source_path), "Double-click did not create ordinary block code");
@@ -300,6 +313,160 @@ void flows(Session& session, const std::filesystem::path& root, const std::files
     require(read(source_path).find(design.blocks.front().factory) != std::string::npos,
             "Block source has no editable factory declaration");
     session.activate("code.close");
+}
+void gesture_regressions(const std::filesystem::path& root, const std::filesystem::path& captures) {
+    auto project = initial_project();
+    Block source; source.id = "source"; source.flow = "main_flow"; source.label = "Source";
+    source.x = 32; source.y = 36; source.factory = "fixture::source";
+    source.header = "src/blocks.hpp"; source.file = source.header;
+    source.outputs = {{"samples", "float", false}, {"count", "int", false}};
+    Block sink; sink.id = "sink"; sink.flow = "main_flow"; sink.label = "Sink";
+    sink.x = 362; sink.y = 162; sink.factory = "fixture::sink";
+    sink.header = source.header; sink.file = source.header;
+    sink.inputs = {{"samples", "float", false}, {"count", "int", false}};
+    auto remote_source = source; remote_source.id = "remote_source"; remote_source.flow = "remote_flow";
+    remote_source.x = 20; remote_source.y = 20;
+    auto remote_sink = sink; remote_sink.id = "remote_sink"; remote_sink.flow = "remote_flow";
+    remote_sink.x = 1000; remote_sink.y = 500;
+    project.flows.push_back({"remote_flow", "Widely spaced chain"});
+    project.blocks = {source, sink, remote_source, remote_sink};
+    write(root / "design/project.json", write_project(project));
+    write(root / "src/handlers.hpp", "#pragma once\n// on_start is ordinary project source.\n");
+    write(root / "src/blocks.hpp", "#pragma once\n// source and sink are ordinary project factories.\n");
+    const auto source_bytes = read(root / "src/blocks.hpp");
+    Session session(root / "design/project.json", root);
+    session.activate("editor.preview");
+    require(!widget(session.view(), "canvas.surface").spec.pointer_input, "Form preview left the design surface live");
+    session.choose("editor.mode", "flows");
+    require(widget(session.view(), "canvas.surface").spec.pointer_input,
+            "Switching from form preview to flows left block gestures disabled");
+    session.activate("editor.zoom.reset");
+    const auto origin = center(widget(session.view(), "canvas.block.source").state.bounds);
+    session.pointer(origin, gui::PointerKind::press);
+    session.pointer({origin.x + 12, origin.y + 18}, gui::PointerKind::move);
+    session.pointer({origin.x + 40, origin.y + 60}, gui::PointerKind::move);
+    session.pointer({origin.x + 40, origin.y + 60}, gui::PointerKind::release);
+    session.activate("editor.save");
+    auto saved = saved_project(root);
+    require(saved.blocks.front().x == 72 && saved.blocks.front().y == 96,
+            "Press/move/release did not move the selected flow block by the pointer delta");
+    session.activate("editor.undo"); session.activate("editor.save");
+    saved = saved_project(root);
+    require(saved.blocks.front().x == source.x && saved.blocks.front().y == source.y &&
+            !widget(session.view(), "editor.undo").state.enabled,
+            "One drag did not undo as exactly one design edit");
+    session.activate("editor.redo"); session.activate("editor.save");
+    saved = saved_project(root);
+    require(saved.blocks.front().x == 72 && saved.blocks.front().y == 96,
+            "Redo did not restore the completed block drag");
+    const auto returned_origin = center(widget(session.view(), "canvas.block.source").state.bounds);
+    session.pointer(returned_origin, gui::PointerKind::press);
+    session.pointer({returned_origin.x + 30, returned_origin.y + 18}, gui::PointerKind::move);
+    session.pointer(returned_origin, gui::PointerKind::cancel);
+    session.activate("editor.save"); saved = saved_project(root);
+    require(saved.blocks.front().x == 72 && saved.blocks.front().y == 96,
+            "Cancelling a physical block drag did not restore the original position");
+    session.pointer(returned_origin, gui::PointerKind::press);
+    session.pointer({returned_origin.x + 18, returned_origin.y + 24}, gui::PointerKind::move);
+    session.pointer(returned_origin, gui::PointerKind::move);
+    session.pointer(returned_origin, gui::PointerKind::release);
+    session.activate("editor.save"); saved = saved_project(root);
+    require(saved.blocks.front().x == 72 && saved.blocks.front().y == 96,
+            "Dragging away and back to the press point did not restore the initial block position");
+    session.activate("editor.undo"); session.activate("editor.save");
+    saved = saved_project(root);
+    require(saved.blocks.front().x == source.x && saved.blocks.front().y == source.y &&
+            !widget(session.view(), "editor.undo").state.enabled,
+            "An unchanged return-to-origin drag created an extra history edit");
+    session.activate("editor.redo"); session.activate("editor.save"); saved = saved_project(root);
+    const auto pending = [&] {
+        const auto* cancel = find(session.view(), "editor.connection.cancel");
+        return cancel && cancel->state.enabled;
+    };
+    const auto click_port = [&](gui::Point point, bool expect_success = true) {
+        session.pointer(point, gui::PointerKind::press, false);
+        session.pointer(point, gui::PointerKind::release, expect_success);
+    };
+    const auto output = port_position(saved, session, "source", "samples", PortDirection::output);
+    const auto input = port_position(saved, session, "sink", "samples", PortDirection::input);
+    const auto other_output = port_position(saved, session, "source", "count", PortDirection::output);
+    click_port(output);
+    require(pending(), "A port press/release did not start a pending connection");
+    capture(session.view(), captures, "editor-pending-port");
+    require(std::any_of(session.view().key_bindings.begin(), session.view().key_bindings.end(), [](const auto& binding) {
+        return binding.key == gui::ShortcutKey::escape && binding.target.id == "editor.connection.cancel";
+    }), "Pending wiring did not offer Escape cancellation");
+    click_port(other_output, false);
+    require(pending() && widget(session.view(), "editor.status").state.font.tone == gui::Tone::error,
+            "An invalid destination discarded the selected source port or reported success");
+    click_port(input);
+    require(!pending(), "A corrected destination left the connection gesture pending");
+    session.activate("editor.save"); saved = saved_project(root);
+    require(saved.edges.size() == 1 && saved.edges.front().from_block == "source" &&
+            saved.edges.front().from_port == "samples" && saved.edges.front().to_block == "sink" &&
+            saved.edges.front().to_port == "samples", "Correcting a rejected connection changed its initial source port");
+    const auto count_output = port_position(saved, session, "source", "count", PortDirection::output);
+    click_port(count_output); require(pending(), "Second wiring gesture did not start");
+    click_port(count_output); require(!pending(), "Clicking the pending port again did not cancel wiring");
+    click_port(count_output); session.activate("editor.connection.cancel");
+    require(!pending(), "Cancel wiring left the selected port pending");
+    click_port(count_output);
+    require(session.adapter.send(gui::ShortcutEvent{gui::ShortcutKey::escape}) == gui::Delivery::delivered,
+            "Escape did not dispatch the pending connection's cancel action");
+    session.healthy("Escape cancelled wiring");
+    require(!pending(), "Escape left the selected port pending");
+    session.activate("editor.save");
+    require(saved_project(root).edges.size() == 1, "Cancelling wiring created an edge");
+    click_port(count_output); click_port(input, false);
+    require(pending(), "A rejected stream type discarded the original port selection");
+    const auto count_caption = center(widget(session.view(), "canvas.port.6:source.out.count").state.bounds);
+    const auto destination_caption = center(widget(session.view(), "canvas.port.4:sink.in.count").state.bounds);
+    session.pointer(count_caption, gui::PointerKind::press, false);
+    session.pointer({(count_caption.x + destination_caption.x) / 2,
+                     (count_caption.y + destination_caption.y) / 2}, gui::PointerKind::move, false);
+    session.pointer(destination_caption, gui::PointerKind::release);
+    session.activate("editor.save"); saved = saved_project(root);
+    require(!pending() && saved.edges.size() == 2 && saved.edges.back().from_block == "source" &&
+            saved.edges.back().from_port == "count" && saved.edges.back().to_block == "sink" &&
+            saved.edges.back().to_port == "count", "Dragging between port names did not connect the compatible streams");
+    capture(session.view(), captures, "editor-block-gestures");
+    const auto all_remote_ports_visible = [&] {
+        for (const auto id : {"remote_source", "remote_sink"}) {
+            const auto* block_title = find(session.view(), std::string("canvas.block.") + id);
+            if (!block_title || block_title->state.bounds.width < 20 || block_title->state.bounds.height < 10) return false;
+        }
+        for (const auto id : {"samples", "count"}) {
+            if (!find(session.view(), std::string("canvas.port.13:remote_source.out.") + id) ||
+                !find(session.view(), std::string("canvas.port.11:remote_sink.in.") + id)) return false;
+        }
+        return true;
+    };
+    session.choose("editor.document", "remote_flow");
+    require(all_remote_ports_visible(), "Selecting a flow did not automatically frame its distant blocks and ports");
+    session.activate("editor.zoom.reset");
+    require(!find(session.view(), "canvas.block.remote_sink"), "100% reset did not expose the need to fit a wide graph");
+    session.activate("editor.zoom.fit");
+    require(all_remote_ports_visible(), "Fit did not bring the complete flow back into the canvas");
+    capture(session.view(), captures, "editor-fit-flow");
+    session.choose("editor.document", "main_flow"); session.activate("editor.zoom.reset");
+    session.activate("editor.add"); session.activate("editor.save", false);
+    saved = saved_project(root);
+    require(saved.blocks.size() == project.blocks.size() + 1, "Add block did not create a new flow block");
+    const auto& added = saved.blocks.back();
+    Canvas canvas; CanvasOptions options;
+    options.mode = CanvasMode::flows; options.document = "main_flow";
+    options.viewport = widget(session.view(), "canvas.viewport").state.bounds;
+    options.measure_text = [&](const auto& request) { return session.adapter.measure_text(request); };
+    (void)canvas.render(saved, options);
+    const auto new_bounds = canvas.object_bounds(added.id);
+    require(new_bounds.has_value(), "The added block has no canvas geometry");
+    for (const auto& block : saved.blocks) {
+        if (block.id == added.id || block.flow != added.flow) continue;
+        const auto bounds = canvas.object_bounds(block.id);
+        require(bounds && !gui::has_area(gui::intersect(*new_bounds, *bounds)),
+                "Automatic Add block placement overlaps an existing flow block");
+    }
+    require(read(root / "src/blocks.hpp") == source_bytes, "Flow gestures rewrote ordinary processing source");
 }
 void editing_regressions(const std::filesystem::path& root) {
     auto project = empty_project("Editing regressions");
@@ -586,11 +753,13 @@ void document_name_regressions(const std::filesystem::path& root, const std::fil
 void example_regressions(const std::filesystem::path& root, const std::filesystem::path& captures) {
     // Discovery must work when the editor is launched outside the repository,
     // using its executable's ancestors rather than the process working directory.
-    const auto original_demo = std::filesystem::path(__FILE__).parent_path().parent_path() / "examples/demo";
+    const auto original_examples = std::filesystem::path(__FILE__).parent_path().parent_path() / "examples";
     const auto bundle = root / "bundle";
     const auto demo = bundle / "editor/examples/demo";
     std::filesystem::create_directories(demo.parent_path());
-    std::filesystem::copy(original_demo, demo, std::filesystem::copy_options::recursive);
+    for (const auto name : {"demo", "simple", "rust-dsp"})
+        std::filesystem::copy(original_examples / name, demo.parent_path() / name,
+                              std::filesystem::copy_options::recursive);
     const auto executable = bundle / "build/editor-fixture/foundation-editor-fixture";
     write(executable, "Executable location fixture.\n");
     const auto current = root / "unrelated-project";
@@ -604,6 +773,15 @@ void example_regressions(const std::filesystem::path& root, const std::filesyste
     require(find(session.view(), "unsaved.cancel"), "Example bypassed the current design's unsaved-changes prompt");
     session.activate("unsaved.cancel");
     require(session.objects() == dirty_objects && inventory(root) == original, "Cancelling Example lost unsaved project work");
+    session.activate("editor.example"); session.activate("unsaved.discard");
+    require(find(session.view(), "example.cancel"), "Discard did not continue to the pending example picker");
+    session.activate("example.cancel");
+    require(session.objects() == dirty_objects && inventory(root) == original,
+            "Cancelling the continued picker changed the uncommitted design or ordinary files");
+    session.activate("editor.open");
+    require(find(session.view(), "unsaved.cancel"),
+            "Cancelling the continued picker incorrectly marked the retained design as saved");
+    session.activate("unsaved.cancel");
     session.activate("editor.undo"); session.select("start"); session.activate("editor.code");
     const auto source = widget(session.view(), "code.text").state.text;
     session.edit("code.text", source + "// Unsaved ordinary code.\n");
@@ -619,6 +797,14 @@ void example_regressions(const std::filesystem::path& root, const std::filesyste
             "Cancelling Example discarded the ordinary source buffer");
     session.activate("code.discard");
     session.activate("editor.example");
+    require(session.view().modal_root && find(session.view(), "example.simple") &&
+            find(session.view(), "example.rust") && find(session.view(), "example.demo"),
+            "Example did not offer the simple C++, Rust DSP and advanced MIMO designs");
+    capture(session.view(), captures, "editor-example-picker");
+    session.activate("example.cancel");
+    require(!session.view().modal_root && session.objects() == 1 && inventory(root) == original,
+            "Cancelling the example picker changed the current project or ordinary files");
+    session.activate("editor.example"); session.activate("example.demo");
     const auto demo_project = parse_project(read(demo / "project.json"));
     require(bool(demo_project) && !demo_project.project->forms.empty() && !demo_project.project->flows.empty(),
             "Retained example omits a form or flow");
@@ -645,6 +831,48 @@ void example_regressions(const std::filesystem::path& root, const std::filesyste
     session.select(block->id); session.activate("editor.code");
     require(widget(session.view(), "code.text").state.text == read(demo / block->file), "Example block did not open ordinary processing source");
     session.activate("code.close");
+    session.activate("editor.example"); session.activate("example.simple");
+    require(widget(session.view(), "editor.mode").state.selected == "forms" &&
+            widget(session.view(), "editor.document").state.selected == "simple.controls",
+            "Simple C++ example did not begin with its form controls");
+    capture(session.view(), captures, "editor-simple-form");
+    session.select("simple.run"); session.activate("editor.code");
+    require(widget(session.view(), "code.text").state.text == read(demo.parent_path() / "simple/events.cpp"),
+            "Simple C++ form did not open its ordinary event source");
+    session.activate("code.close"); session.choose("editor.mode", "flows");
+    require(widget(session.view(), "editor.document").state.selected == "simple.processing",
+            "Simple C++ example did not expose its ordinary signal-processing flow");
+    session.select("simple.gain"); session.activate("editor.details");
+    require(widget(session.view(), "detail.anchor").state.text == "starter::apply_gain" &&
+            widget(session.view(), "detail.symbol").state.text == "starter::make_gain",
+            "Block Details conflated the ordinary source function with its flow factory");
+    session.activate("detail.apply"); session.activate("editor.code");
+    require(widget(session.view(), "code.text").state.text == read(demo.parent_path() / "simple/signal.cpp") &&
+            widget(session.view(), "code.find").state.text == "apply_gain",
+            "Unchanged Details Apply lost navigation to the simple processing function");
+    session.activate("code.close"); capture(session.view(), captures, "editor-simple-flow");
+    session.activate("editor.example"); session.activate("example.rust");
+    require(widget(session.view(), "editor.mode").state.selected == "flows" &&
+            widget(session.view(), "editor.document").state.selected == "rust-dsp.processing",
+            "Rust DSP example did not open its flow when no form exists");
+    session.select("rust-dsp.filter"); session.activate("editor.details");
+    require(widget(session.view(), "detail.anchor").state.text == "process_samples" &&
+            widget(session.view(), "detail.file").state.text == "dsp.rs" &&
+            widget(session.view(), "detail.symbol").state.text == "foundation::editor::rust_dsp::make_filter",
+            "Rust block did not retain distinct source navigation and C++ factory references");
+    session.activate("detail.apply"); session.activate("editor.code");
+    require(widget(session.view(), "code.text").state.text == read(demo.parent_path() / "rust-dsp/dsp.rs") &&
+            widget(session.view(), "code.find").state.text == "process_samples",
+            "Rust processing block did not navigate to its ordinary Rust algorithm");
+    capture(session.view(), captures, "editor-rust-source");
+    session.activate("code.close"); capture(session.view(), captures, "editor-rust-flow");
+    {
+        const auto rust_root = demo.parent_path() / "rust-dsp";
+        Session launched(rust_root / "project.json", rust_root, executable);
+        require(widget(launched.view(), "editor.mode").state.selected == "flows" &&
+                widget(launched.view(), "editor.document").state.selected == "rust-dsp.processing" && launched.objects() >= 3,
+                "Launching a flow-only project left the initial Forms workspace empty");
+    }
     require(inventory(root) == original, "Opening the Example or its source wrote files or ran a project recipe");
 }
 #if defined(__linux__)
@@ -732,11 +960,12 @@ int main(int argc, char** argv) {
         editing_regressions(root / "editing-regressions");
         path_prompt_regressions(root / "path-prompt-regressions", captures);
         document_name_regressions(root / "document-name-regressions", captures);
+        gesture_regressions(root / "gesture-regressions", captures);
         example_regressions(root / "example-regressions", captures);
 #if defined(__linux__)
         recipe_regressions(root / "recipe-regressions", std::filesystem::canonical(argv[0]));
 #endif
-        std::cout << "editor application: shell, same-window prompts, document names, editable example, generated dispatch, forms, ordinary source, conflicts, arbitrary MIMO, preview, native smoke: ok\n";
+        std::cout << "editor application: shell, same-window prompts, document names, example picker, C++/Rust source navigation, block dragging, port wiring, fitted flows, generated dispatch, forms, ordinary source, conflicts, arbitrary MIMO, preview, native smoke: ok\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

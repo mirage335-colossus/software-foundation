@@ -84,12 +84,13 @@ struct Application::Impl {
     std::string modal, status="Open a project, or create a new one.", log, prompt_action;
     std::string saved_design, pending_action, previous_modal, prompt_previous_modal;
     bool error=false, pending=false, stopped=false, preview=false, run_after_build=false;
-    bool reveal_code=false, reveal_prompt=false;
+    bool reveal_code=false, reveal_prompt=false, fit_requested=false, ignore_double=false;
     struct WidgetLife { gui::WidgetSpec spec; bool active=false; std::uint64_t scene=0; };
     std::map<std::string,WidgetLife> widget_lives;
     std::uint64_t widget_generation=0;
     std::optional<Hit> connection;
-    struct Drag { std::string id; gui::Point initial, position; bool resize; Rect original; };
+    std::optional<Hit> pressed_port;
+    struct Drag { std::string id; gui::Point initial, position; bool resize; Rect original; bool moved=false; };
     std::optional<Drag> drag;
     double zoom=1;
     gui::Point pan;
@@ -117,6 +118,7 @@ struct Application::Impl {
         throw std::runtime_error("Select a form or flow first.");
     }
     void restore_history(Project restored) {
+        cancel_gesture();
         project=std::move(restored);
         if((mode=="forms"&&!form())||(mode=="flows"&&!flow()))choose_document();
         else sync_fields();
@@ -154,7 +156,8 @@ struct Application::Impl {
             if(std::none_of(project.forms.begin(),project.forms.end(),[&](const auto& f){return f.id==document;}))
                 document=project.forms.empty()?"":project.forms.front().id;
         }
-        selected.clear(); connection.reset(); pan={}; sync_fields();
+        selected.clear(); connection.reset(); pressed_port.reset(); drag.reset();
+        preview=false; pan={}; zoom=1; fit_requested=mode=="flows"; sync_fields();
     }
     void sync_fields() {
         fields["property.label"]=""; fields["property.position"]="0, 0"; fields["property.size"]="120, 32";
@@ -198,6 +201,8 @@ struct Application::Impl {
         if(next->recovery_pending())throw std::runtime_error("An interrupted save needs recovery. Run foundation-editor-tool recover for this project.");
         project=std::move(*parsed.project); files=std::move(next); design_original=std::move(snapshot); design_path=relative;
         saved_design=write_project(project); history.reset(project); code.reset(); modal.clear(); ++generation;
+        if(mode=="forms"&&project.forms.empty()&&!project.flows.empty())mode="flows";
+        else if(mode=="flows"&&project.flows.empty()&&!project.forms.empty())mode="forms";
         fields["project.path"]=path.string(); choose_document(); refresh_files();
         log=diagnostics(parsed.diagnostics); success("Opened "+project.name);
     }
@@ -256,7 +261,7 @@ struct Application::Impl {
                 if(mode=="flows"){Flow f{unique("flow"),name};document=f.id;project.flows.push_back(std::move(f));}
                 else if(mode=="forms"){Form f;f.id=unique("form");f.label=name;document=f.id;project.forms.push_back(std::move(f));}
                 else throw std::runtime_error("Choose Forms or Flows first.");
-                selected.clear();connection.reset();pan={};
+                choose_document();
             } else if(mode=="forms"&&form())form()->label=name;
             else if(mode=="flows"&&flow())flow()->label=name;
             else throw std::runtime_error("Select a form or flow first.");
@@ -264,7 +269,8 @@ struct Application::Impl {
         }
         prompt_action.clear();prompt_previous_modal.clear();
     }
-    void open_example() {
+    void open_example(std::string_view name) {
+        const auto relative=std::filesystem::path("editor/examples")/name/"project.json";
         std::vector<std::filesystem::path> starts{std::filesystem::current_path()};
         if(!launch_executable.empty())starts.push_back(std::filesystem::absolute(launch_executable).parent_path());
         if(!launch_root.empty())starts.push_back(std::filesystem::absolute(launch_root));
@@ -272,16 +278,16 @@ struct Application::Impl {
         for(auto path:starts) {
             path=path.lexically_normal();
             while(!path.empty()) {
-                const auto example=path/"editor/examples/demo/project.json";
+                const auto example=path/relative;
                 if(std::filesystem::is_regular_file(example)) {
-                    open(example);mode="forms";choose_document();
-                    success("Example opened. Choose Forms or Flows; double-click an element for C++ source.");
+                    open(example);mode=project.forms.empty()?"flows":"forms";choose_document();
+                    success("Example opened. Double-click an element to edit its source; Save updates the example files.");
                     return;
                 }
                 const auto parent=path.parent_path();if(parent==path)break;path=parent;
             }
         }
-        throw std::runtime_error("Example not found. Run from the software-foundation directory, or Open editor/examples/demo/project.json.");
+        throw std::runtime_error("Example not found. Run from the software-foundation directory, or Open "+relative.generic_string()+".");
     }
     void require_clean(std::string action) {
         if(dirty()||(code&&code->dirty())) {
@@ -289,9 +295,12 @@ struct Application::Impl {
             if(modal!="unsaved")previous_modal=modal;
             modal="unsaved"; return;
         }
+        continue_action(action);
+    }
+    void continue_action(const std::string& action) {
         if(action=="open")prompt("open","Open project JSON or directory",fields["project.path"]);
         else if(action=="new")prompt("new","New project directory");
-        else if(action=="example")open_example();
+        else if(action=="example")modal="examples";
         else { owner.shutdown(); adapter.close(); }
     }
     void select(std::string id) {
@@ -319,8 +328,14 @@ struct Application::Impl {
             if(palette=="list"||palette=="bitmap")c.layout.height=120;
             selected=c.id;form()->controls.push_back(std::move(c));
         } else if(mode=="flows") {
-            Block b; b.id=unique("block"); b.label="Block";b.flow=document;b.x=40+32.0*project.blocks.size();b.y=40;
+            if(!flow())throw std::runtime_error("Add a flow first.");
+            Block b; b.id=unique("block"); b.label="Block";b.flow=document;b.x=24;b.y=24;
+            for(const auto& other:project.blocks)if(other.flow==document) {
+                const auto height=42+25*std::max<std::size_t>({1,other.inputs.size(),other.outputs.size()});
+                b.y=std::max(b.y,other.y+height+24);
+            }
             b.inputs={{"in","float",true}};b.outputs={{"out","float",true}};selected=b.id;project.blocks.push_back(std::move(b));
+            fit_requested=true;
         } else throw std::runtime_error("Use Forms or Flows to add an element.");
         changed();select(selected);
     }
@@ -359,6 +374,7 @@ struct Application::Impl {
             fields["detail.read_only"]=c->read_only?"true":"false";
         } else if(auto* b=block()) {
             fields["detail.file"]=b->file; fields["detail.symbol"]=b->factory; fields["detail.header"]=b->header;
+            fields["detail.anchor"]=b->symbol;
             fields["detail.inputs"].clear(); fields["detail.outputs"].clear();fields["detail.params"].clear();
             for(const auto& p:b->inputs)fields["detail.inputs"]+=p.id+" : "+p.type+"\n";
             for(const auto& p:b->outputs)fields["detail.outputs"]+=p.id+" : "+p.type+"\n";
@@ -398,7 +414,7 @@ struct Application::Impl {
                     b->file=fields["detail.file"];b->symbol=fields["detail.symbol"];b->header=fields["detail.header"];b->event=event;
                 }
             } else if(auto* b=block()) {
-                b->file=fields["detail.file"];b->header=fields["detail.header"];b->factory=fields["detail.symbol"];b->symbol=b->factory;
+                b->file=fields["detail.file"];b->header=fields["detail.header"];b->factory=fields["detail.symbol"];b->symbol=fields["detail.anchor"];
                 b->inputs=ports(fields["detail.inputs"],b->inputs);b->outputs=ports(fields["detail.outputs"],b->outputs);b->params.clear();
                 for(const auto& line:lines(fields["detail.params"])) {const auto p=line.find('=');if(p==std::string::npos)throw std::invalid_argument("Parameters use name = value.");b->params.emplace(trim(line.substr(0,p)),trim(line.substr(p+1)));}
             }
@@ -490,8 +506,9 @@ struct Application::Impl {
     }
     void connect(Hit hit) {
         if(!hit.direction)return;
-        if(!connection) {connection=std::move(hit);success("Select the matching destination port.");return;}
-        auto a=*connection,b=std::move(hit);connection.reset();
+        if(!connection) {connection=std::move(hit);success("Select the other port, or press Escape to cancel.");return;}
+        if(*connection==hit){connection.reset();success("Connection cancelled.");return;}
+        auto a=*connection,b=std::move(hit);
         if(a.direction==b.direction)throw std::invalid_argument("Connect an output to an input.");
         if(a.direction==PortDirection::input)std::swap(a,b);
         Edge edge;edge.id=unique("edge");edge.from_block=a.object;edge.from_port=a.port;edge.to_block=b.object;edge.to_port=b.port;
@@ -500,36 +517,65 @@ struct Application::Impl {
         std::vector<Diagnostic> introduced;
         for(const auto& d:ds)if(d.severity==Severity::error&&std::none_of(prior.begin(),prior.end(),[&](const auto& old){return old.severity==d.severity&&old.path==d.path&&old.message==d.message;}))introduced.push_back(d);
         if(!introduced.empty()){project.edges.pop_back();throw std::invalid_argument(diagnostics(introduced));}
+        connection.reset();
         log=diagnostics(ds);
         changed();success("Connected ports.");
     }
+    void cancel_gesture() {
+        if(drag){selected=drag->id;if(auto* c=control())c->layout=drag->original;else if(auto* b=block()){b->x=drag->original.x;b->y=drag->original.y;}sync_fields();}
+        drag.reset();pressed_port.reset();connection.reset();
+    }
+    void move_drag(gui::Point position) {
+        if(!drag)return;
+        if(!drag->moved&&std::hypot(position.x-drag->position.x,position.y-drag->position.y)<3)return;
+        drag->moved=true;
+        const auto p=canvas.view_to_model(position);const auto dx=p.x-drag->initial.x,dy=p.y-drag->initial.y;
+        selected=drag->id;
+        if(auto* c=control()) {
+            if(drag->resize){c->layout.width=std::max(8.0,drag->original.width+dx);c->layout.height=std::max(8.0,drag->original.height+dy);}
+            else {c->layout.x=std::max(0.0,drag->original.x+dx);c->layout.y=std::max(0.0,drag->original.y+dy);}
+        } else if(auto* b=block()){b->x=std::max(0.0,drag->original.x+dx);b->y=std::max(0.0,drag->original.y+dy);}
+        sync_fields();
+    }
     void pointer(const gui::PointerInput& input) {
-        if(preview)return;
+        if(preview&&mode=="forms")return;
+        if(input.kind==gui::PointerKind::double_click&&std::exchange(ignore_double,false))return;
+        if(input.kind==gui::PointerKind::press||input.kind==gui::PointerKind::click)ignore_double=false;
         if(input.kind==gui::PointerKind::wheel) {
+            if(drag||pressed_port)return;
             if(input.control)zoom=std::clamp(zoom*(input.wheel_y>0?1.1:1/1.1),.25,3.0);
             else {pan.x=std::max(0.0,pan.x-input.wheel_x*28/zoom);pan.y=std::max(0.0,pan.y-input.wheel_y*28/zoom);}
             return;
         }
-        if(input.kind==gui::PointerKind::cancel){
-            if(drag){selected=drag->id;if(auto* c=control())c->layout=drag->original;else if(auto* b=block()){b->x=drag->original.x;b->y=drag->original.y;}sync_fields();}
-            drag.reset();return;
+        if(input.kind==gui::PointerKind::cancel){cancel_gesture();return;}
+        if(input.kind==gui::PointerKind::move&&drag){move_drag(input.position);return;}
+        if(input.kind==gui::PointerKind::release) {
+            ignore_double=input.clicks>=2;
+            if(drag) {
+                move_drag(input.position);
+                bool modified=false;
+                if(auto* c=control())modified=c->layout!=drag->original;
+                else if(auto* b=block())modified=b->x!=drag->original.x||b->y!=drag->original.y;
+                const auto moved=drag->moved;
+                drag.reset();if(modified)changed();else if(!moved&&input.clicks>=2)edit_code();return;
+            }
+            if(pressed_port) {
+                const auto origin=std::exchange(pressed_port,{});
+                const auto destination=canvas.hit_test(input.position);
+                if(destination&&destination->direction) {
+                    if(*destination!=*origin)connection=origin;
+                    connect(*destination);
+                }
+                return;
+            }
+            return;
         }
-        if(input.kind==gui::PointerKind::move&&drag) {
-            const auto p=canvas.view_to_model(input.position);const auto dx=p.x-drag->initial.x,dy=p.y-drag->initial.y;
-            selected=drag->id;
-            if(auto* c=control()) {
-                if(drag->resize){c->layout.width=std::max(8.0,drag->original.width+dx);c->layout.height=std::max(8.0,drag->original.height+dy);}
-                else {c->layout.x=std::max(0.0,drag->original.x+dx);c->layout.y=std::max(0.0,drag->original.y+dy);}
-            } else if(auto* b=block()){b->x=std::max(0.0,drag->original.x+dx);b->y=std::max(0.0,drag->original.y+dy);}
-            sync_fields();return;
-        }
-        if(input.kind==gui::PointerKind::release&&drag) {drag.reset();changed();if(input.clicks>=2)edit_code();return;}
-        if(input.kind!=gui::PointerKind::press&&input.kind!=gui::PointerKind::click&&input.kind!=gui::PointerKind::double_click&&input.kind!=gui::PointerKind::release)return;
+        if(input.kind!=gui::PointerKind::press&&input.kind!=gui::PointerKind::click&&input.kind!=gui::PointerKind::double_click)return;
         auto hit=canvas.hit_test(input.position);
         if(!hit){selected.clear();connection.reset();sync_fields();return;}
         select(hit->object);
-        if(hit->direction) {if(input.kind!=gui::PointerKind::press)connect(*hit);return;}
-        if(input.kind==gui::PointerKind::double_click||(input.kind==gui::PointerKind::release&&input.clicks>=2)) {if(!hit->edge)edit_code();return;}
+        if(hit->direction) {if(input.kind==gui::PointerKind::press)pressed_port=hit;else connect(*hit);return;}
+        if(input.kind==gui::PointerKind::double_click) {if(!hit->edge)edit_code();return;}
         if(input.kind==gui::PointerKind::press&&!hit->edge) {
             Rect r;if(auto* c=control())r=c->layout;else if(auto* b=block())r={b->x,b->y,0,0};
             drag=Drag{selected,canvas.view_to_model(input.position),input.position,hit->resize,r};
@@ -539,10 +585,14 @@ struct Application::Impl {
         if(id=="editor.open")require_clean("open");
         else if(id=="editor.new")require_clean("new");
         else if(id=="editor.example")require_clean("example");
+        else if(id=="example.simple")open_example("simple");
+        else if(id=="example.rust")open_example("rust-dsp");
+        else if(id=="example.demo")open_example("demo");
+        else if(id=="example.cancel")modal.clear();
         else if(id=="editor.save"){if(files)save();else prompt("save_as","Save project in directory");}
         else if(id=="editor.undo") {if(auto p=history.undo()){restore_history(std::move(*p));success("Undone.");}}
         else if(id=="editor.redo") {if(auto p=history.redo()){restore_history(std::move(*p));success("Redone.");}}
-        else if(id=="editor.preview"){preview=!preview;success(preview?"Layout preview; application code is not executed.":"Design mode.");}
+        else if(id=="editor.preview"&&mode=="forms"){cancel_gesture();preview=!preview;success(preview?"Layout preview; application code is not executed.":"Design mode.");}
         else if(id=="editor.build")build(false);
         else if(id=="editor.run")build(true);
         else if(id=="editor.stop"){process_status=process.cancel();run_after_build=false;success("Process stopped.");}
@@ -559,6 +609,8 @@ struct Application::Impl {
         else if(id=="editor.zoom.in")zoom=std::min(3.0,zoom*1.2);
         else if(id=="editor.zoom.out")zoom=std::max(.25,zoom/1.2);
         else if(id=="editor.zoom.reset"){zoom=1;pan={};}
+        else if(id=="editor.zoom.fit"){fit_requested=true;success("View fitted. Wheel scroll pans; Ctrl+wheel zooms.");}
+        else if(id=="editor.connection.cancel"){cancel_gesture();success("Connection cancelled.");}
         else if(id=="detail.apply")apply_details();
         else if(id=="detail.cancel")modal.clear();
         else if(id=="code.save"){code->save(*files);success("Source saved.");}
@@ -570,7 +622,7 @@ struct Application::Impl {
         else if(id=="code.close"){if(code->dirty()){failure("Save edits or choose Discard to close this buffer.");}else{modal.clear();code.reset();}}
         else if(id=="code.discard"){modal.clear();code.reset();success("Unsaved buffer discarded.");}
         else if(id=="unsaved.save"){if(!files){prompt("save_as","Save project in directory");}else{save();if(!error){modal.clear();auto next=std::exchange(pending_action,{});require_clean(next);}}}
-        else if(id=="unsaved.discard"){modal.clear();if(code)code.reset();saved_design=write_project(project);auto next=std::exchange(pending_action,{});require_clean(next);}
+        else if(id=="unsaved.discard"){modal.clear();if(code)code.reset();auto next=std::exchange(pending_action,{});continue_action(next);}
         else if(id=="unsaved.cancel"){modal=std::exchange(previous_modal,{});pending_action.clear();}
         else if(id=="editor.file.open")open_file(fields["file.path"]);
         ++epoch;
@@ -597,13 +649,24 @@ struct Application::Impl {
         if(std::any_of(values.begin(),values.end(),[&](const auto& v){return v.first==value;}))w.state.selected=value;
     }
     void draw_modal(double width,double height) {
-        const bool compact=modal=="prompt";
+        const bool compact=modal=="prompt"||modal=="examples";
         const auto w=compact?std::min(760.0,width-32):std::max(380.0,width*.86);
-        const auto x=std::max(8.0,(width-w)/2),y=std::max(55.0,height*.06),h=compact?230.0:std::max(300.0,height-y-45);
+        const auto x=std::max(8.0,(width-w)/2),y=std::max(55.0,height*.06),h=modal=="examples"?310.0:compact?230.0:std::max(300.0,height-y-45);
         const std::string parent="modal.root";
         auto& group=add(gui::Kind::group,parent,"",{x,y,w,h});group.state.content_size={w,h};
         view.modal_root=group.spec.key;
-        if(modal=="prompt") {
+        if(modal=="examples") {
+            label("Choose an editable example",x+12,y+12,w-24,parent);
+            button("example.simple","Simple C++",x+12,y+48,158,parent);
+            label("Start here: form events and a source, gain and collector.",x+184,y+52,w-196,parent);
+            button("example.rust","Rust DSP",x+12,y+98,158,parent);
+            label("Stateful FIR filter and decimation in ordinary Rust.",x+184,y+102,w-196,parent);
+            button("example.demo","Advanced MIMO",x+12,y+148,158,parent);
+            label("Two inputs, four outputs and unequal stream rates.",x+184,y+152,w-196,parent);
+            label("Opening runs no code. Save edits the example's files.",x+12,y+208,w-24,parent);
+            button("example.cancel","Cancel",x+12,y+h-46,100,parent);
+            view.key_bindings.push_back({gui::ShortcutKey::escape,{"example.cancel",generation}});
+        } else if(modal=="prompt") {
             const bool naming=prompt_action=="rename"||prompt_action=="new_document";
             label(fields["prompt.title"],x+12,y+12,w-24,parent);
             auto& value=input("prompt.value",naming?"Name":"Project path",{x+12,y+44,w-24,32},false,parent);
@@ -646,6 +709,7 @@ struct Application::Impl {
                     choice("detail.read_only","Editing",{x+12,y+345,column,30},{{"true","Read only"},{"false","Editable"}},fields["detail.read_only"],parent);
                 }
             } else {
+                field("detail.anchor","Source symbol (optional)",x+24+column,y+104);
                 field("detail.inputs","Input ports: name : type",x+12,y+170,110);
                 field("detail.outputs","Output ports: name : type",x+24+column,y+170,110);
                 field("detail.params","Parameters: name = value",x+12,y+315,70);
@@ -661,6 +725,37 @@ struct Application::Impl {
             button("unsaved.cancel","Cancel",x+248,y+100,100,parent);
         }
     }
+    std::vector<gui::Widget> render_canvas(gui::Rect viewport) {
+        if(fit_requested){zoom=1;pan={};}
+        const auto render=[&] {
+            canvas_options={mode=="flows"?CanvasMode::flows:CanvasMode::forms,document,selected,viewport,zoom,pan,preview&&mode=="forms",connection?connection:pressed_port,
+                [this](const gui::TextMeasureRequest& request){return adapter.measure_text(request);}};
+            return canvas.render(project,canvas_options);
+        };
+        auto widgets=render();
+        // Re-measure after zoom: minimum readable font sizes can widen blocks.
+        for(unsigned pass=0;fit_requested&&pass<4;++pass) {
+            std::optional<gui::Rect> extent;
+            const auto include=[&](gui::Rect r) {
+                if(!extent)extent=r;
+                else {const auto x=std::min(extent->x,r.x),y=std::min(extent->y,r.y);
+                    *extent={x,y,std::max(extent->x+extent->width,r.x+r.width)-x,std::max(extent->y+extent->height,r.y+r.height)-y};}
+            };
+            if(mode=="forms"&&form()) {
+                const auto origin=canvas.model_to_view({0,0});
+                include({origin.x,origin.y,form()->width*zoom,form()->height*zoom});
+                for(const auto& c:form()->controls)if(auto r=canvas.object_bounds(c.id))include(*r);
+            } else for(const auto& b:project.blocks)if(b.flow==document)if(auto r=canvas.object_bounds(b.id))include(*r);
+            if(!extent)break;
+            const auto top=canvas.view_to_model({extent->x,extent->y});
+            const auto ratio=std::min((viewport.width-32)/std::max(1.0,extent->width),(viewport.height-32)/std::max(1.0,extent->height));
+            zoom=std::clamp(zoom*ratio,.25,1.0);
+            pan={top.x-16/zoom,top.y-16/zoom};
+            widgets=render();
+        }
+        fit_requested=false;
+        return widgets;
+    }
     void publish() {
         if(stopped||adapter.closed())return;
         pending=true;
@@ -674,25 +769,30 @@ struct Application::Impl {
             if(widget.spec.parent.empty())widget.spec.parent="editor.root";
             view.widgets.push_back(std::move(widget));
         }
-        button("editor.example","Example",710,8,90);
+        button("editor.example","Examples",710,8,90);
         const bool running=process.running();
         for(auto& widget:view.widgets) {
             if(widget.spec.key.id=="editor.stop")widget.state.enabled=running;
             if(widget.spec.key.id=="editor.build"||widget.spec.key.id=="editor.run")widget.state.enabled=!running&&files!=nullptr;
             if(widget.spec.key.id=="editor.undo")widget.state.enabled=history.can_undo();
             if(widget.spec.key.id=="editor.redo")widget.state.enabled=history.can_redo();
+            if(widget.spec.key.id=="editor.preview")widget.state.enabled=mode=="forms"&&form();
+            if(widget.spec.key.id=="editor.details")widget.state.enabled=mode!="files"&&(control()||block());
         }
         label(files?files->root().string():"No project directory",12,46,width-24);
         choice("editor.mode","Workspace",{12,74,172,30},{{"forms","Forms"},{"flows","Flows"},{"files","Files"}},mode);
         std::vector<std::pair<std::string,std::string>> docs;
         if(mode=="flows")for(const auto& f:project.flows)docs.emplace_back(f.id,f.label);
         else for(const auto& f:project.forms)docs.emplace_back(f.id,f.label);
-        choice("editor.document","Document",{198,74,260,30},docs,document);
-        button("editor.document.new",mode=="flows"?"New flow":"New form",468,74,100);
-        auto& rename=button("editor.document.rename","Rename",580,74,94);
-        rename.state.enabled=(mode=="forms"&&form())||(mode=="flows"&&flow());
-        button("editor.zoom.out","-",width-120,74,30);button("editor.zoom.reset",number(zoom*100)+"%",width-85,74,66);
-        button("editor.zoom.in","+",width-155,74,30);
+        if(mode!="files") {
+            choice("editor.document","Document",{198,74,260,30},docs,document);
+            button("editor.document.new",mode=="flows"?"New flow":"New form",468,74,100);
+            auto& rename=button("editor.document.rename","Rename",580,74,94);
+            rename.state.enabled=(mode=="forms"&&form())||(mode=="flows"&&flow());
+            button("editor.zoom.fit","Fit",width-220,74,56);
+            button("editor.zoom.out","-",width-120,74,30);button("editor.zoom.reset",number(zoom*100)+"%",width-85,74,66);
+            button("editor.zoom.in","+",width-155,74,30);
+        }
         const double body_y=120,body_h=std::max(230.0,height-270),right=width-235;
         auto& list=add(gui::Kind::list,"editor.objects",mode=="files"?"Source files":"Elements",{12,body_y,174,body_h});
         list.spec.row_height=29;list.state.content_size={174,body_h};
@@ -703,33 +803,48 @@ struct Application::Impl {
         if(std::any_of(list.state.records.begin(),list.state.records.end(),[&](const auto& r){return r.id==selected;}))list.state.selected=selected;
         list.state.content_size.height=list.state.records.size()*29;
         if(mode!="files") {
-            canvas_options={mode=="flows"?CanvasMode::flows:CanvasMode::forms,document,selected,{198,body_y,std::max(120.0,right-212),body_h},zoom,pan,preview,connection,
-                [this](const gui::TextMeasureRequest& request){return adapter.measure_text(request);}};
-            auto widgets=canvas.render(project,canvas_options);
+            auto widgets=render_canvas({198,body_y,std::max(120.0,right-212),body_h});
             for(auto& w:widgets){w.spec.key.generation=generation;if(w.spec.parent.empty())w.spec.parent="editor.root";view.widgets.push_back(std::move(w));}
+            for(auto& w:view.widgets)if(w.spec.key.id=="editor.zoom.reset")w.state.label=number(std::round(zoom*100))+"%";
         } else {
             label("Double-click a source file to edit it.",210,145,std::max(160.0,right-225));
             input("file.path","Relative path",{210,180,std::max(120.0,right-225),32});button("editor.file.open","Open file",210,222,110);
             label("C++, Rust and build files remain ordinary text files.",210,270,std::max(160.0,right-225));
         }
-        label("Properties",right,body_y,210);
-        label(selected.empty()?"Select an element":selected,right,body_y+25,210);
-        label("Label",right,body_y+56,210);input("property.label","Label",{right,body_y+80,216,30});
-        label("Position: x, y",right,body_y+118,210);input("property.position","Position",{right,body_y+142,216,30});
-        label("Size: width, height",right,body_y+180,210);input("property.size","Size",{right,body_y+204,216,30});
-        button("editor.apply","Apply",right,body_y+248,100);button("editor.code","Edit code",right+110,body_y+248,106);
-        choice("editor.event","Event",{right,body_y+292,216,30},{{"activate","Activate / click"},{"text_changed","Text changed"},{"submit","Submit text"},{"choose","Choice changed"},{"checked","Toggle changed"},{"select_record","Row selected"},{"activate_record","Row activated"},{"pointer","Pointer"},{"action","Named action"}},event);
-        button("editor.duplicate","Duplicate",right,body_y+338,100);button("editor.remove","Delete",right+110,body_y+338,106);
+        if(mode!="files") {
+            label("Properties",right,body_y,210);
+            label(selected.empty()?"Select an element":selected,right,body_y+25,210);
+            const bool editable=control()||block();
+            if(editable) {
+                label("Label",right,body_y+56,210);input("property.label","Label",{right,body_y+80,216,30});
+                label("Position: x, y",right,body_y+118,210);input("property.position","Position",{right,body_y+142,216,30});
+                if(mode=="forms") {
+                    label("Size: width, height",right,body_y+180,210);input("property.size","Size",{right,body_y+204,216,30});
+                    choice("editor.event","Event",{right,body_y+292,216,30},{{"activate","Activate / click"},{"text_changed","Text changed"},{"submit","Submit text"},{"choose","Choice changed"},{"checked","Toggle changed"},{"select_record","Row selected"},{"activate_record","Row activated"},{"pointer","Pointer"},{"action","Named action"}},event);
+                } else {
+                    label("Details: ports and source",right,body_y+186,216);
+                    label("Auto-sized to fit ports.",right,body_y+212,216);
+                }
+                button("editor.apply","Apply",right,body_y+248,100);button("editor.code","Edit code",right+110,body_y+248,106);
+                button("editor.duplicate","Duplicate",right,body_y+338,100);
+            }
+            if(!selected.empty())button("editor.remove","Delete",right+110,body_y+338,106);
+            if(connection||pressed_port)button("editor.connection.cancel","Cancel link",right,body_y+388,216);
+        }
         if(mode=="forms")choice("editor.palette","Widget",{12,height-136,174,30},{{"button","Button"},{"label","Label"},{"text","Text"},{"choice","Dropdown"},{"toggle","Toggle"},{"list","List"},{"bitmap","Bitmap"},{"menu","Menu"},{"group","Group"}},palette);
-        button("editor.add",mode=="flows"?"Add block":"Add widget",198,height-136,112);
-        label(connection?"Choose the other port to connect.":preview?"Preview: code is inactive.":"Double-click to edit code. Drag to move; Ctrl+wheel to zoom.",322,height-132,width-340);
+        if(mode!="files")button("editor.add",mode=="flows"?"Add block":"Add widget",198,height-136,112).state.enabled=mode=="forms"?form()!=nullptr:flow()!=nullptr;
+        std::string help=mode=="files"?"Open any ordinary source file; use External for your preferred editor.":preview?"Preview: code is inactive. Choose Preview again to edit.":mode=="flows"?"Drag headers. Click or drag port names to connect. Double-click for code.":"Drag to move; use the corner to resize. Double-click for event code.";
+        if(const auto origin=connection?connection:pressed_port)help="Link from "+origin->object+"."+origin->port+": choose an "+(origin->direction==PortDirection::output?"input":"output")+"; Escape cancels.";
+        auto& help_widget=add(gui::Kind::label,"editor.help","",{322,height-141,width-340,44});
+        help_widget.state.text=std::move(help);help_widget.state.wrap=gui::TextWrap::word;
         auto& output=add(gui::Kind::text,"editor.diagnostics","Diagnostics",{12,height-95,width-24,48});output.spec.text_policy={true,true,2*1024*1024,gui::SubmitKey::none};output.state.text=display_log(log);
         auto& state=add(gui::Kind::label,"editor.status",status,{12,height-36,width-24,26});state.state.font.tone=error?gui::Tone::error:gui::Tone::muted;
         if(!modal.empty())draw_modal(width,height);
         else {
-            view.key_bindings.push_back({gui::ShortcutKey::f2,{"editor.code",generation}});
+            if(mode!="files"&&(control()||block()))view.key_bindings.push_back({gui::ShortcutKey::f2,{"editor.code",generation}});
             view.key_bindings.push_back({gui::ShortcutKey::f5,{"editor.run",generation}});
             view.key_bindings.push_back({gui::ShortcutKey::f3,{"editor.save",generation}});
+            if(connection||pressed_port)view.key_bindings.push_back({gui::ShortcutKey::escape,{"editor.connection.cancel",generation}});
         }
         // Retired identities and changed specifications cannot reuse a native
         // widget generation. Unchanged live controls keep focus/caret/capture.

@@ -22,12 +22,23 @@ identity inside a renderer.
   toolkit/adapter targets, without the upstream demonstration or install rules.
 - `rev-dependencies.patch` passes the preserved archive root explicitly to the
   upstream GLEW/FreeType recipe.
+- `rev-pointer.patch` translates physical raw pointer gestures with stable
+  ownership through release or cancellation, skipping inert text when choosing
+  the declared input surface. `rev-pointer-probe.patch` exposes native phase
+  input to focused tests while retaining the existing semantic click probe.
 - `fltk-appearance.patch` renders generic groups, buttons, toggles and menus with
   the shared flat palette, border and font roles. It uses a monospaced font class
   throughout, including measurement, and clears native focus when requested.
   Native button/editor callbacks and keyboard handling remain in the toolkit.
   No application identity or command occurs in this adapter patch. Real native
   control, toggle, focus and pixel-comparison fixtures protect its behavior.
+- `fltk-pointer.patch` follows the appearance patch and translates physical
+  pointer input on declared raw surfaces into press, move and release, retaining
+  the target through a drag outside its bounds. Escape and loss of window focus
+  cancel ownership. Inert labels and groups let an underlying surface receive
+  input; ordinary buttons, text editors and lists keep their toolkit handling.
+  The native FLTK fixture checks phases, capture and cancellation. Remove the
+  patch when the pinned upstream implements and passes the same contract.
 
 - `contract-portability.patch` makes the upstream synchronous text acknowledgment
   test capture an explicitly declared pointer, then assigns it after construction.

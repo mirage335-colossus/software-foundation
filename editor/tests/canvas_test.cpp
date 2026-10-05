@@ -119,6 +119,12 @@ void flows() {
     require(hit&&hit->object=="source"&&hit->port=="signal"&&hit->direction==PortDirection::output,"named output port hit");
     const auto input_hit=canvas.hit_test(in);
     require(input_hit&&input_hit->direction==PortDirection::input,"named input port hit");
+    for(const auto& widget:view.widgets)if(widget.spec.key.id.starts_with("canvas.port.")) {
+        const auto area=widget.state.bounds;
+        const auto label_hit=canvas.hit_test({area.x+area.width*.5,area.y+area.height*.5});
+        require(label_hit&&label_hit->direction.has_value(),"port text is a wiring target");
+        require(!widget.spec.pointer_input,"port labels leave pointer capture on the stable canvas surface");
+    }
     require(canvas.port_position("sink","extra",PortDirection::input).has_value(),"arbitrary MIMO extra input");
     const auto wire=canvas.hit_test({(out.x+in.x)*.5,(out.y+in.y)*.5});
     require(wire&&wire->edge&&wire->object=="wire","wire selection");
@@ -126,6 +132,12 @@ void flows() {
     for(const auto& w:view.widgets)if(w.spec.key.id.find(".in.extra")!=std::string::npos)
         required=w.state.font.tone==gui::Tone::error;
     require(required,"unconnected required port diagnostic");
+    options.pending_port=Hit{"sink","extra",PortDirection::input};
+    const auto pending=snapshot(canvas.render(project,options));
+    bool accented=false;
+    for(const auto& w:pending.widgets)if(w.spec.key.id.find(".in.extra")!=std::string::npos)
+        accented=w.state.font.tone==gui::Tone::accent;
+    require(accented,"pending required port is visibly selected");
     gui::FramebufferAdapter adapter;adapter.present(view);
     require(adapter.frame().pixels!=nullptr,"flow raster and labels present together");
     // Partial repaint uses the original sample mapping, independent of damage.

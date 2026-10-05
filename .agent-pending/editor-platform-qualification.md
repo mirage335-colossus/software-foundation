@@ -59,6 +59,41 @@ source/library identities are in `build/editor-usability-probe/compile-receipt.j
 `build/editor-app-checks/usability-captures/`. This focused check adds no SDK,
 application CI or release dependency and does not expand the platform claims below.
 
+Focused flow-editing follow-up from commit
+`974ef0e0d70fef9d08cd45b7b86ecc4d00e0d092`, 2026-10-05:
+
+- All ten local editor suites passed through the supported headless command in
+  `build/editor-gesture-checks`. Coverage includes physical pointer phases,
+  drag/undo/cancel, port-name click and drag wiring, rejected-link correction,
+  preview transitions, Fit, examples and independent source/factory navigation.
+  The application fixture passed again after the final ASCII example caption.
+- Rebuilt `build/editor-fltk-sdk/foundation-editor-fltk` with the same native
+  C++ SDK. An actual XTest/FLTK probe against its final libraries passed block
+  dragging across repaints, Escape rollback, both wiring gestures, native
+  Save/Delete/Open/Cancel buttons, clipboard paste and stable focus. Its receipt
+  matches the final source/library hashes. Private display/process groups joined.
+- Focused native FLTK and Rev pointer-contract probes and shared framebuffer
+  pointer checks passed. The retained source-group suite passed 25/25. The shared
+  GUI boundary suite passed 38 cases; its remaining fixture was updated for the
+  new repatch call and passed on a focused rerun. No editor CI gate was added.
+- The simpler C++ starter and Rust 1.63 FIR/decimation example built and ran.
+  Rust checks cover state across uneven chunks, capacity/backpressure, counts,
+  restart and actual recompilation after a source change. Retained generation
+  is current for both new examples, the existing MIMO demo and the editor itself.
+  Updated UI captures were inspected, including example spacing and connection
+  instructions. Documentation and whitespace checks passed.
+
+Final source identities and the caption follow-up are recorded in
+`build/editor-usability-followup/source-snapshot.json`; suite and native evidence
+are in `build/editor-gesture-checks/interaction-validation.json`,
+`build/editor-gesture-probe/foundation-editor-flow-probe-result.json`,
+`build/editor-rev-pointer-probe/receipt.json`,
+`build/editor-simple-example-check/check-receipt.json` and
+`build/editor-rust-dsp-check/receipt.json`. The refreshed GUI input manifest is
+`a6c7f359a4679961d0e8211dcafa6f4743094de5105ca2b5ed0de2d86feb2fbb`;
+its upstream revision is unchanged. These are focused development checks, with
+no added SDK package, editor distribution step or application release dependency.
+
 The outstanding broader scope is qualification of actual editor use on selected
 native targets/backends: Windows source file/process adapters, native ARM64,
 and disconnected editor builds/runtime using an already retained matching native

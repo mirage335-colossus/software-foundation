@@ -2,8 +2,11 @@
 
 The C++20 editor combines a small form designer, event-source editor and typed
 stream-flow designer. Complex behavior stays in ordinary C++, headers, Rust
-wrappers and normal compiler tools. Start with [COMPILE-editor](../COMPILE-editor),
-the [adopted-source example](examples/demo/README.md), or the editor's
+wrappers and normal compiler tools. Start with [COMPILE-editor](../COMPILE-editor)
+and the [simple C++ example](examples/simple/README.md). The
+[Rust DSP example](examples/rust-dsp/README.md) offers a processing-language
+alternative; the [advanced MIMO example](examples/demo/README.md) demonstrates
+more integration features. The editor also has its
 [own editable design](self/README.md).
 
 The editor uses the existing GUI abstraction for FLTK, Rev and the framebuffer
@@ -62,17 +65,18 @@ cannot be reused for the editor.
 
 ## Normal editing
 
-1. Choose **Example** to open the [receiver form and MIMO flow](examples/demo/README.md),
-   **New** for a project directory, or **Open** for a project JSON file.
+1. Choose **Examples**, then **Simple C++**, **Rust DSP**, or **Advanced MIMO**.
+   Choose **New** for a project directory or
+   **Open** for a project JSON file.
    New/Open and Save-as use a path field inside the editor window: type or paste
    a path and press Enter to accept or Escape to cancel. The window remains
    minimizable while entering a path. A project directory selects
    `design/project.json`. The command line accepts
    `--project PATH` and an optional `--root PATH` for a wider existing project.
-   Example opens the actual editable `editor/examples/demo` project; Save changes
-   its design/generated files, and saving source changes its ordinary C++ files.
+   Examples opens the chosen editable project under `editor/examples/`; Save changes
+   its design/generated files, and saving source changes its ordinary source files.
    Opening it executes no project code and writes no files. Run the editor from
-   the repository root if it cannot locate the example.
+   the repository root if it cannot locate the examples.
 2. Choose **Forms**, a form, a widget kind and **Add widget**. Select an element,
    drag it to move, resize with its handle, or change its label/position/size and
    **Apply**. **New form** asks for a name; **Rename** beside the document picker
@@ -90,14 +94,21 @@ cannot be reused for the editor.
    edited directly in the JSON document.
 5. Choose **Flows**, a flow and **Add block**. **New flow** asks for a name;
    **Rename** changes the selected flow's displayed name and preserves its ID.
-   **Details** sets its factory,
-   source/header paths, input/output lists and parameters. Port rows use
+   Drag a block by its body or header. Flows fit the canvas when opened;
+   **Fit** restores the whole view after moving blocks or zooming.
+   **Details** sets its C++ factory, source/header paths, **Source symbol (optional)**,
+   input/output lists and parameters. The source search text can name the useful
+   C++ or Rust processing function separately from its factory. Port rows use
    `name : C++ type`, one per line; parameter rows use `name = value`.
-   Select an output and an input to connect them. Select a wire to delete it.
-   Double-click a block to edit its ordinary factory/processing source.
+   Click an output port name or socket, then an input port, or drag between them
+   to connect. The selected origin stays highlighted while wiring; choose a
+   different destination after an invalid connection. Click the origin again,
+   press Escape, or use **Cancel link** to cancel. Select a wire to delete it.
+   Double-click a block to edit its ordinary processing source.
 6. **Save** retains the design and deterministically generated C++. Incomplete
    designs can be saved as drafts; diagnostics explain generation/build errors.
-   **Preview** presents the form without executing application handlers.
+   **Preview** presents the selected form without executing application handlers;
+   switching documents returns to editing.
    **Build** and **Run** use explicit project recipes; Run builds first and only
    starts the application after a successful build. **Stop** cancels owned work.
 
@@ -146,9 +157,14 @@ Applications adopt only the optional `visual/ui` and/or `visual/flow` runtime
 source they need, together with retained generated headers and the existing GUI
 boundary. They build with their normal compiler and CMake files, without linking
 the editor model, generator, file services or process runner. The
-[demo](examples/demo/README.md) contains a minimal independent CMake project and
-an optional real Rust static-library integration. Rust compilation and linking
-remain explicit project actions; Rust is not an editor prerequisite.
+[simple example](examples/simple/README.md) keeps event and sample-processing
+functions short, with flow plumbing in a separate source file. The
+[Rust DSP example](examples/rust-dsp/README.md) implements a stateful FIR filter
+and decimation in ordinary Rust behind a small C ABI adapter; it builds with
+`rustc` and no external crates. The [advanced demo](examples/demo/README.md)
+shows unequal-rate MIMO, injected callbacks and worker-to-GUI messages.
+Rust compilation and linking remain explicit project actions; Rust is not an
+editor prerequisite.
 
 ## Multiple streams and execution
 
