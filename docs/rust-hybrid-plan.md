@@ -284,7 +284,9 @@ contain finished binaries/archives and notices, not a runtime Rust installer.
 Existing Debian, Arch and Gentoo mechanisms wrap verified payloads; package
 installation requires no Cargo or crates.io. Rust retained groups accompany
 dependency recovery inputs. Duplicate-target and promotion gates remain intact.
-No stable publication or repository promotion is authorized by this task.
+The original implementation task did not authorize stable publication or repository
+promotion. The separately authorized [Rust release and signed channels](validation.md#rust-enabled-portable-release-and-signed-channels-2026-10-05)
+record later publication and qualification with their exact source identities.
 
 ## Qualification evidence
 
@@ -434,8 +436,10 @@ failed matrix. Later successes do not retroactively qualify those producers.
 Full Windows offline GUI regression, Microsoft host-tool installation from
 retained media, older operating-system floors and unexecuted targets remain
 separate. Compiler reconstruction from Rust source remains **UNVERIFIED**.
-No stable application release or distro-channel promotion is claimed.
-Unexecuted, skipped or compile-only targets are not runtime passes.
+Those historical qualification runs make no stable publication or distro-channel
+promotion claim. The [later release record](validation.md#rust-enabled-portable-release-and-signed-channels-2026-10-05)
+records the separately executed delivery gates. Unexecuted, skipped or
+compile-only targets are not runtime passes.
 
 ## Future portable logic
 

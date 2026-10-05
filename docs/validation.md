@@ -13,6 +13,186 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
+## Rust-enabled portable release and signed channels (2026-10-05)
+
+The Rust/all-GUI application is certified and promoted to ordinary public Latest.
+Its immutable application source is `13ed8311dc28e7951ed0b2fbd72f3eeae88a9351`;
+the certifier, promoter and signed-channel packager source is
+`e864abb9f9bc088ea5396b49b4f042614ceb343d`. These identities remain separate.
+Both signed channels are public and accepted. The ARM native checker uses
+`c45f8f3316d32986ad70e291f5bddb8d44ec7ae7`; its package bytes retain the e864
+packager identity. The original ARM publication workflow failed after publication,
+and successful fresh native qualification is recorded separately.
+
+| Delivery gate | Verified identity and result |
+| --- | --- |
+| Public Latest application | [Tag `release-37245250573-attempt-1`](https://github.com/mirage335-colossus/software-foundation/releases/tag/release-37245250573-attempt-1), release ID `403269840`, 39 assets; immutable 13ed application |
+| Complete standalone certification | [Run 37251267915](https://github.com/mirage335-colossus/software-foundation/actions/runs/37251267915), attempt 1 at e864; all 27 jobs and independent complete inspection passed |
+| Protected promotion | [Run 37252930718](https://github.com/mirage335-colossus/software-foundation/actions/runs/37252930718), attempt 1 at e864; promotion and final independent Latest inspection passed |
+| x86_64 signed channel | [Run 37253584672](https://github.com/mirage335-colossus/software-foundation/actions/runs/37253584672), attempt 1 at e864; all nine jobs passed, including publisher `111586011936`, five native clients and protected acceptance `111595732249`; release `403315362`, [tag `distro-0.1.0-x86_64-r4-s4`](https://github.com/mirage335-colossus/software-foundation/releases/tag/distro-0.1.0-x86_64-r4-s4), 82 assets |
+| aarch64 original publication | [Run 37253586732](https://github.com/mirage335-colossus/software-foundation/actions/runs/37253586732), attempt 1 at e864; publisher `111586013358` failed after publication; release `403315776`, [tag `distro-0.1.0-aarch64-r3-s3`](https://github.com/mirage335-colossus/software-foundation/releases/tag/distro-0.1.0-aarch64-r3-s3), 82 signed assets reconciled; original qualification skipped |
+| aarch64 fresh native acceptance | [Run 37257537261](https://github.com/mirage335-colossus/software-foundation/actions/runs/37257537261), attempt 1 at c45f; all five jobs passed, including three native clients and protected acceptance `111598380092`; existing signed channel accepted without rebuilding or resigning |
+
+Application source archive SHA256:
+`b348368cecb91c41073fb4bd0b9f7b57ad98794aafca0615c23a55116bca6171`;
+supplemented source-tree SHA256:
+`abb40b11887479294b9cdc1980455c1a7241d166ae71fa3951a19ea49b99adae`;
+delivery SHA256:
+`b77e66667cc410ec520daa9fb59ef3466ea39e4de195ee1e9edfd6bb3f3dd1c3`.
+Application inventory SHA256:
+`e5a142600dfc0484858110417d446de01c2a134962aa78c3f34befd64051eaef`.
+Accepted certificate SHA256:
+`6786f42481dec8944a3152ab24ad459349dfdaef769b2f1fb61db8c2ffb7cb73`.
+The certificate was reproduced from public retained evidence; its complete archive
+SHA256 is `3bfe3f1a7041d8b049a812bfdcc79fe721fa27844a956007bd9eec7d4cc8ed67`.
+
+Complete certification covers 106 logical checks, 66 physical executions in 23
+batches, eight source/recovery JUnit files and 424 inner tool reports: 11,762 passed
+unittest case occurrences and 164 declared platform-exclusion occurrences, with
+no required runtime skips, failed or incomplete outcomes. Eight installed and four
+delivered consumers passed. Wrappers and inner case counts overlap and are not
+additive assertion counts. Independent full application archive/member/export
+inspection covered all four archives and 19 GUI backend-target bindings.
+Every production target uses the Rust provider. Retained build configuration,
+Rust static libraries, CMake exports and transitive C++ linkage agree with actual
+Rust/C++ ABI execution and relocated installed consumers. Frontend execution and
+package binding complement this evidence; no direct Rust marker in every frontend
+binary is claimed. Compatibility baselines and dependency policy remain unchanged
+(policy SHA256 `b0f65fdedef9d597d5423d5c1ca5d57b5c0fbb04137b2b2fc1fb2a813fdaa734`).
+
+Qualifier development [run 37251218678](https://github.com/mirage335-colossus/software-foundation/actions/runs/37251218678),
+attempt 1 at e864, passed all four jobs: 12 Rust fast CTests (Cargo unit outside
+that label), four explicit C++ CTests, 43 shared GUI CTests, and 24 infrastructure
+suites with 708 case occurrences and zero exclusions, failures or runtime skips.
+Documentation links and workflow lint passed; this is development feedback.
+
+SDK maintenance/publication [run 37235528096](https://github.com/mirage335-colossus/software-foundation/actions/runs/37235528096),
+attempt 1 at `1b338e0e504a4e3c8ab6f0ba9f307f28e8ea32aa`, passed. Four C/C++
+groups were reused and four Rust extensions newly published into `base` release
+`401599028`; all 24 selected public asset digests matched eight publication receipts.
+
+| Target | C/C++ recipe SHA256 | Rust extension recipe SHA256 |
+| --- | --- | --- |
+| Linux x86_64 | `3e7438a4b5ee7a4baf5d7abacbdd320087aab42f24ea021f0f023b61db55bb33` | `888eaacdca83ecc2d518a2062e13b65d43fdbe6188ee6daaf29713f2aabb13cd` |
+| Linux aarch64 | `afe8d1ba004206fcf234376a2110e69c4e9e1ef6b373e7afe23afe8497f8e4de` | `7b930acdbda806699c5ac752dbb30d20000e6a74f4fa97560a8f96d56e33fa23` |
+| Windows x86_64 | `da0aa41ad58536497e23503b4ca778521e47cbd412c5b944490aa3c4d535bf0a` | `e224a3b622d0af5e40b511d67f8bfa6426abdd35b54756cc7f6343d15c01eebe` |
+| Browser wasm32 | `74f5153e31c23f899f01d8340ffa4aba7f5a8ed81b0db206e6da8a1b38ece541` | `f9e35b94f0f7c65b7f2c7fe6d8af2c93fee6056d572ed2943c2dc6ea81f609f4` |
+
+GUI maintenance/publication [run 37234010192](https://github.com/mirage335-colossus/software-foundation/actions/runs/37234010192)
+passed at initial source `4753bae990c3f73fcecdd0804321b6032946ff62`, with prepare
+`111529422829` and publish `111529490015` completed successfully.
+The GUI input group is
+`7fca961e0e472f353e1f7332baca565f479ddc71ff82a33d6b1dbfb89009add8`.
+Windows graphics asset `604977464` is pinned by SHA256
+`3f3613adb43cfd0f2e665ce2400b130c275f0b3317cb3a05566320a3a67589ed`;
+it supplies host qualification only and does not establish public redistribution approval.
+
+Full Rust [candidate 37240914371](https://github.com/mirage335-colossus/software-foundation/actions/runs/37240914371)
+and explicit C++ [candidate 37241363978](https://github.com/mirage335-colossus/software-foundation/actions/runs/37241363978)
+each passed all 19 jobs and nine source scopes at e260, including coverage merge
+and installed/package consumers. The explicit C++ run intentionally omitted 13
+Rust preparation steps and exercised provider 0 without Rust SDK/unit requirements;
+those omissions are not Rust production coverage.
+
+Original Rust/offline qualification [run 37240910392](https://github.com/mirage335-colossus/software-foundation/actions/runs/37240910392)
+remains bound to `e260ab0f3f2bf44ea70dffbc906b141cf1b671f5`: Linux x86_64,
+ARM and wasm used attempt 1; Windows used successful attempt 2 after cancellation.
+It passed 399 source CTest occurrences and 5,881 inner tool case occurrences
+(1,587 distinct methods); 82 platform-exclusion occurrences covered 76 methods,
+each executed on another applicable target. Seven Windows Debug and five bounded
+offline consumer checks are outside the 399. The sole e260-to-13ed change adds
+27 prose lines to `FURTHER-agents.txt`. Reviewed reuse supports unchanged relevant
+implementation while preserving original source/run/attempt/receipt identities;
+it does not establish exact 13ed offline execution.
+
+Fresh 13ed application controls in [run 37245250573](https://github.com/mirage335-colossus/software-foundation/actions/runs/37245250573)
+passed the nested candidate and all four runtime lanes, including 19 GUI bindings,
+actual Rust/C++ ABI probes and package consumers. That original Latest run still
+failed seven of 23 certification batches and did not promote. Successful full Windows GUI/backend and
+Firefox execution is separate from the original e260 bounded offline
+core/consumer/package evidence.
+
+Focused application fixes were
+`24435107d14da4d731876b65c01fc119942610a8` (installed consumer provider inspection),
+`1b338e0e504a4e3c8ab6f0ba9f307f28e8ea32aa` (missing `iproute2` prerequisite) and
+`e260ab0f3f2bf44ea70dffbc906b141cf1b671f5` (numeric CMake capacity and flat Rust
+evidence retention). Later qualifier commit `561f4dbae0a10dc72359a937802b45fbea91cfe5`
+added Node to browser archive prerequisites and removed transport `CONTROL_ATTEMPT`
+from archived child tests; 162 focused tests passed. Its standalone
+[run 37249070053](https://github.com/mirage335-colossus/software-foundation/actions/runs/37249070053)
+passed all 23 batches but failed retention: 6,016 files required 23,500,974 bytes,
+exceeding both the old 1 MiB manifest and 16 MiB certificate slot. Commit e864
+raised only those limits to 2 MiB/24 MiB, with a 378 MiB aggregate below the
+384 MiB ceiling; 146 focused tests passed, followed by fresh complete certification
+and promotion. Failed original runs remain failures.
+
+Signed requests preserve exact predecessors `distro-0.1.0-x86_64-r3-s3` and
+`distro-0.1.0-aarch64-r2-s2`, the independently trusted signing fingerprint
+`EF876322B5CE4782062CB3E991649063150BC781`, and complete derived notice lists
+(152 x86_64, 151 ARM). Signed manifest SHA256 values are
+`d9221f635cdd70d0d43909c445ad35a8b18b2e286d4cf93eca2fb2640f223842` (x86_64) and
+`e7933abea7a4eeed1a8f3e19e4114145a660743b360b1ae4a368982238ccc083` (ARM).
+
+The ARM publisher failed during final global release-inventory lookup after the
+public PATCH, with `invalid or duplicate release inventory entry`. The offending
+row was not retained, so its cause remains unresolved. Bounded reconciliation
+verified all 82 public asset identities against failed-producer file hashes and
+authenticated the signed controls; no completed publication receipt exists.
+The skipped original qualification supplied no native receipts. Fix c45f changes
+only the final publisher and native-acceptance confirmations to use their already
+verified release IDs. Strict initial discovery and every identity, asset, body,
+reference and non-Latest guard remain. Two real signed regression fixtures failed
+at the original final lookup and passed after the fix; all 189 affected local
+release/native/transport cases passed with zero skips.
+
+Fix development [run 37257471699](https://github.com/mirage335-colossus/software-foundation/actions/runs/37257471699)
+passed all four jobs at c45f: 12 Rust fast CTests, four C++ core checks, 43 shared
+GUI checks, documentation and workflow lint, and 58 complete infrastructure suites
+with 1,614 passed cases. Its three declared Windows-only exclusions concern
+pending-delete directories, native linker-file identity and Job Object containment;
+there were no unexpected runtime skips or failures.
+
+All five x86_64 clients (Bookworm, Trixie, Ubuntu 24.04, Arch, Gentoo) and three
+ARM APT clients (Bookworm, Trixie, Ubuntu 24.04) passed. Each exercised all seven
+variants: core, terminal, framebuffer, FLTK, rev, SDL and hosted-web. Each performed
+two installation rounds, first the exact predecessor and then the new version,
+with one actual version upgrade. APT advanced x86_64 `0.1.0+r3` to `0.1.0+r4`
+and ARM `0.1.0+r2` to `0.1.0+r3`; Arch advanced `0.1.0-3` to `0.1.0-4`, and
+Gentoo `0.1.0-r2` to `0.1.0-r3`. Exact predecessor manifest hashes are
+`383f1bc7e510bc2a375d86ab3364adc7af6507e85d1a8af1bb6ddea170816a32` (x86_64) and
+`57d7632206b6a329d386a1b954d08a396acc2949291b578e19c5506d04966544` (ARM).
+
+The audits verified authenticated complete native receipts, CLI/GUI/HTTP checks,
+package contents, command outcomes/timings and joined display cleanup. Protected
+acceptance recomputed payload identities and each whole canonical public marker
+matched the native results. No required native job or step was skipped. Both
+82-asset signed inventories, both 70-asset predecessor inventories, and public
+Latest `403269840` with all 39 asset identities were preserved. A first local x64
+comparison rejected increased embedded download counters; the retained diagnosis
+proved only those volatile counters changed, and the corrected comparison retained
+all stable release fields and exact asset identities.
+
+Independent evidence indices below are retained under `.agent-work/artifacts/`;
+public workflow and release links above preserve the hosted delivery provenance.
+
+| Independent proof | Retained record and SHA256 |
+| --- | --- |
+| Complete certificate | `rust-sdk-inspection-20261004/latest-inspection-13ed/e864-run37251267915-attempt-1/public-certificate-replay/independent-candidate-certificate-inspection.json` — `f615915b1e23e3043e4a2e68dc5285f6f9f6ee4e00e93e1bf01f37f290e2e91b` |
+| Latest promotion | `rust-sdk-inspection-20261004/latest-inspection-13ed/e864-promotion-run37252930718-attempt-1/final-latest-inspection/independent-promotion-inspection.json` — `40ee172e6ebb6d6ed827c71f4bdcbfaf4a006c4ca433ac145271421d4609e7f9` |
+| x86_64 native channel | `rust-distribution-inspection-20261004/source-e864abb-standalone/run37253584672/channel_gate_review-v1/native-audit-final.json` — `fbe74c86f04623231b9017ea1c62fb3dda2aaa206e9ab65af2e9912199005369` |
+| ARM native channel | `rust-distribution-inspection-20261004/source-e864abb-standalone/run37253586732/standalone-native-37257537261-attempt-1/final-native-audit.json` — `7baa6f0d8395bd0cc674a1718ba63b142f46b9080ec095646c3685fbc4c2acb5` |
+
+Material limits follow the [Rust portability boundary](portability.md#rust-provider-boundary)
+and [SDK recovery contract](sdk.md#retained-rust-extension):
+
+- Rust 1.63 standard-library binaries are not ASAN-instrumented; Wasm has no native Rust unit harness, with mixed Node/browser execution supplying the recorded evidence.
+- Linux container/ABI checks do not qualify older kernels or physical hardware. Windows Server 2022 execution does not qualify the oldest Windows client. Full Windows GUI execution passed; offline Windows GUI and MSVC installation/reinstallation remain unverified.
+- Retained official compiler-package reassembly is not Rust compiler/Cargo reconstruction from source; that reconstruction remains unverified.
+- Certificate source/recovery controls rebuild retained input closures without a base fetch fallback; their ordinary execution route does not impose OS network denial. Additional e260 offline evidence retains its original scope and source identity.
+- Local SDK inspection verified selected hash-bound controls, not complete SDK payload/source/bootstrap recovery. Visual image pixels were not reviewed.
+- Protected native acceptance recomputed physical payload identities; local channel audits verified receipts and bindings without extracting the channel archives. Native receipts have no Rust-provider field; their Rust provenance is bound to the certified application inventory and build records.
+- No ARM Arch/Gentoo, offline native installation, separate reinstall or physical-device coverage is claimed. The failed ARM publisher and its skipped original qualification remain failures/skips; fresh native acceptance is bound to its separate successful run.
+
 ## Rust-default selection (2026-10-04)
 
 Local checks of the default-policy change used base commit
@@ -321,7 +501,9 @@ Full Windows offline GUI regression, Microsoft tool installation/reinstallation,
 older-client floors and other unexecuted platforms/devices remain unqualified.
 Retained toolchain restoration, source-input recovery
 and a compiler rebuilt from source remain distinct claims; the last is
-**UNVERIFIED**. No stable application release or distro-channel promotion is claimed.
+**UNVERIFIED**. Those historical qualification runs make no stable publication or
+distro-channel promotion claim. The [later release record](#rust-enabled-portable-release-and-signed-channels-2026-10-05)
+records the separately executed delivery gates.
 
 ## Disconnected builds, stale actions and browser authority (2026-10-04)
 
@@ -1737,8 +1919,11 @@ and account quota use remain to be measured on the next ordinary hosted run.
 The later 2026-10-03 simplification supersedes the preceding 62-slot storage
 policy and 750–1,150 complete-release request estimate. Routine application,
 package, source and certification handoffs now use native Actions artifacts.
-The full certificate fits a dedicated 16 MiB slot; all 79 available slots total
-at most 370 MiB of content per attempt, plus outer archive overhead. SDK archives
+That historical policy allocated a dedicated 16 MiB certificate slot and at
+most 370 MiB across all 79 slots per attempt, plus outer archive overhead.
+The [2026-10-05 release record](#rust-enabled-portable-release-and-signed-channels-2026-10-05)
+records the later measured capacity repair: a 2 MiB manifest, 24 MiB certificate
+slot and 378 MiB aggregate bound. SDK archives
 remain in release storage, including during preparation-only application runs.
 There is no automatic private-release fallback in routine workflows.
 

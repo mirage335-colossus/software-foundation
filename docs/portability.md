@@ -59,12 +59,18 @@ target-library or final runtime contract.
 | Browser wasm32 | Exact Rust 1.63.0 / Emscripten 6.0.10 pair passed final `41d28fe` source/core/package/consumer/replay/disconnected gates and actual Firefox/Chromium application checks, with 30 renderer-isolation cases per engine. Mobile, other engines/devices and other compiler pairs are unqualified. Native Wasm objects, panic abort and no cross-language LTO remain required |
 | Arduino and other targets | No implemented Rust profile or qualified board port; use the C++ route and the selective-porting policy below |
 
-See [the Rust validation record](validation.md#optional-rust-qualification-2026-10-04)
-for exact source, recipe, package and receipt identities, and
+See the [current Rust release and signed-channel record](validation.md#rust-enabled-portable-release-and-signed-channels-2026-10-05)
+for the published four-target application, all 19 GUI backend-target bindings,
+complete certificate and native installation/upgrade results. It distinguishes
+application source from the later qualifier and packager revisions.
+The historical table above and [earlier Rust validation record](validation.md#optional-rust-qualification-2026-10-04)
+retain their original source, recipe, package and receipt identities. See also
 [the Rust implementation record](rust-hybrid-plan.md) for implemented scope and limits.
-The complete four-target hosted run passed with remotely retained evidence;
-final metadata inspection did not read back full payload bytes or create a local
-accepted bundle. Older independent full-byte readbacks keep their own identities.
+That historical `41d28fe` four-target hosted run passed with remotely retained
+evidence; its final metadata inspection did not read back full payload bytes or
+create a local accepted bundle. Later complete application-byte and certificate
+readbacks are recorded separately in the current release record. Earlier
+independent full-byte readbacks also keep their own identities.
 Stable Rust 1.63 and edition 2021 are the component
 baseline. SDK-free native development currently requires Debian-family package
 ownership and complete notices; other Linux distributions or unowned tool

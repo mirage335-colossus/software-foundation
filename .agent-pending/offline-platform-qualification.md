@@ -29,7 +29,17 @@ older C++ receipts. Final complete console/job evidence and SHA-verified small
 manifests are local; payload bytes remain remotely retained without a final local
 full-byte bundle acceptance claim.
 
-The following broader scopes were not selected and are not implied by that pass:
+The later [Rust release record](../docs/validation.md#rust-enabled-portable-release-and-signed-channels-2026-10-05) includes
+Rust/offline qualification at `e260ab0f3f2bf44ea70dffbc906b141cf1b671f5` in
+[run 37240910392](https://github.com/mirage335-colossus/software-foundation/actions/runs/37240910392),
+with successful Windows attempt 2 and the other three targets at attempt 1.
+Its reuse for application `13ed8311dc28e7951ed0b2fbd72f3eeae88a9351` is limited
+to independently verified identical relevant implementation; it is not exact
+13ed or later qualifier execution under an OS-level network block. The complete
+fresh all-GUI certificate and signed-channel native checks have their own sources
+and scopes. The current release record preserves all remaining limits below.
+
+The following broader scopes were not selected and are not implied by those passes:
 
 - Full native Windows x86_64 offline GUI/host-bootstrap scope: a supported Windows
   host, the complete Microsoft offline installer layout and selected compiler/Windows SDK
@@ -49,5 +59,6 @@ and do not establish installation/reinstallation from retained media. Other OS
 floors, devices and target/compiler pairs require their own scope. Retained
 compiler-package replay is not compiler reconstruction from Rust source, which
 remains **UNVERIFIED**. Preserve each newly executed result's source identity.
-No stable application release or distro-channel promotion is claimed. Existing
-certification gates still apply.
+The historical offline results alone make no publication or promotion claim.
+Later application and signed-channel publication is recorded in the linked current
+release record; it does not expand offline GUI or host-bootstrap qualification.
