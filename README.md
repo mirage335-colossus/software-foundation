@@ -14,7 +14,8 @@ logic; the present application remains predominantly C++.
 ## One application, seven backends
 
 Each host presents the same shared **Entry list** application. All seven cloud
-captures show the Rust/C++ application from the 2026-10-05 source snapshot.
+captures show the Rust/C++ application from the
+[2026-10-05 source snapshot](https://github.com/mirage335-colossus/software-foundation/commit/2e33720a73f0686dc1ffe72992dfb52e472cd059).
 Select an image to view it at full size.
 
 | FLTK native window | Rev native window |

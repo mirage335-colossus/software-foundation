@@ -4,9 +4,9 @@
 
 **Cloud-built source snapshot — 2026-10-05.** These seven fresh initial views
 show the Rust/C++ application built on GitHub-hosted Actions from source commit
-[`946007da9328e78cdc1380cd0238c9740f435042`](https://github.com/mirage335-colossus/software-foundation/commit/946007da9328e78cdc1380cd0238c9740f435042).
-The [published screenshot release](https://github.com/mirage335-colossus/software-foundation/releases/tag/screenshots-37352058694-attempt-1)
-and [capture run 37352058694, attempt 1](https://github.com/mirage335-colossus/software-foundation/actions/runs/37352058694/attempts/1)
+[`2e33720a73f0686dc1ffe72992dfb52e472cd059`](https://github.com/mirage335-colossus/software-foundation/commit/2e33720a73f0686dc1ffe72992dfb52e472cd059).
+The [published screenshot release](https://github.com/mirage335-colossus/software-foundation/releases/tag/screenshots-37383282720-attempt-1)
+and [capture run 37383282720, attempt 1](https://github.com/mirage335-colossus/software-foundation/actions/runs/37383282720/attempts/1)
 record the exact hosted execution.
 The date is the source commit date. The images document that exact source;
 later documentation commits do not change the capture's identity.
@@ -83,7 +83,7 @@ To download this exact public snapshot from the repository root, use a fresh
 temporary directory and the existing verifier:
 
 ```sh
-gallery_tag=screenshots-37352058694-attempt-1
+gallery_tag=screenshots-37383282720-attempt-1
 gallery_download="$(mktemp -d)"
 gh release download "$gallery_tag" \
   --repo mirage335-colossus/software-foundation --dir "$gallery_download"

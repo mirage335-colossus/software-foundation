@@ -1,0 +1,92 @@
+name: Temporary signing availability diagnostic
+# Diagnostics only: no builds, signing or publication. Remove after the hosted proof.
+'on':
+  workflow_dispatch:
+    inputs:
+      package_repository:
+        description: Diagnostic control; keep true to match package assembly
+        type: boolean
+        default: true
+      execute:
+        description: Diagnostic control; keep true to match package assembly
+        type: boolean
+        default: true
+permissions:
+  contents: read
+jobs:
+  direct:
+    name: Direct protected environment control
+    runs-on: ubuntu-24.04
+    environment: release-publisher
+    timeout-minutes: 5
+    outputs:
+      bounded_presence: ${{ steps.availability.outputs.bounded_presence }}
+      values_agree: ${{ steps.availability.outputs.values_agree }}
+    steps:
+    - id: availability
+      name: Report only bounded presence and agreement
+      shell: python
+      env:
+        DIRECT_SIGNING_KEY: ${{ secrets.DISTRIBUTION_SIGNING_KEY }}
+        CONDITIONAL_SIGNING_KEY: ${{ inputs.package_repository && secrets.DISTRIBUTION_SIGNING_KEY || '' }}
+      run: |
+        import json, os
+        direct = os.environ.pop('DIRECT_SIGNING_KEY')
+        conditional = os.environ.pop('CONDITIONAL_SIGNING_KEY')
+        bounded_presence = bool(direct) and bool(conditional) and len(direct.encode()) <= 1024 * 1024 and len(conditional.encode()) <= 1024 * 1024
+        values_agree = direct == conditional
+        del direct, conditional
+        print(json.dumps({'bounded_presence': bounded_presence, 'values_agree': values_agree}))
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            output.write('bounded_presence=' + str(bounded_presence).lower() + '\n')
+            output.write('values_agree=' + str(values_agree).lower() + '\n')
+  undeclared_unmapped:
+    name: Reusable environment without secret declaration or mapping
+    uses: ./.github/workflows/signing-availability-undeclared.yml
+    with:
+      package_repository: true
+      execute: true
+  declared_unmapped:
+    name: Reusable environment with optional declaration and no mapping
+    uses: ./.github/workflows/signing-availability-declared.yml
+    with:
+      package_repository: true
+      execute: true
+  declared_mapped:
+    name: Reusable environment with explicit named mapping
+    uses: ./.github/workflows/signing-availability-declared.yml
+    with:
+      package_repository: true
+      execute: true
+    secrets:
+      DISTRIBUTION_SIGNING_KEY: ${{ secrets.DISTRIBUTION_SIGNING_KEY }}
+  verdict:
+    name: Require direct control and named mapping availability
+    if: always()
+    needs: [direct, undeclared_unmapped, declared_unmapped, declared_mapped]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - shell: python
+      env:
+        DIRECT_RESULT: ${{ needs.direct.result }}
+        DIRECT_PRESENT: ${{ needs.direct.outputs.bounded_presence }}
+        DIRECT_AGREE: ${{ needs.direct.outputs.values_agree }}
+        UNDECLARED_RESULT: ${{ needs.undeclared_unmapped.result }}
+        UNDECLARED_PRESENT: ${{ needs.undeclared_unmapped.outputs.bounded_presence }}
+        UNDECLARED_AGREE: ${{ needs.undeclared_unmapped.outputs.values_agree }}
+        DECLARED_RESULT: ${{ needs.declared_unmapped.result }}
+        DECLARED_PRESENT: ${{ needs.declared_unmapped.outputs.bounded_presence }}
+        DECLARED_AGREE: ${{ needs.declared_unmapped.outputs.values_agree }}
+        MAPPED_RESULT: ${{ needs.declared_mapped.result }}
+        MAPPED_PRESENT: ${{ needs.declared_mapped.outputs.bounded_presence }}
+        MAPPED_AGREE: ${{ needs.declared_mapped.outputs.values_agree }}
+      run: |
+        import json, os
+        observations = {name.lower(): os.environ[name] == 'true' for name in (
+            'DIRECT_PRESENT', 'DIRECT_AGREE', 'UNDECLARED_PRESENT', 'UNDECLARED_AGREE',
+            'DECLARED_PRESENT', 'DECLARED_AGREE', 'MAPPED_PRESENT', 'MAPPED_AGREE')}
+        print(json.dumps(observations, sort_keys=True))
+        if (any(os.environ[name] != 'success' for name in ('DIRECT_RESULT', 'UNDECLARED_RESULT', 'DECLARED_RESULT', 'MAPPED_RESULT')) or
+                not all(observations[name] for name in ('direct_present', 'direct_agree', 'mapped_present', 'mapped_agree'))):
+            raise SystemExit('A diagnostic case did not complete, or the direct control or named mapping lacked the bounded matching signing input')
