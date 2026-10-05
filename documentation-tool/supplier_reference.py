@@ -1,4 +1,4 @@
-"""Capture three pinned GUI contract references without restoring a dependency.
+"""Capture four pinned GUI contract references without restoring a dependency.
 
 Only regular archive members selected below are read into memory. All metadata
 and archive reads are bounded; no member is extracted, imported, or executed.
@@ -18,6 +18,7 @@ from typing import Callable, Any
 
 
 SELECTED_MEMBERS = (
+    'upstream/include/gui/geometry.hpp',
     'upstream/include/gui/contract.hpp',
     'upstream/include/gui/presentation.hpp',
     'upstream/examples/application.hpp',
@@ -75,7 +76,7 @@ def capture_supplier_references(source: Path, max_file_bytes: int,
         'selected_members': list(SELECTED_MEMBERS), 'captured_members': [], 'inputs': [],
         'verification_scope': 'Selected members checked against current checkout GUI lock, retained manifest, and SHA256SUMS.',
         'limitations': [
-            'Only these three contract/example members are captured; this is not a supplier build or complete supplier inventory.',
+            'Only these four contract/example members are captured; this is not a supplier build or complete supplier inventory.',
             'The captured bytes are pinned upstream references. Local integration patches are not applied.',
             'No archive files are restored or executed, and no build output is inspected.',
             'Consistency with checkout pins is checked; no independent signature or whole-supplier validation is claimed.',

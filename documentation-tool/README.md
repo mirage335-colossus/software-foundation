@@ -99,6 +99,20 @@ function, its callers/callees, or captured source. The companion runtime diagram
 traces the existing Add button through `append_entry`, `Store::add`, and
 `Store::validate`; publication is shown as a later call from `handle`.
 
+Dense examples have **Parameters explained** guides next to the relevant edit
+steps. Each guide includes a readable synopsis, numbered field names, types,
+meanings and defaults, followed by a filled multiline example with labels beside
+its values. The initial guides cover `ViewDefinition`, `gui::Page`, `gui::Rect`,
+widget page/parent assignments, and CMake `target_sources`. The PDF links each
+step to a deduplicated parameter-reference appendix and back again.
+
+Reading notation is labeled separately from usable C++/CMake fragments. C++
+aggregate fields are shown in declaration order; proposed page/parent additions
+are not presented as existing `ViewDefinition` fields. The guides check their
+source anchors, including complete aggregate declarations, so field-order drift
+shows a review warning. Their explanations are curated local data in
+`parameter_guides.py`, not AI-generated at documentation build time.
+
 These edit recipes encode project ownership deliberately; an arbitrary desired
 feature cannot be inferred reliably from syntax alone. The separate
 `change_maps.py` contains these small, reviewable recipes. Generation resolves
@@ -150,7 +164,7 @@ represent several generated targets. The generator does not claim that these
 are the targets of any particular configured build.
 
 By default `build/`, `third_party/`, caches, Git internals, agent work directories,
-and symlinks are excluded. For page/tab guidance, the tool reads three selected
+and symlinks are excluded. For page/tab and parameter guidance, the tool reads four selected
 GUI contract/example files from the pinned local source archive into memory;
 they appear under `@gui-boundary/` with archive provenance. These supplier files
 are evidence, not application edit targets. Archives are never extracted,
@@ -198,7 +212,8 @@ documentation.
 `docmap.py` owns read-only collection, snapshot metadata, conservative candidate
 call linking, and output-path checks. `syntax_scan.py` reads syntax trees;
 `build_map.py` inventories build declarations; `change_maps.py` supplies the
-task-first edit paths and verifies source anchors; `navigation_guide.py` supplies
+task-first edit paths and verifies source anchors; `parameter_guides.py` explains
+dense examples with labeled fields and values; `navigation_guide.py` supplies
 project navigation guidance with evidence lines resolved against the snapshot.
 `render_html.py`, `explorer.js`, and `explorer.css` provide the browser explorer;
 `supplier_reference.py` captures the bounded retained GUI contract evidence.

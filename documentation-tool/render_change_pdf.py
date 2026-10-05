@@ -47,9 +47,10 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import landscape, letter
         from reportlab.lib.styles import ParagraphStyle
+        from reportlab.pdfbase.pdfmetrics import stringWidth
         from reportlab.platypus import (
             BaseDocTemplate, Flowable, Frame, KeepTogether, NextPageTemplate,
-            PageBreak, PageTemplate, Paragraph, Spacer,
+            PageBreak, PageTemplate, Paragraph, Preformatted, Spacer, Table, TableStyle,
         )
     except ImportError as exc:
         raise ImportError("Edit-path PDF output needs ReportLab. Install the documentation "
@@ -58,6 +59,15 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
     maps = model.get("change_maps", [])
     if not maps:
         raise ValueError("No change_maps are available for the edit-path PDF.")
+    parameter_guides: dict[str, dict[str, Any]] = {}
+    guide_uses: dict[str, list[tuple[dict[str, Any], dict[str, Any], int]]] = {}
+    for map_value in maps:
+        for number, node in enumerate(map_value.get("nodes", []), 1):
+            for guide in node.get("parameter_guides", []):
+                if not guide.get("id"):
+                    continue
+                parameter_guides.setdefault(guide["id"], guide)
+                guide_uses.setdefault(guide["id"], []).append((map_value, node, number))
     output = Path(output)
     pdf_dir = output / "pdf"
     pdf_dir.mkdir(parents=True, exist_ok=True)
@@ -97,6 +107,14 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
                                    leading=11.2, textColor=ink, spaceAfter=4),
         "question": ParagraphStyle("edit-question", fontName="Helvetica", fontSize=10,
                                    leading=12, textColor=muted),
+        "parameter": ParagraphStyle("edit-parameter", fontName="Helvetica", fontSize=9.3,
+                                    leading=12.1, textColor=ink),
+        "parameter-head": ParagraphStyle("edit-parameter-head", fontName="Helvetica-Bold", fontSize=9.3,
+                                         leading=12.1, textColor=ink),
+        "code": ParagraphStyle("edit-code", fontName="Courier", fontSize=9.3,
+                               leading=12, textColor=ink, leftIndent=10,
+                               rightIndent=10, borderPadding=8, backColor=colors.HexColor("#edf3f6"),
+                               spaceBefore=4, spaceAfter=8),
     }
     for style in styles.values():
         style.splitLongWords = True
@@ -119,7 +137,7 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
             return "<b>Planned addition:</b> " + _esc(label or "new application code to add")
         rendered = link(label, _source_url(reference)) if path else "Source location not supplied"
         if reference.get("symbol_id"):
-            rendered += " | " + link("function", _symbol_url(reference))
+            rendered += " | " + link("symbol", _symbol_url(reference))
         prefix = "Read-only supplier evidence" if str(path).startswith("@") else "Source"
         return "<b>" + prefix + ":</b> " + rendered
 
@@ -132,8 +150,12 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
         return node
 
     class Heading(Paragraph):
-        def __init__(self, text: str, destination: str, level: int, chapter: bool = False) -> None:
-            super().__init__(_esc(text), styles["chapter" if chapter else "heading"])
+        def __init__(self, text: str, destination: str, level: int, chapter: bool = False,
+                     keep_with_next: bool = True) -> None:
+            style = styles["chapter" if chapter else "heading"]
+            if not keep_with_next:
+                style = ParagraphStyle("splittable-parameter-heading", parent=style, keepWithNext=False)
+            super().__init__(_esc(text), style)
             self.destination, self.level, self.label = destination, level, _plain(text)
 
     class EditDoc(BaseDocTemplate):
@@ -144,6 +166,8 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
                              author="Local source-map generator",
                              subject="Prospective edits and verified source navigation")
             self.current_map = maps[0]
+            self.parameter_section = False
+            self.current_guide: dict[str, Any] | None = None
             full = Frame(margin, 37, body_w, body_h, leftPadding=0,
                          rightPadding=0, topPadding=0, bottomPadding=0)
             gap = 24
@@ -152,16 +176,25 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
                          rightPadding=0, topPadding=0, bottomPadding=0)
             right = Frame(margin + col_w + gap, 37, col_w, body_h,
                           leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+            reference = Frame(margin, 37, body_w, body_h, leftPadding=0,
+                              rightPadding=0, topPadding=0, bottomPadding=0)
             self.addPageTemplates([
                 PageTemplate(id="chart", frames=[full], onPage=self.decorate),
                 PageTemplate(id="details", frames=[left, right], onPage=self.decorate),
+                PageTemplate(id="parameters", frames=[reference], onPage=self.decorate),
             ])
 
         def decorate(self, c: Any, doc: Any) -> None:
             c.saveState()
-            c.setFont("Helvetica-Bold", 16)
+            if self.parameter_section:
+                header = "Parameter reference" + (": " + self.current_guide.get("title", "") if self.current_guide else "")
+            else:
+                header = self.current_map.get("title", "Edit path")
+            header = _plain(header)
+            header_size = min(16, max(10, (body_w - 85) / max(1, stringWidth(header, "Helvetica-Bold", 1))))
+            c.setFont("Helvetica-Bold", header_size)
             c.setFillColor(ink)
-            c.drawString(margin, page_h - 27, _plain(self.current_map.get("title", "Edit path")))
+            c.drawString(margin, page_h - 27, header)
             c.setFont("Helvetica", 8)
             c.setFillColor(muted)
             c.drawRightString(page_w - margin, page_h - 27, f"Edit paths | {doc.page}")
@@ -170,12 +203,18 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
             c.line(margin, 28, page_w - margin, 28)
             c.setFont("Helvetica", 8)
             c.setFillColor(colors.HexColor("#256b91"))
-            c.drawString(margin, 16, "Up to chart")
-            c.linkRect("", _dest("chart", self.current_map["id"]),
-                       (margin, 13, margin + 48, 24), relative=1)
-            c.drawString(margin + 65, 16, "Offline explorer")
-            c.linkURL("../index.html#change/" + quote(self.current_map["id"], safe=""),
-                      (margin + 65, 13, margin + 127, 24), relative=1)
+            if self.parameter_section:
+                c.drawString(margin, 16, "Up to parameter index")
+                c.linkRect("", "parameter-index", (margin, 13, margin + 87, 24), relative=1)
+                explorer_x, explorer_url = margin + 105, "../index.html"
+            else:
+                c.drawString(margin, 16, "Up to chart")
+                c.linkRect("", _dest("chart", self.current_map["id"]),
+                           (margin, 13, margin + 48, 24), relative=1)
+                explorer_x = margin + 65
+                explorer_url = "../index.html#change/" + quote(self.current_map["id"], safe="")
+            c.drawString(explorer_x, 16, "Offline explorer")
+            c.linkURL(explorer_url, (explorer_x, 13, explorer_x + 62, 24), relative=1)
             generated = _plain(model.get("generated_at", "unknown date"))
             c.setFillColor(muted)
             c.drawRightString(page_w - margin, 16,
@@ -201,6 +240,15 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
 
         def draw(self) -> None:
             self._doctemplate.current_map = self.map
+
+    class SetGuide(Flowable):
+        def __init__(self, guide: dict[str, Any] | None) -> None:
+            super().__init__()
+            self.guide, self.width, self.height = guide, 0, 0
+
+        def draw(self) -> None:
+            self._doctemplate.parameter_section = True
+            self._doctemplate.current_guide = self.guide
 
     class Chart(Flowable):
         def __init__(self, map_value: dict[str, Any]) -> None:
@@ -407,11 +455,95 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
             parts.append(paragraph("<br/>".join(ref_text(reference) for reference in unique.values()), "small", raw=True))
         if node.get("link_map"):
             parts.append(paragraph(link("Drill down to the related edit map", "#" + _dest("chart", node["link_map"])), "small", raw=True))
+        if node.get("parameter_guides"):
+            guide_links = []
+            seen_guides = set()
+            for guide in node["parameter_guides"]:
+                if guide.get("id") in parameter_guides and guide["id"] not in seen_guides:
+                    seen_guides.add(guide["id"])
+                    guide_links.append(link(guide.get("title", guide["id"]), "#" + _dest("parameter", guide["id"])))
+            if guide_links:
+                parts.append(paragraph("<b>Parameters and filled examples:</b> " + " | ".join(guide_links), "small", raw=True))
         parts.append(paragraph(link("Up to chart", "#" + _dest("chart", map_value["id"])) + " | " +
                                link("Full rationale in explorer", "../index.html#change/" + quote(map_value["id"], safe="") + "/" + quote(node["id"], safe="")) +
                                " | " + _esc(node["id"]),
                                "small", raw=True))
         return [KeepTogether(parts), Spacer(1, 2)]
+
+    def parameter_value(value: Any) -> str:
+        if value is None:
+            return "Not specified"
+        if value == "":
+            return '\"\" (empty string)'
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        return str(value)
+
+    def reference_table(rows: list[list[Any]], widths: list[float], header: bool = True) -> Any:
+        cells = [[paragraph(cell, "parameter-head" if row_number == 0 and header else "parameter", raw=True)
+                  for cell in row] for row_number, row in enumerate(rows)]
+        result = Table(cells, colWidths=widths, repeatRows=1 if header else 0,
+                       hAlign="LEFT", splitByRow=True)
+        result.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.4, rule),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#edf3f6")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafb")]),
+        ]))
+        return result
+
+    def code_block(code: Any) -> Any:
+        # The full-width monospace block keeps labeled examples together. A
+        # high line limit wraps only unusually long lines, without shrinking.
+        return Preformatted(_plain(code), styles["code"], maxLineLength=126,
+                            splitChars=" ,", newLineChars="  ")
+
+    def parameter_guide_story(guide: dict[str, Any]) -> list[Any]:
+        guide_id = guide["id"]
+        parts = [Heading(guide.get("title", guide_id), _dest("parameter", guide_id), 1, chapter=True),
+                 paragraph(guide.get("summary", ""))]
+        if guide.get("status") == "missing":
+            parts.append(paragraph("<b>Review required:</b> the declaration anchor was not captured. Confirm the parameter details in current source.", "small", raw=True))
+        uses = guide_uses.get(guide_id, [])
+        if uses:
+            return_links = []
+            for map_value, node, number in uses:
+                return_links.append(link(f"{map_value['id']} / N{number}", "#" + _dest("node", map_value["id"], node["id"])) +
+                                    " (" + link("chart", "#" + _dest("chart", map_value["id"])) + ")")
+            parts.append(paragraph("<b>Return to edit steps:</b> " + " | ".join(return_links), "small", raw=True))
+        references = {}
+        for reference in guide.get("references", []):
+            references.setdefault((reference.get("path"), reference.get("line")), reference)
+        if references:
+            parts.append(paragraph("<b>Declaration and examples:</b><br/>" +
+                                   "<br/>".join(ref_text(reference) for reference in references.values()),
+                                   "small", raw=True))
+        parts += [Heading("Synopsis", _dest("parameter-synopsis", guide_id), 2),
+                  code_block(guide.get("syntax", "")),
+                  paragraph("<b>Notation:</b> " + _esc(guide.get("syntax_note") or
+                            "The synopsis names values to supply; the filled example below shows concrete values. Defaults are listed explicitly."),
+                            "small", raw=True),
+                  Heading("Numbered parameters", _dest("parameter-fields", guide_id), 2, keep_with_next=False)]
+        rows = [["#", "Parameter", "Type", "Meaning", "Default", "Filled example value"]]
+        for index, parameter in enumerate(guide.get("parameters", []), 1):
+            rows.append([_esc(parameter.get("position", index)),
+                         "<b>" + _esc(parameter.get("name", "")) + "</b>",
+                         _esc(parameter.get("type", "")), _esc(parameter.get("description", "")),
+                         _esc(parameter_value(parameter.get("default"))),
+                         _esc(parameter_value(parameter.get("example_value")))])
+        parts += [reference_table(rows, [30, 112, 104, 224, 112, body_w - 582]), Spacer(1, 8)]
+        example = guide.get("example", {})
+        if example:
+            example_parts = [Heading(example.get("label", "Filled example"), _dest("parameter-example", guide_id), 2),
+                             code_block(example.get("code", ""))]
+            for note in example.get("notes", []):
+                example_parts.append(paragraph("- " + str(note), "small"))
+            parts.append(KeepTogether(example_parts))
+        return parts
 
     story = []
     doc = EditDoc()
@@ -428,5 +560,20 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
                             "small", raw=True)]
         for number, node in enumerate(map_value.get("nodes", []), 1):
             story.extend(node_details(map_value, node, number))
+    if parameter_guides:
+        story += [SetGuide(None), NextPageTemplate("parameters"), PageBreak(),
+                  Heading("Parameter reference and filled examples", "parameter-index", 0, chapter=True),
+                  paragraph("These shared guides explain the values used by the linked edit steps. Each guide appears once. "
+                            "Read its notation note before using the filled example; argument positions, named fields, defaults, "
+                            "and optional entries are distinguished there."),
+                  paragraph("Select a guide below, then use its return links to continue at an edit step or its chart.", "small")]
+        guide_rows = [["Parameter guide", "Use it for"]]
+        for guide in parameter_guides.values():
+            guide_rows.append([link(guide.get("title", guide["id"]), "#" + _dest("parameter", guide["id"])),
+                               _esc(guide.get("summary", ""))])
+        story.append(reference_table(guide_rows, [250, body_w - 250]))
+        for guide in parameter_guides.values():
+            story += [SetGuide(guide), PageBreak()]
+            story.extend(parameter_guide_story(guide))
     doc.build(story)
     return ["pdf/00-edit-paths.pdf"]
