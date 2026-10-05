@@ -590,7 +590,7 @@ def render_change_pdfs(model: dict[str, Any], output: Path) -> list[str]:
     story += [reference_table(task_rows, [260, body_w - 260]), Spacer(1, 9),
               paragraph("<b>Printable reference and execution charts:</b> " +
                         " | ".join(link(pdf["title"], pdf["name"]) for pdf in model.get("pdfs", [])
-                                   if pdf["name"] in {"01-code-walkthroughs.pdf", "02-compiler-reference.pdf", "03-execution-flows.pdf", "04-code-flowcharts.pdf"}), raw=True)]
+                                   if pdf["name"] in {"01-code-walkthroughs.pdf", "02-compiler-reference.pdf", "03-execution-flows.pdf", "04-code-flowcharts.pdf", "AI-AUTHORED__GUI-MENTAL-MODEL.pdf"}), raw=True)]
     if parameter_guides:
         story.append(paragraph(link("Parameter reference: synopsis, named fields, and filled examples", "#parameter-index"), "small", raw=True))
     doc = EditDoc()

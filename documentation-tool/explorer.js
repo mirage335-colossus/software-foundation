@@ -112,6 +112,7 @@
   function renderNavigation() {
     const list = [
       `<a class="nav-link" data-nav="home" href="#home"><span class="nav-icon">◈</span>Edit task maps</a>`,
+      ...(hasConceptGuide() ? ['<a class="nav-link concept-nav" href="AI-AUTHORED__GUI-MENTAL-MODEL.html"><span class="nav-icon">AI</span>AI-authored GUI guide</a>'] : []),
       ...((data.flow_maps || []).length ? ['<a class="nav-link" data-nav="flows" href="#flows"><span class="nav-icon">⇢</span>What runs when…</a>'] : []),
       `<a class="nav-link" data-nav="inventory" href="#inventory"><span class="nav-icon">▤</span>Code inventory<span class="count">${files.length}</span></a>`,
       `<a class="nav-link" data-nav="build" href="#build"><span class="nav-icon">⚙</span>Compiler & toolchain</a>`,
@@ -163,11 +164,16 @@
     return child ? codeRoute(child.map, child.node) : map.kind === "code" ? codeRoute(map, node) : executionMap(map) ? flowRoute(map, node) : changeRoute(map, node);
   }
   function executionMap(map) { return map.kind === "execution"; }
+  function hasConceptGuide() { return data.conceptual_guide?.html_file === "AI-AUTHORED__GUI-MENTAL-MODEL.html"; }
+  function conceptGuideLink() {
+    return hasConceptGuide() ? `<a class="concept-guide-button" href="AI-AUTHORED__GUI-MENTAL-MODEL.html" title="${esc(data.conceptual_guide.title || "AI-authored GUI mental model")}"><strong>AI-AUTHORED · GUI mental model</strong><span>Simple diagrams, linked to code →</span></a>` : "";
+  }
   function codeEntryLinks() {
     const entry = codeMap("main-to-widgets"), definitions = codeMap("widget-definitions");
-    if (!entry) return "";
+    const concept = conceptGuideLink();
+    if (!entry) return concept ? `<nav class="concept-guide-entry" aria-label="AI-authored conceptual guide">${concept}</nav>` : "";
     const node = (entry.nodes || []).find(item => String(item.id) === "entry");
-    return `<nav class="code-entry-start" aria-label="Start at the application entry point"><a class="code-entry-main" href="${codeRoute(entry, node)}"><span class="code-entry-icon" aria-hidden="true">↳</span><span><small>Start with the actual code</small><strong>main() → widget definitions</strong><span>Follow the entry point through the diagrams into widget construction.</span></span><span class="code-entry-arrow" aria-hidden="true">→</span></a>${definitions ? `<a class="code-entry-definitions" href="${codeRoute(definitions)}">Widget declarations diagram ↗</a>` : ""}</nav>`;
+    return `<nav class="code-entry-start" aria-label="Start at the application entry point"><a class="code-entry-main" href="${codeRoute(entry, node)}"><span class="code-entry-icon" aria-hidden="true">↳</span><span><small>Start with the actual code</small><strong>main() → widget definitions</strong><span>Follow the entry point through the diagrams into widget construction.</span></span><span class="code-entry-arrow" aria-hidden="true">→</span></a><span class="code-entry-related">${definitions ? `<a class="code-entry-definitions" href="${codeRoute(definitions)}">Widget declarations diagram ↗</a>` : ""}${concept}</span></nav>`;
   }
   function wrappedText(value, width = 24, maxLines = 3) {
     const words = String(value || "").split(/\s+/);

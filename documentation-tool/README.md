@@ -3,8 +3,9 @@
 A separate, manually invoked documentation generator answering **what do I edit
 to make this change?** in a changing `software-foundation` checkout. Its starting
 view is a graphical edit path, with source details underneath. It produces an
-offline HTML explorer, five linked PDF handbooks, and a machine-readable source
-snapshot. It requires no AI, API
+offline HTML explorer, five linked source-reference PDF handbooks, a distinctly
+marked AI-authored conceptual guide in HTML/PDF, and a machine-readable source
+snapshot. Running the generator requires no AI, API
 key, service, compiler, CMake configuration, compile database, or application build.
 
 The generator is versioned in the separate **`documentation-tool/` directory**.
@@ -64,6 +65,20 @@ hash of the captured files. It detects edits to captured files during collection
 but it cannot guarantee an atomic repository snapshot while other agents work.
 
 ## Start with the change you want
+
+For a simple first look, open **`AI-AUTHORED__GUI-MENTAL-MODEL.html`** or its
+same-named PDF in `pdf/`. The main explorer links to this companion prominently.
+Its large, simple diagrams explain startup to widget definitions, the GUI
+abstraction boundary, publication and display, and an Add-button click.
+Cards lead into the exact source-backed code diagrams when more detail is useful.
+
+This is explicitly **AI-authored editorial explanation**, written for the example
+and stored in `AI-AUTHORED__GUI-MENTAL-MODEL.json`. It emphasizes the stable
+design and deliberately simplifies control flow. The generator renders the saved
+explanation locally and checks its source anchors and diagram links; it never
+calls AI or rewrites the explanation. Matching anchors do not prove that every
+conceptual claim remains current. Changed anchors are marked for review, and
+the guide retains its separate authorship date alongside the capture date.
 
 **Add a widget, a click event, and a helper beneath the event.** The first diagram
 leads from the row in `view_definition.hpp`, through target-ID routing in
@@ -210,7 +225,8 @@ invokes any command shown in them, including builds, tests, or release tools.
 - Use the extension guide to find the existing targets for a new C++ file, the
   Rust module boundary, shared GUI feature ownership, and runtime entry points.
 
-The default print collection has five linked volumes:
+The default print collection has five source-reference volumes and one
+conspicuously named AI-authored companion:
 
 - `pdf/00-edit-paths.pdf` starts with a task index, then provides the charts,
   actions, ownership rationales, source links and parameter reference. It is the
@@ -233,6 +249,9 @@ The default print collection has five linked volumes:
   keeps the full main-to-widget path on one landscape Letter page with 9.2-point
   source text, and links directly into declaration rows and constructor detail. Dense diagrams
   continue on linked pages instead of shrinking or dropping source text.
+- `pdf/AI-AUTHORED__GUI-MENTAL-MODEL.pdf` provides the simple conceptual diagrams
+  described above. It is labeled AI-authored on the cover and diagram pages,
+  with links to detailed code diagrams and its separate explorer page.
 
 The edit steps and explorer offer **Read in PDF** links to exact reference pages
 where available. The reference books link back to the edit guide and to their
@@ -328,6 +347,8 @@ project navigation guidance with evidence lines resolved against the snapshot.
 references. `render_flow_pdf.py` creates the graphical execution companion;
 `render_code_pdf.py` creates its detailed code diagrams. An initial execution
 PDF pass records parent pages; a final pass links to exact code-diagram pages.
+`conceptual_guide.py` loads and validates the clearly named AI-authored JSON;
+`render_concept_html.py` and `render_concept_pdf.py` render that fixed explanation.
 `render_pdf.py` creates the optional inventory volumes.
 `atlas.json` retains the complete
 analysis and captured text without requiring either presentation layer.
@@ -335,7 +356,7 @@ analysis and captured text without requiring either presentation layer.
 ## Snapshots and verification
 
 Generated snapshots are deliberately not committed. Each output has `index.html`
-and, by default, the five PDFs described above. The prepared external tool directory
+and, by default, the six PDFs described above. The prepared external tool directory
 also retains earlier snapshots, including `2026-10-04-edit-paths` and the expanded
 `2026-10-04-placement-tabs` guide. `2026-10-04-developer-handbooks` contains the
 expanded three-volume collection and the five behavior workflows.
@@ -345,6 +366,8 @@ execution scenarios to the explorer.
 volume; the overview boxes now open diagrams instead of prose summaries.
 `2026-10-04-main-to-widgets` makes the entry-to-declaration path directly
 discoverable and adds diagrams for actual widget rows and field defaults.
+`2026-10-04-ai-gui-concepts` adds the explicitly AI-authored conceptual HTML/PDF
+companion while retaining the source-reference collection.
 
 Generator-only checks passed for source/output isolation, symlink and FIFO
 handling, parser fixtures, unique symbol IDs, source spans, call targets, guide
@@ -366,6 +389,14 @@ changed anchors remain explicit review warnings rather than guessed code.
 The startup check distinguishes its direct constructor/call path from the table's
 data feed; changing a captured widget declaration produces a review marker instead
 of retaining an obsolete literal snippet.
+
+The AI-authored companion has four conceptual diagrams, 27 cards and 24 checked
+source anchors. Its five PDF pages were rendered and visually inspected; all
+card/source links and exact diagram-page destinations were checked. The HTML
+checks cover complete labels, arrow routing, source-button clearance, authorship
+and capture dates, local links, escaping, and omission of PDF links in HTML-only
+mode. A missing-anchor fixture keeps the guide readable and marks all affected
+cards for review. The conceptual prose received a separate source review.
 
 The available in-app browser blocked local `file:` URLs, so live browser layout
 and interaction were not visually verified here. JavaScript syntax and route
