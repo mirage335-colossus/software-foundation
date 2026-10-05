@@ -190,7 +190,7 @@ published application/certification assets use release storage. Small handoffs n
 longer create private releases or re-query producer jobs through REST.
 
 Each native artifact contains a complete hashed archive and manifest. There are
-79 immutable slots per run attempt, with **458 MiB maximum combined content**
+79 immutable slots per run attempt, with **474 MiB maximum combined content**
 across their individual budgets, plus ZIP metadata overhead. This union includes
 mutually exclusive preparation/publication paths; it is not a private-account
 storage reservation. The 2026-10-05 limits use measured growth by resource class:
@@ -200,12 +200,20 @@ storage reservation. The 2026-10-05 limits use measured growth by resource class
 | Individual check evidence | 2,050,496 bytes, nearly the former 2 MiB cap | 3 MiB per slot; still 48 slots |
 | Complete certificate | 23,500,974 bytes, including manifest | 40 MiB |
 | Certificate inventory | 6,016 files; 1,470,211-byte manifest | 16,000 files; 4 MiB manifest, included in the complete slot budget |
-| Source archive | 13,570,953 bytes | 24 MiB |
+| Complete all-GUI source handoff | 27,280,673-byte source archive; 27,277,415 bytes including the outer archive, manifest and two 352-byte recipe receipts | 40 MiB |
 | Linux application archives | 13,063,595 / 13,002,687 bytes | 20 MiB per architecture |
 | Windows / Wasm application archives | 6,922,103 / 2,817,900 bytes | Unchanged 16 MiB each |
 | Source-scope evidence / small controls | Largest observed source-scope handoff 145,495 bytes | Unchanged 2 MiB |
 | Application diagnostics | Largest observed 323,174 bytes | Unchanged 8 MiB |
 | Native package / optional SDK-free candidate | Separate complete payload paths | Unchanged 16 / 64 MiB |
+
+The source measurement reproduces `2371ad4` with its verified retained GUI group.
+The refreshed offline documentation atlas includes the complete published JSON
+and standalone JavaScript data; these required source bytes grew beyond the former
+24 MiB slot. The 40 MiB source bound retains about 14 MiB of growth capacity,
+without dropping files or enabling release fallback. Producers and consumers use
+the same complete-slot bound. Oversize errors report the slot, archive, manifest,
+complete byte count and applicable ceilings before failing.
 
 SDK archives remain excluded. The 512 MiB expanded-artifact bound already exceeds
 the measured 111,930,014-byte certificate inventory fourfold. General transport
@@ -245,11 +253,11 @@ do not enforce included-only use. See [budget controls](https://docs.github.com/
 
 For the current all-GUI Latest shape (31 evidence slots, including eight package
 checks), successful final-consumer deletion gives conservative phase ceilings of
-**198 MiB during production** and **199 MiB during certification**, before ZIP
+**214 MiB during production** and **199 MiB during certification**, before ZIP
 overhead. A finished run can leave up to 159 MiB of smaller evidence until cleanup
-or expiry. Disabling early deletion allows 343 MiB across that executed shape;
+or expiry. Disabling early deletion allows 359 MiB across that executed shape;
 arbitrary failed attempts must be charged their complete retained inventory, up
-to the 458 MiB union bound. A measured standalone certificate run retained
+to the 474 MiB union bound. A measured standalone certificate run retained
 44.502 MiB; these observations are not a substitute for the ceiling calculation.
 
 Count every current workflow, predecessor awaiting cleanup, failed/preserved
@@ -259,9 +267,15 @@ erase previously accrued monthly usage. Keep **at least 100 MiB reserve on Free*
 
 | Included budget | Example planned peak, including 2 MiB ZIP allowance | Reserve / operating condition |
 | --- | --- | --- |
-| Free, 500 MiB | One active full run 199 + one prior retained run 159 + other pooled storage 40 + overhead 2 = 400 MiB | 100 MiB; serialize new full runs/retries if another retained or delayed-accounting copy would exceed this |
-| Free, 500 MiB | Two active phases 398 + overhead 2 = 400 MiB | 100 MiB only when no predecessor, failed attempt or other pooled storage remains; not the default |
-| Team, 2,048 MiB | Two active 398 + two failed/preserved whole attempts 916 + other storage 256 + overhead 2 = 1,572 MiB | 476 MiB; only if Team is already included in the account plan |
+| Free, 500 MiB | One active full run 214 + one prior retained run 159 + other pooled storage 25 + overhead 2 = 400 MiB | 100 MiB; serialize new full runs/retries if another retained or delayed-accounting copy would exceed this |
+| Free, 500 MiB | Two active phases up to 428 + overhead 2 = 430 MiB | 70 MiB fails the required reserve; serialize full runs even without a predecessor or other pooled storage |
+| Team, 2,048 MiB | Two active 428 + two failed/preserved whole attempts 948 + other storage 256 + overhead 2 = 1,634 MiB | 414 MiB; only if Team is already included in the account plan |
+
+The Free single-run example allows 25 MiB of other pooled storage through the
+larger production phase. A retained predecessor plus 40 MiB of other storage
+would reach 415 MiB and fail the required 100 MiB reserve. Reconcile those bytes
+before dispatch; the smaller certification phase does not authorize a larger
+production peak.
 
 Use `preserve_artifacts=false`, keep one-day retention, and keep full workflow
 dispatches within that envelope. Reconcile/expire failed attempts before another

@@ -85,8 +85,8 @@ class EvidenceArtifacts(unittest.TestCase):
 
     def test_names_have_finite_storage_bound_and_overflow_uses_release(self):
         self.assertEqual(artifacts.MAX_ARTIFACTS, 79)
-        self.assertEqual(artifacts.MAX_RUN_BYTES, 458 * artifacts.MIB)
-        self.assertLess(artifacts.MAX_RUN_BYTES, 460 * artifacts.MIB)
+        self.assertEqual(artifacts.MAX_RUN_BYTES, 474 * artifacts.MIB)
+        self.assertLess(artifacts.MAX_RUN_BYTES, 475 * artifacts.MIB)
         self.assertEqual(artifacts.MAX_FILES, ci_transport.MAX_FILES)
         for target in artifacts.TARGETS:
             for scope in artifacts.SCOPES:
@@ -117,17 +117,29 @@ class EvidenceArtifacts(unittest.TestCase):
         consumed += ['package-' + target for target in artifacts.TARGETS]
         late_peak = complete - sum(artifacts.SLOT_BUDGETS[slot] for slot in consumed)
         predecessor = late_peak - artifacts.SLOT_BUDGETS['certificate']
+        production_slots = ['source', 'candidate-coverage', 'apt-mechanism']
+        production_slots += ['source-' + target + '-' + scope for target in artifacts.TARGETS
+                             for scope in artifacts.SCOPES]
+        production_slots += ['application-' + target for target in artifacts.APPLICATION_TARGETS]
+        production_slots += ['application-evidence-' + target for target in artifacts.APPLICATION_TARGETS]
+        production_slots += ['package-' + target for target in artifacts.TARGETS]
+        production_peak = sum(artifacts.SLOT_BUDGETS[slot] for slot in production_slots)
         self.assertEqual((complete, late_peak, predecessor),
-                         tuple(value * artifacts.MIB for value in (343, 199, 159)))
+                         tuple(value * artifacts.MIB for value in (359, 199, 159)))
+        self.assertEqual(production_peak, 214 * artifacts.MIB)
+        active_peak = max(production_peak, late_peak)
         # Failed cleanup/quota-recalculation delay keeps the predecessor charged.
-        projected = late_peak + predecessor + (40 + 2) * artifacts.MIB
+        projected = active_peak + predecessor + (25 + 2) * artifacts.MIB
         self.assertLessEqual(projected, (500 - 100) * artifacts.MIB)
+        self.assertGreater(active_peak + predecessor + (40 + 2) * artifacts.MIB,
+                           (500 - 100) * artifacts.MIB)
+        self.assertGreater(2 * active_peak + 2 * artifacts.MIB, (500 - 100) * artifacts.MIB)
         # An extra retry or concurrent workflow cannot fit that same Free budget.
         self.assertGreater(projected + complete, (500 - 100) * artifacts.MIB)
         self.assertGreater(projected + late_peak, (500 - 100) * artifacts.MIB)
         # Existing Team allowance can cover two active + two fully retained attempts.
-        team_peak = 2 * late_peak + 2 * artifacts.MAX_RUN_BYTES + (256 + 2) * artifacts.MIB
-        self.assertEqual(team_peak, 1572 * artifacts.MIB)
+        team_peak = 2 * active_peak + 2 * artifacts.MAX_RUN_BYTES + (256 + 2) * artifacts.MIB
+        self.assertEqual(team_peak, 1634 * artifacts.MIB)
         self.assertGreaterEqual(2048 * artifacts.MIB - team_peak, 400 * artifacts.MIB)
 
     def test_expanded_file_and_manifest_budgets_choose_release(self):
@@ -280,6 +292,36 @@ class EvidenceArtifacts(unittest.TestCase):
         for target in ('windows-x86_64', 'browser-wasm32'):
             with self.subTest(target=target), self.assertRaisesRegex(ValueError, 'byte budget'):
                 self.prepare(name='application-' + target + '-2')
+
+    def test_source_growth_above_old_slot_roundtrips_with_recipe_receipts(self):
+        self.name = 'source-2'
+        data = os.urandom(26 * artifacts.MIB)
+        (self.source / 'nested/test.log').write_bytes(data)
+        recipes = {'linux-x86_64': 'b' * 64, 'browser-wasm32': 'c' * 64}
+        (self.source / 'nested/recipes.json').write_text(json.dumps(recipes))
+        (self.source / 'nested/rust-recipes.json').write_text(json.dumps(recipes))
+        target = self.stage()
+        complete_bytes = sum(path.stat().st_size for path in target.iterdir())
+        self.assertGreater(complete_bytes, 24 * artifacts.MIB)
+        self.assertLess(complete_bytes, 40 * artifacts.MIB)
+        result = self.fetch()
+        self.assertEqual(result['pointer']['transport'], 'actions')
+        self.assertEqual((self.root / 'result/nested/test.log').read_bytes(), data)
+        for name in ('recipes.json', 'rust-recipes.json'):
+            self.assertEqual(json.loads((self.root / 'result/nested' / name).read_text()), recipes)
+            self.assertIn('nested/' + name, result['manifest']['files'])
+        # A complete source may grow; unrelated receipt slots remain bounded.
+        with self.assertRaisesRegex(ValueError, 'slot=candidate-delivery.*slot_budget_bytes=2097152'):
+            self.prepare(name='candidate-delivery-2')
+
+    def test_oversize_diagnostic_identifies_complete_bytes_and_keeps_explicit_fallback(self):
+        with mock.patch.dict(artifacts.SLOT_BUDGETS, {'evidence-00': 1}):
+            with self.assertRaisesRegex(ValueError,
+                    r'slot=evidence-00, total_bytes=\d+, slot_budget_bytes=1, archive_bytes=\d+, '
+                    r'manifest_bytes=\d+, manifest_budget_bytes=4194304.*explicit opt-in'):
+                self.prepare()
+        self.assertEqual((self.source / 'nested/test.log').read_text(), 'complete evidence\n' * 100)
+        self.assertFalse(any(self.root.glob('stage-*')))
 
     def test_complete_certificate_file_inventory_above_old_manifest_limit_roundtrips(self):
         self.name = 'certificate-2'

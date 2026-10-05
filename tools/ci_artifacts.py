@@ -32,7 +32,7 @@ CONTROLS = ('qualification-inputs', 'certificate', 'certification-delivery',
             'candidate-coverage', 'apt-mechanism')
 SLOT_BUDGETS = {('source-' + target + '-' + scope): 2 * MIB for target in TARGETS for scope in SCOPES}
 SLOT_BUDGETS.update({name: 2 * MIB for name in CONTROLS})
-SLOT_BUDGETS.update({'certificate': 40 * MIB, 'source': 24 * MIB, 'candidate': 64 * MIB,
+SLOT_BUDGETS.update({'certificate': 40 * MIB, 'source': 40 * MIB, 'candidate': 64 * MIB,
                      'candidate-delivery': 2 * MIB, 'latest-verification': 2 * MIB,
                      'promotion-inputs': 2 * MIB, 'promotion-delivery': 2 * MIB})
 SLOT_BUDGETS.update({'application-' + target: 16 * MIB for target in APPLICATION_TARGETS})
@@ -143,12 +143,17 @@ def prepare(repository, run_id, attempt, source_commit, workflow, name, root, pa
                     metadata=staged['metadata'],
                     files=staged['files'], archive={key: staged['whole'][key] for key in ('size', 'sha256')})
     encoded = archive.encoded(manifest)
-    if len(encoded) > MAX_MANIFEST_BYTES or len(encoded) + payload.stat().st_size > budget:
+    payload_bytes = payload.stat().st_size
+    complete_bytes = len(encoded) + payload_bytes
+    if len(encoded) > MAX_MANIFEST_BYTES or complete_bytes > budget:
         shutil.rmtree(output)
-        return _fallback('complete compressed handoff exceeds artifact byte budget', allow_release_fallback)
+        return _fallback('complete compressed handoff exceeds artifact byte budget '
+                         f'(slot={selected}, total_bytes={complete_bytes}, slot_budget_bytes={budget}, '
+                         f'archive_bytes={payload_bytes}, manifest_bytes={len(encoded)}, '
+                         f'manifest_budget_bytes={MAX_MANIFEST_BYTES})', allow_release_fallback)
     with (output / 'manifest.json').open('xb') as stream: stream.write(encoded)
     return dict(transport='actions', artifact_name=artifact_name(context, selected), path=str(output),
-                bytes=len(encoded) + payload.stat().st_size, manifest_sha256=archive.digest(output / 'manifest.json'))
+                bytes=complete_bytes, manifest_sha256=archive.digest(output / 'manifest.json'))
 
 
 def _validate(value, context, directory_name):

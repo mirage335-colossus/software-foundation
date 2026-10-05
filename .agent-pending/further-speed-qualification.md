@@ -47,25 +47,37 @@ All four C++ and four Rust retained groups remain available. The supported
 maintenance helper retired only the verified superseded GUI slot; it did not
 rebuild SDKs or retire unrelated SDK groups.
 
-Remaining hosted release work:
+Both legacy predecessor workflows completed at attempt 1: x64
+[37352060627](https://github.com/mirage335-colossus/software-foundation/actions/runs/37352060627)
+passed all nine jobs and five native frontends; ARM64
+[37352082640](https://github.com/mirage335-colossus/software-foundation/actions/runs/37352082640)
+passed all seven jobs and three native frontends. Protected acceptance, trusted
+signatures, complete unchanged 82-asset inventories and direct tag/source binding
+were independently verified. Their application bytes remain the old certified
+`release-37245250573-attempt-1`; packaging source remains `946007d`. Neither became
+Latest. The accepted r5/s5 selectors and signed manifest digests are retained in
+`.agent-work/artifacts/further-release-audit-20261005/accepted-predecessors.json`.
+They establish initial native channels, not upgrades from deleted historical tags.
 
-1. Historical distro predecessor tags are unavailable. The retained old Latest
-   `release-37245250573-attempt-1` still has a reproduced complete certificate.
-   Use the supported legacy distribution workflow to create new immutable r5/s5
-   predecessor channels for x64 and ARM64, with the exact old certified bytes and
-   a new clean pushed `packager_commit`. Ready request/dispatch templates and old
-   certificate readback are in `.agent-work/artifacts/further-release-audit-20261005/`.
-   Their native acceptance does not claim upgrades from the deleted tags. Runs
-   `37352060627` (x64) and `37352082640` (ARM64) are in progress on `946007d`;
-   do not launch duplicates or infer completion from successful planning.
-2. Run `_release-latest.yml` with all-gui, Rust, exact retained recipes, package
-   revision 6, the two newly accepted predecessor selectors and the explicitly
-   configured pinned Windows graphics URL. Complete nested candidate, production,
-   certification (including all eight native upgrades), promotion and final
-   readback. Do not duplicate those workflows or reuse an incomplete attempt.
-3. Record actual hosted identities and retire the applicable integrated-package
-   obligation only after success. Observe normal cleanup during these runs;
-   do not manufacture extra full runs solely to trigger cleanup.
+Full Latest run
+[37358862485](https://github.com/mirage335-colossus/software-foundation/actions/runs/37358862485)
+on `2371ad4` failed before builds or candidate publication: the complete all-GUI
+source handoff exceeded its 24 MiB slot. Exact local reproduction measured
+27,277,415 bytes including manifest and recipes. The generated documentation
+explorer accounts for the growth. The repair increases only the source slot to 40 MiB, preserves complete source
+and strict fallback policy, and recalculates storage operating examples while
+retaining at least 100 MiB private Free reserve.
+Source budget evidence is in `build/further-capacity-source-budget-20261005/`.
+The unsuccessful run and its skipped downstream stages are not qualification.
+
+Remaining authorized work is a fresh `_release-latest.yml` from the repaired
+pushed source, all-gui/Rust, package revision 6, the two accepted exact predecessor
+selectors, retained SDK recipes and pinned Windows graphics input. Complete
+nested regression, production, certification (all eight real native upgrades),
+promotion and final readback. Preserve each attempt's identity; do not duplicate
+nested workflows or combine incomplete attempts. Then record actual results and
+retire applicable integrated-package qualification. Observe normal cleanup;
+do not manufacture extra full runs solely to trigger deletion.
 
 Optional broader editor and full Windows offline GUI/host-bootstrap scope remains
 separate, as documented in the existing pending records. Local passes and older
