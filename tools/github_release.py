@@ -757,6 +757,7 @@ class Remote:
             raise DeliveryError('remote asset identities changed during operation')
         if expected_ref is not None and self.reference(tag) != expected_ref:
             raise DeliveryError('tag identity changed during operation')
+        return after
 
     def not_latest(self, info):
         value = self.transport.json(self.base + '/releases/latest', missing=True)
@@ -1295,11 +1296,14 @@ def promote(repository,tag,directory,delivery,policy,profile,run_id,attempt,cert
         evidence=verify_certificate(remote,assets,delivery,directory,policy,profile,run_id,attempt,certificate_sha256,metadata_only=metadata_only)
         # Reconcile IDs, sizes, hashes and tag after certificate reproduction;
         # this operation already downloaded and verified the immutable bytes.
-        remote.unchanged(tag,info,assets,delivery['tag_commit'])
+        info=remote.unchanged(tag,info,assets,delivery['tag_commit'])
         if archive.digest(policy)!=result['policy_sha256']:raise DeliveryError('promotion policy changed')
-        remote.change(f'/releases/{info["id"]}',method='PATCH',body={'draft':False,'prerelease':False,'make_latest':'true'})
+        body=info.get('body')
+        if body and body.startswith('Certification pending.'):
+            body=body.replace('Certification pending.','Certification complete.',1)
+        remote.change(f'/releases/{info["id"]}',method='PATCH',body={'draft':False,'prerelease':False,'make_latest':'true','body':body})
         final=remote.by_id(info['id'],tag);after=remote.assets(final)
-        if (final['draft'] or final['prerelease'] or final['name']!=info['name'] or after!=assets or
+        if (final['draft'] or final['prerelease'] or final['name']!=info['name'] or final.get('body')!=body or after!=assets or
                 remote.reference(tag)!=delivery['tag_commit']):raise DeliveryError('promoted lifecycle or assets changed')
         latest=remote.transport.json(remote.base+'/releases/latest')
         remote.info(latest,tag)

@@ -898,7 +898,16 @@ class DeliveryTests(unittest.TestCase):
         self.assertEqual(self.remote.releases[0]['assets'][:len(before)],before)
         self.assertTrue(self.remote.releases[0]['prerelease'])
         self.assertIsNone(self.remote.json('repos/example/project/releases/latest',missing=True))
-        result=self.promotion(cert,execute=True)
+        self.assertEqual(self.remote.releases[0]['body'],'Certification pending. Immutable application assets.')
+        note='\n\nOperator note: "Certification pending." is the original placeholder.'
+        verify=G.verify_certificate
+        def add_note(*args,**kwargs):
+            result=verify(*args,**kwargs)
+            self.remote.releases[0]['body']+=note
+            return result
+        with mock.patch.object(G,'verify_certificate',side_effect=add_note):
+            result=self.promotion(cert,execute=True)
+        self.assertEqual(self.remote.releases[0]['body'],'Certification complete. Immutable application assets.'+note)
         self.assertTrue(result['latest']);self.assertEqual(self.remote.latest,result['release_id'])
         self.assertFalse(self.remote.releases[0]['prerelease']);self.assertFalse(self.delivery['experiment'])
         G.verified_remote(G.Remote('example/project',self.remote),self.delivery,self.directory,prerelease=False)
@@ -912,9 +921,11 @@ class DeliveryTests(unittest.TestCase):
         self.assertFalse(self.remote.releases[0]['prerelease'])
         self.assertEqual(self.remote.latest,self.remote.releases[0]['id'])
         count=len(self.remote.mutations)
+        self.remote.releases[0]['body']='Operator note: Certification pending. is quoted, not the generated status.'
         self.promotion(later,execute=True)
         self.assertEqual(len(self.remote.mutations),count+1)
         self.assertFalse(self.remote.releases[0]['prerelease'])
+        self.assertEqual(self.remote.releases[0]['body'],'Operator note: Certification pending. is quoted, not the generated status.')
 
     def test_lifecycle_change_during_attachment_is_uncertain(self):
         self.publish();cert=self.cert();original=self.remote.upload
@@ -988,6 +999,7 @@ class DeliveryTests(unittest.TestCase):
         self.assertEqual(self.remote.releases[0]['assets'][:len(old)],old)
         with self.assertRaisesRegex(ValueError,'does not qualify'):self.promotion(later,execute=True)
         self.assertIsNone(self.remote.latest)
+        self.assertEqual(self.remote.releases[0]['body'],'Certification pending. Immutable application assets.')
 
     def test_duplicate_attempt_and_stale_certificate_are_rejected(self):
         self.publish();cert=self.cert();G.attach_certificate(**cert,execute=True,transport=self.remote)
