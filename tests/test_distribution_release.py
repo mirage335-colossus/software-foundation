@@ -420,6 +420,31 @@ class MirrorTests(unittest.TestCase):
             self.publish(first, execute=True)
         self.assertEqual(saved, row)
 
+    def test_instruction_correction_preserves_signed_assets_and_recovers_interruption(self):
+        directory = self.channel()
+        with patch.object(mirror, 'instructions', return_value=b'Old generated instructions\n'):
+            result = self.publish(directory, execute=True)
+        row = self.row(result['tag']); before = copy.deepcopy(row)
+        original = self.asset_bytes(row)
+        upload = self.remote.upload
+        def fail_instructions(tag, path):
+            if Path(path).name == 'INSTALL.md':
+                raise d.delivery.DeliveryError('interrupted instruction correction')
+            return upload(tag, path)
+        with patch.object(self.remote, 'upload', side_effect=fail_instructions):
+            with self.assertRaisesRegex(d.delivery.DeliveryError, 'instruction correction'):
+                self.publish(directory, execute=True)
+        state = json.loads(row['body'])
+        self.assertEqual(state['current'], state['pending'])
+        self.assertNotIn('INSTALL.md', self.asset_bytes(row))
+        self.publish(directory, execute=True)
+        self.assertIsNone(json.loads(row['body'])['pending'])
+        for asset in before['assets']:
+            if asset['name'] != 'INSTALL.md':
+                self.assertIn(asset, row['assets'])
+                self.assertEqual(original[asset['name']], self.asset_bytes(row)[asset['name']])
+        self.assertIn((result['url'].rstrip('/') + '\n').encode(), self.asset_bytes(row)['INSTALL.md'])
+
     def test_accepted_channel_and_exact_latest_are_required_before_mutation(self):
         directory = self.channel(); baseline = copy.deepcopy(self.remote)
         for fault in ('prerelease', 'draft', 'marker', 'target', 'inventory', 'latest', 'application-inventory'):
@@ -501,6 +526,7 @@ class MirrorTests(unittest.TestCase):
             self.assertIn(b'apt-get update', text); self.assertIn(b'apt-get install software-foundation-core', text)
             self.assertNotIn(b'software-foundation-core=1.2.3', text)
         text = self.asset_bytes(self.row(first['tag']))['INSTALL.md']
+        self.assertIn(('Server = ' + first['url'].rstrip('/') + '\n').encode(), text)
         self.assertIn(b'pacman -Syu software-foundation-core-bin', text)
         self.assertIn(b'emaint sync -r software-foundation-bin', text)
         self.assertIn(b'same stable repository URL', text)

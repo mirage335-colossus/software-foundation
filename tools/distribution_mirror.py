@@ -28,7 +28,7 @@ def instructions(value, selected):
     # Keep the immutable channel's historical instruction templates unchanged.
     text = channel.instructions(req, value['backends'], native_only=True).decode()
     text = text[text.index('APT: '):text.index('\n\nAvailable variants:')]
-    text = text.replace(channel.base_url(req), url)
+    text = text.replace(channel.base_url(req).rstrip('/'), url.rstrip('/'))
     text = text.replace('software-foundation-core=' + req['version'] + '+r' + str(req['package_release']), 'software-foundation-core')
     text = text.replace('same immutable release root', 'same stable repository URL')
     text = text[:text.index('Gentoo: ')] + (
@@ -170,14 +170,15 @@ def publish(directory, policy, trusted, *, execute=False, transport=None):
             if current and current != selected and (selected['sequence'] <= current['sequence'] or
                     channel.distro.version_key(selected) <= channel.distro.version_key(current)):
                 raise ValueError('package mirror update would roll back or replace a generation')
-            if current == selected and any(state['files'].get(name) != row for name, row in incoming.items()):
+            # Generated instructions may be corrected without changing signed bytes.
+            if current == selected and any(state['files'].get(name) != row for name, row in incoming.items() if name != 'INSTALL.md'):
                 raise ValueError('same-generation mirror content changed')
             reconcile(assets, state, incoming)
             expected = dict(state['files'], **incoming)
             if len(expected) > 1000 or any(row['size'] > channel.MAX_ASSET for row in expected.values()):
                 raise ValueError('retained package mirror exceeds GitHub asset limits')
             remote.unchanged(tag, info, assets, state['tag_commit'])
-            if state['pending'] is None and current != selected:
+            if state['pending'] is None and (current != selected or state['files'] != expected):
                 state = dict(state, pending=selected)
                 remote.change('/releases/' + str(info['id']), method='PATCH', body={'body': channel.archive.encoded(state).decode()})
                 info = remote.by_id(info['id'], tag)

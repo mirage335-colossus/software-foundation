@@ -228,6 +228,8 @@ immutable payloads are available, so a client holding an older index can still
 retrieve its exact package. A retained ledger and pending publication state permit
 recovery of the same accepted input and reject a different input while recovery is
 unfinished. Publication does not rebuild packages or generate new signatures.
+Generated `INSTALL.md` may be corrected for the same accepted generation; that
+uses the same pending-state recovery and leaves every signed asset unchanged.
 GitHub replaces individual index assets, so publication is not atomic: a client
 may need to retry a failed authenticated refresh. Interrupted publication remains
 visible as pending until the exact input is reconciled and read back successfully.
