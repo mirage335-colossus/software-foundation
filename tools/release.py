@@ -139,6 +139,25 @@ def validate_package(archive, entry, source_identity, expected):
         raise ValueError('packaged dependency list differs from release specification')
 
 
+def package_files(metadata, referenced):
+    """Declare package assets inside the ordinary immutable release inventory."""
+    if 'packages' not in metadata:
+        return set()
+    packages = metadata['packages']
+    if (not isinstance(packages, dict) or set(packages) != {'manifest', 'files'} or
+            packages['manifest'] != 'packages.json' or not isinstance(packages['files'], list) or
+            not packages['files'] or not all(isinstance(name, str) for name in packages['files'])):
+        raise ValueError('complete package asset declaration required')
+    names = packages['files']
+    if (names != sorted(set(names)) or not {'packages.json', 'packages.json.sig', 'archive-keyring.gpg', 'INSTALL.md'} <= set(names) or
+            set(names) & referenced or not set(names) <= set(metadata['files'])):
+        raise ValueError('duplicate, missing or overlapping package assets')
+    for name in names:
+        if safe_name(name) != name or Path(name).name != name:
+            raise ValueError('package repository assets must be flat release assets')
+    return set(names)
+
+
 def verify_metadata(directory):
     """Validate the complete frozen inventory without reading absent payloads.
 
@@ -182,6 +201,7 @@ def verify_metadata(directory):
             path = 'dependencies/' + recipe + '/' + name
             if files.get(path) != value: raise ValueError('release dependency identity mismatch')
             referenced.add(path)
+    referenced.update(package_files(data, referenced))
     if not wanted or wanted != observed or set(files) != referenced:
         raise ValueError('unexpected or omitted release asset')
     scopes = data['required_scopes']
@@ -270,8 +290,12 @@ def verify_release(directory):
         referenced.update((entry['archive'], entry['manifest']))
     for entry in metadata['dependencies']:
         referenced.update('dependencies/' + entry['recipe_id'] + '/' + name for name in entry['files'])
+    referenced.update(package_files(metadata, referenced))
     if set(metadata['files']) != referenced:
         raise ValueError('unexpected or omitted release asset')
+    if 'packages' in metadata:
+        import release_packages
+        release_packages.binding(directory, metadata)
     return metadata
 
 

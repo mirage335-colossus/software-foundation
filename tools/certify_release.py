@@ -87,10 +87,17 @@ def certify(directory, manifest, plan, reports, policy, profile, experiment=Fals
             covered = {x["backend"] for x in coverage.execution_members(plan, leader)}
             if covered != actual_targets[leader["target"]]:
                 raise ValueError("grouped execution must cover every delivered backend")
-    result = coverage.merge(plan, reports, adoption=adoption)
-    report_paths = {coverage.load(path)["check"]: path for path in reports}
+    reports = list(reports)
+    package_reports = [path for path in reports if coverage.load(path).get('check') == 'native-packages']
+    if len(package_reports) != (1 if 'packages' in manifest else 0):
+        raise ValueError('integrated packages require exactly one complete native qualification report')
+    application_reports = [path for path in reports if path not in package_reports]
+    result = coverage.merge(plan, application_reports, adoption=adoption)
+    report_paths = {coverage.load(path)["check"]: path for path in application_reports}
     for check in plan["checks"]:
         coverage.check_host(plan, check['id'], result['checks'][check['id']], report_paths[check['id']].parent)
+    native_packages = (sibling('release_package_check').validate_report(package_reports[0], manifest, plan, result)
+                       if package_reports else None)
     passed = result["status"] == "passed"
     # Neither an enclosing green workflow nor an advisory warning waives a check.
     warnings = {n: r["warnings"] for n, r in result["checks"].items() if r["warnings"]}
@@ -101,6 +108,7 @@ def certify(directory, manifest, plan, reports, policy, profile, experiment=Fals
             "warnings": warnings, "omitted": result["omitted"], "coverage": result["checks"],
             "reports": [{"name": str(p.name), "sha256": coverage.sha(p)} for p in reports],
             **({"adoption": result["adoption"]} if adoption is not None else {}),
+            **({"native_packages": native_packages} if native_packages is not None else {}),
             "limits": ["Evidence applies only to the named environments and exact bytes.",
                        "Containers do not qualify another kernel, physical device or desktop session.",
                        "This helper neither publishes a release nor changes a remote Latest pointer."]}

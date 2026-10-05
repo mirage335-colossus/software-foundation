@@ -72,14 +72,30 @@ The manual lifecycle is executable, not only described:
   selected retained opaque archive and preserve complete verification receipts.
 - `sdk-application.yml`: consume exact base recipes, package each required target,
   retain identical SDK copies and optionally publish an ordinary candidate.
+  `package_repository=false` is its standalone default; the Latest caller enables
+  it to build and sign native repositories before freezing the candidate inventory.
 - `certify.yml` and `promote.yml`: qualify exact remote bytes, attach complete
   evidence, then revalidate the selected certificate before changing Latest.
+  Integrated packages require eight native frontend installation/upgrade results
+  before the certificate is eligible: five x86_64 frontends and three ARM64
+  APT frontends.
 - [`_release-latest.yml`](workflows/_release-latest.yml): the visible
-  **_Publish new Latest release** entry point composes the full sequence.
+  **_Publish new Latest release** entry point composes the full sequence, always
+  including signed packages. Set the decimal `package_release` string in
+  `1`..`999999` and increase it
+  for changed packages at the same application version. Integrated execution and
+  certification require `previous_packages`, a bounded JSON string with exact
+  predecessor selectors for both Linux targets. APT/pacman discover the resulting
+  assets through `releases/latest/download`; Gentoo tracks Latest then pins its
+  exact tag. This layout applies to the next rebuild; it has not been qualified
+  or deployed by the current source change.
 - [`screenshots.yml`](workflows/screenshots.yml): capture fresh initial views of
   all seven actual GUI hosts and optionally publish a non-Latest image gallery.
 - [`distribution.yml`](workflows/distribution.yml): turn a certified immutable
-  application into separately signed APT, Arch and Gentoo channels with exact retained inputs.
+  application into legacy separately signed APT, Arch and Gentoo channels with
+  exact retained inputs. Its manual publication and verification tools remain
+  available. Historical stable-mirror publication is superseded for future
+  rebuilds; there is no current mirror helper or workflow route.
 - `gui-inputs.yml` and `native-gui.yml`: explicit supplier-input maintenance and
   native host qualification with separate Windows graphics prerequisites.
 - [`rust-qualification.yml`](workflows/rust-qualification.yml): four explicitly

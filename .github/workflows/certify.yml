@@ -14,6 +14,10 @@ name: Certify exact published candidate
         description: Exact release.json SHA-256
         type: string
         required: true
+      previous_packages:
+        description: Exact JSON upgrade selections for both Linux package targets
+        type: string
+        default: '{}'
       profile:
         description: Support policy profile
         type: choice
@@ -48,6 +52,10 @@ name: Certify exact published candidate
         description: Exact release.json SHA-256
         type: string
         required: true
+      previous_packages:
+        description: Exact JSON upgrade selections for both Linux package targets
+        type: string
+        default: '{}'
       profile:
         description: Support policy profile
         type: string
@@ -93,6 +101,8 @@ jobs:
       control_attempt: ${{ steps.origin.outputs.attempt }}
       matrix: ${{ steps.plan.outputs.matrix }}
       max_parallel: ${{ steps.plan.outputs.max_parallel }}
+      package_enabled: ${{ steps.packages.outputs.enabled }}
+      package_matrix: ${{ steps.slots.outputs.matrix }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
@@ -105,11 +115,32 @@ jobs:
         from pathlib import Path
         with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as stream:
             stream.write('attempt=' + os.environ['GITHUB_RUN_ATTEMPT'] + '\n')
+    - name: Freeze signed package controls and exact native upgrade predecessors
+      id: packages
+      run: python tools/release_package_check.py plan
     - shell: python
       run: |-
         import subprocess, sys
         subprocess.run([sys.executable, '.github/scripts/lifecycle.py', 'certification-plan'], check=True)
       id: plan
+    - name: Allocate disjoint bounded native evidence slots
+      id: slots
+      shell: python
+      env:
+        CHECK_MATRIX: ${{ steps.plan.outputs.matrix }}
+        PACKAGE_ENABLED: ${{ steps.packages.outputs.enabled }}
+        PACKAGE_MATRIX: ${{ steps.packages.outputs.matrix }}
+      run: |
+        import json,os
+        from pathlib import Path
+        base=len(json.loads(os.environ['CHECK_MATRIX'])['include'])
+        matrix=json.loads(os.environ['PACKAGE_MATRIX'])
+        count=len(matrix['include'])
+        if os.environ['PACKAGE_ENABLED']=='true' and base+count>48:
+            raise SystemExit('Complete native and application evidence exceeds finite certification slots')
+        for index,row in enumerate(matrix['include']): row['slot']=base+index
+        with Path(os.environ['GITHUB_OUTPUT']).open('a',encoding='utf-8') as stream:
+            stream.write('matrix='+json.dumps(matrix)+'\n')
     - name: Retain the frozen complete inventory and exact original asset identities
       run: python .github/scripts/lifecycle.py qualification-metadata-check
     - name: Retain bounded certification controls
@@ -121,6 +152,9 @@ jobs:
           build/delivery.json
           build/candidate-remote.json
           build/check-plan.json
+          build/package-plan.json
+          build/package-control/current/
+          build/package-control/previous/
     permissions:
       contents: write
       actions: read
@@ -177,6 +211,44 @@ jobs:
     permissions:
       contents: write
       actions: read
+  packages:
+    name: Qualify native package ${{ matrix.id }}
+    if: needs.prepare.outputs.package_enabled == 'true'
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.package_matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.kind == 'gentoo' && 180 || 90 }}
+    env:
+      CONTROL_ATTEMPT: ${{ needs.prepare.outputs.control_attempt }}
+      PACKAGE_CHECK: ${{ matrix.id }}
+    permissions:
+      contents: write
+      actions: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Download bounded workflow evidence
+      if: needs.prepare.outputs.control_attempt == github.run_attempt
+      uses: ./.github/actions/ci-evidence-download
+      with:
+        pattern: qualification-inputs
+    - name: Install the job-owned native display service
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends xvfb xauth x11-utils
+    - name: Install, upgrade and verify every signed backend payload
+      run: python tools/release_package_check.py check
+    - if: always()
+      name: Retain complete native package evidence
+      uses: ./.github/actions/ci-evidence-publish
+      with:
+        name: evidence-batch-package-${{ matrix.id }}-${{ github.run_attempt }}
+        slot: ${{ matrix.slot }}
+        allow-release-fallback: 'true'
+        paths: build/distro-evidence/
   record:
     env:
       CONTROL_ATTEMPT: ${{ needs.prepare.outputs.control_attempt }}
@@ -184,6 +256,7 @@ jobs:
     needs:
     - prepare
     - check
+    - packages
     runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -200,6 +273,10 @@ jobs:
       run: |
         import subprocess,sys
         subprocess.run([sys.executable,'.github/scripts/lifecycle.py','fetch-certification-evidence'],check=True)
+    - name: Collect every required native package result and its signed controls
+      env:
+        FOUNDATION_CI_ARTIFACT_RELEASE_FALLBACK: 'true'
+      run: python tools/release_package_check.py collect
     - shell: python
       run: |-
         import subprocess, sys
@@ -211,11 +288,16 @@ jobs:
       uses: ./.github/actions/ci-evidence-publish
       with:
         name: certificate-${{ github.run_attempt }}
+        allow-release-fallback: 'true'
         paths: |-
           build/candidate/release.json
           build/delivery.json
           build/candidate-remote.json
           build/check-plan.json
+          build/package-plan.json
+          build/package-control/current/
+          build/package-control/previous/
+          build/package-evidence/
           build/evidence/
           build/certificate.json
           build/attachment-plan.json
@@ -253,6 +335,7 @@ jobs:
       uses: ./.github/actions/ci-evidence-download
       with:
         pattern: certificate
+        allow-release-fallback: 'true'
     - shell: python
       run: |
         import subprocess,sys
@@ -285,18 +368,21 @@ jobs:
     needs:
     - prepare
     - check
+    - packages
     - record
     - attach
     runs-on: ubuntu-24.04
     env:
       RESULTS: ${{ toJSON(needs) }}
       EXECUTE: ${{ inputs.execute }}
+      PACKAGE_ENABLED: ${{ needs.prepare.outputs.package_enabled }}
     steps:
     - shell: python
       run: |
         import json,os
         results=json.loads(os.environ['RESULTS'])
         required=['prepare','check','record'] + (['attach'] if os.environ['EXECUTE']=='true' else [])
+        if os.environ['PACKAGE_ENABLED']=='true': required.append('packages')
         if any(results[k]['result'] != 'success' for k in required): raise SystemExit('Incomplete or failed exact qualification; inspect retained evidence')
 
 env:
@@ -305,6 +391,8 @@ env:
   PYTHONDONTWRITEBYTECODE: '1'
   TAG: ${{ inputs.tag }}
   INVENTORY: ${{ inputs.inventory }}
+  PREVIOUS_PACKAGES: ${{ inputs.previous_packages }}
+  TRUSTED_FINGERPRINT: ${{ vars.DISTRIBUTION_SIGNING_FINGERPRINT }}
   PROFILE: ${{ inputs.profile }}
   CERTIFICATION_JOBS: ${{ vars.FOUNDATION_CERTIFICATION_JOBS || '0' }}
   LINUX_POOL: ${{ inputs.linux_pool }}

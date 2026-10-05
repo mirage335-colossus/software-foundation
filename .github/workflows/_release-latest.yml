@@ -47,6 +47,14 @@ run-name: Latest preparation from ${{ github.ref_name }} (${{ inputs.profile }})
         description: Publish, certify and promote after every mandatory gate passes
         type: boolean
         default: false
+      package_release:
+        description: Native package revision, 1 through 999999; increase for each package update
+        type: string
+        required: true
+      previous_packages:
+        description: JSON Linux-target map of exact previous package selectors for mandatory native upgrade checks
+        type: string
+        default: '{}'
 permissions:
   contents: read
   actions: read
@@ -66,6 +74,8 @@ env:
   GRAPHICS_ARCHIVE_URL: ${{ inputs.graphics_archive_url }}
   EXECUTE: ${{ inputs.execute }}
   JOBS: ${{ inputs.jobs }}
+  PACKAGE_RELEASE: ${{ inputs.package_release }}
+  PREVIOUS_PACKAGES: ${{ inputs.previous_packages }}
 jobs:
   prepare:
     name: Freeze source, target inventory and existing dependency identities
@@ -113,6 +123,8 @@ jobs:
       tag: ${{ needs.prepare.outputs.tag }}
       experiment: false
       require_regression: true
+      package_repository: true
+      package_release: ${{ inputs.package_release }}
       jobs: ${{ inputs.jobs }}
       execute: ${{ inputs.execute }}
       gui_group: ${{ inputs.gui_group }}
@@ -133,6 +145,7 @@ jobs:
       linux_pool: ${{ inputs.linux_pool }}
       graphics_archive_url: ${{ inputs.graphics_archive_url }}
       execute: true
+      previous_packages: ${{ inputs.previous_packages }}
   promotion:
     name: Revalidate exact certificate and assets before changing Latest
     if: inputs.execute

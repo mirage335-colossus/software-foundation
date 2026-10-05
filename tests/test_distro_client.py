@@ -459,7 +459,7 @@ class ClientTests(unittest.TestCase):
 
     def test_configuration_rejects_ambiguous_or_linked_destinations(self):
         self.assertEqual(self.value,client.configuration(self.value))
-        for key,value in [('schema_version',True),('target','linux-unknown'),('policy_sha256','x'),('location','/'),('selection',{'track':'latest'})]:
+        for key,value in [('schema_version',True),('target','linux-unknown'),('policy_sha256','x'),('location','/'),('selection',{'track':'latest','format':'unknown'})]:
             with self.subTest(key=key), self.assertRaises(ValueError):client.configuration(dict(self.value,**{key:value}))
         (self.root/'alias').symlink_to(self.root,target_is_directory=True)
         with self.assertRaises(ValueError):client.configuration(dict(self.value,location=str(self.root/'alias/state')))
@@ -505,7 +505,7 @@ class NativeUpgradeTests(unittest.TestCase):
         self.root = Path(self.temp.name); self.value = config(self.root/'channel')
         self.generation = self.root/'channel/generations'/('7-'+'c'*64)
         self.result = {'changed':True, 'tag':self.value['selection']['tag'], 'sequence':7, 'manifest_sha256':'c'*64}
-        self.manifest = {'tag':self.result['tag'], 'request':{'sequence':7}}
+        self.manifest = {'tag':self.result['tag'], 'request':{'sequence':7,'target':'linux-x86_64'}}
 
     def enter(self, stack, *, kind='apt'):
         from contextlib import nullcontext
@@ -513,6 +513,7 @@ class NativeUpgradeTests(unittest.TestCase):
             (client, 'locked', {'side_effect':lambda path:nullcontext()}),
             (client, 'current', {'return_value':self.generation}),
             (client, 'previous_identity', {'return_value':self.manifest}),
+            (client, 'channel_format', {'return_value':'distribution'}),
             (client.release.archive, 'digest', {'return_value':'b'*64}),
             (client.release, 'verify_native', {'return_value':self.manifest}),
             (client.release, 'verify_native_channels', {})]
@@ -573,6 +574,125 @@ class NativeUpgradeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'requires root'):
                 client.native_upgrade(self.value, self.root/'policy', 'apt')
             refresh.assert_not_called(); run.assert_not_called()
+
+
+class IntegratedClientTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve(); self.value = config(self.root/'state')
+        self.tag = 'release-123-attempt-1'
+        self.selected = dict(format=client.PACKAGE_FORMAT, tag=self.tag, manifest_sha256='c'*64)
+
+    def test_latest_and_exact_integrated_selections_are_explicit_and_bounded(self):
+        for selected in ({'track':'latest'}, {'track':'latest','format':client.PACKAGE_FORMAT}, self.selected):
+            value = dict(self.value, selection=selected)
+            self.assertEqual(value, client.configuration(value))
+        for selected in ({'track':'latest','tag':self.tag}, dict(self.selected,format='distribution'),
+                         dict(self.selected,manifest_sha256='x'), {'track':'qualified','format':client.PACKAGE_FORMAT}):
+            with self.subTest(selected=selected), self.assertRaises(ValueError):
+                client.configuration(dict(self.value,selection=selected))
+
+    def test_latest_pins_only_pointer_and_exact_packages_asset_without_legacy_scan(self):
+        remote = Mock(); info = dict(id=17, tag_name=self.tag, draft=False, prerelease=False)
+        remote.json.return_value = info
+        remote.pages.return_value = [dict(id=18,name='packages.json',size=100,state='uploaded',digest='sha256:'+'c'*64)]
+        selected = client.select(dict(self.value,selection={'track':'latest'}),remote)
+        self.assertEqual(self.selected,selected)
+        remote.json.assert_called_once_with('repos/example/project/releases/latest')
+        remote.pages.assert_called_once_with('repos/example/project/releases/17/assets?per_page=100')
+        for rows in ([], remote.pages.return_value*2,
+                     [dict(remote.pages.return_value[0],digest=None)],
+                     [dict(remote.pages.return_value[0],size=client.MAX_JSON+1)]):
+            remote.pages.return_value = rows
+            with self.subTest(rows=rows), self.assertRaises(ValueError):
+                client.select(dict(self.value,selection={'track':'latest'}),remote)
+        remote.json.return_value = dict(info,prerelease=True); remote.pages.reset_mock()
+        with self.assertRaises(ValueError): client.select(dict(self.value,selection={'track':'latest'}),remote)
+        remote.pages.assert_not_called()
+
+    def test_public_latest_single_release_binding_does_not_need_release_history(self):
+        remote = client.PublicGitHub('example/project')
+        info = dict(id=17, tag_name=self.tag, draft=False, prerelease=False)
+        rows = [asset_row(18,'packages.json',b'{}',self.tag)]
+        with patch.object(remote,'json',return_value=info), patch.object(remote,'pages',return_value=rows):
+            selected = client.select(dict(self.value,selection={'track':'latest'}),remote)
+        self.assertEqual({17:self.tag},remote.releases)
+        remote.remember('repos/example/project/releases/17/assets?per_page=100',rows)
+        self.assertEqual(hashlib.sha256(b'{}').hexdigest(),selected['manifest_sha256'])
+        with self.assertRaisesRegex(ValueError,'identity changed'):
+            remote.observe_release(dict(info,tag_name='foreign-tag'))
+
+    def test_public_transport_admits_exact_repository_visibility_and_rejects_foreign_routes(self):
+        remote = client.PublicGitHub('example/project')
+        response = asset_response(b'{}','https://api.github.com/repos/example/project')
+        with patch.object(client,'urlopen',return_value=response) as request:
+            self.assertIs(response,remote.request('repos/example/project'))
+            self.assertEqual('https://api.github.com/repos/example/project',request.call_args.args[0].full_url)
+            for route in ('repos/foreign/project','repos/example/project-foreign/releases'):
+                with self.subTest(route=route),self.assertRaisesRegex(ValueError,'escaped'):
+                    remote.request(route)
+            self.assertEqual(1,request.call_count)
+        response.close()
+
+    def test_manifest_identity_and_integrated_api_routing_keep_legacy_independent(self):
+        assets = self.root/'assets'; assets.mkdir(); (assets/'packages.json').write_bytes(b'{}')
+        module = Mock(); view = {'format':client.PACKAGE_FORMAT,'request':{'target':'linux-x86_64'}}
+        module.verify.return_value = view; module.fetch.return_value = view
+        self.assertEqual(hashlib.sha256(b'{}').hexdigest(),client.manifest_digest(assets))
+        with self.assertRaisesRegex(ValueError,'format differs'): client.manifest_digest(assets,'distribution')
+        with patch.object(client,'package_tools',return_value=module), patch.object(client.release,'verify_native') as old_verify, \
+                patch.object(client.release,'fetch') as old_fetch:
+            self.assertEqual(view,client.verify_channel(assets,'policy','A'*40,target='linux-x86_64',format=client.PACKAGE_FORMAT))
+            selected = dict(self.selected,target='linux-x86_64')
+            self.assertEqual(view,client.fetch_channel(selected,'example/project',self.root/'fetch','policy','A'*40))
+            module.verify.assert_called_once_with(assets,'policy','A'*40,target='linux-x86_64')
+            module.fetch.assert_called_once_with('example/project',self.tag,'c'*64,self.root/'fetch','policy','A'*40,
+                                                 target='linux-x86_64',transport=None)
+            old_verify.assert_not_called(); old_fetch.assert_not_called()
+        (assets/'distribution.json').write_bytes(b'{}')
+        with self.assertRaisesRegex(ValueError,'one exact'): client.manifest_digest(assets)
+
+    def test_integrated_extraction_normalizes_only_fresh_directories(self):
+        channels = self.root/'channels'; (channels/'apt').mkdir(parents=True,mode=0o700)
+        (channels/'native/packages').mkdir(parents=True,mode=0o700)
+        channels.chmod(0o700); (channels/'native').chmod(0o700)
+        payload = channels/'apt/Packages'; payload.write_bytes(b'signed'); payload.chmod(0o644)
+        module = Mock(); module.extract_channels.return_value = channels
+        view = dict(format=client.PACKAGE_FORMAT,request={'target':'linux-x86_64'})
+        with patch.object(client,'package_tools',return_value=module):
+            self.assertEqual(channels,client.extract_channels('assets',channels,view))
+        self.assertTrue(all(path.stat().st_mode & 0o777 == 0o755
+                            for path in (channels,channels/'apt',channels/'native',channels/'native/packages')))
+        self.assertEqual(0o644,payload.stat().st_mode & 0o777); self.assertEqual(b'signed',payload.read_bytes())
+
+    def test_expired_predecessor_uses_signed_identity_and_raw_generation_digest(self):
+        raw = b'{"expired":true}\n'; digest = hashlib.sha256(raw).hexdigest()
+        generation = self.root/('7-'+digest); (generation/'assets').mkdir(parents=True)
+        (generation/'assets/packages.json').write_bytes(raw)
+        request = dict(repository='example/project',target='linux-x86_64',trusted_fingerprint='A'*40,sequence=7)
+        view = dict(format=client.PACKAGE_FORMAT,request=request)
+        module = Mock(); module.native_identity.return_value = view
+        with patch.object(client,'package_tools',return_value=module):
+            self.assertEqual(view,client.previous_identity(generation,self.value))
+            module.native_identity.assert_called_once_with(generation/'assets','A'*40,target='linux-x86_64')
+            module.verify.assert_not_called()
+            (generation/'assets/packages.json').write_bytes(raw+b' ')
+            with self.assertRaisesRegex(ValueError,'generation name'):
+                client.previous_identity(generation,self.value)
+            (generation/'assets/packages.json').write_bytes(raw)
+            module.native_identity.return_value = dict(view,request=dict(request,repository='foreign/project'))
+            with self.assertRaisesRegex(ValueError,'trust or target'):
+                client.previous_identity(generation,self.value)
+
+    def test_cross_format_upgrade_retains_strict_version_and_specification_rules(self):
+        before = dict(request=dict(repository='example/project',target='linux-x86_64',trusted_fingerprint='A'*40,sequence=7),
+                      backends=['core'],specifications={'core':dict(version='1.2.3',package_release=1)})
+        after = copy.deepcopy(before); after['format'] = client.PACKAGE_FORMAT; after['request']['sequence'] = 8
+        client.advance(before,after)
+        changed = copy.deepcopy(after); changed['specifications']['core']['archive_url'] = 'replacement'
+        with self.assertRaisesRegex(ValueError,'same-version'): client.advance(before,changed)
+        changed['specifications']['core']['package_release'] = 2
+        client.advance(before,changed)
 
 
 @unittest.skipUnless(sys.platform.startswith('linux') and all(shutil.which(x) for x in ('cc','dpkg-deb','gpg','gpgv','gpgconf','git')),

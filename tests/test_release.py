@@ -1,4 +1,5 @@
 from pathlib import Path
+import copy
 import shutil
 import json
 import subprocess
@@ -41,6 +42,77 @@ class ReleaseTests(unittest.TestCase):
         write_json(self.spec_path, self.spec)
 
     def tearDown(self): self.temp.cleanup()
+
+    def release_with_packages(self):
+        output = self.root / 'release with packages'
+        metadata = release.assemble(self.spec_path, self.base, output)
+        # These inert bytes exercise the complete release hash inventory. The
+        # package builder separately validates its manifest and signatures.
+        package_assets = {
+            'packages.json': b'{"format":"release-packages"}\n',
+            'packages.json.sig': b'inert signature fixture',
+            'archive-keyring.gpg': b'inert keyring fixture',
+            'INSTALL.md': b'fixture installation instructions',
+            'foundation-linux-x86_64-native.tar.gz': b'inert native bundle fixture',
+        }
+        for name, content in package_assets.items():
+            (output / name).write_bytes(content)
+            metadata['files'][name] = digest(output / name)
+        metadata['packages'] = {'manifest': 'packages.json', 'files': sorted(package_assets)}
+        write_json(output / 'release.json', metadata)
+        return output, metadata
+
+    def test_optional_package_assets_are_bound_to_the_complete_release_inventory(self):
+        output, metadata = self.release_with_packages()
+        self.assertEqual(release.verify_metadata(output)['packages'], metadata['packages'])
+        release.verify_inventory(output, metadata['files'], exclude=('release.json',))
+        # Metadata-only reconciliation keeps the frozen hash; physical acceptance
+        # must reject substituted package bytes even when applications are intact.
+        (output / 'foundation-linux-x86_64-native.tar.gz').write_bytes(b'substituted bundle')
+        self.assertEqual(release.verify_metadata(output), metadata)
+        with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+            release.verify_release(output)
+
+    def test_package_declaration_requires_every_signing_and_installation_control(self):
+        output, metadata = self.release_with_packages()
+        for name in ('packages.json', 'packages.json.sig', 'archive-keyring.gpg', 'INSTALL.md'):
+            with self.subTest(control=name):
+                changed = copy.deepcopy(metadata)
+                changed['packages']['files'].remove(name)
+                del changed['files'][name]
+                write_json(output / 'release.json', changed)
+                with self.assertRaisesRegex(ValueError, 'package assets'):
+                    release.verify_metadata(output)
+
+    def test_package_assets_cannot_duplicate_overlap_or_invent_release_files(self):
+        output, metadata = self.release_with_packages()
+        for kind in ('duplicate', 'application-overlap', 'absent', 'nonflat', 'wrong-manifest'):
+            with self.subTest(kind=kind):
+                changed = copy.deepcopy(metadata)
+                names = changed['packages']['files']
+                if kind == 'duplicate':
+                    names.append(names[0]); names.sort()
+                elif kind == 'application-overlap':
+                    names.append(changed['artifacts'][0]['archive']); names.sort()
+                elif kind == 'absent':
+                    names.append('unretained-native.tar.gz'); names.sort()
+                elif kind == 'nonflat':
+                    names.append('nested/native.tar.gz'); names.sort()
+                    changed['files']['nested/native.tar.gz'] = 'a' * 64
+                else:
+                    changed['packages']['manifest'] = 'other.json'
+                write_json(output / 'release.json', changed)
+                with self.assertRaises(ValueError):
+                    release.verify_metadata(output)
+
+    def test_explicit_null_packages_cannot_disguise_a_legacy_package_free_inventory(self):
+        output = self.root / 'legacy release'
+        metadata = release.assemble(self.spec_path, self.base, output)
+        self.assertNotIn('packages', release.verify_metadata(output))
+        metadata['packages'] = None
+        write_json(output / 'release.json', metadata)
+        with self.assertRaisesRegex(ValueError, 'package asset declaration'):
+            release.verify_metadata(output)
 
     def test_package_validation_reads_archive_once_without_full_extraction(self):
         from unittest.mock import patch

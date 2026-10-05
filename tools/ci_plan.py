@@ -823,6 +823,9 @@ def qualification_plan(candidate, profile, output, policy=None, *, runners=None,
     from types import SimpleNamespace
     additional = {name: ROOT / name for name in
         ('.github/scripts/lifecycle.py', '.github/scripts/container_job.py', '.github/workflows/certify.yml')}
+    # Select the extra input here; build_plan verifies the complete manifest below.
+    if 'packages' in module('coverage').load(Path(candidate) / 'release.json'):
+        additional['build/package-plan.json'] = ROOT / 'build/package-plan.json'
     if metadata_only:
         additional.update({'build/' + name: candidate.parent / name
                            for name in ('delivery.json', 'candidate-remote.json')})

@@ -247,6 +247,54 @@ class NativeCheckTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, 'predecessor'):
                 check.qualification(self.selected, records, dict(env, PREVIOUS=json.dumps(bad)))
 
+    def test_integrated_selection_and_fetch_never_enter_legacy_release_path(self):
+        from unittest.mock import patch
+        selected = dict(self.selected,format='release-packages',tag='release-123-attempt-1')
+        self.assertEqual(selected,check.selection(json.dumps(selected)))
+        for changed in (dict(selected,format='distribution'),dict(selected,format='unknown'),dict(selected,extra=True)):
+            with self.subTest(changed=changed),self.assertRaises(ValueError):check.selection(json.dumps(changed))
+        with patch.object(check.client,'fetch_channel',return_value={'format':'release-packages'}) as fetch:
+            self.assertEqual({'format':'release-packages'},check.fetch_selected(selected,'out','policy','A'*40,'example/project'))
+        fetch.assert_called_once_with(selected,'example/project','out','policy','A'*40,transport=None,reuse=None)
+        with patch.object(check.release,'fetch') as fetch, self.assertRaisesRegex(ValueError,'application release promotion'):
+            check.accept(selected,[],self.env,'out')
+        fetch.assert_not_called()
+
+    def test_integrated_qualification_requires_complete_matrix_and_exact_mixed_format_upgrade(self):
+        selected = dict(self.selected,format='release-packages',tag='release-123-attempt-1')
+        prior = dict(self.selected,tag='distro-1.2.2-x86_64-r1-s1',manifest_sha256='e'*64)
+        env = dict(self.env,PREVIOUS=json.dumps(prior))
+        records = copy.deepcopy(self.records)
+        for record in records:
+            record.update(format='release-packages',tag=selected['tag'],upgrade_format='distribution',
+                          upgrade_from=prior['tag'],upgrade_manifest_sha256=prior['manifest_sha256'])
+        self.assertEqual(5,len(check.qualification(selected,records,env)['checks']))
+        with self.assertRaisesRegex(ValueError,'exact upgrade predecessor'):
+            check.qualification(selected,records,self.env)
+        with self.assertRaisesRegex(ValueError,'missing or foreign'):
+            check.qualification(selected,records[:-1],env)
+        for key,value in (('format',None),('upgrade_format','release-packages'),('manifest_sha256','f'*64),
+                          ('upgrade_manifest_sha256','f'*64),('tag',self.selected['tag'])):
+            changed = copy.deepcopy(records); changed[0][key] = value
+            with self.subTest(key=key),self.assertRaisesRegex(ValueError,'scope'):
+                check.qualification(selected,changed,env)
+        integrated_prior = dict(prior,format='release-packages',tag='release-122-attempt-1')
+        for record in records: record.update(upgrade_format='release-packages',upgrade_from=integrated_prior['tag'])
+        self.assertEqual(5,len(check.qualification(selected,records,dict(env,PREVIOUS=json.dumps(integrated_prior)))['checks']))
+
+    def test_integrated_combined_apt_receipts_match_backend_and_exact_target_architecture(self):
+        from unittest.mock import patch
+        values = {'repository.json':{'packages':[{'receipt':'amd64.json'},{'receipt':'arm64.json'}]},
+                  'amd64.json':{'backend':'core','architecture':'amd64','payload':{'x64':'bytes'}},
+                  'arm64.json':{'backend':'core','architecture':'arm64','payload':{'arm':'bytes'}}}
+        def read(path): return values[Path(path).name]
+        with patch.object(check.release.archive,'read_json',side_effect=read):
+            for target,expected in (('linux-x86_64',{'x64':'bytes'}),('linux-aarch64',{'arm':'bytes'})):
+                view = {'format':'release-packages','request':{'target':target}}
+                self.assertEqual(expected,check.expected_payload(Path('/channels'),view,'core','apt'))
+            with self.assertRaisesRegex(ValueError,'one exact APT'):
+                check.expected_payload(Path('/channels'),{'backends':['core']},'core','apt')
+
     def test_arch_keyring_setup_keeps_explicit_native_home_and_trust(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as temp:

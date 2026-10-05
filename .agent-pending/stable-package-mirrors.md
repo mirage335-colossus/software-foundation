@@ -1,36 +1,49 @@
-# Native stable package mirror upgrade qualification
+# Integrated application-release package qualification
 
-Implementation starts from `1ad167aa741c07d9f8d33b56239b271913cd66d5`.
-The [stable mirror design](../docs/distribution-release.md#stable-package-mirrors)
-preserves the accepted immutable signed channels and their existing qualification.
-Both mirrors are deployed. Their signed assets match the accepted immutable
-channels, whose original native installation/upgrade qualification remains valid.
-Fresh public APT and pacman refresh/download checks and Gentoo authenticated
-qualified-channel refresh passed. Native installation and upgrade through two
-generations of the permanent URLs have not been executed. See the exact
-[publication and validation record](../docs/validation.md#stable-package-repository-urls-2026-10-05).
+The source change starts from `c88fb7988037d38ca1685f9a22ff0ea604b04179` and adopts
+the [application-release package layout](../docs/distribution-release.md#application-release-packages)
+for the next rebuild. Signed packages are prepared before the application
+candidate's inventory and checksums are frozen, then delivered and certified as
+part of that complete release. This replaces the separate mirror route.
 
-Implementation `84a599e2d4608bd7b6acbd992939f62b574c7c73` was followed by the
-bounded manual publication route in `e5022ab7a748d1fdba0b047bdb8902db02e0d5f6`
-and the Arch instruction correction in `c3b889b5327397828ce3bcb75594b092913c816b`.
-Final local validation on 2026-10-05 passed nine mirror cases and one real signed
-native-acceptance fixture, with no skips. Workflow isolation, YAML, embedded Python
-and documentation checks passed. These focused checks do not establish native
-stable-URL upgrade qualification.
+The user requested source changes only, with no test executions, Actions runs or live
+consolidation. No package build, signing, integrated native check or release
+execution for this layout is recorded. Static integration review is complete:
+17 Python files and 24 embedded Python blocks parse with Python 3.9 grammar,
+four workflow YAML files parse, local reusable-workflow inputs match their
+declarations, and whitespace checks pass. Regression cases were added but not
+executed. Complete native/release qualification remains deferred until explicitly
+requested. Earlier [mirror publication and public client checks](../docs/validation.md#stable-package-repository-urls-2026-10-05)
+and immutable-channel installation/upgrade receipts keep their original scope;
+they do not establish qualification of the new inventory layout.
 
-One qualification obligation remains: run the existing required native A-to-B
-installation and upgrade procedure with APT on its declared x86_64 and aarch64
-hosts and pacman on qualified x86_64, configuring each permanent mirror URL only
-once. Confirm signed metadata and package verification, the newer installed
-versions, unchanged configuration between revisions, and retrieval of the retained
-older versioned payload after index replacement. Use the existing
-[native client procedure](../docs/distribution-release.md#native-acceptance-and-normal-updates)
-and retain exact application/channel identities, mirror state, qualifier revision
-and workflow evidence. This does not add an ARM64 Arch support claim.
+Required qualification covers the complete candidate inventory, signed
+`packages.json`, combined APT assets for both architectures, x86_64 Arch assets
+and both signed native bundles. All eight native frontends must install each
+declared backend, verify the actual version and payload, exercise the application,
+refresh the repository, upgrade from the exact predecessor and uninstall. These
+are Debian Bookworm, Debian Trixie and Ubuntu 24.04 APT on both Linux targets,
+plus Arch and Gentoo on x86_64. There is no ARM64 Arch/Gentoo support claim.
 
-Next manual action: explicitly request native stable-URL A-to-B qualification
-when the next accepted generation is ready. Do not roll application Latest or
-production repository indexes backward to manufacture a historical transition.
-The user explicitly excluded long Actions jobs from the current publication;
-only three publication jobs ran, each under two minutes. No further workflow
-launch is requested by this record.
+Supply `package_release` in 1..999999, increasing it for same-version package
+changes, and `previous_packages` with exact selectors for both Linux targets.
+The first integrated release can use the existing accepted immutable-channel
+selectors. Later integrated predecessors add `"format":"release-packages"`
+and pin their exact application tag and `packages.json` digest. Require real
+native upgrade evidence on every frontend and a complete eligible certificate
+before promotion. See [Latest inputs and executable ordering](../docs/latest-release.md).
+
+Integrated native evidence currently requires fresh preparation and all eight
+native jobs in the same certification attempt. A failed-jobs-only rerun that
+keeps an earlier preparation attempt fails closed; use a full certification
+rerun with fresh preparation. Historical application-only adoption is unchanged.
+
+The old mirror obligation to preserve prior payloads after replacing remote
+indexes is superseded by the new complete application-release layout. It was
+not executed or counted as passed. No published mirror or historical release
+has been consolidated, removed or modified by this source change.
+
+Next manual action: explicitly request the full integrated Latest rebuild and
+native predecessor-upgrade qualification after implementation is ready, with
+reviewed exact SDK recipes, predecessor selectors and protected signing inputs.
+This record does not schedule or authorize that execution now.

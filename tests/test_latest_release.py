@@ -20,6 +20,12 @@ def request(execute=True):
             'gui_group': '', 'graphics_archive_url': '', 'execute': execute, 'jobs': '2'}
 
 
+def previous_packages():
+    return {target: {'tag': 'distro-0.1.0-' + target.removeprefix('linux-') + '-r1-s1',
+                     'manifest_sha256': 'c' * 64, 'target': target}
+            for target in ('linux-x86_64', 'linux-aarch64')}
+
+
 def results(execute=True):
     value = {name: {'result': 'success', 'outputs': {}} for name in L.STAGES}
     value['application']['outputs'] = {'source_commit': 'a' * 40, 'tag': 'v1', 'inventory_sha256': 'c' * 64,
@@ -136,14 +142,76 @@ L.main()
                             for row in prepared['matrix']['include']))
         self.assertEqual(remote.mutations, [])
 
+    def test_package_revision_bounds_reject_before_remote_work(self):
+        for revision in ('1', '999999'):
+            prepared = L.preflight(dict(request(False), package_release=revision,
+                                        previous_packages={}, attempt=999), remote=False)
+            self.assertEqual(prepared['package_release'], revision)
+            self.assertFalse(prepared['execute'])
+        for changes in ({'package_release': ''}, {'package_release': '0'}, {'package_release': '01'},
+                        {'package_release': '1000000'}, {'package_release': 1},
+                        {'package_release': True}, {'package_release': '1', 'attempt': 1000},
+                        {'package_release': '1', 'tag': 'latest'}, {'package_release': '1', 'tag': 'Latest'}):
+            remote = fixtures.FakeGitHub()
+            with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, 'package revision'):
+                L.preflight(dict(request(False), **changes), transport=remote)
+            self.assertEqual(remote.calls, [])
+
+    def test_package_execution_requires_both_exact_predecessors(self):
+        complete = previous_packages()
+        for provider in ('rust', 'cpp'):
+            prepared = L.preflight(dict(request(), core_provider=provider, package_release='2',
+                                        previous_packages=complete), remote=False)
+            self.assertEqual(prepared['previous_packages'], complete)
+            self.assertEqual(prepared['core_provider'], provider)
+        integrated = {target: dict(selected, tag='previous-application', format='release-packages')
+                      for target, selected in complete.items()}
+        self.assertEqual(L.preflight(dict(request(), package_release='2', previous_packages=integrated),
+                                     remote=False)['previous_packages'], integrated)
+        malformed = [None, [], {}, {'linux-x86_64': complete['linux-x86_64']},
+                     dict(complete, **{'windows-x86_64': complete['linux-x86_64']})]
+        for mutation in ('swapped-target', 'missing-digest', 'extra-selector-field', 'new-candidate'):
+            changed = copy.deepcopy(complete)
+            selected = changed['linux-x86_64']
+            if mutation == 'swapped-target': selected['target'] = 'linux-aarch64'
+            elif mutation == 'missing-digest': del selected['manifest_sha256']
+            elif mutation == 'extra-selector-field': selected['track'] = 'latest'
+            else: selected['tag'] = 'release-123-attempt-1'
+            malformed.append(changed)
+        for previous in malformed:
+            remote = fixtures.FakeGitHub()
+            with self.subTest(previous=previous), self.assertRaises(ValueError):
+                L.preflight(dict(request(), tag='', package_release='2', previous_packages=previous),
+                            transport=remote)
+            self.assertEqual(remote.calls, [])
+
+    def test_predecessor_controls_cannot_be_orphaned_from_package_revision(self):
+        remote = fixtures.FakeGitHub()
+        with self.assertRaisesRegex(ValueError, 'package revision'):
+            L.preflight(dict(request(False), previous_packages=previous_packages()), transport=remote)
+        self.assertEqual(remote.calls, [])
+
     def test_environment_provider_defaults_rust_and_preserves_explicit_cpp(self):
         environment = {'GITHUB_REPOSITORY': 'example/project', 'GITHUB_SHA': 'a' * 40,
             'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1', 'PROFILE': 'core',
             'RECIPES': json.dumps(request()['recipes']), 'EXECUTE': 'false', 'JOBS': '2'}
         with mock.patch.dict(os.environ, environment, clear=True):
-            self.assertEqual(L.environment_request()['core_provider'], 'rust')
+            defaults = L.environment_request()
+            self.assertEqual(defaults['core_provider'], 'rust')
+            self.assertNotIn('package_release', defaults)
+            self.assertNotIn('previous_packages', defaults)
+            with mock.patch.dict(os.environ, PACKAGE_RELEASE=''):
+                self.assertEqual(L.environment_request()['package_release'], '')
+                self.assertEqual(L.environment_request()['previous_packages'], {})
+            with mock.patch.dict(os.environ, PACKAGE_RELEASE='2', PREVIOUS_PACKAGES=json.dumps(previous_packages())):
+                selected = L.environment_request()
+                self.assertEqual(selected['package_release'], '2')
+                self.assertEqual(selected['previous_packages'], previous_packages())
             with mock.patch.dict(os.environ, CORE_PROVIDER='cpp'):
                 self.assertEqual(L.environment_request()['core_provider'], 'cpp')
+            with mock.patch.dict(os.environ, PREVIOUS_PACKAGES='{"linux-x86_64":{},"linux-x86_64":{}}'):
+                with self.assertRaisesRegex(ValueError, 'duplicate JSON key'):
+                    L.environment_request()
 
     def test_unresolved_gui_redistribution_fails_before_remote_work(self):
         policy=(L.ci.ROOT/'docs/release-policy.json').read_bytes()
@@ -216,6 +284,16 @@ L.main()
             checked = L.verify_latest(req, value, transport=fixture.remote)
             self.assertTrue(checked['qualified']); self.assertEqual(checked['assets'].keys(),
                 {a['name'] for a in fixture.remote.releases[0]['assets']})
+            # A genuine ordinary certificate and Latest pointer remain sufficient
+            # for historical candidates, but cannot qualify a future package-
+            # enabled request whose complete inventory has no package repositories.
+            future = dict(req, package_release='2', previous_packages=previous_packages())
+            before = copy.deepcopy(fixture.remote.releases)
+            with mock.patch.object(L.delivery, 'verify_certificate') as replay:
+                with self.assertRaisesRegex(ValueError, 'required package repositories'):
+                    L.verify_latest(future, value, transport=fixture.remote)
+            replay.assert_not_called()
+            self.assertEqual(fixture.remote.releases, before)
             fixture.remote.releases[0]['prerelease'] = True
             with mock.patch.object(L.delivery, 'verify_certificate') as replay:
                 with self.assertRaisesRegex(ValueError, 'lifecycle'):

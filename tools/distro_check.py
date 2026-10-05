@@ -15,6 +15,7 @@ import tarfile
 import tempfile
 import time
 import uuid
+from urllib.parse import quote
 
 import process_tree
 from release_check import qualification_work
@@ -39,8 +40,9 @@ def matrix(target, distro="all", *, accept=False):
         runner='ubuntu-24.04' if target == 'linux-x86_64' else 'ubuntu-24.04-arm') for name in names]}
 
 
-def extract_channels(assets, output):
-    channels = release.archive.extract(Path(assets)/'channels.tar.gz', output, max_bytes=release.distro.MAX_BYTES*2)
+def extract_channels(assets, output, manifest=None):
+    channels = (client.extract_channels(assets, output, manifest) if manifest is not None else
+                release.archive.extract(Path(assets)/'channels.tar.gz', output, max_bytes=release.distro.MAX_BYTES*2))
     # Only the fresh owned extraction is normalized. Payload file modes remain
     # authenticated by the signed channel and its native package inventories.
     channels.chmod(0o755)
@@ -53,7 +55,9 @@ def expected_payload(channels, manifest, backend, kind):
     if kind == 'apt':
         metadata = release.archive.read_json(channels/'apt/repository.json')
         rows = [release.archive.read_json(channels/'apt'/row['receipt']) for row in metadata['packages']]
-        matches = [row for row in rows if row['backend'] == backend]
+        architecture = release.TARGETS[manifest['request']['target']][1] if manifest.get('format') == client.PACKAGE_FORMAT else None
+        matches = [row for row in rows if row['backend'] == backend and
+                   (architecture is None or row['architecture'] == architecture)]
         if len(matches) != 1: raise ValueError('one exact APT backend receipt required')
         return matches[0]['payload']
     spec = manifest['specifications'][backend]
@@ -286,10 +290,11 @@ def prepare_gentoo_runtime(value, root, run):
         '--binpkg-respect-use=y', '--oneshot', '--with-bdeps=n', *dependencies)
 
 
-def native(directory, policy, trusted, kind, evidence, *, previous=None):
+def native(directory, policy, trusted, kind, evidence, *, previous=None, target=None,
+           format=None, previous_format=None):
     require_disposable()
     if kind not in ('apt', 'arch', 'gentoo'): raise ValueError('unknown package frontend')
-    manifest = release.verify_native(directory, policy, trusted)
+    manifest = client.verify_channel(directory, policy, trusted, target=target, format=format)
     target = manifest['request']['target']
     machine = {'amd64': 'x86_64', 'arm64': 'aarch64'}.get(platform.machine().lower(), platform.machine().lower())
     if target != 'linux-'+machine: raise ValueError('native package target differs from execution processor')
@@ -303,12 +308,16 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
     with qualification_work(evidence) as work:
         rounds = []
         if previous:
-            old = release.verify_native(previous, policy, trusted); require_version_upgrade(old, manifest)
+            old = client.verify_channel(previous, policy, trusted, target=target, format=previous_format)
+            require_version_upgrade(old, manifest)
             rounds.append((Path(previous), old))
         rounds.append((Path(directory), manifest)); installed = []; package_versions = []
         for index, (assets, value) in enumerate(rounds):
-            channels = extract_channels(assets, work/('channels-'+str(index)))
-            url = release.base_url(value['request']); backends = value['backends']
+            channels = extract_channels(assets, work/('channels-'+str(index)), value)
+            url = ('https://github.com/' + value['request']['repository'] + '/releases/download/' +
+                   quote(value['tag'], safe='') + '/' if value.get('format') == client.PACKAGE_FORMAT
+                   else release.base_url(value['request']))
+            backends = value['backends']
             if kind == 'apt':
                 # Minimal images may exclude manuals; qualification must inspect
                 # the complete installed package, including its public man pages.
@@ -337,8 +346,10 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
                 prepare_gentoo_runtime(value, '/', run)
                 config = dict(schema_version=1, repository=value['request']['repository'], target=target,
                     trusted_fingerprint=trusted, policy_sha256=release.archive.digest(policy),
-                    selection={'tag': value['tag'], 'manifest_sha256': release.archive.digest(assets/'distribution.json')},
+                    selection={'tag': value['tag'], 'manifest_sha256': client.manifest_digest(assets)},
                     location='/var/lib/software-foundation-channel')
+                if value.get('format') == client.PACKAGE_FORMAT:
+                    config['selection']['format'] = client.PACKAGE_FORMAT
                 config_path = Path('/etc/software-foundation-channel.json')
                 config_path.write_bytes(release.archive.encoded(config))
                 client.refresh(config, policy, prepared=assets)
@@ -382,15 +393,18 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
             private = Path('/opt/software-foundation')/backend
             if private.exists() and any(private.rglob('*')): raise ValueError('private files remain after removal')
     result = dict(schema_version=1, status='passed', kind=kind, target=target, tag=manifest['tag'],
-        manifest_sha256=release.archive.digest(Path(directory)/'distribution.json'),
+        manifest_sha256=client.manifest_digest(directory),
         checks=['signature', 'published-download', 'install', 'repeated-update', 'exact-payload', 'self-check', 'remove'],
         upgrade_from=rounds[0][1]['tag'] if len(rounds) == 2 else None,
-        upgrade_manifest_sha256=release.archive.digest(rounds[0][0]/'distribution.json') if len(rounds) == 2 else None,
+        upgrade_manifest_sha256=client.manifest_digest(rounds[0][0]) if len(rounds) == 2 else None,
         package_versions=package_versions, backends=installed,
         id=os.environ.get('CHECK_ID'), image=os.environ.get('CHECK_IMAGE'), image_id=os.environ.get('CHECK_IMAGE_ID'),
         os_release=Path('/etc/os-release').read_text(),
         source_commit=os.environ.get('GITHUB_SHA'), run_id=os.environ.get('GITHUB_RUN_ID'),
         attempt=os.environ.get('GITHUB_RUN_ATTEMPT'), commands=commands, command_timings=timings)
+    if manifest.get('format') == client.PACKAGE_FORMAT:
+        result['format'] = client.PACKAGE_FORMAT
+        result['upgrade_format'] = rounds[0][1].get('format', 'distribution') if len(rounds) == 2 else None
     release.archive.write_json(evidence/'result.json', result)
     return result
 
@@ -398,12 +412,21 @@ def native(directory, policy, trusted, kind, evidence, *, previous=None):
 def selection(raw):
     if not isinstance(raw, str) or len(raw.encode()) > 16384: raise ValueError('bounded exact channel selection required')
     value = release.delivery.parse(raw)
-    if not isinstance(value, dict) or set(value) != {'tag', 'manifest_sha256', 'target'}:
+    if (not isinstance(value, dict) or
+            set(value) not in ({'tag', 'manifest_sha256', 'target'}, {'tag', 'manifest_sha256', 'target', 'format'}) or
+            'format' in value and value['format'] != client.PACKAGE_FORMAT):
         raise ValueError('exact channel tag, manifest digest and target required')
     release.delivery.valid_name(value['tag'])
     if value['target'] not in release.TARGETS or not release.delivery.SHA.fullmatch(str(value['manifest_sha256'])):
         raise ValueError('invalid channel target or digest')
     return value
+
+
+def fetch_selected(selected, output, policy, trusted, repository, *, transport=None, reuse=None):
+    """Fetch the exact native target without routing integrated bytes via legacy tags."""
+    selected = selection(release.distro.encoded(selected).decode())
+    return client.fetch_channel(selected, repository, output, policy, trusted,
+                                transport=transport, reuse=reuse)
 
 
 def private_display(directory):
@@ -465,9 +488,15 @@ def container_with_display(root, check_id, environment, display):
             if not snapshot or any(c not in '0123456789abcdef' for c in snapshot): raise ValueError('invalid disposable snapshot identity')
             args += ['--volumes-from', snapshot+':ro']
         script = commands[row['kind']] + '\nexec python3 -B tools/distro_check.py native --directory /source/build/channels/current --policy /source/docs/release-policy.json --trusted-fingerprint "$TRUSTED_FINGERPRINT" --kind '+row['kind']+' --evidence /evidence/native'
-        if environment.get('PREVIOUS'): script += ' --previous /source/build/channels/previous'
+        if selected.get('format') == client.PACKAGE_FORMAT:
+            script += ' --format '+client.PACKAGE_FORMAT+' --target '+selected['target']
+        if environment.get('PREVIOUS'):
+            prior = selection(environment['PREVIOUS'])
+            if prior['target'] != selected['target']: raise ValueError('native upgrade predecessor differs')
+            script += ' --previous /source/build/channels/previous'
+            if prior.get('format') == client.PACKAGE_FORMAT: script += ' --previous-format '+client.PACKAGE_FORMAT
         with (output/'container.log').open('wb') as stream:
-            supervised([*args, image_id, 'bash', '-euc', script], stream, timeout=120)
+            supervised([*args, image_id, 'bash', '-euc', script], stream, timeout=120, env=environment)
             # A Gentoo upgrade executes two complete verified channel rounds.
             # Keep individual command limits and every other native scope unchanged.
             duration = 9000 if row['kind'] == 'gentoo' and environment.get('PREVIOUS') else 4500
@@ -484,7 +513,10 @@ def container_with_display(root, check_id, environment, display):
 
 
 def qualification(selected, records, environment):
+    selected = selection(release.distro.encoded(selected).decode())
     prior = selection(environment['PREVIOUS']) if environment.get('PREVIOUS') else None
+    if selected.get('format') == client.PACKAGE_FORMAT and prior is None:
+        raise ValueError('integrated native qualification requires an exact upgrade predecessor')
     if prior and (prior['target'] != selected['target'] or prior['tag'] == selected['tag']):
         raise ValueError('native upgrade predecessor differs')
     expected = matrix(selected['target'])['include']; by_id = {}
@@ -503,6 +535,9 @@ def qualification(selected, records, environment):
                 result.get('attempt') != environment['GITHUB_RUN_ATTEMPT'] or
                 result.get('upgrade_from') != (prior['tag'] if prior else None) or
                 result.get('upgrade_manifest_sha256') != (prior['manifest_sha256'] if prior else None) or
+                result.get('format') != selected.get('format') or
+                (selected.get('format') == client.PACKAGE_FORMAT and
+                    result.get('upgrade_format') != (prior.get('format', 'distribution') if prior else None)) or
                 not result.get('backends') or not result.get('commands') or
                 not isinstance(result.get('image_id'), str) or not result['image_id'].startswith('sha256:') or
                 not release.delivery.SHA.fullmatch(result['image_id'][7:])):
@@ -524,6 +559,8 @@ def validate_payload_evidence(channels, value, result):
 
 def accept(selected, records, environment, output):
     """Called after verified successful workflow bundles, under publication ownership."""
+    if selected.get('format') == client.PACKAGE_FORMAT:
+        raise ValueError('integrated packages are accepted through certified application release promotion')
     marker = qualification(selected, records, environment)
     value = release.fetch(environment['GITHUB_REPOSITORY'], selected['tag'], selected['manifest_sha256'],
         output, release.ROOT/'docs/release-policy.json', environment['TRUSTED_FINGERPRINT'], native_only=True)
@@ -559,6 +596,8 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__); p.add_argument('operation', choices=('plan', 'native', 'arch-keyring'))
     p.add_argument('--distro', choices=('all', 'apt', 'arch', 'gentoo'), default='all'); p.add_argument('--accept', action='store_true')
     p.add_argument('--target'); p.add_argument('--directory', type=Path); p.add_argument('--previous', type=Path)
+    p.add_argument('--format', choices=(client.PACKAGE_FORMAT,))
+    p.add_argument('--previous-format', choices=(client.PACKAGE_FORMAT,))
     p.add_argument('--policy', type=Path); p.add_argument('--trusted-fingerprint'); p.add_argument('--kind'); p.add_argument('--evidence', type=Path)
     a = p.parse_args(argv)
     if a.operation == 'plan': result = matrix(a.target, a.distro, accept=a.accept)
@@ -567,7 +606,10 @@ def main(argv=None):
         result = prepare_arch_keyring(a.directory/'archive-keyring.gpg', a.trusted_fingerprint)
     else:
         if not all((a.directory, a.policy, a.trusted_fingerprint, a.kind, a.evidence)): p.error('complete native inputs required')
-        result = native(a.directory, a.policy, a.trusted_fingerprint, a.kind, a.evidence, previous=a.previous)
+        if a.format and not a.target: p.error('integrated native inputs require --target')
+        if a.previous_format and not a.previous: p.error('--previous-format requires --previous')
+        result = native(a.directory, a.policy, a.trusted_fingerprint, a.kind, a.evidence,
+                        previous=a.previous, target=a.target, format=a.format, previous_format=a.previous_format)
     print(json.dumps(result, sort_keys=True))
 
 if __name__ == '__main__': main()

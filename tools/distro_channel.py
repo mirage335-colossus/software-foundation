@@ -174,6 +174,25 @@ def immutable_url(value, expected):
     return value
 
 
+def release_tag_url(value, expected):
+    """Require one exact GitHub tag asset, authenticated by its separate digest."""
+    if not isinstance(expected, str) or not re.fullmatch(r'[0-9a-f]{64}', expected):
+        raise ValueError('invalid URL digest')
+    component = r'[A-Za-z0-9][A-Za-z0-9_.+-]{0,180}'
+    repository = r'[A-Za-z0-9][A-Za-z0-9_.-]{0,180}'
+    match = re.fullmatch(r'https://github\.com/(' + repository + ')/(' + repository +
+                         r')/releases/download/(' + component + ')/(' + component + ')', value) if isinstance(value, str) else None
+    if not match or match[3].lower() == 'latest':
+        raise ValueError('require an exact HTTPS GitHub release-tag asset URL')
+    for part in match.groups():
+        safe_name(part)
+        stem = part.split('.', 1)[0].upper()
+        if (part.endswith('.') or '..' in part or stem in {'CON', 'PRN', 'AUX', 'NUL'} or
+                re.fullmatch(r'(?:COM|LPT)[1-9]', stem)):
+            raise ValueError('unsafe release-tag URL spelling')
+    return value
+
+
 def version_key(spec):
     value = spec['version']
     if not isinstance(value, str) or not re.fullmatch(r'(?:0|[1-9][0-9]{0,5})(?:\.(?:0|[1-9][0-9]{0,5})){2}', value):
@@ -204,18 +223,20 @@ def runtime_policy(backend):
 
 
 CURRENT_SCHEMA = 6
+RELEASE_TAG_SCHEMA = 7
 
 
 def validate_spec(spec):
     fields = {'schema_version', 'version', 'package_release', 'architecture', 'backend',
               'archive_url', 'archive_sha256', 'license_files', 'redistribution_approved',
               'application_source', 'packaging_tool', 'sdk', 'dependencies', 'runtime_dependencies'}
-    if not isinstance(spec, dict) or set(spec) != fields or type(spec['schema_version']) is not int or spec['schema_version'] not in (1, 2, 3, 4, 5, 6):
+    if not isinstance(spec, dict) or set(spec) != fields or type(spec['schema_version']) is not int or spec['schema_version'] not in (1, 2, 3, 4, 5, 6, RELEASE_TAG_SCHEMA):
         raise ValueError('invalid complete package specification')
     version_key(spec)
     if spec['architecture'] not in ARCHES or spec['backend'] not in BACKENDS or spec['redistribution_approved'] is not True:
         raise ValueError('unsupported target or unreviewed redistribution terms')
-    immutable_url(spec['archive_url'], spec['archive_sha256'])
+    check_url = release_tag_url if spec['schema_version'] == RELEASE_TAG_SCHEMA else immutable_url
+    check_url(spec['archive_url'], spec['archive_sha256'])
     if not isinstance(spec['license_files'], list) or not spec['license_files'] or len(set(spec['license_files'])) != len(spec['license_files']):
         raise ValueError('complete retained license file list required')
     for name in spec['license_files']:
@@ -225,7 +246,10 @@ def validate_spec(spec):
     for record in [spec['application_source'], spec['packaging_tool'], spec['sdk'], *spec['dependencies']]:
         if not isinstance(record, dict) or set(record) != {'url', 'sha256'}:
             raise ValueError('source, SDK and dependency groups require exact URLs and digests')
-        immutable_url(record['url'], record['sha256'])
+        check_url(record['url'], record['sha256'])
+        if (spec['schema_version'] == RELEASE_TAG_SCHEMA and
+                record['url'].rsplit('/', 1)[0] != spec['archive_url'].rsplit('/', 1)[0]):
+            raise ValueError('release-tag references must name the same exact repository and tag')
     dependencies = spec['runtime_dependencies']
     if not isinstance(dependencies, dict) or set(dependencies) != {'arch', 'gentoo'}:
         raise ValueError('explicit runtime dependency lists required')

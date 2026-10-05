@@ -13,7 +13,33 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
+## Application-release package layout: qualification deferred (2026-10-05)
+
+The source change based on `c88fb7988037d38ca1685f9a22ff0ea604b04179` moves signed
+APT/Arch packages and per-target native bundles into the next application
+candidate before its inventory and checksums are frozen. The intended complete
+release certificate requires all eight native frontends and exact predecessor
+upgrades before promotion. APT/pacman use `releases/latest/download`; Gentoo
+discovers Latest and then pins the exact tag. See the
+[package contract](distribution-release.md#application-release-packages).
+
+This is implementation scope, not execution evidence. The user requested source
+changes for the next rebuild and excluded test executions, Actions runs and live
+consolidation. No new package build, signing, certification, native installation
+or upgrade, publication or Latest change is claimed here. Static integration
+review completed: 17 changed/new Python files and 24 embedded Python blocks parse
+with Python 3.9 grammar, four workflow YAML files parse, local reusable-workflow
+inputs match their declarations, and `git diff --check` passes. Added regression
+cases remain unexecuted. Complete release/native qualification remains
+[deferred](../.agent-pending/stable-package-mirrors.md). Historical mirror and
+immutable-channel results below retain their original identities and limits;
+they do not qualify the new application inventory layout.
+
 ## Stable package repository URLs (2026-10-05)
+
+This historical deployment record is preserved. Its separate mirror design is
+superseded for future rebuilds by application-release packages; removing its
+source helper and workflow route did not mutate any published release or asset.
 
 The permanent [x86_64 repository](https://github.com/mirage335-colossus/software-foundation/releases/download/packages-x86_64/INSTALL.md)
 and [aarch64 repository](https://github.com/mirage335-colossus/software-foundation/releases/download/packages-aarch64/INSTALL.md)
@@ -70,11 +96,13 @@ network access. APT's absent empty preferences directory warning and pacman's
 legacy public-keyring warning did not bypass signatures; exact-byte and independent
 signature checks passed. These checks establish repository discovery, signatures
 and downloads. They do not establish native ARM execution or new installation/
-upgrade coverage. The existing native qualification is recorded below. A real
-production stable-URL A-to-B update, including retrieval of an older retained
-payload after index replacement, remains [pending](../.agent-pending/stable-package-mirrors.md).
+upgrade coverage. The existing native qualification is recorded below. The
+previously deferred two-generation mirror upgrade and older-payload retention
+obligation was superseded by the next application-release package layout; it
+was not executed or counted as passed. The replacement full native/upgrade
+qualification remains [pending](../.agent-pending/stable-package-mirrors.md).
 Arch/Gentoo support remains x86_64 only. Metadata expiry and non-atomic index
-replacement retain the [documented limits](distribution-release.md#stable-package-mirrors).
+replacement describe the [historical mirror design](distribution-release.md#stable-package-mirrors).
 
 Exact local evidence remains under `.agent-work/artifacts/stable-package-mirrors-live-20261005/`:
 

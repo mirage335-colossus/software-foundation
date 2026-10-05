@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import subprocess
@@ -872,6 +873,10 @@ def main(command):
     elif command == 'publish-gui':
         write('build/receipts/gui-publication.json', ci.publish_gui_group(value('GITHUB_REPOSITORY'), Path('build/gui-group'), value('GITHUB_SHA'), execute=True))
     elif command == 'application-plan':
+        if os.environ.get('PACKAGE_REPOSITORY') == 'true':
+            if (not re.fullmatch(r'[1-9][0-9]{0,5}', os.environ.get('PACKAGE_RELEASE', '')) or
+                    not 1 <= int(value('GITHUB_RUN_ATTEMPT')) < 1000 or os.environ.get('TAG', '').lower() == 'latest'):
+                raise ValueError('signed repositories need a package revision 1..999999, attempt below 1000 and an exact release tag')
         recipes = delivery.parse(value('RECIPES').encode())
         matrix = ci.release_matrix(recipes, value('PROFILE'), runners=selected_runners(), core_provider=core_provider())
         write('build/recipes.json', recipes)
@@ -915,6 +920,23 @@ def main(command):
                 (Path('build/rust-base') / recipe).rename(Path('build/base') / recipe)
         ci.assemble_release(Path('build/source/source.tar.gz'), Path('build/packages'), Path('build/base'), Path('build/candidate'), value('PROFILE'))
         tag = os.environ.get('TAG') or 'candidate-' + value('GITHUB_RUN_ID') + '-attempt-' + value('GITHUB_RUN_ATTEMPT')
+        if os.environ.get('PACKAGE_REPOSITORY') == 'true':
+            import release_packages
+            candidate = Path('build/candidate')
+            manifest = ci.module('release').verify_release(candidate)
+            if manifest.get('packages') is not None:
+                raise ValueError('package repositories must be assembled exactly once before publication')
+            if not 1 <= int(value('GITHUB_RUN_ATTEMPT')) < 1000:
+                raise ValueError('package sequence requires a bounded positive workflow attempt')
+            release_packages.build(candidate, value('GITHUB_REPOSITORY'), tag, value('GITHUB_SHA'),
+                ROOT / 'docs/release-policy.json', Path(value('PACKAGE_SIGNING_KEY')), value('TRUSTED_FINGERPRINT'),
+                sequence=int(value('GITHUB_RUN_ID')) * 1000 + int(value('GITHUB_RUN_ATTEMPT')),
+                package_release=int(value('PACKAGE_RELEASE')))
+            files = ci.module('dependency_archive').file_inventory(candidate, exclude=('release.json',))
+            manifest['packages'] = dict(manifest='packages.json', files=sorted(set(files) - set(manifest['files'])))
+            manifest['files'] = files
+            ci.module('dependency_archive').write_json(candidate / 'release.json', manifest)
+            ci.module('release').verify_release(candidate)
         request = dict(repository=value('GITHUB_REPOSITORY'), tag=tag, directory='build/candidate',
                        source_commit=value('GITHUB_SHA'), packager_commit=value('GITHUB_SHA'),
                        publication_id='run-' + value('GITHUB_RUN_ID') + '-attempt-' + value('GITHUB_RUN_ATTEMPT'),
@@ -961,6 +983,8 @@ def main(command):
         plan = evidence.load(Path('build/check-plan.json'))
         reports = [evidence.result_path(plan, x['id'], Path('build/evidence')) for x in plan['checks']]
         policy = ROOT / 'docs/release-policy.json'; directory = ROOT / 'build/candidate'
+        if ci.module('release').verify_metadata(directory).get('packages') is not None:
+            reports.append(Path('build/package-evidence/native-packages.result.json'))
         if command == 'certificate':
             import certify_release
             result = certify_release.certify(directory, ci.module('release').verify_metadata(directory), plan, reports,

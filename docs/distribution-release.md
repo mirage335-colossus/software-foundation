@@ -1,4 +1,90 @@
-# Signed immutable package releases
+# Signed package repositories
+
+## Application-release packages
+
+The next Latest rebuild prepares its signed package repositories as ordinary
+application-release assets. [`release_packages.py`](../tools/release_packages.py)
+builds and signs them from the prepared application archives before the candidate
+inventory and checksum list are frozen. `release.json` therefore binds the package
+bytes through the normal delivery and certification path. There is no later
+package attachment or separate mirror publication in this route.
+
+The release download root contains `packages.json`, its detached signature,
+`archive-keyring.gpg`, `INSTALL.md`, and the signed repository assets. The combined
+APT index covers both Linux architectures: two packages for the core profile or
+14 backend/architecture variants for all-GUI. The flat Arch database and packages
+cover x86_64 only: one core package or seven all-GUI variants. The signed
+`native-linux-x86_64.tar.gz` and `native-linux-aarch64.tar.gz` bundles retain the
+respective native channel and Gentoo inputs for exact-tag verification and
+activation. Creating ARM64 recipes does not establish Arch or Gentoo support on
+ARM64. Each application release also retains its original source, application and
+SDK recovery inputs.
+Integrated native recipes opt into specification 7 (legacy default 6) for exact
+GitHub tag URLs and checksums without duplicate SDK alias copies.
+
+Use the same independently reviewed signing fingerprint and protected
+`DISTRIBUTION_SIGNING_KEY` secret described below. The Latest caller always sets
+the prepared-SDK producer's `package_repository` option to `true`; standalone
+`sdk-application.yml` calls default it to `false`. `package_release` is a decimal
+string bounded to `1`..`999999` and must increase explicitly for changed packages
+at the same application version. Packaging and signing finish before checksums are published; certificate
+and promotion checks then bind the complete frozen application inventory.
+
+APT and pacman use this stable public download root:
+
+```text
+https://github.com/OWNER/REPOSITORY/releases/latest/download/
+```
+
+Configure APT with the independently trusted key, flat suite `./` and the desired
+`amd64` or `arm64` architecture. Configure x86_64 pacman with
+`SigLevel = Required DatabaseRequired` and the same root as its `Server`.
+Ordinary `apt-get update` or `pacman -Syu` discovers the newly promoted release.
+Its `INSTALL.md` supplies the complete setup. Gentoo uses the operator-trusted
+`distro_client.py` tree with `selection: {"track":"latest"}`; discovery pins the
+exact application tag before verifying its signed per-target native bundle and
+activating the existing Portage sync adapter. Independent key trust, signatures,
+policy and metadata expiry remain required.
+
+Every new Latest release contains its own complete package inventory. It does not
+copy prior versions into the new release for clients holding an older index, and
+there is no mutable mirror ledger or index-replacement protocol. Refresh the
+signed native repository after Latest advances; historical exact release tags
+retain their own immutable bytes. The reviewed
+[Data Pump example](https://github.com/mirage335-colossus/pumpModem/blob/2bbd92c63e22490e7708c6bc3d878eb4d1fe09e7/tools/apt-release.py#L306)
+provides the package-before-checksum ordering pattern; Foundation additionally
+requires its normal complete delivery inventory and native qualification.
+
+### Application-package qualification
+
+Integrated certification requires all eight native frontends: Debian Bookworm,
+Debian Trixie and Ubuntu 24.04 APT clients on both Linux architectures, plus Arch
+and Gentoo on x86_64. Every declared backend must install, verify its actual native
+package version and private payload, exercise the application, refresh the
+repository, upgrade from its exact predecessor and uninstall. Missing, skipped
+or failed native receipts leave the certificate ineligible for promotion.
+
+The Latest `previous_packages` input is a bounded JSON string mapping both
+`linux-x86_64` and `linux-aarch64` to exact predecessor selectors. It may be omitted
+for planning, but integrated execution and certification require both targets.
+Legacy selectors keep their existing `tag`, `manifest_sha256` and `target` fields
+so the first rebuild can prove upgrades from the accepted immutable channels.
+Integrated selectors add `"format":"release-packages"`, identify an exact
+application tag, and bind `manifest_sha256` to its signed `packages.json`. A
+strictly newer version or package revision is required on each target; an absent
+entry cannot count as upgrade evidence. See [Latest inputs](latest-release.md).
+
+This layout is a source change for the next rebuild. No build, test execution, hosted
+workflow, publication or live consolidation has been performed for it. Its full
+native installation/upgrade and release qualification remain
+[deferred](../.agent-pending/stable-package-mirrors.md). Existing public application
+releases, signed channels and package mirrors preserve their historical bytes.
+
+## Legacy immutable package releases
+
+The following manual workflow and client procedures preserve the existing
+separate-channel format. They remain available for explicit legacy operations;
+they do not describe the integrated Latest package inventory above.
 
 [`distribution.yml`](../.github/workflows/distribution.yml) wraps an existing,
 certified application release as a separate package-manager release. It never
@@ -203,57 +289,21 @@ advertising support. Public service behavior requires hosted execution.
 
 ## Stable package mirrors
 
-Stable mirrors are live: [x86_64 installation instructions](https://github.com/mirage335-colossus/software-foundation/releases/download/packages-x86_64/INSTALL.md)
-cover APT, Arch and the existing Gentoo qualified-channel adapter;
-[aarch64 instructions](https://github.com/mirage335-colossus/software-foundation/releases/download/packages-aarch64/INSTALL.md)
-cover APT. Public signed refresh/download checks and exact publication provenance
-are recorded in [validation](validation.md#stable-package-repository-urls-2026-10-05).
-The outstanding [native stable-URL upgrade check](../.agent-pending/stable-package-mirrors.md)
-is separate from the completed immutable-channel installation/upgrade qualification.
+The separately published mirrors are historical deployments superseded by
+[application-release packages](#application-release-packages) for future rebuilds.
+Their [x86_64 instructions](https://github.com/mirage335-colossus/software-foundation/releases/download/packages-x86_64/INSTALL.md)
+and [aarch64 instructions](https://github.com/mirage335-colossus/software-foundation/releases/download/packages-aarch64/INSTALL.md)
+retain the original APT/Arch discovery URLs. Their exact publication and public
+client evidence remains in [validation](validation.md#stable-package-repository-urls-2026-10-05).
 
-[`distribution_mirror.py`](../tools/distribution_mirror.py) runs once after the
-existing native `check.accept` operation, under the same release-lifecycle lock.
-For an already accepted channel, manually dispatch `distro-check.yml` with its
-exact `channel` selector and `mirror_only: true`, leaving `accept: false`,
-`previous` empty and `distro: all`. This separate protected job has a 15-minute
-limit, skips the native matrix and preserves the original acceptance marker. It
-only verifies and copies existing signed bytes, then reads them back; it neither
-requalifies packages nor replaces their installation/upgrade evidence.
-It requires the accepted channel's application to match the current application
-Latest. Permanent public tags `packages-x86_64` and `packages-aarch64` mirror the
-accepted signed APT assets unchanged, with Arch also available on qualified
-x86_64; they never become Latest. The
-original immutable distribution releases, schemas and recovery closures remain
-unchanged. Signature, independent key trust and metadata expiry checks still apply.
-
-The mirror retains its verification key and every published versioned package and
-package signature. It replaces repository indexes only after their referenced
-immutable payloads are available, so a client holding an older index can still
-retrieve its exact package. A retained ledger and pending publication state permit
-recovery of the same accepted input and reject a different input while recovery is
-unfinished. Publication does not rebuild packages or generate new signatures.
-Generated `INSTALL.md` may be corrected for the same accepted generation; that
-uses the same pending-state recovery and leaves every signed asset unchanged.
-GitHub replaces individual index assets, so publication is not atomic: a client
-may need to retry a failed authenticated refresh. Interrupted publication remains
-visible as pending until the exact input is reconciled and read back successfully.
-Complete a pending update before advancing application Latest. If Latest has
-already advanced, automatic retry stops for manual reconciliation; it does not
-activate an older channel or silently discard the interrupted generation.
-
-Each mirror's `INSTALL.md` gives the permanent APT and pacman URLs, for example
-`https://github.com/OWNER/REPOSITORY/releases/download/packages-x86_64/`.
-After independently trusting the key and configuring those URLs once, ordinary
-`apt-get update` and `pacman -Syu` retrieve the signed repository directly. The
-application Latest body links to these mirror instructions; historical immutable
-`INSTALL.md` assets are preserved. Gentoo continues using the installed trusted
-`distro_client.py install-portage` adapter with `selection: {"track":"qualified"}`
-and normal `emaint sync`, as described below.
-
-The reviewed [Data Pump example](https://github.com/mirage335-colossus/pumpModem/blob/2bbd92c63e22490e7708c6bc3d878eb4d1fe09e7/tools/apt-release.py#L306)
-also separates stable index discovery from fixed package bytes. Its packages are
-certified inside the application inventory; these mirrors preserve Foundation's
-existing separate-channel certification, signing and expiry contracts.
+That historical design retained versioned payloads while replacing signed indexes,
+using a pending-state ledger and protected `mirror_only` publication jobs. Native
+installation and upgrade across two mirror generations were not executed. The
+mirror helper and workflow route have been removed from current source; no live
+mirror, application release, asset or instruction was changed by that removal.
+The obsolete older-payload retention obligation is superseded by qualification of
+the new complete application-release layout. Legacy immutable distribution tools
+and their exact-tag clients below remain available.
 
 ## Native acceptance and normal updates
 

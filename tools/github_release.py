@@ -1100,6 +1100,12 @@ def publish_candidate(repository, tag, directory, source_commit, packager_commit
     delivery = candidate_identity(directory, repository, tag, source_commit, packager_commit, publication_id, experiment)
     result = plan('publish-candidate', repository, delivery=delivery, lifecycle='draft upload, verify every byte, publish prerelease until certified promotion; never Latest')
     if not execute:return result
+    body = 'Certification pending. Immutable application assets.'
+    if release.verify_metadata(directory).get('packages') is not None:
+        body += ('\n\nSigned package repositories are included in this release. '
+                 '[Installation instructions](https://github.com/' + repository +
+                 '/releases/download/' + tag + '/INSTALL.md). '
+                 'The stable repository URL becomes active when this release is promoted to Latest.')
     remote = Remote(repository, transport)
     def act():
         remote.visible()
@@ -1107,7 +1113,7 @@ def publish_candidate(repository, tag, directory, source_commit, packager_commit
             raise DeliveryError('release or tag already exists; no overwrite or implicit resume')
         remote.change('/git/refs', body={'ref':'refs/tags/'+tag,'sha':delivery['tag_commit']})
         info = remote.info(remote.change('/releases', body={'tag_name':tag,'target_commitish':delivery['tag_commit'],
-            'name':'experiment' if experiment else tag,'body':'Certification pending. Immutable application assets.',
+            'name':'experiment' if experiment else tag,'body':body,
             'draft':True,'prerelease':True,'make_latest':'false'}), tag)
         remote.wait_find(tag, release_id=info['id'])
         upload_files(remote, tag, [Path(directory) / name for name in delivery['files']], release_info=info)

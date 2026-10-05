@@ -20,7 +20,7 @@ def preflight(request, *, transport=None, remote=True):
     required = {'repository', 'source_commit', 'run_id', 'attempt', 'tag', 'profile',
                 'recipes', 'gui_group', 'graphics_archive_url', 'execute', 'jobs'}
     if (not isinstance(request, dict) or not required <= set(request) or
-            set(request) - required - {'core_provider'}):
+            set(request) - required - {'core_provider', 'package_release', 'previous_packages'}):
         raise ValueError('complete Latest request required')
     core_provider = request.get('core_provider', 'rust')
     if core_provider not in ('rust', 'cpp'):
@@ -32,6 +32,23 @@ def preflight(request, *, transport=None, remote=True):
         raise ValueError('invalid run, attempt, execution or concurrency selection')
     tag = request['tag'] or f'release-{request["run_id"]}-attempt-{request["attempt"]}'
     delivery.valid_name(tag)
+    if 'previous_packages' in request and 'package_release' not in request:
+        raise ValueError('previous package selectors require a package revision')
+    if 'package_release' in request:
+        if (not isinstance(request['package_release'], str) or
+                not re.fullmatch(r'[1-9][0-9]{0,5}', request['package_release']) or request['attempt'] >= 1000 or
+                tag.lower() == 'latest'):
+            raise ValueError('package revision must be 1 through 999999 and attempt below 1000')
+        previous = request.get('previous_packages', {})
+        if not isinstance(previous, dict) or set(previous) - {'linux-x86_64', 'linux-aarch64'}:
+            raise ValueError('previous packages must be an exact Linux target map')
+        if request['execute'] and set(previous) != {'linux-x86_64', 'linux-aarch64'}:
+            raise ValueError('both exact previous Linux package channels are required for native upgrade qualification')
+        import distro_check
+        for target, selected in previous.items():
+            checked = distro_check.selection(json.dumps(selected))
+            if checked['target'] != target or checked['tag'] == tag:
+                raise ValueError('previous package selector differs from target or names the new candidate')
     if tag == 'base' or tag.startswith(('ci-', 'screenshots-', 'experiment')):
         raise ValueError('ordinary release needs a distinct application tag')
     matrix = ci.release_matrix(request['recipes'], request['profile'], core_provider=core_provider)
@@ -106,6 +123,8 @@ def verify_latest(request, results, *, transport=None):
                 delivery.sha(delivery.archive.encoded(identity)) != app['delivery_sha256']):
             raise ValueError('published source, packager or delivery differs from this workflow')
         info, assets = delivery.verified_remote(api, identity, output / 'candidate', prerelease=False, readback=False, metadata_only=True)
+        if 'package_release' in request and delivery.release.verify_metadata(output / 'candidate').get('packages') is None:
+            raise ValueError('Latest candidate omits its required package repositories')
         checked = delivery.verify_certificate(api, assets, identity, output / 'candidate',
             ROOT / 'docs/release-policy.json', request['profile'], cert['certification_run'],
             int(cert['certification_attempt']), cert['certificate_sha256'], metadata_only=True)
@@ -129,6 +148,9 @@ def environment_request():
             'core_provider': os.environ.get('CORE_PROVIDER', 'rust'),
             'recipes': delivery.parse(os.environ['RECIPES']), 'gui_group': os.environ.get('GUI_GROUP', ''),
             'graphics_archive_url': os.environ.get('GRAPHICS_ARCHIVE_URL', ''),
+            **({'package_release': os.environ.get('PACKAGE_RELEASE', ''),
+                'previous_packages': delivery.parse(os.environ.get('PREVIOUS_PACKAGES', '{}'))}
+               if 'PACKAGE_RELEASE' in os.environ or 'PREVIOUS_PACKAGES' in os.environ else {}),
             'execute': {'true': True, 'false': False}[os.environ['EXECUTE']], 'jobs': os.environ['JOBS']}
 
 

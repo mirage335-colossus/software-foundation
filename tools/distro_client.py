@@ -27,6 +27,83 @@ import distribution_release as release
 
 MAX_JSON = 16 * 1024 * 1024
 MAX_DOWNLOAD_SECONDS = 600
+PACKAGE_FORMAT = 'release-packages'
+
+
+def package_tools():
+    # Legacy retained tool trees do not need the integrated publisher module.
+    import release_packages
+    return release_packages
+
+
+def channel_format(directory):
+    """Identify one signed control format; never silently choose between two."""
+    directory = Path(directory)
+    names = [name for name in ('distribution.json', 'packages.json')
+             if (directory/name).exists() or (directory/name).is_symlink()]
+    if len(names) != 1: raise ValueError('one exact signed package manifest required')
+    return PACKAGE_FORMAT if names[0] == 'packages.json' else 'distribution'
+
+
+def manifest_digest(directory, format=None):
+    """Hash the selected control bytes for native receipts and cache identities."""
+    observed = channel_format(directory)
+    if format is not None and format != observed:
+        raise ValueError('signed package manifest format differs')
+    name = 'packages.json' if observed == PACKAGE_FORMAT else 'distribution.json'
+    data, _ = release.distro.ordinary(Path(directory)/name, MAX_JSON)
+    return hashlib.sha256(data).hexdigest()
+
+
+def verify_channel(directory, policy, trusted, *, target=None, format=None):
+    """Keep legacy verification independent of the integrated target projection."""
+    expected = format or 'distribution'
+    if channel_format(directory) != expected: raise ValueError('signed package manifest format differs')
+    if expected == PACKAGE_FORMAT:
+        if target not in release.TARGETS: raise ValueError('integrated package verification requires its exact target')
+        return package_tools().verify(directory, policy, trusted, target=target)
+    if expected != 'distribution': raise ValueError('unsupported signed package format')
+    value = release.verify_native(directory, policy, trusted)
+    if target is not None and value['request']['target'] != target:
+        raise ValueError('selected channel target differs')
+    return value
+
+
+def fetch_channel(selected, repository, output, policy, trusted, *, transport=None, reuse=None):
+    format = selected.get('format', 'distribution')
+    if format == PACKAGE_FORMAT:
+        return package_tools().fetch(repository, selected['tag'], selected['manifest_sha256'],
+            output, policy, trusted, target=selected['target'], transport=transport)
+    if format != 'distribution': raise ValueError('unsupported signed package format')
+    value = release.fetch(repository, selected['tag'], selected['manifest_sha256'], output,
+        policy, trusted, transport=transport, native_only=True, reuse=reuse)
+    if value['request']['target'] != selected['target']: raise ValueError('selected channel target differs')
+    return value
+
+
+def extract_channels(directory, output, value):
+    if value.get('format') == PACKAGE_FORMAT:
+        channels = package_tools().extract_channels(directory, output, value['request']['target'])
+    else:
+        channels = release.archive.extract(Path(directory)/'channels.tar.gz', output,
+                                           max_bytes=release.distro.MAX_BYTES * 2)
+    # Normalize fresh implicit directories only; signed payload modes stay exact.
+    channels.chmod(0o755)
+    for path in channels.rglob('*'):
+        if path.is_dir(): path.chmod(0o755)
+    return channels
+
+
+def verify_channel_tree(directory, channels, value, trusted):
+    if value.get('format') != PACKAGE_FORMAT:
+        return release.verify_native_channels(channels, value, trusted)
+    # The integrated verifier authenticated all selected assets. Re-extract those
+    # exact bytes to compare every cached derived file, including Portage recipes.
+    with tempfile.TemporaryDirectory(prefix='package-channel-verify-') as temporary:
+        expected = extract_channels(directory, Path(temporary)/'channels', value)
+        if release.distro.tree(channels) != release.distro.tree(expected):
+            raise ValueError('derived channel changed; preserve state for inspection')
+    return value
 
 
 class ReleaseRedirects(HTTPRedirectHandler):
@@ -70,7 +147,8 @@ class PublicGitHub:
         self._retry_delay = None
 
     def request(self, endpoint, accept='application/vnd.github+json', *, deadline=None):
-        if not endpoint.startswith('repos/' + self.repository + '/'):
+        base = 'repos/' + self.repository
+        if endpoint != base and not endpoint.startswith(base + '/'):
             raise ValueError('public client request escaped its configured repository')
         response = urlopen(Request('https://api.github.com/' + endpoint,
             headers={'Accept': accept, 'User-Agent': 'software-foundation-channel/1'}),
@@ -195,6 +273,16 @@ class PublicGitHub:
             raise ValueError('public asset identity changed')
         self.assets.update(observed)
 
+    def observe_release(self, info):
+        """Bind an exact single-release response without scanning release history."""
+        if (not isinstance(info, dict) or not release.delivery.positive(info.get('id')) or
+                not isinstance(info.get('tag_name'), str)):
+            raise ValueError('invalid observed public release')
+        tag = release.delivery.valid_name(info['tag_name'])
+        if info['id'] in self.releases and self.releases[info['id']] != tag:
+            raise ValueError('public release identity changed')
+        self.releases[info['id']] = tag
+
     def download(self, asset_id, path):
         if not release.delivery.positive(asset_id) or asset_id not in self.assets:
             raise ValueError('download requires an observed complete public asset inventory')
@@ -248,9 +336,12 @@ def configuration(value):
             Path(location).absolute() != Path(location).resolve() or Path(location) == Path('/') or '..' in Path(location).parts):
         raise ValueError('dedicated absolute physical client location required')
     selected = value['selection']
-    if selected != {'track': 'qualified'}:
-        if not isinstance(selected, dict) or set(selected) != {'tag', 'manifest_sha256'}:
-            raise ValueError('exact tag/digest or explicitly qualified tracking selection required')
+    if selected not in ({'track': 'qualified'}, {'track': 'latest'},
+                        {'track': 'latest', 'format': PACKAGE_FORMAT}):
+        if (not isinstance(selected, dict) or
+                set(selected) not in ({'tag', 'manifest_sha256'}, {'tag', 'manifest_sha256', 'format'}) or
+                'format' in selected and selected['format'] != PACKAGE_FORMAT):
+            raise ValueError('exact tag/digest or explicitly qualified/latest tracking selection required')
         release.delivery.valid_name(selected['tag'])
         if not release.delivery.SHA.fullmatch(str(selected['manifest_sha256'])):
             raise ValueError('exact selected manifest digest required')
@@ -260,6 +351,25 @@ def configuration(value):
 def select(value, transport):
     selected = value['selection']
     if 'tag' in selected: return selected
+    if selected.get('track') == 'latest':
+        # The application's actual Latest pointer is the sole discovery surface.
+        # Pin its exact tag and signed manifest digest before fetching any bytes.
+        base = 'repos/' + value['repository'] + '/releases'
+        info = transport.json(base + '/latest')
+        if (not isinstance(info, dict) or not release.delivery.positive(info.get('id')) or
+                info.get('draft') is not False or info.get('prerelease') is not False):
+            raise ValueError('published ordinary Latest release required')
+        tag = release.delivery.valid_name(info.get('tag_name'))
+        if isinstance(transport, PublicGitHub): transport.observe_release(info)
+        rows = transport.pages(base + '/' + str(info['id']) + '/assets?per_page=100')
+        matches = [row for row in rows if isinstance(row, dict) and row.get('name') == 'packages.json']
+        if (len(matches) != 1 or not release.delivery.positive(matches[0].get('id')) or
+                matches[0].get('state') != 'uploaded' or type(matches[0].get('size')) is not int or
+                not 0 < matches[0]['size'] <= MAX_JSON or
+                not isinstance(matches[0].get('digest'), str) or
+                not re.fullmatch(r'sha256:[0-9a-f]{64}', matches[0]['digest'])):
+            raise ValueError('Latest lacks one bounded exact signed package manifest')
+        return {'format': PACKAGE_FORMAT, 'tag': tag, 'manifest_sha256': matches[0]['digest'][7:]}
     rows = transport.pages('repos/' + value['repository'] + '/releases?per_page=100')
     candidates = []
     suffix = release.TARGETS[value['target']][0]
@@ -313,6 +423,16 @@ def current(location):
 
 def previous_identity(root, value):
     """Verify the signed old manifest, without requiring unexpired old metadata."""
+    if channel_format(root/'assets') == PACKAGE_FORMAT:
+        manifest = package_tools().native_identity(root/'assets', value['trusted_fingerprint'],
+                                                   target=value['target'])
+        request = manifest['request']
+        if (request['repository'] != value['repository'] or request['target'] != value['target'] or
+                request['trusted_fingerprint'] != value['trusted_fingerprint']):
+            raise ValueError('active channel trust or target differs')
+        if root.name != str(request['sequence']) + '-' + manifest_digest(root/'assets', PACKAGE_FORMAT):
+            raise ValueError('active manifest identity differs from generation name')
+        return manifest
     data, _ = release.distro.ordinary(root / 'assets/distribution.json', 8 * 1024 * 1024)
     manifest = release.delivery.parse(data)
     request = release.request(manifest['request'])
@@ -369,8 +489,10 @@ def refresh(value, policy, *, transport=None, prepared=None):
         selected = select(value, transport)
         with tempfile.TemporaryDirectory(prefix='.refresh-', dir=location) as temporary:
             stage = Path(temporary)/'generation'; stage.mkdir(mode=0o755); stage.chmod(0o755)
-            unchanged = previous is not None and selected['manifest_sha256'] == release.archive.digest(prior/'assets/distribution.json')
-            if unchanged:
+            format = selected.get('format', 'distribution')
+            unchanged = (previous is not None and channel_format(prior/'assets') == format and
+                         selected['manifest_sha256'] == manifest_digest(prior/'assets', format))
+            if unchanged and format == 'distribution':
                 if prepared is None:
                     manifest, _, _, _ = release.remote_native_descriptor(value['repository'], selected['tag'],
                         selected['manifest_sha256'], Path(temporary)/'controls', policy,
@@ -390,21 +512,23 @@ def refresh(value, policy, *, transport=None, prepared=None):
                 return {'changed': False, 'tag': selected['tag'], 'sequence': manifest['request']['sequence'],
                         'manifest_sha256': selected['manifest_sha256']}
             if prepared is None:
-                manifest = release.fetch(value['repository'], selected['tag'], selected['manifest_sha256'],
+                manifest = fetch_channel(dict(selected, target=value['target']), value['repository'],
                     stage/'assets', policy, value['trusted_fingerprint'], transport=transport,
-                    native_only=True, reuse=prior/'assets' if prior else None)
+                    reuse=prior/'assets' if prior else None)
             else:
-                if release.archive.digest(Path(prepared)/'distribution.json') != selected['manifest_sha256']:
+                if manifest_digest(prepared, format) != selected['manifest_sha256']:
                     raise ValueError('prepared manifest differs from selected bytes')
-                manifest = release.verify_native(prepared, policy, value['trusted_fingerprint'])
+                manifest = verify_channel(prepared, policy, value['trusted_fingerprint'],
+                                          target=value['target'], format=format)
                 if manifest['tag'] != selected['tag'] or manifest['request']['repository'] != value['repository']:
                     raise ValueError('prepared channel identity differs')
                 shutil.copytree(prepared, stage/'assets')
-                if release.verify_native(stage/'assets', policy, value['trusted_fingerprint']) != manifest:
+                if verify_channel(stage/'assets', policy, value['trusted_fingerprint'],
+                                  target=value['target'], format=format) != manifest:
                     raise ValueError('prepared bytes changed while copying')
             if manifest['request']['target'] != value['target']: raise ValueError('selected channel target differs')
             if previous: advance(previous, manifest)
-            release.archive.extract(stage/'assets/channels.tar.gz', stage/'channels', max_bytes=release.distro.MAX_BYTES * 2)
+            extract_channels(stage/'assets', stage/'channels', manifest)
             # Only freshly created owned directories: transport deliberately omits their modes.
             for tree in (stage/'assets', stage/'channels'):
                 tree.chmod(0o755)
@@ -416,7 +540,8 @@ def refresh(value, policy, *, transport=None, prepared=None):
             destination = generations/identity
             if destination.exists():
                 # Exact assets must remain untouched; derived Portage metadata belongs outside assets.
-                if release.verify_native(destination/'assets', policy, value['trusted_fingerprint']) != manifest:
+                if verify_channel(destination/'assets', policy, value['trusted_fingerprint'],
+                                  target=value['target'], format=format) != manifest:
                     raise ValueError('existing generation differs')
                 if release.distro.tree(destination/'channels') != release.distro.tree(stage/'channels'):
                     raise ValueError('derived channel changed; preserve state for inspection')
@@ -469,9 +594,11 @@ def native_upgrade(value, policy, kind):
             raise ValueError('verified generation changed before native upgrade; retry explicitly')
         if release.archive.digest(Path(policy)) != value['policy_sha256']:
             raise ValueError('trusted policy bytes changed before native upgrade')
-        if release.verify_native(generation/'assets', policy, value['trusted_fingerprint']) != manifest:
+        format = manifest.get('format', 'distribution')
+        if verify_channel(generation/'assets', policy, value['trusted_fingerprint'],
+                          target=value['target'], format=format) != manifest:
             raise ValueError('verified assets changed before native upgrade')
-        release.verify_native_channels(generation/'channels', manifest, value['trusted_fingerprint'])
+        verify_channel_tree(generation/'assets', generation/'channels', manifest, value['trusted_fingerprint'])
         for command in commands:
             # A failed update must never fall through to installation/upgrade.
             subprocess.run(command, check=True)
