@@ -149,6 +149,20 @@ example. They do not claim every marked function must change for every feature.
 
 ## Follow what runs when
 
+Start with **main() -> widget definitions** on the explorer's opening page or
+execution index. One diagram connects the real entry call, Session construction,
+Application constructor, declaration loop and `Application::add`. Actual editor
+and Add-button rows appear beside the loop with a **data dependency** arrow:
+the array supplies values; it is not another function call. Click those rows for
+the root, controls, optional feature and field/default diagrams. Host waiting,
+object ownership and the rest of initialization have separate deeper diagrams.
+
+This path ends at creation of the shared Snapshot widgets. The constructor's
+publication branch leads onward to layout and adapter presentation. Declaration
+order and height are consumed by layout; `add` copies the widget properties and
+assigns its root parent. Creating a Snapshot widget does not itself create a
+native control or assign its bounds.
+
 The explorer's **What runs when…** scenarios illustrate existing code paths for
 compilation, testing, release, startup, an Add-button click, import and export.
 Choose a scenario, then follow its arrows and click a function or process box
@@ -215,7 +229,9 @@ The default print collection has five linked volumes:
   diagrams in the next volume; evidence notes remain secondary links.
 - `pdf/04-code-flowcharts.pdf` expands the overview into diagrams containing
   literal code/configuration lines, highlighted primary paths, nested helper
-  diagrams, source links and links back to the parent charts. Dense diagrams
+  diagrams, source links and links back to the parent charts. Its first diagram
+  keeps the full main-to-widget path on one landscape Letter page with 9.2-point
+  source text, and links directly into declaration rows and constructor detail. Dense diagrams
   continue on linked pages instead of shrinking or dropping source text.
 
 The edit steps and explorer offer **Read in PDF** links to exact reference pages
@@ -327,6 +343,8 @@ expanded three-volume collection and the five behavior workflows.
 execution scenarios to the explorer.
 `2026-10-04-code-flowcharts` adds the literal-code diagram hierarchy and fifth
 volume; the overview boxes now open diagrams instead of prose summaries.
+`2026-10-04-main-to-widgets` makes the entry-to-declaration path directly
+discoverable and adds diagrams for actual widget rows and field defaults.
 
 Generator-only checks passed for source/output isolation, symlink and FIFO
 handling, parser fixtures, unique symbol IDs, source spans, call targets, guide
@@ -336,15 +354,18 @@ and visually inspected. Eight C++ files contain recoverable syntax limitations;
 the coverage report also records lexical CMake notices and symbolic-build limits.
 
 The expanded collection was generated through the packaged CLI; HTML-only mode
-was also checked. All ten edit maps, seven execution scenarios, 32 detailed code
+was also checked. All ten edit maps, seven execution scenarios, 35 detailed code
 diagrams, seven parameter guides, exact PDF page mappings,
 cross-file PDF links, internal bookmarks, source routes, and annotation bounds
 passed focused checks. Full selected source bodies and indexed flow labels were
 checked for presence; call-table omission counts are explicit. The application
 source fingerprint was unchanged by generation. The code-diagram checks cover
-all 56 overview destinations, 40 deeper links, 192 code boxes and 476 literal
+all 56 overview destinations, 48 deeper links, 208 code boxes and 515 literal
 source lines. Every printed source excerpt is checked on its mapped page;
 changed anchors remain explicit review warnings rather than guessed code.
+The startup check distinguishes its direct constructor/call path from the table's
+data feed; changing a captured widget declaration produces a review marker instead
+of retaining an obsolete literal snippet.
 
 The available in-app browser blocked local `file:` URLs, so live browser layout
 and interaction were not visually verified here. JavaScript syntax and route

@@ -55,9 +55,13 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
         raise ImportError("Code-flowchart PDF output needs ReportLab. Install the documentation "
                           "tool's requirements or run with --no-pdf.") from exc
 
-    maps = model.get("code_maps", [])
+    maps = list(model.get("code_maps", []))
     if not maps:
         raise ValueError("No code_maps are available for the code-flowchart PDF.")
+    # Put the direct startup-to-declaration route at the front of the
+    # printed collection without altering the captured model's ordering.
+    entry_order = {"main-to-widgets": 0, "widget-definitions": 1}
+    maps.sort(key=lambda item: entry_order.get(item.get("id", ""), 2))
     output = Path(output)
     (output / "pdf").mkdir(parents=True, exist_ok=True)
     filename = output / "pdf" / PDF_NAME
@@ -114,15 +118,16 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
         return "".join(character if ord(character) in mono_glyphs else character.encode("ascii", "backslashreplace").decode("ascii")
                        for character in str(value)).expandtabs(4)
 
-    def code_fragments(node: dict[str, Any], width: float) -> list[tuple[int, str, bool]]:
-        limit = max(12, int((width - 48) / char_w))
+    def code_fragments(node: dict[str, Any], width: float, compact: bool = False) -> list[tuple[int, str, bool]]:
+        limit = max(12, int((width - (36 if compact else 48)) / char_w))
         fragments = []
         for record in node.get("code_lines", []):
             text, continuation = literal(record.get("text", "")), False
             while len(text) > limit:
                 # Keep every character, including spaces at the wrap point.
-                cut = text.rfind(" ", limit // 2, limit + 1)
-                if cut < limit // 2:
+                minimum = int(limit * .8) if compact else limit // 2
+                cut = text.rfind(" ", minimum, limit + 1)
+                if cut < minimum:
                     cut = limit
                 fragments.append((int(record.get("line") or node.get("line") or 1), text[:cut], continuation))
                 text, continuation = text[cut:], True
@@ -156,8 +161,10 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
                 links.append(link("Up: " + label, target))
         return " | ".join(links) or link("Up: execution scenarios", "03-execution-flows.pdf")
 
-    def node_metrics(node: dict[str, Any], width: float) -> dict[str, Any]:
-        title = _esc(node.get("title", "Code excerpt")).replace("::", "::<br/>")
+    def node_metrics(node: dict[str, Any], width: float, compact: bool = False) -> dict[str, Any]:
+        title = _esc(node.get("title", "Code excerpt"))
+        if not compact:
+            title = title.replace("::", "::<br/>")
         title_h = paragraph_height(title, width - 18, "card-title", True)
         source = link(f"{node.get('path', '')}:{node.get('line') or 1}" +
                       (f"-{node['end_line']}" if node.get("end_line") and node.get("end_line") != node.get("line") else ""), _source_url(node))
@@ -172,15 +179,18 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
         note_h = 0
         child = node.get("child") or {}
         footer = ""
-        if child.get("map"):
+        if child.get("map") and not compact:
             footer = link("Open deeper diagram", "#" + _dest("node" if child.get("node") else "map", child["map"], child.get("node", "")))
         footer_h = paragraph_height(footer, width - 18, "card-source", True) + 3 if footer else 0
-        fragments = code_fragments(node, width)
-        code_h = len(fragments) * code_leading if fragments else paragraph_height(
+        fragments = code_fragments(node, width, compact)
+        leading = 10.8 if compact else code_leading
+        code_h = len(fragments) * leading if fragments else paragraph_height(
             "No literal source lines were captured; review the linked location.", width - 51, "card-note")
-        height = 22 + title_h + 4 + source_h + 5 + code_h + 4 + note_h + footer_h + 8
+        height = ((19 + title_h + 3 + source_h + 4 + code_h + 4 + 6) if compact else
+                  (22 + title_h + 4 + source_h + 5 + code_h + 4 + note_h + footer_h + 8))
         return {"height": max(86, height), "title": title, "source": source, "fragments": fragments,
-                "note": note, "footer": footer, "code_height": code_h}
+                "note": note, "footer": footer, "code_height": code_h, "compact": compact,
+                "code_leading": leading}
 
     # Node rows are pagination units. A genuinely wide/long source block gets
     # full width rather than an illegibly small font or a clipped command.
@@ -189,6 +199,7 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
     full_w = body_w - outside * 2
     plans: list[dict[str, Any]] = []
     for map_value in maps:
+        compact = map_value.get("id") == "main-to-widgets"
         nodes = map_value.get("nodes", [])
         numbers = {node["id"]: i for i, node in enumerate(nodes, 1)}
         by_row: dict[int, list[dict[str, Any]]] = {}
@@ -197,10 +208,10 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
         units = []
         for row_nodes in by_row.values():
             row_nodes = sorted(row_nodes, key=lambda n: int(n.get("column", 0)))
-            metrics = [node_metrics(node, half_w) for node in row_nodes]
+            metrics = [node_metrics(node, half_w, compact) for node in row_nodes]
             if len(row_nodes) > 2 or any(item["height"] > 315 for item in metrics):
                 for node in row_nodes:
-                    units.append({"nodes": [node], "wide": True, "metrics": [node_metrics(node, full_w)]})
+                    units.append({"nodes": [node], "wide": True, "metrics": [node_metrics(node, full_w, compact)]})
             else:
                 units.append({"nodes": row_nodes, "wide": False, "metrics": metrics})
         for unit in units:
@@ -230,13 +241,17 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
             key_rows = ["<b>" + _esc(f"{number}. N{numbers.get(edge['from'], '?')} -> N{numbers.get(edge['to'], '?')}") + "</b> " + _esc(f"[{edge.get('kind', 'step')}] {edge.get('label', '')}") for number, edge in internal]
             incoming_h = sum(paragraph_height(text, body_w - 30, "key", True) + 6 for _, _, text in incoming_rows)
             outgoing_h = sum(paragraph_height(text, body_w - 30, "key", True) + 6 for _, _, text in outgoing_rows)
-            key_h = sum(paragraph_height(text, body_w, "key", True) + 3 for text in key_rows)
+            key_grid = [key_rows[i:i + 2] for i in range(0, len(key_rows), 2)] if compact else []
+            key_h = (sum(max(paragraph_height(text, (body_w - 16) / 2, "key", True) for text in row) + 3
+                         for row in key_grid) if compact else
+                     sum(paragraph_height(text, body_w, "key", True) + 3 for text in key_rows))
             # Reserve the part-navigation line as well as graph/legend gaps.
             # Even a one-part diagram keeps this slack, so splitting does not
             # invalidate an earlier page-height calculation.
             used = header_h + incoming_h + outgoing_h + key_h + 51 + sum(u["height"] for u in chosen) + max(0, len(chosen) - 1) * 20
             return {"units": chosen, "internal": internal, "incoming": incoming_rows,
-                    "outgoing": outgoing_rows, "key": key_rows, "header": header_values, "height": used}
+                    "outgoing": outgoing_rows, "key": key_rows, "key_grid": key_grid,
+                    "header": header_values, "height": used}
         chunks = []
         current = []
         for unit in units:
@@ -260,11 +275,17 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
                     chunks.append(page_parts([wide]))
         if current:
             chunks.append(page_parts(current))
+        whole = page_parts(units)
+        # A single-page entry path has no continuation-navigation line.
+        # Recover that reserved space only when the complete six-card map fits.
+        if compact and whole["height"] - 16 <= body_h:
+            whole["height"] -= 16
+            chunks = [whole]
         if not chunks:
             chunks = [page_parts([])]
         if any(chunk["height"] > body_h for chunk in chunks):
             raise ValueError(f"Code diagram {map_value['id']} contains too much complete source/metadata for one row; refine its literal node boundaries.")
-        plans.append({"map": map_value, "chunks": chunks, "numbers": numbers})
+        plans.append({"map": map_value, "chunks": chunks, "numbers": numbers, "compact": compact})
 
     class Heading(Paragraph):
         def __init__(self, text: str, destination: str) -> None:
@@ -407,31 +428,36 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
             child = node.get("child") or {}
             if child.get("map"):
                 c.linkRect("", _dest("node" if child.get("node") else "map", child["map"], child.get("node", "")), (x, y, x + width, y + height), relative=1)
-            top = y + height - 8
+            compact = metric.get("compact", False)
+            top = y + height - (7 if compact else 8)
             c.setFont("Helvetica-Bold", 9)
             c.setFillColor(border)
-            c.drawString(x + 9, top - 5, f"N{self.plan['numbers'][node['id']]} | {node.get('role', 'CODE')} | {'MAIN' if primary else 'SUPPORT'}")
-            top -= 14
-            top -= self.text(metric["title"], x + 9, top, width - 18, "card-title", True) + 4
-            top -= self.text(metric["source"], x + 9, top, width - 18, "card-source", True) + 5
+            role_label = f"N{self.plan['numbers'][node['id']]} | {node.get('role', 'CODE')} | {'MAIN' if primary else 'SUPPORT'}"
+            if compact:
+                role_label += " | callback runs later" if node.get("id") == "session" else " | Deeper diagram" if child.get("map") else ""
+            c.drawString(x + 9, top - 5, role_label)
+            top -= 12 if compact else 14
+            top -= self.text(metric["title"], x + 9, top, width - 18, "card-title", True) + (3 if compact else 4)
+            top -= self.text(metric["source"], x + 9, top, width - 18, "card-source", True) + (4 if compact else 5)
             fragments = metric["fragments"]
             code_top = top
             c.setStrokeColor(rule)
-            c.line(x + 35, code_top + 1, x + 35, code_top - metric["code_height"])
+            gutter, text_x = (24, 30) if compact else (35, 42)
+            c.line(x + gutter, code_top + 1, x + gutter, code_top - metric["code_height"])
             # Draw source consecutively before gutter labels. PDF extraction
             # then keeps wrapped physical source lines contiguous as well.
             for index, (_, text, _) in enumerate(fragments):
-                baseline = code_top - code_size - index * code_leading
+                baseline = code_top - code_size - index * metric["code_leading"]
                 c.setFont(mono_font, code_size)
                 c.setFillColor(ink)
-                c.drawString(x + 42, baseline, text)
+                c.drawString(x + text_x, baseline, text)
             for index, (line, _, continuation) in enumerate(fragments):
-                baseline = code_top - code_size - index * code_leading
+                baseline = code_top - code_size - index * metric["code_leading"]
                 c.setFont("Helvetica", 9)
                 c.setFillColor(blue)
-                c.drawRightString(x + 30, baseline, "+" if continuation else str(line))
+                c.drawRightString(x + gutter - 4, baseline, "+" if continuation else str(line))
                 if not continuation:
-                    c.linkURL(_source_url(node, line), (x + 3, baseline - 2, x + 33, baseline + 10), relative=1)
+                    c.linkURL(_source_url(node, line), (x + 3, baseline - 2, x + gutter - 1, baseline + 10), relative=1)
             if not fragments:
                 top -= self.text("No literal source lines were captured; review the linked location.", x + 42, top, width - 51, "card-note")
             else:
@@ -536,11 +562,20 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
                 end = (spine, footer_top - caption_height / 2)
                 self.arrow([start, (spine, start[1]), end], edge)
                 footer_top -= self.text(text, 22, footer_top, body_w - 30, "key", True) + 6
-            for text in self.chunk["key"]:
-                footer_top -= self.text(text, 0, footer_top, body_w, "key", True) + 3
+            if self.chunk["key_grid"]:
+                for row in self.chunk["key_grid"]:
+                    heights = [self.text(text, column * (body_w + 16) / 2, footer_top,
+                                         (body_w - 16) / 2, "key", True)
+                               for column, text in enumerate(row)]
+                    footer_top -= max(heights) + 3
+            else:
+                for text in self.chunk["key"]:
+                    footer_top -= self.text(text, 0, footer_top, body_w, "key", True) + 3
             for data in boxes.values():
                 self.draw_node(data["node"], data["metric"], data["box"])
-            legend = "MAIN = emphasized path; SUPPORT / dashed dependency = supporting work. '+' = wrapped source continuation. Literal excerpts; surrounding code remains linked."
+            legend = ("Calls follow startup; DATA is a declaration dependency. Session callback runs later. '+' wraps source; click cards for deeper diagrams."
+                      if self.plan["compact"] else
+                      "MAIN = emphasized path; SUPPORT / dashed dependency = supporting work. '+' = wrapped source continuation. Literal excerpts; surrounding code remains linked.")
             self.text(legend, 0, 13, body_w, "small")
             if footer_top < 24:
                 raise ValueError(f"Code diagram {map_value['id']} part {self.part + 1} overlaps its legend.")
@@ -549,6 +584,9 @@ def render_code_pdf(model: dict[str, Any], output: Path) -> str:
                         p("Open a scenario box in the execution handbook to reach these deeper graphical diagrams. Each code card contains numbered literal source lines; bold main paths and lighter supporting paths distinguish the selected behavior from prerequisites. Called helpers can link to another diagram."),
                         p("These are selected captured statements, not full function bodies or recorded traces. Complete implementations remain in the source explorer and implementation PDF. Long diagrams continue through explicit linked arrows across parts; no source line is shortened or replaced with an ellipsis.", "small"),
                         p(f"Source font: {mono_font}, {code_size} pt. Tabs expand to four spaces; unsupported source glyphs use explicit Unicode escapes. Snapshot {model.get('generated_at', '')}; generated on request and may be stale.", "small")]
+    if any(map_value.get("id") == "main-to-widgets" for map_value in maps):
+        story += [p("<b>Start here:</b> " + link("main() to widget definitions", "#" + _dest("map", "main-to-widgets"))
+                    + ". Follow the startup calls into the application constructor, widget declarations, and widget-creation loop.", "body", True)]
     rows = [["Detailed code diagram", "Scope", "Parts"]]
     for plan in plans:
         map_value = plan["map"]

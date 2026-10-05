@@ -10,16 +10,17 @@ def make_runtime_code_maps(code, edge, diagram):
     app = 'gui/shared/application.cpp'
     session = 'gui/host/contract.hpp'
     fltk = 'gui/hosts/fltk_main.cpp'
+    definitions = 'gui/shared/view_definition.hpp'
     core = 'src/store.cpp'
     cpp = 'src/text_validation.cpp'
     rust = 'rust/text_validation/src/lib.rs'
     files = 'gui/host/file_services.hpp'
     positions = ((0, 0), (1, 0), (1, 1), (0, 1), (0, 2), (1, 2))
 
-    def c(index, id, title, path, fragment, *, child=None, note='', emphasis='primary'):
+    def c(index, id, title, path, fragment, *, child=None, note='', emphasis='primary', role='CODE'):
         column, row = positions[index]
         return code(id, title, path, fragment, column=column, row=row,
-                    child=child, note=note, emphasis=emphasis)
+                    child=child, note=note, emphasis=emphasis, role=role)
 
     def link(map, node=None):
         return {'map': map, **({'node': node} if node else {})}
@@ -28,6 +29,114 @@ def make_runtime_code_maps(code, edge, diagram):
         return diagram(id, title, summary, nodes, edges, scope=scope, category='runtime')
 
     maps = []
+    maps.append(d('main-to-widgets', 'main to the declared widgets: calls and the data they consume',
+        'Normal native startup reaches the shared Application constructor, which loops over view_definition '
+        'and calls add for each eligible row to create shared Snapshot widgets. The editor/Add declarations '
+        'feed that loop as data; they are not calls. Layout and adapter presentation happen later in publish.', [
+            c(0, 'entry', 'main → run_fltk<Application>', fltk,
+              'int main(int argc, char** argv) { return foundation::host::run_fltk<foundation::ui::Application>(argc, argv); }',
+              child=link('gui-startup', 'session'), role='CALL'),
+            c(1, 'session', 'Session constructor → Application', session,
+              '    Session() : adapter([this](const gui::Event& event) {\n'
+              '        if (current_) { current_->handle(event); services(); }\n'
+              '    }), application(adapter) { current_ = &application; }',
+              child=link('application-ownership', 'construct'), role='CALL',
+              note='The runner creates NativeSession, a Session alias. The callback body runs later; application(adapter) constructs the shared Application now.'),
+            c(2, 'application', 'Enter Application constructor', app,
+              'Application::Application(gui::Adapter& adapter, std::unique_ptr<TaskExecutor> executor)\n'
+              '    : adapter_(adapter), task_(std::move(executor)) {', child=link('application-init', 'enter')),
+            c(3, 'definitions', 'view_definition: editor and Add rows', definitions,
+              '    ViewDefinition{"entries.editor", gui::Kind::text, 32, "", "New entry", "Type an entry"},\n'
+              '    ViewDefinition{"entries.add", gui::Kind::button, 32, "", "Add entry", ""},',
+              child=link('widget-definitions', 'controls'), role='DATA',
+              note='These constexpr aggregate values are declarations. The same table supplies creation order and later layout policy.'),
+            c(4, 'loop', 'Creation loop → add(definition)', app,
+              '    for (const auto& definition : view_definition)\n'
+              '        if (!definition.remove_extension) add(definition);',
+              child=link('widget-definitions', 'loop'), role='CALL',
+              note='Only rows with remove_extension == false are created here. Its declared default is false; the optional Remove row sets it true.'),
+            c(5, 'add', 'Application::add creates one widget', app,
+              'gui::Widget& Application::add(const ViewDefinition& definition) {\n'
+              '    gui::Widget widget;\n'
+              '    widget.spec.key.id = definition.id;\n'
+              '    widget.spec.kind = definition.kind;\n'
+              '    if (definition.id != view_definition.front().id) widget.spec.parent = view_definition.front().id;',
+              child=link('widget-create', 'identity'),
+              note='The remainder copies strings/font/wrapping, appends to the shared view_ Snapshot, and returns the widget. Height is consumed later by publish/layout; add creates no native control.'),
+        ], [edge('entry', 'session', 'run_fltk runner creates NativeSession; Session constructor', 'call'),
+            edge('session', 'application', 'application(adapter)', 'call'),
+            edge('application', 'loop', 'constructor body; executor check and title set'),
+            edge('definitions', 'loop', 'view_definition supplies declaration rows', 'dependency'),
+            edge('loop', 'add', 'eligible row: add(definition)', 'call'),
+            edge('add', 'loop', 'add returns; next declaration row', 'return')],
+        scope='Primary native startup to shared Snapshot widget creation'))
+
+    maps.append(d('widget-definitions', 'Widget declaration table: fields, rows and their consumer',
+        'Representative literal rows from the application-owned table. Aggregate field order and defaults '
+        'expand from the first card. Data arrows feed the actual constructor loop; only its add arrow is a call. '
+        'The constructor excludes the optional Remove row.', [
+            c(0, 'fields', 'ViewDefinition aggregate field order', definitions,
+              '    std::string_view id;\n'
+              '    gui::Kind kind;\n'
+              '    double height;\n'
+              '    std::string_view text, label, placeholder;',
+              child=link('widget-definition-fields', 'identity'), role='DATA',
+              note='Following fields declare bold=false, wrap=none and remove_extension=false. Expand for their exact declarations.'),
+            c(1, 'root', 'First row declares the parent group', definitions,
+              'inline constexpr std::array view_definition{\n'
+              '    ViewDefinition{"entries.form", gui::Kind::group, 0, "", "", ""},', role='DATA',
+              note='add compares each ID with view_definition.front().id; the first root gets no parent assignment.'),
+            c(2, 'controls', 'Editor and Add declaration values', definitions,
+              '    ViewDefinition{"entries.editor", gui::Kind::text, 32, "", "New entry", "Type an entry"},\n'
+              '    ViewDefinition{"entries.add", gui::Kind::button, 32, "", "Add entry", ""},', role='DATA',
+              note='Other ordinary rows are omitted here. Their table order is preserved by the creation loop.'),
+            c(3, 'remove', 'Optional Remove row sets the final flag', definitions,
+              '    ViewDefinition{"entries.remove", gui::Kind::button, 32, "", "Remove selected", "", false, gui::TextWrap::none, true}',
+              role='DATA', emphasis='supporting',
+              note='The final true initializes remove_extension. This row is skipped during default constructor creation.'),
+            c(4, 'loop', 'Constructor iterates the declaration table', app,
+              '    for (const auto& definition : view_definition)\n'
+              '        if (!definition.remove_extension) add(definition);', role='CALL'),
+            c(5, 'add', 'add copies identity and chooses the default parent', app,
+              'gui::Widget& Application::add(const ViewDefinition& definition) {\n'
+              '    gui::Widget widget;\n'
+              '    widget.spec.key.id = definition.id;\n'
+              '    widget.spec.kind = definition.kind;\n'
+              '    if (definition.id != view_definition.front().id) widget.spec.parent = view_definition.front().id;',
+              child=link('widget-create', 'identity'),
+              note='Non-root IDs receive the first row as parent. Height is used later by publish/layout; the loop already filtered remove_extension.'),
+        ], [edge('fields', 'root', 'aggregate field order determines row meanings', 'dependency'),
+            edge('fields', 'controls', 'same fields and declared defaults', 'dependency'),
+            edge('fields', 'remove', 'final field is remove_extension', 'dependency', emphasis='supporting'),
+            edge('root', 'loop', 'table starts with the root group', 'dependency'),
+            edge('controls', 'loop', 'ordinary rows consumed in table order', 'dependency'),
+            edge('remove', 'loop', 'declared row; true flag excludes it', 'dependency', emphasis='supporting'),
+            edge('loop', 'add', 'remove_extension is false: add(definition)', 'call'),
+            edge('add', 'loop', 'return; continue iteration', 'return')],
+        scope='Declaration data and constructor consumer'))
+
+    maps.append(d('widget-definition-fields', 'ViewDefinition: literal types and declared defaults',
+        'Field declarations in aggregate order. Dependency arrows show declaration order, not execution. '
+        'The editor/Add rows supply the first six fields and use the trailing declared defaults. '
+        'Other rows can override those defaults, as the optional Remove row does.', [
+            c(0, 'identity', 'Identity, widget kind and layout height', definitions,
+              'struct ViewDefinition {\n'
+              '    std::string_view id;\n'
+              '    gui::Kind kind;\n'
+              '    double height;', role='DATA'),
+            c(1, 'strings', 'Text, label and placeholder', definitions,
+              '    std::string_view text, label, placeholder;', role='DATA'),
+            c(2, 'presentation', 'Default font weight and wrapping', definitions,
+              '    bool bold = false;\n'
+              '    gui::TextWrap wrap = gui::TextWrap::none;', role='DATA'),
+            c(3, 'optional', 'Default creation flag', definitions,
+              '    bool remove_extension = false;', role='DATA',
+              note='The constructor creates false rows. The optional Remove declaration explicitly overrides this default with true.'),
+        ], [edge('identity', 'strings', 'following aggregate members', 'dependency'),
+            edge('strings', 'presentation', 'following aggregate members / defaults', 'dependency'),
+            edge('presentation', 'optional', 'final aggregate member / default', 'dependency')],
+        scope='Application-owned declaration types and defaults'))
+
     maps.append(d('gui-startup', 'Native GUI startup: real entry and host calls',
         'Normal FLTK launch, excluding the qualification branch. Expand construction for shared behavior. '
         'Window waiting and timer callbacks are supporting host infrastructure.', [
@@ -40,7 +149,7 @@ def make_runtime_code_maps(code, edge, diagram):
               '    Session() : adapter([this](const gui::Event& event) {\n'
               '        if (current_) { current_->handle(event); services(); }\n'
               '    }), application(adapter) { current_ = &application; }',
-              child=link('application-ownership', 'construct'),
+              child=link('application-init', 'enter'),
               note='The callback body runs on later input. application(adapter) constructs the shared App; current_ is assigned afterward.'),
             c(3, 'show', 'Show and schedule', fltk,
               '        session.adapter.show(); Fl::add_timeout(0, Timer::tick, &timer);', emphasis='supporting'),
@@ -101,7 +210,7 @@ def make_runtime_code_maps(code, edge, diagram):
               '    view_.title = "Entry list";'),
             c(2, 'rows', 'Create eligible declaration rows', app,
               '    for (const auto& definition : view_definition)\n'
-              '        if (!definition.remove_extension) add(definition);', child=link('widget-create', 'identity')),
+              '        if (!definition.remove_extension) add(definition);', child=link('widget-definitions', 'loop')),
             c(3, 'editor', 'Configure editor input', app,
               '    get("entries.editor").spec.text_policy = {false, false, foundation::Store::max_text_bytes, gui::SubmitKey::enter};'),
             c(4, 'options', 'Declare menu options', app,
@@ -565,8 +674,8 @@ def make_runtime_code_maps(code, edge, diagram):
 
     targets = {
         'startup': {
-            'start-entry': ('gui-startup', 'entry'), 'start-session': ('gui-startup', 'session'),
-            'start-application': ('application-init', 'enter'), 'start-widgets': ('application-init', 'rows'),
+            'start-entry': ('main-to-widgets', 'entry'), 'start-session': ('gui-startup', 'session'),
+            'start-application': ('application-init', 'enter'), 'start-widgets': ('widget-definitions', 'loop'),
             'start-layout': ('publish-layout', 'panel'), 'start-present': ('publish-view', 'present'),
             'start-return': ('gui-startup', 'show'), 'start-loop': ('gui-startup', 'loop')},
         'button-click': {

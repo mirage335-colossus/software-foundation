@@ -267,7 +267,7 @@ def make_model(source: Path, max_bytes: int, excludes: list[str], pdfs: bool,
                          'CMake control outlines are lexical and unevaluated; other configuration/text-only files have source views.',
                          'Per-file captured bytes are embedded. Concurrent edits or newly added files may prevent a single atomic snapshot.',
                      ]},
-        'generator': {'name': 'software-foundation-docmap', 'version': '2.3',
+        'generator': {'name': 'software-foundation-docmap', 'version': '2.4',
                       'packages': {name: importlib.metadata.version(name) for name in PARSER_PACKAGES}},
     }
 
