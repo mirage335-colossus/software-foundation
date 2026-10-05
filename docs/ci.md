@@ -91,7 +91,7 @@ Candidate regression and certification never use this selector.
 A separate automatic **Affected complete infrastructure suites** job selects
 whole tooling suites using conservative source-reference dependencies and explicit
 coupled domains. A shared, unknown, deleted or workflow input falls back to the
-complete inventory. It runs at most two suites concurrently through the strict
+complete inventory. CPU/RAM-aware workers run whole suites concurrently through the strict
 case-outcome runner and process-tree owner, with individual deadlines and retained
 receipts. Skips, orphaned writers, missing cases and timeouts cannot count as passes.
 This protects SDK/release/coordination tooling on ordinary PR/main feedback without

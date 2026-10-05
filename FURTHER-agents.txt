@@ -55,21 +55,12 @@ Test parallelism follow-ups (separate discussion)
 Release discovery resilience (implemented)
 -----------------------------------------
 
-- Initial GitHub release discovery now handles the narrow case where concurrent publication
-  shifts pagination: retry a repeated release ID across distinct response pages,
-  after validating the records. Reuse tools/github_release.py transport machinery
-  with one shared attempt, time and API-request budget across transport and
-  inventory retries; do not nest independent retry loops. Explicitly bound extra
-  full-inventory reads and their request cost. Restart the complete inventory and
-  discard every prior page; never silently deduplicate or accept partial results.
-  Persistent repeated IDs must fail with useful diagnostics. Malformed records,
-  authentication/permission failures and genuinely ambiguous matching tags must
-  remain errors, without gaining retries from this change. Preserve existing API
-  savings, shared discovery and all source, asset, digest and signature checks.
-  Recovery stays read-only: never repeat a mutation because discovery failed or
-  infer absence from an unsuccessful read. Add focused tests for a repeated ID
-  followed by success, persistent repetition, exhausted shared budgets, discarded
-  partial results and unchanged publication safeguards. Assert zero extra API calls
-  or waits on successful first-attempt discovery and bounded request counts on
-  failures. Exact-ID final publication/native-acceptance readback was implemented
-  in c45f8f3; that fix is retained.
+- Validated release IDs repeated across distinct pages can restart the complete
+  initial inventory at most twice. Transport and inventory retries share the
+  existing attempt/time/wait controls, plus a 768-request total ceiling and
+  256-page per-inventory ceiling. Every prior page is discarded on restart.
+  Persistent repetition, same-page duplicates, malformed rows/links, access
+  failures and genuinely ambiguous tags still fail. Focused tests cover recovery,
+  exhausted budgets, discarded partial matches, unchanged publication safeguards
+  and zero extra calls/waits on first success. Exact-ID final publication/native
+  acceptance readback from c45f8f3 remains unchanged. Recovery is read-only.

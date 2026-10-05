@@ -4,9 +4,9 @@ These executable workflows are hosted with this repository. Actual observed
 qualification is recorded in [validation](../docs/validation.md).
 `ci.yml` gives inexpensive automatic feedback for pull requests and main-branch
 pushes. `candidate.yml` is manual, defaults to full selected-platform tests,
-checks actual target architecture, and creates verified native archives. Manual
-producers retain outputs in private draft releases with complete manifests; no
-workflow uses Actions artifact storage. Neither workflow publishes an application
+checks actual target architecture, and creates verified native archives. Routine
+handoffs and diagnostics use bounded Actions artifacts; explicitly retained SDK
+inputs use private draft release bundles with complete manifests. Neither workflow publishes an application
 release or establishes an older-runtime baseline.
 
 Application entry points default `core_provider` to `rust`; `cpp` is an explicit
@@ -25,7 +25,7 @@ Manual candidate inputs:
 | --- | --- | --- |
 | `devfast` | `false` | `true` runs focused core diagnostics and omits packaging/sanitizers |
 | `linux_pool` | `standard` | `faster` selects one administrator-configured larger Linux runner |
-| `build_jobs` | `2` | Choose 2, 4 or 8 compiler jobs; tests retain two concurrent slots |
+| `build_jobs` | `auto` | Use available CPU/RAM capacity, or explicitly select 2, 4 or 8 compiler jobs; test limits remain separate |
 | `include_arm` | `true` | Include the Linux ARM64 runner alongside Linux/Windows x64 |
 
 To enable `faster`, configure repository variable `FOUNDATION_FAST_LINUX_RUNNER`
