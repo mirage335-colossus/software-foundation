@@ -100,7 +100,7 @@ fi
 parent=$(CDPATH='' cd -- "$(dirname -- "$destination")" && pwd -P) ||
     die 'The destination parent directory must exist.'
 directory_name=$(basename -- "$destination")
-destination="$parent/$directory_name"
+destination="${parent%/}/$directory_name"
 PROJECT_NAME=${PROJECT_NAME:-$directory_name}
 
 temporary=$(mktemp -d "$parent/.foundation-fork.XXXXXX")
@@ -215,18 +215,31 @@ shell_quote() {
     printf '%s' "$1" | sed "s/'/'\\\\''/g"
     printf "'"
 }
-quoted_destination=$(shell_quote "$destination")
-quoted_message=$(shell_quote "Start $PROJECT_NAME ($PROJECT_DATE)")
+# Show a short path from the user's current shell directory, even when the
+# destination argument was absolute. Match the shell's normal logical cd paths.
+suggestion_base=$(pwd -L)
+suggestion_prefix=
+while [ "$suggestion_base" != / ]; do
+    case $destination in "$suggestion_base"/*) break ;; esac
+    suggestion_base=${suggestion_base%/*}
+    suggestion_base=${suggestion_base:-/}
+    suggestion_prefix="../$suggestion_prefix"
+done
+relative_destination="$suggestion_prefix${destination#"${suggestion_base%/}/"}"
+case $relative_destination in -*) relative_destination="./$relative_destination" ;; esac
+quoted_destination=$(shell_quote "$relative_destination")
+quoted_message=$(shell_quote "first commit $PROJECT_NAME $PROJECT_DATE")
 
 finished=true
 printf '\nCreated %s in %s\nDate: %s\nBaseline: %s\nOnly main at depth one; no commit made and no remote configured.\n' \
     "$PROJECT_NAME" "$destination" "$PROJECT_DATE" "$source_commit"
-printf '\nReview your changes, then make your first project commit when ready:\n'
-printf 'git -C %s status\n' "$quoted_destination"
-printf 'git -C %s diff\n' "$quoted_destination"
-printf 'git -C %s add --all\n' "$quoted_destination"
-printf 'git -C %s commit -m %s\n' "$quoted_destination" "$quoted_message"
+printf '\nChange into your project directory, then review and commit when ready:\n'
+printf 'cd %s\n' "$quoted_destination"
+printf 'git status\n'
+printf 'git diff\n'
+printf 'git add --all\n'
+printf 'git commit -m %s\n' "$quoted_message"
 printf '\nSet your new repository URL, then push when ready:\n'
-printf "git -C %s remote add origin 'YOUR_NEW_REPOSITORY_URL'\n" "$quoted_destination"
-printf 'git -C %s push -u origin main\n' "$quoted_destination"
+printf "git remote add origin 'YOUR_NEW_REPOSITORY_URL'\n"
+printf 'git push -u origin main\n'
 printf '\n'

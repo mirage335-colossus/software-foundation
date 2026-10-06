@@ -355,27 +355,38 @@ class ForkTests(unittest.TestCase):
         result = self.fork(destination, source, environment=environment)
         self.assert_fresh(destination, source, previous, modified=('LICENSE', 'README.md'))
         lines = result.stdout.splitlines()
+        directory_commands = [(number, line.strip(), shlex.split(line.strip()))
+                              for number, line in enumerate(lines) if line.strip().startswith('cd ')]
         commands = [(number, line.strip(), shlex.split(line.strip()))
                     for number, line in enumerate(lines) if line.strip().startswith('git ')]
+        self.assertEqual(len(directory_commands), 1, result.stdout)
+        directory_line, directory_command, directory_arguments = directory_commands[0]
+        self.assertEqual(directory_arguments, ['cd', os.path.relpath(destination, self.root)])
+        self.assertTrue(commands, result.stdout)
+        self.assertLess(directory_line, commands[0][0])
+        for _, _, arguments in commands:
+            self.assertNotIn('-C', arguments)
+            self.assertNotIn(str(destination), arguments)
         commit_commands = [item for item in commands if 'commit' in item[2]]
         remote_commands = [item for item in commands if 'remote' in item[2] and 'add' in item[2]]
         self.assertEqual(len(commit_commands), 1, result.stdout)
         self.assertEqual(len(remote_commands), 1, result.stdout)
-        commit_line, _, commit_arguments = commit_commands[0]
+        commit_line, _, _ = commit_commands[0]
         remote_line, _, remote_arguments = remote_commands[0]
         self.assertGreater(remote_line, commit_line)
         self.assertTrue(any(not line.strip() for line in lines[commit_line + 1:remote_line]), result.stdout)
         self.assertIn('origin', remote_arguments)
-        self.assertEqual(commit_arguments[commit_arguments.index('-C') + 1], str(destination))
-        self.assertEqual(remote_arguments[remote_arguments.index('-C') + 1], str(destination))
         # Execute only the suggested local staging/commit commands after checking
-        # the script itself preserved HEAD. Never execute remote setup or push.
+        # the script itself preserved HEAD. Keep cd and Git in the same shell;
+        # never execute remote setup or push.
+        selected_commands = [directory_command]
         for _, command, arguments in commands:
             if 'commit' in arguments or ('add' in arguments and 'remote' not in arguments):
-                execution = subprocess.run(command, shell=True, executable='/bin/sh', cwd=self.root,
-                    env=self.environment, text=True, stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE, timeout=15)
-                self.assertEqual(execution.returncode, 0, execution.stdout + execution.stderr)
+                selected_commands.append(command)
+        execution = subprocess.run('\n'.join(selected_commands), shell=True, executable='/bin/sh',
+            cwd=self.root, env=self.environment, text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, timeout=15)
+        self.assertEqual(execution.returncode, 0, execution.stdout + execution.stderr)
         self.assertFalse((self.root / 'injected').exists())
         source_head = self.git(source, 'rev-parse', 'HEAD').stdout.strip()
         self.git(destination, 'merge-base', '--is-ancestor', source_head, 'HEAD')
@@ -406,9 +417,12 @@ class ForkTests(unittest.TestCase):
         source, previous = self.source('relative source')
         caller = self.root / 'caller'
         caller.mkdir()
-        destination = caller / 'project'
-        self.fork('project', '../relative source', cwd=caller)
+        destination = self.root / 'project'
+        result = self.fork(destination, '../relative source', cwd=caller)
         self.assert_fresh(destination, source, previous)
+        directory_commands = [shlex.split(line.strip()) for line in result.stdout.splitlines()
+                              if line.strip().startswith('cd ')]
+        self.assertEqual(directory_commands, [['cd', '../project']])
 
     def test_all_source_failures_leave_no_destination_or_scratch(self):
         destination = self.root / 'failed'
@@ -493,8 +507,11 @@ class ForkTests(unittest.TestCase):
 
     def test_separator_allows_destination_beginning_with_dash(self):
         source, previous = self.source()
-        self.fork('-project', source, separator=True)
+        result = self.fork('-project', source, separator=True)
         self.assert_fresh(self.root / '-project', source, previous)
+        directory_commands = [shlex.split(line.strip()) for line in result.stdout.splitlines()
+                              if line.strip().startswith('cd ')]
+        self.assertEqual(directory_commands, [['cd', './-project']])
 
     def test_project_attribution_without_documents_does_not_set_git_identity(self):
         source, previous = self.source()

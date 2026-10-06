@@ -209,9 +209,9 @@ so the depth limit also applies to local paths, without hardlinks or alternate
 object stores. The repositories remain independent.
 Sources containing submodules are rejected. A failed run removes its own partial
 output; existing destinations, including empty directories, are never reused.
-Use `./fork.sh --help` for command help. Completion prints separated command
-examples to review changes, make the first project commit, add your new remote
-URL and push `main`. These commands are suggestions only. Git identity can be
+Use `./fork.sh --help` for command help. Completion prints one relative `cd` command followed
+by ordinary Git commands to review changes, make the first project commit, add
+your new remote URL and push `main`. These commands are suggestions only. Git identity can be
 configured by the user before committing. When later fetching a foundation update
 for a merge, include the intervening history back to the retained baseline; a
 second depth-one snapshot alone may not establish the shared ancestry. Older
