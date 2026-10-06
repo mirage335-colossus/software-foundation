@@ -149,6 +149,82 @@ navigation. It is checked for missing references, and does not substitute for th
 
 ## Use this as a project specification
 
+### Start a new repository
+
+[`fork.sh`](fork.sh) creates an independent repository containing only `main` and
+its latest original commit, using a depth-one clone. Older commits, other branches
+and tags are not fetched. There is no configured remote or upstream tracking.
+It makes no commit and needs no Git name or email setting. The original commit ID
+is preserved as the baseline for comparing and integrating foundation updates.
+Requires a POSIX shell, Git 2.28+ and `mktemp`.
+The destination defaults to `PROJECT_NAME` in the current directory. It must not
+exist; its parent directory must exist. An explicit destination overrides it.
+
+```sh
+PROJECT_NAME='my-project' PROJECT_AUTHOR='my-screenname' ./fork.sh
+```
+
+The configuration block at the top of the script can also hold these defaults.
+If `PROJECT_NAME` is empty, supply a destination; its basename becomes the project
+name. `PROJECT_AUTHOR` is an optional copyright/CC0 name or screenname, independent
+of Git identity. When set, it replaces the foundation author in the root
+`LICENSE` preamble and README author line; the copyright year comes from the
+current date. When empty, attribution is preserved. Only recognized foundation
+attribution in regular tracked files is changed; the CC0 legal text, third-party
+notices and other source contents remain intact. Attribution edits are left
+unstaged; the index and existing commits remain unchanged. The script captures
+the current local date automatically for the copyright year and completion
+message. Other project-specific renaming within source files is a separate step.
+
+`DEFAULT_SOURCE_URLS` in the top configuration block holds the default ordered
+list, initially the GitHub HTTPS URL. Set one URL or local path per line, without
+quoting individual entries; spaces and shell characters in paths are literal.
+Empty lines are ignored. It can also be set through the environment:
+
+```sh
+DEFAULT_SOURCE_URLS='/path/to/local software-foundation
+https://github.com/mirage335-colossus/software-foundation.git
+git@github.com:mirage335-colossus/software-foundation.git' \
+  PROJECT_NAME='my-project' ./fork.sh
+```
+
+Supply a replacement list as arguments after the destination to try other
+sources in order, stopping at the first successful clone of `refs/heads/main`.
+A source without that branch is skipped, even if it has a tag named `main`:
+
+```sh
+./fork.sh ../my-project \
+  https://github.com/mirage335-colossus/software-foundation.git \
+  git@github.com:mirage335-colossus/software-foundation.git \
+  '/path/to/software-foundation' \
+  'file:///path/to/software-foundation.git'
+```
+
+Git handles authentication and URL protocols normally. Relative local paths are
+relative to the directory where you run the script. The checkout starts from the
+selected source's latest `main` commit, regardless of its default branch or local
+checkout; local modifications and untracked files are excluded. Executable bits,
+symlinks and tracked ignored files are preserved. Local sources use Git transport
+so the depth limit also applies to local paths, without hardlinks or alternate
+object stores. The repositories remain independent.
+Sources containing submodules are rejected. A failed run removes its own partial
+output; existing destinations, including empty directories, are never reused.
+Use `./fork.sh --help` for command help. Completion prints separated command
+examples to review changes, make the first project commit, add your new remote
+URL and push `main`. These commands are suggestions only. Git identity can be
+configured by the user before committing. When later fetching a foundation update
+for a merge, include the intervening history back to the retained baseline; a
+second depth-one snapshot alone may not establish the shared ancestry. Older
+history can be fetched later when needed, rather than during project creation.
+
+Focused offline regression:
+
+```sh
+./build.sh test dev --core-provider cpp --build-dir build/fork-check --test tools.fork
+```
+
+### Adapt the foundation
+
 1. Adopt the repository map and replace the small application with your own.
 2. Define supported environments and observable compatibility contracts before
    adding implementation. Keep interfaces independent of delivery mechanisms.
