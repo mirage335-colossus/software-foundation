@@ -178,6 +178,24 @@ not qualified or promoted. A bounded native startup comparison precedes any
 fixture change or complete release retry. The original failure remains retained
 in `.agent-work/artifacts/further-release-audit-20261005/latest-37387659465-attempt-1-failure-analysis.json`.
 
+The bounded native probe [37392975669](https://github.com/mirage335-colossus/software-foundation/actions/runs/37392975669)
+on `cd7a4cf` reproduced the twenty-second timeout; later fresh profiles passed.
+Its elapsed time included session setup/cleanup, so it did not establish that the
+longer connection deadline helped. The separate fresh-runner comparison
+[37393372940](https://github.com/mirage335-colossus/software-foundation/actions/runs/37393372940)
+on `e852b1c` measured automation connections separately: the ordinary twenty-second
+control connected in 7.830 seconds, while the 120-second trial needed 21.582
+seconds and then completed session setup. Both retained complete, independently
+verified artifacts with the same Firefox executable identity as the failure and
+confirmed stopped writers. This supports a bounded 120-second Firefox startup
+allowance; protocol/application waits and all assertions remain unchanged.
+The temporary probe is removed after diagnosis. Its initial diagnostic-source
+[CI 37392948056](https://github.com/mirage335-colossus/software-foundation/actions/runs/37392948056)
+correctly rejected direct artifact upload outside the bounded adapter; the fresh
+probe uses that adapter and the complete 39-case storage suite passed without
+changing its guard. Neither probe is release qualification. Full release
+qualification must use the repaired fixture and a fresh complete attempt.
+
 Refreshed screenshot
 [37383282720](https://github.com/mirage335-colossus/software-foundation/actions/runs/37383282720)
 on the same source passed all three jobs and published

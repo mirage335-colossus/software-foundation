@@ -27,6 +27,9 @@ PROCESS_TREE_PATH=Path(__file__).resolve().parents[2]/'tools/process_tree.py'
 _tree_spec=importlib.util.spec_from_file_location('browser_process_tree',PROCESS_TREE_PATH)
 process_tree=importlib.util.module_from_spec(_tree_spec);_tree_spec.loader.exec_module(process_tree)
 
+# Fresh native ARM profiles can need more than 20 seconds before Marionette listens.
+FIREFOX_STARTUP_TIMEOUT_SECONDS=120
+
 
 class BrowserCleanupError(RuntimeError):
     """Writers may remain; the browser workspace must retain its ownership."""
@@ -47,7 +50,7 @@ class Browser:
         self._launch([executable,'--headless','--no-remote','--marionette','--profile',str(self.profile)],
             directory,'firefox.log',env=dict(os.environ,MOZ_HEADLESS='1'))
         try:
-            deadline=time.monotonic()+20
+            deadline=time.monotonic()+FIREFOX_STARTUP_TIMEOUT_SECONDS
             while time.monotonic()<deadline:
                 try:self.socket=socket.create_connection(('127.0.0.1',port),timeout=1);break
                 except OSError:

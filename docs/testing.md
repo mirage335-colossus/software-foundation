@@ -145,6 +145,13 @@ well as output. Test assertions must remain active in optimized builds. Visual
 qualification rejects an interpreter started with assertions disabled; setting
 Python optimization flags must never turn a failed comparison into a pass.
 
+Firefox automation allows up to 120 seconds for its initial connection because
+fresh native ARM startup can exceed twenty seconds. This bounded prerequisite
+margin preserves the fifteen-second protocol/application waits, early process
+exit detection, required browser assertions and descendant cleanup. Chromium's
+startup bound is unchanged. Clock-driven regressions cover delayed readiness
+and deadline expiry; real native browser qualification remains required.
+
 Tests shipped in a source archive must run without the original checkout or its
 Git metadata. A fixture that exercises Git identity must create and commit its own
 temporary repository; keep the production identity check real. Route CI output

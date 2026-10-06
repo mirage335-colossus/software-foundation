@@ -825,6 +825,77 @@ class BrowserOwnerTests(unittest.TestCase):
         instance.socket = None; instance.session = None
         return instance
 
+    def test_firefox_accepts_delayed_startup_without_extending_protocol_timeout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary); elapsed = [0.0]; attempts = []; connection = mock.Mock()
+            owner = mock.Mock(); owner.process.poll.return_value = None
+            def connect(address, *, timeout):
+                self.assertEqual(('127.0.0.1', 32100), address)
+                self.assertEqual(1, timeout)
+                attempts.append(elapsed[0])
+                if elapsed[0] >= 21.5: return connection
+                elapsed[0] += timeout
+                raise OSError('Firefox has not started listening')
+            def sleep(seconds): elapsed[0] += seconds
+            def command(name, arguments):
+                return {'capabilities': {'browserVersion': '156.0'}} if name == 'WebDriver:NewSession' else {}
+            with mock.patch.object(self.browser.process_tree, 'launch', return_value=owner), \
+                 mock.patch.object(self.browser.socket, 'socket') as reserve_socket, \
+                 mock.patch.object(self.browser.socket, 'create_connection', side_effect=connect), \
+                 mock.patch.object(self.browser.time, 'monotonic', side_effect=lambda: elapsed[0]), \
+                 mock.patch.object(self.browser.time, 'sleep', side_effect=sleep), \
+                 mock.patch.object(self.browser.Browser, 'receive', return_value={}), \
+                 mock.patch.object(self.browser.Browser, 'command', side_effect=command):
+                reserve_socket.return_value.__enter__.return_value.getsockname.return_value = ('127.0.0.1', 32100)
+                with self.browser.browser_workspace(output) as work:
+                    browser = self.browser.Browser('firefox', work)
+                    try:
+                        self.assertGreater(attempts[-1], 20)
+                        self.assertLess(attempts[-1], 120)
+                        self.assertEqual('156.0', browser.capabilities['browserVersion'])
+                        connection.settimeout.assert_called_once_with(15)
+                        owner.terminate.assert_not_called(); owner.close.assert_not_called()
+                    finally: browser.close()
+            owner.terminate.assert_called_once(); owner.close.assert_called_once()
+            connection.close.assert_called_once()
+            self.assertFalse(work.exists())
+
+    def test_firefox_startup_expires_at_120_seconds_and_joins_before_diagnostics(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary); elapsed = [0.0]; attempts = []; events = []; streams = []
+            owner = mock.Mock(); owner.process.poll.return_value = None
+            owner.terminate.side_effect = lambda: events.append('terminate')
+            owner.close.side_effect = lambda: events.append('join')
+            def launch(argv, cwd, stream, *, env):
+                streams.append(stream); stream.write('Firefox startup remained pending'); stream.flush()
+                return owner
+            def connect(address, *, timeout):
+                self.assertEqual(1, timeout)
+                attempts.append(elapsed[0]); elapsed[0] += timeout
+                raise OSError('Firefox has not started listening')
+            def sleep(seconds): elapsed[0] += seconds
+            real_copy = self.browser.shutil.copyfile
+            def copy(source, destination):
+                self.assertEqual(['terminate', 'join'], events)
+                self.assertTrue(streams[0].closed)
+                return real_copy(source, destination)
+            with mock.patch.object(self.browser.process_tree, 'launch', side_effect=launch), \
+                 mock.patch.object(self.browser.socket, 'socket') as reserve_socket, \
+                 mock.patch.object(self.browser.socket, 'create_connection', side_effect=connect), \
+                 mock.patch.object(self.browser.time, 'monotonic', side_effect=lambda: elapsed[0]), \
+                 mock.patch.object(self.browser.time, 'sleep', side_effect=sleep), \
+                 mock.patch.object(self.browser.shutil, 'copyfile', side_effect=copy):
+                reserve_socket.return_value.__enter__.return_value.getsockname.return_value = ('127.0.0.1', 32100)
+                with self.assertRaisesRegex(TimeoutError, 'Firefox automation startup timeout'):
+                    with self.browser.browser_workspace(output) as work:
+                        self.browser.Browser('firefox', work)
+            self.assertLess(attempts[-1], 120)
+            self.assertGreaterEqual(elapsed[0], 120)
+            self.assertLess(elapsed[0], 121.1)  # At most the last bounded connection attempt plus its pause.
+            owner.terminate.assert_called_once(); owner.close.assert_called_once()
+            self.assertEqual('Firefox startup remained pending', (output / 'firefox.log').read_text())
+            self.assertFalse(work.exists())
+
     def test_both_launchers_own_startup_and_join_before_log_copy(self):
         for chromium in (False, True):
             with self.subTest(chromium=chromium), tempfile.TemporaryDirectory() as temporary:
