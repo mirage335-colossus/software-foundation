@@ -31,6 +31,25 @@ the manual override waives only that wait and preserves the same input and
 publication guards. This observation does not establish the separate SDK
 same-slot retirement or preceding full-run artifact pruning scopes.
 
+## Retired predecessor package channels (2026-10-06)
+
+The user-requested cleanup subsequently removed the two published r5 predecessor
+channels and their exact tags: `distro-0.1.0-x86_64-r5-s5` (release `403999768`)
+and `distro-0.1.0-aarch64-r5-s5` (release `404001723`). The operation checked idle
+workflows, complete frozen inventories, unchanged tags and non-Latest identity
+before exact deletion, without replaying mutations. It retired 164 assets totaling
+11,892,282,081 listed bytes. Independent readback confirmed both release IDs and
+tags absent, zero numeric CI drafts, and all eight surviving releases and 291
+asset identities, sizes and digests unchanged.
+
+CI Tools stays at release `403986164`; its configured validator URL is unchanged.
+Base `401599028` and Latest `404206667` remain intact. Current downloads and
+retained certificate reproduction remain self-contained. The removed r5 package
+URLs and fresh reproduction of those historical r5-to-r6 upgrades are no longer
+available; future releases should use the current integrated application release
+as their [exact predecessor](latest-release.md). No additional Actions run or
+application rebuild was needed for this retirement.
+
 ## Rust all-GUI release and integrated packages (2026-10-06)
 
 The cloud-built Rust/all-GUI application is certified and promoted to ordinary
@@ -166,6 +185,8 @@ passed at attempt 1/source `946007d…`, accepting respectively
 `distro-0.1.0-x86_64-r5-s5` and `distro-0.1.0-aarch64-r5-s5`.
 Final upgrade receipts bind those exact frozen manifest selectors; these
 channels do not establish upgrades from the deleted historical tags.
+Both r5 channels were later [retired](#retired-predecessor-package-channels-2026-10-06);
+the completed certificate retains their signed controls and upgrade receipts.
 
 [Fresh screenshots 37383282720](https://github.com/mirage335-colossus/software-foundation/actions/runs/37383282720)
 passed all three jobs at attempt 1/source `2e33720a…` and GUI group `bf9a364b…`.
