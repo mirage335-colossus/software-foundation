@@ -10,6 +10,8 @@ and packaging. The wrapper provides predictable defaults and validation; it
 must not become an independent build system. Read [testing](testing.md) for
 test selection and [portability](portability.md) before promising that a
 package runs on another computer.
+The [shell script inventory](shell-scripts.md) identifies the Bourne-compatible
+project wrappers and the helpers that retain modern POSIX shell requirements.
 
 Use [development speed](development-speed.md) to select the smallest useful check
 and keep independent release work parallel. Leaving compile jobs unspecified uses

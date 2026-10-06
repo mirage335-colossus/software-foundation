@@ -1,10 +1,15 @@
 #!/bin/sh
+# Backticks and guarded argument expansion support traditional Bourne sh too.
+# shellcheck disable=SC2006
 set -eu
 
 # Usage: ./editor.sh [editor arguments, e.g. --project editor/self/project.json]
 # Prefer the retained native SDK documented in COMPILE-editor. Without it,
 # use the system toolchain in the build wrapper's default development tree.
-root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+script_path=$0
+case $script_path in /*) ;; *) script_path=./$script_path ;; esac
+script_dir=`dirname "$script_path"`
+root=`CDPATH='' cd "$script_dir" && pwd`
 cd "$root"
 sdk="$root/build/agents/rust-package-qualification/sdk"
 build_dir="$root/build/editor-fltk-dev"
@@ -22,4 +27,4 @@ if [ ! -x "$editor" ]; then
     fi
 fi
 
-exec "$editor" "$@"
+exec "$editor" ${1+"$@"}

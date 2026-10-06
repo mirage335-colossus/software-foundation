@@ -7,6 +7,7 @@ what was observed. A proposed platform or procedure is not execution evidence.
 | Topic | Start here |
 | --- | --- |
 | Start an independent project | [New repository script and configuration](../README.md#start-a-new-repository) |
+| Shell entry points | [Script inventory, Bourne/Dash compatibility and checks](shell-scripts.md) |
 | Build and run an example | [CLI commands](../COMPILE), [desktop GUI](../COMPILE-gui), [browser GUI](../COMPILE-web), [view screenshots](screenshots.md#view-screenshots), [capture commands](../SCREENSHOTS) |
 | Scope and specification | [Engineering contract](engineering-contract.md), [requirements](requirements.md), [practice map](practice-map.json), [architecture and directory map](architecture.md) |
 | Build and SDK | [Building](building.md), [offline application builds](offline-builds.md), [SDK](sdk.md), [portability](portability.md), [COMPILE](../COMPILE) |
