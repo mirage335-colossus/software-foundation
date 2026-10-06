@@ -92,8 +92,9 @@ immutable publication and exact-ID final acceptance remain enforced.
 Python loading registers imported modules to preserve ordinary fixture semantics.
 Whole suites remain the scheduling unit. The local timing investigation did not
 justify additional class workers; it does not claim measured hosted speedup.
-Existing qualified assembly/retry reuse remains; older-producer and publication-
-only reuse remain optional. See [development speed](development-speed.md).
+Existing qualified assembly/retry reuse remains. The remaining proposal extends
+that release retry path to reuse compatible successful cloud application builds.
+See [development speed](development-speed.md).
 
 ### Development evidence
 

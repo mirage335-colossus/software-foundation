@@ -1,31 +1,18 @@
-Optional follow-ups
-==================
+Further improvements to this example
+===================================
 
-Optional improvements for later work; these are not pending qualification or
-authorization to execute. Reuse existing mechanisms and preserve their safeguards.
+Keep only improvements that would substantially improve this example as a starting
+point after accounting for complexity, maintenance and fragility. Reducing GitHub
+Actions time to qualified binary releases is a high priority. Possible usefulness
+only to a derived project, hypothetical growth or marginal savings is insufficient.
+Entries are proposals, not pending qualification or authorization to execute.
 
-- Publication-only reuse of qualified CI artifacts, binding original consumer
-  evidence and exact bytes without rebuilding or relaying through a workstation.
-- Authenticated assembly/retry reuse across older successful application producer
-  runs with unchanged inputs, preserving original attempts and complete inventories.
-- Thin agent-operation wrappers if necessary to remove repeated bookkeeping while
-  preserving ownership checks, supervised completion and failure handling.
-
-Reuse across older application producer runs or publication-only adoption needs
-new source/configuration/provider and consumer-evidence binding. Keep those
-extensions optional and preserve the established release safeguards.
-
-
-Test parallelism follow-ups (separate discussion)
------------------------------------------------
-
-- Parallelize the slow Python suites with isolated worker processes, using existing
-  timing receipts to select useful partitions rather than spawning a process for
-  every small test. Extend tools/run_tests.py and the existing inventory/aggregation
-  mechanisms while preserving module/class fixture semantics, per-case results and
-  explicit platform exclusions. Reject missing, duplicate, skipped or failed cases;
-  retain bounded execution, descendant cleanup and complete diagnostic evidence.
-  Deferred after measuring five slow suites: the two dominant suites spend 92%
-  and 97% in one class; balanced suites offer about three seconds of theoretical
-  class-level savings. Existing whole-suite scheduling remains the useful first
-  step.
+- Shorten recovery from failed or interrupted releases by extending the existing
+  GitHub Actions retry path to reuse successful cloud application producer outputs.
+  Avoid repeating expensive successful builds when their source, configuration,
+  provider and dependency inputs are demonstrably unchanged. Preserve authenticated
+  original producer attempts, exact bytes, complete inventories and consumer
+  evidence; rerun affected checks and every remaining required release gate.
+  Reuse the existing cloud assembly/publication path, without workstation payload
+  relays or a separate publication system. Missing or incompatible evidence must
+  require rebuilding or requalification, never weaker acceptance.
