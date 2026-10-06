@@ -25,7 +25,7 @@ capable. A Linux `aarch64` archive is not a Windows ARM64 archive. Normalize nam
 once when generating filenames and translate to a package manager's vocabulary
 at the packaging boundary.
 
-The [current validation record](validation.md) identifies a successfully certified
+The [current validation record](validation.md#rust-all-gui-release-and-integrated-packages-2026-10-06) identifies a successfully certified
 multi-platform application release published as Latest, with its exact revision,
 recipes and environments. All-GUI recipe results do not qualify different core-only
 recipes, every older operating system, or independent signed package channels.
@@ -59,10 +59,11 @@ target-library or final runtime contract.
 | Browser wasm32 | Exact Rust 1.63.0 / Emscripten 6.0.10 pair passed final `41d28fe` source/core/package/consumer/replay/disconnected gates and actual Firefox/Chromium application checks, with 30 renderer-isolation cases per engine. Mobile, other engines/devices and other compiler pairs are unqualified. Native Wasm objects, panic abort and no cross-language LTO remain required |
 | Arduino and other targets | No implemented Rust profile or qualified board port; use the C++ route and the selective-porting policy below |
 
-See the [current Rust release and signed-channel record](validation.md#rust-enabled-portable-release-and-signed-channels-2026-10-05)
+See the [current Rust release and integrated-package record](validation.md#rust-all-gui-release-and-integrated-packages-2026-10-06)
 for the published four-target application, all 19 GUI backend-target bindings,
 complete certificate and native installation/upgrade results. It distinguishes
-application source from the later qualifier and packager revisions.
+each release's immutable application, qualifier and packager sources; all bind
+`91dd1392…` in the current qualified run.
 The historical table above and [earlier Rust validation record](validation.md#optional-rust-qualification-2026-10-04)
 retain their original source, recipe, package and receipt identities. See also
 [the Rust implementation record](rust-hybrid-plan.md) for implemented scope and limits.

@@ -224,11 +224,14 @@ application recovery only. Platform host/runtime/GUI qualification remains
 separate in [the Rust implementation record](rust-hybrid-plan.md) and
 [portability](portability.md#optional-rust-provider-boundary).
 
-The [current Rust release record](validation.md#rust-enabled-portable-release-and-signed-channels-2026-10-05) identifies the exact
-eight retained C++/Rust groups, successful SDK publication, application and
-certificate revisions, and signed native channels. Its offline qualification
-retains the original execution revision; supplier-package replay does not
-establish compiler reconstruction from source.
+The [current Rust release record](validation.md#rust-all-gui-release-and-integrated-packages-2026-10-06)
+and its [public inventory](https://github.com/mirage335-colossus/software-foundation/releases/download/release-37394012851-attempt-1/release.json)
+identify the exact eight retained C++/Rust groups, cloud application/control
+source, complete certificate and integrated native packages. This rebuild used
+retained SDK binaries; it does not claim a new compiler build. Earlier SDK
+publication and offline qualification retain their original execution revisions
+in [the previous release record](validation.md#rust-enabled-portable-release-and-signed-channels-2026-10-05).
+Supplier-package replay does not establish compiler reconstruction from source.
 
 ## Linux SDK filenames and destination filesystems
 

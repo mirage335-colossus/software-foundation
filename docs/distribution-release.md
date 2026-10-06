@@ -2,7 +2,7 @@
 
 ## Application-release packages
 
-The next Latest rebuild prepares its signed package repositories as ordinary
+Latest rebuilds prepare their signed package repositories as ordinary
 application-release assets. [`release_packages.py`](../tools/release_packages.py)
 builds and signs them from the prepared application archives before the candidate
 inventory and checksum list are frozen. `release.json` therefore binds the package
@@ -74,11 +74,12 @@ application tag, and bind `manifest_sha256` to its signed `packages.json`. A
 strictly newer version or package revision is required on each target; an absent
 entry cannot count as upgrade evidence. See [Latest inputs](latest-release.md).
 
-This layout is a source change for the next rebuild. No build, test execution, hosted
-workflow, publication or live consolidation has been performed for it. Its full
-native installation/upgrade and release qualification remain
-[deferred](../.agent-pending/stable-package-mirrors.md). Existing public application
-releases, signed channels and package mirrors preserve their historical bytes.
+This layout passed the complete cloud-built Rust/all-GUI release at source
+`91dd1392ce182dd6aeef6bf9e18c17cfb9786377`: all eight native predecessor upgrades,
+eligible certification, protected promotion and exact public Latest readback
+passed in [run 37394012851, attempt 1](validation.md#rust-all-gui-release-and-integrated-packages-2026-10-06).
+Earlier source-only/deferred results, public application releases, signed channels
+and package mirrors preserve their historical identities and bytes.
 
 ## Legacy immutable package releases
 

@@ -13,7 +13,241 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
+## Rust all-GUI release and integrated packages (2026-10-06)
+
+The cloud-built Rust/all-GUI application is certified and promoted to ordinary
+public Latest. [Full workflow 37394012851](https://github.com/mirage335-colossus/software-foundation/actions/runs/37394012851)
+passed all 65 jobs at attempt 1, with no failed, cancelled or skipped jobs.
+Application, certifier, packager, promoter and tag commit all bind source
+`91dd1392ce182dd6aeef6bf9e18c17cfb9786377`. This completes the speed and integrated
+package qualification obligations; earlier failed candidates remain separate.
+
+| Accepted identity | Verified result and public evidence |
+| --- | --- |
+| Application Latest | [release-37394012851-attempt-1](https://github.com/mirage335-colossus/software-foundation/releases/tag/release-37394012851-attempt-1), release ID `404206667`, 95 assets; ordinary public non-draft/non-prerelease, exact final readback passed. |
+| Complete inventory | [release.json](https://github.com/mirage335-colossus/software-foundation/releases/download/release-37394012851-attempt-1/release.json), SHA256 `7a079a1d0c549520433e39bf9a8ee5e352921bba5b14106cb7644e2da4c5d0d0`. |
+| Certificate | [public index](https://github.com/mirage335-colossus/software-foundation/releases/download/release-37394012851-attempt-1/certification-37394012851-attempt-1.json) and [complete evidence archive](https://github.com/mirage335-colossus/software-foundation/releases/download/release-37394012851-attempt-1/certification-37394012851-attempt-1.tar.gz); certificate SHA256 `78b4965293775ef1ddb6d3c7fc2f6b204027cb73f5b391ba4a030fd829cb0c8c`, passed/eligible, no experiment or adoption. |
+| Signed integrated packages | [packages.json](https://github.com/mirage335-colossus/software-foundation/releases/download/release-37394012851-attempt-1/packages.json), SHA256 `ff9b6059f70824627ddee90cf190f5f7e72c8db35e83cc3e39f6512a2493a325`; independently trusted fingerprint `EF876322B5CE4782062CB3E991649063150BC781`. |
+| Protected promotion | [promote job 112062936831](https://github.com/mirage335-colossus/software-foundation/actions/runs/37394012851/job/112062936831) and [final readback 112063056814](https://github.com/mirage335-colossus/software-foundation/actions/runs/37394012851/job/112063056814) passed after exact certificate and asset revalidation. |
+
+All 106 mandatory logical checks passed across 66 distinct physical executions
+in 23 transport batches. The complete bundle contains 107 reports, including
+native packages, and 6,075 file hashes; no certificate omissions or warnings.
+All eight native upgrades passed with fresh preparation in that same attempt.
+The original named mandatory step metadata was complete and passed directly.
+
+The independent final audit reconciled all 95 remote asset identities/digests
+(6,127,014,318 bytes) and reproduced the complete public certificate. Its archive
+is 22,302,836 bytes, SHA256
+`f9558290c39c57effb24c5eeee1b61d845b30f85d8416febccd81aaf9f2417ef`.
+Hosted publication/certification verified the application/SDK payload bytes;
+this independent audit did not download those payloads again. It verified explicit
+Rust identity on all four targets and 38 source/recovery provider bindings.
+The exact retained SDK groups and source/delivery digests are in the public
+inventory and certificate; previous SDK/offline results keep their original scope.
+
+The release used retained SDKs and the Rust provider on Linux x86_64,
+native Linux aarch64, Windows x86_64 and browser Wasm, profile `all-gui`, package
+revision `6`, standard Linux pools and automatic capacity. Original application
+archives/build records and every Rust identity are bound by the inventory and
+certificate; package receipt consistency alone does not establish provider semantics.
+
+The integrated inventory binds signed `packages.json`, both Linux native bundles,
+combined APT assets and x86_64 Arch assets before application checksums freeze.
+Native qualification covered install, payload/version verification, execution,
+repository refresh, actual upgrade from the exact accepted predecessor and
+uninstall: Debian Bookworm, Debian Trixie and Ubuntu 24.04 on both Linux targets,
+plus Arch and Gentoo on x86_64. ARM Arch/Gentoo are outside this selected scope.
+Both independent native reviews checked exact r5/r6 installs, all seven signed
+backend payload anchors and the accepted predecessor selectors in `packages.json`.
+
+| Native target | Passed frontend jobs in run 37394012851, attempt 1 |
+| --- | --- |
+| Linux x86_64 | Bookworm `112056756164`; Trixie `112056756199`; Ubuntu `112056756089`; Arch `112056756208`; Gentoo `112056756088`. |
+| Linux aarch64 | Bookworm `112056756230`; Trixie `112056756122`; Ubuntu `112056756207`. |
+
+See the [package contract](distribution-release.md#application-release-packages).
+
+### Feature and safeguard scope
+
+The appropriate [FURTHER follow-ups](../FURTHER-agents.txt) add resource-aware
+workers and bounded release discovery. Automatic test/planner/tooling workers
+honor CPU affinity, container CPU/RAM limits, retained growth headroom and scoped
+nested worker budgets. Explicit operator limits and shared-resource locks remain.
+
+Independent Linux source, recovery, archive and ABI checks share verified
+read-only inputs/prepared images and keep writable outputs, containers and
+displays separate. Handoff requires confirmed writer shutdown; failures aggregate
+before evidence publication. Native Windows, host-browser and package operations
+retain ordering. Source and reconstruction results retain separate identities.
+
+Initial release discovery restarts a complete inventory at most twice only for
+validated IDs repeated across different pages. It discards all earlier pages and
+shares existing retry/time/wait budgets, with 768 total requests and 256 pages
+per inventory. Successful initial discovery adds no calls or waits. Same-page
+duplicates, malformed/access/ambiguous results and persistent repetition fail;
+immutable publication and exact-ID final acceptance remain enforced.
+
+Python loading registers imported modules to preserve ordinary fixture semantics.
+Whole suites remain the scheduling unit. The local timing investigation did not
+justify additional class workers; it does not claim measured hosted speedup.
+Existing qualified assembly/retry reuse remains; older-producer and publication-
+only reuse remain optional. See [development speed](development-speed.md).
+
+### Development evidence
+
+| Completed check | Scope and evidence |
+| --- | --- |
+| Initial local tooling snapshot | Initial implementation `3d1ba14a15df90910e18805b4eba948af630dc40`: all 66 complete suites, 1,855 cases and three explicit Linux platform exclusions, no accepted internal skips. The local ledger binds each changed-file SHA256 and selected rerun receipt. These original counts are not current `91dd` totals; final hosted regression establishes current qualification. |
+| Rust development core | Four core suites passed; component ABI reports `provider=Rust`. Frozen archive/build identity remains in the root local validation ledger. |
+| Linux headless editor | All ten supported-wrapper suites passed; 252 input files unchanged across execution. `.agent-work/artifacts/further-pending-20261005/editor-run.json`. This establishes the recorded Linux authoring/runtime/application fixture scope. |
+| Early native Windows | [37352186436](https://github.com/mirage335-colossus/software-foundation/actions/runs/37352186436) and [37352211039](https://github.com/mirage335-colossus/software-foundation/actions/runs/37352211039), attempt 1, source `946007da9328e78cdc1380cd0238c9740f435042`: planner 54/54 and orchestration 116/116, no exclusions/skips. Complete authenticated receipts: `.agent-work/artifacts/further-pending-20261005/hosted/summary.json`. |
+| Portable signing contracts | [37387186519](https://github.com/mirage335-colossus/software-foundation/actions/runs/37387186519), attempt 1, exact `d0a6c3f…`: twenty cases, no errors/failures/exclusions/skips on native Windows CPython 3.14.7 x64; all 620 maintained source files match. `.agent-work/artifacts/further-release-audit-20261005/host-contracts-37387186519-final-verification.json`. |
+| Portable-fixture feedback | [37387167002](https://github.com/mirage335-colossus/software-foundation/actions/runs/37387167002), attempt 1, exact `d0a6c3f…`: all four jobs green. |
+| Current development feedback | [37393752282](https://github.com/mirage335-colossus/software-foundation/actions/runs/37393752282), attempt 1, exact `91dd1392…`: all four jobs green. This does not replace final certification/promotion. |
+
+The initial local ledger (`.agent-work/artifacts/further-root-20261005/local-validation.json`)
+preserves original GPG-helper sandbox failures and complete
+authorized reruns, and the earlier CI-plan fixture failure with its complete
+repaired rerun. The three exclusions concern native Windows delete-pending
+directories, selected-linker identity and Job Object containment. Workflow lint,
+documentation and whitespace checks passed. Docker execution is hosted evidence.
+Overlapping focused cases and wrappers are not additive assertion totals.
+
+### Cloud prerequisites and screenshot provenance
+
+The retained [actionlint prerequisite](https://github.com/mirage335-colossus/software-foundation/releases/tag/ci-tools-actionlint-1.7.12-20261005),
+release `403986164`, preserves the pinned official binary, source, MIT license,
+provenance and checksums. All five exact readbacks matched; no local rebuild.
+See `.agent-work/artifacts/further-validator-20261005/completion.json`.
+
+The repaired GUI group `bf9a364b…` was fully published by
+[maintenance 37363634930](https://github.com/mirage335-colossus/software-foundation/actions/runs/37363634930),
+attempt 3, source `2e33720a73f0686dc1ffe72992dfb52e472cd059`; all 24 existing
+C++/Rust SDK assets survived unchanged. Serialized
+[native Windows 37363626265](https://github.com/mirage335-colossus/software-foundation/actions/runs/37363626265),
+attempt 4 on that source, passed 104 unique JUnit cases with zero errors,
+failures or skips, including relocated-SDK/all-native-GUI/full-source checks.
+Exact group/archive/recipe/runtime identities and full retained bytes are bound
+by `.agent-work/artifacts/further-release-audit-20261005/gui-bf9a-prerequisites-final-verification.json`.
+
+Attempts 1/2 of those prerequisites executed zero steps during the retained
+[Actions runner-allocation incident](https://www.githubstatus.com/incidents/3q1yb5m7ltvb).
+Native attempt 3 executed zero tests: concurrent base GUI publication changed
+the frozen complete inventory. Serialize base publication before SDK consumers;
+preserve the guard that rejected the changed input.
+
+The accepted predecessor channels were separately built from the already
+certified `release-37245250573-attempt-1` after historical distro tags disappeared.
+[x86_64 bootstrap 37352060627](https://github.com/mirage335-colossus/software-foundation/actions/runs/37352060627)
+and [aarch64 bootstrap 37352082640](https://github.com/mirage335-colossus/software-foundation/actions/runs/37352082640)
+passed at attempt 1/source `946007d…`, accepting respectively
+`distro-0.1.0-x86_64-r5-s5` and `distro-0.1.0-aarch64-r5-s5`.
+Final upgrade receipts bind those exact frozen manifest selectors; these
+channels do not establish upgrades from the deleted historical tags.
+
+[Fresh screenshots 37383282720](https://github.com/mirage335-colossus/software-foundation/actions/runs/37383282720)
+passed all three jobs at attempt 1/source `2e33720a…` and GUI group `bf9a364b…`.
+[Public gallery 404150639](https://github.com/mirage335-colossus/software-foundation/releases/tag/screenshots-37383282720-attempt-1)
+contains ten verified assets and seven inspected views, built by native/Wasm
+cloud Rust providers. README integration is `cfcab000c8fcb96f8bf42677c7881ef6b3efafd9`.
+[The current gallery manifest](screenshots/screenshots.json) binds every source,
+SDK, binary and image identity. Captures retain 640×480 native/browser content
+at scale 1/96 DPI and complete 80×31 terminal cells, border/status; no resampling
+or content edits. Appearance only, not release qualification.
+
+These fresh PNG bytes match the original gallery, whose distinct source/run
+remain in [the original tagged manifest](https://github.com/mirage335-colossus/software-foundation/releases/download/screenshots-37352058694-attempt-1/screenshots.json).
+Historical screenshot evidence is not linked to the newer current manifest.
+
+### Failed attempts and focused repairs
+
+Original source/attempt identities remain separate from later passing evidence.
+No failed Latest below produced an eligible certificate or promoted a release.
+
+| Original attempt and exact source | Failure and resulting repair |
+| --- | --- |
+| [37358862485](https://github.com/mirage335-colossus/software-foundation/actions/runs/37358862485), attempt 1, `2371ad4d820073919f7c38c68d3785ec2eaae632` | Complete source handoff measured 27,277,415 bytes and exceeded 24 MiB before application builds. `b6d192d5ce59039d19d552d119401ed7c40511c7` raises only the slot to 40 MiB; strict complete inventories and at least 100 MiB private Free reserve remain. Complete real-byte replay and artifact suite passed. |
+| [37359677255](https://github.com/mirage335-colossus/software-foundation/actions/runs/37359677255), attempt 1, `b6d192d5ce59039d19d552d119401ed7c40511c7` | Application/Windows tooling failures exposed undeclared PyYAML cleanup wiring, ambient mocked package mode and actual FLTK prompt-focus race. `2e33720a73f0686dc1ffe72992dfb52e472cd059` makes cleanup tests standard-library-only, scopes fixture package mode, and guards three inbound retained-focus handlers. |
+| [37383219288](https://github.com/mirage335-colossus/software-foundation/actions/runs/37383219288), attempt 1, `2e33720a73f0686dc1ffe72992dfb52e472cd059` | All four Rust producers/full candidate regression passed, but correctly selected protected environment resolved the signing key empty. Setup stopped before lifecycle assembly/publication; certificate/promotion skipped. `d4a94574129165264bce8b43b000a5ff0cbcb4da` adds optional callee declaration plus named caller secret mapping without changing protection or key guards. |
+| [37385992507](https://github.com/mirage335-colossus/software-foundation/actions/runs/37385992507), attempt 1, `d4a94574129165264bce8b43b000a5ff0cbcb4da` | Windows signing-test setup inserted a synthetic oversized key into the real process environment, exceeding its 32,767-character limit before the guard executed. Remaining producers were cancelled. `d0a6c3f5cf2067fc843ab8c4d2c02a1cca9d7b70` isolates synthetic environments with ordinary dictionaries; production key bound remains unchanged. |
+| [Diagnostic CI 37385654742](https://github.com/mirage335-colossus/software-foundation/actions/runs/37385654742), attempt 1, `cfcab000c8fcb96f8bf42677c7881ef6b3efafd9` | Three jobs passed; one signed-client test counted GPG subprocess polling in a global sleep mock. The test-only scoped transport clock in `d0a6c3f…` retains assertions and real subprocess timing. Passing development runs at other sources do not relabel this failure. |
+| [37387659465](https://github.com/mirage335-colossus/software-foundation/actions/runs/37387659465), attempt 1, `d0a6c3f5cf2067fc843ab8c4d2c02a1cca9d7b70` | Signing, candidate publication/readback, full regression and all eight native upgrades passed. Sole qualification failure was ARM Ubuntu Firefox startup at the 20-second bound, before GUI assertions. Complete failed certificate reproduced: ineligible, promotion skipped, old Latest unchanged; terminal jobs 60 success/3 failure/1 skipped. |
+
+The standard-library cleanup repair rejected eleven unsafe workflow mutations;
+hostile ambient package mode remained isolated. The final actual dialog-hide
+focus regression fails against the original adapter while preserving clipboard/
+focus checks. These focused evidence counts are not added to the tooling total.
+
+[Hosted boolean probe 37385671588](https://github.com/mirage335-colossus/software-foundation/actions/runs/37385671588)
+passed all five jobs/source `cfcab000…`: direct presence true, undeclared-unmapped
+false, declared-unmapped false, declared-named-mapped true; agreement passed.
+No secret values/lengths, inherit-all mapping, signing or publication were exposed.
+All three temporary diagnostics were removed. The clock investigation reproduced
+global mock contamination with an actual timed-wait child and zero scoped mock
+waits; the complete repaired signed-client suite passed without exclusions.
+
+The [published d0 candidate](https://github.com/mirage335-colossus/software-foundation/releases/tag/release-37387659465-attempt-1)
+(`404181190`) retains its failed certificate and exact inventory. All eight
+native records bind that source/run/attempt, accepted target-specific r5 tags
+and all seven signed backend payloads; they do not qualify the new `91dd` run.
+
+[First probe 37392975669](https://github.com/mirage335-colossus/software-foundation/actions/runs/37392975669),
+source `cd7a4cf5c97d758e5a0ae0a19490014dfc659846`, reproduced the timeout;
+its longer trial's total elapsed time did not isolate automation connection.
+[Fresh paired probe 37393372940](https://github.com/mirage335-colossus/software-foundation/actions/runs/37393372940),
+source `e852b1c5d0efb4ee6e3c82413c0ab044795f145f`, measured 21.582 seconds
+to connect under a 120-second bound; the separate 20-second control took 7.830.
+Both used the same native Firefox 156 executable digest as the failed check;
+complete small artifacts were verified. Startup variation exceeded the old bound.
+
+Probe CI [37392948056](https://github.com/mirage335-colossus/software-foundation/actions/runs/37392948056)
+correctly rejected direct artifact upload bypassing the storage guard. The bounded
+adapter repair passed [37393335345](https://github.com/mirage335-colossus/software-foundation/actions/runs/37393335345).
+Final `91dd` changes only Firefox startup to 120 seconds; protocol/application
+waits remain bounded and unchanged. GUI boundary 41/41, storage 39/39, lint of
+21 workflows, docs and independent review passed; temporary probes were removed.
+
+### Cleanup evidence and retained limits
+
+The successful current attempt precisely removed nine temporary artifacts after
+their final consumers succeeded: three package handoffs, source/four application
+handoffs after publication/readback, and certificate handoff after verified public
+attachment. Complete authenticated inventory confirms every selected ID absent;
+all 52 surviving artifacts are nonexpired and bind the current source/run,
+including final verification and promotion evidence. The base's 27 assets, both
+accepted predecessors' 82 assets each and the current gallery's ten assets retain
+exact public identities, sizes and digests.
+
+[Ordinary completion hook 37399475439](https://github.com/mirage335-colossus/software-foundation/actions/runs/37399475439)
+passed with current source-run ID `37394012851`, status `complete`,
+`previous_run_id: null` and zero selected/deleted artifacts, drafts or tags.
+This establishes the first marked successful full-run baseline; it does not
+prove preceding-run pruning. Prior failed/cancelled hooks skipped correctly.
+The failed d0 attempt's separate nine cleanup removals retain their own identity.
+GUI replacement is separate from unexecuted C++/Rust SDK same-slot replacement.
+Next eligible full-run pruning, SDK retirement and inaccessible private Packages/
+billing/zero-overage checks remain [pending](../.agent-pending/cleanup-capacity-hosted.md).
+
+Optional editor Windows/ARM64/disconnected interaction remains
+[pending](../.agent-pending/editor-platform-qualification.md). Full Windows
+offline GUI and Microsoft installer host-bootstrap remain separately
+[pending](../.agent-pending/offline-platform-qualification.md). Headless editor,
+screenshots and ordinary online release do not expand these scopes. Rust
+compiler reconstruction from source remains unverified without named evidence.
+
+Local independent audit receipts retain their scope in
+`.agent-work/artifacts/further-release-audit-20261005/latest-37394012851-attempt-1/final-verification.json`
+and `.agent-work/artifacts/integrated-package-review-cleanup-20261005/` native,
+cleanup and survivor readbacks. Failed d0 certificate and Firefox timing receipts
+retain their original sources. Public accepted evidence is linked above; local
+receipts do not substitute for its complete certificate and inventory.
+
 ## Application-release package layout: qualification deferred (2026-10-05)
+
+The following dated sections preserve historical results and pointer identities
+at their original recording time. The current qualified Latest is recorded in
+[the completed integrated release above](#rust-all-gui-release-and-integrated-packages-2026-10-06).
 
 The source change based on `c88fb7988037d38ca1685f9a22ff0ea604b04179` moves signed
 APT/Arch packages and per-target native bundles into the next application
@@ -30,10 +264,11 @@ or upgrade, publication or Latest change is claimed here. Static integration
 review completed: 17 changed/new Python files and 24 embedded Python blocks parse
 with Python 3.9 grammar, four workflow YAML files parse, local reusable-workflow
 inputs match their declarations, and `git diff --check` passes. Added regression
-cases remain unexecuted. Complete release/native qualification remains
-[deferred](../.agent-pending/stable-package-mirrors.md). Historical mirror and
-immutable-channel results below retain their original identities and limits;
-they do not qualify the new application inventory layout.
+cases were unexecuted at this source. Complete release/native qualification was
+then deferred; [the later integrated release](#rust-all-gui-release-and-integrated-packages-2026-10-06)
+records its successful execution at `91dd1392…` and resolves that obligation.
+Historical mirror and immutable-channel results below retain their original
+identities and limits; they are not relabeled as new-layout qualification.
 
 ## Stable package repository URLs (2026-10-05)
 
@@ -100,7 +335,7 @@ upgrade coverage. The existing native qualification is recorded below. The
 previously deferred two-generation mirror upgrade and older-payload retention
 obligation was superseded by the next application-release package layout; it
 was not executed or counted as passed. The replacement full native/upgrade
-qualification remains [pending](../.agent-pending/stable-package-mirrors.md).
+qualification subsequently [passed for the integrated release](#rust-all-gui-release-and-integrated-packages-2026-10-06).
 Arch/Gentoo support remains x86_64 only. Metadata expiry and non-atomic index
 replacement describe the [historical mirror design](distribution-release.md#stable-package-mirrors).
 
@@ -115,6 +350,10 @@ Exact local evidence remains under `.agent-work/artifacts/stable-package-mirrors
 | `gentoo-probe/result.json` | `d49e00cd7c16449ede63e905e9834ac4c92d283d597c2617f99c2012210f5b64` |
 
 ## Rust-enabled portable release and signed channels (2026-10-05)
+
+This is the earlier release and separate-channel record at its original recording
+time; [the current integrated release](#rust-all-gui-release-and-integrated-packages-2026-10-06)
+supersedes its application Latest pointer without changing these accepted bytes.
 
 The Rust/all-GUI application is certified and promoted to ordinary public Latest.
 Its immutable application source is `13ed8311dc28e7951ed0b2fbd72f3eeae88a9351`;
