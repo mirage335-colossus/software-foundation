@@ -32,7 +32,7 @@ TOOL_DOMAINS = (
     frozenset('dependencies dependency_archive prepare_dependencies sdk sdk_paths sdk_retention windows_compiler windows_graphics'.split()),
     frozenset('gui_boundary gui_source_group gui_visual gallery_browser screenshots package_wasm rev_probe host_contracts'.split()),
     frozenset('build build_capacity ci_plan ci_changes coverage qualification_tasks run_tests source_identity test_plan'.split()),
-    frozenset('ci_apt ci_artifacts ci_cleanup ci_cleanup_repository ci_cleanup_previous ci_cleanup_drafts ci_retry ci_transport container_job workflow_storage'.split()),
+    frozenset('ci_apt ci_artifacts ci_cleanup ci_cleanup_repository ci_cleanup_previous ci_cleanup_drafts ci_cleanup_expired ci_retry ci_transport container_job workflow_storage'.split()),
     frozenset('rust_sdk rust_build rust_component rust_workflow build ci_plan source_identity test_plan release release_check offline_acceptance container_job'.split()),
 )
 

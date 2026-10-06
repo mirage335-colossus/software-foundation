@@ -344,12 +344,34 @@ The same completion barrier removes only the selected current/prior
 `ci-RUN_ID-attempt-ATTEMPT` draft stores and their unchanged direct tags, after
 checking exact transport provenance and a complete temporary-bundle inventory.
 Stores containing SDK, migration, unknown or incomplete namespaces are preserved.
-Draft cleanup is bounded to two selected stores and two minutes, and rechecks for
+Full-run draft cleanup is bounded to two selected stores and two minutes, and rechecks for
 active consumers before deletion. Published application releases, `base`, workflow
 runs and normal logs remain intact. GitHub draft releases have no one-day artifact
 expiry: a blocked draft cleanup needs a later successful cleanup retry or explicit
-review; it is never treated as reclaimed storage. The new completion hook becomes
+review; it is never treated as reclaimed storage. The completion hook becomes
 active only after these workflow files are on the repository's default branch.
+
+The same cleanup workflow also runs daily at 07:23 UTC to expire completed
+auxiliary drafts through [`ci_cleanup_expired.py`](../tools/ci_cleanup_expired.py).
+Both the draft and its exact producing attempt must have been unchanged for at
+least 24 hours. Known host-contract, native-GUI, Rev-probe and native-package
+diagnostic bundles may expire after a terminal outcome. Screenshot, GUI-input
+and distribution stores require that exact attempt's `publish` job to have
+succeeded; unpublished galleries, private reuse inputs and failed prepared
+generations remain available. Unknown, SDK, legacy and incomplete stores are
+preserved as a whole. This separate policy does not broaden full-run artifact
+pruning or its preservation option.
+
+The daily sweep selects at most 20 eligible stores, validates complete assets
+and exact historical attempts before deletion, and rechecks age, publication and
+idle consumers immediately before each store is removed. It uses the existing
+two-minute deletion loop and nine-minute overall budget, without retrying an
+uncertain deletion. A busy repository is left for a later daily sweep. The job
+only removes selected numeric `ci-RUN_ID-attempt-ATTEMPT` drafts and unchanged
+tags: public releases, `ci-tools-*`, base inputs, Actions artifacts and normal
+logs remain intact. This is a small maintenance run; it performs no build or
+release qualification. Its first hosted execution is observed during ordinary
+scheduled maintenance, without requiring a special validation run.
 
 Unknown slots, oversize bundles and failed uploads fail visibly without silently
 starting the expensive release relay. The composite actions expose an explicit

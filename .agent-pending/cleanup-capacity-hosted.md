@@ -25,6 +25,16 @@ reclaimed preceding-run storage. Confirm required current evidence, unrelated
 releases and retained SDK drafts survive those operations. Do not manufacture
 additional expensive runs solely for this observation.
 
+The daily auxiliary-draft expiry policy added after `b900859` was checked locally
+with 123 passing cases across `ci_cleanup_expired`, `ci_cleanup_drafts`,
+`ci_cleanup_previous`, `workflow_storage` and `ci_changes`, plus pinned actionlint,
+documentation and whitespace checks. It reuses exact release/tag deletion guards
+and preserves SDK stores and unpublished inputs. No extra hosted build, release,
+validation run or immediate remote deletion was performed for this change.
+Observe its first normal daily maintenance run for actual release/tag counts;
+local fixtures do not establish hosted execution. A busy repository skips that
+day's sweep and remains eligible on a later day.
+
 Before private operation, complete the account checks in
 [the storage budget](../docs/ci.md#private-account-storage-budget): private Packages
 inventory was inaccessible, and existing nonzero spending caps do not enforce

@@ -479,11 +479,14 @@ Marked successful full application/regression/certification workflows now trigge
 bounded cleanup of their current and preceding full run's exact transient draft
 stores and unchanged tags, after consumers have finished. SDK/legacy retention,
 unknown namespaces, partial stores and unrelated releases remain excluded. Failed,
-preparation-only, preserved and rerun attempts do not trigger it; historical
-unmarked drafts still require explicit review. See the precise
+preparation-only, preserved and rerun application attempts do not trigger it.
+A separate daily sweep expires known auxiliary diagnostic drafts after 24 hours,
+including older attempts; GUI inputs, screenshots and distribution stores require
+successful publication by that exact attempt. Unknown, incomplete and retained
+SDK stores remain protected. See the precise
 [completion cleanup policy](ci.md#storage-caches-and-sdk-reuse). Native artifacts
 expire after one day when preserved or when cleanup cannot finish; draft releases
-have no corresponding automatic expiry.
+have no GitHub-provided expiry, so these checked cleanup policies govern them.
 
 GitHub's [release API permission rules](https://docs.github.com/en/rest/releases/releases#create-a-release)
 require additional workflow-write authorization when the target commit changes
