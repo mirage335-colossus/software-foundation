@@ -70,9 +70,10 @@ See the [package contract](distribution-release.md#application-release-packages)
 
 ### Feature and safeguard scope
 
-The appropriate [FURTHER follow-ups](../FURTHER-agents.txt) add resource-aware
-workers and bounded release discovery. Automatic test/planner/tooling workers
-honor CPU affinity, container CPU/RAM limits, retained growth headroom and scoped
+The completed performance work adds resource-aware workers and bounded release
+discovery; remaining optional work is listed in [FURTHER-agents.txt](../FURTHER-agents.txt).
+Automatic test/planner/tooling workers honor CPU affinity, container CPU/RAM
+limits, retained growth headroom and scoped
 nested worker budgets. Explicit operator limits and shared-resource locks remain.
 
 Independent Linux source, recovery, archive and ABI checks share verified

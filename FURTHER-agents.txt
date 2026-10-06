@@ -6,33 +6,18 @@ authorization to execute. Reuse existing mechanisms and preserve their safeguard
 
 - Publication-only reuse of qualified CI artifacts, binding original consumer
   evidence and exact bytes without rebuilding or relaying through a workstation.
-- Authenticated assembly/retry reuse of successful producers with unchanged inputs,
-  preserving original attempts and complete required inventories.
-- Earlier native platform diagnostics for affected contracts before costly dependent
-  builds, while retaining required final qualification.
-- Compact evidence reporting that distinguishes execution, retention, qualification
-  and publication and links the original receipts.
-- Conservative development-check selection if measurements justify it, retaining
-  broad coverage for unknown dependencies and shared build changes.
+- Authenticated assembly/retry reuse across older successful application producer
+  runs with unchanged inputs, preserving original attempts and complete inventories.
 - Thin agent-operation wrappers if necessary to remove repeated bookkeeping while
   preserving ownership checks, supervised completion and failure handling.
 
-2026-10-05 review: existing same-job assembly/publication already avoids a full
-candidate relay, and authenticated certification retries already reuse successful
-whole batches. Extending either to older application producers or publication-only
-adoption needs new source/configuration/provider and consumer-evidence binding.
-Keep those extensions optional; this iteration preserves the established release
-path. Existing preflight dependencies, final evidence summaries and checked agent
-helpers remain preferable to duplicate diagnostics/reporting/bookkeeping layers.
+Reuse across older application producer runs or publication-only adoption needs
+new source/configuration/provider and consumer-evidence binding. Keep those
+extensions optional and preserve the established release safeguards.
 
 
 Test parallelism follow-ups (separate discussion)
 -----------------------------------------------
-
-- Implemented: automatic test/planner/tooling workers use CPU/RAM capacity,
-  preserving affinity/container limits, explicit overrides, CPU/RAM headroom,
-  shared-resource locks and the complete inventory. Parallel parents scope nested
-  worker allowances instead of letting each child claim the entire machine.
 
 - Parallelize the slow Python suites with isolated worker processes, using existing
   timing receipts to select useful partitions rather than spawning a process for
@@ -43,24 +28,4 @@ Test parallelism follow-ups (separate discussion)
   Deferred after measuring five slow suites: the two dominant suites spend 92%
   and 97% in one class; balanced suites offer about three seconds of theoretical
   class-level savings. Existing whole-suite scheduling remains the useful first
-  step. Module fixture registration was repaired and regression-tested separately.
-
-- Implemented: independent Linux source/recovery/archive/ABI batch cases share
-  verified read-only inputs and prepared images, with private writable outputs,
-  containers, temporary resources and displays. Output handoff requires confirmed
-  container shutdown; all failures aggregate. Native Windows/host-browser and
-  package-manager operations remain ordered. Source/recovery evidence stays separate.
-
-
-Release discovery resilience (implemented)
------------------------------------------
-
-- Validated release IDs repeated across distinct pages can restart the complete
-  initial inventory at most twice. Transport and inventory retries share the
-  existing attempt/time/wait controls, plus a 768-request total ceiling and
-  256-page per-inventory ceiling. Every prior page is discarded on restart.
-  Persistent repetition, same-page duplicates, malformed rows/links, access
-  failures and genuinely ambiguous tags still fail. Focused tests cover recovery,
-  exhausted budgets, discarded partial matches, unchanged publication safeguards
-  and zero extra calls/waits on first success. Exact-ID final publication/native
-  acceptance readback from c45f8f3 remains unchanged. Recovery is read-only.
+  step.
