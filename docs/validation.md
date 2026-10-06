@@ -13,6 +13,24 @@ failures produced focused regressions and repairs; unqualified scopes remain
 explicit. The current delivery record below distinguishes public publication from
 earlier private preparation and local fixtures.
 
+## Automatic CI draft cleanup (2026-10-06)
+
+[Cleanup run 37410061631](https://github.com/mirage335-colossus/software-foundation/actions/runs/37410061631)
+passed its single job on source `b4959a595b446c94bbf15b8fb8f7aec69571664a`,
+attempt 1. The explicitly requested manual `expire_now=true` invocation removed
+11 completed auxiliary draft releases and their 11 exact tags, covering 14,349,068
+listed asset bytes. Preceding full-run Actions artifact pruning was skipped.
+
+Independent readback found zero remaining numeric `ci-RUN-attempt-N` releases or
+tags. All 10 public releases and all 455 asset identities, sizes and digests were
+unchanged, including Latest release `404206667`, base, CI tools and galleries.
+The manual entry point passed 29 expiry and 21 preceding-cleanup local cases,
+pinned actionlint and documentation checks before dispatch. No application build
+or release qualification was rerun. Daily cleanup retains its 24-hour grace;
+the manual override waives only that wait and preserves the same input and
+publication guards. This observation does not establish the separate SDK
+same-slot retirement or preceding full-run artifact pruning scopes.
+
 ## Rust all-GUI release and integrated packages (2026-10-06)
 
 The cloud-built Rust/all-GUI application is certified and promoted to ordinary

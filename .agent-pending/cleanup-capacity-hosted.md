@@ -31,9 +31,13 @@ with 123 passing cases across `ci_cleanup_expired`, `ci_cleanup_drafts`,
 documentation and whitespace checks. It reuses exact release/tag deletion guards
 and preserves SDK stores and unpublished inputs. No extra hosted build, release,
 validation run or immediate remote deletion was performed for this change.
-Observe its first normal daily maintenance run for actual release/tag counts;
-local fixtures do not establish hosted execution. A busy repository skips that
-day's sweep and remains eligible on a later day.
+The subsequent user-requested [manual cleanup 37410061631](https://github.com/mirage335-colossus/software-foundation/actions/runs/37410061631)
+passed on `b4959a595b446c94bbf15b8fb8f7aec69571664a`, removing all 11 selected
+drafts and their 11 tags with `expire_now=true`. Independent readback confirmed
+all 10 public releases and 455 asset identities/digests unchanged. This retires
+the auxiliary-draft hosted observation; see the [validation record](../docs/validation.md#automatic-ci-draft-cleanup-2026-10-06).
+The automatic daily schedule retains its normal age grace and skips a busy
+repository for a later sweep. Separate SDK and preceding-run scopes above remain.
 
 Before private operation, complete the account checks in
 [the storage budget](../docs/ci.md#private-account-storage-budget): private Packages
