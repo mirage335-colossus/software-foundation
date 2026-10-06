@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import socket
 import sys
 import time
 import types
@@ -14,6 +15,9 @@ import ci_plan
 
 
 def main():
+    if len(sys.argv) != 2 or sys.argv[1] not in ('20', '120'):
+        raise ValueError('one explicitly bounded startup limit required')
+    seconds = int(sys.argv[1])
     output = ROOT / 'build/firefox-startup-probe'
     output.mkdir(parents=True, exist_ok=False)
     source = ROOT / 'gui/tests/browser_test.py'
@@ -29,7 +33,7 @@ def main():
                   python=sys.version, prerequisite=prerequisite,
                   source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(), trials=[])
     (output / 'prerequisite.json').write_text(json.dumps(result, indent=2) + '\n')
-    for index, seconds in enumerate((20, 120, 20), 1):
+    for index in (1,):
         text = original.replace(needle, 'deadline=time.monotonic()+' + str(seconds), 1)
         module = types.ModuleType('firefox_startup_probe_' + str(index))
         module.__file__ = str(source)
@@ -40,11 +44,19 @@ def main():
         trial = dict(index=index, startup_seconds=seconds,
                      fixture_sha256=hashlib.sha256(text.encode()).hexdigest())
         started = time.monotonic()
+        def connect(*args, **kwargs):
+            connection = socket.create_connection(*args, **kwargs)
+            trial['automation_connection_seconds'] = round(time.monotonic() - started, 3)
+            return connection
+        # Instrument only this fixture's binding, never the process-wide socket module.
+        module.socket = types.SimpleNamespace(**vars(socket))
+        module.socket.create_connection = connect
         try:
             with module.browser_workspace(directory) as workspace:
                 browser = module.Browser(prerequisite['executable'], workspace)
                 try:
-                    trial.update(status='ready', browser_version=browser.capabilities.get('browserVersion'))
+                    trial.update(status='ready', browser_version=browser.capabilities.get('browserVersion'),
+                                 ready_seconds=round(time.monotonic() - started, 3))
                 finally:
                     browser.close()
         except module.BrowserCleanupError:
