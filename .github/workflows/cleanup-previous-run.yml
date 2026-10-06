@@ -1,5 +1,11 @@
 name: Clean preceding full workflow evidence
 'on':
+  workflow_dispatch:
+    inputs:
+      expire_now:
+        description: Remove completed eligible auxiliary drafts without the normal 24-hour grace
+        type: boolean
+        default: false
   schedule:
   - cron: '23 7 * * *'
   workflow_run:
@@ -17,7 +23,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   cleanup:
-    if: github.event_name == 'schedule' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.id == github.event.repository.id)
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.id == github.event.repository.id)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -31,8 +37,9 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: python3 -B tools/ci_cleanup_previous.py
-    - name: Expire completed auxiliary drafts after one day
-      if: github.event_name == 'schedule'
+    - name: Expire completed auxiliary drafts
+      if: github.event_name != 'workflow_run'
       env:
         GH_TOKEN: ${{ github.token }}
+        CLEANUP_EXPIRE_NOW: ${{ github.event_name == 'workflow_dispatch' && inputs.expire_now || false }}
       run: python3 -B tools/ci_cleanup_expired.py

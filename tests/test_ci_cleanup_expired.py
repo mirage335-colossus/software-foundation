@@ -205,6 +205,65 @@ class ExpiredCleanupTests(unittest.TestCase):
                 self.assertEqual(self.sweep(remote)['status'], 'refused')
                 self.assertFalse(remote.calls)
 
+    def test_manual_default_or_false_preserves_recent_drafts_and_attempts(self):
+        for immediate in (None, 'false'):
+            with self.subTest(immediate=immediate):
+                self.setUp(); self.environment['GITHUB_EVENT_NAME'] = 'workflow_dispatch'
+                if immediate is not None: self.environment['CLEANUP_EXPIRE_NOW'] = immediate
+                remote = Transport([context()])
+                remote.releases[0]['updated_at'] = remote.runs[(42, 1)]['updated_at'] = RECENT
+                self.assertEqual(self.sweep(remote)['status'], 'skipped')
+                self.assert_no_deletions(remote)
+                self.assertEqual(len(remote.releases), 1)
+
+    def test_explicit_manual_true_retires_recent_terminal_diagnostics(self):
+        self.environment.update(GITHUB_EVENT_NAME='workflow_dispatch', CLEANUP_EXPIRE_NOW='true')
+        remote = Transport([context()])
+        remote.releases[0]['updated_at'] = remote.runs[(42, 1)]['updated_at'] = RECENT
+        result = self.sweep(remote)
+        self.assertEqual(result['status'], 'complete')
+        self.assertEqual((result['selected_drafts'], result['deleted_drafts'], result['deleted_tags']), (1, 1, 1))
+        self.assertEqual(self.deletions(remote), ['repos/example/project/releases/100',
+            'repos/example/project/git/refs/tags/ci-42-attempt-1'])
+
+    def test_manual_true_preserves_unpublished_inputs_sdk_and_unknown_payloads(self):
+        self.environment.update(GITHUB_EVENT_NAME='workflow_dispatch', CLEANUP_EXPIRE_NOW='true')
+        for workflow in (*PUBLICATION, 'sdk-maintenance.yml', 'sdk-import.yml', 'host-contracts.yml'):
+            with self.subTest(workflow=workflow):
+                remote = Transport([context(workflow=workflow)])
+                remote.releases[0]['updated_at'] = remote.runs[(42, 1)]['updated_at'] = RECENT
+                if workflow in PUBLICATION:
+                    remote.jobs[(42, 1)][1]['conclusion'] = 'failure'
+                elif workflow == 'host-contracts.yml':
+                    remote.assets[100] += remote.bundle_assets('unrecognized', 999)
+                self.sweep(remote)
+                self.assert_no_deletions(remote)
+                self.assertEqual(len(remote.releases), 1)
+                self.assertIn('ci-42-attempt-1', remote.refs)
+
+    def test_manual_true_still_blocks_active_consumers_and_producers(self):
+        self.environment.update(GITHUB_EVENT_NAME='workflow_dispatch', CLEANUP_EXPIRE_NOW='true')
+        for status in cleanup.repository_cleanup.ACTIVE_STATUSES:
+            with self.subTest(status=status):
+                remote = Transport([context()])
+                remote.releases[0]['updated_at'] = remote.runs[(42, 1)]['updated_at'] = RECENT
+                remote.active[status] = [dict(id=77, status=status)]
+                self.assertEqual(self.sweep(remote)['status'], 'skipped')
+                self.assert_no_deletions(remote)
+        remote = Transport([context()]); remote.runs[(42, 1)].update(status='in_progress', conclusion=None)
+        self.assertEqual(self.sweep(remote)['status'], 'skipped')
+        self.assert_no_deletions(remote)
+
+    def test_immediate_override_requires_manual_event_and_literal_boolean_input(self):
+        for event, immediate in [('schedule', 'true')] + [
+                (event, value) for event in ('schedule', 'workflow_dispatch')
+                for value in ('', 'True', 'FALSE', '1', True, None)]:
+            with self.subTest(event=event, immediate=immediate):
+                self.environment.update(GITHUB_EVENT_NAME=event, CLEANUP_EXPIRE_NOW=immediate)
+                remote = Transport([context()])
+                self.assertEqual(self.sweep(remote)['status'], 'refused')
+                self.assertFalse(remote.calls)
+
     def test_every_active_consumer_blocks_mutation_and_cleanup_itself_is_allowed(self):
         for status in cleanup.repository_cleanup.ACTIVE_STATUSES:
             with self.subTest(status=status):
@@ -327,7 +386,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertTrue(all('/releases/' in endpoint or '/git/refs/tags/' in endpoint
                             for endpoint in self.deletions(remote)))
 
-    def test_daily_workflow_keeps_auxiliary_expiry_separate_from_full_run_pruning(self):
+    def test_daily_and_manual_workflow_keep_auxiliary_expiry_separate_from_full_run_pruning(self):
         workflow = (Path(__file__).resolve().parents[1] /
                     '.github/workflows/cleanup-previous-run.yml').read_text()
         trigger = re.search(r"(?ms)^'on':\n(.*?)(?=^\S|\Z)", workflow).group(1)
@@ -338,7 +397,12 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(re.findall(r'^    - (.+)$', trigger, re.M), [
             'Candidate checks', '_Publish new Latest release',
             'Certify exact published candidate', 'Prepared SDK application and candidate'])
-        self.assertNotIn('workflow_dispatch:', trigger)
+        dispatch = re.search(r'(?ms)^  workflow_dispatch:\n(.*?)(?=^  \S|\Z)', trigger).group(1)
+        self.assertEqual(dispatch.count('    inputs:\n'), 1)
+        self.assertEqual(dispatch.count('      expire_now:\n'), 1)
+        immediate = re.search(r'(?ms)^      expire_now:\n(.*?)(?=^      \S|\Z)', dispatch).group(1)
+        self.assertEqual(re.findall(r'^        type: (.+)$', immediate, re.M), ['boolean'])
+        self.assertEqual(re.findall(r'^        default: (.+)$', immediate, re.M), ['false'])
         steps = workflow.split('    steps:\n', 1)[1].split('\n    - ')
         commands = {}
         for step in steps:
@@ -348,8 +412,10 @@ class ExpiredCleanupTests(unittest.TestCase):
                 commands[command[1]] = re.findall(r'^      if: (.+)$', step, re.M)
         self.assertEqual(commands, {
             'python3 -B tools/ci_cleanup_previous.py': ["github.event_name == 'workflow_run'"],
-            'python3 -B tools/ci_cleanup_expired.py': ["github.event_name == 'schedule'"],
+            'python3 -B tools/ci_cleanup_expired.py': ["github.event_name != 'workflow_run'"],
         })
+        self.assertEqual(re.findall(r'^        CLEANUP_EXPIRE_NOW: (.+)$', workflow, re.M),
+            ["${{ github.event_name == 'workflow_dispatch' && inputs.expire_now || false }}"])
 
 
 if __name__ == '__main__':

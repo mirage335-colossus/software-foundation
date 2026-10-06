@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Expire completed auxiliary transport drafts, preserving unpublished inputs.
 
-Only the daily default-branch cleanup may invoke this policy. Application/full-run
-artifact pruning and explicitly retained SDK stores keep their existing policy.
+Daily or explicitly dispatched default-branch cleanup may invoke this policy.
+Application/full-run artifact pruning and retained SDKs keep their existing policy.
 """
 from datetime import datetime, timezone
 import json
@@ -68,17 +68,21 @@ def sweep(*, environment=None, transport=None, sleep=time.sleep, clock=time.mono
                   preserved_drafts=0)
     try:
         native = cleanup.current_context(environment)
-        if (environment.get('GITHUB_EVENT_NAME') != 'schedule' or
+        event = environment.get('GITHUB_EVENT_NAME')
+        immediate = environment.get('CLEANUP_EXPIRE_NOW', 'false')
+        if (event not in ('schedule', 'workflow_dispatch') or
                 not environment['GITHUB_WORKFLOW_REF'].startswith(
                     native['repository'] + '/.github/workflows/cleanup-previous-run.yml@')):
-            raise cleanup.CleanupError('draft expiry requires its native scheduled cleanup context')
+            raise cleanup.CleanupError('draft expiry requires its native scheduled or manual cleanup context')
+        if immediate not in ('false', 'true') or (immediate == 'true' and event != 'workflow_dispatch'):
+            raise cleanup.CleanupError('immediate expiry requires an explicit manual cleanup request')
         if transport is None:
             transport = delivery.GitHub(native['repository'])
             transport.WRITE_HEADROOM = transport.WAIT_BUDGET = transport.wait_remaining = 0
             transport.REQUEST_DEADLINE = transport.COMMAND_TIMEOUT = 30
             transport.MAX_ATTEMPTS = 1
         transport = previous.BoundedTransport(transport, clock() + previous.MAX_SECONDS, clock)
-        cutoff = (time.time() if now is None else now) - MIN_AGE
+        cutoff = (time.time() if now is None else now) - (0 if immediate == 'true' else MIN_AGE)
         remote = delivery.Remote(native['repository'], transport)
         selected, identities, seen = [], {}, set()
         for row in transport.pages(remote.base + '/releases?per_page=100'):

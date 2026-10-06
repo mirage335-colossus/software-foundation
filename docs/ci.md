@@ -370,8 +370,13 @@ uncertain deletion. A busy repository is left for a later daily sweep. The job
 only removes selected numeric `ci-RUN_ID-attempt-ATTEMPT` drafts and unchanged
 tags: public releases, `ci-tools-*`, base inputs, Actions artifacts and normal
 logs remain intact. This is a small maintenance run; it performs no build or
-release qualification. Its first hosted execution is observed during ordinary
-scheduled maintenance, without requiring a special validation run.
+release qualification.
+
+For an explicit cleanup now, dispatch `cleanup-previous-run.yml` on `main` with
+`expire_now=true`. This waives only the 24-hour grace; completed exact attempts,
+successful publication where required, temporary-only assets and idle consumers
+remain mandatory. Manual runs otherwise use the same one-day policy as the daily
+schedule and never invoke preceding full-run Actions artifact pruning.
 
 Unknown slots, oversize bundles and failed uploads fail visibly without silently
 starting the expensive release relay. The composite actions expose an explicit
