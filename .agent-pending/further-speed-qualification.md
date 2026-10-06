@@ -161,6 +161,23 @@ suite passed 57/57 with no exclusions. This test-only correction is included wit
 the portable signing fixture. Production transport and signing behavior remain
 unchanged.
 
+Portable fixtures were pushed as `d0a6c3f5cf2067fc843ab8c4d2c02a1cca9d7b70`.
+[Development CI 37387167002](https://github.com/mirage335-colossus/software-foundation/actions/runs/37387167002)
+passed all four jobs; [native Windows diagnostic 37387186519](https://github.com/mirage335-colossus/software-foundation/actions/runs/37387186519)
+passed all twenty Latest-contract cases on CPython 3.14.7, with no exclusions or
+skips and a verified complete 620-file source inventory. Full
+[Latest 37387659465](https://github.com/mirage335-colossus/software-foundation/actions/runs/37387659465),
+attempt 1, then passed all four Rust producers, full regression, real protected
+signing, candidate publication/readback and certification preparation. Its frozen
+inventory is `eb4845be7a651287128db6bf209bd67c14653937f8c64e1f230138a8643c0fc9`.
+ARM Ubuntu hosted-web archive qualification failed before application assertions:
+verified native Firefox 156.0 did not open its automation connection within
+twenty seconds. The complete retained diagnostic identifies a startup timeout,
+not its underlying cause. Other certification jobs continue; this candidate is
+not qualified or promoted. A bounded native startup comparison precedes any
+fixture change or complete release retry. The original failure remains retained
+in `.agent-work/artifacts/further-release-audit-20261005/latest-37387659465-attempt-1-failure-analysis.json`.
+
 Refreshed screenshot
 [37383282720](https://github.com/mirage335-colossus/software-foundation/actions/runs/37383282720)
 on the same source passed all three jobs and published
