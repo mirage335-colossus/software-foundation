@@ -156,7 +156,11 @@ its latest original commit, using a depth-one clone. Older commits, other branch
 and tags are not fetched. There is no configured remote or upstream tracking.
 It makes no commit and needs no Git name or email setting. The original commit ID
 is preserved as the baseline for comparing and integrating foundation updates.
-Requires a POSIX shell, Git 2.28+ and `mktemp`.
+Requires a traditional SVR4-style Bourne shell or a POSIX shell such as Dash,
+Git 2.28+, `mktemp -d` and standard modern Unix utilities (including `printf`,
+`awk` and external `pwd` with `-L`/`-P`). The shell syntax avoids POSIX-only
+substitutions and builtins. This does not require Bash, but does not target the
+original V7 shell or an unchanged historical operating system.
 The destination defaults to `PROJECT_NAME` in the current directory. It must not
 exist; its parent directory must exist. An explicit destination overrides it.
 
@@ -221,6 +225,17 @@ Focused offline regression:
 
 ```sh
 ./build.sh test dev --core-provider cpp --build-dir build/fork-check --test tools.fork
+```
+
+Set `FOUNDATION_FORK_SHELL` to a shell executable path to run the same regression
+cases, including the printed commands, through that interpreter instead of the
+script's shebang. All 35 cases passed on Linux under both Dash and
+[Heirloom Bourne 050706](https://heirloom.sourceforge.net/sh.html), using modern
+Git and utilities. For example:
+
+```sh
+FOUNDATION_FORK_SHELL=/bin/dash \
+  ./build.sh test dev --core-provider cpp --build-dir build/fork-check --test tools.fork
 ```
 
 ### Adapt the foundation

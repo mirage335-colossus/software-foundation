@@ -1,4 +1,8 @@
-"""Offline Git fixtures verify creation of an independent foundation repository."""
+"""Offline Git fixtures verify creation of an independent foundation repository.
+
+Set FOUNDATION_FORK_SHELL to an executable path to exercise a specific shell;
+otherwise the fixtures use fork.sh's shebang.
+"""
 import os
 from pathlib import Path
 import shlex
@@ -10,6 +14,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'fork.sh'
+FORK_SHELL = os.environ.get('FOUNDATION_FORK_SHELL')
+SCRIPT_COMMAND = [FORK_SHELL, str(SCRIPT)] if FORK_SHELL else [str(SCRIPT)]
 
 
 @unittest.skipUnless(os.name == 'posix' and shutil.which('git'),
@@ -85,7 +91,7 @@ class ForkTests(unittest.TestCase):
 
     def fork(self, destination=None, *sources, cwd=None, environment=None, success=True,
              separator=False):
-        command = [str(SCRIPT)]
+        command = list(SCRIPT_COMMAND)
         if separator:
             command.append('--')
         if destination is not None:
@@ -177,7 +183,7 @@ class ForkTests(unittest.TestCase):
         self.assert_fresh(destination, source, previous)
 
     def test_omitted_destination_uses_project_name_and_ordered_configured_sources(self):
-        source, previous = self.source('source [literal] path')
+        source, previous = self.source(r"source [literal] 'quoted' \path")
         alternate, _ = self.source('alternate')
         environment = dict(self.environment, PROJECT_NAME='Default Project',
                            DEFAULT_SOURCE_URLS='\n' + str(self.root / 'missing') + '\n\n' +
@@ -204,6 +210,13 @@ class ForkTests(unittest.TestCase):
                           DEFAULT_SOURCE_URLS=sources), success=False)
                 self.assertFalse(destination.exists())
                 self.assert_no_temporary_output()
+
+    def test_empty_destination_does_not_fall_back_to_configured_project_name(self):
+        source, _ = self.source()
+        environment = dict(self.environment, PROJECT_NAME='Configured Project')
+        self.fork('', source, environment=environment, success=False)
+        self.assertFalse((self.root / 'Configured Project').exists())
+        self.assert_no_temporary_output()
 
     def test_ssh_url_forms_in_source_list_use_git_native_routing(self):
         source, previous = self.source('routed-source')
@@ -383,7 +396,8 @@ class ForkTests(unittest.TestCase):
         for _, command, arguments in commands:
             if 'commit' in arguments or ('add' in arguments and 'remote' not in arguments):
                 selected_commands.append(command)
-        execution = subprocess.run('\n'.join(selected_commands), shell=True, executable='/bin/sh',
+        execution = subprocess.run('\n'.join(selected_commands), shell=True,
+            executable=FORK_SHELL or '/bin/sh',
             cwd=self.root, env=self.environment, text=True, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, timeout=15)
         self.assertEqual(execution.returncode, 0, execution.stdout + execution.stderr)
@@ -428,6 +442,30 @@ class ForkTests(unittest.TestCase):
         destination = self.root / 'failed'
         self.fork(destination, self.root / 'missing-one', self.root / 'missing-two', success=False)
         self.assertFalse(destination.exists())
+        self.assert_no_temporary_output()
+
+    def test_checkout_failure_removes_own_output_and_preserves_other_files(self):
+        source, _ = self.source()
+        source_head = self.git(source, 'rev-parse', 'HEAD').stdout
+        source_index = (source / '.git' / 'index').read_bytes()
+        sentinel = self.root / 'unrelated.txt'
+        sentinel.write_text('preserve unrelated content\n')
+        programs = self.root / 'programs'
+        programs.mkdir()
+        wrapper = programs / 'git'
+        wrapper.write_text('#!/bin/sh\n'
+            'for argument do\n'
+            '  if [ "$argument" = reset ]; then exit 7; fi\n'
+            'done\nexec ' + shlex.quote(shutil.which('git')) + ' "$@"\n')
+        wrapper.chmod(0o755)
+        environment = dict(self.environment, PATH=str(programs) + os.pathsep + self.environment['PATH'])
+        destination = self.root / 'failed-checkout'
+        self.fork(destination, source, environment=environment, success=False)
+        self.assertFalse(destination.exists())
+        self.assertEqual(sentinel.read_text(), 'preserve unrelated content\n')
+        self.assertEqual(self.git(source, 'rev-parse', 'HEAD').stdout, source_head)
+        self.assertEqual((source / '.git' / 'index').read_bytes(), source_index)
+        self.assertEqual(self.git(source, 'status', '--porcelain').stdout, '')
         self.assert_no_temporary_output()
 
     def test_missing_git_identity_is_not_required_to_create_checkout(self):
@@ -636,13 +674,13 @@ class ForkTests(unittest.TestCase):
         self.assert_no_temporary_output()
 
     def test_help_and_missing_arguments_do_not_fetch_or_write(self):
-        help_result = subprocess.run([str(SCRIPT), '--help'], cwd=self.root,
+        help_result = subprocess.run([*SCRIPT_COMMAND, '--help'], cwd=self.root,
                                      env=self.environment, text=True,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
         self.assertIn('https://github.com/mirage335-colossus/software-foundation.git',
                       help_result.stdout + help_result.stderr)
-        missing = subprocess.run([str(SCRIPT)], cwd=self.root, env=self.environment,
+        missing = subprocess.run(SCRIPT_COMMAND, cwd=self.root, env=self.environment,
                                  text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
         self.assertNotEqual(missing.returncode, 0)
         self.assert_no_temporary_output()

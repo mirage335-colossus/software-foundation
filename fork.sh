@@ -1,4 +1,8 @@
 #!/bin/sh
+# Keep shell syntax compatible with traditional SVR4 Bourne sh and with Dash.
+# Git and the external utilities still need the versions documented in README.
+# Backticks and expr are intentional: traditional Bourne sh needs them.
+# shellcheck disable=SC2006,SC2003
 set -eu
 
 # Project settings: edit these defaults, or set the variables in the environment.
@@ -11,7 +15,7 @@ PROJECT_AUTHOR=${PROJECT_AUTHOR:-}
 # entry. Spaces are preserved. Command-line source arguments replace this list.
 DEFAULT_SOURCE_URLS=${DEFAULT_SOURCE_URLS-'https://github.com/mirage335-colossus/software-foundation.git'}
 # Capture the date on the machine running this script.
-PROJECT_DATE=$(date +%Y-%m-%d)
+PROJECT_DATE=`date +%Y-%m-%d`
 
 usage() {
     cat <<'EOF'
@@ -63,24 +67,29 @@ if [ -z "$destination" ]; then
     exit 2
 fi
 
-# Read whole lines without splitting spaces, expanding globs or interpreting
-# backslashes. Do not evaluate configurable source text as shell code.
+# Split only at newlines, with pathname expansion disabled: spaces, backslashes
+# and shell characters remain literal. A redirected read loop would run in a
+# subshell on traditional Bourne sh and lose its changes to the source arguments.
 if [ "$#" -eq 0 ]; then
-    while IFS= read -r source_url; do
-        [ -n "$source_url" ] || continue
-        set -- "$@" "$source_url"
-    done <<EOF
-$DEFAULT_SOURCE_URLS
-EOF
+    saved_ifs=$IFS
+    IFS='
+'
+    set -f
+    # Deliberate field splitting using the newline-only IFS above.
+    # shellcheck disable=SC2086
+    set -- $DEFAULT_SOURCE_URLS
+    set +f
+    IFS=$saved_ifs
 fi
 [ "$#" -gt 0 ] || die 'DEFAULT_SOURCE_URLS must contain at least one source.'
+carriage_return=`printf '\r'`
 case $PROJECT_AUTHOR in
     *'
-'*|*"$(printf '\r')"*) die 'PROJECT_AUTHOR must be a single-line name or screenname.' ;;
+'*|*"$carriage_return"*) die 'PROJECT_AUTHOR must be a single-line name or screenname.' ;;
 esac
 
-command -v git >/dev/null 2>&1 || die 'Git is required.'
-command -v mktemp >/dev/null 2>&1 || die 'mktemp is required.'
+type git >/dev/null 2>&1 || die 'Git is required.'
+type mktemp >/dev/null 2>&1 || die 'mktemp is required.'
 
 # Do not let a calling Git hook or shell redirect writes into another repository.
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_NAMESPACE \
@@ -88,42 +97,45 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_NAMESPACE \
 
 case $destination in
     /*) ;;
-    *) destination="$(pwd -P)/$destination" ;;
+    *) invocation_directory=`env pwd -P`
+       destination="$invocation_directory/$destination" ;;
 esac
-while [ "${destination%/}" != "$destination" ]; do
-    destination=${destination%/}
-done
-[ -n "$destination" ] || die 'The destination must be a new directory.'
-if [ -e "$destination" ] || [ -L "$destination" ]; then
+# Traditional test has no -e. ls -d also detects dangling symbolic links.
+if ls -d -- "$destination" >/dev/null 2>&1; then
     die "Destination already exists: $destination"
 fi
-parent=$(CDPATH='' cd -- "$(dirname -- "$destination")" && pwd -P) ||
+parent_path=`dirname -- "$destination"`
+parent=`CDPATH='' cd "$parent_path" && env pwd -P` ||
     die 'The destination parent directory must exist.'
-directory_name=$(basename -- "$destination")
-destination="${parent%/}/$directory_name"
+directory_name=`basename -- "$destination"`
+case $parent in
+    /) destination="/$directory_name" ;;
+    *) destination="$parent/$directory_name" ;;
+esac
 PROJECT_NAME=${PROJECT_NAME:-$directory_name}
 
-temporary=$(mktemp -d "$parent/.foundation-fork.XXXXXX")
+temporary=`mktemp -d "$parent/.foundation-fork.XXXXXX"`
 destination_created=false
 finished=false
 cleanup() {
-    result=$?
-    trap - 0 HUP INT TERM
+    # An omitted action resets traps in both traditional Bourne sh and Dash.
+    trap 0 1 2 15
     if [ "$destination_created" = true ] && [ "$finished" = false ]; then
         rm -rf -- "$destination"
     fi
     rm -rf -- "$temporary"
-    exit "$result"
+    # Let the shell retain its exit status. Traditional Bourne sh can expose
+    # zero in $? here even when an explicit exit caused the failure.
 }
 trap cleanup 0
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap 'exit 129' 1
+trap 'exit 130' 2
+trap 'exit 143' 15
 
 fetched=false
 attempt=0
 for source_url do
-    attempt=$((attempt + 1))
+    attempt=`expr "$attempt" + 1`
     source_git="$temporary/source-$attempt.git"
     printf 'Fetching source %s of %s...\n' "$attempt" "$#" >&2
     # Keep the caller's cwd so relative local paths resolve where they were given.
@@ -141,8 +153,8 @@ for source_url do
     printf 'Source %s failed.\n' "$attempt" >&2
 done
 [ "$fetched" = true ] || die 'Could not fetch the main branch from any source URL.'
-source_commit=$(git --git-dir="$source_git" rev-parse --verify 'refs/heads/main^{commit}')
-source_tree=$(git --git-dir="$source_git" rev-parse --verify "$source_commit^{tree}")
+source_commit=`git --git-dir="$source_git" rev-parse --verify 'refs/heads/main^{commit}'`
+source_tree=`git --git-dir="$source_git" rev-parse --verify "$source_commit^{tree}"`
 git --git-dir="$source_git" ls-tree -r "$source_tree" > "$temporary/tree"
 if LC_ALL=C grep -q '^160000 ' "$temporary/tree"; then
     die 'Source contains submodules; this script requires a self-contained tracked tree.'
@@ -165,14 +177,15 @@ git -C "$destination" -c core.hooksPath=/dev/null reset --quiet --hard "$source_
 # Edit only recognized project attribution in regular tracked root documents.
 # Read original blobs without following symlinks; leave edits out of the index.
 if [ -n "$PROJECT_AUTHOR" ]; then
+    project_year=`printf '%s\n' "$PROJECT_DATE" | cut -d- -f1`
     for attribution_file in LICENSE README.md; do
-        entry=$(git --git-dir="$source_git" ls-tree "$source_tree" -- "$attribution_file")
+        entry=`git --git-dir="$source_git" ls-tree "$source_tree" -- "$attribution_file"`
         case $entry in
             '100644 blob '*|'100755 blob '*) ;;
             *) continue ;;
         esac
         git --git-dir="$source_git" show "$source_commit:$attribution_file" > "$temporary/original"
-        if PROJECT_AUTHOR="$PROJECT_AUTHOR" PROJECT_YEAR="${PROJECT_DATE%%-*}" \
+        if PROJECT_AUTHOR="$PROJECT_AUTHOR" PROJECT_YEAR="$project_year" \
             ATTRIBUTION_FILE="$attribution_file" LC_ALL=C awk '
             BEGIN { author = ENVIRON["PROJECT_AUTHOR"]; year = ENVIRON["PROJECT_YEAR"] }
             # First pass recognizes the complete foundation CC0 preamble.
@@ -217,18 +230,26 @@ shell_quote() {
 }
 # Show a short path from the user's current shell directory, even when the
 # destination argument was absolute. Match the shell's normal logical cd paths.
-suggestion_base=$(pwd -L)
-suggestion_prefix=
-while [ "$suggestion_base" != / ]; do
-    case $destination in "$suggestion_base"/*) break ;; esac
-    suggestion_base=${suggestion_base%/*}
-    suggestion_base=${suggestion_base:-/}
-    suggestion_prefix="../$suggestion_prefix"
-done
-relative_destination="$suggestion_prefix${destination#"${suggestion_base%/}/"}"
-case $relative_destination in -*) relative_destination="./$relative_destination" ;; esac
-quoted_destination=$(shell_quote "$relative_destination")
-quoted_message=$(shell_quote "first commit $PROJECT_NAME $PROJECT_DATE")
+# Use external pwd because traditional shell builtins do not offer -L/-P.
+suggestion_base=`env pwd -L`
+relative_destination=`FORK_BASE="$suggestion_base" FORK_DESTINATION="$destination" awk '
+    BEGIN {
+        base = ENVIRON["FORK_BASE"]
+        destination = ENVIRON["FORK_DESTINATION"]
+        prefix = ""
+        while (base != "/" && substr(destination, 1, length(base) + 1) != base "/") {
+            sub(/\/[^/]*$/, "", base)
+            if (base == "") base = "/"
+            prefix = "../" prefix
+        }
+        if (base == "/") base = ""
+        relative = prefix substr(destination, length(base) + 2)
+        if (relative ~ /^-/) relative = "./" relative
+        print relative
+    }
+'`
+quoted_destination=`shell_quote "$relative_destination"`
+quoted_message=`shell_quote "first commit $PROJECT_NAME $PROJECT_DATE"`
 
 finished=true
 printf '\nCreated %s in %s\nDate: %s\nBaseline: %s\nOnly main at depth one; no commit made and no remote configured.\n' \
