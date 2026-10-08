@@ -22,8 +22,9 @@ usage() {
 Usage: fork.sh [--] [DESTINATION [SOURCE_URL ...]]
        fork.sh --help
 
-Create an independent repository containing only main and its latest original
-commit (depth one), with no tags or remote. No commit or Git identity is needed.
+Create an independent, non-shallow repository with one root commit containing
+the latest main snapshot, with no tags or remote. No Git identity is needed.
+The root records the original commit hash, without the source URL or path.
 DESTINATION defaults to PROJECT_NAME in the current directory. It must not exist,
 and its parent directory must already exist.
 Try SOURCE_URLs in order, using main from the first successful clone.
@@ -139,8 +140,8 @@ for source_url do
     source_git="$temporary/source-$attempt.git"
     printf 'Fetching source %s of %s...\n' "$attempt" "$#" >&2
     # Keep the caller's cwd so relative local paths resolve where they were given.
-    # Fetch only main at depth one, retaining its original commit ID as a baseline
-    # for future updates. --no-local makes depth apply to local paths too and
+    # Fetch only main at depth one as temporary input for a new root commit.
+    # --no-local makes depth apply to local paths too and
     # avoids shared objects or hardlinks. Tags and other branches are not fetched.
     # Each attempt owns separate metadata so a failed source cannot leak refs.
     if git -c core.hooksPath=/dev/null clone --quiet --bare --no-local --template= \
@@ -160,19 +161,36 @@ if LC_ALL=C grep -q '^160000 ' "$temporary/tree"; then
     die 'Source contains submodules; this script requires a self-contained tracked tree.'
 fi
 
-# The bare clone has its own configuration, not the source checkout's settings.
-# Remove its download remote without touching main or the shallow boundary.
-if git --git-dir="$source_git" config --get remote.origin.url >/dev/null; then
-    git --git-dir="$source_git" config --remove-section remote.origin
-fi
-git --git-dir="$source_git" config core.bare false
-git --git-dir="$source_git" config core.logallrefupdates true
-rm -f -- "$source_git/FETCH_HEAD"
+# Keep the exact tree and recorded attribution, without parents or signatures
+# that describe the original commit. Writing the object directly avoids signing
+# and any identity inferred from the caller's Git configuration or environment.
+git --git-dir="$source_git" cat-file commit "$source_commit" > "$temporary/commit"
+LC_ALL=C awk '/^$/ { exit } /^(tree|author|committer|encoding) / { print }' \
+    "$temporary/commit" > "$temporary/root-commit"
+printf '\nFoundation snapshot\n\nFoundation-commit: %s\n' "$source_commit" >> "$temporary/root-commit"
+root_commit=`git --git-dir="$source_git" hash-object -t commit -w "$temporary/root-commit"`
+
+# Import only the new root's reachable objects into fresh metadata. The temporary
+# shallow commit, source location and any download refs/reflogs stay behind.
+# Use a file, not a pipe, so either Git failure is caught even in Bourne sh.
+printf '%s\n' "$root_commit" > "$temporary/revisions"
+git --git-dir="$source_git" pack-objects --stdout --revs \
+    < "$temporary/revisions" > "$temporary/snapshot.pack"
+object_format=`git --git-dir="$source_git" config --local --get extensions.objectFormat || printf 'sha1\n'`
+project_git="$temporary/project.git"
+GIT_DEFAULT_HASH="$object_format" git -c core.hooksPath=/dev/null \
+    init --quiet --bare --template= --initial-branch=main "$project_git"
+git --git-dir="$project_git" index-pack --stdin < "$temporary/snapshot.pack" > /dev/null
+git --git-dir="$project_git" -c core.hooksPath=/dev/null -c core.logallrefupdates=false \
+    update-ref refs/heads/main "$root_commit"
+git --git-dir="$project_git" config core.bare false
+git --git-dir="$project_git" config core.logallrefupdates true
 mkdir -- "$destination"
 destination_created=true
-mv -- "$source_git" "$destination/.git"
+mv -- "$project_git" "$destination/.git"
 source_git="$destination/.git"
-git -C "$destination" -c core.hooksPath=/dev/null reset --quiet --hard "$source_commit"
+git -C "$destination" -c core.hooksPath=/dev/null -c core.logallrefupdates=false \
+    reset --quiet --hard "$root_commit"
 
 # Edit only recognized project attribution in regular tracked root documents.
 # Read original blobs without following symlinks; leave edits out of the index.
@@ -184,7 +202,7 @@ if [ -n "$PROJECT_AUTHOR" ]; then
             '100644 blob '*|'100755 blob '*) ;;
             *) continue ;;
         esac
-        git --git-dir="$source_git" show "$source_commit:$attribution_file" > "$temporary/original"
+        git --git-dir="$source_git" show "$source_tree:$attribution_file" > "$temporary/original"
         if PROJECT_AUTHOR="$PROJECT_AUTHOR" PROJECT_YEAR="$project_year" \
             ATTRIBUTION_FILE="$attribution_file" LC_ALL=C awk '
             BEGIN { author = ENVIRON["PROJECT_AUTHOR"]; year = ENVIRON["PROJECT_YEAR"] }
@@ -252,8 +270,8 @@ quoted_destination=`shell_quote "$relative_destination"`
 quoted_message=`shell_quote "first commit $PROJECT_NAME $PROJECT_DATE"`
 
 finished=true
-printf '\nCreated %s in %s\nDate: %s\nBaseline: %s\nOnly main at depth one; no commit made and no remote configured.\n' \
-    "$PROJECT_NAME" "$destination" "$PROJECT_DATE" "$source_commit"
+printf '\nCreated %s in %s\nDate: %s\nFoundation commit: %s\nRoot commit: %s\nOnly main with one independent root commit; non-shallow and no remote configured.\n' \
+    "$PROJECT_NAME" "$destination" "$PROJECT_DATE" "$source_commit" "$root_commit"
 printf '\nChange into your project directory, then review and commit when ready:\n'
 printf 'cd %s\n' "$quoted_destination"
 printf 'git status\n'

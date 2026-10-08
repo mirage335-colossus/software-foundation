@@ -42,19 +42,25 @@ class ForkTests(unittest.TestCase):
         self.scratch.mkdir()
         self.environment['TMPDIR'] = str(self.scratch)
 
-    def git(self, repository, *arguments, check=True):
+    def git(self, repository, *arguments, check=True, environment=None, input=None):
         result = subprocess.run(['git', '-C', str(repository), *arguments],
-                                env=self.environment, text=True,
+                                env=environment or self.environment, input=input, text=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 timeout=15)
         if check:
             self.assertEqual(result.returncode, 0, result.stderr)
         return result
 
-    def source(self, name='source', rich=False, attribution=False):
+    def source(self, name='source', rich=False, attribution=False, object_format=None):
         repository = self.root / name
         repository.mkdir()
-        self.git(repository, 'init', '-q', '-b', 'main')
+        if object_format:
+            result = self.git(repository, 'init', '-q', '-b', 'main',
+                              '--object-format=' + object_format, check=False)
+            if result.returncode:
+                self.skipTest('Git does not support ' + object_format + ' repositories: ' + result.stderr)
+        else:
+            self.git(repository, 'init', '-q', '-b', 'main')
         (repository / 'tracked.txt').write_text('previous contents\n')
         self.git(repository, 'add', 'tracked.txt')
         self.git(repository, 'commit', '-q', '-m', 'Old upstream commit')
@@ -109,17 +115,21 @@ class ForkTests(unittest.TestCase):
 
     def assert_fresh(self, destination, source, old_commit, modified=()):
         source_main = self.git(source, 'rev-parse', 'refs/heads/main').stdout.strip()
+        root_commit = self.git(destination, 'rev-parse', 'HEAD').stdout.strip()
+        source_tree = self.git(source, 'rev-parse', 'refs/heads/main^{tree}').stdout.strip()
+        source_headers = self.git(source, 'cat-file', 'commit', source_main).stdout.split('\n\n', 1)[0]
+        identity_headers = [line for line in source_headers.splitlines()
+                            if line.startswith(('author ', 'committer ', 'encoding '))]
+        self.assertEqual(self.git(destination, 'cat-file', 'commit', root_commit).stdout,
+                         'tree ' + source_tree + '\n' + '\n'.join(identity_headers) +
+                         '\n\nFoundation snapshot\n\nFoundation-commit: ' + source_main + '\n')
         self.assertEqual(self.git(destination, 'symbolic-ref', 'HEAD').stdout.strip(), 'refs/heads/main')
-        self.assertEqual(self.git(destination, 'rev-parse', 'HEAD').stdout.strip(), source_main)
-        self.assertEqual(self.git(destination, 'rev-list', '--all', '--parents').stdout.strip(), source_main)
+        self.assertNotEqual(root_commit, source_main)
+        self.assertEqual(self.git(destination, 'rev-list', '--all', '--parents').stdout.strip(), root_commit)
         self.assertEqual(self.git(destination, 'rev-list', '--count', 'HEAD').stdout.strip(), '1')
-        stored_types = self.git(destination, 'cat-file', '--batch-all-objects',
-                                '--batch-check=%(objecttype)').stdout.splitlines()
-        self.assertEqual(stored_types.count('commit'), 1)
-        self.assertNotIn('tag', stored_types)
-        self.assertEqual(self.git(destination, 'for-each-ref', '--format=%(refname) %(objectname)',
-                                 'refs/heads', 'refs/tags').stdout,
-                         'refs/heads/main ' + source_main + '\n')
+        self.assert_complete_history(destination, (root_commit,))
+        self.assertEqual(self.git(destination, 'for-each-ref', '--format=%(refname) %(objectname)').stdout,
+                         'refs/heads/main ' + root_commit + '\n')
         self.assertEqual(self.git(destination, 'rev-parse', 'HEAD^{tree}').stdout,
                          self.git(source, 'rev-parse', 'refs/heads/main^{tree}').stdout)
         self.assertEqual(self.git(destination, 'write-tree').stdout,
@@ -133,14 +143,30 @@ class ForkTests(unittest.TestCase):
                                      check=False).returncode, 0)
         self.assertNotEqual(self.git(destination, 'cat-file', '-e', old_commit,
                                      check=False).returncode, 0)
+        self.assertNotEqual(self.git(destination, 'cat-file', '-e', source_main,
+                                     check=False).returncode, 0)
         self.assertEqual(self.git(destination, 'status', '--porcelain').stdout,
                          ''.join(' M ' + filename + '\n' for filename in sorted(modified)))
-        self.assertEqual(self.git(destination, 'rev-parse', '--is-shallow-repository').stdout.strip(),
-                         'true')
-        self.assertEqual((destination / '.git' / 'shallow').read_text(), source_main + '\n')
         self.assertFalse((destination / '.git' / 'FETCH_HEAD').exists())
-        self.assertFalse((destination / '.git' / 'objects' / 'info' / 'alternates').exists())
         self.assert_no_temporary_output()
+
+    def assert_complete_history(self, repository, commits):
+        metadata = Path(self.git(repository, 'rev-parse', '--absolute-git-dir').stdout.strip())
+        self.assertEqual(self.git(repository, 'rev-parse', '--is-shallow-repository').stdout.strip(),
+                         'false')
+        for path in ('shallow', 'objects/info/alternates', 'objects/info/http-alternates',
+                     'info/grafts', 'refs/replace'):
+            self.assertFalse((metadata / path).exists(), path)
+        self.assertEqual(self.git(repository, 'for-each-ref', 'refs/replace').stdout, '')
+        stored = [line.split() for line in self.git(repository, 'cat-file', '--batch-all-objects',
+                  '--batch-check=%(objectname) %(objecttype)').stdout.splitlines()]
+        self.assertEqual({object_id for object_id, kind in stored if kind == 'commit'}, set(commits))
+        self.assertNotIn('tag', [kind for _, kind in stored])
+        reachable = set(self.git(repository, 'rev-list', '--objects', '--all',
+                                '--no-object-names').stdout.splitlines())
+        self.assertEqual({object_id for object_id, _ in stored}, reachable)
+        result = self.git(repository, 'fsck', '--strict', '--full')
+        self.assertEqual(result.stdout + result.stderr, '')
 
     def assert_no_temporary_output(self):
         self.assertEqual(list(self.root.rglob('.foundation-fork.*')), [])
@@ -150,7 +176,7 @@ class ForkTests(unittest.TestCase):
         return subprocess.run(['date', '+%Y-%m-%d'], env=self.environment, text=True,
                               stdout=subprocess.PIPE, check=True, timeout=5).stdout.strip()
 
-    def test_exact_tracked_tree_and_original_main_tip_are_preserved(self):
+    def test_exact_tracked_tree_is_preserved_in_an_independent_root_commit(self):
         source, previous = self.source('source path', rich=True)
         (source / 'tracked.txt').write_text('uncommitted modification\n')
         (source / 'untracked.txt').write_text('exclude this file\n')
@@ -181,6 +207,15 @@ class ForkTests(unittest.TestCase):
         destination = self.root / 'default-source'
         self.fork(destination)
         self.assert_fresh(destination, source, previous)
+
+    def test_sha256_source_retains_object_format_and_complete_independent_history(self):
+        source, previous = self.source('sha256-source', rich=True, object_format='sha256')
+        destination = self.root / 'sha256-project'
+        self.fork(destination, source)
+        self.assert_fresh(destination, source, previous)
+        self.assertEqual(self.git(destination, 'config', '--local', '--get',
+                                 'extensions.objectFormat').stdout.strip(), 'sha256')
+        self.assertEqual(len(self.git(destination, 'rev-parse', 'HEAD').stdout.strip()), 64)
 
     def test_omitted_destination_uses_project_name_and_ordered_configured_sources(self):
         source, previous = self.source(r"source [literal] 'quoted' \path")
@@ -299,31 +334,52 @@ class ForkTests(unittest.TestCase):
         self.assertTrue(object_inodes[0])
         self.assertTrue(object_inodes[1])
         self.assertFalse(object_inodes[0] & object_inodes[1])
-        main_commit = self.git(source, 'rev-parse', 'refs/heads/main').stdout.strip()
+        root_commit = self.git(destination, 'rev-parse', 'HEAD').stdout.strip()
         shutil.rmtree(source)
-        self.git(destination, 'fsck', '--full')
+        self.assert_complete_history(destination, (root_commit,))
         self.assertEqual(self.git(destination, 'rev-list', '--count', 'HEAD').stdout.strip(), '1')
-        self.assertEqual(self.git(destination, 'show', main_commit + ':tracked.txt').stdout, 'source\n')
+        self.assertEqual(self.git(destination, 'show', 'HEAD:tracked.txt').stdout, 'source\n')
 
-    def test_fetching_connecting_history_retains_original_main_tip_as_merge_base(self):
-        source, previous = self.source()
-        baseline = self.git(source, 'rev-parse', 'refs/heads/main').stdout.strip()
-        destination = self.root / 'derived-project'
-        self.fork(destination, source)
-        self.assert_fresh(destination, source, previous)
-        (destination / 'project.txt').write_text('project-specific work\n')
-        self.git(destination, 'add', 'project.txt')
-        self.git(destination, 'commit', '-q', '-m', 'First project commit')
-        for number in range(2):
-            (source / 'fix.txt').write_text('upstream fix ' + str(number) + '\n')
-            self.git(source, 'add', 'fix.txt')
-            self.git(source, 'commit', '-q', '-m', 'Upstream fix ' + str(number))
-        self.git(destination, 'fetch', '--depth=1', '--no-tags', '--', source.as_uri(), 'main')
-        self.assertNotEqual(self.git(destination, 'merge-base', 'HEAD', 'FETCH_HEAD',
-                                     check=False).returncode, 0)
-        self.git(destination, 'fetch', '--depth=3', '--no-tags', '--', source.as_uri(), 'main')
-        self.assertEqual(self.git(destination, 'merge-base', 'HEAD', 'FETCH_HEAD').stdout.strip(), baseline)
-        self.assertEqual(self.git(destination, 'remote').stdout, '')
+    def test_initial_push_and_ordinary_clone_keep_only_the_snapshot_and_project_history(self):
+        source, previous = self.source(rich=True)
+        source_main = self.git(source, 'rev-parse', 'refs/heads/main').stdout.strip()
+        for child_commits in (0, 2):
+            with self.subTest(child_commits=child_commits):
+                destination = self.root / ('push-project-' + str(child_commits))
+                self.fork(destination, source)
+                self.assert_fresh(destination, source, previous)
+                root_commit = self.git(destination, 'rev-parse', 'HEAD').stdout.strip()
+                commits = [root_commit]
+                for number in range(child_commits):
+                    (destination / 'project.txt').write_text('project work ' + str(number) + '\n')
+                    self.git(destination, 'add', 'project.txt')
+                    self.git(destination, 'commit', '-q', '-m', 'Project commit ' + str(number))
+                    commits.append(self.git(destination, 'rev-parse', 'HEAD').stdout.strip())
+                remote = self.root / ('empty-remote-' + str(child_commits) + '.git')
+                remote.mkdir()
+                self.git(remote, 'init', '-q', '--bare', '-b', 'main')
+                self.assertEqual(self.git(remote, 'config', '--get', 'receive.shallowUpdate',
+                                         check=False).returncode, 1)
+                expected_history = self.git(destination, 'rev-list', '--parents', 'HEAD').stdout
+                expected_root = self.git(destination, 'cat-file', 'commit', root_commit).stdout
+                expected_tree = self.git(destination, 'rev-parse', 'HEAD^{tree}').stdout
+                self.git(destination, 'push', '--', remote.as_uri(), 'main')
+                shutil.rmtree(destination)
+                if child_commits == 2:
+                    shutil.rmtree(source)
+                clone = self.root / ('ordinary-clone-' + str(child_commits))
+                self.git(self.root, 'clone', '--quiet', '--', remote.as_uri(), str(clone))
+                for repository in (remote, clone):
+                    self.assert_complete_history(repository, commits)
+                    self.assertEqual(self.git(repository, 'rev-list', '--parents', 'HEAD').stdout,
+                                     expected_history)
+                    self.assertEqual(self.git(repository, 'cat-file', 'commit', root_commit).stdout,
+                                     expected_root)
+                    for excluded in (source_main, previous):
+                        self.assertNotEqual(self.git(repository, 'cat-file', '-e', excluded,
+                                                     check=False).returncode, 0)
+                self.assertEqual(self.git(clone, 'rev-parse', 'HEAD^{tree}').stdout, expected_tree)
+                self.assertEqual(self.git(clone, 'status', '--porcelain').stdout, '')
 
     def test_failed_clone_does_not_leak_refs_or_objects_into_next_attempt(self):
         failed, _ = self.source('failed-source')
@@ -390,21 +446,21 @@ class ForkTests(unittest.TestCase):
         self.assertTrue(any(not line.strip() for line in lines[commit_line + 1:remote_line]), result.stdout)
         self.assertIn('origin', remote_arguments)
         # Execute only the suggested local staging/commit commands after checking
-        # the script itself preserved HEAD. Keep cd and Git in the same shell;
+        # the script itself created the snapshot root. Keep cd and Git in the same shell;
         # never execute remote setup or push.
         selected_commands = [directory_command]
         for _, command, arguments in commands:
             if 'commit' in arguments or ('add' in arguments and 'remote' not in arguments):
                 selected_commands.append(command)
+        root_commit = self.git(destination, 'rev-parse', 'HEAD').stdout.strip()
         execution = subprocess.run('\n'.join(selected_commands), shell=True,
             executable=FORK_SHELL or '/bin/sh',
             cwd=self.root, env=self.environment, text=True, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, timeout=15)
         self.assertEqual(execution.returncode, 0, execution.stdout + execution.stderr)
         self.assertFalse((self.root / 'injected').exists())
-        source_head = self.git(source, 'rev-parse', 'HEAD').stdout.strip()
-        self.git(destination, 'merge-base', '--is-ancestor', source_head, 'HEAD')
-        self.assertNotEqual(self.git(destination, 'rev-parse', 'HEAD').stdout.strip(), source_head)
+        self.git(destination, 'merge-base', '--is-ancestor', root_commit, 'HEAD')
+        self.assertNotEqual(self.git(destination, 'rev-parse', 'HEAD').stdout.strip(), root_commit)
         self.assertEqual(self.git(destination, 'status', '--porcelain').stdout, '')
 
     def test_source_local_configuration_is_not_copied(self):
@@ -420,6 +476,59 @@ class ForkTests(unittest.TestCase):
         for key in ('user.name', 'user.email', 'custom.private'):
             self.assertEqual(self.git(destination, 'config', '--local', '--get', key,
                                       check=False).returncode, 1)
+
+    def test_snapshot_metadata_preserves_source_identity_without_private_caller_or_source_details(self):
+        source, previous = self.source("private source '$(touch source-injected)'")
+        source_environment = dict(self.environment,
+            GIT_AUTHOR_NAME='Source author', GIT_AUTHOR_EMAIL='source-author@example.invalid',
+            GIT_AUTHOR_DATE='2001-02-03T04:05:06+05:30',
+            GIT_COMMITTER_NAME='Source committer', GIT_COMMITTER_EMAIL='source-committer@example.invalid',
+            GIT_COMMITTER_DATE='2007-08-09T10:11:12-04:00')
+        self.git(source, 'config', 'i18n.commitEncoding', 'ISO-8859-1')
+        private_message = 'Private source message ' + str(source)
+        self.git(source, 'commit', '-q', '--amend', '--reset-author', '-m', private_message,
+                 environment=source_environment)
+        raw_source = self.git(source, 'cat-file', 'commit', 'HEAD').stdout.replace('\n\n',
+            '\nx-private-location ' + str(source) +
+            '\ngpgsig private-source-signature\n private-signature-continuation\n\n', 1)
+        source_commit = self.git(source, 'hash-object', '-t', 'commit', '-w', '--stdin',
+                                 input=raw_source).stdout.strip()
+        self.git(source, 'update-ref', 'refs/heads/main', source_commit)
+        routed_url = 'https://private-source.example.invalid/private-repository.git'
+        self.git(self.root, 'config', '--file', str(self.config),
+                 'url.' + source.as_uri() + '.insteadOf', routed_url)
+        self.git(self.root, 'config', '--file', str(self.config), 'user.name', 'Private machine user')
+        self.git(self.root, 'config', '--file', str(self.config), 'user.email', 'private-machine@example.invalid')
+        self.git(self.root, 'config', '--file', str(self.config), 'core.logAllRefUpdates', 'true')
+        self.git(self.root, 'config', '--file', str(self.config), 'i18n.commitEncoding', 'UTF-8')
+        environment = dict(self.environment,
+            EMAIL='private-email@example.invalid',
+            GIT_AUTHOR_NAME='Private environment author', GIT_AUTHOR_EMAIL='private-author@example.invalid',
+            GIT_AUTHOR_DATE='1999-01-02T03:04:05+00:00',
+            GIT_COMMITTER_NAME='Private environment committer',
+            GIT_COMMITTER_EMAIL='private-committer@example.invalid',
+            GIT_COMMITTER_DATE='1999-06-07T08:09:10+00:00',
+            GIT_CONFIG_COUNT='2', GIT_CONFIG_KEY_0='user.name',
+            GIT_CONFIG_VALUE_0='Private injected user', GIT_CONFIG_KEY_1='user.email',
+            GIT_CONFIG_VALUE_1='private-injected@example.invalid',
+            PROJECT_NAME='Private project name', PROJECT_AUTHOR='Private project screenname')
+        destination = self.root / 'metadata-isolated'
+        self.fork(destination, routed_url, environment=environment)
+        self.assert_fresh(destination, source, previous)
+        metadata_text = self.git(destination, 'cat-file', 'commit', 'HEAD').stdout
+        metadata_text += (destination / '.git' / 'config').read_text()
+        logs = destination / '.git' / 'logs'
+        if logs.exists():
+            metadata_text += ''.join(path.read_text() for path in logs.rglob('*') if path.is_file())
+        for private in (str(source), routed_url, private_message, 'private-source-signature',
+                        'private-signature-continuation', 'Private machine user',
+                        'private-machine@example.invalid', 'Private environment author',
+                        'Private environment committer', 'private-author@example.invalid',
+                        'private-committer@example.invalid', 'private-email@example.invalid',
+                        'Private injected user', 'private-injected@example.invalid',
+                        'Private project name', 'Private project screenname'):
+            self.assertNotIn(private, metadata_text)
+        self.assertFalse((self.root / 'source-injected').exists())
 
     def test_file_url_handles_spaces(self):
         source, previous = self.source('source with spaces')

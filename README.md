@@ -151,11 +151,16 @@ navigation. It is checked for missing references, and does not substitute for th
 
 ### Start a new repository
 
-[`fork.sh`](fork.sh) creates an independent repository containing only `main` and
-its latest original commit, using a depth-one clone. Older commits, other branches
-and tags are not fetched. There is no configured remote or upstream tracking.
-It makes no commit and needs no Git name or email setting. The original commit ID
-is preserved as the baseline for comparing and integrating foundation updates.
+[`fork.sh`](fork.sh) creates an independent, non-shallow repository containing
+only `main`, with one new root commit holding the selected foundation snapshot.
+Your project's own commits follow that root. A temporary depth-one clone supplies
+the snapshot; older commits, other branches and tags are not fetched or retained.
+The new root has a different commit ID and no parents. It preserves the source
+commit's recorded author, committer and dates, so no configured Git name or email
+is needed. Its message records only the original foundation commit hash as
+provenance, without the source URL or filesystem path. No provenance file is
+added. There is no configured remote or upstream tracking, and no source location
+is retained in Git configuration.
 Requires a traditional SVR4-style Bourne shell or a POSIX shell such as Dash,
 Git 2.28+, `mktemp -d` and standard modern Unix utilities (including `printf`,
 `awk` and external `pwd` with `-L`/`-P`). The shell syntax avoids POSIX-only
@@ -176,7 +181,7 @@ of Git identity. When set, it replaces the foundation author in the root
 current date. When empty, attribution is preserved. Only recognized foundation
 attribution in regular tracked files is changed; the CC0 legal text, third-party
 notices and other source contents remain intact. Attribution edits are left
-unstaged; the index and existing commits remain unchanged. The script captures
+unstaged; the index and new root retain the exact source snapshot. The script captures
 the current local date automatically for the copyright year and completion
 message. Other project-specific renaming within source files is a separate step.
 
@@ -209,19 +214,23 @@ relative to the directory where you run the script. The checkout starts from the
 selected source's latest `main` commit, regardless of its default branch or local
 checkout; local modifications and untracked files are excluded. Executable bits,
 symlinks and tracked ignored files are preserved. Local sources use Git transport
-so the depth limit also applies to local paths, without hardlinks or alternate
-object stores. The repositories remain independent.
+so the temporary depth limit also applies to local paths. The final repository
+has its own complete object store, without hardlinks, alternates, replacement refs
+or a shallow boundary. It can be pushed to an empty repository and cloned normally,
+without older foundation history. Local-source operation works offline and requires
+no destination remote, account, credentials or push.
 Sources containing submodules are rejected. A failed run removes its own partial
 output; existing destinations, including empty directories, are never reused.
 Use `./fork.sh --help` for command help. Completion prints one relative `cd` command followed
 by ordinary Git commands to review changes, make the first project commit, add
 your new remote URL and push `main`. These commands are suggestions only. Git identity can be
-configured by the user before committing. When later fetching a foundation update
-for a merge, include the intervening history back to the retained baseline; a
-second depth-one snapshot alone may not establish the shared ancestry. Older
-history can be fetched later when needed, rather than during project creation.
+configured by the user before committing. The recorded foundation hash identifies
+the snapshot for later comparison or applying selected foundation changes; it is
+provenance, not shared Git ancestry for a future merge.
 
-Focused offline regression:
+Focused offline regression verifies exact snapshot contents and modes, independent
+history, attribution and privacy, then pushes to a disposable local bare repository
+with normal Git receive settings and clones it again:
 
 ```sh
 ./build.sh test dev --core-provider cpp --build-dir build/fork-check --test tools.fork
@@ -229,7 +238,7 @@ Focused offline regression:
 
 Set `FOUNDATION_FORK_SHELL` to a shell executable path to run the same regression
 cases, including the printed commands, through that interpreter instead of the
-script's shebang. All 35 cases passed on Linux under both Dash and
+script's shebang. The suite runs on Linux under both Dash and
 [Heirloom Bourne 050706](https://heirloom.sourceforge.net/sh.html), using modern
 Git and utilities. For example:
 

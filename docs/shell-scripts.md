@@ -12,7 +12,7 @@ The original V7 shell and historical operating systems are outside this scope.
 | --- | --- | --- |
 | [`build.sh`](../build.sh) | Dispatch build/test/package arguments to `tools/build.py`. | Python and the selected [build prerequisites](building.md). |
 | [`editor.sh`](../editor.sh) | Select the system or retained-SDK editor, build it if absent, then launch it. | Native editor prerequisites in [COMPILE-editor](../COMPILE-editor). |
-| [`fork.sh`](../fork.sh) | Create an independent shallow repository with the original `main` tip and no remote. | Git, `mktemp -d` and modern Unix utilities; [configuration](../README.md#start-a-new-repository). |
+| [`fork.sh`](../fork.sh) | Create an independent, non-shallow repository with one root snapshot commit and no remote. | Git, `mktemp -d` and modern Unix utilities; [configuration](../README.md#start-a-new-repository). |
 | [`tools/ci-apt.sh`](../tools/ci-apt.sh) | Configure Debian/Ubuntu CI mirrors and perform bounded APT recovery; unchanged. | Modern POSIX shell (including Dash), Debian/Ubuntu APT, dpkg, coreutils, sed and grep; installation permissions when actually installing. |
 
 This table enumerates the four tracked standalone project shell scripts. It
