@@ -1,0 +1,60 @@
+--- a/backends/web/renderer.mjs
++++ b/backends/web/renderer.mjs
+@@ -23,6 +23,7 @@
+     this.activePointers = new Set();this.pointerCancelEpoch=0n;this.wheelPending={count:0};
+     for(const kind of ["blur","pagehide"])this.listen(this.document.defaultView,kind,()=>this.cancelPointers());
+     this.listen(this.root,"wheel", event => this.groupWheel(event), {passive: false});
++    this.listen(this.root,"contextmenu", event => this.contextMenu(event));
+     this.listen(this.document,"keydown", event => {
+       const snapshot = this.acceptedSnapshot || this.snapshot;
+       if (event.defaultPrevented || event.isComposing || !snapshot) return;
+@@ -182,16 +183,6 @@
+     }, true);
+     node.addEventListener("pointermove", event => pointer(event, "move"));
+     node.addEventListener("wheel", event => pointer(event, "wheel"), {passive: false});
+-    node.addEventListener("contextmenu",event=>{
+-      if(this.activePointers.size){event.preventDefault();return;}
+-      if(entry.widget.contextInput) {
+-        event.preventDefault();event.stopPropagation();
+-        if(this.snapshot?.popup)return;
+-        const bounds=this.root.getBoundingClientRect();
+-        act("pointer",{kind:"context",pointerId:"0",x:event.clientX-bounds.left,y:event.clientY-bounds.top,
+-          wheelX:0,wheelY:0,control:event.ctrlKey,shift:event.shiftKey,alt:event.altKey});
+-      } else if(entry.widget.kind===7&&entry.widget.actions.length){event.preventDefault();act("popupOpen");}
+-    });
+     entry.control.addEventListener("focus", () => {
+       if(entry.updating)return;
+       const version=(this.focusVersion||0)+1;this.focusVersion=version;this.pendingFocus=version;
+@@ -200,6 +191,32 @@
+       });
+     });
+     return entry;
++  }
++  contextMenu(event) {
++    const snapshot=this.acceptedSnapshot||this.snapshot;
++    if(event.defaultPrevented||!snapshot||snapshot.closed)return;
++    if(this.activePointers.size||snapshot.popup){event.preventDefault();return;}
++    // Native hit testing stops at inert decoration. Resolve the generic shared
++    // declarations instead, without changing label selection, help or hit tests.
++    const origin=event.target.closest?.(".widget");
++    if(origin&&(!this.nodes.has(origin.dataset.key)||!snapshot.widgets.some(widget=>identity(widget.key)===origin.dataset.key)))return;
++    const bounds=this.root.getBoundingClientRect(),x=event.clientX-bounds.left,y=event.clientY-bounds.top;
++    if(!Number.isFinite(x)||!Number.isFinite(y))return;
++    for(let index=snapshot.widgets.length-1;index>=0;--index){
++      const widget=snapshot.widgets[index],[cx,cy,cw,ch]=widget.clip;
++      if(!widget.visible||!widget.enabled||!widget.inModal||x<cx||y<cy||x>=cx+cw||y>=cy+ch)continue;
++      const focusable=widget.kind!==0&&widget.kind!==1&&(widget.kind!==7||widget.pointerInput||widget.actions.length);
++      if(!widget.contextInput&&!widget.pointerInput&&!focusable)continue;
++      // Accepted replacement generations block old painted controls until their
++      // own retained DOM object exists; stale input cannot impersonate them.
++      if(!this.nodes.has(identity(widget.key)))return;
++      if(widget.contextInput){
++        event.preventDefault();event.stopPropagation();
++        this.operation(widget,"pointer",{kind:"context",pointerId:"0",x,y,wheelX:0,wheelY:0,
++          control:event.ctrlKey,shift:event.shiftKey,alt:event.altKey});
++      } else if(widget.kind===7&&widget.actions.length){event.preventDefault();this.operation(widget,"popupOpen");}
++      return;
++    }
+   }
+   selection(entry) {
+     if (entry.updating || this.pendingEdits.has(identity(entry.widget.key))) return;

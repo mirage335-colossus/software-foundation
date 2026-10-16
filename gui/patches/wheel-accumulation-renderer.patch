@@ -1,0 +1,80 @@
+--- a/backends/web/renderer.mjs
++++ b/backends/web/renderer.mjs
+@@ -20,7 +20,7 @@
+     this.nodes = new Map(); this.pendingEdits = new Map(); this.editVersion = 0;
+     this.measurements = new Set(); this.measureRequests = new Map(); this.measureAttempts = new Set(); this.measureTimer = null; this.measureProbe = null;
+     this.destroyed = false; this.lastFocus = null; this.snapshot = null; this.pointerSerial = 0n;
+-    this.activePointers = new Set();this.pointerCancelEpoch=0n;
++    this.activePointers = new Set();this.pointerCancelEpoch=0n;this.wheelPending={count:0};
+     for(const kind of ["blur","pagehide"])this.listen(this.document.defaultView,kind,()=>this.cancelPointers());
+     this.listen(this.root,"wheel", event => this.groupWheel(event), {passive: false});
+     this.listen(this.document,"keydown", event => {
+@@ -46,7 +46,7 @@
+     return this.send({type, key: widget.key, ...values}, coalesce).catch(() => {});
+   }
+   // Acknowledgment callbacks need accepted data even while the next paint waits.
+-  acceptSnapshot(snapshot) { this.acceptedSnapshot = snapshot; }
++  acceptSnapshot(snapshot) { this.acceptedSnapshot = snapshot; if(snapshot.closed)this.wheelPending={count:0}; }
+   current(key) { return (this.acceptedSnapshot || this.snapshot).widgets.find(widget => identity(widget.key) === identity(key)); }
+   setFont(node, font) {
+     node.style.fontSize = `${font.size}px`; node.style.fontWeight = font.bold ? "700" : "400";
+@@ -462,14 +462,17 @@
+     this.destroyed = true; this.stopMeasuring(); this.measureRequests.clear(); this.measureAttempts.clear(); this.measurements.clear();
+     this.cancelPointers();
+     for(const [target,kind,callback,options] of this.listeners)target.removeEventListener?.(kind,callback,options);this.listeners=[];
+-    this.nodes.clear();this.pendingEdits.clear();
++    this.nodes.clear();this.pendingEdits.clear();this.wheelPending={count:0};
+   }
+   groupWheel(event) {
+-    if(event.defaultPrevented||!this.snapshot)return;
++    const snapshot=this.acceptedSnapshot||this.snapshot;
++    if(this.destroyed||event.defaultPrevented||!snapshot||snapshot.closed)return;
+     const node=event.target.closest?.(".widget"), entry=node?this.nodes.get(node.dataset.key):null;
+     if(!Number.isFinite(event.deltaX)||!Number.isFinite(event.deltaY)||(!event.deltaX&&!event.deltaY))return;
+     if(event.target.closest?.("select"))return;
+-    if(entry&&(entry.widget.kind===6||entry.widget.kind===5)){
++    const current=entry&&snapshot.widgets.find(value=>identity(value.key)===identity(entry.widget.key));
++    if(!current)return;
++    if(current.kind===6||current.kind===5){
+       // Suggestions retain their native wheel selection. A text/list viewport
+       // owns a wheel only while it can move in a requested direction.
+       if(event.ctrlKey)return;
+@@ -484,9 +487,10 @@
+            room(control.scrollTop,control.scrollHeight,control.clientHeight,event.deltaY))return;
+       }
+     }
+-    let widget=entry?.widget;
+-    while(widget){
++    let widget=current,origin=null,moves=false,remaining=snapshot.widgets.length;
++    while(widget&&remaining--){
+       if(widget.kind===0&&widget.visible&&widget.enabled&&widget.inModal){
++        origin??=widget;
+         // Logical parents are DOM siblings. Use the shared child viewport to
+         // clamp group requests and continue through an ancestor at its bound.
+         const [,,width,height]=widget.bounds,[cx,cy,cw,ch]=widget.contentClip??[0,0,width,height];
+@@ -496,12 +500,19 @@
+         const maximumY=Math.max(0,widget.contentSize[1]-viewportHeight);
+         const x=Math.max(0,Math.min(maximumX,widget.scroll[0]+event.deltaX));
+         const y=Math.max(0,Math.min(maximumY,widget.scroll[1]+event.deltaY));
+-        if(x!==widget.scroll[0]||y!==widget.scroll[1]){
+-          event.preventDefault();this.operation(widget,"scroll",{x,y},`scroll:${identity(widget.key)}`);return;
+-        }
+-      }
+-      widget=this.snapshot.widgets.find(value=>value.key.id===widget.parent);
+-    }
++        if(x!==widget.scroll[0]||y!==widget.scroll[1])moves=true;
++      }
++      widget=snapshot.widgets.find(value=>value.key.id===widget.parent);
++    }
++    // An earlier relative stroke may create room before its receipt arrives.
++    // Keep only a scalar; the Client/channel own the existing bounded queues.
++    // A conservative exhausted stroke while pending completes locally at dispatch.
++    const pending=this.wheelPending??(this.wheelPending={count:0});
++    if(!origin||(!moves&&!pending.count))return;
++    event.preventDefault();++pending.count;
++    const finish=()=>{if(pending.count>0)--pending.count;};
++    this.operation(origin,"groupWheel",{x:Math.max(-1000000,Math.min(1000000,event.deltaX)),
++      y:Math.max(-1000000,Math.min(1000000,event.deltaY))}).then(finish,finish);
+   }
+ }
+ 

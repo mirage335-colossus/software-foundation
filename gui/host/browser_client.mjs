@@ -10,6 +10,30 @@ const serializedOperation=operation=>{
     throw Error("Input exceeds the operation byte limit.");
   return text;
 };
+// Relative group wheels are local queue intents. Resolve each stroke only at
+// first dispatch, after earlier actions/scrolls, then retain the ordinary absolute
+// backend envelope unchanged for retries. Never merge opposite/clamped strokes.
+const prepareGroupWheel=(intent,snapshot)=>{
+  const stale=message=>{const error=Error(message);error.stale=true;throw error;};
+  if(!snapshot||snapshot.closed)stale("Application is closed");
+  if(!intent.key||![intent.x,intent.y].every(value=>Number.isFinite(value)&&Math.abs(value)<=1000000))
+    throw Error("Invalid group wheel intent");
+  let widget=snapshot.widgets.find(value=>value.key.id===intent.key.id&&value.key.generation===intent.key.generation);
+  if(!widget||widget.kind!==0||!widget.visible||!widget.enabled||!widget.inModal)stale("Wheel group is no longer available");
+  let remaining=snapshot.widgets.length;
+  while(widget&&remaining--){
+    if(widget.kind===0&&widget.visible&&widget.enabled&&widget.inModal){
+      const [,,width,height]=widget.bounds,[cx,cy,cw,ch]=widget.contentClip??[0,0,width,height];
+      const viewportWidth=Math.max(0,Math.min(width,cx+cw)-Math.max(0,cx));
+      const viewportHeight=Math.max(0,Math.min(height,cy+ch)-Math.max(0,cy));
+      const x=Math.max(0,Math.min(Math.max(0,widget.contentSize[0]-viewportWidth),widget.scroll[0]+intent.x));
+      const y=Math.max(0,Math.min(Math.max(0,widget.contentSize[1]-viewportHeight),widget.scroll[1]+intent.y));
+      if(x!==widget.scroll[0]||y!==widget.scroll[1])return {type:"scroll",key:widget.key,x,y};
+    }
+    widget=snapshot.widgets.find(value=>value.key.id===widget.parent);
+  }
+  return null; // Exhausted input needs neither a backend request nor a sequence.
+};
 export class Client {
   constructor(exchange, apply, status = () => {}) {
     this.exchange = exchange; this.apply = apply; this.status = status;
@@ -38,6 +62,7 @@ export class Client {
           operation=JSON.parse(text); // Caller mutation cannot alter a queued/retried command.
         }
       }catch(error){this.status(error.message);reject(error);return;}
+      if(operation?.type==="groupWheel")coalesce=null;
       const last=this.queue.at(-1),previous=coalesce&&last?.coalesce===coalesce?last:null;
       if(this.queuedBytes-(previous?.bytes||0)+bytes>MAX_QUEUED_BYTES||
           (previous?previous.completions.length>=128:this.queue.length>=128)){
@@ -60,10 +85,26 @@ export class Client {
           const task=this.queue[0];
           try {
             if(task.beforePrepare?.(this.state,task.operation)===false)throw Error("Input is no longer current.");
-            const operation=typeof task.operation==="function"?JSON.parse(serializedOperation(task.operation(this.state.snapshot))):task.operation;
+            let operation=typeof task.operation==="function"?JSON.parse(serializedOperation(task.operation(this.state.snapshot))):task.operation;
+            const relativeWheel=operation?.type==="groupWheel";
+            if(relativeWheel){
+              operation=prepareGroupWheel(operation,this.state.snapshot);
+              if(operation===null){
+                this.queue.shift();this.queuedBytes-=task.bytes;
+                for(const completion of task.completions)completion.resolve(this.state);
+                continue;
+              }
+            }
             const envelope={epoch:this.epoch,seq:String(this.ack+1n),operation};
             const text=JSON.stringify(envelope);
-            if(text.length>MAX_OPERATION_BYTES||encoder.encode(text).length>MAX_OPERATION_BYTES)throw Error("Input envelope exceeds the byte limit.");
+            const envelopeBytes=encoder.encode(text).length;
+            if(text.length>MAX_OPERATION_BYTES||envelopeBytes>MAX_OPERATION_BYTES)throw Error("Input envelope exceeds the byte limit.");
+            if(relativeWheel){
+              // Retain the small intent and its prepared absolute envelope. An
+              // ancestor identity may be larger; charge it before any exchange.
+              if(this.queuedBytes+envelopeBytes>MAX_QUEUED_BYTES)throw Error("Input queue is full; wait for the backend.");
+              this.queuedBytes+=envelopeBytes;task.bytes+=envelopeBytes;
+            }
             this.inflight={task,envelope};this.queue.shift();
           }catch(error){
             // Local preparation failure has no uncertain backend side effect.

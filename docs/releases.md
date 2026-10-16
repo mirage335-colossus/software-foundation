@@ -331,6 +331,13 @@ both identity and archive operations. Its actual source bytes are retained under
 `third_party/retained/gui/`; recovery must not depend on an upstream URL surviving.
 A source archive includes `source.json`, complete per-file hashes and executable
 modes. Generated build outputs and ignored coordination files are excluded.
+Local `.env` and `.env.*` files and directories are excluded at every depth,
+even without Git metadata or when forcibly tracked. `.env.example` and
+`.env.*.example` templates remain source inputs. Environment-file backup, lock
+and swap artifacts are also filtered, including `.env~`, `.#.env`, `.#.env.*`,
+`#.env#`, `#.env.*#`, `..env.sw[a-z]` and `..env.*.sw[a-z]`. These name-based rules
+exclude local credential artifacts from source identity and archives; ordinary
+source files and templates still require review for private values.
 Snapshot creation rechecks the input tree before publishing the archive.
 
 Release assembly verifies that each package's `source_tree_sha256`, normalized

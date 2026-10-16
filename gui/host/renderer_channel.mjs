@@ -54,7 +54,7 @@ export function validateRendererOperation(operation, snapshot) {
   const schemas = {
     activate:['key'],checked:['key','value'],editIntent:['key','value'],choose:['key','id'],select:['key','id'],
     activateRecord:['key','id'],submit:['key'],action:['key','id'],pointer:['key','kind','pointerId','x','y','wheelX','wheelY','control','shift','alt'],
-    focus:['key'],selection:['key','anchor','caret'],scroll:['key','x','y'],popupOpen:['key'],popupClose:['key'],
+    focus:['key'],selection:['key','anchor','caret'],scroll:['key','x','y'],groupWheel:['key','x','y'],popupOpen:['key'],popupClose:['key'],
     popupChoice:['key','id'],listKey:['key','value'],page:['id'],shortcut:['key','control','shift','alt'],measure:['values']
   };
   if (!operation || !Object.hasOwn(schemas,operation.type)) throw Error('Renderer operation is not delegated');
@@ -68,11 +68,13 @@ export function validateRendererOperation(operation, snapshot) {
   if (type === 'editIntent' && typeof operation.value !== 'string') throw Error('Invalid renderer edit');
   if (type === 'selection' && (!uint(operation.anchor) || !uint(operation.caret))) throw Error('Invalid renderer selection');
   if (type === 'scroll' && (!geometry(operation.x) || !geometry(operation.y) || operation.x < 0 || operation.y < 0)) throw Error('Invalid renderer scroll');
+  if (type === 'groupWheel' && (!geometry(operation.x) || !geometry(operation.y))) throw Error('Invalid renderer group wheel');
   if (type === 'listKey' && !['up','down','space','enter'].includes(operation.value)) throw Error('Invalid renderer list key');
-  if (type === 'pointer' && (!['press','release','cancel','double','move','wheel'].includes(operation.kind) ||
+  if (type === 'pointer' && (!['press','release','cancel','double','move','wheel','context'].includes(operation.kind) ||
       !uint(operation.pointerId) || !['x','y','wheelX','wheelY'].every(name=>geometry(operation[name])) ||
-      (['press','release','cancel'].includes(operation.kind) && operation.pointerId === '0'))) throw Error('Invalid renderer pointer');
-  if (type === 'shortcut' && (!Number.isInteger(operation.key) || operation.key < 0 || operation.key > 13)) throw Error('Invalid renderer shortcut');
+      (['press','release','cancel'].includes(operation.kind) && operation.pointerId === '0') ||
+      (operation.kind === 'context' && (operation.pointerId !== '0' || operation.wheelX !== 0 || operation.wheelY !== 0)))) throw Error('Invalid renderer pointer');
+  if (type === 'shortcut' && (!Number.isInteger(operation.key) || operation.key < 0 || operation.key > 15)) throw Error('Invalid renderer shortcut');
   if (type === 'measure') {
     if (!Array.isArray(operation.values) || !operation.values.length || operation.values.length > 512) throw Error('Invalid renderer measurement batch');
     const seen = new Set();
@@ -103,7 +105,7 @@ export function validateRendererOperation(operation, snapshot) {
   const widget = snapshot.widgets.find(widget=>keyEqual(widget.key,operation.key));
   if (!widget || !widget.visible || !widget.enabled || !widget.inModal) stale('Widget is no longer available');
   const kind = widget.kind;
-  const kinds = {activate:[2],checked:[3],editIntent:[5],choose:[4,5,8],select:[6],activateRecord:[6],submit:[5],action:[7],selection:[5],scroll:[0,5,6],listKey:[6]};
+  const kinds = {activate:[2],checked:[3],editIntent:[5],choose:[4,5,8],select:[6],activateRecord:[6],submit:[5],action:[7],selection:[5],scroll:[0,5,6],groupWheel:[0],listKey:[6]};
   if (kinds[type] && !kinds[type].includes(kind)) stale('Widget capability changed');
   if (['editIntent','submit'].includes(type) && widget.readOnly) stale('Editor is read only');
   if (type === 'submit' && !widget.submit) stale('Editor cannot submit');
@@ -111,7 +113,8 @@ export function validateRendererOperation(operation, snapshot) {
   if (type === 'choose' && ((kind === 5 && widget.readOnly) || !widget.options.some(option=>option.id === operation.id && option.enabled))) stale('Option is no longer available');
   if (['select','activateRecord'].includes(type) && !widget.records.some(record=>record.id === operation.id && record.enabled && (type !== 'activateRecord' || record.activatable))) stale('Record is no longer available');
   if (type === 'action' && !widget.actions.some(action=>action.id === operation.id && action.enabled)) stale('Action is no longer available');
-  if (type === 'pointer' && !widget.pointerInput) stale('Pointer input is no longer available');
+  if (type === 'pointer' && !(operation.kind === 'context' ? widget.contextInput : widget.pointerInput)) stale('Pointer input is no longer available');
+  if (type === 'pointer' && operation.kind === 'context' && snapshot.popup) stale('A popup owns context input');
   if (type === 'popupOpen' && !widget.actions?.some(action=>action.enabled)) stale('Popup is no longer available');
   if (['popupClose','popupChoice'].includes(type) && !keyEqual(snapshot.popup?.key,operation.key)) stale('Popup was replaced');
   if (type === 'popupChoice' && !snapshot.popup.options.some(option=>option.id === operation.id && option.enabled)) stale('Popup option was replaced');
@@ -120,7 +123,7 @@ export function validateRendererOperation(operation, snapshot) {
 
 export function publicSnapshot(snapshot) {
   const result = {};
-  for (const name of ['revision','title','palette','width','height','scale','pages','activePage','widgets','measurements','keyBindings','focus','popup','closed'])
+  for (const name of ['revision','title','palette','width','height','scale','pages','activePage','widgets','measurements','keyBindings','commands','focus','popup','closed'])
     if (Object.hasOwn(snapshot,name)) result[name] = snapshot[name];
   return clonePacket(result,MAX_STATE_BYTES);
 }

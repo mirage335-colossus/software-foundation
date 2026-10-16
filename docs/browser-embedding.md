@@ -92,7 +92,8 @@ listeners are removed when bound; startup/load/bind deadlines fail closed.
 
 The protocol is `foundation-renderer-v1`. Child requests carry typed UI intents:
 activate, checked, edit intent, choose/select/activate-record, submit/action,
-pointer/focus/selection/scroll, popup/list input, page and shortcut. Measurements
+pointer/focus/selection/scroll, relative group-wheel intent, popup/list input,
+page and shortcut. Measurements
 reply only to currently outstanding measurement IDs. There is no child operation
 for a raw Client envelope, service result, file begin/chunk/finish/read, polling,
 resize, close or arbitrary host method.
@@ -112,6 +113,16 @@ and exact retry identity. Channel queues additionally limit pending requests to
 builds their edit base from current accepted state. The renderer's existing
 fourth `document` argument remains compatible; its fifth options argument can
 supply `sendEdit(key, value)` for the typed child path.
+
+`groupWheel` carries only an exact current group key and finite signed `x`/`y`
+deltas bounded to one million logical units per axis. The parent checks group
+eligibility at receipt and again before dispatch. Each relative stroke resolves
+against current accepted geometry and logical ancestors after prior queued
+actions, then becomes the existing absolute backend scroll operation. It has
+no new backend authority or wire operation. Relative wheels never coalesce;
+exhausted input completes locally without a sequence. Queue accounting charges
+the retained intent and its prepared envelope before transport; a failed growth
+check has no transport side effect. Retries retain the same envelope and charge.
 
 State delivery permits one outstanding packet and one latest pending snapshot,
 with bounded completions. Each public snapshot is limited to 64 MiB to preserve
