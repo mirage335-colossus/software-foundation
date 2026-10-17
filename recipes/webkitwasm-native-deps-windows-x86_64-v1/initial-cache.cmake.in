@@ -1,0 +1,31 @@
+# Proposed initial-cache template only; this file has not been generated or run.
+# Every program placeholder requires an independently admitted absolute Windows
+# path. No placeholder is an executable selection or an approved supplier argv.
+set(CMAKE_SYSTEM_NAME "Windows" CACHE STRING "Exact target system")
+set(CMAKE_SYSTEM_PROCESSOR "x86_64" CACHE STRING "Exact target processor")
+set(CMAKE_C_COMPILER "@FOUNDATION_WINDOWS_COMPILER@" CACHE FILEPATH "Selected clang-cl")
+set(CMAKE_CXX_COMPILER "@FOUNDATION_WINDOWS_COMPILER@" CACHE FILEPATH "Selected clang-cl")
+set(CMAKE_C_COMPILER_TARGET "x86_64-pc-windows-msvc" CACHE STRING "Exact target triple")
+set(CMAKE_CXX_COMPILER_TARGET "x86_64-pc-windows-msvc" CACHE STRING "Exact target triple")
+set(CMAKE_LINKER "@FOUNDATION_WINDOWS_LINKER@" CACHE FILEPATH "Selected lld-link")
+set(CMAKE_AR "@FOUNDATION_WINDOWS_ARCHIVER@" CACHE FILEPATH "Selected llvm-lib")
+set(CMAKE_RC_COMPILER "@FOUNDATION_WINDOWS_RESOURCE_COMPILER@" CACHE FILEPATH "Selected llvm-rc")
+set(CMAKE_MT "@FOUNDATION_WINDOWS_MANIFEST_TOOL@" CACHE FILEPATH "Selected llvm-mt")
+set(CMAKE_MAKE_PROGRAM "@FOUNDATION_WINDOWS_NINJA@" CACHE FILEPATH "Selected Ninja")
+set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Release-only dependency proposal")
+set(CMAKE_CONFIGURATION_TYPES "Release" CACHE STRING "Release-only dependency proposal")
+set(CMAKE_CXX_STANDARD "23" CACHE STRING "Proposed engine C++ standard")
+set(CMAKE_CXX_STANDARD_REQUIRED ON CACHE BOOL "Require C++23")
+set(CMAKE_CXX_EXTENSIONS OFF CACHE BOOL "Disable language extensions")
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "Static Release CRT /MT")
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Static dependency proposal")
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "No LTO")
+
+# These settings express the explicit-input proposal. Actual reviewed commands
+# must also close environment, include/lib paths, compiler services and tools.
+set(CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH OFF CACHE BOOL "No environment discovery")
+set(CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH OFF CACHE BOOL "No environment discovery")
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY OFF CACHE BOOL "No user package registry")
+set(CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY OFF CACHE BOOL "No system package registry")
+set(CMAKE_FIND_USE_CMAKE_SYSTEM_PATH OFF CACHE BOOL "No default system discovery")
+set(CMAKE_FIND_USE_INSTALL_PREFIX OFF CACHE BOOL "No implicit install-prefix discovery")

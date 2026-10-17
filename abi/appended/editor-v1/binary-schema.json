@@ -1,0 +1,883 @@
+{
+  "name": "foundation-native-editor-binary-v1",
+  "version": 1,
+  "endianness": "little",
+  "maximum_total_bytes": 1048576,
+  "header": {
+    "bytes": 16,
+    "magic_bytes": [
+      66,
+      73,
+      66,
+      69,
+      68,
+      86,
+      49,
+      0
+    ],
+    "kind": {
+      "offset": 8,
+      "type": "u16",
+      "values": {
+        "ProjectionQuery": 1,
+        "ProjectionReply": 2,
+        "NativeRequestEnvelope": 3,
+        "NativeResultEnvelope": 4,
+        "RevocationEnvelope": 5
+      }
+    },
+    "flags": {
+      "offset": 10,
+      "type": "u16",
+      "constant": 0
+    },
+    "total": {
+      "offset": 12,
+      "type": "u32",
+      "equals": "complete encoded byte length"
+    },
+    "trailing_bytes": false
+  },
+  "primitives": {
+    "u64": "manual unsigned 64-bit LE; complete domain, no precision reduction",
+    "u32": "manual unsigned 32-bit LE",
+    "bool": "one byte, exactly 0 or 1",
+    "string": "u32 byte count followed by strict shortest scalar UTF-8, no U+0000, bounded before allocation",
+    "optional": "one strict bool byte followed by value iff 1",
+    "list": "u32 count followed by exactly count values; bounded before allocation",
+    "f64": "manual LE u64 IEEE754 binary64 bits; finite; abs(value)<=1000000; width/height nonnegative"
+  },
+  "enums": {
+    "Direction": {
+      "forward": 0,
+      "backward": 1,
+      "none": 2
+    },
+    "Kind": {
+      "key": 0,
+      "text": 1,
+      "selection": 2,
+      "composition": 3
+    },
+    "Authority": {
+      "native": 0,
+      "range": 1,
+      "default_action": 2,
+      "composition": 3
+    },
+    "KeyPhase": {
+      "down": 0,
+      "up": 1
+    },
+    "CompositionOperation": {
+      "begin": 0,
+      "update": 1,
+      "commit": 2,
+      "cancel": 3
+    },
+    "Outcome": {
+      "applied": 0,
+      "cancelled": 1,
+      "rejected": 2,
+      "unknown": 3
+    },
+    "Continuity": {
+      "same": 0,
+      "key_retarget": 1,
+      "replaced": 2
+    },
+    "CompositionState": {
+      "pending": 0,
+      "live": 1,
+      "ended": 2
+    },
+    "Availability": {
+      "available": 0,
+      "noneditable": 1,
+      "unavailable": 2
+    }
+  },
+  "records": {
+    "WireTarget": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "worker_epoch",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "application_instance",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "document_sequence",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "service_generation",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "request_sequence",
+          "type": "u64",
+          "minimum": 1
+        }
+      ],
+      "closed": true
+    },
+    "Identity": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "owner.id",
+          "type": "string",
+          "minimum_bytes": 1,
+          "maximum_bytes": 128
+        },
+        {
+          "name": "owner.generation",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "presentation_revision",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "generation",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "epoch",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "context",
+          "type": "u64",
+          "minimum": 1
+        }
+      ],
+      "closed": true
+    },
+    "ByteRange": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "begin",
+          "type": "u32"
+        },
+        {
+          "name": "end",
+          "type": "u32"
+        }
+      ],
+      "closed": true,
+      "constraints": [
+        "begin<=end; both are scalar UTF-8 byte boundaries in the associated text"
+      ]
+    },
+    "Basis": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "token",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "identity",
+          "type": "Identity"
+        },
+        {
+          "name": "editor_revision",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "surrounding",
+          "type": "string",
+          "maximum_bytes": 65536
+        },
+        {
+          "name": "selection",
+          "type": "ByteRange",
+          "associated_text": "surrounding"
+        },
+        {
+          "name": "backward",
+          "type": "bool"
+        },
+        {
+          "name": "composition",
+          "type": "u64"
+        }
+      ],
+      "closed": true
+    },
+    "NativeRetireMaterial": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "token",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "mapping_id",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "input_context",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "composition",
+          "type": "u64"
+        }
+      ],
+      "closed": true
+    },
+    "Rect": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "x",
+          "type": "f64"
+        },
+        {
+          "name": "y",
+          "type": "f64"
+        },
+        {
+          "name": "width",
+          "type": "f64"
+        },
+        {
+          "name": "height",
+          "type": "f64"
+        }
+      ],
+      "closed": true
+    },
+    "NativeProjection": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "identity",
+          "type": "Identity"
+        },
+        {
+          "name": "editor_revision",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "surrounding",
+          "type": "string",
+          "maximum_bytes": 65536
+        },
+        {
+          "name": "selection",
+          "type": "ByteRange",
+          "associated_text": "surrounding"
+        },
+        {
+          "name": "backward",
+          "type": "bool"
+        },
+        {
+          "name": "composition",
+          "type": "u64"
+        },
+        {
+          "name": "mapping_id",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "frame_id",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "readback_attested",
+          "type": "bool"
+        },
+        {
+          "name": "caret",
+          "type": "Rect"
+        },
+        {
+          "name": "editable",
+          "type": "bool"
+        },
+        {
+          "name": "input_purpose",
+          "type": "string",
+          "maximum_bytes": 128
+        },
+        {
+          "name": "retire",
+          "type": "optional<NativeRetireMaterial>"
+        }
+      ],
+      "closed": true,
+      "constraints": [
+        "Completed usable projections require readback_attested=true, editable=true, retire present.",
+        "Any present retire must match mapping_id, identity.context and composition.",
+        "Unknown-only forensic projections may have false readback/editable and absent retire; they never grant authority."
+      ]
+    },
+    "TextObservation": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "value",
+          "type": "string",
+          "maximum_bytes": 65536
+        },
+        {
+          "name": "selection_start",
+          "type": "u32",
+          "units": "UTF-16 code units at scalar boundary"
+        },
+        {
+          "name": "selection_end",
+          "type": "u32",
+          "units": "UTF-16 code units at scalar boundary"
+        },
+        {
+          "name": "selection_direction",
+          "type": "enum32<Direction>"
+        },
+        {
+          "name": "selection",
+          "type": "ByteRange",
+          "associated_text": "value"
+        },
+        {
+          "name": "byte_length",
+          "type": "u32"
+        }
+      ],
+      "closed": true,
+      "constraints": [
+        "UTF-16 endpoints independently join exactly to the encoded UTF-8 selection; no surrogate midpoint.",
+        "byte_length equals value UTF-8 byte length."
+      ]
+    },
+    "KeyData": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "transition.phase",
+          "type": "enum32<KeyPhase>"
+        },
+        {
+          "name": "transition.key",
+          "type": "string",
+          "minimum_bytes": 1,
+          "maximum_bytes": 64
+        },
+        {
+          "name": "transition.code",
+          "type": "string",
+          "maximum_bytes": 64,
+          "character_domain": "empty or ASCII 0x21..0x7e"
+        },
+        {
+          "name": "transition.location",
+          "type": "u32",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "name": "transition.modifiers",
+          "type": "u32",
+          "minimum": 0,
+          "maximum": 31
+        },
+        {
+          "name": "transition.repeat",
+          "type": "bool"
+        },
+        {
+          "name": "is_composing",
+          "type": "bool"
+        }
+      ],
+      "closed": true,
+      "constraints": [
+        "KeyPhase up forbids repeat."
+      ]
+    },
+    "SourceGroups": {
+      "kind": "list",
+      "element": "u64",
+      "maximum_count": 8,
+      "constraints": [
+        "Every element nonzero; no duplicate values."
+      ]
+    },
+    "TextData": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "input_type",
+          "type": "string",
+          "minimum_bytes": 1,
+          "maximum_bytes": 64
+        },
+        {
+          "name": "text",
+          "type": "string",
+          "maximum_bytes": 65536
+        },
+        {
+          "name": "replacement",
+          "type": "ByteRange",
+          "associated_text": "observation.before.value"
+        },
+        {
+          "name": "source_groups",
+          "type": "SourceGroups"
+        }
+      ],
+      "closed": true
+    },
+    "SelectionData": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "selection",
+          "type": "ByteRange",
+          "associated_text": "observation.before.value"
+        },
+        {
+          "name": "backward",
+          "type": "bool"
+        }
+      ],
+      "closed": true
+    },
+    "CompositionData": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "operation",
+          "type": "enum32<CompositionOperation>"
+        },
+        {
+          "name": "text",
+          "type": "string",
+          "maximum_bytes": 65536
+        },
+        {
+          "name": "selection",
+          "type": "ByteRange",
+          "associated_text": "text"
+        },
+        {
+          "name": "replacement",
+          "type": "optional<ByteRange>",
+          "associated_text": "observation.before.value"
+        },
+        {
+          "name": "source_groups",
+          "type": "SourceGroups"
+        }
+      ],
+      "closed": true
+    },
+    "Observation": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "predecessor",
+          "type": "optional<u64>",
+          "present_minimum": 1
+        },
+        {
+          "name": "kind",
+          "type": "enum32<Kind>"
+        },
+        {
+          "name": "authority",
+          "type": "enum32<Authority>"
+        },
+        {
+          "name": "group",
+          "type": "optional<u64>",
+          "present_minimum": 1
+        },
+        {
+          "name": "group_end",
+          "type": "bool"
+        },
+        {
+          "name": "transaction",
+          "type": "u64"
+        },
+        {
+          "name": "before",
+          "type": "TextObservation"
+        },
+        {
+          "name": "after",
+          "type": "optional<TextObservation>"
+        },
+        {
+          "name": "data",
+          "type": "variant_by_kind",
+          "cases": {
+            "key": "KeyData",
+            "text": "TextData",
+            "selection": "SelectionData",
+            "composition": "CompositionData"
+          }
+        }
+      ],
+      "closed": true
+    },
+    "DefaultDependency": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "group",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "token",
+          "type": "u64",
+          "minimum": 1
+        }
+      ],
+      "closed": true
+    },
+    "Packet": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "session",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "basis",
+          "type": "Basis"
+        },
+        {
+          "name": "default_token",
+          "type": "optional<u64>",
+          "present_minimum": 1
+        },
+        {
+          "name": "default_dependencies",
+          "type": "list<DefaultDependency>",
+          "maximum_count": 8,
+          "distinct_by": "group"
+        },
+        {
+          "name": "observation",
+          "type": "Observation"
+        }
+      ],
+      "closed": true
+    },
+    "NativeRequest": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "resolved",
+          "type": "NativeProjection"
+        },
+        {
+          "name": "packet",
+          "type": "Packet"
+        }
+      ],
+      "closed": true
+    },
+    "CompositionFact": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "transaction",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "state",
+          "type": "enum32<CompositionState>"
+        }
+      ],
+      "closed": true
+    },
+    "NativeResult": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "outcome",
+          "type": "enum32<Outcome>"
+        },
+        {
+          "name": "continuity",
+          "type": "enum32<Continuity>"
+        },
+        {
+          "name": "projection",
+          "type": "optional<NativeProjection>"
+        },
+        {
+          "name": "key_dispatch_attested",
+          "type": "bool"
+        },
+        {
+          "name": "default_prevented",
+          "type": "bool"
+        },
+        {
+          "name": "default_handled",
+          "type": "bool"
+        },
+        {
+          "name": "changed_focused_frame",
+          "type": "bool"
+        },
+        {
+          "name": "allow_default",
+          "type": "bool"
+        },
+        {
+          "name": "key_retarget_attested",
+          "type": "bool"
+        },
+        {
+          "name": "composition_readback_attested",
+          "type": "bool"
+        },
+        {
+          "name": "composition",
+          "type": "optional<CompositionFact>"
+        },
+        {
+          "name": "availability",
+          "type": "enum32<Availability>"
+        },
+        {
+          "name": "observation_revision",
+          "type": "u64"
+        },
+        {
+          "name": "readback_identity",
+          "type": "IdentityOrUnknownZeroSentinel"
+        },
+        {
+          "name": "readback_attested",
+          "type": "bool"
+        },
+        {
+          "name": "retire",
+          "type": "optional<NativeRetireMaterial>"
+        },
+        {
+          "name": "retired",
+          "type": "optional<NativeRetireMaterial>"
+        }
+      ],
+      "closed": true,
+      "constraints": [
+        "Completed non-unknown results require actual nonzero observation_revision, readback_attested=true and valid readback_identity.",
+        "Completed available requires a usable projection whose identity equals readback_identity; any current retire equals projection.retire.",
+        "Completed noneditable/unavailable has no projection, no allow_default/key_retarget_attested and no non-ended composition fact.",
+        "Current retire, if present on a completed result, matches readback_identity.context. Retired proves an OLD lease and must not be rebound to replacement context.",
+        "Unknown preserves bounded forensic facts but forbids allow_default, key_retarget_attested, composition_readback_attested or a composition continuation fact. Empty unknown identity requires zero revision and false readback_attested. Nonempty unknown readback_attested requires nonzero revision. Unknown is terminal to the outer owner."
+      ]
+    },
+    "IdentityOrUnknownZeroSentinel": {
+      "kind": "conditional",
+      "normal": "Identity",
+      "special": "Only outcome=unknown permits owner.id empty and all five identity u64 fields zero together; no partial-zero identity."
+    },
+    "Revocation": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "basis",
+          "type": "Basis"
+        },
+        {
+          "name": "incarnation",
+          "type": "u64",
+          "minimum": 1
+        },
+        {
+          "name": "composition",
+          "type": "u64"
+        },
+        {
+          "name": "held_keys",
+          "type": "list<KeyData>",
+          "maximum_count": 64,
+          "element_constraint": "phase=down"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "maximum_bytes": 512
+        }
+      ],
+      "closed": true
+    },
+    "NativeRevocationRequest": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "material",
+          "type": "NativeRetireMaterial"
+        },
+        {
+          "name": "identity",
+          "type": "Identity"
+        },
+        {
+          "name": "observed",
+          "type": "optional<Revocation>"
+        }
+      ],
+      "closed": true,
+      "constraints": [
+        "material.input_context equals identity.context.",
+        "If observed exists, its basis.identity equals identity and its composition equals material.composition.",
+        "Observed keys/basis never authorize native teardown; provider validates its own issued material."
+      ]
+    }
+  },
+  "messages": {
+    "ProjectionQuery": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "target",
+          "type": "WireTarget"
+        },
+        {
+          "name": "identity",
+          "type": "Identity"
+        },
+        {
+          "name": "mapping_id",
+          "type": "u64",
+          "zero": "initial actual discovery"
+        }
+      ],
+      "closed": true,
+      "maximum_total_bytes": 236
+    },
+    "ProjectionReply": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "observation_revision",
+          "type": "u64",
+          "minimum": 1,
+          "absolute_offset": 16
+        },
+        {
+          "name": "target",
+          "type": "WireTarget",
+          "absolute_offset": 24
+        },
+        {
+          "name": "state",
+          "type": "enum32<Availability>"
+        },
+        {
+          "name": "identity",
+          "type": "Identity"
+        },
+        {
+          "name": "readback_attested",
+          "type": "bool",
+          "constant": true
+        },
+        {
+          "name": "projection",
+          "type": "optional<NativeProjection>"
+        }
+      ],
+      "closed": true,
+      "constraints": [
+        "available iff projection present; present projection is usable and identity exactly equals reply identity.",
+        "noneditable and unavailable are distinct completed checked null samples, both retain nonzero actual observation revision."
+      ]
+    },
+    "NativeRequestEnvelope": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "target",
+          "type": "WireTarget",
+          "absolute_offset": 16
+        },
+        {
+          "name": "request",
+          "type": "NativeRequest"
+        }
+      ],
+      "closed": true
+    },
+    "NativeResultEnvelope": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "target",
+          "type": "WireTarget",
+          "absolute_offset": 16
+        },
+        {
+          "name": "result",
+          "type": "NativeResult"
+        }
+      ],
+      "closed": true
+    },
+    "RevocationEnvelope": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "target",
+          "type": "WireTarget",
+          "absolute_offset": 16
+        },
+        {
+          "name": "request",
+          "type": "NativeRevocationRequest"
+        }
+      ],
+      "closed": true
+    }
+  },
+  "validation": [
+    "Reject unknown kinds, enum values, flag bits, bool/presence bytes outside0/1, trailing data, header totals that differ from exact span, and total lengths above1MiB.",
+    "Decode preflights complete strings/counts/offsets and complete structural traversal without owning allocation before constructing decoded storage; caller output unchanged on every rejection/allocation failure.",
+    "WireTarget exactly joins the outer C request document+sequence and compiled worker in the owner/native backend; no observation/session/mapping ID substitutes for request_sequence.",
+    "Identity.context is the actual committed physical-input context; codec never allocates/replaces identities or native authority.",
+    "Causal sequence, before/after editing semantics, source-group/default authority and exact live native range admission remain outside codec."
+  ]
+}

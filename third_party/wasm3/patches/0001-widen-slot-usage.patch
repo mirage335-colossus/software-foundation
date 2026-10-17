@@ -1,0 +1,22 @@
+--- a/source/m3_compile.c
++++ b/source/m3_compile.c
+@@ -1000,7 +1000,7 @@
+ 
+     // OPTZ (memory): 'm3Slots' could still be fused with 'typeStack' if 4 bits were used to indicate: [0,1,2,many]. The many-case
+     // would scan 'wasmStack' to determine the actual usage count
+-    if (M3_LIKELY(o->m3Slots[i_slot] < 0xFF)) {
++    if (M3_LIKELY(o->m3Slots[i_slot] < 0xFFFF)) {
+         o->m3Slots[i_slot]++;
+     } else {
+         result = "slot usage count overflow";
+--- a/source/m3_compile.h
++++ b/source/m3_compile.h
+@@ -190,7 +190,7 @@
+     m3type_t   typeStack[d_m3MaxFunctionStackHeight];
+ 
+     // 'm3Slots' contains allocation usage counts
+-    u8         m3Slots[d_m3MaxFunctionSlots];
++    u16        m3Slots[d_m3MaxFunctionSlots];
+ 
+     u16        slotMaxAllocatedIndexPlusOne;
+ 

@@ -1,0 +1,173 @@
+{
+  "archive_regular_members": 129,
+  "archive_roundtrip_exact": true,
+  "canonical_source_edits": [],
+  "data_inputs": 18,
+  "direct_translation_units": 32,
+  "editor_controller": "singular existing native editor; no second Controller TU or instance",
+  "engine_cpp_postimages": 11,
+  "files": [
+    {
+      "bytes": 8615,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/HANDOFF.md",
+      "sha256": "b5b720a689a5e457935f051955775f1d2818eaaf0a3b932a5dff693e5423a09f"
+    },
+    {
+      "bytes": 57640,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/SOURCE-CLOSURE.json",
+      "sha256": "d60496150a68d32b43ac17ad041fd13aed8673f91c0c6bda31f86e199bf4c50b"
+    },
+    {
+      "bytes": 87885,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/SOURCE-MAP.json",
+      "sha256": "634f8ef9109d937d8e9882e584f72713d06e6ba586c60093ce7d9213672267a1"
+    },
+    {
+      "bytes": 120917,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/SOURCE-PROJECTION.json",
+      "sha256": "f9177517b0d4b6e9556932e9776f216af383e30794cb1df28710220c7994fd91"
+    },
+    {
+      "bytes": 9195,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/ENGINE-OVERLAY-MAP.json",
+      "sha256": "09530bc47411fb14e9c623a51776f7b5b3f31781e7a6dc349094b83403a558e6"
+    },
+    {
+      "bytes": 188644,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/DOCUMENT-ACTIONS-DELTA.patch",
+      "sha256": "40e3db0712c128ee541329e6e8b97a1805f814ff5c15950b7881b49433a7b0eb"
+    },
+    {
+      "bytes": 631660,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/ndv2-provider-source-overlay-document-actions-0001.tar.gz",
+      "sha256": "b2d53e03b89fccb0bdbb7eae06000ea3cd44cb812c038a0ee7245e3ccb577c78"
+    },
+    {
+      "bytes": 941,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/BASE-CLOSURE.json",
+      "sha256": "1745fda69e27f14670078ed2b68969bd4a47eed41047ddd48b2ee78eff2915cc"
+    },
+    {
+      "bytes": 76805,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/SOURCE-CHECKS.json",
+      "sha256": "ad72f5db719ae215c33601a469b0bc9b8408376c9a211531142568b62df05f03"
+    },
+    {
+      "bytes": 3574,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/check_sources.py",
+      "sha256": "1b70da21cd384240d25ee9593c97bb920b0a5e74ead812451ab6d9e387307c46"
+    },
+    {
+      "bytes": 2314,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/seal_capsule.py",
+      "sha256": "655abab36ecd18c470059a411a3da3075ac43cae5b555283f91f52b1dca769c3"
+    },
+    {
+      "bytes": 360,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/SOURCE-CHECKS-ATTEMPT-001.json",
+      "sha256": "5934b8ab0e3e8bd7bd06f9419af9cef591e2c0543ea344de1038f44839a9ff60"
+    },
+    {
+      "bytes": 338,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/SOURCE-CHECKS-ATTEMPT-002.json",
+      "sha256": "9ff45e4f75bdf8e7a635f6271d8b2c0683ebced97e09b3699b0dec219c3539ef"
+    },
+    {
+      "bytes": 4792,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/codec-checks/HANDOFF.json",
+      "sha256": "336a128f4bb273d9e61290864729089e1f98577eeaf37e5400bae88378cc53c2"
+    },
+    {
+      "bytes": 5669,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/guard-checks/SUMMARY.json",
+      "sha256": "e33dcb8323a01f9b83c69c5dd8808c1ca1188f4a738ff855c2dd506c7ffe6c90"
+    },
+    {
+      "bytes": 3595,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/bootstrap-checks/FINAL-FREEZE.json",
+      "sha256": "0dd786c6090bba59097eccbe7ee60a102969c02f5ca91d6442976f7370b96ee8"
+    },
+    {
+      "bytes": 35731,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/review/native-api-witness-audit.md",
+      "sha256": "2030f951ca40409c73bb36e3fa724f63ac9219e9fc49a4f6451cece4e5c9f39c"
+    }
+  ],
+  "headers": 66,
+  "kind": "native-document-actions-v1-source-component-capsule",
+  "native_body_phases": [
+    "reserve/dispatch under Bridge+JSLock; retained Session action busy",
+    "after native dispatch unwind, paired capture/witness under fresh Bridge+JSLock; still busy",
+    "after final unwind, passive VM/context/property/style/layout/focus/selection witness, then owned completion encoding"
+  ],
+  "new_profile": {
+    "capabilities": 4083,
+    "commands": [
+      1,
+      3,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "compiled_flags": [
+      "BIB_ENGINE_PROVIDER_DOCUMENT_ACTIONS_V1=1",
+      "BIB_ENGINE_PROVIDER_EDITOR_V1=1"
+    ],
+    "facts_fields": 45,
+    "kind": 4,
+    "maximum_command_bytes": 1048576,
+    "maximum_query_bytes": 236,
+    "maximum_reply_bytes": 1048576,
+    "name": "foundation-engine-copied4083-ndv2-editor-document-actions-v1",
+    "queries": [
+      3,
+      4
+    ]
+  },
+  "next_manual_request": "After source integration, explicitly request the bounded actual-WebCore parse or native/runtime qualification against exact retained source, SDK, toolchain and this frozen kind4 profile; do not infer authorization from these component passes.",
+  "old0004_119_source_capsule_unchanged": true,
+  "old0005_118_source_capsule_unchanged": true,
+  "old_private_table_definitions_unchanged": true,
+  "old_public_headers_and_C_tables_unchanged": true,
+  "open_jobs": [],
+  "open_streams": [],
+  "open_writers": [],
+  "predecessor": {
+    "bytes": 7441,
+    "mode": "0664",
+    "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0005-cpp-only-outcome/FINAL-FREEZE.json",
+    "sha256": "333e266aa571cc04690e12ff6e836c7ccdee3618415cf08265894b66fa124d7f"
+  },
+  "projected_source_files": 127,
+  "proof_only_original_headers": 2,
+  "recorded_utc": "2026-10-17T05:24:07.780968+00:00",
+  "remaining": [
+    "Root recipe/maintained-helper/host composition integration for this separate explicit source profile; no oldprofile widening.",
+    "Actual Publisher/Binding/WebCore and Wasm shim compilation, complete retained metadata generator invocation/publication, object/link and connected TUI/runtime qualification unexecuted.",
+    "No eligible retained engine group, SDK, binary, release or production runtime created by this source/mock evidence."
+  ],
+  "review": "Independent typed native API/passive-getter review and separate binding/Guard/bootstrap source reviews; all concrete findings repaired; exact API assumptions and60 retained source identities in review note",
+  "schema_version": 1,
+  "source_root": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source",
+  "source_version": "0001-document-actions-v1",
+  "state": "FROZEN AND RELEASED TO ROOT: isolated127-source kind4/4083 capsule; actual native engine integration unqualified",
+  "validation": {
+    "actual_SDK_scan": 0,
+    "actual_WebCore_header_parse_or_engine_compilation": 0,
+    "actual_engine_browser_nativeport_kernel_runtime": 0,
+    "bootstrap_mock_assertions": 2582,
+    "bootstrap_pure_metadata_checks": 60,
+    "codec_checks": 8593,
+    "codec_groups": 5,
+    "earlier_failed_fixture_setup_attempts_preserved": true,
+    "finite_source_checks": 550,
+    "guard_assertions": 515,
+    "guard_fresh_processes": 13,
+    "selected_final_failures": 0,
+    "selected_final_skips": 0
+  }
+}

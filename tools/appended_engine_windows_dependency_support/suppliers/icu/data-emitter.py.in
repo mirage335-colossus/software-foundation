@@ -1,0 +1,116 @@
+"""Source-owned bounded ICU77 packed-data C renderer; no supplier script runs.
+
+The non-OS400 writeCCode producer in official ICU release-77-1 pkg_genc.cpp
+(lines442-602; SHA25691e37b9974365bd5737264d6d0b6edb16c391e0c4edf93321e5e3deba69e9fd9)
+places a zero double before every input byte. Keep that wrapper and every byte;
+it is not a request to reinterpret the entry as a pointer to the byte array.
+"""
+import hashlib
+import os
+from pathlib import Path
+import stat
+import sys
+
+EXPECTED_SOURCE = @INPUT_PATH@
+EXPECTED_OUTPUT = @OUTPUT_PATH@
+EXPECTED_BYTES = @INPUT_BYTES@
+EXPECTED_SHA256 = @INPUT_SHA256@
+CHUNK = 65536
+MAXIMUM_INPUT = 53673984
+
+
+def _identity(info):
+    return (info.st_dev, info.st_ino, info.st_size,
+            info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _read_hash(source):
+    digest = hashlib.sha256()
+    total = 0
+    while True:
+        chunk = source.read(min(CHUNK, EXPECTED_BYTES - total + 1))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > EXPECTED_BYTES:
+            raise ValueError("ICU packed-data size exceeded exact source identity")
+        digest.update(chunk)
+    if total != EXPECTED_BYTES or digest.hexdigest() != EXPECTED_SHA256:
+        raise ValueError("ICU packed-data bytes differ from admitted original Data")
+
+
+def main():
+    if sys.argv[1:] != [EXPECTED_SOURCE, EXPECTED_OUTPUT]:
+        raise ValueError("Exact source-owned renderer operands required")
+    if not 1 <= EXPECTED_BYTES <= MAXIMUM_INPUT:
+        raise ValueError("Bounded nonempty packed-data input required")
+    if EXPECTED_SOURCE.casefold() == EXPECTED_OUTPUT.casefold():
+        raise ValueError("Original data and generated output must differ")
+    destination = Path(EXPECTED_OUTPUT)
+    with open(EXPECTED_SOURCE, "rb") as source:
+        before = os.fstat(source.fileno())
+        if not stat.S_ISREG(before.st_mode) or before.st_size != EXPECTED_BYTES:
+            raise ValueError("Exact ordinary packed-data input required")
+        identity = _identity(before)
+        _read_hash(source)
+        if _identity(os.fstat(source.fileno())) != identity:
+            raise ValueError("Original packed-data identity changed during prehash")
+        source.seek(0)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        # A failed command preserves its exclusive partial output for evidence.
+        # The controller must stop this graph before any consumer stage.
+        with destination.open("xb") as output:
+            written = 0
+            maximum_output = EXPECTED_BYTES * 5 + 65536
+
+            def emit(raw):
+                nonlocal written
+                written += len(raw)
+                if written > maximum_output:
+                    raise ValueError("Generated C output exceeded finite bound")
+                output.write(raw)
+
+            prefix = (
+                "/* Fixed source-owned ICU packed-data wrapper. */\n"
+                "#if defined(U_HIDE_INTERNAL_API)\n"
+                "#error Fixed_ICU_data_entry_requires_internal_naming_macros\n"
+                "#endif\n"
+                "#define U_SHOW_INTERNAL_API 1\n"
+                "#define U_DISABLE_RENAMING 1\n"
+                "#include <stddef.h>\n"
+                "#include \"unicode/utypes.h\"\n"
+                "#if !defined(U_DEF2_ICUDATA_ENTRY_POINT) || !defined(U_DEF_ICUDATA_ENTRY_POINT)\n"
+                "#error Fixed_ICU_data_entry_naming_macros_unavailable\n"
+                "#endif\n"
+                "typedef struct { double bogus; uint8_t bytes[%d]; } FoundationIcuData;\n"
+                "_Static_assert(sizeof(double) == 8, \"ICU double prelude\");\n"
+                "_Static_assert(offsetof(FoundationIcuData, bytes) == 8, \"ICU byte-array offset\");\n"
+                "_Static_assert(_Alignof(FoundationIcuData) >= 8, \"ICU data alignment\");\n"
+                "U_CDECL_BEGIN\n"
+                "const FoundationIcuData U_ICUDATA_ENTRY_POINT = { 0.0, {\n"
+            ) % EXPECTED_BYTES
+            emit(prefix.encode("ascii"))
+            digest = hashlib.sha256()
+            total = 0
+            while True:
+                chunk = source.read(min(CHUNK, EXPECTED_BYTES - total + 1))
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > EXPECTED_BYTES:
+                    raise ValueError("ICU packed-data grew during rendering")
+                digest.update(chunk)
+                for offset in range(0, len(chunk), 32):
+                    emit((",".join(str(value) for value in chunk[offset:offset + 32]) + ",\n").encode("ascii"))
+            if total != EXPECTED_BYTES or digest.hexdigest() != EXPECTED_SHA256:
+                raise ValueError("ICU packed-data changed during rendering")
+            if (_identity(os.fstat(source.fileno())) != identity
+                    or _identity(os.stat(EXPECTED_SOURCE, follow_symlinks=False)) != identity):
+                raise ValueError("Original packed-data physical identity changed")
+            emit(b"} };\nU_CDECL_END\n")
+            output.flush()
+            os.fsync(output.fileno())
+
+
+if __name__ == "__main__":
+    main()

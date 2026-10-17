@@ -1,0 +1,22 @@
+{
+  "document_profile": "foundation-engine-copied4083-ndv2-editor-document-actions-v1",
+  "kind": "foundation-native-provider-actions-prelink-config-v1",
+  "profile_kind": 4,
+  "provider_limits": {
+    "maximum_command_bytes": 1048576,
+    "maximum_inflight_resources": 64,
+    "maximum_query_bytes": 236,
+    "maximum_reply_bytes": 1048576,
+    "maximum_resource_response_bytes": 67108864,
+    "maximum_retained_resource_bytes": 134217728,
+    "maximum_retired_documents": 8,
+    "maximum_service_message_bytes": 1048576,
+    "reserved": 0,
+    "size": 48
+  },
+  "schema_version": 1,
+  "service_retention": {
+    "max_retained_bytes": 4194304,
+    "max_retained_calls": 64
+  }
+}

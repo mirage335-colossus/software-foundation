@@ -1,0 +1,175 @@
+{
+  "baseline_compile_flags": {
+    "CMAKE_CXX_FLAGS": "-msimd128",
+    "CMAKE_C_FLAGS": "-msimd128",
+    "constraint": "Preserve these completed non-pthread baseline global flags. The copied target changes only its reviewed source-local options and final factory link."
+  },
+  "binding": "copied-owner-bridge/direct-worker-v1",
+  "bridge_abi": 65536,
+  "build_target": "BibEmbedder",
+  "capabilities": "259",
+  "cmake_paths": {
+    "BIB_ENGINE_COPIED_GENERATED_DIR": "BUILD_ROOT/copied-generated",
+    "BIB_ENGINE_COPIED_SOURCE_ROOT": "source/copied-provider",
+    "BIB_ENGINE_PROVIDER_BINDING_ROOT": "source/provider-binding",
+    "BIB_ENGINE_PROVIDER_SOURCE_ROOT": "source/foundation",
+    "EMSCRIPTEN_EMBEDDER_CMAKE": "source/wrapper/src/embedder/embedder.cmake",
+    "engine_source": "WORK_ROOT/engine"
+  },
+  "configuration": {
+    "auto_main": false,
+    "esm": true,
+    "fixed_viewport_height": 600,
+    "fixed_viewport_width": 800,
+    "modularized": true,
+    "profile": "browser-wasm32-cpu-direct-owner-v1",
+    "pthread": false,
+    "shared_memory": false
+  },
+  "data": {
+    "bytes": 36478101,
+    "ca_bundle": "Not consumed by the copied259 branch. The diagnostic baseline extra CA is not part of the copied data identity.",
+    "count": 32,
+    "external_data_package": false,
+    "fontconfig": {
+      "bytes": 69557,
+      "files": 22,
+      "source": "data/fontconfig",
+      "virtual_destination": "/etc/fonts"
+    },
+    "fonts": {
+      "bytes": 4513168,
+      "files": 9,
+      "source": "data/fonts",
+      "virtual_destination": "/usr/share/fonts"
+    },
+    "icu": {
+      "actual_baseline_virtual_file": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/webkit-engine-probe/wrapper/third_party/wasm-sysroot/share/icu/77.1/icudt77l.dat",
+      "bytes": 31895376,
+      "sha256": "310d9b2cb42947fad7f388b09d2ae574e2adeb60ca76abf280438908f20b2d7b",
+      "source": "data/icu/icudt77l.dat",
+      "virtual_destination": "Must match the exact baseline ICU compiled default directory. Current CMake uses the absolute input path as its virtual path. Freeze that mapping before moving data."
+    },
+    "inventory": "provenance/selected-data-inventory.json"
+  },
+  "draft_status": "Actual staged diagnostic source/prelink input for root review. No metadata generation, compile/link/runtime or production eligibility is claimed.",
+  "explicit_options": {
+    "BIB_ENGINE_PROVIDER_NEUTRAL": true,
+    "BIB_PTHREAD": false,
+    "ENABLE_C_LOOP": true,
+    "ENABLE_JIT": false,
+    "ENABLE_STATIC_JSC": true,
+    "PORT": "Emscripten",
+    "USE_SYSTEM_MALLOC": true
+  },
+  "kind": "foundation-copied-engine-prelink-plan-v1",
+  "link_contract": {
+    "ALLOW_MEMORY_GROWTH": 1,
+    "ENVIRONMENT": "worker",
+    "EXIT_RUNTIME": 0,
+    "EXPORT_ES6": 1,
+    "EXPORT_NAME": "createFoundationRetainedEngine",
+    "INITIAL_MEMORY": "256MB",
+    "INVOKE_RUN": 0,
+    "MAXIMUM_MEMORY": "4GB",
+    "MODULARIZE": 1,
+    "STACK_SIZE": "8MB",
+    "custom_host_property": "foundationEngineHost is read explicitly by retained pre-JS; this is separate from the generated INCOMING_MODULE_JS_API list.",
+    "exports": [
+      "_bib_engine_get_provider_v1",
+      "_bib_engine_wasm_bridge_v1",
+      "_bib_engine_wasm_dispatch_v1",
+      "_malloc",
+      "_free"
+    ],
+    "incoming_module_api": [
+      "wasmBinary",
+      "noInitialRun",
+      "print",
+      "printErr",
+      "locateFile"
+    ],
+    "js_library": "source/copied-provider/runtime/engine-copied-library.js",
+    "no_entry": true,
+    "pre_js": "source/copied-provider/runtime/engine-copied-pre.js",
+    "runtime_methods": [
+      "HEAPU8"
+    ],
+    "source_local_exceptions_only": true
+  },
+  "options": {
+    "rendering": "cpu",
+    "script_enabled": true,
+    "thread_model": "single"
+  },
+  "output_names": [
+    "foundation-retained-engine.mjs",
+    "foundation-retained-engine.wasm"
+  ],
+  "recovery_scope": {
+    "available_source_scope": "Exact selected wrapper/WebKit Source/Tools/root supplier scope plus 75 composed overlay files, dependency source archives and selected 32 data files. No full upstream platform/test fetch is required.",
+    "execution_scope": "Source-only diagnostic identity generation, then a separately authorized exact incremental provider target. This is not a standalone redistribution/recovery or eligibility claim.",
+    "external_paired_sdk": {
+      "bootstrap_group_location": "Unresolved; original restored SDK is available. This plan makes no native LLVM/Binaryen/Node source-rebuild claim.",
+      "manifest_sha256": "217e8ee79c8f825e52cf92338a841cd7c79836666aaee7cbd1f41ee9e070920a",
+      "original_recipe": "9c0a7de7b155052360b352c18345583c2ce4a264ec64f6e9e270eeabeb6ffb60",
+      "original_sources_manifest_sha256": "576a4117aec258438fc0caaf6dd0a58da959e5a28df6b3cd83305bc65c91e722"
+    },
+    "host_runtime": "Linux x86_64 Debian 13 observed. Private Ruby 3.3.8/gperf 3.2.1 .deb binaries, system Perl 5.40.1 with explicit modules, and system runtime versions are recorded in retained host-tool logs. Not a self-contained or oldest-host qualification."
+  },
+  "schema_version": 1,
+  "sdk_execution": {
+    "base_manifest_sha256": "217e8ee79c8f825e52cf92338a841cd7c79836666aaee7cbd1f41ee9e070920a",
+    "no_network_or_missing_input_download_fallback": true,
+    "originalsdk_write_policy": "Original closed inventory must remain unchanged. The baseline file_packager Python -E child ignores PYTHONDONTWRITEBYTECODE. Pin private -B execution or enforce read-only SDK access before any new link.",
+    "private_config_and_cache": true
+  },
+  "source_graph": {
+    "changed_engine_cpp": [
+      "Source/WTF/wtf/generic/RunLoopGeneric.cpp",
+      "Source/WebCore/dom/Document.cpp",
+      "Source/WebCore/loader/DocumentLoader.cpp",
+      "Source/WebCore/bindings/js/ScriptController.cpp",
+      "Source/WebCore/workers/Worker.cpp",
+      "Source/WebCore/workers/shared/SharedWorker.cpp"
+    ],
+    "composition_record": "provenance/copied-composition.json",
+    "composition_sha256": "3f3ee24afa640dd2b97887c7ef99d544651877eea43218d581b1bfb59c7d35d3",
+    "no_global_engine_compile_option_or_public_engine_header_change": true,
+    "overlay_rule": "Recover pristine selected supplier snapshots; apply the retained supplier port patch exactly once with its 68 measured preimages/postimages, then promote each of the 75 hash-verified final retained source files to its explicit mapped destination. The five historical COMPOSITION stages are provenance only; recovery does not require replaying their external patch paths. This selected-target source reconstruction does not claim self-contained SDK or host-tool recovery.",
+    "selected_pristine_source_archive_sha256": "ffc02dcdbd7fa2a58f72b4fb7f8cd5404df15bb8e6a348cd42206f1d4c7c76b8",
+    "selected_pristine_source_raw_bytes": 1075056225,
+    "selected_pristine_source_scope": "provenance/source-archive/source-scope.json",
+    "source_count": 75,
+    "supplier_patch_first": "patches/00-webkit-supplier-port.patch",
+    "supplier_patch_images": "provenance/source-archive/supplier-patch-images.json",
+    "supplier_patch_sha256": "f25940d21c8ba37d62a6d48ea6da25053af1559bde323d0bfc9ba25cad2bca84",
+    "unchanged_base_engine_prerequisites": "Original completed baseline configuration, compiler, headers, libraries and thin-archive members. The graph owner must supply exact reuse facts before commands."
+  },
+  "startup": {
+    "application_engine_relink": false,
+    "native_service_inventory": [],
+    "physical_input_capabilities": 0,
+    "read_only_describe_before_start": true,
+    "supplier_auto_main_prejs_demo_owner": false
+  },
+  "target": {
+    "pointer_bits": 32,
+    "processor": "wasm32",
+    "system": "Emscripten",
+    "triple": "wasm32-emscripten"
+  },
+  "toolchain": {
+    "cxx_standard": 23,
+    "identity_sha256": "217e8ee79c8f825e52cf92338a841cd7c79836666aaee7cbd1f41ee9e070920a",
+    "paired_sdk_sha256": "217e8ee79c8f825e52cf92338a841cd7c79836666aaee7cbd1f41ee9e070920a",
+    "runtime_policy": "paired-emscripten",
+    "target_baseline": "Initial diagnostic source compilation: non-pthread wasm32 CPU engine in one direct Worker; fixed 800x600. Full production retention and runtime are not established."
+  },
+  "unresolved_before_actual_generation": [
+    "Root must review these exact recipe/prelink bytes and the intended source-only metadata invocation.",
+    "Reused engine thin-member/configuration/header closure and actual incremental execution graph remain external prerequisites for compile/link, not facts established by this source recipe.",
+    "Original paired-SDK bootstrap archive/group location remains unknown; this diagnostic scope makes no standalone bootstrap-recovery claim.",
+    "Current ICU virtual path must remain bound to the original compiled ICU data directory; moving host data requires an explicit reviewed mapping."
+  ]
+}

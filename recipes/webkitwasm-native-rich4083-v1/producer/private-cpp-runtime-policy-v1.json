@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "kind": "foundation-native-provider-private-runtime-policy-v1",
+  "policy_id": "private-static-gcc-sdk-v1",
+  "scope": "first-native-linux-provider-private-static-runtime-only",
+  "target": {
+    "system": "Linux",
+    "processor": "x86_64",
+    "triple": "x86_64-buildroot-linux-gnu",
+    "pointer_bits": 64
+  },
+  "sdk_recipe_id": "3e7438a4b5ee7a4baf5d7abacbdd320087aab42f24ea021f0f023b61db55bb33",
+  "original_manifest_sha256": "dcb6d8dd7c13310b41fe13aae0a926b23c60de6c412d779122fa2cb879f1c894",
+  "selection_kind": "foundation-native-provider-private-runtime-selection-v1",
+  "selection_scope": "native-engine-private-static-gcc-runtime-selection-only",
+  "c_library": "glibc",
+  "maximum_glibc_version": "2.36",
+  "query_driver_options": [
+    "-march=x86-64",
+    "-mtune=generic",
+    "-shared",
+    "-static-libstdc++",
+    "-static-libgcc"
+  ],
+  "link_driver_options": [
+    "-static-libstdc++",
+    "-static-libgcc"
+  ],
+  "linker_options": [
+    "--exclude-libs,ALL",
+    "-z,defs",
+    "-z,text",
+    "--trace"
+  ],
+  "roles": {
+    "libstdcxx": {
+      "basename": "libstdc++.a",
+      "sha256": "8deac041936d2916dfd538457347fa2299ef6b37e242182b62104d34850b28a0",
+      "paths": [
+        "x86_64-buildroot-linux-gnu/lib64/libstdc++.a",
+        "x86_64-buildroot-linux-gnu/sysroot/usr/lib/libstdc++.a",
+        "x86_64-buildroot-linux-gnu/sysroot/usr/lib64/libstdc++.a"
+      ]
+    },
+    "libgcc": {
+      "basename": "libgcc.a",
+      "sha256": "caa681527d53fa4b78d6aa767f5c566bb2a06f28dbbca6401e8764b8eb57e85b",
+      "paths": [
+        "lib/gcc/x86_64-buildroot-linux-gnu/15.3.0/libgcc.a",
+        "lib64/gcc/x86_64-buildroot-linux-gnu/15.3.0/libgcc.a"
+      ]
+    },
+    "libgcc_eh": {
+      "basename": "libgcc_eh.a",
+      "sha256": "e9d5eda0cca41430e0215f8c9b110bbea8f5add09a3db10596188d407044cca6",
+      "paths": [
+        "lib/gcc/x86_64-buildroot-linux-gnu/15.3.0/libgcc_eh.a",
+        "lib64/gcc/x86_64-buildroot-linux-gnu/15.3.0/libgcc_eh.a"
+      ]
+    },
+    "crtbeginS": {
+      "basename": "crtbeginS.o",
+      "sha256": "9e7965279f33ed90e46c48a440e3632bdcc6efa5a3ee7e62f7c6875c71bb9428",
+      "paths": [
+        "lib/gcc/x86_64-buildroot-linux-gnu/15.3.0/crtbeginS.o",
+        "lib64/gcc/x86_64-buildroot-linux-gnu/15.3.0/crtbeginS.o"
+      ]
+    },
+    "crtendS": {
+      "basename": "crtendS.o",
+      "sha256": "c6357d4963582a97541ebf045cac7d47906977adb8803ae4c167217ad9c42a48",
+      "paths": [
+        "lib/gcc/x86_64-buildroot-linux-gnu/15.3.0/crtendS.o",
+        "lib64/gcc/x86_64-buildroot-linux-gnu/15.3.0/crtendS.o"
+      ]
+    }
+  },
+  "forbidden_needed": [
+    "libgcc_s.so.1",
+    "libstdc++.so.6"
+  ],
+  "forbidden_undefined_prefixes": [
+    "_Unwind_",
+    "_Z",
+    "__cxa_",
+    "__gxx_"
+  ],
+  "libc_abi_exceptions": [
+    "__cxa_atexit",
+    "__cxa_finalize",
+    "__cxa_thread_atexit_impl"
+  ],
+  "required_link_evidence": [
+    "linker_input_trace",
+    "linker_map"
+  ]
+}

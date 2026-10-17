@@ -7,7 +7,36 @@
  #include <chrono>
  #include <iostream>
  #include <stdexcept>
-@@ -61,6 +61,9 @@
+@@ -45,22 +45,32 @@
+     ~TerminalHost() {
+         write(leave_screen);SetConsoleMode(input_,input_mode_);SetConsoleMode(output_,output_mode_);
+     }
+-    std::pair<unsigned,unsigned> size() const {
++    std::optional<std::pair<unsigned,unsigned>> measured_size() const {
+         CONSOLE_SCREEN_BUFFER_INFO info{};
+-        if(!GetConsoleScreenBufferInfo(output_,&info))return {80,24};
+-        return {unsigned(info.srWindow.Right-info.srWindow.Left+1),unsigned(info.srWindow.Bottom-info.srWindow.Top+1)};
+-    }
++        if(!GetConsoleScreenBufferInfo(output_,&info)||info.srWindow.Right<info.srWindow.Left||info.srWindow.Bottom<info.srWindow.Top)return {};
++        return std::pair{unsigned(info.srWindow.Right-info.srWindow.Left+1),unsigned(info.srWindow.Bottom-info.srWindow.Top+1)};
++    }
++    std::pair<unsigned,unsigned> size() const {return measured_size().value_or(std::pair{80u,24u});}
++    bool foreground() const {return foreground_;}
+     bool stopped() const {return false;}
+-    void poll(gui::TerminalAdapter& adapter) {
+-        if(WaitForSingleObject(input_,30)!=WAIT_OBJECT_0)return;
++    void wait(int timeout) {Sleep(static_cast<DWORD>(timeout));}
++    void poll(gui::TerminalAdapter& adapter,int timeout=30,const std::function<void(bool)>& foreground={}) {
++        if(WaitForSingleObject(input_,static_cast<DWORD>(timeout))!=WAIT_OBJECT_0)return;
+         INPUT_RECORD records[64];DWORD count=0;
+         if(!ReadConsoleInputW(input_,records,64,&count))throw std::runtime_error("Console input failed.");
+         for(DWORD i=0;i<count&&!adapter.closed();++i) {
++            if(foreground&&records[i].EventType==FOCUS_EVENT) {
++                foreground_=records[i].Event.FocusEvent.bSetFocus!=FALSE;
++                foreground(foreground_);continue;
++            }
+             if(records[i].EventType!=KEY_EVENT||!records[i].Event.KeyEvent.bKeyDown)continue;
+             const auto event=records[i].Event.KeyEvent;
              const bool shift=(event.dwControlKeyState&SHIFT_PRESSED)!=0;
              const bool control=(event.dwControlKeyState&(LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))!=0;
              for(WORD repeat=0;repeat<event.wRepeatCount&&!adapter.closed();++repeat) {
@@ -17,17 +46,124 @@
                  switch(event.wVirtualKeyCode) {
                      case VK_TAB:adapter.key(gui::Key::tab,control,shift);break;
                      case VK_RETURN:adapter.key(gui::Key::enter,control,shift);break;
-@@ -215,7 +218,8 @@
+@@ -92,6 +102,7 @@
+     HANDLE input_=INVALID_HANDLE_VALUE,output_=INVALID_HANDLE_VALUE;
+     DWORD input_mode_=0,output_mode_=0;
+     wchar_t high_surrogate_=0;
++    bool foreground_=false;
+     std::string last_;
+     void write(std::string_view text) noexcept {
+         DWORD written=0;WriteFile(output_,text.data(),DWORD(text.size()),&written,nullptr);
+@@ -155,16 +166,29 @@
+         }
+         restore();
+     }
+-    std::pair<unsigned,unsigned> size() const {
++    std::optional<std::pair<unsigned,unsigned>> measured_size() const {
+         winsize size{};
+-        if(ioctl(STDOUT_FILENO,TIOCGWINSZ,&size)<0||!size.ws_col||!size.ws_row)return {80,24};
+-        return {size.ws_col,size.ws_row};
+-    }
++        if(ioctl(STDOUT_FILENO,TIOCGWINSZ,&size)<0||!size.ws_col||!size.ws_row)return {};
++        return std::pair{unsigned(size.ws_col),unsigned(size.ws_row)};
++    }
++    std::pair<unsigned,unsigned> size() const {return measured_size().value_or(std::pair{80u,24u});}
++    bool foreground() const {const auto group=tcgetpgrp(STDIN_FILENO);return group>=0&&group==getpgrp();}
+     bool stopped() const {return stop_requested!=0;}
+-    void poll(gui::TerminalAdapter& adapter) {
++    void wait(int timeout) {
++        pollfd output{STDOUT_FILENO,short(pending_.empty()?0:POLLOUT),0};
++        const auto ready=::poll(&output,1,timeout);
++        if(ready<0&&errno!=EINTR)throw std::runtime_error("Terminal polling failed.");
++        if(output.revents&(POLLHUP|POLLERR|POLLNVAL))throw std::runtime_error("Terminal output disconnected.");
++        if(output.revents&POLLOUT)flush();
++    }
++    void poll(gui::TerminalAdapter& adapter,int timeout=30,const std::function<void(bool)>& foreground={}) {
++        if(foreground&&!this->foreground()) {
++            foreground(false);::poll(nullptr,0,timeout);foreground(this->foreground());return;
++        }
+         pollfd descriptors[2]={{STDIN_FILENO,POLLIN,0},{STDOUT_FILENO,short(pending_.empty()?0:POLLOUT),0}};
+-        const auto ready=::poll(descriptors,2,30);
++        const auto ready=::poll(descriptors,2,timeout);
+         if(ready<0&&errno!=EINTR)throw std::runtime_error("Terminal polling failed.");
++        if(foreground) {const bool active=this->foreground();foreground(active);if(!active)return;}
+         if(descriptors[0].revents&(POLLHUP|POLLERR|POLLNVAL)) {adapter.key(gui::Key::quit);return;}
+         if(descriptors[1].revents&(POLLHUP|POLLERR|POLLNVAL))throw std::runtime_error("Terminal output disconnected.");
+         if(descriptors[0].revents&POLLIN) {
+@@ -215,7 +239,71 @@
  #endif
  }
  
 -int main(int argc,char** argv) {
 +namespace foundation::host {
++namespace terminal_runner_detail {
++template<class Host> auto now(Host& host) {
++    if constexpr(requires {host.now();})return host.now();
++    else return std::chrono::steady_clock::now();
++}
++inline int wait_timeout(const RunnerState& state,std::chrono::steady_clock::time_point now,
++                        std::optional<std::chrono::steady_clock::time_point> close_deadline={}) {
++    auto until=now+std::chrono::milliseconds(30);
++    if(state.deadline)until=std::min(until,*state.deadline);
++    if(close_deadline)until=std::min(until,*close_deadline);
++    // A due deadline gets another ordinary tick after a bounded yield, never
++    // an unbounded callback/busy loop if a producer retains an expired value.
++    const auto delay=std::chrono::ceil<std::chrono::milliseconds>(until-now).count();
++    return static_cast<int>(std::clamp<std::int64_t>(delay,1,30));
++}
++template<RunnerApplication App,class Adapter,class Services,class Host>
++int run(Session<App,Adapter,Services>& session,Host& host) {
++    bool closing=false,have_dimensions=false;
++    std::optional<bool> foreground;
++    std::optional<std::pair<unsigned,unsigned>> dimensions;
++    std::optional<std::chrono::steady_clock::time_point> close_deadline;
++    const auto set_foreground=[&](bool active) {
++        if(!foreground||*foreground!=active) {foreground=active;session.foreground(active);}
++    };
++    for(;;) {
++        auto state=session.runner_state();
++        if(state.exit_code)return state.exit_code;
++        auto current_time=now(host);
++        if(!closing&&(state.close_requested||session.adapter.closed()||host.stopped())) {
++            closing=true;close_deadline=current_time+std::chrono::seconds(10);
++            set_foreground(false);session.application.shutdown();
++            state=session.runner_state();
++            if(state.exit_code)return state.exit_code;
++        }
++        if(closing) {
++            if(state.close_complete)return state.exit_code;
++            if(current_time>=*close_deadline)return 1;
++            session.tick();state=session.runner_state();
++            if(state.exit_code)return state.exit_code;
++            if(state.close_complete)return state.exit_code;
++            current_time=now(host);
++            if(current_time>=*close_deadline)return 1;
++            host.wait(wait_timeout(state,current_time,close_deadline));continue;
++        }
++        const auto measured=host.measured_size();
++        if(!have_dimensions||measured!=dimensions) {
++            have_dimensions=true;dimensions=measured;
++            const auto columns=measured?std::min(measured->first,500u):0;
++            const auto rows=measured?std::min(measured->second,200u):0;
++            // Facts close old authority before terminal_size's synchronous
++            // minimum-canvas ResizeEvent can reach the application.
++            session.drawable_cells(columns,rows?rows-1:0);
++            set_foreground(host.foreground());
++            if(measured)session.adapter.terminal_size(measured->first,measured->second);
++        } else set_foreground(host.foreground());
++        session.tick();state=session.runner_state();
++        if(state.exit_code)return state.exit_code;
++        if(state.close_requested||session.adapter.closed())continue;
++        host.draw(session.adapter.ansi_rows());
++        host.poll(session.adapter,wait_timeout(state,now(host)),set_foreground);
++    }
++}
++}
 +template<Application App> int run_terminal(int argc,char** argv) {
      if(argc==2&&std::string_view(argv[1])=="--help") {
          std::cout<<"Standalone terminal UI example\n"
                   <<"Tab/Shift-Tab: focus; Enter/Space: activate; arrows: edit/select;\n"
-@@ -227,29 +231,19 @@
+@@ -227,29 +315,22 @@
      if(argc!=1) {std::cerr<<"Usage: "<<argv[0]<<" [--help]\n";return 2;}
      try {
          TerminalHost host;
@@ -47,18 +183,29 @@
 +        NativeSession<App, gui::TerminalAdapter> session;
 +        auto& adapter=session.adapter;
          adapter.focus_next();
-         std::pair<unsigned,unsigned> dimensions{};
-         while(!adapter.closed()) {
-             if(host.stopped()) {adapter.key(gui::Key::quit);break;}
-             const auto current=host.size();
-             if(current!=dimensions) {adapter.terminal_size(current.first,current.second);dimensions=current;}
+-        std::pair<unsigned,unsigned> dimensions{};
+-        while(!adapter.closed()) {
+-            if(host.stopped()) {adapter.key(gui::Key::quit);break;}
+-            const auto current=host.size();
+-            if(current!=dimensions) {adapter.terminal_size(current.first,current.second);dimensions=current;}
 -            example.retry_presentation();
 -            service_pump();
-+            session.tick();
-             host.draw(adapter.ansi_rows());
-             host.poll(adapter);
+-            host.draw(adapter.ansi_rows());
+-            host.poll(adapter);
++        if constexpr(RunnerApplication<App>)return terminal_runner_detail::run(session,host);
++        else {
++            std::pair<unsigned,unsigned> dimensions{};
++            while(!adapter.closed()) {
++                if(host.stopped()) {adapter.key(gui::Key::quit);break;}
++                const auto current=host.size();
++                if(current!=dimensions) {adapter.terminal_size(current.first,current.second);dimensions=current;}
++                session.tick();
++                host.draw(adapter.ansi_rows());
++                host.poll(adapter);
++            }
          }
      } catch(const std::exception& error) {std::cerr<<"Terminal example: "<<error.what()<<'\n';return 1;}
+-}
 +    return 0;
- }
++}
 +}

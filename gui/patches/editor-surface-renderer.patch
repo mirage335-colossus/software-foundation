@@ -1,0 +1,21 @@
+--- renderer_surface_dom.mjs
++++ renderer_editor_dom.mjs
+@@ -1,5 +1,5 @@
+ import {MAX_OPERATION_BYTES} from './browser_limits.mjs';
+-import {createBrowserSurface} from './browser_surface.mjs';
++import {createBrowserEditorSurface} from './browser_surface_editor_integration.mjs';
+ // Generic DOM mechanics for the shared boundary. Application state, widget
+ // eligibility, layout, stable IDs and edit validation remain in C++.
+ export const identity = key => JSON.stringify([key.id, key.generation]);
+@@ -22,9 +22,9 @@
+     this.measurements = new Set(); this.measureRequests = new Map(); this.measureAttempts = new Set(); this.measureTimer = null; this.measureProbe = null;
+     this.destroyed = false; this.lastFocus = null; this.snapshot = null; this.pointerSerial = 0n;
+     this.activePointers = new Set();this.pointerCancelEpoch=0n;this.wheelPending={count:0};
+-    this.surface = options.surface ? createBrowserSurface({root:this.root,document:this.document,send:operation=>this.send(operation),
++    this.surface = options.surface ? createBrowserEditorSurface({root:this.root,document:this.document,send:operation=>this.send(operation),
+       resolveOwner:(key,event)=>this.resolveSurfaceOwner(key,event),onFailure:options.surface.onFailure || (()=>{}),
+-      profile:options.surface.profile, classifyContext:options.surface.classifyContext}) : null;
++      editor:options.surface.editor, classifyContext:options.surface.classifyContext}) : null;
+     for(const kind of ["blur","pagehide"])this.listen(this.document.defaultView,kind,()=>this.cancelPointers());
+     this.listen(this.root,"wheel", event => this.groupWheel(event), {passive: false});
+     this.listen(this.root,"contextmenu", event => this.contextMenu(event));

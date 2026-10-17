@@ -1,0 +1,58 @@
+"""Future registered closed static-library/header installation child."""
+import argparse
+import json
+from pathlib import Path
+import shutil
+import stat
+
+
+def ordinary(path):
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or path.is_symlink() or info.st_nlink != 1:
+        raise ValueError("Ordinary generated/original install input required")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source-root", required=True)
+    parser.add_argument("--prefix", required=True)
+    parser.add_argument("--header-index", required=True)
+    parser.add_argument("--library", action="append", required=True)
+    parser.add_argument("--generated-header", action="append", required=True)
+    args = parser.parse_args()
+    source, prefix = Path(args.source_root), Path(args.prefix)
+    if not source.is_absolute() or not prefix.is_absolute():
+        raise ValueError("Exact absolute install roots required")
+    raw = Path(args.header_index).read_bytes()
+    if len(raw) > 65536:
+        raise ValueError("Header index bound")
+    index = json.loads(raw)
+    if set(index) != {"original", "generated"}:
+        raise ValueError("Closed header index required")
+    libraries = {Path(value).name: Path(value) for value in args.library}
+    if len(args.library) != 2 or set(libraries) != {"libcrypto.lib", "libssl.lib"}:
+        raise ValueError("Exact static OpenSSL library pair required")
+    generated = {Path(value).name: Path(value) for value in args.generated_header}
+    if len(generated) != len(args.generated_header) or sorted(generated) != index["generated"]:
+        raise ValueError("Exact produced header operands required")
+    library_dir, include_dir = prefix / "lib", prefix / "include" / "openssl"
+    library_dir.mkdir(parents=True, exist_ok=True)
+    include_dir.mkdir(parents=True, exist_ok=True)
+    inputs = [(value, library_dir / name) for name, value in sorted(libraries.items())]
+    for name in index["original"]:
+        if type(name) is not str or "/" in name or "\\" in name or not name.endswith(".h"):
+            raise ValueError("Direct public header basename required")
+        if name not in generated:
+            inputs.append((source / "include" / "openssl" / name, include_dir / name))
+    inputs.extend((value, include_dir / name) for name, value in sorted(generated.items()))
+    for incoming, outgoing in inputs:
+        ordinary(incoming)
+        with incoming.open("rb") as read, outgoing.open("xb") as write:
+            shutil.copyfileobj(read, write, 1024 * 1024)
+        if outgoing.stat().st_size == 0:
+            raise ValueError("Empty installed library/header")
+    print("Installed exact static OpenSSL libraries and selected public headers")
+
+
+if __name__ == "__main__":
+    main()

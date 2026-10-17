@@ -3,6 +3,27 @@
   "meaning": "Maintained requirements and coverage references; execution evidence is recorded separately.",
   "practices": [
     {
+      "id": "APPEND-1",
+      "requirement": "Preserve exact finalized kernel bytes through pure payload replacement; never implicitly rebuild retained kernels.",
+      "documents": ["docs/appended-applications.md", "docs/appended-application-plan.md"],
+      "implementation": ["tools/appended_container.py", "tools/appended_kernel.py", "tools/appended_release.py", "tools/build.py"],
+      "checks": ["tests/test_appended_container.py", "tests/test_appended_entry.py", "tests/test_appended_release.py", "tests/appended/check_kernel.py"]
+    },
+    {
+      "id": "APPEND-2",
+      "requirement": "Independent four-mode projects keep application decisions above generic GUI and platform capabilities.",
+      "documents": ["docs/appended-applications.md", "docs/gui-boundary.md"],
+      "implementation": ["tools/appended_project.py", "tools/appended_policy.py", "tools/ci_changes.py", "gui/shared/appended_application.cpp"],
+      "checks": ["tests/test_appended_project.py", "tests/test_appended_policy.py", "tests/test_ci_changes.py", "gui/tests/appended_application_test.cpp"]
+    },
+    {
+      "id": "APPEND-3",
+      "requirement": "Compile lean C/C++/Rust payloads once against bounded stable value contracts and a conservative portable instruction profile.",
+      "documents": ["docs/appended-applications.md", "sdk/appended/README.md", "abi/appended/v1/README.md"],
+      "implementation": ["include/foundation/appended/abi.h", "src/appended/abi.cpp", "src/appended/registry.cpp", "src/appended/module_wasm3.cpp", "tools/appended_compile.py", "tools/appended_wasm.py"],
+      "checks": ["tests/appended/abi_test.cpp", "tests/appended/registry_test.cpp", "tests/appended/module_test.cpp", "tests/test_appended_compile.py", "tests/test_appended_wasm.py"]
+    },
+    {
       "id": "ARCH-1",
       "requirement": "One owner for behavior and public contracts.",
       "documents": [

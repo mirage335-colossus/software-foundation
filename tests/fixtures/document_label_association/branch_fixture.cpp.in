@@ -1,0 +1,179 @@
+// Generated fixture: association and Begin focus guards come from maintained source.
+
+#include <algorithm>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <variant>
+#include <vector>
+#include <type_traits>
+static void require(bool b,const char* s){if(!b)throw std::invalid_argument(s);}
+template<class T> struct RefPtr {
+    T* p{}; RefPtr()=default; RefPtr(T* q):p(q){}
+    template<class U> requires std::is_convertible_v<U*,T*> RefPtr(const RefPtr<U>&q):p(q.p){}
+    T* get()const{return p;} T* operator->()const{return p;} T&operator*()const{return *p;}
+    explicit operator bool()const{return p;}
+    bool operator==(const RefPtr&)const=default;
+};
+struct AtomString {
+    std::u16string s; bool null{true}; AtomString()=default; AtomString(const char16_t*v):s(v),null(false){}
+    unsigned length()const{return s.size();} char16_t operator[](unsigned i)const{return s[i];}
+    bool isNull()const{return null;} bool isEmpty()const{return s.empty();}
+    bool operator==(const AtomString&)const=default;
+};
+struct Settings {bool reference{};bool shadowRootReferenceTargetEnabled()const{return reference;}};
+struct Node;
+struct Document {Settings configuration; Node*focused{}; Settings&settings(){return configuration;}
+    Node*focusedElement()const{return focused;}};
+struct Node {virtual~Node()=default;Node*parent{};Document*doc{};bool connected{true};
+    Node*parentOrShadowHostNode(){return parent;} bool isConnected()const{return connected;}
+    Document&document(){return *doc;}};
+struct Element:Node {bool authorOmit{},secure{};};
+struct HTMLElement:Element {};
+struct HTMLTextFormControlElement:HTMLElement {
+    Node*inner{};unsigned start{},end{20};std::string direction{"forward"};std::function<void()>onDirectionRead;
+    Node*innerTextElement()const{return inner;}unsigned selectionStart()const{return start;}
+    unsigned selectionEnd()const{return end;}std::string selectionDirection(){if(onDirectionRead)onDirectionRead();return direction;}
+};
+static std::string operator""_s(const char*s,size_t n){return std::string(s,n);}
+struct Map {bool overrideFor{};bool contains(int)const{return overrideFor;}};
+struct HTMLLabelElement:HTMLElement {AtomString forID;HTMLElement*resolved{};bool resolveFailure{},invalidateRead{};
+    Map overrides;Map*explicitlySetAttrElementsMapIfExists(){return &overrides;}};
+template<class T> T*dynamicDowncast(Node&n){return dynamic_cast<T*>(&n);}
+namespace HTMLNames {constexpr int forAttr=1;}
+namespace F {
+enum class FormKind{text,secure_readonly};
+enum class FormDirection{none,forward,backward};
+struct FormControlRange {unsigned start{},end{20};FormDirection direction{FormDirection::forward};
+    bool operator==(const FormControlRange&)const=default;};
+struct FormTextState {std::string editing_text{"initial native value"};std::optional<FormControlRange>selection{FormControlRange{}};
+    bool operator==(const FormTextState&)const=default;};
+struct FormControl {FormKind kind{FormKind::text};bool omitted{},complete{true},focused{};unsigned capabilities{17};
+    std::optional<int>lease;std::variant<std::monostate,FormTextState>state{FormTextState{}};std::string label{"visible label"};
+    bool operator==(const FormControl&)const=default;};
+static void form_byte_selection(const std::string&s,const FormControlRange&r){
+    require(r.start<=r.end&&r.end<=s.size(),"fake ASCII range boundary");}
+}
+namespace N {
+enum class TextSection{forms};constexpr size_t maxFieldUnits=2048;
+size_t utf16Units(const std::string&s){return s.size();}
+struct ReadBudget {size_t traversal{128},privateUnits{65536};unsigned qualified{},hints{},nativeCalls{},textCalls{};
+    void visitRaw(size_t depth){require(depth<=32&&traversal,"raw bound");--traversal;}
+    void chargePrivate(size_t n){require(n<=privateUnits,"private bound");privateUnits-=n;}
+    void chargeForms(size_t){} };
+}
+struct Session {
+    struct Context{RefPtr<Document>document;};
+    struct LabelState {RefPtr<HTMLLabelElement>node;RefPtr<HTMLElement>target;AtomString forAttribute;std::string text;
+        bool associationComplete{},privateComplete{true},styleComplete{true},onlyMatchingID{};
+        bool operator==(const LabelState&)const=default;};
+    struct Capture{RefPtr<HTMLElement>node;F::FormControl observed;AtomString nativeID;bool privateComplete{true},styleComplete{true};std::vector<LabelState>labels;
+        RefPtr<HTMLElement>focused;RefPtr<Node>innerRoot;unsigned editorFlags{};int unrelatedPrivateField{};
+        bool operator==(const Capture&)const=default;};
+    struct PreparedRead{Context exact;std::vector<Capture>controls;N::ReadBudget bounds;bool live{true};bool valid()const{return live;}const Context&context()const{return exact;}};
+    struct Hooks{std::function<bool()>foreground=[]{return true;};}hooks;
+    bool actionableResult{true};std::optional<uint32_t>liveEditorFlags{21};
+    std::vector<std::optional<uint32_t>>flagSamples;size_t sampleIndex{};
+    bool actionable(const Capture&)const{return actionableResult;}
+    uint32_t editorFlags(const Context&){auto value=flagSamples.empty()?liveEditorFlags:flagSamples.at(sampleIndex++);
+        require(value.has_value(),"authoritative input-method state unavailable");return *value;}
+    // These are dependency-boundary fakes, not another implementation of the
+    // producer comparator: every supplied field must remain exactly equal.
+    bool sameCapture(const Capture&a,const Capture&b)const{return a==b;}
+    void copy(const std::string&s,std::string&o,N::TextSection,N::ReadBudget&){o=s;}
+    void attachLabels(PreparedRead&,const std::vector<LabelState>&,uint32_t&);
+};
+namespace NativeAttributeRead {
+bool authorOmittedForAssociation(Element&e,N::ReadBudget&b){require(!e.secure,"secure attr");++b.hints;return e.authorOmit;}
+const AtomString&qualified(HTMLLabelElement&l,int,N::ReadBudget&b){++b.qualified;return l.forID;}
+}
+constexpr uint32_t labelUnavailable=16;
+static Session::PreparedRead*activeRead{};
+RefPtr<HTMLElement>associatedControl(HTMLLabelElement&l,const AtomString&,bool,N::ReadBudget&b){
+    ++b.nativeCalls;if(l.resolveFailure)throw std::invalid_argument("native resolution");
+    if(l.invalidateRead)activeRead->live=false;
+    return l.resolved;}
+
+@EXCLUDED_LABEL_ASSOCIATION@
+@ATTACH_LABELS@
+@LABEL_EVIDENCE_COMPLETE@
+@BEGIN_FOCUS_SELECTION@
+@BEGIN_FOCUS_BASELINE@
+
+static unsigned checks{};
+void check(bool b,const char*s){++checks;if(!b)throw std::runtime_error(s);}
+struct Fixture {
+    Document doc,foreign;HTMLElement root,visible,hidden;HTMLLabelElement label;
+    Session session;Session::PreparedRead read;N::ReadBudget budget;uint32_t degradation{};
+    Fixture(){root.doc=visible.doc=hidden.doc=label.doc=&doc;label.parent=&root;visible.parent=hidden.parent=&root;
+        label.forID=AtomString(u"hidden");label.resolved=&hidden;read.exact.document=&doc;
+        Session::Capture c;c.node=&visible;c.nativeID=AtomString(u"visible");read.controls.push_back(c);activeRead=&read;}
+    Session::LabelState capture(){return excludedLabelAssociation(read,label,budget);}
+    void join(const Session::LabelState&s){session.attachLabels(read,{s},degradation);}
+    bool ready()const{return read.controls[0].observed.complete&&read.controls[0].observed.capabilities==17&&
+        std::get<F::FormTextState>(read.controls[0].observed.state).selection.has_value();}
+};
+struct FocusFixture {
+    Document doc,foreign;HTMLTextFormControlElement control;HTMLElement inner,otherInner;
+    Session session;Session::PreparedRead read;Session::Capture baseline;
+    FocusFixture(){control.doc=inner.doc=otherInner.doc=&doc;control.inner=&inner;doc.focused=&control;
+        read.exact.document=&doc;baseline.node=&control;baseline.innerRoot=&inner;baseline.editorFlags=4;
+        auto captured=baseline;captured.focused=&control;captured.observed.focused=true;captured.editorFlags=21;
+        read.controls.push_back(captured);}
+    bool accepted(){try{return beginFocusBaseline(session,read,&baseline);}catch(const std::invalid_argument&){return false;}}
+};
+int main(){
+try {
+    {Fixture f;auto e=f.capture();f.join(e);check(e.associationComplete&&e.target.get()==&f.hidden&&!e.privateComplete,"known hidden target");check(f.ready(),"ordinary hidden tab must preserve unrelated visible editability");check(f.budget.qualified==1&&f.budget.nativeCalls==1&&f.budget.textCalls==0,"association-only exact calls");check(labelEvidenceComplete(f.read,{e}),"unrelated hidden contents do not defeat exact equality");}
+    {Fixture f;f.label.resolved=&f.visible;f.label.forID=AtomString(u"visible");auto e=f.capture();f.join(e);check(!f.ready()&&f.read.controls[0].observed.capabilities==0,"hidden label affecting visible target refuses authority");check(!std::get<F::FormTextState>(f.read.controls[0].observed.state).selection,"affected selection withheld");check(!labelEvidenceComplete(f.read,{e}),"affected hidden contents cannot establish equality");}
+    {Fixture f;f.label.resolveFailure=true;auto e=f.capture();f.join(e);check(!e.associationComplete&&e.onlyMatchingID,"bounded unresolved explicit for constraint retained");check(f.ready(),"exact different ID excludes unrelated control");check(labelEvidenceComplete(f.read,{e}),"unresolved exact unrelated ID permits stable equality");check(f.budget.nativeCalls==1,"no native retry");}
+    {Fixture f;f.label.resolveFailure=true;f.label.forID=AtomString(u"visible");auto e=f.capture();f.join(e);check(!f.ready(),"unresolved matching ID stays unavailable");check(!labelEvidenceComplete(f.read,{e}),"unresolved matching ID forbids stable equality");}
+    {Fixture f;f.root.authorOmit=true;auto e=f.capture();f.join(e);check(!f.ready()&&!e.onlyMatchingID,"author omission unknown stays global");check(f.budget.qualified==0&&f.budget.nativeCalls==0,"author omission checked before for/native read");}
+    {Fixture f;f.root.secure=true;f.join(f.capture());check(!f.ready(),"secure unknown stays global");check(f.budget.qualified==0&&f.budget.nativeCalls==0,"secure ancestor forbids for/native reads");}
+    {Fixture f;f.doc.configuration.reference=true;f.join(f.capture());check(!f.ready()&&f.budget.qualified==0&&f.budget.nativeCalls==0,"reference-target uncertainty remains closed");}
+    {Fixture f;f.label.overrides.overrideFor=true;f.join(f.capture());check(!f.ready()&&f.budget.qualified==0&&f.budget.nativeCalls==0,"explicit reference override remains closed");}
+    {Fixture f;f.budget.traversal=0;f.join(f.capture());check(!f.ready()&&f.budget.qualified==0,"precharged traversal bound closes before attribute");}
+    {Fixture f;f.budget.privateUnits=0;auto e=f.capture();f.join(e);check(!f.ready()&&!e.onlyMatchingID&&f.budget.nativeCalls==0,"private copy bound closes before retained constraint/native call");}
+    {Fixture f;f.label.forID.s=std::u16string(1,char16_t(0xd800));auto e=f.capture();f.join(e);check(!f.ready()&&!e.onlyMatchingID&&f.budget.nativeCalls==0,"unpaired UTF16 remains closed");}
+    {Fixture f;f.label.forID.s=std::u16string(1,char16_t(0));f.join(f.capture());check(!f.ready()&&f.budget.nativeCalls==0,"NUL identity remains closed");}
+    {Fixture f;f.read.live=false;f.join(f.capture());check(!f.ready()&&f.budget.hints==0&&f.budget.qualified==0,"invalid context reads nothing");}
+    {Fixture f;f.label.doc=&f.foreign;f.join(f.capture());check(!f.ready()&&f.budget.qualified==0,"foreign label context reads nothing");}
+    {Fixture f;f.label.connected=false;f.join(f.capture());check(!f.ready()&&f.budget.qualified==0,"detached label reads nothing");}
+    {Fixture f;f.label.invalidateRead=true;auto e=f.capture();check(!e.associationComplete,"context invalidation cannot establish native association");}
+    {Fixture f;f.hidden.doc=&f.foreign;auto e=f.capture();check(!e.associationComplete,"foreign resolved target is not known association");}
+    {Fixture f;f.hidden.connected=false;auto e=f.capture();check(!e.associationComplete,"detached resolved target is not known association");}
+    {Fixture f;f.label.forID=AtomString();auto e=f.capture();f.join(e);check(e.associationComplete&&!e.onlyMatchingID&&f.ready(),"bounded implicit hidden target may exclude unrelated control");}
+    {Fixture f;f.label.forID=AtomString();f.label.resolveFailure=true;f.join(f.capture());check(!f.ready(),"unresolved implicit association remains global");}
+    {Fixture f;f.label.resolved=nullptr;auto e=f.capture();f.join(e);check(e.associationComplete&&f.ready()&&labelEvidenceComplete(f.read,{e}),"known no target does not poison any control");}
+    {Fixture f;f.label.forID=AtomString(u"\U0001f642");f.join(f.capture());check(f.ready()&&f.budget.nativeCalls==1,"scalar non-ASCII IDs preserved");}
+    {Fixture f;Session::LabelState old;old.node=&f.label;f.join(old);check(!f.ready(),"original default missing-label state reproduces V5 global poison");}
+    {Fixture f;f.read.controls[0].observed.kind=F::FormKind::secure_readonly;Session::LabelState unknown;f.join(unknown);check(f.read.controls[0].observed.capabilities==17,"unchanged attachLabels secure branch does not inspect state");}
+    {FocusFixture f;check(f.accepted(),"repeated Begin accepts stable flags4 to21 after blur/refocus");check(f.baseline.editorFlags==4,"Begin normalization changes only comparison copy");}
+    {FocusFixture f;f.read.controls[0].editorFlags=5;f.session.liveEditorFlags=5;check(f.accepted(),"Begin accepts stable input-method off state");}
+    {FocusFixture f;f.baseline.editorFlags=21;f.read.controls[0].editorFlags=5;f.session.liveEditorFlags=5;check(f.accepted(),"Begin accepts stable input-method on to off transition");}
+    {FocusFixture f;f.baseline.editorFlags=21;check(f.accepted(),"original stable focused flags21 remain accepted");}
+    for(auto bit:{2U,4U,8U,32U}){FocusFixture f;f.read.controls[0].editorFlags=21U^bit;f.session.liveEditorFlags=f.read.controls[0].editorFlags;check(!f.accepted(),"composition undo redo and unknown flag changes remain rejected");}
+    {FocusFixture f;f.baseline.editorFlags|=32U;check(!f.accepted(),"unknown baseline flag cannot be normalized away");}
+    {FocusFixture f;f.read.controls[0].unrelatedPrivateField=1;check(!f.accepted(),"other private capture fields remain exact");}
+    {FocusFixture f;f.read.controls[0].observed.label="changed by focus handler";check(!f.accepted(),"other public capture fields remain exact");}
+    {FocusFixture f;f.session.flagSamples={21U,5U};check(!f.accepted(),"input-method/fullflags must remain stable across range sample");}
+    {FocusFixture f;f.session.liveEditorFlags=std::nullopt;check(!f.accepted(),"unavailable authoritative input-method state rejects");}
+    {FocusFixture f;f.read.live=false;check(!f.accepted(),"unavailable native context rejects");}
+    {FocusFixture f;f.control.onDirectionRead=[&]{f.read.live=false;};check(!f.accepted(),"context change during selection sample rejects");}
+    {FocusFixture f;f.doc.focused=nullptr;check(!f.accepted(),"focus retarget rejects");}
+    {FocusFixture f;f.control.connected=false;check(!f.accepted(),"detached focused control rejects");}
+    {FocusFixture f;f.control.doc=&f.foreign;check(!f.accepted(),"foreign focused document rejects");}
+    {FocusFixture f;f.control.inner=&f.otherInner;check(!f.accepted(),"native inner-editor retarget rejects");}
+    {FocusFixture f;f.session.hooks.foreground=[]{return false;};check(!f.accepted(),"foreground authority remains mandatory");}
+    {FocusFixture f;std::get<F::FormTextState>(f.baseline.observed.state).selection.reset();check(!f.accepted(),"missing pre-focus selection remains rejected");}
+    {FocusFixture f;std::get<F::FormTextState>(f.read.controls[0].observed.state).selection.reset();check(!f.accepted(),"missing captured selection remains rejected");}
+    {FocusFixture f;f.control.start=1;check(!f.accepted(),"captured and repeated native selection must agree");}
+    {FocusFixture f;f.control.direction="unknown";check(!f.accepted(),"unknown native selection direction rejects");}
+    {FocusFixture f;f.control.end=21;std::get<F::FormTextState>(f.read.controls[0].observed.state).selection->end=21;check(!f.accepted(),"native selection outside exact text remains rejected");}
+    {FocusFixture f;f.session.actionableResult=false;check(!f.accepted(),"non-actionable postfocus control rejects");}
+    {FocusFixture f;f.read.controls.clear();check(!f.accepted(),"missing postfocus target rejects");}
+    std::cout<<"passed "<<checks<<" extracted-source checks\n";return 0;
+}catch(const std::exception&e){std::cerr<<e.what()<<'\n';return 1;}}

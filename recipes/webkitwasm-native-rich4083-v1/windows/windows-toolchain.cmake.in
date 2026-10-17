@@ -1,0 +1,26 @@
+# Native Windows candidate only. No cross-host compiler, downloaded tool, forced
+# compiler result, pretense of a successful try-compile, or alternate engine.
+if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+    message(FATAL_ERROR "Windows engine candidate requires its native Windows x64 host")
+endif()
+cmake_policy(SET CMP0091 NEW)
+set(CMAKE_SYSTEM_NAME Windows)
+set(CMAKE_SYSTEM_PROCESSOR AMD64)
+set(CMAKE_C_COMPILER "@CMAKE_C_COMPILER@" CACHE FILEPATH "Pinned clang-cl" FORCE)
+set(CMAKE_CXX_COMPILER "@CMAKE_CXX_COMPILER@" CACHE FILEPATH "Same pinned clang-cl" FORCE)
+set(CMAKE_C_COMPILER_TARGET x86_64-pc-windows-msvc)
+set(CMAKE_CXX_COMPILER_TARGET x86_64-pc-windows-msvc)
+set(CMAKE_LINKER "@CMAKE_LINKER@" CACHE FILEPATH "Pinned lld-link" FORCE)
+set(CMAKE_AR "@CMAKE_AR@" CACHE FILEPATH "Pinned llvm-lib" FORCE)
+set(CMAKE_RC_COMPILER "@CMAKE_RC_COMPILER@" CACHE FILEPATH "Pinned llvm-rc" FORCE)
+set(CMAKE_MT "@CMAKE_MT@" CACHE FILEPATH "Pinned llvm-mt" FORCE)
+set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded CACHE STRING "Explicit static Release CRT" FORCE)
+# x64 SSE2 is the engine baseline. Individual dispatched leaves retain their own
+# source properties; this does not promote the whole engine to AVX/AVX2.
+set(CMAKE_C_FLAGS_INIT "/clang:-msse2")
+set(CMAKE_CXX_FLAGS_INIT "/clang:-msse2")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "/machine:x64")
+set(CMAKE_SHARED_LINKER_FLAGS_INIT "/machine:x64")
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY OFF)
+set(CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY OFF)
+set(CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH OFF)

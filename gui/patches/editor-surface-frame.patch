@@ -1,0 +1,65 @@
+--- renderer_surface_frame.mjs
++++ renderer_editor_frame.mjs
+@@ -1,8 +1,10 @@
+-import {Renderer} from './renderer_surface_dom.mjs';
++import {Renderer} from './renderer_editor_dom.mjs';
+ import {validateSurfaceState,validateSurfaceOperation} from './browser_surface_protocol.mjs';
+ import {createBrowserPresenter} from './browser_presenter.mjs';
+ import {createRendererRequests} from './renderer_channel.mjs';
+ import {CHANNEL_PROTOCOL} from './browser_limits.mjs';
++import {createBrowserEditorEndpoint,validateEditorPublication,validateEditorOperation,validateEditorReply} from './browser_editor_endpoint.mjs';
++import {createBrowserDocumentEndpoint,validateDocumentState,validateDocumentOperation,validateDocumentReply} from './browser_document_endpoint.mjs';
+ 
+ // This module executes only inside the opaque sandbox document. It has no
+ // Client, transport, token, Worker, file or service provider in its module graph.
+@@ -14,8 +16,8 @@
+   // navigation can replace the WindowProxy, but cannot receive this endpoint.
+   const ports = new host.MessageChannel();
+   const surfaceProtocol={
+-    validateSurfaceState:(snapshot,surface)=>validateSurfaceState(snapshot,surface,'mouse_v1'),
+-    validateSurfaceOperation:(operation,snapshot,surface)=>validateSurfaceOperation(operation,snapshot,surface,'mouse_v1')
++    validateSurfaceState:(snapshot,surface)=>validateSurfaceState(snapshot,surface,'editor_v1'),
++    validateSurfaceOperation:(operation,snapshot,surface)=>validateSurfaceOperation(operation,snapshot,surface,'editor_v1')
+   };
+   // This explicit browser profile uses native source evidence, never coordinates
+   // or a remembered raw key. Other browser ports may supply their own qualified
+@@ -32,12 +34,15 @@
+     return origin===mouseSource&&event.pointerType==='mouse'?'pointer':null;
+   }:undefined;
+   let bound = false, closed = false, requests = null, renderer = null, presenter = null;
++  let editorEndpoint=null,documentEndpoint=null;
++  const editorProtocol={validateEditorPublication,validateEditorOperation,validateEditorReply};
++  const documentProtocol={validateDocumentState,validateDocumentOperation,validateDocumentReply};
+   let surfaceProfile=null,surfaceConnection=null,surfaceStarted=false,surfaceBasis=null,surfacePaintBarrier=false;
+   const close = () => {
+     if (closed) return; closed = true; surfaceConnection=null;
+     host.removeEventListener('pagehide',close);
+     ports.port1.onmessage = null; ports.port1.onmessageerror = null; ports.port1.close();
+-    requests?.close(); presenter?.close(); renderer?.destroy(); document.querySelector('#stage')?.setAttribute('inert','');
++    documentEndpoint?.close(); editorEndpoint?.close(); requests?.close(); presenter?.close(); renderer?.destroy(); document.querySelector('#stage')?.setAttribute('inert','');
+   };
+   const connect = event => {
+     if (closed) return;
+@@ -45,13 +50,19 @@
+     const plain = data && !Array.isArray(data) && typeof data === 'object' && [Object.prototype,null].includes(Object.getPrototypeOf(data));
+     if (!plain || data.protocol !== CHANNEL_PROTOCOL || data.generation !== generation || bound || data.type !== 'connect' || Object.keys(data).length !== 3 || !['protocol','type','generation'].every(key=>Object.hasOwn(data,key)) || event.ports?.length) { close(); return; }
+     bound = true;
+-    requests = createRendererRequests({port:ports.port1,generation,surfaceProtocol,
+-      acceptSnapshot(snapshot,cancelPointers,surface=null,hasSurface=false) {
++    editorEndpoint=createBrowserEditorEndpoint({send:operation=>requests.send(operation),scheduler:host,onFailure:close});
++    documentEndpoint=createBrowserDocumentEndpoint({send:operation=>requests.send(operation),scheduler:host,onFailure:close});
++    requests = createRendererRequests({port:ports.port1,generation,surfaceProtocol,editorProtocol,documentProtocol,
++      acceptSnapshot(snapshot,cancelPointers,surface=null,hasSurface=false,editor=null,editorReply=null,documentState=null,documentReply=null) {
+         if(closed)return;
++        documentEndpoint.accept(snapshot,documentState,documentReply);
++        if(closed)return;
++        editorEndpoint.accept(snapshot,surface,editor,editorReply);
++        if(closed)return;
+         if(surfaceProfile===null){
+           surfaceProfile=hasSurface;
+           const options={sendEdit:(key,value)=>requests.send({type:'editIntent',key,value})};
+-          if(surfaceProfile)options.surface={profile:'mouse_v1',classifyContext,onFailure:error=>{if(!error.stale)close();}};
++          if(surfaceProfile)options.surface={profile:'editor_v1',editor:editorEndpoint,classifyContext,onFailure:error=>{if(!error.stale)close();}};
+           renderer=new Renderer(document.querySelector('#stage'),document.querySelector('#pages'),operation=>requests.send(operation),document,options);
+           presenter=createBrowserPresenter(value=>renderer.render(value),host);
+         }

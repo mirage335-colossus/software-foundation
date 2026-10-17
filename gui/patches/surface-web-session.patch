@@ -1,0 +1,74 @@
+--- web-framed.hpp
++++ web.hpp
+@@ -230,16 +230,20 @@
+ // without re-running an action. A new process/session must have a new epoch.
+ class WebSession {
+ public:
++    using ExtensionDispatch=std::function<bool(const web_detail::Json&)>;
++    using ExtensionPublication=std::function<web_detail::Json(const std::optional<ServiceRequest>&)>;
++    using ExtensionAdmission=std::function<bool()>;
+     using Tick=std::function<void()>;
+     using NextService=std::function<std::optional<ServiceRequest>()>;
+     using CompleteService=std::function<bool(ServiceResult)>;
+-    WebSession(WebAdapter& adapter,std::string epoch,NextService next={},CompleteService complete={},Tick tick={})
+-        :adapter_(adapter),epoch_(std::move(epoch)),next_(std::move(next)),complete_(std::move(complete)),tick_(std::move(tick)){
++    WebSession(WebAdapter& adapter,std::string epoch,NextService next={},CompleteService complete={},Tick tick={},ExtensionDispatch extension_dispatch={},ExtensionPublication extension_publication={},ExtensionAdmission extension_admission={})
++        :adapter_(adapter),epoch_(std::move(epoch)),next_(std::move(next)),complete_(std::move(complete)),tick_(std::move(tick)),extension_dispatch_(std::move(extension_dispatch)),extension_publication_(std::move(extension_publication)),extension_admission_(std::move(extension_admission)){
+         if(epoch_.empty()||!valid_utf8(epoch_))throw std::invalid_argument("Invalid session epoch");}
+     // Only the native composition root exposes this to a trusted host pipe.
+     // Ordinary browser messages cannot choose a native pathname.
+     const std::optional<ServiceRequest>& pending_service() const { return service_; }
+     bool complete_host_service(ServiceResult result) {
++        if(extension_admission_&&!extension_admission_())return false;
+         if(adapter_.closed()||!service_||result.id!=service_->id||!complete_)return false;
+         if(!complete_(std::move(result)))return false;
+         service_.reset();upload_.reset();transfer_=web_detail::Json{};return true;
+@@ -258,11 +262,19 @@
+     }
+ private:
+     WebAdapter& adapter_;std::string epoch_;std::uint64_t ack_=0;NextService next_;CompleteService complete_;Tick tick_;std::optional<ServiceRequest> service_;
++    ExtensionDispatch extension_dispatch_;ExtensionPublication extension_publication_;ExtensionAdmission extension_admission_;
+     struct Upload {std::uint64_t id;std::size_t total;std::string bytes;};
+     std::optional<Upload> upload_;
+     web_detail::Json transfer_;
+     std::optional<web_detail::Json> last_presentation_;
+     std::string response(std::string error={}){using namespace web_detail;
++        if(extension_admission_&&!extension_admission_()){
++            service_.reset();upload_.reset();transfer_=Json{};
++            if(!extension_publication_)throw std::logic_error("Session admission is closed");
++            const auto publication=extension_publication_(service_);
++            return encode(Json::Object{{"epoch",epoch_},{"ack",std::to_string(ack_)},{"error",std::move(error)},
++                {"snapshot",publication.at("snapshot")},{"surface",publication.at("surface")},{"service",Json{}},{"transfer",Json{}}});
++        }
+         if(adapter_.closed()){service_.reset();upload_.reset();transfer_=Json{};}
+         if(!service_&&next_&&!adapter_.closed()) {service_=next_();if(service_)adapter_.policy().cancel_pointer();}
+         if(service_&&(service_->title.size()>65536||service_->value.size()>65536||service_->byte_limit>65536)){
+@@ -271,6 +283,12 @@
+         }
+         Json service;
+         if(service_)service=Json::Object{{"id",std::to_string(service_->id)},{"kind",int(service_->kind)},{"title",service_->title},{"value",service_->kind==ServiceKind::write_text?std::string{}:service_->value},{"byteLimit",std::to_string(service_->byte_limit)},{"chunked",true},{"byteSize",std::to_string(service_->value.size())}};
++        if(extension_publication_){
++            const auto publication=extension_publication_(service_);
++            if(publication.at("snapshot").at("closed").boolean()){service_.reset();upload_.reset();transfer_=Json{};service=Json{};}
++            return encode(Json::Object{{"epoch",epoch_},{"ack",std::to_string(ack_)},{"error",std::move(error)},
++                {"snapshot",publication.at("snapshot")},{"surface",publication.at("surface")},{"service",std::move(service)},{"transfer",transfer_}});
++        }
+         try{last_presentation_=adapter_.presentation();}catch(const std::exception& failure){
+             if(!last_presentation_)throw;
+             error=std::string("Presentation failed; previous frame retained: ")+failure.what();
+@@ -279,6 +297,7 @@
+             {"snapshot",*last_presentation_},{"service",std::move(service)},{"transfer",transfer_}});
+     }
+     void dispatch(const web_detail::Json& op){using namespace web_detail;const auto& type=op.at("type").str();
++        if(extension_admission_&&!extension_admission_())throw std::logic_error("Session admission is closed");
+         transfer_=Json{};
+         if(type=="poll"){if(!adapter_.closed()&&tick_)tick_();return;}
+         if(type=="fileBegin"||type=="fileChunk"||type=="fileFinish"||type=="fileRead") {
+@@ -318,6 +337,7 @@
+             if(!complete_||!complete_(std::move(result)))throw std::invalid_argument("Service reply rejected");
+             service_.reset();upload_.reset();return;}
+         if(service_&&type!="resize"&&type!="close")return; // Modal service owns user input.
++        if(extension_dispatch_&&extension_dispatch_(op))return;
+         if(type=="resize"){const Size size{op.at("width").number(),op.at("height").number()};
+             if(size.width>4096||size.height>4096)throw std::length_error("Browser client size exceeds 4096");
+             adapter_.policy().send(ResizeEvent{size,op.at("scale").number()});return;}

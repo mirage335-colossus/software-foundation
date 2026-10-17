@@ -1,0 +1,37 @@
+{
+  "build": false,
+  "dependency_policy": "complete-pinned-static-native-inventory-and-provenance",
+  "direct_translation_units": 32,
+  "engine_execution": false,
+  "engine_files": 48,
+  "executable_plan": false,
+  "graph": {
+    "path": "recipes/webkitwasm-native-rich4083-v1/cmake/native-provider.cmake",
+    "sha256": "a19c8e7ddd7f1c4f15b143ca33a4826bec806ad0bd95137ac5a6059811d6dab1"
+  },
+  "implementation_status": "passive-input-contract-only",
+  "kernel_rebuild": false,
+  "kind": "foundation-native-engine-windows-producer-profile-v1",
+  "production_eligible": false,
+  "profile": "document-actions-v1",
+  "provenance": {
+    "path": "recipes/webkitwasm-native-rich4083-v1/provenance.json",
+    "sha256": "265cc0a00333a22d0eeea57acbdc5a881d9fd584a663871da86ecaf5937caae9"
+  },
+  "publication_policy": "unimplemented-native-adapter-or-two-host-metadata-join",
+  "recipe_directory": "recipes/webkitwasm-native-rich4083-v1",
+  "schema_version": 1,
+  "scope": "windows-native-source-input-contract-only",
+  "source_files": 157,
+  "source_map": {
+    "path": "recipes/webkitwasm-native-rich4083-v1/source-imports.json",
+    "sha256": "6bcb8189cfd29a428b18a9dade71161f3c0ba8d366dcf5743bea1abbbdba51fe"
+  },
+  "target": {
+    "pointer_bits": 64,
+    "processor": "x86_64",
+    "system": "Windows",
+    "triple": "x86_64-pc-windows-msvc"
+  },
+  "toolchain_policy": "native-windows-x64-clang-cl-cxx23-release-static-mt"
+}

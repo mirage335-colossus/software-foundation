@@ -1,0 +1,192 @@
+--- backends/rev/adapter.cpp
++++ backends/rev/adapter.cpp
+@@ -3,6 +3,7 @@
+ #include "clipboard.hpp"
+ #include "gui/presentation.hpp"
+ #include "rev_embedded.hpp"
++#include <array>
+ #include "WinEvent.hpp"
+ #include <algorithm>
+ #include <cmath>
+@@ -125,6 +126,9 @@
+         re::Button* cancel=nullptr;
+         std::optional<ServiceResult> result;
+     };
++    std::shared_ptr<NativeSurfaceHooks> surface_hooks;
++    std::array<re::Event::Button,5> surface_buttons;
++    Point surface_point;
+     Adapter& owner;
+     std::vector<void*> windows;
+     std::unique_ptr<Window> window;
+@@ -350,10 +354,79 @@
+     explicit Window(Impl& owner):Rev::Window(owner.windows,{.name="Generic GUI",.size={640,480,{1,1},{0,0}}}),impl(owner) {
+         style->overflow=Overflow::Hide;spacing(style->padding,0);
+     }
+-    void onClose(bool& reject) override {reject=true;impl.safely([&]{impl.cancel_pointer();impl.send(CloseEvent{});});}
++    void onClose(bool& reject) override {
++        if(impl.surface_hooks) {
++            reject=true;
++            impl.safely([&]{RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::close;(void)impl.surface_hooks->event(event);});
++            return; // The normal runner drains the application before teardown.
++        }
++        reject=true;impl.safely([&]{impl.cancel_pointer();impl.send(CloseEvent{});});
++    }
+     void onDefocus() override {impl.safely([&]{impl.cancel_pointer();Rev::Window::onDefocus();});}
+     void onMinimize() override {impl.safely([&]{impl.cancel_pointer();Rev::Window::onMinimize();});}
+     void onEvent(WinEvent& event) override {
++        if(impl.surface_hooks) {
++            impl.safely([&] {
++                if(event.surface) {
++                    auto value=*event.surface;
++                    if(value.kind==RevSurfaceEvent::Kind::context) {
++                        value.kind=RevSurfaceEvent::Kind::mouse;value.mouse_phase=5;
++                        for(unsigned n=0;n<5;++n)if(impl.surface_buttons[n]) {
++                            constexpr unsigned bits[]{1,4,2,8,16};value.buttons|=bits[n];
++                        }
++                        if(value.keyboard_context) {value.x=value.y=0;value.modifiers=0;}
++                        else {auto point=screenToLocal(float(value.x),float(value.y));value.x=point.x;value.y=point.y;}
++                    }
++                    if(impl.surface_hooks->event(value))event.reject();
++                    return;
++                }
++                const bool transform=event.type==WinEvent::Resize || event.type==WinEvent::Scale;
++                const bool lifecycle=transform || event.type==WinEvent::Focus || event.type==WinEvent::Defocus ||
++                    event.type==WinEvent::Minimize || event.type==WinEvent::Restore || event.type==WinEvent::Destroy;
++                if(lifecycle) {
++                    impl.surface_hooks->lifecycle(window->getNativeSurfaceFacts(),transform);
++                    Rev::Window::onEvent(event);return;
++                }
++                if(event.type==WinEvent::MouseButton || event.type==WinEvent::MouseMove ||
++                    event.type==WinEvent::MouseWheel || event.type==WinEvent::CaptureLost) {
++                    RevSurfaceEvent value;value.kind=RevSurfaceEvent::Kind::mouse;
++                    value.modifiers=event.surface_modifiers.value_or(0);
++                    if(event.type==WinEvent::MouseButton || event.type==WinEvent::MouseMove) {
++                        const auto point=screenToLocal(float(event.c),float(event.d));
++                        impl.surface_point={point.x,point.y};
++                    }
++                    value.x=impl.surface_point.x;value.y=impl.surface_point.y;
++                    if(event.type==WinEvent::MouseButton) {
++                        if(event.a>4)throw std::runtime_error("Unsupported native Rev mouse button");
++                        const unsigned button=event.a==1?2:event.a==2?1:unsigned(event.a);
++                        value.mouse_phase=event.b==0?2:1;value.button=button;
++                        auto& native=impl.surface_buttons[button];
++                        Rev::Core::Pos position{float(value.x),float(value.y)};
++                        native.set(event.b!=0,position);
++                        if(event.b!=0)value.clicks=native.isDoubleClick()?2:1;
++                    } else if(event.type==WinEvent::MouseMove)value.mouse_phase=0;
++                    else if(event.type==WinEvent::MouseWheel) {
++                        value.mouse_phase=3;
++                        value.wheel_x=double(float(event.c/120.0));value.wheel_y=double(float(event.d/120.0));
++                    } else value.mouse_phase=4;
++                    if(value.mouse_phase==4)for(auto& button:impl.surface_buttons)button.set(false);
++                    for(unsigned n=0;n<5;++n)if(impl.surface_buttons[n]) {
++                        constexpr unsigned bits[]{1,4,2,8,16};value.buttons|=bits[n];
++                    }
++                    if(value.mouse_phase==4){value.x=value.y=0;value.modifiers=0;value.buttons=0;}
++                    if(impl.surface_hooks->event(value))event.reject();
++#ifndef _WIN32
++                    if(value.mouse_phase==2 && value.button==2) {
++                        value.mouse_phase=5;value.button=0;value.clicks=0;
++                        (void)impl.surface_hooks->event(value);
++                    }
++#endif
++                    return;
++                }
++                Rev::Window::onEvent(event);
++            });
++            return;
++        }
+         if(event.type==WinEvent::CaptureLost)impl.safely([&]{impl.cancel_pointer();});
+         Rev::Window::onEvent(event);
+     }
+@@ -706,7 +779,7 @@
+     background->style->background.color=color(view.palette.background);background->style->border.width=0_px;
+     const auto width=std::max(1,int(std::ceil(view.client_size.width*window->details.scale)));
+     const auto height=std::max(1,int(std::ceil(view.client_size.height*window->details.scale)));
+-    if(window->window->size.w!=width||window->window->size.h!=height) {
++    if(!surface_hooks && (window->window->size.w!=width||window->window->size.h!=height)) {
+         window->window->setSize(width,height);window->Rev::Window::onResize(width,height);
+     }
+     for(auto it=entries.begin();it!=entries.end();) {
+@@ -1108,6 +1181,7 @@
+ bool Adapter::pump() {
+     sync();if(closed())return false;
+     impl_->safely([&]{if(!Rev::NativeWindow::pumpEvents())impl_->send(CloseEvent{});});
++    if(impl_->surface_hooks && impl_->window)impl_->safely([&]{impl_->window->window->flushNativeSurface();});
+     if(!closed())impl_->safely([&]{impl_->clipboard.poll();});
+     if(!closed())impl_->update_tooltip();
+     sync();
+@@ -1137,7 +1211,10 @@
+ }
+ BitmapImage Adapter::capture() {
+     sync();if(closed()||!impl_->window)throw std::logic_error("Cannot capture a closed Rev window");
+-    auto& window=*impl_->window;window.draw(window.event);
++    auto& window=*impl_->window;
++    if(impl_->surface_hooks)while(glGetError()!=GL_NO_ERROR){}
++    window.draw(window.event);
++    if(impl_->surface_hooks && glGetError()!=GL_NO_ERROR)throw std::runtime_error("Rev native surface draw failed");
+     auto& target=*window.shared->canvas->frameBuffer;
+     Rev::NativeWindow::requireContext(window.shared->canvas->context,"Native capture");
+     const auto width=unsigned(target.params.width),height=unsigned(target.params.height);
+@@ -1145,12 +1222,61 @@
+     GLint previous=0,alignment=0;glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING,&previous);glGetIntegerv(GL_PACK_ALIGNMENT,&alignment);
+     glBindFramebuffer(GL_READ_FRAMEBUFFER,target.buffer);glPixelStorei(GL_PACK_ALIGNMENT,1);
+     glReadPixels(0,0,GLsizei(width),GLsizei(height),GL_RGB,GL_UNSIGNED_BYTE,pixels.data());
++    const auto native_surface_read_error=impl_->surface_hooks?glGetError():GL_NO_ERROR;
+     glPixelStorei(GL_PACK_ALIGNMENT,alignment);glBindFramebuffer(GL_READ_FRAMEBUFFER,GLuint(previous));
++    if(native_surface_read_error!=GL_NO_ERROR)throw std::runtime_error("Rev native surface readback failed");
+     BitmapImage result(width,height,PixelFormat::rgb24);
+     const auto stride=std::size_t(width)*3;
+     for(unsigned y=0;y<height;++y)result.blit(0,y,{width,1,stride,PixelFormat::rgb24,
+         std::span<const unsigned char>(pixels.data()+std::size_t(height-y-1)*stride,stride)});
+     return result;
++}
++
++void Adapter::native_surface(std::shared_ptr<NativeSurfaceHooks> hooks,bool editor) {
++    policy().require_interaction();
++    if(!impl_->window)throw std::runtime_error("Rev native surface has no Window");
++    if(!hooks) {
++        impl_->window->window->suspendNativeSurface();
++        impl_->window->window->enableNativeSurface(false);
++        impl_->surface_hooks.reset();return;
++    }
++    if(!hooks->event || !hooks->lifecycle)throw std::invalid_argument("Incomplete Rev native surface hooks");
++    impl_->surface_hooks=std::move(hooks);
++    if(!impl_->window->window->enableNativeSurface(true,editor)) {
++        impl_->surface_hooks.reset();throw std::runtime_error("Rev native raw/editor frontend is unavailable");
++    }
++}
++void Adapter::native_surface_window(std::string title,int width,int height) {
++    policy().require_interaction();
++    if(!impl_->surface_hooks || !impl_->window || width<=0 || height<=0 || width>16384 || height>16384)
++        throw std::invalid_argument("Invalid or unstaged Rev native surface Window");
++    impl_->window->setTitle(title);
++    impl_->window->setSize(int(std::ceil(width*impl_->window->details.scale)),int(std::ceil(height*impl_->window->details.scale)));
++    const auto actual=impl_->window->window->getNativeSurfaceFacts();
++    if(actual.width<=0 || actual.height<=0 || actual.width>16384 || actual.height>16384)
++        throw std::runtime_error("Rev staging has no bounded actual client extent");
++    impl_->window->window->size.w=int(actual.width);impl_->window->window->size.h=int(actual.height);
++    // Window::setSize alone does not invalidate the retained GL canvas. Stage
++    // the actual extent now; a later OS notification may confirm or replace it.
++    impl_->window->Rev::Window::onResize(int(actual.width),int(actual.height));
++}
++RevSurfaceFacts Adapter::native_surface_facts() const {
++    (void)closed();
++    if(!impl_->window)return {};
++    return impl_->window->window->getNativeSurfaceFacts();
++}
++void Adapter::native_surface_context(const RevSurfaceContext& context) {
++    policy().require_interaction();
++    if(!impl_->surface_hooks || !impl_->window || !impl_->window->window->installNativeSurfaceContext(context))
++        throw std::runtime_error("Rev actual native frontend/caret rejected its bounded context");
++}
++void Adapter::native_surface_suspend(bool retire_pointer) {
++    if(retire_pointer)for(auto& button:impl_->surface_buttons)button.set(false);
++    if(impl_->window)impl_->window->window->suspendNativeSurface();
++}
++bool Adapter::native_surface_capture(bool capture) {
++    policy().require_interaction();
++    return impl_->window && impl_->window->window->captureNativeSurface(capture);
+ }
+ 
+ bool Probe::exists(Adapter& adapter,const WidgetKey& key){adapter.sync();return adapter.impl_->entry(key)!=nullptr;}

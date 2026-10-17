@@ -1,0 +1,12 @@
+--- renderer_surface_dom.mjs
++++ renderer_surface_dom.mjs
+@@ -23,7 +23,8 @@
+     this.destroyed = false; this.lastFocus = null; this.snapshot = null; this.pointerSerial = 0n;
+     this.activePointers = new Set();this.pointerCancelEpoch=0n;this.wheelPending={count:0};
+     this.surface = options.surface ? createBrowserSurface({root:this.root,document:this.document,send:operation=>this.send(operation),
+-      resolveOwner:(key,event)=>this.resolveSurfaceOwner(key,event),onFailure:options.surface.onFailure || (()=>{})}) : null;
++      resolveOwner:(key,event)=>this.resolveSurfaceOwner(key,event),onFailure:options.surface.onFailure || (()=>{}),
++      profile:options.surface.profile, classifyContext:options.surface.classifyContext}) : null;
+     for(const kind of ["blur","pagehide"])this.listen(this.document.defaultView,kind,()=>this.cancelPointers());
+     this.listen(this.root,"wheel", event => this.groupWheel(event), {passive: false});
+     this.listen(this.root,"contextmenu", event => this.contextMenu(event));

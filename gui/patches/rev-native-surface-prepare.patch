@@ -1,0 +1,19 @@
+--- cmake/PrepareRev.cmake
++++ cmake/PrepareRev.cmake
+@@ -25,7 +25,15 @@
+            lower MATCHES "\\.(mac|metal|vulkan)\\.")
+             continue()
+         endif()
+-        file(READ "${source}" content)
++        # The caller may supply independently exact-patched raw interfaces.
++        # Keep original source identity/relative output names for resource logic.
++        set(read_source "${source}")
++        if(name STREQUAL "NativeWindow.lnx.ixx" AND DEFINED GUI_REV_NATIVE_WINDOW_LNX_SOURCE)
++            set(read_source "${GUI_REV_NATIVE_WINDOW_LNX_SOURCE}")
++        elseif(name STREQUAL "NativeWindow.win.ixx" AND DEFINED GUI_REV_NATIVE_WINDOW_WIN_SOURCE)
++            set(read_source "${GUI_REV_NATIVE_WINDOW_WIN_SOURCE}")
++        endif()
++        file(READ "${read_source}" content)
+         if(NOT name STREQUAL "Resource.ixx")
+             # Documentation examples are not resource calls. No executable code
+             # is removed; only whole comment lines mentioning File(...) are skipped.

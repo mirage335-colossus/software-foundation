@@ -16,3 +16,5 @@
 gui/patches/*.patch whitespace=-blank-at-eol
 # Preserve upstream bytes when a vendored source inventory requires exact hashes.
 # Add a narrowly scoped -text rule with each such dependency.
+third_party/wasm3/source/* -text
+third_party/wasm3/patches/*.patch whitespace=-blank-at-eol,-blank-at-eof

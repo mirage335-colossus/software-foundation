@@ -1,0 +1,1038 @@
+{
+  "schema_version": 1,
+  "kind": "foundation-native-dependency-recipe-v1",
+  "target": {
+    "system": "Linux",
+    "processor": "x86_64",
+    "triple": "x86_64-buildroot-linux-gnu",
+    "pointer_bits": 64
+  },
+  "maximum_jobs": 4,
+  "source_policy": "exact-retained-archives-no-fetch-no-patches",
+  "cmake_inputs": [
+    "NATIVE_PREFIX",
+    "NATIVE_WORK",
+    "NATIVE_TOOLCHAIN",
+    "NATIVE_SYSROOT",
+    "NATIVE_C_FLAGS",
+    "NATIVE_CXX_FLAGS",
+    "NATIVE_LINK_FLAGS",
+    "NATIVE_PIC_RUNTIME_MODE",
+    "SOURCE_icu",
+    "SOURCE_zlib",
+    "SOURCE_brotli",
+    "SOURCE_png",
+    "SOURCE_jpeg",
+    "SOURCE_webp",
+    "SOURCE_freetype",
+    "SOURCE_harfbuzz",
+    "SOURCE_xml2",
+    "SOURCE_sqlite",
+    "SOURCE_openssl",
+    "SOURCE_nghttp2",
+    "SOURCE_psl",
+    "SOURCE_curl",
+    "SOURCE_fontconfig",
+    "PROGRAM_cmake",
+    "PROGRAM_ninja",
+    "PROGRAM_make",
+    "PROGRAM_sh",
+    "PROGRAM_perl",
+    "PROGRAM_python",
+    "PROGRAM_gperf",
+    "PROGRAM_pkg_config",
+    "PROGRAM_c",
+    "PROGRAM_cxx",
+    "PROGRAM_archiver",
+    "PROGRAM_ranlib",
+    "NATIVE_ASSETS_FONT_CONFIG",
+    "NATIVE_ASSETS_ICU_DATA",
+    "NATIVE_ASSETS_CA_BUNDLE",
+    "NATIVE_ASSETS_FONTS",
+    "NATIVE_NOTICE_FILES"
+  ],
+  "components": {
+    "icu": {
+      "archive": "icu4c-77_1-src.tgz",
+      "version": "77.1",
+      "sha256": "588e431f77327c39031ffbb8843c0e3bc122c211374485fa87dc5f3faff24061",
+      "bytes": 27384265,
+      "format": "tar-gzip",
+      "strip_prefix": "icu",
+      "build_system": "autoconf",
+      "depends": [],
+      "configure_options": [
+        "--enable-option-checking=fatal",
+        "--enable-static",
+        "--disable-shared",
+        "--disable-dyload",
+        "--disable-tests",
+        "--disable-samples",
+        "--disable-extras",
+        "--disable-icuio",
+        "--disable-layoutex",
+        "--disable-plugins",
+        "--with-data-packaging=static"
+      ],
+      "build_targets": [
+        "all"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "zlib": {
+      "archive": "zlib.tar.gz",
+      "version": "1.3.1",
+      "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+      "bytes": 1512791,
+      "format": "tar-gzip",
+      "strip_prefix": "zlib-1.3.1",
+      "build_system": "cmake",
+      "depends": [],
+      "configure_options": [
+        "ZLIB_BUILD_EXAMPLES=OFF"
+      ],
+      "build_targets": [
+        "zlibstatic"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "brotli": {
+      "archive": "brotli.tar.gz",
+      "version": "1.1.0",
+      "sha256": "e720a6ca29428b803f4ad165371771f5398faba397edf6778837a18599ea13ff",
+      "bytes": 511969,
+      "format": "tar-gzip",
+      "strip_prefix": "brotli-1.1.0",
+      "build_system": "cmake",
+      "depends": [],
+      "configure_options": [
+        "BROTLI_DISABLE_TESTS=ON",
+        "BROTLI_BUNDLED_MODE=OFF"
+      ],
+      "build_targets": [
+        "brotlidec",
+        "brotlicommon"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "png": {
+      "archive": "libpng.tar.gz",
+      "version": "1.6.43",
+      "sha256": "fecc95b46cf05e8e3fc8a414750e0ba5aad00d89e9fdf175e94ff041caf1a03a",
+      "bytes": 1554715,
+      "format": "tar-gzip",
+      "strip_prefix": "libpng-1.6.43",
+      "build_system": "cmake",
+      "depends": [
+        "zlib"
+      ],
+      "configure_options": [
+        "PNG_SHARED=OFF",
+        "PNG_STATIC=ON",
+        "PNG_TESTS=OFF",
+        "PNG_TOOLS=OFF",
+        "PNG_EXECUTABLES=OFF"
+      ],
+      "build_targets": [
+        "png_static"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "jpeg": {
+      "archive": "libjpeg-turbo.tar.gz",
+      "version": "3.0.4",
+      "sha256": "0270f9496ad6d69e743f1e7b9e3e9398f5b4d606b6a47744df4b73df50f62e38",
+      "bytes": 2400356,
+      "format": "tar-gzip",
+      "strip_prefix": "libjpeg-turbo-3.0.4",
+      "build_system": "cmake",
+      "depends": [],
+      "configure_options": [
+        "ENABLE_SHARED=OFF",
+        "ENABLE_STATIC=ON",
+        "WITH_TURBOJPEG=OFF",
+        "WITH_SIMD=OFF"
+      ],
+      "build_targets": [
+        "jpeg-static"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "webp": {
+      "archive": "libwebp.tar.gz",
+      "version": "1.4.0",
+      "sha256": "12af50c45530f0a292d39a88d952637e43fb2d4ab1883c44ae729840f7273381",
+      "bytes": 3800514,
+      "format": "tar-gzip",
+      "strip_prefix": "libwebp-1.4.0",
+      "build_system": "cmake",
+      "depends": [],
+      "configure_options": [
+        "WEBP_LINK_STATIC=ON",
+        "WEBP_ENABLE_SIMD=ON",
+        "WEBP_USE_THREAD=ON",
+        "WEBP_BUILD_ANIM_UTILS=OFF",
+        "WEBP_BUILD_CWEBP=OFF",
+        "WEBP_BUILD_DWEBP=OFF",
+        "WEBP_BUILD_GIF2WEBP=OFF",
+        "WEBP_BUILD_IMG2WEBP=OFF",
+        "WEBP_BUILD_VWEBP=OFF",
+        "WEBP_BUILD_WEBPINFO=OFF",
+        "WEBP_BUILD_LIBWEBPMUX=OFF",
+        "WEBP_BUILD_WEBPMUX=OFF",
+        "WEBP_BUILD_EXTRAS=OFF",
+        "WEBP_BUILD_WEBP_JS=OFF",
+        "CMAKE_DISABLE_FIND_PACKAGE_OpenGL=ON",
+        "CMAKE_DISABLE_FIND_PACKAGE_GLUT=ON",
+        "CMAKE_DISABLE_FIND_PACKAGE_SDL2=ON"
+      ],
+      "build_targets": [
+        "webp",
+        "webpdemux",
+        "sharpyuv"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "freetype": {
+      "archive": "freetype.tar.gz",
+      "version": "2.13.3",
+      "sha256": "bc5c898e4756d373e0d991bab053036c5eb2aa7c0d5c67e8662ddc6da40c4103",
+      "bytes": 2482495,
+      "format": "tar-gzip",
+      "strip_prefix": "freetype-VER-2-13-3",
+      "build_system": "cmake",
+      "depends": [
+        "brotli",
+        "zlib",
+        "png"
+      ],
+      "configure_options": [
+        "FT_DISABLE_ZLIB=OFF",
+        "FT_REQUIRE_ZLIB=ON",
+        "FT_DISABLE_BZIP2=ON",
+        "FT_DISABLE_PNG=OFF",
+        "FT_REQUIRE_PNG=ON",
+        "FT_DISABLE_HARFBUZZ=ON",
+        "FT_DISABLE_BROTLI=OFF",
+        "FT_REQUIRE_BROTLI=ON"
+      ],
+      "build_targets": [
+        "freetype"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "harfbuzz": {
+      "archive": "harfbuzz.tar.xz",
+      "version": "9.0.0",
+      "sha256": "a41b272ceeb920c57263ec851604542d9ec85ee3030506d94662067c7b6ab89e",
+      "bytes": 17895360,
+      "format": "tar-xz",
+      "strip_prefix": "harfbuzz-9.0.0",
+      "build_system": "cmake",
+      "depends": [
+        "freetype",
+        "icu"
+      ],
+      "configure_options": [
+        "HB_HAVE_FREETYPE=ON",
+        "HB_HAVE_ICU=ON",
+        "HB_BUILD_UTILS=OFF",
+        "HB_BUILD_SUBSET=OFF",
+        "HB_HAVE_CAIRO=OFF",
+        "HB_HAVE_GRAPHITE2=OFF",
+        "HB_HAVE_GLIB=OFF",
+        "HB_HAVE_GOBJECT=OFF",
+        "HB_HAVE_INTROSPECTION=OFF"
+      ],
+      "build_targets": [
+        "harfbuzz",
+        "harfbuzz-icu"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "xml2": {
+      "archive": "libxml2.tar.xz",
+      "version": "2.12.9",
+      "sha256": "59912db536ab56a3996489ea0299768c7bcffe57169f0235e7f962a91f483590",
+      "bytes": 2643456,
+      "format": "tar-xz",
+      "strip_prefix": "libxml2-2.12.9",
+      "build_system": "cmake",
+      "depends": [
+        "icu",
+        "zlib"
+      ],
+      "configure_options": [
+        "LIBXML2_WITH_ICU=ON",
+        "LIBXML2_WITH_ZLIB=ON",
+        "LIBXML2_WITH_ICONV=OFF",
+        "LIBXML2_WITH_LZMA=OFF",
+        "LIBXML2_WITH_PYTHON=OFF",
+        "LIBXML2_WITH_TESTS=OFF",
+        "LIBXML2_WITH_PROGRAMS=OFF",
+        "LIBXML2_WITH_MODULES=OFF",
+        "LIBXML2_WITH_THREADS=ON",
+        "LIBXML2_WITH_SAX1=ON"
+      ],
+      "build_targets": [
+        "LibXml2"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "sqlite": {
+      "archive": "sqlite.zip",
+      "version": "3.46.1",
+      "sha256": "77823cb110929c2bcb0f5d48e4833b5c59a8a6e40cdea3936b99e199dbbe5784",
+      "bytes": 2764032,
+      "format": "zip",
+      "strip_prefix": "sqlite-amalgamation-3460100",
+      "build_system": "recipe-cmake",
+      "depends": [],
+      "configure_options": [
+        "SQLITE_THREADSAFE=1",
+        "SQLITE_OMIT_LOAD_EXTENSION",
+        "SQLITE_ENABLE_FTS5"
+      ],
+      "build_targets": [
+        "sqlite3"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "openssl": {
+      "archive": "openssl.tar.gz",
+      "version": "3.5.0",
+      "sha256": "344d0a79f1a9b08029b0744e2cc401a43f9c90acd1044d09a530b4885a8e9fc0",
+      "bytes": 53136912,
+      "format": "tar-gzip",
+      "strip_prefix": "openssl-3.5.0",
+      "build_system": "openssl",
+      "depends": [],
+      "configure_options": [
+        "linux-x86_64",
+        "no-shared",
+        "no-dso",
+        "no-engine",
+        "no-afalgeng",
+        "no-hw",
+        "no-tests",
+        "no-apps",
+        "no-docs",
+        "no-asm",
+        "--libdir=lib"
+      ],
+      "build_targets": [
+        "build_libs"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "nghttp2": {
+      "archive": "nghttp2.tar.xz",
+      "version": "1.64.0",
+      "sha256": "88bb94c9e4fd1c499967f83dece36a78122af7d5fb40da2019c56b9ccc6eb9dd",
+      "bytes": 1676124,
+      "format": "tar-xz",
+      "strip_prefix": "nghttp2-1.64.0",
+      "build_system": "cmake",
+      "depends": [],
+      "configure_options": [
+        "ENABLE_LIB_ONLY=ON",
+        "BUILD_STATIC_LIBS=ON",
+        "ENABLE_APP=OFF",
+        "ENABLE_HPACK_TOOLS=OFF",
+        "ENABLE_EXAMPLES=OFF",
+        "ENABLE_FAILMALLOC=OFF",
+        "ENABLE_DOC=OFF",
+        "BUILD_TESTING=OFF",
+        "ENABLE_HTTP3=OFF",
+        "WITH_LIBXML2=OFF",
+        "WITH_JEMALLOC=OFF",
+        "WITH_MRUBY=OFF",
+        "WITH_NEVERBLEED=OFF",
+        "WITH_LIBBPF=OFF",
+        "WITH_WOLFSSL=OFF"
+      ],
+      "build_targets": [
+        "nghttp2_static"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "psl": {
+      "archive": "libpsl.tar.gz",
+      "version": "0.21.5",
+      "sha256": "1dcc9ceae8b128f3c0b3f654decd0e1e891afc6ff81098f227ef260449dae208",
+      "bytes": 7624251,
+      "format": "tar-gzip",
+      "strip_prefix": "libpsl-0.21.5",
+      "build_system": "autoconf",
+      "depends": [
+        "icu"
+      ],
+      "configure_options": [
+        "--enable-option-checking=fatal",
+        "--enable-static",
+        "--disable-shared",
+        "--with-pic",
+        "--disable-nls",
+        "--disable-gtk-doc",
+        "--disable-gtk-doc-html",
+        "--disable-gtk-doc-pdf",
+        "--disable-man",
+        "--enable-runtime=libicu",
+        "--enable-builtin",
+        "--disable-valgrind-tests"
+      ],
+      "build_targets": [
+        "src/libpsl.la"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "curl": {
+      "archive": "curl.tar.xz",
+      "version": "8.17.0",
+      "sha256": "955f6e729ad6b3566260e8fef68620e76ba3c31acf0a18524416a185acf77992",
+      "bytes": 2797000,
+      "format": "tar-xz",
+      "strip_prefix": "curl-8.17.0",
+      "build_system": "cmake",
+      "depends": [
+        "openssl",
+        "zlib",
+        "brotli",
+        "nghttp2",
+        "psl"
+      ],
+      "configure_options": [
+        "BUILD_STATIC_LIBS=ON",
+        "BUILD_CURL_EXE=OFF",
+        "BUILD_TESTING=OFF",
+        "BUILD_EXAMPLES=OFF",
+        "BUILD_LIBCURL_DOCS=OFF",
+        "BUILD_MISC_DOCS=OFF",
+        "ENABLE_CURL_MANUAL=OFF",
+        "CURL_ENABLE_SSL=ON",
+        "CURL_USE_OPENSSL=ON",
+        "CURL_USE_MBEDTLS=OFF",
+        "CURL_USE_WOLFSSL=OFF",
+        "CURL_USE_GNUTLS=OFF",
+        "CURL_USE_RUSTLS=OFF",
+        "CURL_ZLIB=ON",
+        "CURL_BROTLI=ON",
+        "CURL_ZSTD=OFF",
+        "USE_NGHTTP2=ON",
+        "CURL_USE_LIBPSL=ON",
+        "USE_LIBIDN2=OFF",
+        "CURL_USE_LIBSSH2=OFF",
+        "CURL_USE_LIBSSH=OFF",
+        "USE_LIBRTMP=OFF",
+        "CURL_DISABLE_LDAP=ON",
+        "CURL_DISABLE_LDAPS=ON",
+        "CURL_USE_GSASL=OFF",
+        "CURL_USE_GSSAPI=OFF",
+        "CURL_USE_LIBUV=OFF",
+        "ENABLE_ARES=OFF",
+        "USE_NGTCP2=OFF",
+        "USE_QUICHE=OFF",
+        "USE_OPENSSL_QUIC=OFF",
+        "ENABLE_THREADED_RESOLVER=ON",
+        "CURL_USE_PKGCONFIG=ON",
+        "CURL_CA_PATH=none",
+        "CURL_CA_FALLBACK=OFF"
+      ],
+      "build_targets": [
+        "libcurl_static"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    },
+    "fontconfig": {
+      "archive": "fontconfig.tar.xz",
+      "version": "2.15.0",
+      "sha256": "63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e",
+      "bytes": 1447820,
+      "format": "tar-xz",
+      "strip_prefix": "fontconfig-2.15.0",
+      "build_system": "autoconf",
+      "depends": [
+        "freetype",
+        "harfbuzz",
+        "xml2",
+        "icu",
+        "zlib"
+      ],
+      "configure_options": [
+        "--enable-option-checking=fatal",
+        "--enable-static",
+        "--disable-shared",
+        "--with-pic",
+        "--disable-nls",
+        "--enable-libxml2",
+        "--disable-iconv",
+        "--disable-docs",
+        "--disable-docbook",
+        "--disable-cache-build",
+        "--with-add-fonts=no"
+      ],
+      "build_targets": [
+        "fontconfig/all",
+        "fc-case/all",
+        "fc-lang/all",
+        "src/all"
+      ],
+      "install_policy": "recipe-selected-static-only"
+    }
+  },
+  "libraries": {
+    "ICU::data": {
+      "archive": "lib/libicudata.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [
+        "U_STATIC_IMPLEMENTATION"
+      ],
+      "links": []
+    },
+    "ICU::uc": {
+      "archive": "lib/libicuuc.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [
+        "U_STATIC_IMPLEMENTATION"
+      ],
+      "links": [
+        "ICU::data",
+        "Threads::Threads",
+        "dl",
+        "m"
+      ]
+    },
+    "ICU::i18n": {
+      "archive": "lib/libicui18n.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [
+        "U_STATIC_IMPLEMENTATION"
+      ],
+      "links": [
+        "ICU::data",
+        "ICU::uc"
+      ]
+    },
+    "ZLIB::ZLIB": {
+      "archive": "lib/libz.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [],
+      "links": []
+    },
+    "Brotli::common": {
+      "archive": "lib/libbrotlicommon.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [],
+      "links": [
+        "m"
+      ]
+    },
+    "Brotli::dec": {
+      "archive": "lib/libbrotlidec.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [],
+      "links": [
+        "Brotli::common",
+        "m"
+      ]
+    },
+    "PNG::PNG": {
+      "archive": "lib/libpng16.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [],
+      "links": [
+        "ZLIB::ZLIB",
+        "m"
+      ]
+    },
+    "JPEG::JPEG": {
+      "archive": "lib/libjpeg.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [],
+      "links": []
+    },
+    "WebP::sharpyuv": {
+      "archive": "lib/libsharpyuv.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [],
+      "links": [
+        "m"
+      ]
+    },
+    "WebP::libwebp": {
+      "archive": "lib/libwebp.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [],
+      "links": [
+        "Threads::Threads",
+        "WebP::sharpyuv",
+        "m"
+      ]
+    },
+    "WebP::demux": {
+      "archive": "lib/libwebpdemux.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [],
+      "links": [
+        "WebP::libwebp"
+      ]
+    },
+    "Freetype::Freetype": {
+      "archive": "lib/libfreetype.a",
+      "includes": [
+        "include/freetype2"
+      ],
+      "definitions": [],
+      "links": [
+        "Brotli::common",
+        "Brotli::dec",
+        "PNG::PNG",
+        "ZLIB::ZLIB",
+        "m"
+      ]
+    },
+    "HarfBuzz::HarfBuzz": {
+      "archive": "lib/libharfbuzz.a",
+      "includes": [
+        "include/harfbuzz"
+      ],
+      "definitions": [],
+      "links": [
+        "Freetype::Freetype",
+        "ICU::uc",
+        "Threads::Threads"
+      ]
+    },
+    "HarfBuzz::ICU": {
+      "archive": "lib/libharfbuzz-icu.a",
+      "includes": [
+        "include/harfbuzz"
+      ],
+      "definitions": [],
+      "links": [
+        "HarfBuzz::HarfBuzz",
+        "ICU::uc"
+      ]
+    },
+    "LibXml2::LibXml2": {
+      "archive": "lib/libxml2.a",
+      "includes": [
+        "include/libxml2"
+      ],
+      "definitions": [],
+      "links": [
+        "ICU::data",
+        "ICU::i18n",
+        "ICU::uc",
+        "Threads::Threads",
+        "ZLIB::ZLIB",
+        "m"
+      ]
+    },
+    "SQLite3::SQLite3": {
+      "archive": "lib/libsqlite3.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [
+        "SQLITE_THREADSAFE=1",
+        "SQLITE_OMIT_LOAD_EXTENSION",
+        "SQLITE_ENABLE_FTS5"
+      ],
+      "links": [
+        "Threads::Threads",
+        "m"
+      ]
+    },
+    "OpenSSL::Crypto": {
+      "archive": "lib/libcrypto.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [],
+      "links": [
+        "Threads::Threads",
+        "dl"
+      ]
+    },
+    "OpenSSL::SSL": {
+      "archive": "lib/libssl.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [],
+      "links": [
+        "OpenSSL::Crypto",
+        "Threads::Threads"
+      ]
+    },
+    "FoundationNative::nghttp2": {
+      "archive": "lib/libnghttp2.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [
+        "NGHTTP2_STATICLIB"
+      ],
+      "links": []
+    },
+    "LibPSL::LibPSL": {
+      "archive": "lib/libpsl.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [],
+      "links": [
+        "ICU::data",
+        "ICU::uc"
+      ]
+    },
+    "CURL::libcurl": {
+      "archive": "lib/libcurl.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [
+        "CURL_STATICLIB"
+      ],
+      "links": [
+        "Brotli::common",
+        "Brotli::dec",
+        "FoundationNative::nghttp2",
+        "LibPSL::LibPSL",
+        "OpenSSL::Crypto",
+        "OpenSSL::SSL",
+        "Threads::Threads",
+        "ZLIB::ZLIB"
+      ]
+    },
+    "Fontconfig::Fontconfig": {
+      "archive": "lib/libfontconfig.a",
+      "includes": [
+        "include"
+      ],
+      "definitions": [],
+      "links": [
+        "Freetype::Freetype",
+        "LibXml2::LibXml2",
+        "Threads::Threads",
+        "m"
+      ]
+    }
+  },
+  "pkg_config": {
+    "lib/pkgconfig/icu-data.pc": {
+      "component": "icu",
+      "version": "77.1",
+      "library": "icudata",
+      "requires_private": "",
+      "libs_private": "",
+      "include_subdir": "",
+      "definitions": "-DU_STATIC_IMPLEMENTATION"
+    },
+    "lib/pkgconfig/icu-uc.pc": {
+      "component": "icu",
+      "version": "77.1",
+      "library": "icuuc",
+      "requires_private": "icu-data",
+      "libs_private": "-lstdc++ -pthread -ldl -lm",
+      "include_subdir": "",
+      "definitions": "-DU_STATIC_IMPLEMENTATION"
+    },
+    "lib/pkgconfig/icu-i18n.pc": {
+      "component": "icu",
+      "version": "77.1",
+      "library": "icui18n",
+      "requires_private": "icu-uc",
+      "libs_private": "-lstdc++",
+      "include_subdir": "",
+      "definitions": "-DU_STATIC_IMPLEMENTATION"
+    },
+    "lib/pkgconfig/zlib.pc": {
+      "component": "zlib",
+      "version": "1.3.1",
+      "library": "z",
+      "requires_private": "",
+      "libs_private": "",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/libbrotlicommon.pc": {
+      "component": "brotli",
+      "version": "1.1.0",
+      "library": "brotlicommon",
+      "requires_private": "",
+      "libs_private": "-lm",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/libbrotlidec.pc": {
+      "component": "brotli",
+      "version": "1.1.0",
+      "library": "brotlidec",
+      "requires_private": "libbrotlicommon",
+      "libs_private": "-lm",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/libpng16.pc": {
+      "component": "png",
+      "version": "1.6.43",
+      "library": "png16",
+      "requires_private": "zlib",
+      "libs_private": "-lm",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/libjpeg.pc": {
+      "component": "jpeg",
+      "version": "3.0.4",
+      "library": "jpeg",
+      "requires_private": "",
+      "libs_private": "",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/libsharpyuv.pc": {
+      "component": "webp",
+      "version": "1.4.0",
+      "library": "sharpyuv",
+      "requires_private": "",
+      "libs_private": "-lm",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/libwebp.pc": {
+      "component": "webp",
+      "version": "1.4.0",
+      "library": "webp",
+      "requires_private": "libsharpyuv",
+      "libs_private": "-pthread -lm",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/libwebpdemux.pc": {
+      "component": "webp",
+      "version": "1.4.0",
+      "library": "webpdemux",
+      "requires_private": "libwebp",
+      "libs_private": "",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/freetype2.pc": {
+      "component": "freetype",
+      "version": "26.2.20",
+      "library": "freetype",
+      "requires_private": "zlib libpng16 libbrotlidec libbrotlicommon",
+      "libs_private": "-lm",
+      "include_subdir": "freetype2",
+      "definitions": ""
+    },
+    "lib/pkgconfig/harfbuzz.pc": {
+      "component": "harfbuzz",
+      "version": "9.0.0",
+      "library": "harfbuzz",
+      "requires_private": "freetype2 icu-uc",
+      "libs_private": "-lstdc++ -pthread",
+      "include_subdir": "harfbuzz",
+      "definitions": ""
+    },
+    "lib/pkgconfig/harfbuzz-icu.pc": {
+      "component": "harfbuzz",
+      "version": "9.0.0",
+      "library": "harfbuzz-icu",
+      "requires_private": "harfbuzz icu-uc",
+      "libs_private": "-lstdc++",
+      "include_subdir": "harfbuzz",
+      "definitions": ""
+    },
+    "lib/pkgconfig/libxml-2.0.pc": {
+      "component": "xml2",
+      "version": "2.12.9",
+      "library": "xml2",
+      "requires_private": "icu-i18n icu-uc zlib",
+      "libs_private": "-lstdc++ -pthread -lm",
+      "include_subdir": "libxml2",
+      "definitions": ""
+    },
+    "lib/pkgconfig/sqlite3.pc": {
+      "component": "sqlite",
+      "version": "3.46.1",
+      "library": "sqlite3",
+      "requires_private": "",
+      "libs_private": "-pthread -lm",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/libcrypto.pc": {
+      "component": "openssl",
+      "version": "3.5.0",
+      "library": "crypto",
+      "requires_private": "",
+      "libs_private": "-pthread -ldl",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/libssl.pc": {
+      "component": "openssl",
+      "version": "3.5.0",
+      "library": "ssl",
+      "requires_private": "libcrypto",
+      "libs_private": "-pthread",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/openssl.pc": {
+      "component": "openssl",
+      "version": "3.5.0",
+      "library": "ssl",
+      "requires_private": "libcrypto",
+      "libs_private": "-pthread",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/libnghttp2.pc": {
+      "component": "nghttp2",
+      "version": "1.64.0",
+      "library": "nghttp2",
+      "requires_private": "",
+      "libs_private": "",
+      "include_subdir": "",
+      "definitions": "-DNGHTTP2_STATICLIB"
+    },
+    "lib/pkgconfig/libpsl.pc": {
+      "component": "psl",
+      "version": "0.21.5",
+      "library": "psl",
+      "requires_private": "icu-uc",
+      "libs_private": "-lstdc++",
+      "include_subdir": "",
+      "definitions": ""
+    },
+    "lib/pkgconfig/libcurl.pc": {
+      "component": "curl",
+      "version": "8.17.0",
+      "library": "curl",
+      "requires_private": "libssl libcrypto zlib libbrotlidec libbrotlicommon libnghttp2 libpsl",
+      "libs_private": "-pthread",
+      "include_subdir": "",
+      "definitions": "-DCURL_STATICLIB"
+    },
+    "lib/pkgconfig/fontconfig.pc": {
+      "component": "fontconfig",
+      "version": "2.15.0",
+      "library": "fontconfig",
+      "requires_private": "freetype2 libxml-2.0",
+      "libs_private": "-pthread -lm",
+      "include_subdir": "",
+      "definitions": ""
+    }
+  },
+  "assets": {
+    "font_config": "etc/fonts/fonts.conf",
+    "icu_data": "share/icu/icudt77l.dat",
+    "ca_bundle": "share/certs/ca-bundle.pem",
+    "fonts_directory": "share/fonts",
+    "cache_directory": "var/cache/fontconfig",
+    "policy": "admitted-retained-only-unmodified"
+  },
+  "notices": {
+    "policy": "complete-source-and-asset-manifest-union-required",
+    "directory": "share/licenses/foundation-native-dependencies"
+  },
+  "limitations": [
+    "source-candidate-only",
+    "actual-native-configure-compile-link-unexecuted",
+    "archive-PIC-runtime-inspection-required",
+    "native-font-ICU-TLS-initialization-unexecuted",
+    "no-production-eligible-SDK",
+    "no-Windows-or-aarch64-recipe"
+  ],
+  "pic_check": {
+    "ordered_libraries": [
+      "ICU::data",
+      "ICU::uc",
+      "ICU::i18n",
+      "ZLIB::ZLIB",
+      "Brotli::common",
+      "Brotli::dec",
+      "PNG::PNG",
+      "JPEG::JPEG",
+      "WebP::sharpyuv",
+      "WebP::libwebp",
+      "WebP::demux",
+      "Freetype::Freetype",
+      "HarfBuzz::HarfBuzz",
+      "HarfBuzz::ICU",
+      "LibXml2::LibXml2",
+      "SQLite3::SQLite3",
+      "OpenSSL::Crypto",
+      "OpenSSL::SSL",
+      "FoundationNative::nghttp2",
+      "LibPSL::LibPSL",
+      "CURL::libcurl",
+      "Fontconfig::Fontconfig"
+    ],
+    "output": "pic/libfoundation-native-dependencies-pic-check.so",
+    "system_links": [
+      "Threads::Threads",
+      "m",
+      "dl",
+      "rt",
+      "atomic"
+    ],
+    "link_options": [
+      "-Wl,-z,defs",
+      "-Wl,-z,text"
+    ]
+  },
+  "private_runtime": {
+    "policy": "private-static-gcc-sdk-v1",
+    "policy_sha256": "4983920c892241475f839f6bc6e7a293b348322e390307d4a1769b97ceab9bcc",
+    "toolchain_kind": "foundation-native-engine-prototype-private-sdk-toolchain-v1",
+    "cmake_inputs": [
+      "NATIVE_PRIVATE_RUNTIME_HELPER",
+      "NATIVE_PRIVATE_RUNTIME_HELPER_SHA256",
+      "BIB_NATIVE_RUNTIME_COMPILER_TRIPLE",
+      "BIB_NATIVE_RUNTIME_POLICY_SHA256",
+      "BIB_NATIVE_RUNTIME_SELECTION_PATH",
+      "BIB_NATIVE_RUNTIME_SELECTION_SHA256",
+      "BIB_NATIVE_RUNTIME_LIBSTDCXX_PATH",
+      "BIB_NATIVE_RUNTIME_LIBSTDCXX_SHA256",
+      "BIB_NATIVE_RUNTIME_LIBGCC_PATH",
+      "BIB_NATIVE_RUNTIME_LIBGCC_SHA256",
+      "BIB_NATIVE_RUNTIME_LIBGCC_EH_PATH",
+      "BIB_NATIVE_RUNTIME_LIBGCC_EH_SHA256",
+      "BIB_NATIVE_RUNTIME_CRTBEGINS_PATH",
+      "BIB_NATIVE_RUNTIME_CRTBEGINS_SHA256",
+      "BIB_NATIVE_RUNTIME_CRTENDS_PATH",
+      "BIB_NATIVE_RUNTIME_CRTENDS_SHA256",
+      "BIB_NATIVE_RUNTIME_LINK_MAP"
+    ],
+    "export": "foundation_native_dependency_pic_probe",
+    "export_map_sha256": "cd72a926f92fccc82668968407f12679004518c734272e3a98a2628fd6c6e5b6"
+  }
+}

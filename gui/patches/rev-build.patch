@@ -37,7 +37,7 @@
      "${gui_rev_root}/source/*" "${gui_rev_root}/resources/*" "${gui_rev_root}/external/*")
  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${gui_rev_inputs})
 -include("${CMAKE_CURRENT_LIST_DIR}/PrepareRev.cmake")
-+include("${FOUNDATION_GUI_SOURCE}/cmake/PrepareRev.cmake")
++include("${CMAKE_CURRENT_BINARY_DIR}/PrepareRev.cmake")
  gui_prepare_rev("${gui_rev_root}" "${gui_rev_generated}" "${gui_rev_platform}")
  add_library(gui_rev_toolkit STATIC "${gui_rev_generated}/rev_embedded.cpp")
  set_target_properties(gui_rev_toolkit PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES

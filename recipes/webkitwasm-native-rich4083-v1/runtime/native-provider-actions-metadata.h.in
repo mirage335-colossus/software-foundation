@@ -1,0 +1,197 @@
+// SPDX-License-Identifier: CC0-1.0
+// Generated from pinned native source/build bytes, not runtime eligibility.
+// This output is never a recipe input. It owns no runtime identity or object.
+#pragma once
+#include <array>
+#include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
+#include <foundation/appended/engine_provider_document_actions_v1.h>
+#include "EnginePrivate.hpp"
+#include "LegacyHostAdapters.hpp"
+#include "BibCopiedDocumentCatalog.hpp"
+
+#if defined(__EMSCRIPTEN__) || defined(__wasm__) || defined(__wasm32__) || defined(__wasm64__)
+#error "Native actions metadata rejects browser/Wasm targets"
+#endif
+#if !defined(BIB_ENGINE_PROVIDER_NEUTRAL) || BIB_ENGINE_PROVIDER_NEUTRAL != 1 \
+ || !defined(BIB_ENGINE_PROVIDER_NATIVE) || BIB_ENGINE_PROVIDER_NATIVE != 1 \
+ || !defined(BIB_ENGINE_PROVIDER_DOCUMENT_V2) || BIB_ENGINE_PROVIDER_DOCUMENT_V2 != 1 \
+ || !defined(BIB_ENGINE_PROVIDER_EDITOR_V1) || BIB_ENGINE_PROVIDER_EDITOR_V1 != 1 \
+ || !defined(BIB_ENGINE_PROVIDER_DOCUMENT_ACTIONS_V1) || BIB_ENGINE_PROVIDER_DOCUMENT_ACTIONS_V1 != 1
+#error "Native actions metadata requires the explicit native/editor/actions graph"
+#endif
+
+namespace foundation::appended::native_provider_actions_metadata {
+using Digest = std::array<std::uint8_t, 32>;
+namespace D = bib::provider_candidate::document_catalog;
+inline constexpr std::uint32_t providerAbiMajor = 1, providerAbiMinor = 1;
+inline constexpr std::uint32_t hostAbiMajor = 1, hostAbiMinor = 0;
+// The inherited document descriptor remains profile2; this explicit kind is4.
+inline constexpr std::uint32_t profileKind = 4;
+inline constexpr std::uint64_t surfaceCapabilities = UINT64_C(8255);
+inline constexpr std::uint32_t surfaceProtocolVersion = 2, editorProtocolVersion = 1;
+inline constexpr std::uint32_t editorCommandMaximum = 1048576, editorQueryMaximum = 236, editorReplyCapacity = 1048576;
+inline constexpr std::uint32_t targetSystem = @TARGET_SYSTEM@;
+inline constexpr std::uint32_t targetProcessor = @TARGET_PROCESSOR@;
+inline constexpr Digest baseHeaderSha256{@BASE_SHA256_BYTES@};
+inline constexpr Digest extensionHeaderSha256{@EXTENSION_SHA256_BYTES@};
+inline constexpr Digest documentContractSha256{@DOCUMENT_CONTRACT_SHA256_BYTES@};
+inline constexpr Digest documentCatalogSha256{@DOCUMENT_CATALOG_SHA256_BYTES@};
+inline constexpr Digest documentSchemaSha256{@SCHEMA_SHA256_BYTES@};
+inline constexpr Digest ackSchemaSha256{@ACK_SHA256_BYTES@};
+inline constexpr Digest physicalCatalogSha256{@PHYSICAL_CATALOG_SHA256_BYTES@};
+inline constexpr Digest editorHeaderSha256{@EDITOR_HEADER_SHA256_BYTES@};
+inline constexpr Digest editorContractSha256{@EDITOR_CONTRACT_SHA256_BYTES@};
+inline constexpr Digest editorCatalogSha256{@EDITOR_CATALOG_SHA256_BYTES@};
+inline constexpr Digest editorSchemaSha256{@EDITOR_SCHEMA_SHA256_BYTES@};
+inline constexpr Digest actionsHeaderSha256{@ACTIONS_HEADER_SHA256_BYTES@};
+inline constexpr Digest contractSha256{@CONTRACT_SHA256_BYTES@};
+inline constexpr Digest catalogSha256{@CATALOG_SHA256_BYTES@};
+inline constexpr Digest actionsSchemaSha256{@ACTIONS_SCHEMA_SHA256_BYTES@};
+inline constexpr Digest actionsAckSchemaSha256{@ACTIONS_ACK_SHA256_BYTES@};
+inline constexpr Digest sourceRecipeSha256{@SOURCE_RECIPE_SHA256_BYTES@};
+inline constexpr Digest buildIdentitySha256{@BUILD_IDENTITY_SHA256_BYTES@};
+inline constexpr Digest sourceInputsSha256{@SOURCE_INPUTS_SHA256_BYTES@};
+inline constexpr Digest toolchainIdentitySha256{@TOOLCHAIN_IDENTITY_SHA256_BYTES@};
+
+constexpr BibEngineBuildV1 makeBuild() noexcept {
+    BibEngineBuildV1 value{};
+    value.size = sizeof(value);
+    value.layout_revision = BIB_ENGINE_LAYOUT_V1;
+    value.target_system = targetSystem;
+    value.target_processor = targetProcessor;
+    value.pointer_bits = 64;
+    value.lifetime = BIB_ENGINE_LIFETIME_PROCESS;
+    value.maximum_starts = 1;
+    value.reserved = 0;
+    value.fixed_viewport_width = 800;
+    value.fixed_viewport_height = 600;
+    value.capabilities = UINT64_C(4083);
+    for (std::size_t n = 0; n < 32; ++n) {
+        value.contract_header_sha256[n] = contractSha256[n];
+        value.build_identity_sha256[n] = buildIdentitySha256[n];
+        value.source_recipe_sha256[n] = sourceRecipeSha256[n];
+    }
+    return value;
+}
+inline constexpr BibEngineBuildV1 build = makeBuild();
+inline constexpr BibEngineLimitsV1 limits{
+    sizeof(BibEngineLimitsV1), 1048576, 236, 1048576, 1048576,
+    8, 64, 0, UINT64_C(67108864), UINT64_C(134217728)};
+// Exact values from the source-recipe-bound prelink config, never a CLI default.
+inline constexpr bib::provider_candidate::ServiceRetentionLimits retention{64, 4194304};
+
+constexpr bool nonzero(const Digest& value) noexcept {
+    for (auto byte : value) if (byte) return true;
+    return false;
+}
+constexpr bool rawDigestMatches(const std::uint8_t (&actual)[32], const Digest& expected) noexcept {
+    for (std::size_t n = 0; n < 32; ++n) if (actual[n] != expected[n]) return false;
+    return true;
+}
+inline constexpr std::array<bib::provider_candidate::Operation, 2> queries{{
+    @QUERIES@
+}};
+inline constexpr std::array<bib::provider_candidate::Operation, 9> commands{{
+    @COMMANDS@
+}};
+constexpr bool sameOperation(const bib::provider_candidate::Operation& left,
+                             const bib::provider_candidate::Operation& right) noexcept {
+    return left.kind == right.kind && left.maximum_input_bytes == right.maximum_input_bytes
+        && left.required_reply_capacity == right.required_reply_capacity
+        && left.capability == right.capability && left.schema == right.schema;
+}
+constexpr bool operationsValid() noexcept {
+    if (queries.size() != D::actions_queries.size() || commands.size() != D::actions_commands.size()) return false;
+    for (std::size_t n = 0; n < queries.size(); ++n)
+        if (!sameOperation(queries[n], D::actions_queries[n])
+            || queries[n].maximum_input_bytes > limits.maximum_query_bytes
+            || queries[n].required_reply_capacity > limits.maximum_reply_bytes) return false;
+    for (std::size_t n = 0; n < commands.size(); ++n)
+        if (!sameOperation(commands[n], D::actions_commands[n])
+            || commands[n].maximum_input_bytes > limits.maximum_command_bytes
+            || commands[n].required_reply_capacity > limits.maximum_reply_bytes) return false;
+    return true;
+}
+constexpr bool metadataValid() noexcept {
+#if defined(__linux__) && !defined(_WIN32) && defined(__x86_64__) && !defined(__aarch64__) \
+    && !defined(_M_ARM64) && !defined(_M_ARM64EC)
+    constexpr auto actualSystem = BIB_ENGINE_TARGET_LINUX, actualProcessor = BIB_ENGINE_CPU_X86_64;
+#elif defined(__linux__) && !defined(_WIN32) && defined(__aarch64__) && !defined(__x86_64__) \
+    && !defined(_M_X64) && !defined(_M_ARM64EC)
+    constexpr auto actualSystem = BIB_ENGINE_TARGET_LINUX, actualProcessor = BIB_ENGINE_CPU_AARCH64;
+#elif defined(_WIN32) && !defined(__linux__) && (defined(_M_X64) || defined(__x86_64__)) \
+    && !defined(__aarch64__) && !defined(_M_ARM64) && !defined(_M_ARM64EC)
+    constexpr auto actualSystem = BIB_ENGINE_TARGET_WINDOWS, actualProcessor = BIB_ENGINE_CPU_X86_64;
+#else
+    constexpr auto actualSystem = 0u, actualProcessor = 0u;
+#endif
+    return sizeof(void*) == 8 && sizeof(std::uintptr_t) == 8 && sizeof(std::uint64_t) == 8
+        && sizeof(std::uint32_t) == 4 && sizeof(unsigned int) == 4
+        && (actualSystem == BIB_ENGINE_TARGET_LINUX ? sizeof(long) == 8 : sizeof(long) == 4)
+        && std::endian::native == std::endian::little
+        && providerAbiMajor == BIB_ENGINE_DOCUMENT_ACTIONS_V1_ABI_MAJOR
+        && providerAbiMinor == BIB_ENGINE_DOCUMENT_ACTIONS_V1_ABI_MINOR
+        && hostAbiMajor == BIB_ENGINE_DOCUMENT_ACTIONS_V1_HOST_ABI_MAJOR
+        && hostAbiMinor == BIB_ENGINE_DOCUMENT_ACTIONS_V1_HOST_ABI_MINOR
+        && profileKind == BIB_ENGINE_DOCUMENT_ACTIONS_V1_PROFILE_KIND
+        && profileKind == bib::provider_candidate::document_actions_profile
+        && surfaceCapabilities == BIB_ENGINE_EDITOR_SURFACE_CAPABILITIES
+        && surfaceCapabilities == UINT64_C(8255) && surfaceProtocolVersion == 2
+        && editorProtocolVersion == BIB_ENGINE_EDITOR_PROTOCOL_VERSION
+        && editorCommandMaximum == BIB_ENGINE_EDITOR_MAX_WIRE_BYTES
+        && editorQueryMaximum == BIB_ENGINE_EDITOR_MAX_QUERY_BYTES
+        && editorReplyCapacity == BIB_ENGINE_EDITOR_REPLY_CAPACITY
+        && targetSystem == actualSystem && targetProcessor == actualProcessor
+        && actualSystem != 0 && actualProcessor != 0
+        && baseHeaderSha256 == D::base_header && extensionHeaderSha256 == D::extension_header
+        && documentContractSha256 == D::contract && documentCatalogSha256 == D::catalog
+        && documentSchemaSha256 == D::schema && ackSchemaSha256 == D::ack_schema
+        && physicalCatalogSha256 == D::physical_catalog && editorHeaderSha256 == D::editor_header
+        && editorContractSha256 == D::editor_contract && editorCatalogSha256 == D::editor_catalog
+        && editorSchemaSha256 == D::editor_schema && actionsHeaderSha256 == D::actions_header
+        && contractSha256 == D::actions_contract && catalogSha256 == D::actions_catalog
+        && actionsSchemaSha256 == D::actions_schema && actionsAckSchemaSha256 == D::actions_ack_schema
+        && nonzero(sourceRecipeSha256) && nonzero(buildIdentitySha256)
+        && nonzero(sourceInputsSha256) && nonzero(toolchainIdentitySha256)
+        && build.size == 144 && build.layout_revision == BIB_ENGINE_LAYOUT_V1
+        && build.target_system == actualSystem && build.target_processor == actualProcessor && build.pointer_bits == 64
+        && build.lifetime == BIB_ENGINE_LIFETIME_PROCESS && build.maximum_starts == 1
+        && !build.reserved && build.fixed_viewport_width == 800 && build.fixed_viewport_height == 600
+        && build.capabilities == D::actions_capabilities && build.capabilities == UINT64_C(4083)
+        && rawDigestMatches(build.contract_header_sha256, contractSha256)
+        && rawDigestMatches(build.build_identity_sha256, buildIdentitySha256)
+        && rawDigestMatches(build.source_recipe_sha256, sourceRecipeSha256)
+        && limits.size == 48 && limits.maximum_command_bytes == 1048576
+        && limits.maximum_query_bytes == 236 && limits.maximum_reply_bytes == 1048576
+        && limits.maximum_service_message_bytes == 1048576
+        && limits.maximum_retired_documents == 8 && limits.maximum_inflight_resources == 64
+        && !limits.reserved && limits.maximum_resource_response_bytes == UINT64_C(67108864)
+        && limits.maximum_retained_resource_bytes == UINT64_C(134217728)
+        && retention.max_retained_calls == 64 && retention.max_retained_bytes == 4194304
+        && operationsValid();
+}
+static_assert(std::is_standard_layout_v<BibEngineBuildV1> && std::is_standard_layout_v<BibEngineProviderV1>);
+static_assert(sizeof(BibEngineBytesV1) == 16 && sizeof(BibEngineDocumentV1) == 24);
+static_assert(sizeof(BibEngineBuildV1) == 144 && alignof(BibEngineBuildV1) == 8);
+static_assert(offsetof(BibEngineBuildV1, capabilities) == 40);
+static_assert(offsetof(BibEngineBuildV1, contract_header_sha256) == 48);
+static_assert(offsetof(BibEngineBuildV1, build_identity_sha256) == 80);
+static_assert(offsetof(BibEngineBuildV1, source_recipe_sha256) == 112);
+static_assert(sizeof(BibEngineLimitsV1) == 48 && alignof(BibEngineLimitsV1) == 8);
+static_assert(sizeof(BibEngineDamageV1) == 72 && sizeof(BibEngineResourceRequestV1) == 48);
+static_assert(sizeof(BibEngineResourceResponseV1) == 56 && sizeof(BibEngineResourceEpochV1) == 40);
+static_assert(sizeof(BibEngineHostV1) == 128 && alignof(BibEngineHostV1) == 8);
+static_assert(sizeof(BibEngineStartV1) == 136 && sizeof(BibEngineStartResultV1) == 16);
+static_assert(sizeof(BibEngineAdvanceV1) == 16 && sizeof(BibEngineReplyBufferV1) == 16);
+static_assert(sizeof(BibEngineCommandV1) == 88 && sizeof(BibEngineQueryV1) == 80);
+static_assert(sizeof(BibEngineCommandResultV1) == 24 && sizeof(BibEngineQueryResultV1) == 40);
+static_assert(sizeof(BibEngineProviderV1) == 272 && alignof(BibEngineProviderV1) == 8);
+static_assert(offsetof(BibEngineProviderV1, build) == 16);
+static_assert(offsetof(BibEngineProviderV1, limits) == 160);
+static_assert(offsetof(BibEngineProviderV1, start) == 208);
+static_assert(offsetof(BibEngineProviderV1, dispose_retired_service_document) == 264);
+static_assert(metadataValid());
+} // namespace foundation::appended::native_provider_actions_metadata

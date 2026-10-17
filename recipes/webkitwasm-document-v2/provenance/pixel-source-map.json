@@ -1,0 +1,522 @@
+{
+  "actual_retained_P80_object_archive_link_closure": "UNKNOWN; no inference from75-path or22syntax history",
+  "direct_provider_profile_definitions": {
+    "BIB_APP_RESOURCES": 1,
+    "BIB_ENGINE_PROVIDER_DOCUMENT_V2": 1,
+    "BIB_ENGINE_PROVIDER_NEUTRAL": 1,
+    "BIB_FOUNDATION_SERVICES": 1,
+    "BIB_PTHREAD": 0,
+    "__EMSCRIPTEN__": "actual compiler target, never synthesize to qualify native",
+    "pointer_bits": 32,
+    "pthread": "false; __EMSCRIPTEN_PTHREADS__ absent"
+  },
+  "direct_translation_units": [
+    {
+      "bytes": 18603,
+      "logical_target": "runtime/BibCopiedDocumentBinding.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/runtime/BibCopiedDocumentBinding.cpp",
+      "role": "new native binding",
+      "sha256": "dfe56a0e289b843dd3b7c5f3cea41cd055202c4bae4e9391461d081a10b1ab56"
+    },
+    {
+      "bytes": 7572,
+      "logical_target": "runtime/BibEngineDocumentWasmShim.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/runtime/BibEngineDocumentWasmShim.cpp",
+      "role": "new pure Wasm shim",
+      "sha256": "77d1043ad001fdbcc85df900cba402fbf5adfeb03d9064f62ca793477d619317"
+    },
+    {
+      "bytes": 16809,
+      "logical_target": "portable/BibEngineCopiedDocumentDispatch.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/portable/BibEngineCopiedDocumentDispatch.cpp",
+      "role": "new pure document dispatcher",
+      "sha256": "c98d31985fa6755c2b84c37314ef1042e5a61838d5865deb1fd6e575f3b91fbf"
+    },
+    {
+      "bytes": 70313,
+      "logical_target": "native/NativeDocumentV2Publisher.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/native/NativeDocumentV2Publisher.cpp",
+      "role": "successor native publisher",
+      "sha256": "bbc219cc50258478cf84fbaf7be0c70f6b9ab9c0ac90dd6a164a70bc587db5e5"
+    },
+    {
+      "bytes": 23104,
+      "logical_target": "portable/BibEngineCopiedRecord.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/portable/BibEngineCopiedRecord.cpp",
+      "role": "successor pure record",
+      "sha256": "aefc6cac578b35826e931b3a59f56206a1f0ca0f83a8a7782a5fd33f344b5667"
+    },
+    {
+      "bytes": 155877,
+      "logical_target": "wrapper/src/embedder/main.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/main.cpp",
+      "role": "successor native wrapper",
+      "sha256": "8c2f98835df730b17c0fb0f5bb5807c2ddaf9559797a59598173d95d02a70449"
+    },
+    {
+      "bytes": 38484,
+      "logical_target": "wrapper/src/embedder/BibAppResources.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibAppResources.cpp",
+      "role": "successor native wrapper",
+      "sha256": "721665012a8a352c23dd961a3fdae881cbc6a815cdbdfd207185fb2df5ffe08d"
+    },
+    {
+      "bytes": 32902,
+      "logical_target": "wrapper/src/embedder/BibFoundationServiceBridge.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibFoundationServiceBridge.cpp",
+      "role": "successor native wrapper",
+      "sha256": "a8a9e3901158e5e5bc697b427dfcbc75d465f5b4a5068db46c792cf7b75c0be8"
+    },
+    {
+      "bytes": 15995,
+      "logical_target": "portable/NativeDocumentV2Codec.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/portable/NativeDocumentV2Codec.cpp",
+      "role": "explicit added pure native-document utility",
+      "sha256": "f5c421c32a58e62be9423fb7c983b4f703dcb6c48b689c2a6643e3fb5f558040"
+    },
+    {
+      "bytes": 17620,
+      "logical_target": "portable/NativeDocumentV2Types.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/portable/NativeDocumentV2Types.cpp",
+      "role": "explicit added pure native-document utility",
+      "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44"
+    },
+    {
+      "bytes": 26599,
+      "logical_target": "foundation/src/appended/document_forms.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/src/appended/document_forms.cpp",
+      "role": "explicit added pure Foundation utility",
+      "sha256": "0a6b72f8724be6cc48b92afa810c2f15591befdab6ddb0e812a64f7eade41ed5"
+    },
+    {
+      "bytes": 11363,
+      "logical_target": "foundation/src/appended/abi.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/src/appended/abi.cpp",
+      "role": "explicit added pure Foundation utility",
+      "sha256": "a65e71b9859d57c9e383e5c10a327b79e4a007de6684685ac020ca66c4b7d99d"
+    },
+    {
+      "bytes": 51525,
+      "logical_target": "foundation/third_party/appended-engine/src/ProviderGuard.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp",
+      "role": "selected generic Guard successor dcac",
+      "sha256": "dcac577c612cce0faf8692afde0481f6a0723e297aa5eba4a2c6c5e707d7333d"
+    },
+    {
+      "bytes": 18120,
+      "logical_target": "foundation/third_party/appended-engine/src/LegacyHostAdapters.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/third_party/appended-engine/src/LegacyHostAdapters.cpp",
+      "role": "unchanged generic helper",
+      "sha256": "6e661dda207a84d944d9b173a6f5ee885ab1070ee48be8e30b2899a7d20c4420"
+    },
+    {
+      "bytes": 3246,
+      "logical_target": "provider-binding/binding/BibEngineProviderPreflight.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/provider-binding/binding/BibEngineProviderPreflight.cpp",
+      "role": "unchanged pure preflight helper",
+      "sha256": "dd8c25c5343498106be19b26d96e6b7292bb3e25f10c7b07b191461fdb81c3fb"
+    },
+    {
+      "bytes": 30015,
+      "logical_target": "runtime/BibEngineCopiedHost.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/runtime/BibEngineCopiedHost.cpp",
+      "role": "successor generic copied host (replaces proposed unchanged old Host)",
+      "sha256": "1781dbc1f04e553d2dc6f42ffff7cec4fad9ee04677a6823a775115deff53629"
+    },
+    {
+      "bytes": 6751,
+      "logical_target": "wrapper/src/embedder/resource_url.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/resource_url.cpp",
+      "role": "unchanged generic wrapper helper",
+      "sha256": "05a1af43bd84e8ba4b4eb2b73070c7f331945806d4e33586f1a447cd0b216671"
+    },
+    {
+      "bytes": 7297,
+      "logical_target": "wrapper/src/embedder/AppResourceQueue.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/AppResourceQueue.cpp",
+      "role": "unchanged generic wrapper helper",
+      "sha256": "505a885cdcf80df7933f3aea02d1b11d799922d133dd73e75c4b988e2c0dab80"
+    },
+    {
+      "bytes": 1087,
+      "logical_target": "wrapper/src/embedder/BibAppResourceProfile.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibAppResourceProfile.cpp",
+      "role": "unchanged generic wrapper helper",
+      "sha256": "70680c1910cebb8bcf4b74fed2bd6ca4719b89735e9d921de9c5ea66ad8d9c17"
+    },
+    {
+      "bytes": 33538,
+      "logical_target": "wrapper/src/embedder/EmbedderStrategies.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/EmbedderStrategies.cpp",
+      "role": "unchanged generic wrapper helper",
+      "sha256": "350f39f61dea3660a1b3e486d13d7856031a2e996bced8cace965e5fbf111b9d"
+    },
+    {
+      "bytes": 22553,
+      "logical_target": "wrapper/src/embedder/BibIDBServer.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibIDBServer.cpp",
+      "role": "unchanged generic wrapper helper",
+      "sha256": "9489dec1a9de9b15dc756a4b5d37c435cfb38fa3e7ecbd096b396c6ba20e34a7"
+    },
+    {
+      "bytes": 19789,
+      "logical_target": "wrapper/src/embedder/BibMediaPlayer.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibMediaPlayer.cpp",
+      "role": "unchanged generic wrapper helper",
+      "sha256": "ec01b60ed892fe03dea2c51431c4215961730c175b3112d1da93df73f9e61fc6"
+    },
+    {
+      "bytes": 39829,
+      "logical_target": "native/NativeFormsV2Combined.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/native/NativeFormsV2Combined.cpp",
+      "role": "unchanged native Combined004 implementation",
+      "sha256": "2bc9f9ceca00c644920e2911438dadcf0642257bf43b530863f618deb36dd7ff"
+    }
+  ],
+  "excluded": [
+    {
+      "reason": "replaced by document binding; competing provider owner",
+      "source": "copied-provider/runtime/BibCopiedPixelBinding.cpp"
+    },
+    {
+      "reason": "replaced by document shim; duplicates bib_engine_wasm_bridge_v1 and bib_engine_wasm_dispatch_v1",
+      "source": "copied-provider/runtime/BibEngineWasmShim.cpp"
+    },
+    {
+      "reason": "replaced by document dispatcher; old profile/capacity/operation admission",
+      "source": "copied-provider/portable/BibEngineCopiedDispatch.cpp"
+    },
+    {
+      "reason": "select dispatcher successors only, one body for each class",
+      "source": "copied-provider/portable/BibEngineCopiedRecord.cpp and runtime/BibEngineCopiedHost.cpp old CV3 bodies"
+    },
+    {
+      "reason": "old competing binding; not added by old neutral branch but must remain excluded",
+      "source": "provider-binding/binding/BibEngineProviderBinding.cpp"
+    },
+    {
+      "reason": "obsolete physical catalog; not a physical2003 provider",
+      "source": "provider-binding/codec/BibEngineProviderCodec.cpp"
+    },
+    {
+      "reason": "exactly one dcac577c released selected body",
+      "source": "all other ProviderGuard.cpp copies"
+    },
+    {
+      "reason": "must not shadow selected edfd276a header; remove old private include roots",
+      "source": "copied-provider/runtime/private/EnginePrivate.hpp and provider-binding/private/EnginePrivate.hpp old copies"
+    },
+    {
+      "reason": "document generator/template/header replace old profile facts; real output is not yet generated",
+      "source": "old generate_copied_metadata.py, engine-copied-metadata.h.in, BibCopiedMetadata.generated.h"
+    },
+    {
+      "reason": "not members of selected neutral provider direct-source list",
+      "source": "diagnostic wrapper branches, wb-spike.c/gpu-spike.cpp/pre-js and diagnostic main startup"
+    },
+    {
+      "reason": "outside retained neutral engine boundary; utility document_forms.cpp does not admit application owner code",
+      "source": "Foundation owner/kernel archives and GUI/App/Forms application sources"
+    }
+  ],
+  "generated_source_prerequisite": "actual generated document metadata requires NEW exact recipe/prelink identity; no production header generated",
+  "include_roots_in_required_precedence": [
+    "generated (actual document metadata only)",
+    "runtime",
+    "portable",
+    "native",
+    "foundation/third_party/appended-engine/include (sole selected EnginePrivate.hpp edfd; includes legacy/)",
+    "foundation/include",
+    "provider-binding/binding",
+    "wrapper/src/embedder",
+    "same frozen retained engine WebCore_INCLUDE_DIRECTORIES and WebCore_PRIVATE_INCLUDE_DIRECTORIES; SYSTEM WebCore_SYSTEM_INCLUDE_DIRECTORIES; exact paths/context remain a producer prerequisite"
+  ],
+  "preserved_engine_postimages": [
+    {
+      "bytes": 12234,
+      "logical_target": "engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp",
+      "role": "preserved engine source postimage; do not add duplicate direct TU or claim retained archive inclusion",
+      "sha256": "8ae65acf35a605f9ebe1b2ea0654683926732e6842ae5c806433618b35d94851"
+    },
+    {
+      "bytes": 41875,
+      "logical_target": "engine/Source/WebCore/bindings/js/ScriptController.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/engine/Source/WebCore/bindings/js/ScriptController.cpp",
+      "role": "preserved engine source postimage; do not add duplicate direct TU or claim retained archive inclusion",
+      "sha256": "8f8e984f18a45631bb4a9e425a69656c6a35651e11fd038cab7d7f11bf625e79"
+    },
+    {
+      "bytes": 447362,
+      "logical_target": "engine/Source/WebCore/dom/Document.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/engine/Source/WebCore/dom/Document.cpp",
+      "role": "preserved engine source postimage; do not add duplicate direct TU or claim retained archive inclusion",
+      "sha256": "b9137b64104a653e113912a5a64c09606aea434cfe0a76c1a4c5e0be86843c42"
+    },
+    {
+      "bytes": 113637,
+      "logical_target": "engine/Source/WebCore/loader/DocumentLoader.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/engine/Source/WebCore/loader/DocumentLoader.cpp",
+      "role": "preserved engine source postimage; do not add duplicate direct TU or claim retained archive inclusion",
+      "sha256": "f10bd277bc751179b8c0f7bbecda382d46d39e2919f11a0f87bbd4b37e5270bd"
+    },
+    {
+      "bytes": 14423,
+      "logical_target": "engine/Source/WebCore/workers/Worker.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/engine/Source/WebCore/workers/Worker.cpp",
+      "role": "preserved engine source postimage; do not add duplicate direct TU or claim retained archive inclusion",
+      "sha256": "fd5f885a5bd6032e1bde897802dc4b59713f32ab3e29ed48145132ec95648ea1"
+    },
+    {
+      "bytes": 8877,
+      "logical_target": "engine/Source/WebCore/workers/shared/SharedWorker.cpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/engine/Source/WebCore/workers/shared/SharedWorker.cpp",
+      "role": "preserved engine source postimage; do not add duplicate direct TU or claim retained archive inclusion",
+      "sha256": "748d4fa6786a246500e5b1667721b0ad9ef980abbbc69b351c0da60e317b8c4f"
+    }
+  ],
+  "selected_advance": "bibProviderDocumentAdvance for this1795 profile; separate2003 binder must select same helper",
+  "source_closure_sha256": "0bdcdd54dfa7cbba3405b6281a4d46b1f578c696db861d0c8d74b2231eecc1f2",
+  "source_prerequisite_headers": [
+    {
+      "bytes": 843,
+      "logical_target": "runtime/BibCopiedDocumentBinding.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/runtime/BibCopiedDocumentBinding.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "c1d590528530f1287eb8c2cd4d5bfbacb23ff76dd1e508b4b923f70cc14368fe"
+    },
+    {
+      "bytes": 2378,
+      "logical_target": "runtime/BibCopiedDocumentCatalog.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/runtime/BibCopiedDocumentCatalog.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "4b44fa2fbfea73ef269dd3146320b8d37fc04f24f958fe5a529fa43093a2d6d1"
+    },
+    {
+      "bytes": 7168,
+      "logical_target": "foundation/third_party/appended-engine/include/EnginePrivate.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/third_party/appended-engine/include/EnginePrivate.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "edfd276aa01f94d0b15fc1a944f9d099a4e5e7f06426a57e3804c023a4c15d16"
+    },
+    {
+      "bytes": 1188,
+      "logical_target": "runtime/BibEngineDocumentWasmShim.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/runtime/BibEngineDocumentWasmShim.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "be5b5fa82cac75f8e938001f60c9de990fee97f0167d431f0ce8da1749af7c01"
+    },
+    {
+      "bytes": 6268,
+      "logical_target": "portable/BibEngineCopiedDocumentFacts.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/portable/BibEngineCopiedDocumentFacts.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "d54be1e6992de3a6928a629a6acab180823d0ec79c035362d9db8fefdaa9a0f0"
+    },
+    {
+      "bytes": 1849,
+      "logical_target": "portable/BibEngineCopiedDocumentDispatch.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/portable/BibEngineCopiedDocumentDispatch.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "87909ff26849aa8f2f88856691295a5fcfd87b51ff6cd67c1658ade9f49a915b"
+    },
+    {
+      "bytes": 4676,
+      "logical_target": "portable/BibEngineCopiedRecord.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/portable/BibEngineCopiedRecord.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "46195113095da5f78b44066c42e7199dc58a033e5f5a5cb7d2ad01328f66788a"
+    },
+    {
+      "bytes": 6807,
+      "logical_target": "runtime/BibEngineCopiedHost.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/runtime/BibEngineCopiedHost.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "e8f086913a77a6b8371a474d83e158ebc3637fa7ea67182595b1ded9ccdd30c8"
+    },
+    {
+      "bytes": 5018,
+      "logical_target": "native/NativeDocumentV2Publisher.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/native/NativeDocumentV2Publisher.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "bf47e449f8b6c26dace18ed90a9e1ef38fcc796a7035d95bcc50eb6b31373258"
+    },
+    {
+      "bytes": 9247,
+      "logical_target": "native/NativeFormsV2Combined.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/native/NativeFormsV2Combined.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "2b8b5f39bccf1221bdf32c09ae9a12b68a1c757f38ee30c95b6489fe01ab3c2c"
+    },
+    {
+      "bytes": 1285,
+      "logical_target": "native/CombinedFormsIdentity.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/native/CombinedFormsIdentity.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "021b04f0d1a6ad99e37c8d1e8f4b71f8a94402095494b29a62f5638b5e27519f"
+    },
+    {
+      "bytes": 6674,
+      "logical_target": "native/SharedNativeControlGuard.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/native/SharedNativeControlGuard.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "8f8672072b825a204a2c1d45bfd7aaca341660f4863f325a621cb46add119d90"
+    },
+    {
+      "bytes": 3044,
+      "logical_target": "portable/NativeDocumentV2Codec.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/portable/NativeDocumentV2Codec.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "5b58e3be4bdfebe4a3ddc6f4c57053a4ef91c7193e784ecb7b90519876fd5d90"
+    },
+    {
+      "bytes": 6780,
+      "logical_target": "portable/NativeDocumentV2Types.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/portable/NativeDocumentV2Types.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "815ef2dd3e17f677ad872319ce45bc3db4a950a1be9d1ee509a47637dedbf442"
+    },
+    {
+      "bytes": 2721,
+      "logical_target": "wrapper/src/embedder/BibEngineProviderRuntime.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibEngineProviderRuntime.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "e7b69210d5ffc82a0f8260f79658031ea63fb0292e99eb342f3a9b90b4e4bf4b"
+    },
+    {
+      "bytes": 1290,
+      "logical_target": "wrapper/src/embedder/BibEngineProviderLifecycleHooks.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibEngineProviderLifecycleHooks.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "b4c2a1f33860a5c3e0d1b5229ff9a3c3735ad19f9f7b205f39765deab17cd016"
+    },
+    {
+      "bytes": 28627,
+      "logical_target": "wrapper/src/embedder/BibPageClients.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibPageClients.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2"
+    },
+    {
+      "bytes": 5365,
+      "logical_target": "wrapper/src/embedder/BibAppResources.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibAppResources.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "60738d2b19acd8f04e6a52729c66c42b30965e454974e78202c886556161c463"
+    },
+    {
+      "bytes": 3162,
+      "logical_target": "wrapper/src/embedder/BibAppResourceHost.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibAppResourceHost.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef"
+    },
+    {
+      "bytes": 3720,
+      "logical_target": "wrapper/src/embedder/BibFoundationServiceBridge.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibFoundationServiceBridge.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "d6da6a09948c24be8212fe5e7f3e9bd42f99cb33ae1478aad96c5bc5f2544358"
+    },
+    {
+      "bytes": 3227,
+      "logical_target": "wrapper/src/embedder/BibFoundationServiceHost.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibFoundationServiceHost.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861"
+    },
+    {
+      "bytes": 21260,
+      "logical_target": "wrapper/src/embedder/BibFoundationServicesBootstrap.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibFoundationServicesBootstrap.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "8fecc8b1b8d8c812a393912f82dbacfcc2ee9f7d20a58cb2bac74bdcc85b9b1f"
+    },
+    {
+      "bytes": 1478,
+      "logical_target": "wrapper/src/embedder/BibEngineProviderDocumentProjection.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibEngineProviderDocumentProjection.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "f05ceedb6d7ac04e5e1cb7b5531f02d9e9453b7ff931cd0b5eefd78e2ae7357a"
+    },
+    {
+      "bytes": 724,
+      "logical_target": "wrapper/src/embedder/BibEngineProviderTimerHooks.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/wrapper/src/embedder/BibEngineProviderTimerHooks.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "c13f878e8c51b85392dc30887a2ea76d574ef11e6de5862ab51d829045434279"
+    },
+    {
+      "bytes": 4128,
+      "logical_target": "foundation/include/foundation/appended/engine_provider_document_v2.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/include/foundation/appended/engine_provider_document_v2.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "7b047bae4d0072ef156ea94ba637566d563fea3a95d43c4c6314afc919b1d626"
+    },
+    {
+      "bytes": 9402,
+      "logical_target": "foundation/include/foundation/appended/document_forms.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/include/foundation/appended/document_forms.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "b08e3099854c2911efa4e4f25bc9e7c90423381746ca4e45dd80469c39a9a27a"
+    },
+    {
+      "bytes": 7654,
+      "logical_target": "foundation/include/foundation/appended/registry.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/include/foundation/appended/registry.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "66a303aabdf91018f119cd954db0eba1e06f594946141adac0447e8b2ec6e7fa"
+    },
+    {
+      "bytes": 5730,
+      "logical_target": "foundation/include/foundation/appended/abi.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/include/foundation/appended/abi.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "41a32aa4f6a0c423a3cc620a2f9aa464abd910358ed5be0985849646cffbce10"
+    },
+    {
+      "bytes": 11657,
+      "logical_target": "foundation/include/foundation/appended/engine_provider.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/include/foundation/appended/engine_provider.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "a8e89da85d34b29a4d1bc454495791fa604b81e3477e48ce8ca902e4333a9c0d"
+    },
+    {
+      "bytes": 8253,
+      "logical_target": "portable/appended_engine_abi.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/portable/appended_engine_abi.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "36ba680f97282486cb4f782b336fe6f5aeb669f6fcce86d91685298324d7077e"
+    },
+    {
+      "bytes": 5253,
+      "logical_target": "foundation/third_party/appended-engine/include/LegacyHostAdapters.hpp",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/third_party/appended-engine/include/LegacyHostAdapters.hpp",
+      "role": "source_prerequisite_headers",
+      "sha256": "fdf463196a7a0c93b204969de389469e4a846643d53aa2d13aeb89535795e17c"
+    },
+    {
+      "bytes": 3162,
+      "logical_target": "foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef"
+    },
+    {
+      "bytes": 3227,
+      "logical_target": "foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861"
+    },
+    {
+      "bytes": 500,
+      "logical_target": "provider-binding/binding/BibEngineProviderPreflight.h",
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source/provider-binding/binding/BibEngineProviderPreflight.h",
+      "role": "source_prerequisite_headers",
+      "sha256": "20086b2caab4c9b79bc71391ac92a1b630bab193806eb24ecf7b8089cca3d4d4"
+    }
+  ],
+  "source_root": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0002-document-raster/source",
+  "state": "versioned source map only; no admitted object/link/SDK or runtime proof"
+}

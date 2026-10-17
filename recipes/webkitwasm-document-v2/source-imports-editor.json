@@ -1,0 +1,2444 @@
+{
+  "capsule_source_closure_sha256": "4e145f77909ad9e1931e89c52284ac7b650244186f5e447c7167ee80dcaf9b84",
+  "capsule_source_map_sha256": "a97017168b817334d1a094300e904f09110c234d734712b4d48870e2aa7b4ddb",
+  "capsule_version": "0005-cpp-only-outcome",
+  "document_profile": "editor",
+  "files": {
+    "abi/appended/editor-v1/binary-schema.json": {
+      "bytes": 21124,
+      "mode": 420,
+      "origin": {
+        "kind": "canonical-existing-interface",
+        "role": "editor_schema"
+      },
+      "role": "interface",
+      "sha256": "f2a6202056bd7fb6872539ba1e8806296ae6f6409ab2a21b9b581f19a4c7d4b1",
+      "tracked_path": "abi/appended/editor-v1/binary-schema.json"
+    },
+    "abi/appended/editor-v1/catalog.json": {
+      "bytes": 3571,
+      "mode": 420,
+      "origin": {
+        "kind": "canonical-existing-interface",
+        "role": "editor_catalog"
+      },
+      "role": "interface",
+      "sha256": "34fadacf563a00918255e4dc94b196bf0dc5c8ed57c7165e3da1e5fdd4d06bb8",
+      "tracked_path": "abi/appended/editor-v1/catalog.json"
+    },
+    "abi/appended/editor-v1/contract.json": {
+      "bytes": 3687,
+      "mode": 420,
+      "origin": {
+        "kind": "canonical-existing-interface",
+        "role": "editor_contract"
+      },
+      "role": "interface",
+      "sha256": "0d43707e404979a38e0e8d7a7bc47042be95ae54216ed118a4de3314302b8c9c",
+      "tracked_path": "abi/appended/editor-v1/contract.json"
+    },
+    "abi/appended/engine_editor_protocol.h": {
+      "bytes": 3049,
+      "mode": 420,
+      "origin": {
+        "kind": "canonical-existing-interface",
+        "role": "editor_header"
+      },
+      "role": "interface",
+      "sha256": "bdd9bf16765513be402481ab85dd596263fd4ac66a0dfc1dcc7ba5314ec85034",
+      "tracked_path": "abi/appended/engine_editor_protocol.h"
+    },
+    "abi/engine/document-v2/action-ack.json": {
+      "bytes": 3170,
+      "mode": 420,
+      "origin": {
+        "kind": "canonical-existing-interface",
+        "role": "action_ack"
+      },
+      "role": "interface",
+      "sha256": "1eb6c2d4f56acebc1423d9e2b5bf9a1717a99963a5c3f11f4b9d7b0fe33b50f5",
+      "tracked_path": "abi/engine/document-v2/action-ack.json"
+    },
+    "abi/engine/document-v2/catalog.json": {
+      "bytes": 3667,
+      "mode": 420,
+      "origin": {
+        "kind": "canonical-existing-interface",
+        "role": "document_catalog"
+      },
+      "role": "interface",
+      "sha256": "6e555d4c3bb71fbc965e1ca49671fab64d744913e18f45b9ba273505e0c6bcf5",
+      "tracked_path": "abi/engine/document-v2/catalog.json"
+    },
+    "abi/engine/document-v2/contract.json": {
+      "bytes": 415,
+      "mode": 420,
+      "origin": {
+        "kind": "canonical-existing-interface",
+        "role": "contract"
+      },
+      "role": "interface",
+      "sha256": "aba7800e6aab1898f3614f0b1ac53e59b9f622bf1e9d3a413f50d672a3662298",
+      "tracked_path": "abi/engine/document-v2/contract.json"
+    },
+    "abi/engine/document-v2/schema-definition.json": {
+      "bytes": 10025,
+      "mode": 420,
+      "origin": {
+        "capsule": "0003-document-physical",
+        "logical_path": "foundation/abi/engine/document-v2/schema-definition.json"
+      },
+      "role": "interface",
+      "sha256": "f11fd061350f8d663dbcdec7cf0a063e4fb0ff3564d285076690f58e8a84143d",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/abi/engine/document-v2/schema-definition.json"
+    },
+    "abi/engine/physical-input-catalog.json": {
+      "bytes": 14451,
+      "mode": 420,
+      "origin": {
+        "capsule": "0003-document-physical",
+        "logical_path": "foundation/abi/engine/physical-v1/catalog.json"
+      },
+      "role": "interface",
+      "sha256": "d244e6a17561b49b937ad25058f2d662f4f86063633b716bdb87d0250796a47b",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/foundation/abi/engine/physical-v1/catalog.json"
+    },
+    "include/foundation/appended/engine_provider.h": {
+      "bytes": 11657,
+      "mode": 420,
+      "origin": {
+        "kind": "canonical-existing-interface",
+        "role": "base_header"
+      },
+      "role": "interface",
+      "sha256": "a8e89da85d34b29a4d1bc454495791fa604b81e3477e48ce8ca902e4333a9c0d",
+      "tracked_path": "include/foundation/appended/engine_provider.h"
+    },
+    "include/foundation/appended/engine_provider_document_v2.h": {
+      "bytes": 4128,
+      "mode": 420,
+      "origin": {
+        "kind": "canonical-existing-interface",
+        "role": "extension_header"
+      },
+      "role": "interface",
+      "sha256": "7b047bae4d0072ef156ea94ba637566d563fea3a95d43c4c6314afc919b1d626",
+      "tracked_path": "include/foundation/appended/engine_provider_document_v2.h"
+    },
+    "source/document-provider/clipboard/BibClipboardStore.cpp": {
+      "bytes": 9087,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "e12bfe5af8560ac100e38ce4bfdd21d606186c88fd9f0f2dbb85b18e5f764a33",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-clipboard-implementation-v1/source/clipboard/BibClipboardStore.cpp"
+      },
+      "role": "source",
+      "sha256": "e12bfe5af8560ac100e38ce4bfdd21d606186c88fd9f0f2dbb85b18e5f764a33",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/clipboard/BibClipboardStore.cpp"
+    },
+    "source/document-provider/clipboard/BibClipboardStore.hpp": {
+      "bytes": 5087,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "993aad10185cc5e5f3a16eee234275e1b37152cbdc4d0ec7e8cbbf13bf3faf3e",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-clipboard-implementation-v1/source/clipboard/BibClipboardStore.hpp"
+      },
+      "role": "source",
+      "sha256": "993aad10185cc5e5f3a16eee234275e1b37152cbdc4d0ec7e8cbbf13bf3faf3e",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/clipboard/BibClipboardStore.hpp"
+    },
+    "source/document-provider/clipboard/BibInternalClipboard.hpp": {
+      "bytes": 1165,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "8806293fa736a505fe8ed3c3e954f775f88416ca5b90c3ee66ccad9e7454baf3",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-clipboard-implementation-v1/source/clipboard/BibInternalClipboard.hpp"
+      },
+      "role": "source",
+      "sha256": "8806293fa736a505fe8ed3c3e954f775f88416ca5b90c3ee66ccad9e7454baf3",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/clipboard/BibInternalClipboard.hpp"
+    },
+    "source/document-provider/editor/BibNativeEditorBackend.cpp": {
+      "bytes": 47742,
+      "mode": 420,
+      "origin": {
+        "correction": "document-page-view-element-inline-definitions",
+        "kind": "reviewed-actual-header-editor-inlines-repair",
+        "sha256": "5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815",
+        "source_only": true,
+        "source_path": "recipes/webkitwasm-document-v2/overlays/editor/editor/BibNativeEditorBackend.cpp",
+        "supersedes": {
+          "origin": {
+            "correction": "if-initializer-composition-local",
+            "kind": "reviewed-actual-header-editor-composition-repair",
+            "sha256": "9c315b84feb67ca805be986ca71b3ea388c586f5639efa91b5afaea80b1a8e6e",
+            "source_only": true,
+            "source_path": "recipes/webkitwasm-document-v2/overlays/editor/editor/BibNativeEditorBackend.cpp",
+            "supersedes": {
+              "origin": {
+                "correction": "text-control-inner-elements-defining-header",
+                "kind": "reviewed-actual-header-editor-backend-repair",
+                "sha256": "1cc5c5140b7d8855cf37df214ba396ef051f474d7783ab5d9469365784496aaa",
+                "source_only": true,
+                "source_path": "recipes/webkitwasm-document-v2/overlays/editor/editor/BibNativeEditorBackend.cpp",
+                "supersedes": {
+                  "origin": {
+                    "kind": "reviewed-shared-rich-ui-successor",
+                    "reviewed_packets": {
+                      "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+                      "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+                    },
+                    "selection": "shared-ui-popup-and-internal-rich-clipboard",
+                    "sha256": "3994608abd7f8ac449f411f22b673edf3021ae9ce9d1591b229d5d6a8bd2faf2",
+                    "source_only": true,
+                    "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/call-sites/proposed/recipes/webkitwasm-document-v2/overlays/editor/editor/BibNativeEditorBackend.cpp",
+                    "supersedes": {
+                      "origin": {
+                        "capsule": "0005-cpp-only-outcome",
+                        "logical_path": "editor/BibNativeEditorBackend.cpp",
+                        "sha256": "98f95b8e1c4d352a60a412fb8e97730332bb15b1b8a6995d65036bab19762839"
+                      },
+                      "sha256": "98f95b8e1c4d352a60a412fb8e97730332bb15b1b8a6995d65036bab19762839",
+                      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/editor/BibNativeEditorBackend.cpp"
+                    }
+                  },
+                  "sha256": "3994608abd7f8ac449f411f22b673edf3021ae9ce9d1591b229d5d6a8bd2faf2",
+                  "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/editor/BibNativeEditorBackend.cpp"
+                }
+              },
+              "sha256": "1cc5c5140b7d8855cf37df214ba396ef051f474d7783ab5d9469365784496aaa",
+              "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/editor/BibNativeEditorBackend.cpp"
+            }
+          },
+          "sha256": "9c315b84feb67ca805be986ca71b3ea388c586f5639efa91b5afaea80b1a8e6e",
+          "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/editor/BibNativeEditorBackend.cpp"
+        }
+      },
+      "role": "source",
+      "sha256": "5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/editor/BibNativeEditorBackend.cpp"
+    },
+    "source/document-provider/editor/BibNativeEditorBackend.hpp": {
+      "bytes": 3262,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "editor/BibNativeEditorBackend.hpp",
+        "sha256": "560181bb57e37a162d6290b4626a49f673dda129622b30c0a31e6e28148f6cdd"
+      },
+      "role": "source",
+      "sha256": "560181bb57e37a162d6290b4626a49f673dda129622b30c0a31e6e28148f6cdd",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/editor/BibNativeEditorBackend.hpp"
+    },
+    "source/document-provider/editor/BibNativeEditorWireAdapter.cpp": {
+      "bytes": 23937,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "editor/BibNativeEditorWireAdapter.cpp",
+        "sha256": "240d40631052ceab3ad0462ab79079e2091803e468759521e51f7048b6439765"
+      },
+      "role": "source",
+      "sha256": "240d40631052ceab3ad0462ab79079e2091803e468759521e51f7048b6439765",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/editor/BibNativeEditorWireAdapter.cpp"
+    },
+    "source/document-provider/editor/BibNativeEditorWireAdapter.hpp": {
+      "bytes": 2979,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "editor/BibNativeEditorWireAdapter.hpp",
+        "sha256": "538721c372926558230c0194b83d6a321f76d749bb0c58b3e3a50341410ce8fa"
+      },
+      "role": "source",
+      "sha256": "538721c372926558230c0194b83d6a321f76d749bb0c58b3e3a50341410ce8fa",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/editor/BibNativeEditorWireAdapter.hpp"
+    },
+    "source/document-provider/key/BibNativeKeyEventOutcome.hpp": {
+      "bytes": 5376,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "key/BibNativeKeyEventOutcome.hpp",
+        "sha256": "998fbca5af94503a1b584e867f4f1b2ce4ebd1c63c112b7b5e1c5a0ad03d726b"
+      },
+      "role": "source",
+      "sha256": "998fbca5af94503a1b584e867f4f1b2ce4ebd1c63c112b7b5e1c5a0ad03d726b",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/key/BibNativeKeyEventOutcome.hpp"
+    },
+    "source/document-provider/key/NativeRawKeyDispatch.cpp": {
+      "bytes": 13797,
+      "mode": 420,
+      "origin": {
+        "correction": "global-latin1-character-type",
+        "kind": "reviewed-actual-header-raw-key-repair",
+        "sha256": "1c305f7891339a46ac6425d96edbe17e0157b72bbf5c3434a98baae053e8ca4a",
+        "source_only": true,
+        "source_path": "recipes/webkitwasm-document-v2/overlays/editor/key/NativeRawKeyDispatch.cpp",
+        "supersedes": {
+          "origin": {
+            "kind": "reviewed-shared-rich-ui-successor",
+            "reviewed_packets": {
+              "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+              "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+            },
+            "selection": "shared-ui-popup-and-internal-rich-clipboard",
+            "sha256": "98ea00e3c7c543f5cf4941390aaccb981f9b570689ba254836166a1102819736",
+            "source_only": true,
+            "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/call-sites/proposed/recipes/webkitwasm-document-v2/overlays/editor/key/NativeRawKeyDispatch.cpp",
+            "supersedes": {
+              "origin": {
+                "capsule": "0005-cpp-only-outcome",
+                "logical_path": "key/NativeRawKeyDispatch.cpp",
+                "sha256": "0efb91a52eee6b8f95526eac3461683252addae84ef5a10023c14beafc279325",
+                "supersedes": {
+                  "origin": {
+                    "capsule": "0003-document-physical",
+                    "logical_path": "key/NativeRawKeyDispatch.cpp",
+                    "sha256": "3997aa7526eb425a8bdb00a4c8f8f2c20145166054149fa2d4c220ba102177ec"
+                  },
+                  "sha256": "3997aa7526eb425a8bdb00a4c8f8f2c20145166054149fa2d4c220ba102177ec"
+                }
+              },
+              "sha256": "0efb91a52eee6b8f95526eac3461683252addae84ef5a10023c14beafc279325",
+              "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/key/NativeRawKeyDispatch.cpp"
+            }
+          },
+          "sha256": "98ea00e3c7c543f5cf4941390aaccb981f9b570689ba254836166a1102819736",
+          "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/key/NativeRawKeyDispatch.cpp"
+        }
+      },
+      "role": "source",
+      "sha256": "1c305f7891339a46ac6425d96edbe17e0157b72bbf5c3434a98baae053e8ca4a",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/key/NativeRawKeyDispatch.cpp"
+    },
+    "source/document-provider/key/NativeRawKeyDispatch.hpp": {
+      "bytes": 2592,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "2a625513b343747bf74bf4eb612e8dfb341473ed5113fd3a9a6e6f5acf7787ea",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/call-sites/proposed/recipes/webkitwasm-document-v2/overlays/editor/key/NativeRawKeyDispatch.hpp",
+        "supersedes": {
+          "origin": {
+            "capsule": "0005-cpp-only-outcome",
+            "logical_path": "key/NativeRawKeyDispatch.hpp",
+            "sha256": "bd9229750368d6ee63a389645c5b99b60c6a5546dd8a7d8ead3be2f85a85f244",
+            "supersedes": {
+              "origin": {
+                "capsule": "0003-document-physical",
+                "logical_path": "key/NativeRawKeyDispatch.hpp",
+                "sha256": "b79be4a378ee90c4ae262f979efa26dd63dfca537f9614cd861a3d1c155b62ad"
+              },
+              "sha256": "b79be4a378ee90c4ae262f979efa26dd63dfca537f9614cd861a3d1c155b62ad"
+            }
+          },
+          "sha256": "bd9229750368d6ee63a389645c5b99b60c6a5546dd8a7d8ead3be2f85a85f244",
+          "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/key/NativeRawKeyDispatch.hpp"
+        }
+      },
+      "role": "source",
+      "sha256": "2a625513b343747bf74bf4eb612e8dfb341473ed5113fd3a9a6e6f5acf7787ea",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/key/NativeRawKeyDispatch.hpp"
+    },
+    "source/document-provider/key/NativeRawKeyMapping.cpp": {
+      "bytes": 4428,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "key/NativeRawKeyMapping.cpp",
+        "sha256": "5cfa61001b1889962a8ea8a32f4155c21ec6704e0fcfecec11f51a4cf10f6419"
+      },
+      "role": "source",
+      "sha256": "5cfa61001b1889962a8ea8a32f4155c21ec6704e0fcfecec11f51a4cf10f6419",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/key/NativeRawKeyMapping.cpp"
+    },
+    "source/document-provider/key/NativeRawKeyMapping.hpp": {
+      "bytes": 1257,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "key/NativeRawKeyMapping.hpp",
+        "sha256": "7992e13957bf07d003364798a3f1ca66de3b8886eb30cb3dde7dcdc8ab1363ee"
+      },
+      "role": "source",
+      "sha256": "7992e13957bf07d003364798a3f1ca66de3b8886eb30cb3dde7dcdc8ab1363ee",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/key/NativeRawKeyMapping.hpp"
+    },
+    "source/document-provider/key/NativeRawKeyScope.hpp": {
+      "bytes": 1435,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "key/NativeRawKeyScope.hpp",
+        "sha256": "06c503841ec5afa061d7d86b7db9e010d583780d8e05f432e279d477bfdefc3e"
+      },
+      "role": "source",
+      "sha256": "06c503841ec5afa061d7d86b7db9e010d583780d8e05f432e279d477bfdefc3e",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/key/NativeRawKeyScope.hpp"
+    },
+    "source/document-provider/native/CombinedFormsIdentity.hpp": {
+      "bytes": 1285,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "native/CombinedFormsIdentity.hpp",
+        "sha256": "021b04f0d1a6ad99e37c8d1e8f4b71f8a94402095494b29a62f5638b5e27519f"
+      },
+      "role": "source",
+      "sha256": "021b04f0d1a6ad99e37c8d1e8f4b71f8a94402095494b29a62f5638b5e27519f",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/native/CombinedFormsIdentity.hpp"
+    },
+    "source/document-provider/native/NativeDocumentV2Publisher.cpp": {
+      "bytes": 80117,
+      "mode": 420,
+      "origin": {
+        "correction": "stable-focus-dependent-canEdit-and-inputMethodEnabled",
+        "kind": "reviewed-BEGIN-focus-editor-state-repair",
+        "sha256": "0705d9421e853b7633cc2a3df2c0448b0b53da0daf48fd2e7158f98b341b0453",
+        "source_only": true,
+        "source_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp",
+        "supersedes": {
+          "origin": {
+            "correction": "bounded-private-excluded-label-association",
+            "kind": "reviewed-hidden-label-association-repair",
+            "sha256": "533984f89134872a87d2eb661a0b563f6b865805ab31ae955b2b74c2ab75c867",
+            "source_only": true,
+            "source_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp",
+            "supersedes": {
+              "origin": {
+                "correction": "complete-text-control-inner-text-element-definition",
+                "kind": "reviewed-actual-header-publisher-repair",
+                "sha256": "78e59ed007bde4cd909044bb6a25a61518e6d85d0407c0287dceb6edea96c004",
+                "source_only": true,
+                "source_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp",
+                "supersedes": {
+                  "origin": {
+                    "abi_or_bounds_changed": false,
+                    "kind": "reviewed-publisher-successor",
+                    "reviewed_packets": {
+                      "begin": "a84c9e77795fa90dd2636233a33e0e1e544170b3aa21d502c0dc37e0c49ced22",
+                      "public_text": "17decc9cfba23a8afb5f297ed7e982ea75fc54970464cd6ef934af2b17930db2"
+                    },
+                    "selection": "bounded-public-text-and-stable-BEGIN-selection",
+                    "sha256": "7d0b0ac92fc0929081d6f5807aeec3508fead2fabe942c325b67a8a3e5f60f95",
+                    "source_only": true,
+                    "supersedes": {
+                      "capsule": "0005-cpp-only-outcome",
+                      "logical_path": "native/NativeDocumentV2Publisher.cpp",
+                      "sha256": "bbc219cc50258478cf84fbaf7be0c70f6b9ab9c0ac90dd6a164a70bc587db5e5"
+                    }
+                  },
+                  "sha256": "7d0b0ac92fc0929081d6f5807aeec3508fead2fabe942c325b67a8a3e5f60f95",
+                  "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp"
+                }
+              },
+              "sha256": "78e59ed007bde4cd909044bb6a25a61518e6d85d0407c0287dceb6edea96c004",
+              "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp"
+            }
+          },
+          "sha256": "533984f89134872a87d2eb661a0b563f6b865805ab31ae955b2b74c2ab75c867",
+          "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp"
+        }
+      },
+      "role": "source",
+      "sha256": "0705d9421e853b7633cc2a3df2c0448b0b53da0daf48fd2e7158f98b341b0453",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp"
+    },
+    "source/document-provider/native/NativeDocumentV2Publisher.hpp": {
+      "bytes": 5018,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "native/NativeDocumentV2Publisher.hpp",
+        "sha256": "bf47e449f8b6c26dace18ed90a9e1ef38fcc796a7035d95bcc50eb6b31373258"
+      },
+      "role": "source",
+      "sha256": "bf47e449f8b6c26dace18ed90a9e1ef38fcc796a7035d95bcc50eb6b31373258",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.hpp"
+    },
+    "source/document-provider/native/NativeFormsV2Combined.cpp": {
+      "bytes": 39829,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "native/NativeFormsV2Combined.cpp",
+        "sha256": "2bc9f9ceca00c644920e2911438dadcf0642257bf43b530863f618deb36dd7ff"
+      },
+      "role": "source",
+      "sha256": "2bc9f9ceca00c644920e2911438dadcf0642257bf43b530863f618deb36dd7ff",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeFormsV2Combined.cpp"
+    },
+    "source/document-provider/native/NativeFormsV2Combined.hpp": {
+      "bytes": 9247,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "native/NativeFormsV2Combined.hpp",
+        "sha256": "2b8b5f39bccf1221bdf32c09ae9a12b68a1c757f38ee30c95b6489fe01ab3c2c"
+      },
+      "role": "source",
+      "sha256": "2b8b5f39bccf1221bdf32c09ae9a12b68a1c757f38ee30c95b6489fe01ab3c2c",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeFormsV2Combined.hpp"
+    },
+    "source/document-provider/native/SharedNativeControlGuard.hpp": {
+      "bytes": 6674,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "native/SharedNativeControlGuard.hpp",
+        "sha256": "8f8672072b825a204a2c1d45bfd7aaca341660f4863f325a621cb46add119d90"
+      },
+      "role": "source",
+      "sha256": "8f8672072b825a204a2c1d45bfd7aaca341660f4863f325a621cb46add119d90",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/native/SharedNativeControlGuard.hpp"
+    },
+    "source/document-provider/physical/BibDocumentPhysicalProvider.cpp": {
+      "bytes": 21489,
+      "mode": 420,
+      "origin": {
+        "correction": "complete-frame-page-and-local-frame-view-inline-definitions",
+        "kind": "reviewed-actual-header-inline-repair",
+        "sha256": "94ac6af05af059faaff51e7c4e1f59d90f78430898c4fe6ef9d1255e7c4f9c81",
+        "source_only": true,
+        "source_path": "recipes/webkitwasm-document-v2/overlays/editor/physical/BibDocumentPhysicalProvider.cpp",
+        "supersedes": {
+          "origin": {
+            "correction": "qualified-platform-modifier-helper-and-complete-wheel-processing-enum",
+            "kind": "reviewed-actual-header-cpp-repair",
+            "sha256": "105b7a09fb6144ed5c0397358a80df633fdcddbfcc8d0d6c525b55f6cc2191a7",
+            "source_only": true,
+            "source_path": "recipes/webkitwasm-document-v2/overlays/editor/physical/BibDocumentPhysicalProvider.cpp",
+            "supersedes": {
+              "origin": {
+                "kind": "reviewed-shared-rich-ui-successor",
+                "reviewed_packets": {
+                  "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+                  "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+                },
+                "selection": "shared-ui-popup-and-internal-rich-clipboard",
+                "sha256": "82782522288f63f61d485b1fa8a92eb23ce5bb51b92527846a7411a553a28570",
+                "source_only": true,
+                "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/integration-corrections/proposed/recipes/webkitwasm-document-v2/overlays/editor/physical/BibDocumentPhysicalProvider.cpp",
+                "supersedes": {
+                  "origin": {
+                    "capsule": "0005-cpp-only-outcome",
+                    "logical_path": "physical/BibDocumentPhysicalProvider.cpp",
+                    "sha256": "1ccbf5fa7d405022f139440ad2f681cadd57bea461d7a7cbd8558862e56a3e5e",
+                    "supersedes": {
+                      "origin": {
+                        "capsule": "0003-document-physical",
+                        "logical_path": "physical/BibDocumentPhysicalProvider.cpp",
+                        "sha256": "1ff7236a25294cf558ecd7ca164fe9e969fd305c13a2b910c7ac315c396c7b83"
+                      },
+                      "sha256": "1ff7236a25294cf558ecd7ca164fe9e969fd305c13a2b910c7ac315c396c7b83"
+                    }
+                  },
+                  "sha256": "1ccbf5fa7d405022f139440ad2f681cadd57bea461d7a7cbd8558862e56a3e5e",
+                  "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/physical/BibDocumentPhysicalProvider.cpp"
+                }
+              },
+              "sha256": "82782522288f63f61d485b1fa8a92eb23ce5bb51b92527846a7411a553a28570",
+              "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/physical/BibDocumentPhysicalProvider.cpp"
+            }
+          },
+          "sha256": "105b7a09fb6144ed5c0397358a80df633fdcddbfcc8d0d6c525b55f6cc2191a7",
+          "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/physical/BibDocumentPhysicalProvider.cpp"
+        }
+      },
+      "role": "source",
+      "sha256": "94ac6af05af059faaff51e7c4e1f59d90f78430898c4fe6ef9d1255e7c4f9c81",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/physical/BibDocumentPhysicalProvider.cpp"
+    },
+    "source/document-provider/physical/BibDocumentPhysicalProvider.hpp": {
+      "bytes": 2536,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "physical/BibDocumentPhysicalProvider.hpp",
+        "sha256": "036c62b5fafce31a1e8340bba84e3897fa1e15c710c8047b9282d20667bbd3f3",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "physical/BibDocumentPhysicalProvider.hpp",
+            "sha256": "ecb044679d72c6e4e114d185ad62a9ae576dc4c03f6c0f2d8df0e0ac42a15cc8"
+          },
+          "sha256": "ecb044679d72c6e4e114d185ad62a9ae576dc4c03f6c0f2d8df0e0ac42a15cc8"
+        }
+      },
+      "role": "source",
+      "sha256": "036c62b5fafce31a1e8340bba84e3897fa1e15c710c8047b9282d20667bbd3f3",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/physical/BibDocumentPhysicalProvider.hpp"
+    },
+    "source/document-provider/physical/PhysicalState.hpp": {
+      "bytes": 6267,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "physical/PhysicalState.hpp",
+        "sha256": "6a8ed0dd40b0f298e2cfa6a3d6c02840c6d05ea7a236580ebabb919e5ee57089"
+      },
+      "role": "source",
+      "sha256": "6a8ed0dd40b0f298e2cfa6a3d6c02840c6d05ea7a236580ebabb919e5ee57089",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/physical/PhysicalState.hpp"
+    },
+    "source/document-provider/popup/BibNativePopupHooks.hpp": {
+      "bytes": 1691,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "70283e6ac6eddd8e2133836b25cecbcf06ea17f30ea3dd450e2173ae977ffc9c",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/source/popup/BibNativePopupHooks.hpp"
+      },
+      "role": "source",
+      "sha256": "70283e6ac6eddd8e2133836b25cecbcf06ea17f30ea3dd450e2173ae977ffc9c",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/BibNativePopupHooks.hpp"
+    },
+    "source/document-provider/popup/BibNativePopupOwner.cpp": {
+      "bytes": 29528,
+      "mode": 420,
+      "origin": {
+        "correction": "node-element-frame-page-view-inline-definitions",
+        "kind": "reviewed-actual-header-popup-inlines-repair",
+        "sha256": "d8822f18b214cedf9490a758c52c06a3ca3fc70d9b5b48e9dcbe8de55e4594d9",
+        "source_only": true,
+        "source_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/BibNativePopupOwner.cpp",
+        "supersedes": {
+          "origin": {
+            "kind": "reviewed-shared-rich-ui-successor",
+            "reviewed_packets": {
+              "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+              "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+            },
+            "selection": "shared-ui-popup-and-internal-rich-clipboard",
+            "sha256": "fbb9efa62ff6823a9ceefe179c900ddd26f559c002f6465c6a9821ee28036435",
+            "source_only": true,
+            "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/source/popup/BibNativePopupOwner.cpp"
+          },
+          "sha256": "fbb9efa62ff6823a9ceefe179c900ddd26f559c002f6465c6a9821ee28036435",
+          "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/BibNativePopupOwner.cpp"
+        }
+      },
+      "role": "source",
+      "sha256": "d8822f18b214cedf9490a758c52c06a3ca3fc70d9b5b48e9dcbe8de55e4594d9",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/BibNativePopupOwner.cpp"
+    },
+    "source/document-provider/popup/BibNativePopupOwner.hpp": {
+      "bytes": 2030,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "3e89d0d60dcc4e941f84b2ea7d36621f3ecc2b23a0d71a04b1a64ecb014a8476",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/source/popup/BibNativePopupOwner.hpp"
+      },
+      "role": "source",
+      "sha256": "3e89d0d60dcc4e941f84b2ea7d36621f3ecc2b23a0d71a04b1a64ecb014a8476",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/BibNativePopupOwner.hpp"
+    },
+    "source/document-provider/popup/NativePopupController.cpp": {
+      "bytes": 18898,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "60a8014be7d327c9af8ddb59a54c90b9d47150636b6bf11dae0a6cc60b461f91",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/controller/NativePopupController.cpp"
+      },
+      "role": "source",
+      "sha256": "60a8014be7d327c9af8ddb59a54c90b9d47150636b6bf11dae0a6cc60b461f91",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/NativePopupController.cpp"
+    },
+    "source/document-provider/popup/NativePopupController.hpp": {
+      "bytes": 7830,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "445e84fa5712db288ca0622db80a0f1eeff37f2f17366fb39d4466b5914b16a7",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/controller/NativePopupController.hpp"
+      },
+      "role": "source",
+      "sha256": "445e84fa5712db288ca0622db80a0f1eeff37f2f17366fb39d4466b5914b16a7",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/NativePopupController.hpp"
+    },
+    "source/document-provider/portable/BibEngineCopiedDocumentDispatch.cpp": {
+      "bytes": 22591,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/BibEngineCopiedDocumentDispatch.cpp",
+        "sha256": "9f4e97b768a412e80c9b6c40fb81432debb4eaa0ca5ceef002fe61f1f1a9e79e",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "portable/BibEngineCopiedDocumentDispatch.cpp",
+            "sha256": "84e9772e6a91fd8e627eb4269c92e12b7c76c57c08496b38cd0e0a4fd03096db"
+          },
+          "sha256": "84e9772e6a91fd8e627eb4269c92e12b7c76c57c08496b38cd0e0a4fd03096db"
+        }
+      },
+      "role": "source",
+      "sha256": "9f4e97b768a412e80c9b6c40fb81432debb4eaa0ca5ceef002fe61f1f1a9e79e",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/BibEngineCopiedDocumentDispatch.cpp"
+    },
+    "source/document-provider/portable/BibEngineCopiedDocumentDispatch.hpp": {
+      "bytes": 1968,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/BibEngineCopiedDocumentDispatch.hpp",
+        "sha256": "934dd7c7906865e7ff91f508f678e060fa1bd2fc49688222d1598d371589860c",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "portable/BibEngineCopiedDocumentDispatch.hpp",
+            "sha256": "e62620020e89646646a1c4118db331321c5f9fc3c2d315df8e187bc462f68dc6"
+          },
+          "sha256": "e62620020e89646646a1c4118db331321c5f9fc3c2d315df8e187bc462f68dc6"
+        }
+      },
+      "role": "source",
+      "sha256": "934dd7c7906865e7ff91f508f678e060fa1bd2fc49688222d1598d371589860c",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/BibEngineCopiedDocumentDispatch.hpp"
+    },
+    "source/document-provider/portable/BibEngineCopiedDocumentFacts.h": {
+      "bytes": 11966,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/BibEngineCopiedDocumentFacts.h",
+        "sha256": "25dc7b5ad0d5ee7caaf1b0cbb1c76a10f596abc79cce8afcccefde7e15883e9d",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "portable/BibEngineCopiedDocumentFacts.h",
+            "sha256": "cb435e2313dd25543618a25cb8fdf2eed5f8c6a98d98bbdbd4f046ddfb96e275"
+          },
+          "sha256": "cb435e2313dd25543618a25cb8fdf2eed5f8c6a98d98bbdbd4f046ddfb96e275"
+        }
+      },
+      "role": "source",
+      "sha256": "25dc7b5ad0d5ee7caaf1b0cbb1c76a10f596abc79cce8afcccefde7e15883e9d",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/BibEngineCopiedDocumentFacts.h"
+    },
+    "source/document-provider/portable/BibEngineCopiedRecord.cpp": {
+      "bytes": 26272,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/BibEngineCopiedRecord.cpp",
+        "sha256": "de67b82fc53cb6bd41768f060b13da516a8dd744558ca018e70148d70959f904",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "portable/BibEngineCopiedRecord.cpp",
+            "sha256": "0aaf3e7d11e39a67e80c8ac702b2f816f0b72039b663ec5cedffd7ca9a8279da"
+          },
+          "sha256": "0aaf3e7d11e39a67e80c8ac702b2f816f0b72039b663ec5cedffd7ca9a8279da"
+        }
+      },
+      "role": "source",
+      "sha256": "de67b82fc53cb6bd41768f060b13da516a8dd744558ca018e70148d70959f904",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/BibEngineCopiedRecord.cpp"
+    },
+    "source/document-provider/portable/BibEngineCopiedRecord.h": {
+      "bytes": 4978,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/BibEngineCopiedRecord.h",
+        "sha256": "13ade9e4558805b553eea4fc77c56cea3fcba0787026f3129a3e0415089438ee",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "portable/BibEngineCopiedRecord.h",
+            "sha256": "7af0bc4ba4c8f8cc6f2a323974af600ff0f9dfe6350d30845fa5a464d282879c"
+          },
+          "sha256": "7af0bc4ba4c8f8cc6f2a323974af600ff0f9dfe6350d30845fa5a464d282879c"
+        }
+      },
+      "role": "source",
+      "sha256": "13ade9e4558805b553eea4fc77c56cea3fcba0787026f3129a3e0415089438ee",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/BibEngineCopiedRecord.h"
+    },
+    "source/document-provider/portable/NativeDocumentV2Codec.cpp": {
+      "bytes": 15995,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/NativeDocumentV2Codec.cpp",
+        "sha256": "f5c421c32a58e62be9423fb7c983b4f703dcb6c48b689c2a6643e3fb5f558040"
+      },
+      "role": "source",
+      "sha256": "f5c421c32a58e62be9423fb7c983b4f703dcb6c48b689c2a6643e3fb5f558040",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Codec.cpp"
+    },
+    "source/document-provider/portable/NativeDocumentV2Codec.hpp": {
+      "bytes": 3044,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/NativeDocumentV2Codec.hpp",
+        "sha256": "5b58e3be4bdfebe4a3ddc6f4c57053a4ef91c7193e784ecb7b90519876fd5d90"
+      },
+      "role": "source",
+      "sha256": "5b58e3be4bdfebe4a3ddc6f4c57053a4ef91c7193e784ecb7b90519876fd5d90",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Codec.hpp"
+    },
+    "source/document-provider/portable/NativeDocumentV2Types.cpp": {
+      "bytes": 17620,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/NativeDocumentV2Types.cpp",
+        "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44"
+      },
+      "role": "source",
+      "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Types.cpp"
+    },
+    "source/document-provider/portable/NativeDocumentV2Types.hpp": {
+      "bytes": 6780,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/NativeDocumentV2Types.hpp",
+        "sha256": "815ef2dd3e17f677ad872319ce45bc3db4a950a1be9d1ee509a47637dedbf442"
+      },
+      "role": "source",
+      "sha256": "815ef2dd3e17f677ad872319ce45bc3db4a950a1be9d1ee509a47637dedbf442",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Types.hpp"
+    },
+    "source/document-provider/portable/appended_engine_abi.h": {
+      "bytes": 16952,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/appended_engine_abi.h",
+        "sha256": "9bbfe1e649fa6a5d85495e532224e7f6d6c8fdc1000415ae49c5ccd26623fea8",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "portable/appended_engine_abi.h",
+            "sha256": "36ba680f97282486cb4f782b336fe6f5aeb669f6fcce86d91685298324d7077e"
+          },
+          "sha256": "36ba680f97282486cb4f782b336fe6f5aeb669f6fcce86d91685298324d7077e"
+        }
+      },
+      "role": "source",
+      "sha256": "9bbfe1e649fa6a5d85495e532224e7f6d6c8fdc1000415ae49c5ccd26623fea8",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/appended_engine_abi.h"
+    },
+    "source/document-provider/portable/appended_engine_input_codec.cpp": {
+      "bytes": 19599,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/appended_engine_input_codec.cpp",
+        "sha256": "4cba81d1819b72d721c4ae56287204ef9d2a12b33c1d85fd863a0bee6c94b229"
+      },
+      "role": "source",
+      "sha256": "4cba81d1819b72d721c4ae56287204ef9d2a12b33c1d85fd863a0bee6c94b229",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/portable/appended_engine_input_codec.cpp"
+    },
+    "source/document-provider/portable/appended_engine_input_codec.hpp": {
+      "bytes": 4954,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/appended_engine_input_codec.hpp",
+        "sha256": "81bc8500853ba31b287c9a5bf2ba92b17ba800fce6464c19caa2a478b7bc7d01"
+      },
+      "role": "source",
+      "sha256": "81bc8500853ba31b287c9a5bf2ba92b17ba800fce6464c19caa2a478b7bc7d01",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/portable/appended_engine_input_codec.hpp"
+    },
+    "source/document-provider/portable/appended_engine_input_profile.hpp": {
+      "bytes": 4733,
+      "mode": 420,
+      "origin": {
+        "correction": "noexceptions-consteval-hash",
+        "kind": "reviewed-actual-header-profile-repair",
+        "sha256": "2624d693e52fdab0a98129c4ba0e7d1bf491e167d3c508e9b81c21034ebe17b8",
+        "source_only": true,
+        "source_path": "recipes/webkitwasm-document-v2/overlays/physical/portable/appended_engine_input_profile.hpp",
+        "supersedes": {
+          "origin": {
+            "capsule": "0005-cpp-only-outcome",
+            "logical_path": "portable/appended_engine_input_profile.hpp",
+            "sha256": "0957073f93b9ea8e9f264bb9b7aff2ae247d13b122bb4856fae8cbf47942c2aa"
+          },
+          "sha256": "0957073f93b9ea8e9f264bb9b7aff2ae247d13b122bb4856fae8cbf47942c2aa",
+          "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/portable/appended_engine_input_profile.hpp"
+        }
+      },
+      "role": "source",
+      "sha256": "2624d693e52fdab0a98129c4ba0e7d1bf491e167d3c508e9b81c21034ebe17b8",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/portable/appended_engine_input_profile.hpp"
+    },
+    "source/document-provider/portable/engine_editor_pins.hpp": {
+      "bytes": 982,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/engine_editor_pins.hpp",
+        "sha256": "911d54e7477028f73f6133382cc1304529115593e8b8367f165e60bd96cba937"
+      },
+      "role": "source",
+      "sha256": "911d54e7477028f73f6133382cc1304529115593e8b8367f165e60bd96cba937",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/engine_editor_pins.hpp"
+    },
+    "source/document-provider/portable/engine_editor_protocol.h": {
+      "bytes": 3049,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/engine_editor_protocol.h",
+        "sha256": "bdd9bf16765513be402481ab85dd596263fd4ac66a0dfc1dcc7ba5314ec85034"
+      },
+      "role": "source",
+      "sha256": "bdd9bf16765513be402481ab85dd596263fd4ac66a0dfc1dcc7ba5314ec85034",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/engine_editor_protocol.h"
+    },
+    "source/document-provider/portable/native_editor_codec.cpp": {
+      "bytes": 37061,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/native_editor_codec.cpp",
+        "sha256": "8396e726874c6d990e1891793f3f3be6212a35815464677b4e0bb91a0b537041"
+      },
+      "role": "source",
+      "sha256": "8396e726874c6d990e1891793f3f3be6212a35815464677b4e0bb91a0b537041",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/native_editor_codec.cpp"
+    },
+    "source/document-provider/portable/native_editor_codec.hpp": {
+      "bytes": 3789,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/native_editor_codec.hpp",
+        "sha256": "22ecbfcdff097de39415fc873c56443ce014f99afdb30eef3b52193b77445422"
+      },
+      "role": "source",
+      "sha256": "22ecbfcdff097de39415fc873c56443ce014f99afdb30eef3b52193b77445422",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/native_editor_codec.hpp"
+    },
+    "source/document-provider/portable/native_editor_controller.hpp": {
+      "bytes": 4759,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/native_editor_controller.hpp",
+        "sha256": "706326d6f0784241564c4679fac5d4753df9a0711483ec8f360dd5b23eb96149"
+      },
+      "role": "source",
+      "sha256": "706326d6f0784241564c4679fac5d4753df9a0711483ec8f360dd5b23eb96149",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/native_editor_controller.hpp"
+    },
+    "source/document-provider/portable/native_editor_projection.cpp": {
+      "bytes": 2948,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/native_editor_projection.cpp",
+        "sha256": "20479e08bdc9ec7e8048468f39a039afa818997eea99128a9c653cbdf35275f9"
+      },
+      "role": "source",
+      "sha256": "20479e08bdc9ec7e8048468f39a039afa818997eea99128a9c653cbdf35275f9",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/native_editor_projection.cpp"
+    },
+    "source/document-provider/portable/native_editor_projection.hpp": {
+      "bytes": 1354,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "portable/native_editor_projection.hpp",
+        "sha256": "a970372c032d05a09dfa978c1fc69912d7e0fce26f07e747000dc90374e8bf71"
+      },
+      "role": "source",
+      "sha256": "a970372c032d05a09dfa978c1fc69912d7e0fce26f07e747000dc90374e8bf71",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/portable/native_editor_projection.hpp"
+    },
+    "source/document-provider/runtime/BibCopiedDocumentBinding.cpp": {
+      "bytes": 31368,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "1665546cca29c7d24670563c359894862e21f06efdaab29e26f4c2e5d482ad30",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/call-sites/proposed/recipes/webkitwasm-document-v2/overlays/editor/runtime/BibCopiedDocumentBinding.cpp",
+        "supersedes": {
+          "origin": {
+            "capsule": "0005-cpp-only-outcome",
+            "logical_path": "runtime/BibCopiedDocumentBinding.cpp",
+            "sha256": "62876b58a04dca2825bbffa4803c295324083c9fb28faa8cfad3a5a344e3eb29",
+            "supersedes": {
+              "origin": {
+                "capsule": "0003-document-physical",
+                "logical_path": "runtime/BibCopiedDocumentBinding.cpp",
+                "sha256": "9e1c0b10cc3b5c6c61ca0ecb1ae220e0dcbc9e7cde02aee1d15d353067d060bd"
+              },
+              "sha256": "9e1c0b10cc3b5c6c61ca0ecb1ae220e0dcbc9e7cde02aee1d15d353067d060bd"
+            }
+          },
+          "sha256": "62876b58a04dca2825bbffa4803c295324083c9fb28faa8cfad3a5a344e3eb29",
+          "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/runtime/BibCopiedDocumentBinding.cpp"
+        }
+      },
+      "role": "source",
+      "sha256": "1665546cca29c7d24670563c359894862e21f06efdaab29e26f4c2e5d482ad30",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/runtime/BibCopiedDocumentBinding.cpp"
+    },
+    "source/document-provider/runtime/BibCopiedDocumentBinding.hpp": {
+      "bytes": 994,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "runtime/BibCopiedDocumentBinding.hpp",
+        "sha256": "06c6d9519ae59d64569c5891bb3d1e7ea47665f80cfd5061f170bd0b48032fa4",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "runtime/BibCopiedDocumentBinding.hpp",
+            "sha256": "328c353233e3e53ea74e415ef8f0094c8bc7576d7691017a623df11d7c36c039"
+          },
+          "sha256": "328c353233e3e53ea74e415ef8f0094c8bc7576d7691017a623df11d7c36c039"
+        }
+      },
+      "role": "source",
+      "sha256": "06c6d9519ae59d64569c5891bb3d1e7ea47665f80cfd5061f170bd0b48032fa4",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/runtime/BibCopiedDocumentBinding.hpp"
+    },
+    "source/document-provider/runtime/BibCopiedDocumentCatalog.hpp": {
+      "bytes": 4804,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "runtime/BibCopiedDocumentCatalog.hpp",
+        "sha256": "0df2000114237d08e63a23886a65cef8e2f2b36ea76d8766dbcdf2e092e2b4ac",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "runtime/BibCopiedDocumentCatalog.hpp",
+            "sha256": "6e0a6ef2d9b3ad7f9993676ac47383a12671decda0200ccf8f6fcf34ed685ebd"
+          },
+          "sha256": "6e0a6ef2d9b3ad7f9993676ac47383a12671decda0200ccf8f6fcf34ed685ebd"
+        }
+      },
+      "role": "source",
+      "sha256": "0df2000114237d08e63a23886a65cef8e2f2b36ea76d8766dbcdf2e092e2b4ac",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/runtime/BibCopiedDocumentCatalog.hpp"
+    },
+    "source/document-provider/runtime/BibEngineCopiedHost.cpp": {
+      "bytes": 30015,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "runtime/BibEngineCopiedHost.cpp",
+        "sha256": "1781dbc1f04e553d2dc6f42ffff7cec4fad9ee04677a6823a775115deff53629"
+      },
+      "role": "source",
+      "sha256": "1781dbc1f04e553d2dc6f42ffff7cec4fad9ee04677a6823a775115deff53629",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/runtime/BibEngineCopiedHost.cpp"
+    },
+    "source/document-provider/runtime/BibEngineCopiedHost.h": {
+      "bytes": 6807,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "runtime/BibEngineCopiedHost.h",
+        "sha256": "e8f086913a77a6b8371a474d83e158ebc3637fa7ea67182595b1ded9ccdd30c8"
+      },
+      "role": "source",
+      "sha256": "e8f086913a77a6b8371a474d83e158ebc3637fa7ea67182595b1ded9ccdd30c8",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/runtime/BibEngineCopiedHost.h"
+    },
+    "source/document-provider/runtime/BibEngineDocumentWasmShim.cpp": {
+      "bytes": 10144,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "runtime/BibEngineDocumentWasmShim.cpp",
+        "sha256": "0d8ac5917e46fcd32a7f78716868a3fc883254d137c2d1ccc1305d9f5132d569",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "runtime/BibEngineDocumentWasmShim.cpp",
+            "sha256": "a4e732b427b71d39e195f61b0a8bada1ae66af7c1b9e32595fe764208de92ae7"
+          },
+          "sha256": "a4e732b427b71d39e195f61b0a8bada1ae66af7c1b9e32595fe764208de92ae7"
+        }
+      },
+      "role": "source",
+      "sha256": "0d8ac5917e46fcd32a7f78716868a3fc883254d137c2d1ccc1305d9f5132d569",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/runtime/BibEngineDocumentWasmShim.cpp"
+    },
+    "source/document-provider/runtime/BibEngineDocumentWasmShim.h": {
+      "bytes": 1577,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "runtime/BibEngineDocumentWasmShim.h",
+        "sha256": "5fdec59cff449671b11f939eb83c78dbd3daa5da910b4e26f64a28598a46bfeb",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "runtime/BibEngineDocumentWasmShim.h",
+            "sha256": "be5b5fa82cac75f8e938001f60c9de990fee97f0167d431f0ce8da1749af7c01"
+          },
+          "sha256": "be5b5fa82cac75f8e938001f60c9de990fee97f0167d431f0ce8da1749af7c01"
+        }
+      },
+      "role": "source",
+      "sha256": "5fdec59cff449671b11f939eb83c78dbd3daa5da910b4e26f64a28598a46bfeb",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/runtime/BibEngineDocumentWasmShim.h"
+    },
+    "source/document-provider/runtime/engine-copied-library.js": {
+      "bytes": 3499,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "runtime/engine-copied-library.js",
+        "sha256": "5e82f5e402e3ae4cec2d36d61f8afb66ee24f7efa929c1ef44a6172aa1662ffb"
+      },
+      "role": "source",
+      "sha256": "5e82f5e402e3ae4cec2d36d61f8afb66ee24f7efa929c1ef44a6172aa1662ffb",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/runtime/engine-copied-library.js"
+    },
+    "source/document-provider/runtime/engine-copied-pre.js": {
+      "bytes": 2275,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "runtime/engine-copied-pre.js",
+        "sha256": "0cca50e7c06781287d8ddcd9288b915b6845871c3c4c3c93d86e58e86f367e05"
+      },
+      "role": "source",
+      "sha256": "0cca50e7c06781287d8ddcd9288b915b6845871c3c4c3c93d86e58e86f367e05",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/runtime/engine-copied-pre.js"
+    },
+    "source/document-provider/runtime/engine-document-copied-metadata.h.in": {
+      "bytes": 3505,
+      "mode": 420,
+      "origin": {
+        "kind": "new-production-metadata-adapter"
+      },
+      "role": "config",
+      "sha256": "b971b57eeae0d1e2dddfb71f8cb62a44ca9d32fb80464a6fdfbd6ac0d50c17fe",
+      "tracked_path": "recipes/webkitwasm-document-v2/runtime/engine-document-copied-metadata.h.in"
+    },
+    "source/document-provider/runtime/generate_document_copied_metadata.py": {
+      "bytes": 25133,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "runtime/generate_document_copied_metadata.py",
+        "sha256": "6f302771086d74cb9388d4f9b0f50f82de97e045785aa8fb6d5d50fd0585731f"
+      },
+      "role": "source",
+      "sha256": "6f302771086d74cb9388d4f9b0f50f82de97e045785aa8fb6d5d50fd0585731f",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/runtime/generate_document_copied_metadata.py"
+    },
+    "source/document-provider/runtime/generate_document_metadata.py": {
+      "bytes": 33854,
+      "mode": 420,
+      "origin": {
+        "kind": "new-production-metadata-adapter"
+      },
+      "role": "tool",
+      "sha256": "4da806a9bba654fd118d4c5888f153b6252461116172436d8a4220969badd09c",
+      "tracked_path": "recipes/webkitwasm-document-v2/runtime/generate_document_metadata.py"
+    },
+    "source/document-provider/ui/BibEngineUiOwner.cpp": {
+      "bytes": 6859,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "c98c9df06091c52aad56448291bf18982bde5935c7fd8522d641dac0e1024cc3",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/source/ui/BibEngineUiOwner.cpp"
+      },
+      "role": "source",
+      "sha256": "c98c9df06091c52aad56448291bf18982bde5935c7fd8522d641dac0e1024cc3",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/ui/BibEngineUiOwner.cpp"
+    },
+    "source/document-provider/ui/BibEngineUiOwner.hpp": {
+      "bytes": 3189,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "b02de953075f8829391453c21b83ab959dd13d5725839992bc3b36ac3d8f29f1",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/source/ui/BibEngineUiOwner.hpp"
+      },
+      "role": "source",
+      "sha256": "b02de953075f8829391453c21b83ab959dd13d5725839992bc3b36ac3d8f29f1",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/ui/BibEngineUiOwner.hpp"
+    },
+    "source/engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp": {
+      "bytes": 12234,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp",
+        "sha256": "8ae65acf35a605f9ebe1b2ea0654683926732e6842ae5c806433618b35d94851"
+      },
+      "role": "source",
+      "sha256": "8ae65acf35a605f9ebe1b2ea0654683926732e6842ae5c806433618b35d94851",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp"
+    },
+    "source/engine/Source/WebCore/bindings/js/ScriptController.cpp": {
+      "bytes": 41875,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "engine/Source/WebCore/bindings/js/ScriptController.cpp",
+        "sha256": "8f8e984f18a45631bb4a9e425a69656c6a35651e11fd038cab7d7f11bf625e79"
+      },
+      "role": "source",
+      "sha256": "8f8e984f18a45631bb4a9e425a69656c6a35651e11fd038cab7d7f11bf625e79",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/engine/Source/WebCore/bindings/js/ScriptController.cpp"
+    },
+    "source/engine/Source/WebCore/dom/DataTransfer.cpp": {
+      "bytes": 29083,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "original_supplier": {
+          "path": "third_party/WebKit/Source/WebCore/dom/DataTransfer.cpp",
+          "sha256": "4e74e837716df0f8d417577208e0bb232e2c94e887e8c1e7ece665b4e3407bca"
+        },
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "ac1aeb4539435a3c306f2e8bac8e0720dbea43bea3235ac91978b5b72e2d4a43",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-clipboard-implementation-v1/postimages/Source/WebCore/dom/DataTransfer.cpp"
+      },
+      "role": "source",
+      "sha256": "ac1aeb4539435a3c306f2e8bac8e0720dbea43bea3235ac91978b5b72e2d4a43",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/engine/Source/WebCore/dom/DataTransfer.cpp"
+    },
+    "source/engine/Source/WebCore/dom/Document.cpp": {
+      "bytes": 447362,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "engine/Source/WebCore/dom/Document.cpp",
+        "sha256": "b9137b64104a653e113912a5a64c09606aea434cfe0a76c1a4c5e0be86843c42"
+      },
+      "role": "source",
+      "sha256": "b9137b64104a653e113912a5a64c09606aea434cfe0a76c1a4c5e0be86843c42",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/engine/Source/WebCore/dom/Document.cpp"
+    },
+    "source/engine/Source/WebCore/dom/Element.cpp": {
+      "bytes": 261368,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "engine/Source/WebCore/dom/Element.cpp",
+        "sha256": "9e0159da1f3c28a1689206e6c83f69aa3e0ce727bce8e2c89c3e53bcb822ef91"
+      },
+      "role": "source",
+      "sha256": "9e0159da1f3c28a1689206e6c83f69aa3e0ce727bce8e2c89c3e53bcb822ef91",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/engine/Source/WebCore/dom/Element.cpp"
+    },
+    "source/engine/Source/WebCore/dom/KeyboardEvent.cpp": {
+      "bytes": 9304,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "engine/Source/WebCore/dom/KeyboardEvent.cpp",
+        "sha256": "b62a8ba61658f34b980f4ff6399a704c483322aa64e3c2762d355f514712de29"
+      },
+      "role": "source",
+      "sha256": "b62a8ba61658f34b980f4ff6399a704c483322aa64e3c2762d355f514712de29",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/engine/Source/WebCore/dom/KeyboardEvent.cpp"
+    },
+    "source/engine/Source/WebCore/dom/UIEventWithKeyState.cpp": {
+      "bytes": 2973,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "engine/Source/WebCore/dom/UIEventWithKeyState.cpp",
+        "sha256": "04d93531a6b25ea026ca1f9a1c4c744ac9ea288c63e1cc8a86e6af771ff6175c"
+      },
+      "role": "source",
+      "sha256": "04d93531a6b25ea026ca1f9a1c4c744ac9ea288c63e1cc8a86e6af771ff6175c",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/engine/Source/WebCore/dom/UIEventWithKeyState.cpp"
+    },
+    "source/engine/Source/WebCore/editing/Editor.cpp": {
+      "bytes": 206235,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "original_supplier": {
+          "path": "third_party/WebKit/Source/WebCore/editing/Editor.cpp",
+          "sha256": "f3c3bcbec9a2de12f69f10c1fe072ecb2de8afeb0d89a7a1d5c9e821bb1c2863"
+        },
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "971c90a75ba266575c0bb9c9ed212cc8fd9bd63d740c1707c19d7c1c257b4493",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-clipboard-implementation-v1/postimages/Source/WebCore/editing/Editor.cpp"
+      },
+      "role": "source",
+      "sha256": "971c90a75ba266575c0bb9c9ed212cc8fd9bd63d740c1707c19d7c1c257b4493",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/engine/Source/WebCore/editing/Editor.cpp"
+    },
+    "source/engine/Source/WebCore/html/HTMLSelectElement.cpp": {
+      "bytes": 74585,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "original_supplier": {
+          "path": "third_party/WebKit/Source/WebCore/html/HTMLSelectElement.cpp",
+          "sha256": "72dbbadb8c01208192af65a97f913ac35a13db56a7b44057a7d1494e26e7757e"
+        },
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "0b4b077b36193fd5ebea0e29017c54ae2df430b6e6ef78d7a3a06f6c19cfe4b1",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/engine-call-sites/proposed/source/engine/Source/WebCore/html/HTMLSelectElement.cpp"
+      },
+      "role": "source",
+      "sha256": "0b4b077b36193fd5ebea0e29017c54ae2df430b6e6ef78d7a3a06f6c19cfe4b1",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/engine/Source/WebCore/html/HTMLSelectElement.cpp"
+    },
+    "source/engine/Source/WebCore/loader/DocumentLoader.cpp": {
+      "bytes": 113637,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "engine/Source/WebCore/loader/DocumentLoader.cpp",
+        "sha256": "f10bd277bc751179b8c0f7bbecda382d46d39e2919f11a0f87bbd4b37e5270bd"
+      },
+      "role": "source",
+      "sha256": "f10bd277bc751179b8c0f7bbecda382d46d39e2919f11a0f87bbd4b37e5270bd",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/engine/Source/WebCore/loader/DocumentLoader.cpp"
+    },
+    "source/engine/Source/WebCore/loader/EmptyClients.cpp": {
+      "bytes": 45915,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "original_supplier": {
+          "path": "third_party/WebKit/Source/WebCore/loader/EmptyClients.cpp",
+          "sha256": "816baedf47261c9375aa9f4a8dd303f04e4266e47d4304b7443371c2c7cf3be4"
+        },
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "cec5b3d16c35a9f7e85dd7f1fda09ce2f0648f513724f2e99b3367f78ea070f4",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/engine-call-sites/proposed/source/engine/Source/WebCore/loader/EmptyClients.cpp"
+      },
+      "role": "source",
+      "sha256": "cec5b3d16c35a9f7e85dd7f1fda09ce2f0648f513724f2e99b3367f78ea070f4",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/engine/Source/WebCore/loader/EmptyClients.cpp"
+    },
+    "source/engine/Source/WebCore/page/EventHandler.cpp": {
+      "bytes": 234986,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "engine/Source/WebCore/page/EventHandler.cpp",
+        "sha256": "eb275ae135b7bf8948c079bac23b9622715d0951289b57680c9c67c7caf83439"
+      },
+      "role": "source",
+      "sha256": "eb275ae135b7bf8948c079bac23b9622715d0951289b57680c9c67c7caf83439",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/engine/Source/WebCore/page/EventHandler.cpp"
+    },
+    "source/engine/Source/WebCore/platform/emscripten/PasteboardEmscripten.cpp": {
+      "bytes": 10733,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-clipboard-compile-closure-successor",
+        "original_supplier": {
+          "path": "third_party/WebKit/Source/WebCore/platform/emscripten/PasteboardEmscripten.cpp",
+          "sha256": "41ed6a44ac90e299e927192a0fee3946b958d96fa87226594f707e3e97b37bcf"
+        },
+        "selection": "clipboard-wtf-function-compile-closure",
+        "sha256": "d105c6c16b269fcd0e5334dcdcad4a9f306945e744125257eb140cd3ebdc669e",
+        "source_only": true,
+        "source_path": "recipes/webkitwasm-document-v2/overlays/ui/engine/Source/WebCore/platform/emscripten/PasteboardEmscripten.cpp",
+        "supersedes": {
+          "origin": {
+            "kind": "reviewed-shared-rich-ui-successor",
+            "original_supplier": {
+              "path": "third_party/WebKit/Source/WebCore/platform/emscripten/PasteboardEmscripten.cpp",
+              "sha256": "41ed6a44ac90e299e927192a0fee3946b958d96fa87226594f707e3e97b37bcf"
+            },
+            "reviewed_packets": {
+              "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+              "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+            },
+            "selection": "shared-ui-popup-and-internal-rich-clipboard",
+            "sha256": "575e0283f0aa4e9234e70781549476a6865df57ad6012ef80a2d369bf0385824",
+            "source_only": true,
+            "source_path": ".agent-work/appended-implementation-20261016/native-html-clipboard-implementation-v1/postimages/Source/WebCore/platform/emscripten/PasteboardEmscripten.cpp"
+          },
+          "sha256": "575e0283f0aa4e9234e70781549476a6865df57ad6012ef80a2d369bf0385824",
+          "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/engine/Source/WebCore/platform/emscripten/PasteboardEmscripten.cpp"
+        }
+      },
+      "role": "source",
+      "sha256": "d105c6c16b269fcd0e5334dcdcad4a9f306945e744125257eb140cd3ebdc669e",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/engine/Source/WebCore/platform/emscripten/PasteboardEmscripten.cpp"
+    },
+    "source/engine/Source/WebCore/platform/emscripten/PlatformKeyboardEventEmscripten.cpp": {
+      "bytes": 1193,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "engine/Source/WebCore/platform/emscripten/PlatformKeyboardEventEmscripten.cpp",
+        "sha256": "69ab5db1c35c19a943a3b11a4275555b692a906b843c25cc08b3cb4d674a2cb1"
+      },
+      "role": "source",
+      "sha256": "69ab5db1c35c19a943a3b11a4275555b692a906b843c25cc08b3cb4d674a2cb1",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/engine/Source/WebCore/platform/emscripten/PlatformKeyboardEventEmscripten.cpp"
+    },
+    "source/engine/Source/WebCore/workers/Worker.cpp": {
+      "bytes": 14423,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "engine/Source/WebCore/workers/Worker.cpp",
+        "sha256": "fd5f885a5bd6032e1bde897802dc4b59713f32ab3e29ed48145132ec95648ea1"
+      },
+      "role": "source",
+      "sha256": "fd5f885a5bd6032e1bde897802dc4b59713f32ab3e29ed48145132ec95648ea1",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/engine/Source/WebCore/workers/Worker.cpp"
+    },
+    "source/engine/Source/WebCore/workers/shared/SharedWorker.cpp": {
+      "bytes": 8877,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "engine/Source/WebCore/workers/shared/SharedWorker.cpp",
+        "sha256": "748d4fa6786a246500e5b1667721b0ad9ef980abbbc69b351c0da60e317b8c4f"
+      },
+      "role": "source",
+      "sha256": "748d4fa6786a246500e5b1667721b0ad9ef980abbbc69b351c0da60e317b8c4f",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/engine/Source/WebCore/workers/shared/SharedWorker.cpp"
+    },
+    "source/engine/unified/UnifiedSource-68aea4ac-18.cpp": {
+      "bytes": 399,
+      "mode": 420,
+      "origin": {
+        "kind": "named-retained-unified-owner",
+        "preimage_sha256": "933af3a6a351947b5452bbd9eb6955f95ce78963a11ce3b5fe035a68005640db"
+      },
+      "role": "source",
+      "sha256": "933af3a6a351947b5452bbd9eb6955f95ce78963a11ce3b5fe035a68005640db",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-68aea4ac-18.cpp"
+    },
+    "source/engine/unified/UnifiedSource-767013ce-4.cpp": {
+      "bytes": 303,
+      "mode": 420,
+      "origin": {
+        "archive_ordinal": 721,
+        "kind": "named-retained-unified-owner",
+        "owner_proof_sha256": "486b5892a97f0559bc6e6165440850ddb38eae7fcf8277dc5f79ba42be9c6549",
+        "preimage_sha256": "79cc848ea8268bf0f90385b1978743c05d66fb523c2d4904f8fa8dec46f1e96a"
+      },
+      "role": "source",
+      "sha256": "be3bc103d6deb49921df757c332b94ddfb72714affac2e971749855a425afbf1",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-767013ce-4.cpp"
+    },
+    "source/engine/unified/UnifiedSource-950a39b6-13.cpp": {
+      "bytes": 327,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "original_primary": {
+          "path": "build/webcore/WebCore/DerivedSources/unified-sources/UnifiedSource-950a39b6-13.cpp",
+          "sha256": "b7f5bc891f37dad5d8b8e20a680072e4c878def9bd8fddb9eaabb7030b7bbc6a"
+        },
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "9396da8f6c21e7ee704e8d9c19a262739254a26f868163db8bf445aabe7e6c23",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/rich-ui-retained-union-design-v1/wrapper-proposals/UnifiedSource-950a39b6-13.cpp"
+      },
+      "role": "source",
+      "sha256": "9396da8f6c21e7ee704e8d9c19a262739254a26f868163db8bf445aabe7e6c23",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-950a39b6-13.cpp"
+    },
+    "source/engine/unified/UnifiedSource-be65d27a-15.cpp": {
+      "bytes": 316,
+      "mode": 420,
+      "origin": {
+        "kind": "named-retained-unified-owner",
+        "preimage_sha256": "3732b486a2c61b988469b568fdc9e54e38f28eafe74edcd795691a8374a5fbcb"
+      },
+      "role": "source",
+      "sha256": "0742022025a821736f3f94d460669a4ade15f26b1299373456da60c9acf46fd6",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-be65d27a-15.cpp"
+    },
+    "source/engine/unified/UnifiedSource-be65d27a-26.cpp": {
+      "bytes": 305,
+      "mode": 420,
+      "origin": {
+        "kind": "named-retained-unified-owner",
+        "preimage_sha256": "16830607e3de3aa1ec34aa1890c9b182c42e416e0eb546adb00dd1f93b425364"
+      },
+      "role": "source",
+      "sha256": "a69ab72b60be38146ec8471bd8d1b96e7e4d048724327bb20131a3dfb6ba9cdf",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-be65d27a-26.cpp"
+    },
+    "source/engine/unified/UnifiedSource-be65d27a-6.cpp": {
+      "bytes": 318,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "original_primary": {
+          "path": "build/webcore/WebCore/DerivedSources/unified-sources/UnifiedSource-be65d27a-6.cpp",
+          "sha256": "a207f25f88a3420ab03a6537a69d963e7b7c8c080a66957a3e1df0844030c01a"
+        },
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "cbeb81b1def1bd45728e4bd99b4ca0657bc7d1cc80b349b712fa4881fa1d7040",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/rich-ui-retained-union-design-v1/wrapper-proposals/UnifiedSource-be65d27a-6.cpp"
+      },
+      "role": "source",
+      "sha256": "cbeb81b1def1bd45728e4bd99b4ca0657bc7d1cc80b349b712fa4881fa1d7040",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-be65d27a-6.cpp"
+    },
+    "source/engine/unified/UnifiedSource-be65d27a-7.cpp": {
+      "bytes": 349,
+      "mode": 420,
+      "origin": {
+        "kind": "named-retained-unified-owner",
+        "preimage_sha256": "e64eeb7f5f44dbd4370ce72ea7d875afdcd4d95bc2a135479860504614d4fff6"
+      },
+      "role": "source",
+      "sha256": "e64eeb7f5f44dbd4370ce72ea7d875afdcd4d95bc2a135479860504614d4fff6",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-be65d27a-7.cpp"
+    },
+    "source/engine/unified/UnifiedSource-be65d27a-9.cpp": {
+      "bytes": 289,
+      "mode": 420,
+      "origin": {
+        "archive_ordinal": 602,
+        "kind": "named-retained-unified-owner",
+        "owner_proof_sha256": "486b5892a97f0559bc6e6165440850ddb38eae7fcf8277dc5f79ba42be9c6549",
+        "preimage_sha256": "6a7e856cf18d370c5f731c4c722f4943067f12eab64ab39521d7a1bf0374e6ce"
+      },
+      "role": "source",
+      "sha256": "4224b9a40c7ea0d3f0c56298749ad5c73fc9e1c68f5691d45f457c175fd70db8",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-be65d27a-9.cpp"
+    },
+    "source/engine/unified/UnifiedSource-c57e08af-2.cpp": {
+      "bytes": 391,
+      "mode": 420,
+      "origin": {
+        "kind": "named-retained-unified-owner",
+        "preimage_sha256": "ab2698f87b86a99bce2f73780c0f88ab2b7be5adb0bb662b41a8c1dc5f835469"
+      },
+      "role": "source",
+      "sha256": "ab2698f87b86a99bce2f73780c0f88ab2b7be5adb0bb662b41a8c1dc5f835469",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-c57e08af-2.cpp"
+    },
+    "source/engine/unified/UnifiedSource-c57e08af-3.cpp": {
+      "bytes": 307,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "original_primary": {
+          "path": "build/webcore/WebCore/DerivedSources/unified-sources/UnifiedSource-c57e08af-3.cpp",
+          "sha256": "c68c0930d03c869117a8d7cb9570182d434f00822538ef6417e8008a9a1ef10d"
+        },
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "394807359a4bdc4aee62b86118a4566e20ec2086efa6624280d75a68b356f1ad",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/rich-ui-retained-union-design-v1/wrapper-proposals/UnifiedSource-c57e08af-3.cpp"
+      },
+      "role": "source",
+      "sha256": "394807359a4bdc4aee62b86118a4566e20ec2086efa6624280d75a68b356f1ad",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-c57e08af-3.cpp"
+    },
+    "source/engine/unified/UnifiedSource-f34946be-3.cpp": {
+      "bytes": 318,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "original_primary": {
+          "path": "build/webcore/WebCore/DerivedSources/unified-sources/UnifiedSource-f34946be-3.cpp",
+          "sha256": "a8a9444413fb7c0730496a1ac9cd1bc9fad37440ba15cd83534098583dcba88e"
+        },
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "32d5c1de0048450ecb7d679d6767109e8b78eb4b580bdc238942ae29af46466e",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/rich-ui-retained-union-design-v1/wrapper-proposals/UnifiedSource-f34946be-3.cpp"
+      },
+      "role": "source",
+      "sha256": "32d5c1de0048450ecb7d679d6767109e8b78eb4b580bdc238942ae29af46466e",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-f34946be-3.cpp"
+    },
+    "source/engine/unified/UnifiedSource-f74e0903-1.cpp": {
+      "bytes": 348,
+      "mode": 420,
+      "origin": {
+        "kind": "named-retained-unified-owner",
+        "preimage_sha256": "31a138aaf5c0af75f9ab86a535f94fcdb4d75dd42df7dca17f255d8eea93b7e9"
+      },
+      "role": "source",
+      "sha256": "31a138aaf5c0af75f9ab86a535f94fcdb4d75dd42df7dca17f255d8eea93b7e9",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-f74e0903-1.cpp"
+    },
+    "source/engine/unified/UnifiedSource-f74e0903-9.cpp": {
+      "bytes": 464,
+      "mode": 420,
+      "origin": {
+        "kind": "named-retained-unified-owner",
+        "preimage_sha256": "632627d8d9587a58a031ed33a706c7a79618c6df4b9d97dafa0274797d8fdc35"
+      },
+      "role": "source",
+      "sha256": "632627d8d9587a58a031ed33a706c7a79618c6df4b9d97dafa0274797d8fdc35",
+      "tracked_path": "recipes/webkitwasm-document-v2/unified/UnifiedSource-f74e0903-9.cpp"
+    },
+    "source/foundation/abi/appended/editor-v1/binary-schema.json": {
+      "bytes": 21124,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/abi/appended/editor-v1/binary-schema.json",
+        "sha256": "f2a6202056bd7fb6872539ba1e8806296ae6f6409ab2a21b9b581f19a4c7d4b1"
+      },
+      "role": "source",
+      "sha256": "f2a6202056bd7fb6872539ba1e8806296ae6f6409ab2a21b9b581f19a4c7d4b1",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/foundation/abi/appended/editor-v1/binary-schema.json"
+    },
+    "source/foundation/abi/appended/editor-v1/catalog.json": {
+      "bytes": 3571,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/abi/appended/editor-v1/catalog.json",
+        "sha256": "34fadacf563a00918255e4dc94b196bf0dc5c8ed57c7165e3da1e5fdd4d06bb8"
+      },
+      "role": "source",
+      "sha256": "34fadacf563a00918255e4dc94b196bf0dc5c8ed57c7165e3da1e5fdd4d06bb8",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/foundation/abi/appended/editor-v1/catalog.json"
+    },
+    "source/foundation/abi/appended/editor-v1/contract.json": {
+      "bytes": 3687,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/abi/appended/editor-v1/contract.json",
+        "sha256": "0d43707e404979a38e0e8d7a7bc47042be95ae54216ed118a4de3314302b8c9c"
+      },
+      "role": "source",
+      "sha256": "0d43707e404979a38e0e8d7a7bc47042be95ae54216ed118a4de3314302b8c9c",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/foundation/abi/appended/editor-v1/contract.json"
+    },
+    "source/foundation/abi/appended/engine_editor_protocol.h": {
+      "bytes": 3049,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/abi/appended/engine_editor_protocol.h",
+        "sha256": "bdd9bf16765513be402481ab85dd596263fd4ac66a0dfc1dcc7ba5314ec85034"
+      },
+      "role": "source",
+      "sha256": "bdd9bf16765513be402481ab85dd596263fd4ac66a0dfc1dcc7ba5314ec85034",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/foundation/abi/appended/engine_editor_protocol.h"
+    },
+    "source/foundation/abi/engine/document-v2/action-ack.json": {
+      "bytes": 3170,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/abi/engine/document-v2/action-ack.json",
+        "sha256": "1eb6c2d4f56acebc1423d9e2b5bf9a1717a99963a5c3f11f4b9d7b0fe33b50f5"
+      },
+      "role": "source",
+      "sha256": "1eb6c2d4f56acebc1423d9e2b5bf9a1717a99963a5c3f11f4b9d7b0fe33b50f5",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/abi/engine/document-v2/action-ack.json"
+    },
+    "source/foundation/abi/engine/document-v2/catalog.json": {
+      "bytes": 3667,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/abi/engine/document-v2/catalog.json",
+        "sha256": "6e555d4c3bb71fbc965e1ca49671fab64d744913e18f45b9ba273505e0c6bcf5"
+      },
+      "role": "source",
+      "sha256": "6e555d4c3bb71fbc965e1ca49671fab64d744913e18f45b9ba273505e0c6bcf5",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/abi/engine/document-v2/catalog.json"
+    },
+    "source/foundation/abi/engine/document-v2/contract.json": {
+      "bytes": 415,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/abi/engine/document-v2/contract.json",
+        "sha256": "aba7800e6aab1898f3614f0b1ac53e59b9f622bf1e9d3a413f50d672a3662298"
+      },
+      "role": "source",
+      "sha256": "aba7800e6aab1898f3614f0b1ac53e59b9f622bf1e9d3a413f50d672a3662298",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/abi/engine/document-v2/contract.json"
+    },
+    "source/foundation/abi/engine/document-v2/schema-definition.json": {
+      "bytes": 10025,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/abi/engine/document-v2/schema-definition.json",
+        "sha256": "f11fd061350f8d663dbcdec7cf0a063e4fb0ff3564d285076690f58e8a84143d"
+      },
+      "role": "source",
+      "sha256": "f11fd061350f8d663dbcdec7cf0a063e4fb0ff3564d285076690f58e8a84143d",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/abi/engine/document-v2/schema-definition.json"
+    },
+    "source/foundation/abi/engine/physical-v1/catalog.json": {
+      "bytes": 14451,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/abi/engine/physical-v1/catalog.json",
+        "sha256": "d244e6a17561b49b937ad25058f2d662f4f86063633b716bdb87d0250796a47b"
+      },
+      "role": "source",
+      "sha256": "d244e6a17561b49b937ad25058f2d662f4f86063633b716bdb87d0250796a47b",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/physical/foundation/abi/engine/physical-v1/catalog.json"
+    },
+    "source/foundation/include/foundation/appended/abi.h": {
+      "bytes": 5730,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/include/foundation/appended/abi.h",
+        "sha256": "41a32aa4f6a0c423a3cc620a2f9aa464abd910358ed5be0985849646cffbce10"
+      },
+      "role": "source",
+      "sha256": "41a32aa4f6a0c423a3cc620a2f9aa464abd910358ed5be0985849646cffbce10",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/include/foundation/appended/abi.h"
+    },
+    "source/foundation/include/foundation/appended/document_forms.hpp": {
+      "bytes": 9402,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/include/foundation/appended/document_forms.hpp",
+        "sha256": "b08e3099854c2911efa4e4f25bc9e7c90423381746ca4e45dd80469c39a9a27a"
+      },
+      "role": "source",
+      "sha256": "b08e3099854c2911efa4e4f25bc9e7c90423381746ca4e45dd80469c39a9a27a",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/include/foundation/appended/document_forms.hpp"
+    },
+    "source/foundation/include/foundation/appended/engine_provider.h": {
+      "bytes": 11657,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/include/foundation/appended/engine_provider.h",
+        "sha256": "a8e89da85d34b29a4d1bc454495791fa604b81e3477e48ce8ca902e4333a9c0d"
+      },
+      "role": "source",
+      "sha256": "a8e89da85d34b29a4d1bc454495791fa604b81e3477e48ce8ca902e4333a9c0d",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/include/foundation/appended/engine_provider.h"
+    },
+    "source/foundation/include/foundation/appended/engine_provider_document_v2.h": {
+      "bytes": 4128,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/include/foundation/appended/engine_provider_document_v2.h",
+        "sha256": "7b047bae4d0072ef156ea94ba637566d563fea3a95d43c4c6314afc919b1d626"
+      },
+      "role": "source",
+      "sha256": "7b047bae4d0072ef156ea94ba637566d563fea3a95d43c4c6314afc919b1d626",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/include/foundation/appended/engine_provider_document_v2.h"
+    },
+    "source/foundation/include/foundation/appended/registry.hpp": {
+      "bytes": 7654,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/include/foundation/appended/registry.hpp",
+        "sha256": "66a303aabdf91018f119cd954db0eba1e06f594946141adac0447e8b2ec6e7fa"
+      },
+      "role": "source",
+      "sha256": "66a303aabdf91018f119cd954db0eba1e06f594946141adac0447e8b2ec6e7fa",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/include/foundation/appended/registry.hpp"
+    },
+    "source/foundation/include/foundation/gui/surface.hpp": {
+      "bytes": 14308,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/include/foundation/gui/surface.hpp",
+        "sha256": "885d24939e21ea10d249d73ea4031874ebcfe1ec7139bcb0a4759055e802754f"
+      },
+      "role": "source",
+      "sha256": "885d24939e21ea10d249d73ea4031874ebcfe1ec7139bcb0a4759055e802754f",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/foundation/include/foundation/gui/surface.hpp"
+    },
+    "source/foundation/include/foundation/gui/surface_editor.hpp": {
+      "bytes": 7620,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/include/foundation/gui/surface_editor.hpp",
+        "sha256": "e6c735fa6901c96282321de03ed31a55183fa5165dce52b9c14ada4027702eda"
+      },
+      "role": "source",
+      "sha256": "e6c735fa6901c96282321de03ed31a55183fa5165dce52b9c14ada4027702eda",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/foundation/include/foundation/gui/surface_editor.hpp"
+    },
+    "source/foundation/src/appended/abi.cpp": {
+      "bytes": 11363,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/src/appended/abi.cpp",
+        "sha256": "a65e71b9859d57c9e383e5c10a327b79e4a007de6684685ac020ca66c4b7d99d"
+      },
+      "role": "source",
+      "sha256": "a65e71b9859d57c9e383e5c10a327b79e4a007de6684685ac020ca66c4b7d99d",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/src/appended/abi.cpp"
+    },
+    "source/foundation/src/appended/document_forms.cpp": {
+      "bytes": 26599,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/src/appended/document_forms.cpp",
+        "sha256": "0a6b72f8724be6cc48b92afa810c2f15591befdab6ddb0e812a64f7eade41ed5"
+      },
+      "role": "source",
+      "sha256": "0a6b72f8724be6cc48b92afa810c2f15591befdab6ddb0e812a64f7eade41ed5",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/src/appended/document_forms.cpp"
+    },
+    "source/foundation/third_party/appended-engine/include/EnginePrivate.hpp": {
+      "bytes": 9871,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/third_party/appended-engine/include/EnginePrivate.hpp",
+        "sha256": "b83560bf81705739aeaaacf9e9b8bc8799e6ddd60266bc05a2d1fff8aa12456e",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "foundation/third_party/appended-engine/include/EnginePrivate.hpp",
+            "sha256": "edfd276aa01f94d0b15fc1a944f9d099a4e5e7f06426a57e3804c023a4c15d16"
+          },
+          "sha256": "edfd276aa01f94d0b15fc1a944f9d099a4e5e7f06426a57e3804c023a4c15d16"
+        }
+      },
+      "role": "source",
+      "sha256": "b83560bf81705739aeaaacf9e9b8bc8799e6ddd60266bc05a2d1fff8aa12456e",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/foundation/third_party/appended-engine/include/EnginePrivate.hpp"
+    },
+    "source/foundation/third_party/appended-engine/include/LegacyHostAdapters.hpp": {
+      "bytes": 5253,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/third_party/appended-engine/include/LegacyHostAdapters.hpp",
+        "sha256": "fdf463196a7a0c93b204969de389469e4a846643d53aa2d13aeb89535795e17c"
+      },
+      "role": "source",
+      "sha256": "fdf463196a7a0c93b204969de389469e4a846643d53aa2d13aeb89535795e17c",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/third_party/appended-engine/include/LegacyHostAdapters.hpp"
+    },
+    "source/foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h": {
+      "bytes": 3162,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h",
+        "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef"
+      },
+      "role": "source",
+      "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h"
+    },
+    "source/foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h": {
+      "bytes": 3227,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h",
+        "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861"
+      },
+      "role": "source",
+      "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h"
+    },
+    "source/foundation/third_party/appended-engine/src/LegacyHostAdapters.cpp": {
+      "bytes": 18120,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/third_party/appended-engine/src/LegacyHostAdapters.cpp",
+        "sha256": "6e661dda207a84d944d9b173a6f5ee885ab1070ee48be8e30b2899a7d20c4420"
+      },
+      "role": "source",
+      "sha256": "6e661dda207a84d944d9b173a6f5ee885ab1070ee48be8e30b2899a7d20c4420",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/third_party/appended-engine/src/LegacyHostAdapters.cpp"
+    },
+    "source/foundation/third_party/appended-engine/src/ProviderGuard.cpp": {
+      "bytes": 67487,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "foundation/third_party/appended-engine/src/ProviderGuard.cpp",
+        "sha256": "f18e9cc64c793ed1f9bfd2e51c0e68bf64c1256131c662a6573c211553e85b9e",
+        "supersedes": {
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "foundation/third_party/appended-engine/src/ProviderGuard.cpp",
+            "sha256": "dcac577c612cce0faf8692afde0481f6a0723e297aa5eba4a2c6c5e707d7333d"
+          },
+          "sha256": "dcac577c612cce0faf8692afde0481f6a0723e297aa5eba4a2c6c5e707d7333d"
+        }
+      },
+      "role": "source",
+      "sha256": "f18e9cc64c793ed1f9bfd2e51c0e68bf64c1256131c662a6573c211553e85b9e",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/editor/foundation/third_party/appended-engine/src/ProviderGuard.cpp"
+    },
+    "source/provider-binding/binding/BibEngineProviderPreflight.cpp": {
+      "bytes": 3246,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "provider-binding/binding/BibEngineProviderPreflight.cpp",
+        "sha256": "dd8c25c5343498106be19b26d96e6b7292bb3e25f10c7b07b191461fdb81c3fb"
+      },
+      "role": "source",
+      "sha256": "dd8c25c5343498106be19b26d96e6b7292bb3e25f10c7b07b191461fdb81c3fb",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/provider-binding/binding/BibEngineProviderPreflight.cpp"
+    },
+    "source/provider-binding/binding/BibEngineProviderPreflight.h": {
+      "bytes": 500,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "provider-binding/binding/BibEngineProviderPreflight.h",
+        "sha256": "20086b2caab4c9b79bc71391ac92a1b630bab193806eb24ecf7b8089cca3d4d4"
+      },
+      "role": "source",
+      "sha256": "20086b2caab4c9b79bc71391ac92a1b630bab193806eb24ecf7b8089cca3d4d4",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/provider-binding/binding/BibEngineProviderPreflight.h"
+    },
+    "source/wrapper/src/embedder/AppDocumentLifecycle.hpp": {
+      "bytes": 12630,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/AppDocumentLifecycle.hpp",
+        "sha256": "e1905491bc7b774394b9d95379233faacb96ca25c581b74780a64b79f53cfa84"
+      },
+      "role": "source",
+      "sha256": "e1905491bc7b774394b9d95379233faacb96ca25c581b74780a64b79f53cfa84",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/AppDocumentLifecycle.hpp"
+    },
+    "source/wrapper/src/embedder/AppResourceQueue.cpp": {
+      "bytes": 7297,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/AppResourceQueue.cpp",
+        "sha256": "505a885cdcf80df7933f3aea02d1b11d799922d133dd73e75c4b988e2c0dab80"
+      },
+      "role": "source",
+      "sha256": "505a885cdcf80df7933f3aea02d1b11d799922d133dd73e75c4b988e2c0dab80",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/AppResourceQueue.cpp"
+    },
+    "source/wrapper/src/embedder/AppResourceQueue.hpp": {
+      "bytes": 5098,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/AppResourceQueue.hpp",
+        "sha256": "e9687eded98f1ac287422f08d09fac689d0a2fe463e707ccd0d5dc2b91a388b7"
+      },
+      "role": "source",
+      "sha256": "e9687eded98f1ac287422f08d09fac689d0a2fe463e707ccd0d5dc2b91a388b7",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/AppResourceQueue.hpp"
+    },
+    "source/wrapper/src/embedder/BibAppResourceHost.h": {
+      "bytes": 3162,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibAppResourceHost.h",
+        "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef"
+      },
+      "role": "source",
+      "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibAppResourceHost.h"
+    },
+    "source/wrapper/src/embedder/BibAppResourceProfile.cpp": {
+      "bytes": 1087,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibAppResourceProfile.cpp",
+        "sha256": "70680c1910cebb8bcf4b74fed2bd6ca4719b89735e9d921de9c5ea66ad8d9c17"
+      },
+      "role": "source",
+      "sha256": "70680c1910cebb8bcf4b74fed2bd6ca4719b89735e9d921de9c5ea66ad8d9c17",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibAppResourceProfile.cpp"
+    },
+    "source/wrapper/src/embedder/BibAppResources.cpp": {
+      "bytes": 38484,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibAppResources.cpp",
+        "sha256": "721665012a8a352c23dd961a3fdae881cbc6a815cdbdfd207185fb2df5ffe08d"
+      },
+      "role": "source",
+      "sha256": "721665012a8a352c23dd961a3fdae881cbc6a815cdbdfd207185fb2df5ffe08d",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibAppResources.cpp"
+    },
+    "source/wrapper/src/embedder/BibAppResources.h": {
+      "bytes": 5365,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibAppResources.h",
+        "sha256": "60738d2b19acd8f04e6a52729c66c42b30965e454974e78202c886556161c463"
+      },
+      "role": "source",
+      "sha256": "60738d2b19acd8f04e6a52729c66c42b30965e454974e78202c886556161c463",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibAppResources.h"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderDocumentProjection.h": {
+      "bytes": 1478,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibEngineProviderDocumentProjection.h",
+        "sha256": "f05ceedb6d7ac04e5e1cb7b5531f02d9e9453b7ff931cd0b5eefd78e2ae7357a"
+      },
+      "role": "source",
+      "sha256": "f05ceedb6d7ac04e5e1cb7b5531f02d9e9453b7ff931cd0b5eefd78e2ae7357a",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibEngineProviderDocumentProjection.h"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderLifecycleHooks.h": {
+      "bytes": 1290,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibEngineProviderLifecycleHooks.h",
+        "sha256": "b4c2a1f33860a5c3e0d1b5229ff9a3c3735ad19f9f7b205f39765deab17cd016"
+      },
+      "role": "source",
+      "sha256": "b4c2a1f33860a5c3e0d1b5229ff9a3c3735ad19f9f7b205f39765deab17cd016",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibEngineProviderLifecycleHooks.h"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderRuntime.h": {
+      "bytes": 2721,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibEngineProviderRuntime.h",
+        "sha256": "e7b69210d5ffc82a0f8260f79658031ea63fb0292e99eb342f3a9b90b4e4bf4b"
+      },
+      "role": "source",
+      "sha256": "e7b69210d5ffc82a0f8260f79658031ea63fb0292e99eb342f3a9b90b4e4bf4b",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibEngineProviderRuntime.h"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderTimerHooks.h": {
+      "bytes": 724,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibEngineProviderTimerHooks.h",
+        "sha256": "c13f878e8c51b85392dc30887a2ea76d574ef11e6de5862ab51d829045434279"
+      },
+      "role": "source",
+      "sha256": "c13f878e8c51b85392dc30887a2ea76d574ef11e6de5862ab51d829045434279",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibEngineProviderTimerHooks.h"
+    },
+    "source/wrapper/src/embedder/BibFoundationServiceBridge.cpp": {
+      "bytes": 33316,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-shared-rich-ui-successor",
+        "reviewed_packets": {
+          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+        },
+        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+        "sha256": "c9833fe476ef13afdde9c13e4c5cd288145ed6cb017e8c095a81d2339a89cb92",
+        "source_only": true,
+        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/call-sites/proposed/recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibFoundationServiceBridge.cpp",
+        "supersedes": {
+          "origin": {
+            "capsule": "0005-cpp-only-outcome",
+            "logical_path": "wrapper/src/embedder/BibFoundationServiceBridge.cpp",
+            "sha256": "a8a9e3901158e5e5bc697b427dfcbc75d465f5b4a5068db46c792cf7b75c0be8"
+          },
+          "sha256": "a8a9e3901158e5e5bc697b427dfcbc75d465f5b4a5068db46c792cf7b75c0be8",
+          "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibFoundationServiceBridge.cpp"
+        }
+      },
+      "role": "source",
+      "sha256": "c9833fe476ef13afdde9c13e4c5cd288145ed6cb017e8c095a81d2339a89cb92",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/wrapper/src/embedder/BibFoundationServiceBridge.cpp"
+    },
+    "source/wrapper/src/embedder/BibFoundationServiceBridge.h": {
+      "bytes": 3720,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibFoundationServiceBridge.h",
+        "sha256": "d6da6a09948c24be8212fe5e7f3e9bd42f99cb33ae1478aad96c5bc5f2544358"
+      },
+      "role": "source",
+      "sha256": "d6da6a09948c24be8212fe5e7f3e9bd42f99cb33ae1478aad96c5bc5f2544358",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibFoundationServiceBridge.h"
+    },
+    "source/wrapper/src/embedder/BibFoundationServiceHost.h": {
+      "bytes": 3227,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibFoundationServiceHost.h",
+        "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861"
+      },
+      "role": "source",
+      "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibFoundationServiceHost.h"
+    },
+    "source/wrapper/src/embedder/BibFoundationServicesBootstrap.h": {
+      "bytes": 21260,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibFoundationServicesBootstrap.h",
+        "sha256": "8fecc8b1b8d8c812a393912f82dbacfcc2ee9f7d20a58cb2bac74bdcc85b9b1f"
+      },
+      "role": "source",
+      "sha256": "8fecc8b1b8d8c812a393912f82dbacfcc2ee9f7d20a58cb2bac74bdcc85b9b1f",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibFoundationServicesBootstrap.h"
+    },
+    "source/wrapper/src/embedder/BibIDBServer.cpp": {
+      "bytes": 22553,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibIDBServer.cpp",
+        "sha256": "9489dec1a9de9b15dc756a4b5d37c435cfb38fa3e7ecbd096b396c6ba20e34a7"
+      },
+      "role": "source",
+      "sha256": "9489dec1a9de9b15dc756a4b5d37c435cfb38fa3e7ecbd096b396c6ba20e34a7",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibIDBServer.cpp"
+    },
+    "source/wrapper/src/embedder/BibIDBServer.h": {
+      "bytes": 9834,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibIDBServer.h",
+        "sha256": "e3017071e80aa65f0ebdce2e9a7d44c9574da698496ff0703a16d7024a6a8f8b"
+      },
+      "role": "source",
+      "sha256": "e3017071e80aa65f0ebdce2e9a7d44c9574da698496ff0703a16d7024a6a8f8b",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibIDBServer.h"
+    },
+    "source/wrapper/src/embedder/BibMediaPlayer.cpp": {
+      "bytes": 19789,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibMediaPlayer.cpp",
+        "sha256": "ec01b60ed892fe03dea2c51431c4215961730c175b3112d1da93df73f9e61fc6"
+      },
+      "role": "source",
+      "sha256": "ec01b60ed892fe03dea2c51431c4215961730c175b3112d1da93df73f9e61fc6",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibMediaPlayer.cpp"
+    },
+    "source/wrapper/src/embedder/BibMediaPlayer.h": {
+      "bytes": 1858,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibMediaPlayer.h",
+        "sha256": "06790cb37fe559499ed3f8b3f45c91a206c0a9be7b6cf5bdb5aacb34e4f6ba79"
+      },
+      "role": "source",
+      "sha256": "06790cb37fe559499ed3f8b3f45c91a206c0a9be7b6cf5bdb5aacb34e4f6ba79",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibMediaPlayer.h"
+    },
+    "source/wrapper/src/embedder/BibPageClients.h": {
+      "bytes": 28627,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibPageClients.h",
+        "sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2"
+      },
+      "role": "source",
+      "sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibPageClients.h"
+    },
+    "source/wrapper/src/embedder/BibPrototypeBridge.h": {
+      "bytes": 10464,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibPrototypeBridge.h",
+        "sha256": "494214d9f21d542398d37bab72994c1874936ca15538dbafd301e10ed377a5ad"
+      },
+      "role": "source",
+      "sha256": "494214d9f21d542398d37bab72994c1874936ca15538dbafd301e10ed377a5ad",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibPrototypeBridge.h"
+    },
+    "source/wrapper/src/embedder/BibPrototypeSemanticScript.h": {
+      "bytes": 6789,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibPrototypeSemanticScript.h",
+        "sha256": "639f23dc73cc8b26961f918e43b850abad1cd85d5eafa6c144f5ea97068cea2f"
+      },
+      "role": "source",
+      "sha256": "639f23dc73cc8b26961f918e43b850abad1cd85d5eafa6c144f5ea97068cea2f",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibPrototypeSemanticScript.h"
+    },
+    "source/wrapper/src/embedder/BibPrototypeState.h": {
+      "bytes": 462,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibPrototypeState.h",
+        "sha256": "3c092e4ab5f8158afaebf829d43b138eb0b0b39dc2b1e14a884ecc0ee052fed7"
+      },
+      "role": "source",
+      "sha256": "3c092e4ab5f8158afaebf829d43b138eb0b0b39dc2b1e14a884ecc0ee052fed7",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibPrototypeState.h"
+    },
+    "source/wrapper/src/embedder/BibSocketProvider.h": {
+      "bytes": 1852,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibSocketProvider.h",
+        "sha256": "9644ef368dfe0323094a5dffdce8401d046d0b6596ce509c4fcb902ca7b468dd"
+      },
+      "role": "source",
+      "sha256": "9644ef368dfe0323094a5dffdce8401d046d0b6596ce509c4fcb902ca7b468dd",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibSocketProvider.h"
+    },
+    "source/wrapper/src/embedder/BibStorage.h": {
+      "bytes": 7617,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibStorage.h",
+        "sha256": "d054ec693ea4657e5a45caf5ffb43507cc37f863141ff1d118c389efed88194d"
+      },
+      "role": "source",
+      "sha256": "d054ec693ea4657e5a45caf5ffb43507cc37f863141ff1d118c389efed88194d",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibStorage.h"
+    },
+    "source/wrapper/src/embedder/BibUndoHistory.h": {
+      "bytes": 2662,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibUndoHistory.h",
+        "sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2"
+      },
+      "role": "source",
+      "sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibUndoHistory.h"
+    },
+    "source/wrapper/src/embedder/BibWebSocketChannel.h": {
+      "bytes": 25372,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/BibWebSocketChannel.h",
+        "sha256": "c8fd71955b4cb609ca44f6afa2e8dc36c027eb913be00c8686704b2d7d082c5d"
+      },
+      "role": "source",
+      "sha256": "c8fd71955b4cb609ca44f6afa2e8dc36c027eb913be00c8686704b2d7d082c5d",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibWebSocketChannel.h"
+    },
+    "source/wrapper/src/embedder/EmbedderStrategies.cpp": {
+      "bytes": 33538,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/EmbedderStrategies.cpp",
+        "sha256": "350f39f61dea3660a1b3e486d13d7856031a2e996bced8cace965e5fbf111b9d"
+      },
+      "role": "source",
+      "sha256": "350f39f61dea3660a1b3e486d13d7856031a2e996bced8cace965e5fbf111b9d",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/EmbedderStrategies.cpp"
+    },
+    "source/wrapper/src/embedder/main.cpp": {
+      "bytes": 161502,
+      "mode": 420,
+      "origin": {
+        "correction": "optional-page-identifier",
+        "kind": "reviewed-actual-header-main-repair",
+        "sha256": "2a1ef9ff3574ca31d4f182457dc7b4a83a09cd7944a8a9b410d4109485db791d",
+        "source_only": true,
+        "source_path": "recipes/webkitwasm-document-v2/overlays/ui/wrapper/src/embedder/main.cpp",
+        "supersedes": {
+          "origin": {
+            "kind": "reviewed-shared-rich-ui-successor",
+            "reviewed_packets": {
+              "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+              "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+            },
+            "selection": "shared-ui-popup-and-internal-rich-clipboard",
+            "sha256": "b721ec17ea0b7a029cd2ace6dc2f8431ec8a340957adda4d3815646d56ad7769",
+            "source_only": true,
+            "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/call-sites/proposed/recipes/webkitwasm-document-v2/source/wrapper/src/embedder/main.cpp",
+            "supersedes": {
+              "origin": {
+                "capsule": "0005-cpp-only-outcome",
+                "logical_path": "wrapper/src/embedder/main.cpp",
+                "sha256": "8c2f98835df730b17c0fb0f5bb5807c2ddaf9559797a59598173d95d02a70449"
+              },
+              "sha256": "8c2f98835df730b17c0fb0f5bb5807c2ddaf9559797a59598173d95d02a70449",
+              "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/main.cpp"
+            }
+          },
+          "sha256": "b721ec17ea0b7a029cd2ace6dc2f8431ec8a340957adda4d3815646d56ad7769",
+          "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/wrapper/src/embedder/main.cpp"
+        }
+      },
+      "role": "source",
+      "sha256": "2a1ef9ff3574ca31d4f182457dc7b4a83a09cd7944a8a9b410d4109485db791d",
+      "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/wrapper/src/embedder/main.cpp"
+    },
+    "source/wrapper/src/embedder/resource_url.cpp": {
+      "bytes": 6751,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/resource_url.cpp",
+        "sha256": "05a1af43bd84e8ba4b4eb2b73070c7f331945806d4e33586f1a447cd0b216671"
+      },
+      "role": "source",
+      "sha256": "05a1af43bd84e8ba4b4eb2b73070c7f331945806d4e33586f1a447cd0b216671",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/resource_url.cpp"
+    },
+    "source/wrapper/src/embedder/resource_url.hpp": {
+      "bytes": 2167,
+      "mode": 420,
+      "origin": {
+        "capsule": "0005-cpp-only-outcome",
+        "logical_path": "wrapper/src/embedder/resource_url.hpp",
+        "sha256": "ef7a3a6ed1d71c6ef355e3cdb77488922239cd2f5c47e1d761b29af1c2bf6132"
+      },
+      "role": "source",
+      "sha256": "ef7a3a6ed1d71c6ef355e3cdb77488922239cd2f5c47e1d761b29af1c2bf6132",
+      "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/resource_url.hpp"
+    }
+  },
+  "kind": "foundation-document-v2-source-imports-v1",
+  "limits": "Exact selected source successors including shared private UI/popup/internal clipboard; original capsule/maps remain historical. No source preparation, SDK/object reuse, engine/runtime or eligibility claim.",
+  "original_supplier_patch": {
+    "sha256": "f25940d21c8ba37d62a6d48ea6da25053af1559bde323d0bfc9ba25cad2bca84",
+    "tracked_path": "recipes/webkitwasm-copied259-v1/source/wrapper/src/patches/webkit-emscripten.patch"
+  },
+  "schema_version": 1,
+  "selected_notice_index": {
+    "sha256": "74b53a552a65939e85fb656d7766c2dec7a42f9479bec9186adf77cd14b88b03",
+    "tracked_path": "recipes/webkitwasm-copied259-v1/notices/INDEX.json"
+  }
+}

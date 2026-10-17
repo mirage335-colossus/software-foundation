@@ -240,5 +240,54 @@ class SourceIdentityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'inventory changed'):
             source_tree(self.root / 'restored')
 
+    @unittest.skipIf(os.name == 'nt', 'POSIX symbolic-link fixture')
+    def test_optional_projection_prunes_links_before_traversal_and_restored_comparison(self):
+        payload = self.source / 'replaceable'
+        payload.mkdir()
+        (payload / 'old.txt').write_text('replaceable input')
+        complete = source_tree(self.source)
+        expected = {name: path for name, path in source_module.selected_files(self.source).items()
+                    if not name.startswith('replaceable/')}
+        (self.source / 'source.json').write_text(json.dumps(complete))
+        (payload / 'old.txt').unlink()
+        (payload / 'dangling').symlink_to(self.root / 'absent')
+        exclude = lambda name: name == 'replaceable' or name.startswith('replaceable/')
+        scan = os.scandir
+        def no_payload_traversal(path):
+            self.assertNotEqual(payload, Path(path), 'excluded source was traversed')
+            return scan(path)
+        with patch.object(source_module.os, 'scandir', side_effect=no_payload_traversal):
+            self.assertEqual(expected, source_module.selected_files(self.source, exclude=exclude, prune=exclude))
+        with self.assertRaises(ValueError): source_tree(self.source)
+        (self.source / 'unknown-native.cpp').write_text('must remain part of the projection')
+        with self.assertRaisesRegex(ValueError, 'inventory changed'):
+            source_module.selected_files(self.source, exclude=exclude)
+
+    def test_optional_git_projection_skips_excluded_link_before_type_inspection(self):
+        (self.source / '.git').mkdir()
+        names = b'main.cpp\0build.sh\0replaceable/missing\0'
+        exclude = lambda name: name.startswith('replaceable/')
+        with patch.object(source_module.subprocess, 'check_output', return_value=names):
+            self.assertEqual({'main.cpp', 'build.sh'}, source_module.selected_files(self.source, exclude=exclude).keys())
+
+    def test_optional_windows_projection_keeps_nonexcluded_modes_strict(self):
+        (self.source / '.git').mkdir()
+        paths = {'build.sh': self.source / 'build.sh'}
+        rows = b'100755 abc 0\tbuild.sh\0' + b'120000 abc 2\treplaceable/link\0'
+        exclude = lambda name: name.startswith('replaceable/')
+        with patch.object(source_module, 'WINDOWS', True), patch.object(source_module.subprocess, 'check_output', return_value=rows):
+            self.assertEqual({'build.sh'}, source_module.portable_executables(self.source, paths, exclude=exclude))
+            with self.assertRaisesRegex(ValueError, 'unmerged'):
+                source_module.portable_executables(self.source, paths)
+
+    def test_file_only_exclusions_do_not_prune_same_named_directories(self):
+        nested = self.source / 'notes.md/unknown.cpp'
+        nested.parent.mkdir()
+        nested.write_text('unknown source')
+        (self.source / 'readme.md').write_text('excluded narrative')
+        selected = source_module.selected_files(self.source, exclude=lambda name: name.endswith('.md'))
+        self.assertIn('notes.md/unknown.cpp', selected)
+        self.assertNotIn('readme.md', selected)
+
 
 if __name__ == '__main__': unittest.main()

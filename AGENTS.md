@@ -161,6 +161,19 @@ and shared tests when a new feature needs a capability; do not duplicate feature
 logic across backend-specific code. Preserve the stated build and binary support
 baselines, dependency provenance, SDK consumer checks and release evidence.
 
+For appended applications, use the [implemented payload tools](docs/appended-applications.md)
+and retained-kernel route. Web-resource changes must not compile modules; portable
+module changes may compile only that module. Neither kind authorizes configuring,
+compiling, linking or installing the retained kernel, including cache-hit builds.
+Missing/incompatible retained inputs must fail with concrete maintenance needs,
+never fall back to a full build. Initial or changed kernel capabilities use the
+explicit `--kernel-maintenance --appended-profile` operation for the selected
+profile and the existing manual-qualification policy. The separate explicit
+`engine-maintenance` producer may only use its admitted retained baseline;
+payload iteration never authorizes it or a full engine rebuild. Do not describe
+the rich web engine as implemented until its documented feasibility and
+integration gates pass.
+
 Before finishing, inspect the actual diff, verify observable consumer behavior,
 update the relevant documentation and record exact validation with material limits.
 Never stage unrelated work or publish external changes without task authorization.

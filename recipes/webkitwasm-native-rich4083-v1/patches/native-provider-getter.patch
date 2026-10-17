@@ -1,0 +1,30 @@
+--- a/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp
++++ b/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp
+@@ -1,6 +1,12 @@
+ // SPDX-License-Identifier: CC0-1.0
+ // New private guard/helper only. No real engine binding or qualification exists.
+ #include "EnginePrivate.hpp"
++#if defined(BIB_ENGINE_PROVIDER_NATIVE) && BIB_ENGINE_PROVIDER_NATIVE
++#ifndef BIB_NATIVE_PROVIDER_BINDING_HEADER
++#error "Native provider Guard requires its reviewed private bootstrap declaration"
++#endif
++#include BIB_NATIVE_PROVIDER_BINDING_HEADER
++#endif
+ #include "engine_editor_protocol.h"
+ #include "engine_editor_pins.hpp"
+ #include "NativeDocumentActionsV1Codec.hpp"
+@@ -1016,6 +1022,14 @@
+     uint32_t capacity, BibEngineProviderV1* output) {
+     using namespace bib::provider_candidate;
+     if (!output || major != BIB_ENGINE_ABI_MAJOR || capacity < sizeof(BibEngineProviderV1)) return BIB_ENGINE_INVALID;
++#if defined(BIB_ENGINE_PROVIDER_NATIVE) && BIB_ENGINE_PROVIDER_NATIVE
++    // Fixed actions ABI1.1: rejected getter shapes register nothing.
++    if (minor < BIB_ENGINE_DOCUMENT_V2_ABI_MINOR) return BIB_ENGINE_UNSUPPORTED;
++    // Registration takes Runtime::Gate itself and must precede this getter gate.
++    // It performs no Host/Page/VM/START or author/resource execution.
++    const auto binding_status = ensureNativeDocumentProviderBound();
++    if (binding_status != BIB_ENGINE_OK) return binding_status;
++#endif
+     auto* p = runtime(); if (!p) return BIB_ENGINE_LIMIT;
+     Runtime::Gate gate(*p, false); if (!gate) return gate.status;
+     if (!p->bound) return BIB_ENGINE_UNSUPPORTED;

@@ -1,0 +1,112 @@
+"""Future registered preparation child; never run by the source authoring task.
+
+Copy the exact admitted ordinary-data projection into a fresh private tree and
+apply only fixed, pinned replacements there. The immutable original is untouched.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+
+
+def relative(value):
+    if (type(value) is not str or not value or "\\" in value or ":" in value
+            or value.startswith("/") or any(x in ("", ".", "..") for x in value.split("/"))):
+        raise ValueError("Closed relative source member required")
+    return value
+
+
+def ordinary(path):
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or path.is_symlink() or info.st_nlink != 1:
+        raise ValueError("Ordinary singly linked source file required: " + str(path))
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source-root", required=True)
+    parser.add_argument("--tree-root", required=True)
+    parser.add_argument("--build-root", required=True)
+    parser.add_argument("--patch-spec", required=True)
+    parser.add_argument("--source-index", action="append", required=True)
+    args = parser.parse_args()
+    source, tree, build = map(Path, (args.source_root, args.tree_root, args.build_root))
+    if not all(x.is_absolute() for x in (source, tree, build)) or tree.parent != build:
+        raise ValueError("Exact absolute private source/build roots required")
+    specs = json.loads(Path(args.patch_spec).read_text(encoding="ascii"))["files"]
+    patches = {relative(row["member"]): row for row in specs}
+    if len(patches) != len(specs):
+        raise ValueError("Duplicate fixed patch member")
+    files, directories = {}, set()
+    for filename in args.source_index:
+        raw = Path(filename).read_bytes()
+        if len(raw) > 65536:
+            raise ValueError("Source index chunk exceeds bound")
+        chunk = json.loads(raw)
+        if set(chunk) != {"files", "directories"}:
+            raise ValueError("Closed source index chunk required")
+        for name in chunk["directories"]:
+            if relative(name) in directories:
+                raise ValueError("Duplicate source directory")
+            directories.add(name)
+        for name, size, pin in chunk["files"]:
+            relative(name)
+            if name in files or type(size) is not int or not 0 <= size <= 512 * 1024**2:
+                raise ValueError("Duplicate or unbounded source member")
+            if type(pin) is not str or len(pin) != 64:
+                raise ValueError("Exact source hash required")
+            files[name] = (size, pin)
+    if not files or len(files) > 65536 or len(directories) > 65536:
+        raise ValueError("Finite original source projection required")
+    if not set(patches).issubset(files):
+        raise ValueError("Fixed patch preimage absent")
+    if build.exists():
+        if not build.is_dir() or build.is_symlink() or any(build.iterdir()):
+            raise ValueError("Fresh empty private build tree required")
+    else:
+        build.mkdir(parents=True, mode=0o700)
+    tree.mkdir(mode=0o700)
+    for name in sorted(directories, key=lambda x: (x.count("/"), x)):
+        (tree / name).mkdir(mode=0o700)
+    for name, (size, pin) in sorted(files.items()):
+        original, output = source / name, tree / name
+        ordinary(original)
+        if name in patches:
+            spec = patches[name]
+            if spec["bytes"] != size or spec["sha256"] != pin:
+                raise ValueError("Fixed patch preimage/projection mismatch")
+            with original.open("rb") as stream:
+                data = stream.read(size + 1)
+            if len(data) != size or hashlib.sha256(data).hexdigest() != pin:
+                raise ValueError("Fixed patch preimage changed")
+            for operation in spec["operations"]:
+                old, new = operation["old"].encode("ascii"), operation["new"].encode("ascii")
+                if not old or data.count(old) != 1:
+                    raise ValueError("Fixed patch anchor must occur exactly once")
+                data = data.replace(old, new, 1)
+            if len(data) != spec["post_bytes"] or hashlib.sha256(data).hexdigest() != spec["post_sha256"]:
+                raise ValueError("Fixed virtual postimage differs")
+            with output.open("xb") as stream:
+                stream.write(data)
+        else:
+            digest, copied = hashlib.sha256(), 0
+            with original.open("rb") as incoming, output.open("xb") as outgoing:
+                while True:
+                    block = incoming.read(min(1024 * 1024, size - copied + 1))
+                    if not block:
+                        break
+                    copied += len(block)
+                    if copied > size:
+                        raise ValueError("Source member exceeds exact byte count")
+                    digest.update(block)
+                    outgoing.write(block)
+            if copied != size or digest.hexdigest() != pin:
+                raise ValueError("Original source member changed")
+        ordinary(original)
+    print("Prepared fixed private OpenSSL source projection")
+
+
+if __name__ == "__main__":
+    main()

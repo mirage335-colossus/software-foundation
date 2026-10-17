@@ -1,0 +1,71 @@
+--- renderer-context-routed.mjs
++++ renderer_dom.mjs
+@@ -1,4 +1,5 @@
+ import {MAX_OPERATION_BYTES} from './browser_limits.mjs';
++import {createBrowserSurface} from './browser_surface.mjs';
+ // Generic DOM mechanics for the shared boundary. Application state, widget
+ // eligibility, layout, stable IDs and edit validation remain in C++.
+ export const identity = key => JSON.stringify([key.id, key.generation]);
+@@ -21,6 +22,8 @@
+     this.measurements = new Set(); this.measureRequests = new Map(); this.measureAttempts = new Set(); this.measureTimer = null; this.measureProbe = null;
+     this.destroyed = false; this.lastFocus = null; this.snapshot = null; this.pointerSerial = 0n;
+     this.activePointers = new Set();this.pointerCancelEpoch=0n;this.wheelPending={count:0};
++    this.surface = options.surface ? createBrowserSurface({root:this.root,document:this.document,send:operation=>this.send(operation),
++      resolveOwner:(key,event)=>this.resolveSurfaceOwner(key,event),onFailure:options.surface.onFailure || (()=>{})}) : null;
+     for(const kind of ["blur","pagehide"])this.listen(this.document.defaultView,kind,()=>this.cancelPointers());
+     this.listen(this.root,"wheel", event => this.groupWheel(event), {passive: false});
+     this.listen(this.root,"contextmenu", event => this.contextMenu(event));
+@@ -36,7 +39,7 @@
+     }, {capture:true});
+   }
+   listen(target,kind,callback,options) { target?.addEventListener(kind,callback,options); if(target)this.listeners.push([target,kind,callback,options]); }
+-  cancelPointers() { ++this.pointerCancelEpoch;for(const cancel of [...this.activePointers])cancel(); }
++  cancelPointers() { this.surface?.cancelPointers(); ++this.pointerCancelEpoch;for(const cancel of [...this.activePointers])cancel(); }
+   element(tag, className, parent) {
+     const element = this.document.createElement(tag);
+     if (className) element.className = className;
+@@ -47,7 +50,25 @@
+     return this.send({type, key: widget.key, ...values}, coalesce).catch(() => {});
+   }
+   // Acknowledgment callbacks need accepted data even while the next paint waits.
+-  acceptSnapshot(snapshot) { this.acceptedSnapshot = snapshot; if(snapshot.closed)this.wheelPending={count:0}; }
++  acceptSnapshot(snapshot,surface=null,serviceActive=false) { this.surface?.accept(snapshot,surface,{serviceActive}); this.acceptedSnapshot = snapshot; if(snapshot.closed)this.wheelPending={count:0}; }
++  connectSurface() { return this.surface ? this.surface.connect() : Promise.resolve(false); }
++  resolveSurfaceOwner(key,event) {
++    const snapshot=this.acceptedSnapshot||this.snapshot;if(!snapshot||snapshot.closed)return null;
++    const entry=this.nodes.get(identity(key)),widget=snapshot.widgets.find(value=>identity(value.key)===identity(key));
++    if(!entry||!widget||!widget.visible||!widget.enabled||!widget.inModal)return null;
++    if(!event)return entry.control;
++    const origin=event.target?.closest?.(".widget");
++    if(origin&&(!this.nodes.has(origin.dataset.key)||!snapshot.widgets.some(value=>identity(value.key)===origin.dataset.key)))return null;
++    const box=this.root.getBoundingClientRect(),x=event.clientX-box.left,y=event.clientY-box.top;
++    for(let index=snapshot.widgets.length-1;index>=0;--index){
++      const candidate=snapshot.widgets[index],[cx,cy,cw,ch]=candidate.clip;
++      if(!candidate.visible||!candidate.enabled||!candidate.inModal||x<cx||y<cy||x>=cx+cw||y>=cy+ch)continue;
++      const own=identity(candidate.key)===identity(key),focusable=candidate.kind!==0&&candidate.kind!==1&&(candidate.kind!==7||candidate.pointerInput||candidate.actions.length);
++      if(!own&&!candidate.contextInput&&!candidate.pointerInput&&!focusable)continue;
++      return own&&this.nodes.has(identity(candidate.key))?entry.control:null;
++    }
++    return null;
++  }
+   current(key) { return (this.acceptedSnapshot || this.snapshot).widgets.find(widget => identity(widget.key) === identity(key)); }
+   setFont(node, font) {
+     node.style.fontSize = `${font.size}px`; node.style.fontWeight = font.bold ? "700" : "400";
+@@ -184,7 +205,7 @@
+     node.addEventListener("pointermove", event => pointer(event, "move"));
+     node.addEventListener("wheel", event => pointer(event, "wheel"), {passive: false});
+     entry.control.addEventListener("focus", () => {
+-      if(entry.updating)return;
++      if(entry.updating||this.surface?.owns(entry.widget.key))return;
+       const version=(this.focusVersion||0)+1;this.focusVersion=version;this.pendingFocus=version;
+       this.operation(entry.widget,"focus").then(()=>{
+         if(this.pendingFocus!==version)return;this.pendingFocus=null;this.syncFocus();
+@@ -479,7 +500,7 @@
+   }
+   destroy() {
+     if (this.destroyed) return;
+-    this.destroyed = true; this.stopMeasuring(); this.measureRequests.clear(); this.measureAttempts.clear(); this.measurements.clear();
++    this.destroyed = true; this.surface?.close(); this.stopMeasuring(); this.measureRequests.clear(); this.measureAttempts.clear(); this.measurements.clear();
+     this.cancelPointers();
+     for(const [target,kind,callback,options] of this.listeners)target.removeEventListener?.(kind,callback,options);this.listeners=[];
+     this.nodes.clear();this.pendingEdits.clear();this.wheelPending={count:0};

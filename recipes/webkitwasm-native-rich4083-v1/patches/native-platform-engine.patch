@@ -1,0 +1,1740 @@
+diff --git a/Source/JavaScriptCore/PlatformFoundation.cmake b/Source/JavaScriptCore/PlatformFoundation.cmake
+new file mode 100644
+--- /dev/null
++++ b/Source/JavaScriptCore/PlatformFoundation.cmake
+@@ -0,0 +1,5 @@
++# Shared portable JSC implementation; native CLoop selection happens in
++# CMakeLists.txt. No public GLib API, remote inspector or Windows COM API.
++if (ENABLE_REMOTE_INSPECTOR OR ENABLE_JIT OR NOT ENABLE_C_LOOP)
++    message(FATAL_ERROR "Foundation candidate requires CLoop without remote inspector")
++endif ()
+diff --git a/Source/ThirdParty/skia/CMakeLists.txt b/Source/ThirdParty/skia/CMakeLists.txt
+--- a/Source/ThirdParty/skia/CMakeLists.txt
++++ b/Source/ThirdParty/skia/CMakeLists.txt
+@@ -273,6 +273,11 @@
+     src/core/SkYUVMath.cpp
+     src/core/SkYUVPlanesCache.cpp
+ 
++)
++
++# Ganesh, GL and shared GPU helpers are absent from a CPU-only library.
++if (NOT USE_SKIA_CPU_ONLY)
++    target_sources(Skia PRIVATE
+     src/gpu/AtlasTypes.cpp
+     src/gpu/Blend.cpp
+     src/gpu/BlendFormula.cpp
+@@ -520,6 +525,10 @@
+     src/gpu/tessellate/FixedCountBufferUtils.cpp
+     src/gpu/tessellate/Tessellation.cpp
+ 
++    )
++endif ()
++
++target_sources(Skia PRIVATE
+     src/image/SkImage.cpp
+     src/image/SkImage_Base.cpp
+     src/image/SkImage_Lazy.cpp
+@@ -649,6 +658,10 @@
+     src/text/GlyphRun.cpp
+     src/text/SlugFromBuffer.cpp
+     src/text/StrikeForGPU.cpp
++)
++
++if (NOT USE_SKIA_CPU_ONLY)
++    target_sources(Skia PRIVATE
+     src/text/gpu/DistanceFieldAdjustTable.cpp
+     src/text/gpu/GlyphVector.cpp
+     src/text/gpu/SDFMaskFilter.cpp
+@@ -663,6 +676,10 @@
+     src/text/gpu/TextBlobRedrawCoordinator.cpp
+     src/text/gpu/VertexFiller.cpp
+ 
++    )
++endif ()
++
++target_sources(Skia PRIVATE
+     src/sksl/SkSLAnalysis.cpp
+     src/sksl/SkSLBuiltinTypes.cpp
+     src/sksl/SkSLCompiler.cpp
+@@ -846,16 +863,18 @@
+     endif ()
+ endif ()
+ 
+-if (USE_LIBEPOXY)
+-    target_sources(Skia PRIVATE src/gpu/ganesh/gl/epoxy/GrGLMakeEpoxyEGLInterface.cpp)
+-    target_link_libraries(Skia PRIVATE Epoxy::Epoxy)
+-else ()
+-    target_sources(Skia PRIVATE src/gpu/ganesh/gl/egl/GrGLMakeNativeInterface_egl.cpp)
+-    target_sources(Skia PRIVATE src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp)
+-    if (USE_ANGLE_EGL)
+-        target_link_libraries(Skia PRIVATE ANGLE::EGL)
++if (NOT USE_SKIA_CPU_ONLY)
++    if (USE_LIBEPOXY)
++        target_sources(Skia PRIVATE src/gpu/ganesh/gl/epoxy/GrGLMakeEpoxyEGLInterface.cpp)
++        target_link_libraries(Skia PRIVATE Epoxy::Epoxy)
+     else ()
+-        target_link_libraries(Skia PRIVATE ${EGL_LIBRARIES})
++        target_sources(Skia PRIVATE src/gpu/ganesh/gl/egl/GrGLMakeNativeInterface_egl.cpp)
++        target_sources(Skia PRIVATE src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp)
++        if (USE_ANGLE_EGL)
++            target_link_libraries(Skia PRIVATE ANGLE::EGL)
++        else ()
++            target_link_libraries(Skia PRIVATE ${EGL_LIBRARIES})
++        endif ()
+     endif ()
+ endif ()
+ 
+@@ -1032,8 +1051,6 @@
+     SK_DISABLE_TRACING
+     SK_DISABLE_WEBGL_INTERFACE
+ 
+-    SK_ENABLE_PRECOMPILE
+-
+     SK_R32_SHIFT=16
+ 
+     $<IF:$<BOOL:${SKIA_DEBUG}>,SK_DEBUG,SK_RELEASE>
+@@ -1049,26 +1066,16 @@
+     target_compile_definitions(Skia PUBLIC SK_TRIVIAL_ABI=[[clang::trivial_abi]])
+ endif ()
+ 
+-#
+-# Enable the Ganesh GPU renderer.
+-#
+-# FIXME: Support other combinations.
+-target_compile_definitions(Skia PRIVATE
+-    SK_GL
+-    SK_GANESH
+-)
+-
+-#
+-# FIXME: We may want to support both GLES and "traditional" GL, so we maybe
+-#       do not make Skia assume that any particular kind of API is being
+-#       used. Note that SK_DISABLE_WEBGL_INTERFACE is set anyway so WebGL
+-#       support is not built regardless of the value for SK_ASSUME_WEBGL.
+-#
+-target_compile_definitions(Skia PUBLIC
+-    SK_ASSUME_GL=0
+-    SK_ASSUME_GL_ES=1
+-    SK_ASSUME_WEBGL=0
+-)
++# A CPU-only Skia build exports no GL/Ganesh configuration.
++if (NOT USE_SKIA_CPU_ONLY)
++    target_compile_definitions(Skia PRIVATE SK_GL SK_GANESH)
++    target_compile_definitions(Skia PUBLIC
++        SK_ENABLE_PRECOMPILE
++        SK_ASSUME_GL=0
++        SK_ASSUME_GL_ES=1
++        SK_ASSUME_WEBGL=0
++    )
++endif ()
+ 
+ if (WIN32)
+     target_compile_definitions(Skia PRIVATE SK_TYPEFACE_FACTORY_DIRECTWRITE)
+diff --git a/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp b/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp
+--- a/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp
++++ b/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp
+@@ -31,6 +31,7 @@
+     using DWriteCreateFactoryProc = decltype(DWriteCreateFactory)*;
+     DWriteCreateFactoryProc dWriteCreateFactoryProc;
+ 
++#if !defined(BIB_FOUNDATION_SYSTEM_DWRITE_ONLY) || !BIB_FOUNDATION_SYSTEM_DWRITE_ONLY
+     dWriteCreateFactoryProc = reinterpret_cast<DWriteCreateFactoryProc>(GetProcAddress(
+             LoadLibraryExW(L"DWriteCore.dll", NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS),
+             "DWriteCoreCreateFactory"));
+@@ -40,6 +41,13 @@
+                 LoadLibraryExW(L"dwrite.dll", NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS),
+                 "DWriteCreateFactory"));
+     }
++#else
++    // Bundled font streams call this global resolver even when WebCore supplied
++    // its own factory. This optional port deliberately uses the OS implementation.
++    dWriteCreateFactoryProc = reinterpret_cast<DWriteCreateFactoryProc>(GetProcAddress(
++            LoadLibraryExW(L"dwrite.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32),
++            "DWriteCreateFactory"));
++#endif
+ 
+     if (!dWriteCreateFactoryProc) {
+         HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
+diff --git a/Source/WTF/wtf/ExportMacros.h b/Source/WTF/wtf/ExportMacros.h
+--- a/Source/WTF/wtf/ExportMacros.h
++++ b/Source/WTF/wtf/ExportMacros.h
+@@ -47,7 +47,12 @@
+ #define WTF_INTERNAL
+ #endif
+ 
+-#if USE(DECLSPEC_ATTRIBUTE)
++#if OS(WINDOWS) && USE(FOUNDATION_EMBEDDER) && defined(BIB_ENGINE_PRIVATE_STATIC_COMPONENT) && BIB_ENGINE_PRIVATE_STATIC_COMPONENT
++// One optional private provider DLL owns these static engine components.
++// Only the independent Foundation C getter receives DLL export decoration.
++#define WTF_EXPORT_DECLARATION
++#define WTF_IMPORT_DECLARATION
++#elif USE(DECLSPEC_ATTRIBUTE)
+ #define WTF_EXPORT_DECLARATION __declspec(dllexport)
+ #define WTF_IMPORT_DECLARATION __declspec(dllimport)
+ #elif USE(VISIBILITY_ATTRIBUTE)
+diff --git a/Source/WTF/wtf/FileSystem.h b/Source/WTF/wtf/FileSystem.h
+--- a/Source/WTF/wtf/FileSystem.h
++++ b/Source/WTF/wtf/FileSystem.h
+@@ -128,7 +128,7 @@
+ WTF_EXPORT_PRIVATE Vector<String> listDirectory(const String& path); // Returns file names, not full paths.
+ 
+ WTF_EXPORT_PRIVATE CString fileSystemRepresentation(const String&);
+-#if !PLATFORM(WIN)
++#if !OS(WINDOWS)
+ WTF_EXPORT_PRIVATE String stringFromFileSystemRepresentation(const char*);
+ #endif
+ 
+diff --git a/Source/WTF/wtf/PlatformFoundation.cmake b/Source/WTF/wtf/PlatformFoundation.cmake
+new file mode 100644
+--- /dev/null
++++ b/Source/WTF/wtf/PlatformFoundation.cmake
+@@ -0,0 +1,10 @@
++# Use actual target OS services and the non-GUI Generic RunLoop. Do not define
++# BUILDING_JSCONLY__: WebCore still needs its native platform/font predicates.
++if (NOT CMAKE_SYSTEM_NAME MATCHES "^(Linux|Windows)$" OR NOT USE_GENERIC_EVENT_LOOP OR WTF_DEFAULT_EVENT_LOOP)
++    message(FATAL_ERROR "Foundation candidate requires native Linux services and an explicitly selected Generic RunLoop")
++endif ()
++set(LOWERCASE_EVENT_LOOP_TYPE generic)
++include("${WTF_DIR}/wtf/PlatformJSCOnly.cmake")
++if (NOT WIN32)
++list(APPEND WTF_PUBLIC_HEADERS unix/UnixFileDescriptor.h)
++endif ()
+diff --git a/Source/WTF/wtf/PlatformLegacy.h b/Source/WTF/wtf/PlatformLegacy.h
+--- a/Source/WTF/wtf/PlatformLegacy.h
++++ b/Source/WTF/wtf/PlatformLegacy.h
+@@ -52,6 +52,10 @@
+ #define WTF_PLATFORM_HAIKU 1
+ #elif defined(BUILDING_WPE__)
+ #define WTF_PLATFORM_WPE 1
++#elif defined(BUILDING_FOUNDATION_EMBEDDER__)
++// A headless direct WebCore port. Native OS services remain selected by OS().
++// Do not inherit the desktop Windows platform's HWND/OLE/widget contracts.
++#define WTF_PLATFORM_FOUNDATION 1
+ #elif defined(BUILDING_JSCONLY__)
+ /* JSCOnly does not provide PLATFORM() macro */
+ #elif OS(MACOS)
+diff --git a/Source/WTF/wtf/URL.cpp b/Source/WTF/wtf/URL.cpp
+--- a/Source/WTF/wtf/URL.cpp
++++ b/Source/WTF/wtf/URL.cpp
+@@ -300,7 +300,7 @@
+         return { };
+ 
+     auto result = decodeEscapeSequencesFromParsedURL(path());
+-#if PLATFORM(WIN)
++#if OS(WINDOWS)
+     if (result.startsWith('/'))
+         result = result.substring(1);
+ #endif
+diff --git a/Source/WebCore/CMakeLists.txt b/Source/WebCore/CMakeLists.txt
+--- a/Source/WebCore/CMakeLists.txt
++++ b/Source/WebCore/CMakeLists.txt
+@@ -2160,26 +2160,37 @@
+     endif ()
+ endif ()
+ 
+-# For platforms that want to use system-provided OpenGL (ES) / EGL headers,
+-# these include directories, libraries or definitions need to be
+-# added before the ANGLE directories.
+-if (USE_ANGLE_EGL)
+-    list(APPEND WebCore_LIBRARIES
+-        ANGLE::EGL
+-        ANGLE::GLES
+-    )
+-elseif (USE_LIBEPOXY)
+-    list(APPEND WebCore_LIBRARIES Epoxy::Epoxy)
++# CPU-only Skia deliberately has no GL display, GPU canvas or compositor.
++# Reject combinations whose source sets would reintroduce those dependencies.
++if (USE_SKIA_CPU_ONLY)
++    if (NOT USE_SKIA)
++        message(FATAL_ERROR "USE_SKIA_CPU_ONLY requires USE_SKIA")
++    endif ()
++    if (ENABLE_WEBGL OR ENABLE_WEBGPU OR ENABLE_GPU_PROCESS OR USE_COORDINATED_GRAPHICS OR USE_TEXTURE_MAPPER OR USE_GSTREAMER_GL OR USE_GBM)
++        message(FATAL_ERROR "USE_SKIA_CPU_ONLY requires WebGL, WebGPU, GPU process, coordinated graphics, texture mapper, GStreamer GL and GBM to be disabled")
++    endif ()
+ else ()
+-    list(APPEND WebCore_LIBRARIES OpenGL::GLES)
+-
+-    list(APPEND WebCore_SYSTEM_INCLUDE_DIRECTORIES
+-        ${EGL_INCLUDE_DIRS}
+-    )
+-    list(APPEND WebCore_LIBRARIES
+-        ${EGL_LIBRARIES}
+-    )
+-    add_definitions(${EGL_DEFINITIONS})
++    # For platforms that want to use system-provided OpenGL (ES) / EGL headers,
++    # these include directories, libraries or definitions need to be
++    # added before the ANGLE directories.
++    if (USE_ANGLE_EGL)
++        list(APPEND WebCore_LIBRARIES
++            ANGLE::EGL
++            ANGLE::GLES
++        )
++    elseif (USE_LIBEPOXY)
++        list(APPEND WebCore_LIBRARIES Epoxy::Epoxy)
++    else ()
++        list(APPEND WebCore_LIBRARIES OpenGL::GLES)
++
++        list(APPEND WebCore_SYSTEM_INCLUDE_DIRECTORIES
++            ${EGL_INCLUDE_DIRS}
++        )
++        list(APPEND WebCore_LIBRARIES
++            ${EGL_LIBRARIES}
++        )
++        add_definitions(${EGL_DEFINITIONS})
++    endif ()
+ endif ()
+ 
+ set(WebCoreTestSupport_FRAMEWORKS ${WebCore_FRAMEWORKS})
+diff --git a/Source/WebCore/PAL/pal/PlatformFoundation.cmake b/Source/WebCore/PAL/pal/PlatformFoundation.cmake
+new file mode 100644
+--- /dev/null
++++ b/Source/WebCore/PAL/pal/PlatformFoundation.cmake
+@@ -0,0 +1,10 @@
++# Native OpenSSL digest + portable clock/sound/kill-ring services. Full WebCrypto
++# remains the supplier stub implementation selected by WebCore, not a claim of
++# supported crypto algorithms.
++list(APPEND PAL_SOURCES
++    crypto/openssl/CryptoDigestOpenSSL.cpp
++    system/ClockGeneric.cpp
++    system/Sound.cpp
++    text/KillRing.cpp
++)
++list(APPEND PAL_LIBRARIES OpenSSL::Crypto)
+diff --git a/Source/WebCore/PlatformFoundation.cmake b/Source/WebCore/PlatformFoundation.cmake
+new file mode 100644
+--- /dev/null
++++ b/Source/WebCore/PlatformFoundation.cmake
+@@ -0,0 +1,72 @@
++# Linux direct WebCore candidate. These supplier files have generic C++ bodies;
++# their directory name does not mean native code defines __EMSCRIPTEN__.
++# Empty host services remain explicit prototype limitations (see candidate.json).
++include(platform/Curl.cmake)
++include(platform/ImageDecoders.cmake)
++include(platform/Skia.cmake)
++
++if (WIN32)
++    list(APPEND WebCore_LIBRARIES FoundationNative::nghttp2 Brotli::dec Brotli::common
++        dwrite gdi32 user32 usp10 ole32)
++    if (USE_WOFF2)
++        list(APPEND WebCore_LIBRARIES WOFF2::dec WOFF2::common)
++    endif ()
++    list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES ${WEBCORE_DIR}/platform/win)
++    list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS platform/win/COMPtr.h)
++    list(APPEND WebCore_SOURCES
++        platform/graphics/win/FontCacheSkiaWin.cpp
++        platform/win/LoggingWin.cpp platform/win/SharedMemoryWin.cpp
++        platform/network/win/CurlSSLHandleWin.cpp)
++else ()
++find_library(NGHTTP2_LIBRARY nghttp2 REQUIRED)
++find_library(BROTLIDEC_LIBRARY brotlidec REQUIRED)
++find_library(BROTLICOMMON_LIBRARY brotlicommon REQUIRED)
++list(APPEND WebCore_LIBRARIES
++    ${NGHTTP2_LIBRARY}
++    ${BROTLIDEC_LIBRARY}
++    ${BROTLICOMMON_LIBRARY}
++    Fontconfig::Fontconfig
++)
++endif ()
++
++list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
++    ${WEBCORE_DIR}/platform
++    ${WEBCORE_DIR}/platform/generic
++    ${WEBCORE_DIR}/platform/mediacapabilities
++    ${WEBCORE_DIR}/platform/video-codecs
++)
++list(APPEND WebCore_SOURCES
++    accessibility/emscripten/AXObjectCacheEmscripten.cpp
++    accessibility/emscripten/AccessibilityObjectEmscripten.cpp
++    crypto/emscripten/CryptoStubsEmscripten.cpp
++    editing/emscripten/EditorEmscripten.cpp
++    platform/emscripten/MIMETypeRegistryEmscripten.cpp
++    platform/emscripten/PasteboardEmscripten.cpp
++    platform/emscripten/PlatformKeyboardEventEmscripten.cpp
++    platform/emscripten/PlatformScreenEmscripten.cpp
++    platform/emscripten/ScrollbarThemeEmscripten.cpp
++    platform/emscripten/ThemeEmscripten.cpp
++    platform/emscripten/UserAgentEmscripten.cpp
++    platform/network/emscripten/CurlSSLHandleEmscripten.cpp
++    platform/network/emscripten/NetworkStateNotifierEmscripten.cpp
++    platform/generic/KeyedDecoderGeneric.cpp
++    platform/generic/KeyedEncoderGeneric.cpp
++    platform/graphics/emscripten/SystemFontDatabaseEmscripten.cpp
++    platform/text/Hyphenation.cpp
++    platform/text/LocaleICU.cpp
++    platform/unix/LoggingUnix.cpp
++    platform/unix/SharedMemoryUnix.cpp
++    rendering/emscripten/RenderThemeEmscripten.cpp
++)
++
++if (WIN32)
++    list(REMOVE_ITEM WebCore_SOURCES platform/unix/LoggingUnix.cpp
++        platform/unix/SharedMemoryUnix.cpp platform/network/emscripten/CurlSSLHandleEmscripten.cpp)
++endif ()
++
++# The CPU component separately gates SourcesSkia, ImageBuffer and driver links.
++# No Emscripten display/GLContext, EGL implementation, WPE or GPU stubs are added.
++if (NOT USE_SKIA_CPU_ONLY)
++    message(FATAL_ERROR "Apply the matching CPU-only source component first")
++endif ()
++cmake_language(DEFER CALL include "${BIB_NATIVE_EMBEDDER_CMAKE}")
+diff --git a/Source/WebCore/accessibility/AXCoreObject.h b/Source/WebCore/accessibility/AXCoreObject.h
+--- a/Source/WebCore/accessibility/AXCoreObject.h
++++ b/Source/WebCore/accessibility/AXCoreObject.h
+@@ -52,7 +52,7 @@
+ #include <wtf/WallTime.h>
+ #include <wtf/threads/BinarySemaphore.h>
+ 
+-#if PLATFORM(WIN)
++#if PLATFORM(WIN) && !USE(FOUNDATION_EMBEDDER)
+ #include "AccessibilityObjectWrapperWin.h"
+ #include "COMPtr.h"
+ #endif
+@@ -78,7 +78,7 @@
+ 
+ typedef WebCore::AccessibilityObjectAtspi AccessibilityObjectWrapper;
+ 
+-#elif PLATFORM(PLAYSTATION) || PLATFORM(HAIKU) || defined(__EMSCRIPTEN__)
++#elif PLATFORM(PLAYSTATION) || PLATFORM(HAIKU) || defined(__EMSCRIPTEN__) || USE(FOUNDATION_EMBEDDER)
+ class AccessibilityObjectWrapper : public RefCounted<AccessibilityObjectWrapper> { };
+ #else
+ class AccessibilityObjectWrapper;
+@@ -1397,9 +1397,9 @@
+     AXID m_id;
+ #if PLATFORM(COCOA)
+     RetainPtr<WebAccessibilityObjectWrapper> m_wrapper;
+-#elif PLATFORM(WIN)
++#elif PLATFORM(WIN) && !USE(FOUNDATION_EMBEDDER)
+     COMPtr<AccessibilityObjectWrapper> m_wrapper;
+-#elif PLATFORM(PLAYSTATION) || PLATFORM(HAIKU) || defined(__EMSCRIPTEN__)
++#elif PLATFORM(PLAYSTATION) || PLATFORM(HAIKU) || defined(__EMSCRIPTEN__) || USE(FOUNDATION_EMBEDDER)
+     RefPtr<AccessibilityObjectWrapper> m_wrapper;
+ #elif USE(ATSPI)
+     RefPtr<AccessibilityObjectAtspi> m_wrapper;
+diff --git a/Source/WebCore/platform/MainThreadSharedTimer.cpp b/Source/WebCore/platform/MainThreadSharedTimer.cpp
+--- a/Source/WebCore/platform/MainThreadSharedTimer.cpp
++++ b/Source/WebCore/platform/MainThreadSharedTimer.cpp
+@@ -46,7 +46,7 @@
+     return instance;
+ }
+ 
+-#if USE(CF) || OS(WINDOWS)
++#if USE(CF) || (OS(WINDOWS) && !USE(GENERIC_EVENT_LOOP))
+ MainThreadSharedTimer::MainThreadSharedTimer() = default;
+ #else
+ MainThreadSharedTimer::MainThreadSharedTimer()
+diff --git a/Source/WebCore/platform/MainThreadSharedTimer.h b/Source/WebCore/platform/MainThreadSharedTimer.h
+--- a/Source/WebCore/platform/MainThreadSharedTimer.h
++++ b/Source/WebCore/platform/MainThreadSharedTimer.h
+@@ -30,7 +30,7 @@
+ #include <wtf/Forward.h>
+ #include <wtf/TZoneMalloc.h>
+ 
+-#if !USE(CF) && !OS(WINDOWS)
++#if !USE(CF) && (!OS(WINDOWS) || USE(GENERIC_EVENT_LOOP))
+ #include <wtf/CanMakeWeakPtr.h>
+ #include <wtf/RunLoop.h>
+ #endif
+@@ -38,7 +38,7 @@
+ namespace WebCore {
+ 
+ class MainThreadSharedTimer final : public SharedTimer
+-#if !USE(CF) && !OS(WINDOWS)
++#if !USE(CF) && (!OS(WINDOWS) || USE(GENERIC_EVENT_LOOP))
+     , public CanMakeWeakPtr<MainThreadSharedTimer>
+ #endif
+ {
+@@ -68,7 +68,7 @@
+     MainThreadSharedTimer();
+ 
+     Function<void()> m_firedFunction;
+-#if !USE(CF) && !OS(WINDOWS)
++#if !USE(CF) && (!OS(WINDOWS) || USE(GENERIC_EVENT_LOOP))
+     RunLoop::Timer m_timer;
+ #endif
+ };
+diff --git a/Source/WebCore/platform/Pasteboard.h b/Source/WebCore/platform/Pasteboard.h
+--- a/Source/WebCore/platform/Pasteboard.h
++++ b/Source/WebCore/platform/Pasteboard.h
+@@ -107,7 +107,7 @@
+     bool canSmartCopyOrDelete;
+     String text;
+     String markup;
+-#elif USE(LIBWPE) || defined(__EMSCRIPTEN__)
++#elif USE(LIBWPE) || defined(__EMSCRIPTEN__) || USE(FOUNDATION_EMBEDDER)
+     String text;
+     String markup;
+ #endif
+diff --git a/Source/WebCore/platform/ScrollAnimator.cpp b/Source/WebCore/platform/ScrollAnimator.cpp
+--- a/Source/WebCore/platform/ScrollAnimator.cpp
++++ b/Source/WebCore/platform/ScrollAnimator.cpp
+@@ -419,7 +419,7 @@
+         monitor->removeDeferralForReason(identifier, reason);
+ }
+ 
+-#if USE(COORDINATED_GRAPHICS) || defined(__EMSCRIPTEN__)
++#if USE(COORDINATED_GRAPHICS) || defined(__EMSCRIPTEN__) || USE(FOUNDATION_EMBEDDER)
+ bool ScrollAnimator::scrollAnimationEnabled() const
+ {
+     return checkedScrollableArea()->scrollAnimatorEnabled();
+diff --git a/Source/WebCore/platform/ScrollAnimator.h b/Source/WebCore/platform/ScrollAnimator.h
+--- a/Source/WebCore/platform/ScrollAnimator.h
++++ b/Source/WebCore/platform/ScrollAnimator.h
+@@ -166,8 +166,8 @@
+     void removeWheelEventTestCompletionDeferralForReason(ScrollingNodeID, WheelEventTestMonitor::DeferReason) const final;
+     ScrollingNodeID scrollingNodeIDForTesting() const final;
+ 
+-#if USE(COORDINATED_GRAPHICS) || defined(__EMSCRIPTEN__)
+-    // PORT=Emscripten joins this guard: without it the base
++#if USE(COORDINATED_GRAPHICS) || defined(__EMSCRIPTEN__) || USE(FOUNDATION_EMBEDDER)
++    // Direct embedders join this guard: without it the base
+     // ScrollingEffectsControllerClient default (always animate) applies, and
+     // this port has no display-refresh driver to service scroll animations —
+     // every wheel scroll would be swallowed by a never-ticking animation.
+diff --git a/Source/WebCore/platform/Skia.cmake b/Source/WebCore/platform/Skia.cmake
+--- a/Source/WebCore/platform/Skia.cmake
++++ b/Source/WebCore/platform/Skia.cmake
+@@ -8,6 +8,24 @@
+     "platform/SourcesSkia.txt"
+ )
+ 
++# These translation units require GL/Ganesh even when WebGL is disabled.
++# Keep them out of the CPU graph rather than providing native GL stubs.
++if (NOT USE_SKIA_CPU_ONLY)
++    list(APPEND WebCore_SOURCES
++        platform/graphics/skia/GraphicsContextGLSkia.cpp
++        platform/graphics/skia/ImageBufferSkiaAcceleratedBackend.cpp
++        platform/graphics/skia/PlatformDisplaySkia.cpp
++        platform/graphics/skia/SkiaPaintingEngine.cpp
++        platform/graphics/skia/SkiaRecordingResult.cpp
++        platform/graphics/skia/SkiaReplayCanvas.cpp
++    )
++    list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS
++        platform/graphics/skia/SkiaPaintingEngine.h
++        platform/graphics/skia/SkiaRecordingResult.h
++        platform/graphics/skia/SkiaReplayCanvas.h
++    )
++endif ()
++
+ list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS
+     platform/graphics/harfbuzz/HbUniquePtr.h
+ 
+@@ -16,9 +34,6 @@
+     platform/graphics/skia/ImageBufferSkiaBackend.h
+     platform/graphics/skia/SkiaHarfBuzzFont.h
+     platform/graphics/skia/SkiaHarfBuzzFontCache.h
+-    platform/graphics/skia/SkiaPaintingEngine.h
+-    platform/graphics/skia/SkiaRecordingResult.h
+-    platform/graphics/skia/SkiaReplayCanvas.h
+     platform/graphics/skia/SkiaSpanExtras.h
+     platform/graphics/skia/SkiaSystemFallbackFontCache.h
+ )
+diff --git a/Source/WebCore/platform/SourcesSkia.txt b/Source/WebCore/platform/SourcesSkia.txt
+--- a/Source/WebCore/platform/SourcesSkia.txt
++++ b/Source/WebCore/platform/SourcesSkia.txt
+@@ -45,10 +45,8 @@
+ platform/graphics/skia/FontVariationsSkia.cpp
+ platform/graphics/skia/GlyphPageSkia.cpp
+ platform/graphics/skia/GradientSkia.cpp
+-platform/graphics/skia/GraphicsContextGLSkia.cpp
+ platform/graphics/skia/GraphicsContextSkia.cpp
+ platform/graphics/skia/ImageBufferSkiaBackend.cpp
+-platform/graphics/skia/ImageBufferSkiaAcceleratedBackend.cpp
+ platform/graphics/skia/ImageBufferSkiaSurfaceBackend.cpp
+ platform/graphics/skia/ImageBufferSkiaUnacceleratedBackend.cpp
+ platform/graphics/skia/ImageBufferUtilitiesSkia.cpp
+@@ -56,13 +54,9 @@
+ platform/graphics/skia/NativeImageSkia.cpp
+ platform/graphics/skia/PathSkia.cpp
+ platform/graphics/skia/PatternSkia.cpp
+-platform/graphics/skia/PlatformDisplaySkia.cpp @no-unify
+ platform/graphics/skia/ShareableBitmapSkia.cpp
+ platform/graphics/skia/SkiaHarfBuzzFont.cpp
+ platform/graphics/skia/SkiaHarfBuzzFontCache.cpp
+-platform/graphics/skia/SkiaPaintingEngine.cpp
+-platform/graphics/skia/SkiaRecordingResult.cpp
+-platform/graphics/skia/SkiaReplayCanvas.cpp
+ platform/graphics/skia/SkiaSystemFallbackFontCache.cpp
+ 
+ platform/skia/SharedBufferSkia.cpp
+diff --git a/Source/WebCore/platform/graphics/FontCache.h b/Source/WebCore/platform/graphics/FontCache.h
+--- a/Source/WebCore/platform/graphics/FontCache.h
++++ b/Source/WebCore/platform/graphics/FontCache.h
+@@ -81,9 +81,12 @@
+ #endif
+ 
+ #if USE(SKIA)
++#if OS(WINDOWS)
++#include "COMPtr.h"
++#endif
+ #include "SkiaHarfBuzzFontCache.h"
+ #include <skia/core/SkFontMgr.h>
+-#if !OS(ANDROID) && !PLATFORM(WIN)
++#if !OS(ANDROID) && !OS(WINDOWS)
+ #include "SkiaSystemFallbackFontCache.h"
+ #endif
+ #endif
+@@ -285,12 +288,12 @@
+ #if USE(SKIA)
+     mutable sk_sp<SkFontMgr> m_fontManager;
+     SkiaHarfBuzzFontCache m_harfBuzzFontCache;
+-#if !OS(ANDROID) && !PLATFORM(WIN)
++#if !OS(ANDROID) && !OS(WINDOWS)
+     SkiaSystemFallbackFontCache m_skiaSystemFallbackFontCache;
+ #endif
+ #endif
+ 
+-#if PLATFORM(WIN) && USE(SKIA)
++#if OS(WINDOWS) && USE(SKIA)
+     struct CreateDWriteFactoryResult {
+         COMPtr<IDWriteFactory> factory;
+         COMPtr<IDWriteFontCollection> fontCollection;
+diff --git a/Source/WebCore/platform/graphics/ImageBuffer.cpp b/Source/WebCore/platform/graphics/ImageBuffer.cpp
+--- a/Source/WebCore/platform/graphics/ImageBuffer.cpp
++++ b/Source/WebCore/platform/graphics/ImageBuffer.cpp
+@@ -53,15 +53,10 @@
+ #endif
+ 
+ #if USE(SKIA)
+-#include "GLContext.h"
++#include "ImageBufferUtilitiesSkia.h"
++#if !USE(SKIA_CPU_ONLY)
+ #include "ImageBufferSkiaAcceleratedBackend.h"
+-#include "ImageBufferUtilitiesSkia.h"
+-#include "PlatformDisplay.h"
+-
+-WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
+-#include <skia/gpu/ganesh/GrBackendSurface.h>
+-#include <skia/gpu/ganesh/SkSurfaceGanesh.h>
+-WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_END
++#endif
+ #endif
+ 
+ #if HAVE(IOSURFACE)
+@@ -99,7 +94,7 @@
+             if (auto imageBuffer = ImageBuffer::create<ImageBufferIOSurfaceBackend>(size, resolutionScale, colorSpace, pixelFormat, purpose, creationContext))
+                 return imageBuffer;
+         }
+-#elif USE(SKIA)
++#elif USE(SKIA) && !USE(SKIA_CPU_ONLY)
+         if (auto imageBuffer = ImageBuffer::create<ImageBufferSkiaAcceleratedBackend>(size, resolutionScale, colorSpace, pixelFormat, purpose, { }))
+             return imageBuffer;
+ #endif
+diff --git a/Source/WebCore/platform/graphics/NativeImage.h b/Source/WebCore/platform/graphics/NativeImage.h
+--- a/Source/WebCore/platform/graphics/NativeImage.h
++++ b/Source/WebCore/platform/graphics/NativeImage.h
+@@ -35,7 +35,7 @@
+ #include <wtf/TZoneMalloc.h>
+ #include <wtf/UniqueRef.h>
+ 
+-#if USE(SKIA)
++#if USE(SKIA) && !USE(SKIA_CPU_ONLY)
+ class GrDirectContext;
+ #endif
+ 
+@@ -53,7 +53,7 @@
+     WTF_MAKE_TZONE_ALLOCATED(NativeImage);
+     WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(NativeImage);
+ public:
+-#if USE(SKIA)
++#if USE(SKIA) && !USE(SKIA_CPU_ONLY)
+     static WEBCORE_EXPORT RefPtr<NativeImage> create(PlatformImagePtr&&, GrDirectContext* = nullptr);
+     // Creates a NativeImage that is intended to be drawn once or only few times. Signals the platform to avoid generating any caches for the image.
+     static WEBCORE_EXPORT RefPtr<NativeImage> createTransient(PlatformImagePtr&&, GrDirectContext* = nullptr);
+@@ -81,7 +81,7 @@
+     uint64_t uniqueID() const;
+ #endif
+ 
+-#if USE(SKIA)
++#if USE(SKIA) && !USE(SKIA_CPU_ONLY)
+     GrDirectContext* grContext() const { return m_grContext; }
+ #endif
+ 
+@@ -96,7 +96,7 @@
+     }
+ 
+ protected:
+-#if USE(SKIA)
++#if USE(SKIA) && !USE(SKIA_CPU_ONLY)
+     WEBCORE_EXPORT NativeImage(PlatformImagePtr&&, GrDirectContext* = nullptr);
+ #else
+     WEBCORE_EXPORT NativeImage(PlatformImagePtr&&);
+@@ -108,7 +108,7 @@
+     mutable Headroom m_headroom { Headroom::None };
+     mutable WeakHashSet<RenderingResourceObserver> m_observers;
+     RenderingResourceIdentifier m_renderingResourceIdentifier { RenderingResourceIdentifier::generate() };
+-#if USE(SKIA)
++#if USE(SKIA) && !USE(SKIA_CPU_ONLY)
+     GrDirectContext* m_grContext { nullptr };
+ #endif
+ };
+diff --git a/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp b/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp
+--- a/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp
++++ b/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp
+@@ -43,7 +43,7 @@
+ 
+ #if OS(ANDROID)
+ #include <skia/ports/SkFontMgr_android.h>
+-#elif PLATFORM(WIN)
++#elif OS(WINDOWS)
+ #include <dwrite.h>
+ #include <skia/ports/SkTypeface_win.h>
+ #else
+@@ -133,7 +133,7 @@
+ 
+     bool isEmoji = (codePointsIterator != codePoints.end() && *codePointsIterator == emojiVariationSelector) || preferColoredFont == PreferColoredFont::Yes;
+ 
+-#if OS(ANDROID) || PLATFORM(WIN)
++#if OS(ANDROID) || OS(WINDOWS)
+     // FIXME: handle locale.
+     Vector<const char*, 1> bcp47;
+     if (isEmoji)
+@@ -178,7 +178,7 @@
+ 
+ Ref<Font> FontCache::lastResortFallbackFont(const FontDescription& fontDescription)
+ {
+-#if PLATFORM(WIN)
++#if OS(WINDOWS)
+     const auto defaultFontName = "Times New Roman"_s;
+ #else
+     const auto defaultFontName = "serif"_s;
+@@ -421,7 +421,7 @@
+ void FontCache::platformPurgeInactiveFontData()
+ {
+     m_harfBuzzFontCache.clear();
+-#if !OS(ANDROID) && !PLATFORM(WIN)
++#if !OS(ANDROID) && !OS(WINDOWS)
+     m_skiaSystemFallbackFontCache.clear();
+ #endif
+ }
+diff --git a/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.cpp b/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.cpp
+--- a/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.cpp
++++ b/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.cpp
+@@ -31,16 +31,19 @@
+ #include "FloatRect.h"
+ #include "FloatRoundedRect.h"
+ #include "FontRenderOptions.h"
++#if !USE(SKIA_CPU_ONLY)
+ #include "GLContext.h"
++#endif
+ #include "ImageBuffer.h"
+ #include "IntRect.h"
+ #include "NativeImage.h"
+ #include "NotImplemented.h"
+ #include "PathSegment.h"
+ #include "Pattern.h"
++#if !USE(SKIA_CPU_ONLY)
+ #include "PlatformDisplay.h"
++#endif
+ #include "ProcessCapabilities.h"
+-#include "SkiaPaintingEngine.h"
+ #include <cmath>
+ #include <ranges>
+ WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
+@@ -56,9 +59,11 @@
+ #include <skia/core/SkSurface.h>
+ #include <skia/core/SkTileMode.h>
+ #include <skia/effects/SkImageFilters.h>
++#if !USE(SKIA_CPU_ONLY)
+ #include <skia/gpu/ganesh/GrBackendSurface.h>
+ #include <skia/gpu/ganesh/SkImageGanesh.h>
+ #include <skia/gpu/ganesh/SkSurfaceGanesh.h>
++#endif
+ WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_END
+ #include <wtf/MathExtras.h>
+ 
+@@ -75,6 +80,9 @@
+     , m_destroyNotify(WTF::move(destroyNotify))
+     , m_colorSpace(canvas.imageInfo().colorSpace() ? DestinationColorSpace(canvas.imageInfo().refColorSpace()) : DestinationColorSpace::SRGB())
+ {
++#if USE(SKIA_CPU_ONLY)
++    RELEASE_ASSERT(m_renderingMode == RenderingMode::Unaccelerated);
++#endif
+ }
+ 
+ GraphicsContextSkia::~GraphicsContextSkia()
+@@ -104,12 +112,16 @@
+     return m_colorSpace;
+ }
+ 
+-bool GraphicsContextSkia::makeGLContextCurrentIfNeeded() const
+-{
++bool GraphicsContextSkia::prepareForDrawing() const
++{
++#if USE(SKIA_CPU_ONLY)
++    return m_renderingMode == RenderingMode::Unaccelerated;
++#else
+     if (m_renderingMode == RenderingMode::Unaccelerated || m_renderingPurpose != RenderingPurpose::Canvas)
+         return true;
+ 
+     return PlatformDisplay::sharedDisplay().skiaGLContext()->makeContextCurrent();
++#endif
+ }
+ 
+ void GraphicsContextSkia::pushSkiaState()
+@@ -155,7 +167,7 @@
+ void GraphicsContextSkia::drawRect(const FloatRect& rect, float borderThickness)
+ {
+     ASSERT(!rect.isEmpty());
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     SkPaint paint = createFillPaint();
+@@ -288,7 +300,7 @@
+     if (options.orientation().usesWidthAsHeight())
+         normalizedSrcRect = normalizedSrcRect.transposedRect();
+ 
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     auto normalizedDestRect = normalizeRect(destRect);
+@@ -313,6 +325,7 @@
+     bool inExtraTransparencyLayer = false;
+     auto clampingConstraint = options.strictImageClamping() == StrictImageClamping::Yes ? SkCanvas::kStrict_SrcRectConstraint : SkCanvas::kFast_SrcRectConstraint;
+ 
++#if !USE(SKIA_CPU_ONLY)
+     // 'imageInThisThread' is either the incoming 'image', or a wrapper around the 'image' accessible in the current thread.
+     // When you want to access the image, use 'imageInThisThread' if it's non-zero or 'image'.
+     sk_sp<SkImage> imageInThisThread;
+@@ -346,8 +359,16 @@
+     // This is the image we have to pass on to m_canvas.drawImageRect(...) below.
+     SkImage* imageForDrawing = imageInThisThread ? imageInThisThread.get() : image.get();
+ 
++#else
++    RELEASE_ASSERT(!image->isTextureBacked());
++    SkImage* imageForDrawing = image.get();
++#endif
++
++#if !USE(SKIA_CPU_ONLY)
+     sk_sp<SkImage> imageRasterCopy;
++#endif
+     if (hasDropShadow()) {
++#if !USE(SKIA_CPU_ONLY)
+         if (imageForDrawing->isTextureBacked()) {
+             if (renderingMode() == RenderingMode::Unaccelerated) {
+                 // When drawing GPU-backed image on CPU-backed canvas with filter, we need to convert image to CPU-backed one.
+@@ -356,11 +377,15 @@
+             } else
+                 trackAcceleratedRenderingFenceIfNeeded(imageInThisThread ? imageInThisThread : image, nativeImage.grContext());
+         }
++#endif
+         inExtraTransparencyLayer = drawOutsetShadow(paint, [&](const SkPaint& paint) {
+             m_canvas.drawImageRect(imageForDrawing, normalizedSrcRect, normalizedDestRect, toSkSamplingOptions(m_state.imageInterpolationQuality()), &paint, clampingConstraint);
+         });
+-    } else
++    }
++#if !USE(SKIA_CPU_ONLY)
++    else
+         trackAcceleratedRenderingFenceIfNeeded(imageInThisThread ? imageInThisThread : image, nativeImage.grContext());
++#endif
+ 
+     m_canvas.drawImageRect(imageForDrawing, normalizedSrcRect, normalizedDestRect, toSkSamplingOptions(m_state.imageInterpolationQuality()), &paint, clampingConstraint);
+     if (inExtraTransparencyLayer)
+@@ -376,7 +401,7 @@
+     if (strokeStyle() == StrokeStyle::NoStroke)
+         return;
+ 
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     SkPaint paint = createStrokePaint();
+@@ -420,7 +445,7 @@
+ // This method is only used to draw the little circles used in lists.
+ void GraphicsContextSkia::drawEllipse(const FloatRect& boundaries)
+ {
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     SkPaint paint = createFillPaint();
+@@ -518,7 +543,7 @@
+     if (path.isEmpty())
+         return;
+ 
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     SkPaint paint = createFillPaint();
+@@ -544,7 +569,7 @@
+     if (path.isEmpty())
+         return;
+ 
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     SkPaint strokePaint = createStrokePaint();
+@@ -632,7 +657,9 @@
+     if (auto fillPattern = fillBrush().pattern()) {
+         paint.setShader(fillPattern->createPlatformPattern({ }, toSkSamplingOptions(imageInterpolationQuality())));
+         paint.setAlphaf(alpha());
++#if !USE(SKIA_CPU_ONLY)
+         trackAcceleratedRenderingFenceIfNeeded(*fillPattern);
++#endif
+     } else if (auto fillGradient = fillBrush().gradient())
+         paint.setShader(fillGradient->shader(alpha(), fillBrush().gradientSpaceTransform()));
+     else
+@@ -657,7 +684,9 @@
+ {
+     if (auto strokePattern = strokeBrush().pattern()) {
+         paint.setShader(strokePattern->createPlatformPattern({ }, toSkSamplingOptions(imageInterpolationQuality())));
++#if !USE(SKIA_CPU_ONLY)
+         trackAcceleratedRenderingFenceIfNeeded(*strokePattern);
++#endif
+     } else if (auto strokeGradient = strokeBrush().gradient())
+         paint.setShader(strokeGradient->shader(alpha(), strokeBrush().gradientSpaceTransform()));
+     else
+@@ -679,7 +708,7 @@
+ 
+ void GraphicsContextSkia::fillRect(const FloatRect& boundaries, RequiresClipToRect)
+ {
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     SkPaint paint = createFillPaint();
+@@ -689,7 +718,7 @@
+ 
+ void GraphicsContextSkia::fillRect(const FloatRect& boundaries, const Color& fillColor)
+ {
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     SkPaint paint = createFillPaint();
+@@ -699,7 +728,7 @@
+ 
+ void GraphicsContextSkia::fillRect(const FloatRect& boundaries, Gradient& gradient, const AffineTransform& gradientSpaceTransform, RequiresClipToRect)
+ {
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     SkPaint paint = createFillPaint();
+@@ -761,7 +790,9 @@
+ {
+     if (auto nativeImage = nativeImageForDrawing(buffer)) {
+         auto image = nativeImage->platformImage();
++#if !USE(SKIA_CPU_ONLY)
+         trackAcceleratedRenderingFenceIfNeeded(image, nativeImage->grContext());
++#endif
+         auto shader = image->makeShader(SkTileMode::kDecal, SkTileMode::kDecal, { }, SkMatrix::Translate(SkFloatToScalar(destRect.x()), SkFloatToScalar(destRect.y())));
+ 
+         recordClipIfNeeded({
+@@ -940,7 +971,7 @@
+ 
+ void GraphicsContextSkia::beginTransparencyLayer(float opacity)
+ {
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     GraphicsContext::beginTransparencyLayer(opacity);
+@@ -949,7 +980,7 @@
+ 
+ void GraphicsContextSkia::beginTransparencyLayer(CompositeOperator operation, BlendMode blendMode)
+ {
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     GraphicsContext::beginTransparencyLayer(operation, blendMode);
+@@ -958,7 +989,7 @@
+ 
+ void GraphicsContextSkia::endTransparencyLayer()
+ {
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     GraphicsContext::endTransparencyLayer();
+@@ -967,7 +998,7 @@
+ 
+ void GraphicsContextSkia::clearRect(const FloatRect& rect)
+ {
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     auto paint = createFillPaint();
+@@ -977,7 +1008,7 @@
+ 
+ void GraphicsContextSkia::strokeRect(const FloatRect& boundaries, float lineWidth)
+ {
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     auto strokePaint = createStrokePaint();
+@@ -1102,7 +1133,7 @@
+ 
+ void GraphicsContextSkia::fillRoundedRectImpl(const FloatRoundedRect& rect, const Color& color)
+ {
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     SkPaint paint = createFillPaint();
+@@ -1123,7 +1154,7 @@
+     if (!color.isValid())
+         return;
+ 
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     SkPaint paint = createFillPaint();
+@@ -1132,6 +1163,7 @@
+     m_canvas.drawDRRect(SkRRect::MakeRect(outerRect), innerRRect, paint);
+ }
+ 
++#if !USE(SKIA_CPU_ONLY)
+ // FIXME: Make this a GraphicsContextSkia static function, and use it throughout WebCore.
+ static sk_sp<SkSurface> createAcceleratedSurface(const IntSize& size)
+ {
+@@ -1150,6 +1182,7 @@
+ 
+     return surface;
+ }
++#endif
+ 
+ void GraphicsContextSkia::drawPattern(NativeImage& nativeImage, const FloatRect& destRect, const FloatRect& tileRect, const AffineTransform& patternTransform, const FloatPoint& phase, const FloatSize& spacing, ImagePaintingOptions options)
+ {
+@@ -1160,7 +1193,7 @@
+     if (!image)
+         return;
+ 
+-    if (!makeGLContextCurrentIfNeeded())
++    if (!prepareForDrawing())
+         return;
+ 
+     FloatPoint phaseOffset(tileRect.location());
+@@ -1190,9 +1223,12 @@
+             repeatY = imageSampledRect.y() < 0 || std::trunc(imageSampledRect.bottom()) > size.height();
+         }
+         paint.setShader(image->makeShader(repeatX ? SkTileMode::kRepeat : SkTileMode::kClamp, repeatY ? SkTileMode::kRepeat : SkTileMode::kClamp, samplingOptions, &shaderMatrix));
++#if !USE(SKIA_CPU_ONLY)
+         trackAcceleratedRenderingFenceIfNeeded(image, nativeImage.grContext());
++#endif
+     } else {
+         auto tileFloatRectWithSpacing = FloatRect(0, 0, tileRect.width() + spacing.width() / patternTransform.a(), tileRect.height() + spacing.height() / patternTransform.d());
++#if !USE(SKIA_CPU_ONLY)
+         if (image->isTextureBacked()) {
+             auto enclosingTileIntRect = enclosingIntRect(tileRect);
+             auto dstRect = SkRect::MakeWH(enclosingTileIntRect.width(), enclosingTileIntRect.height());
+@@ -1205,7 +1241,9 @@
+                 paint.setShader(tileImage->makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat, samplingOptions, &shaderMatrix));
+                 trackAcceleratedRenderingFenceIfNeeded(tileImage, grContext);
+             }
+-        } else {
++        } else
++#endif
++        {
+             auto dstRect = SkRect::MakeWH(tileRect.width(), tileRect.height());
+             auto clipRect = SkRect::MakeWH(tileFloatRectWithSpacing.width(), tileFloatRectWithSpacing.height());
+             // For raster images we can save creating a copy altogether, by using SkPicture recording instead.
+@@ -1221,6 +1259,7 @@
+     m_canvas.drawRect(destRect, paint);
+ }
+ 
++#if !USE(SKIA_CPU_ONLY)
+ void GraphicsContextSkia::beginRecording()
+ {
+     ASSERT(m_contextMode == ContextMode::PaintingMode);
+@@ -1233,6 +1272,7 @@
+     m_contextMode = ContextMode::PaintingMode;
+     return WTF::move(m_imageToFenceMap);
+ }
++#endif
+ 
+ void GraphicsContextSkia::enableStateReplayTracking()
+ {
+@@ -1270,6 +1310,7 @@
+     canvas.setMatrix(m_canvas.getTotalMatrix());
+ }
+ 
++#if !USE(SKIA_CPU_ONLY)
+ static std::unique_ptr<GLFence> createFenceAfterFlush(GrDirectContext* grContext)
+ {
+     auto& glDisplay = PlatformDisplay::sharedDisplay().glDisplay();
+@@ -1335,6 +1376,7 @@
+ 
+     trackAcceleratedRenderingFenceIfNeeded(nativeImage->platformImage(), nativeImage->grContext());
+ }
++#endif
+ 
+ void GraphicsContextSkia::drawSkiaText(const sk_sp<SkTextBlob>& blob, SkScalar x, SkScalar y, bool enableAntialias, bool isVertical)
+ {
+diff --git a/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.h b/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.h
+--- a/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.h
++++ b/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.h
+@@ -27,7 +27,9 @@
+ 
+ #if USE(SKIA)
+ 
++#if !USE(SKIA_CPU_ONLY)
+ #include "GLFence.h"
++#endif
+ #include "GraphicsContext.h"
+ WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
+ #include <skia/core/SkCanvas.h>
+@@ -44,7 +46,9 @@
+ 
+ class Pattern;
+ 
++#if !USE(SKIA_CPU_ONLY)
+ using SkiaImageToFenceMap = HashMap<const SkImage*, std::unique_ptr<GLFence>>;
++#endif
+ 
+ class WEBCORE_EXPORT GraphicsContextSkia final : public GraphicsContext {
+     friend class ImageBufferSkiaAcceleratedBackend;
+@@ -57,8 +61,10 @@
+ 
+     const DestinationColorSpace& colorSpace() const final;
+ 
++#if !USE(SKIA_CPU_ONLY)
+     void beginRecording();
+     SkiaImageToFenceMap endRecording();
++#endif
+ 
+     void enableStateReplayTracking();
+     void replayStateOnCanvas(SkCanvas&) const;
+@@ -123,8 +129,10 @@
+ 
+     void drawSkiaText(const sk_sp<SkTextBlob>&, SkScalar, SkScalar, bool, bool);
+ 
++#if !USE(SKIA_CPU_ONLY)
+     static std::unique_ptr<GLFence> createAcceleratedRenderingFence(SkSurface*);
+     static std::unique_ptr<GLFence> createAcceleratedRenderingFence(const sk_sp<SkImage>&, GrDirectContext*);
++#endif
+ 
+ private:
+     enum class ContextMode : bool {
+@@ -132,9 +140,11 @@
+         RecordingMode
+     };
+ 
+-    bool makeGLContextCurrentIfNeeded() const;
++    bool prepareForDrawing() const;
++#if !USE(SKIA_CPU_ONLY)
+     void trackAcceleratedRenderingFenceIfNeeded(const sk_sp<SkImage>&, GrDirectContext*);
+     void trackAcceleratedRenderingFenceIfNeeded(Pattern&);
++#endif
+ 
+     void setupFillSource(SkPaint&);
+     void setupStrokeSource(SkPaint&);
+@@ -199,7 +209,9 @@
+     CompletionHandler<void()> m_destroyNotify;
+     SkiaState m_skiaState;
+     Vector<SkiaState, 1> m_skiaStateStack;
++#if !USE(SKIA_CPU_ONLY)
+     SkiaImageToFenceMap m_imageToFenceMap;
++#endif
+     bool m_enableStateReplayTracking : 1 { false };
+ 
+     const DestinationColorSpace m_colorSpace;
+diff --git a/Source/WebCore/platform/graphics/skia/ImageBufferUtilitiesSkia.cpp b/Source/WebCore/platform/graphics/skia/ImageBufferUtilitiesSkia.cpp
+--- a/Source/WebCore/platform/graphics/skia/ImageBufferUtilitiesSkia.cpp
++++ b/Source/WebCore/platform/graphics/skia/ImageBufferUtilitiesSkia.cpp
+@@ -27,10 +27,14 @@
+ #include "ImageBufferUtilitiesSkia.h"
+ 
+ #if USE(SKIA)
++#if !USE(SKIA_CPU_ONLY)
+ #include "GLContext.h"
++#endif
+ #include "MIMETypeRegistry.h"
+ #include "NativeImage.h"
++#if !USE(SKIA_CPU_ONLY)
+ #include "PlatformDisplay.h"
++#endif
+ 
+ WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
+ #include <skia/core/SkData.h>
+@@ -66,6 +70,7 @@
+     Vector<uint8_t>& m_vector;
+ };
+ 
++#if !USE(SKIA_CPU_ONLY)
+ static sk_sp<SkData> encodeAcceleratedImage(NativeImage& nativeImage, const String& mimeType, std::optional<double> quality)
+ {
+     if (!PlatformDisplay::sharedDisplay().skiaGLContext()->makeContextCurrent())
+@@ -93,6 +98,7 @@
+ 
+     return nullptr;
+ }
++#endif
+ 
+ static Vector<uint8_t> encodeUnacceleratedImage(const SkPixmap& pixmap, const String& mimeType, std::optional<double> quality)
+ {
+@@ -122,6 +128,7 @@
+ Vector<uint8_t> encodeData(NativeImage& nativeImage, const String& mimeType, std::optional<double> quality)
+ {
+     auto image = nativeImage.platformImage();
++#if !USE(SKIA_CPU_ONLY)
+     if (image->isTextureBacked()) {
+         auto data = encodeAcceleratedImage(nativeImage, mimeType, quality);
+         if (!data)
+@@ -129,6 +136,9 @@
+ 
+         return unsafeMakeSpan(reinterpret_cast<const uint8_t*>(data->data()), data->size());
+     }
++#else
++    RELEASE_ASSERT(!image->isTextureBacked());
++#endif
+ 
+     SkPixmap pixmap;
+     if (!image->peekPixels(&pixmap))
+diff --git a/Source/WebCore/platform/graphics/skia/NativeImageSkia.cpp b/Source/WebCore/platform/graphics/skia/NativeImageSkia.cpp
+--- a/Source/WebCore/platform/graphics/skia/NativeImageSkia.cpp
++++ b/Source/WebCore/platform/graphics/skia/NativeImageSkia.cpp
+@@ -27,32 +27,61 @@
+ #include "NativeImage.h"
+ 
+ #if USE(SKIA)
++#include "Color.h"
++#include "DestinationColorSpace.h"
++#include "IntSize.h"
++#if !USE(SKIA_CPU_ONLY)
+ #include "GLContext.h"
+-#include "GraphicsContextSkia.h"
+ #include "PlatformDisplay.h"
++#endif
+ WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN // GLib/Win ports
+ #include <skia/core/SkPixmap.h>
+ WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_END
+ 
+ namespace WebCore {
+ 
++#if USE(SKIA_CPU_ONLY)
++RefPtr<NativeImage> NativeImage::create(PlatformImagePtr&& platformImage)
++#else
+ RefPtr<NativeImage> NativeImage::create(PlatformImagePtr&& platformImage, GrDirectContext* grContext)
++#endif
+ {
+     if (!platformImage)
+         return nullptr;
++#if USE(SKIA_CPU_ONLY)
++    if (platformImage->isTextureBacked())
++        return nullptr;
++    return adoptRef(*new NativeImage(WTF::move(platformImage)));
++#else
+     return adoptRef(*new NativeImage(WTF::move(platformImage), grContext));
++#endif
+ }
+ 
++#if USE(SKIA_CPU_ONLY)
++RefPtr<NativeImage> NativeImage::createTransient(PlatformImagePtr&& image)
++{
++    return create(WTF::move(image));
++}
++
++NativeImage::NativeImage(PlatformImagePtr&& platformImage)
++#else
+ RefPtr<NativeImage> NativeImage::createTransient(PlatformImagePtr&& image, GrDirectContext* grContext)
+ {
+     return create(WTF::move(image), grContext);
+ }
+ 
+ NativeImage::NativeImage(PlatformImagePtr&& platformImage, GrDirectContext* grContext)
++#endif
+     : m_platformImage(WTF::move(platformImage))
++#if !USE(SKIA_CPU_ONLY)
+     , m_grContext(grContext)
++#endif
+ {
++#if USE(SKIA_CPU_ONLY)
++    RELEASE_ASSERT(!m_platformImage->isTextureBacked());
++#else
+     ASSERT(!m_platformImage->isTextureBacked() || m_grContext);
++#endif
+     computeHeadroom();
+ }
+ 
+@@ -93,6 +122,7 @@
+         return std::nullopt;
+ 
+     auto platformImage = this->platformImage();
++#if !USE(SKIA_CPU_ONLY)
+     if (platformImage->isTextureBacked()) {
+         if (!PlatformDisplay::sharedDisplay().skiaGLContext()->makeContextCurrent())
+             return std::nullopt;
+@@ -106,6 +136,9 @@
+ 
+         return pixmap.getColor(0, 0);
+     }
++#else
++    RELEASE_ASSERT(!platformImage->isTextureBacked());
++#endif
+ 
+     SkPixmap pixmap;
+     if (!platformImage->peekPixels(&pixmap))
+diff --git a/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.cpp b/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.cpp
+--- a/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.cpp
++++ b/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.cpp
+@@ -26,7 +26,7 @@
+ #include "config.h"
+ #include "SkiaSystemFallbackFontCache.h"
+ 
+-#if USE(SKIA) && !OS(ANDROID) && !PLATFORM(WIN)
++#if USE(SKIA) && !OS(ANDROID) && !OS(WINDOWS)
+ #include "FontCache.h"
+ #include <fontconfig/fontconfig.h>
+ #include <wtf/FileSystem.h>
+@@ -222,4 +222,4 @@
+ 
+ } // namepsace WebCore
+ 
+-#endif // USE(SKIA) && !OS(ANDROID) && !PLATFORM(WIN)
++#endif // USE(SKIA) && !OS(ANDROID) && !OS(WINDOWS)
+diff --git a/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.h b/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.h
+--- a/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.h
++++ b/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.h
+@@ -25,7 +25,7 @@
+ 
+ #pragma once
+ 
+-#if USE(SKIA) && !OS(ANDROID) && !PLATFORM(WIN)
++#if USE(SKIA) && !OS(ANDROID) && !OS(WINDOWS)
+ WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
+ #include <skia/core/SkFontStyle.h>
+ #include <skia/core/SkTypeface.h>
+@@ -51,4 +51,4 @@
+ 
+ } // namespace WebCore
+ 
+-#endif // USE(SKIA) && !OS(ANDROID) && !PLATFORM(WIN)
++#endif // USE(SKIA) && !OS(ANDROID) && !OS(WINDOWS)
+diff --git a/Source/cmake/FoundationWindowsInputs.cmake b/Source/cmake/FoundationWindowsInputs.cmake
+new file mode 100644
+--- /dev/null
++++ b/Source/cmake/FoundationWindowsInputs.cmake
+@@ -0,0 +1,227 @@
++# Private native-engine Windows input admission. No find_package/pkg-config,
++# source download, dependency preparation, compiler launch or build fallback.
++# The explicit producer must verify retained inventories/provenance before
++# configuring. Hash/target consistency here is not Windows qualification.
++include_guard(GLOBAL)
++
++function(_foundation_windows_keys document)
++    string(JSON _count ERROR_VARIABLE _error LENGTH "${document}")
++    list(LENGTH ARGN _expected)
++    if(_error OR NOT _count EQUAL _expected)
++        message(FATAL_ERROR "Windows native input object has an unsupported field set")
++    endif()
++    if(_count GREATER 0)
++        math(EXPR _last "${_count} - 1")
++        foreach(_index RANGE 0 ${_last})
++            string(JSON _key ERROR_VARIABLE _error MEMBER "${document}" ${_index})
++            if(_error OR NOT _key IN_LIST ARGN)
++                message(FATAL_ERROR "Windows native input object has an unknown field")
++            endif()
++        endforeach()
++    endif()
++endfunction()
++
++function(_foundation_windows_json out document)
++    string(JSON _value ERROR_VARIABLE _error GET "${document}" ${ARGN})
++    if(_error)
++        message(FATAL_ERROR "Missing or malformed retained Windows input field: ${ARGN}")
++    endif()
++    set(${out} "${_value}" PARENT_SCOPE)
++endfunction()
++
++function(_foundation_windows_pin path sha label)
++    string(LENGTH "${sha}" _length)
++    if(NOT _length EQUAL 64 OR NOT sha MATCHES "^[0-9a-f]+$" OR sha MATCHES "^0+$" OR
++            NOT IS_ABSOLUTE "${path}" OR NOT EXISTS "${path}" OR
++            IS_DIRECTORY "${path}" OR IS_SYMLINK "${path}" OR
++            "${path}" MATCHES "[;\"\n\r]" OR "${path}" MATCHES "\\$<")
++        message(FATAL_ERROR "Retained Windows engine ${label} needs a pinned absolute ordinary file")
++    endif()
++    file(SHA256 "${path}" _actual)
++    if(NOT _actual STREQUAL sha)
++        message(FATAL_ERROR "Retained Windows engine ${label} differs from its independent SHA256")
++    endif()
++    # A later explicit incremental engine build must re-admit changed pinned
++    # inputs, rather than silently link a mutated retained library/tool record.
++    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${path}")
++endfunction()
++
++function(_foundation_windows_object_file out document label)
++    _foundation_windows_json(_path "${document}" ${ARGN} path)
++    _foundation_windows_json(_sha "${document}" ${ARGN} sha256)
++    _foundation_windows_pin("${_path}" "${_sha}" "${label}")
++    file(REAL_PATH "${_path}" _real)
++    set(${out} "${_real}" PARENT_SCOPE)
++endfunction()
++
++function(foundation_import_windows_inputs)
++    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows" OR NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows" OR
++            NOT MSVC OR NOT COMPILER_IS_CLANG_CL OR NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC" OR
++            NOT WTF_CPU_X86_64 OR WTF_CPU_ARM64 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR EMSCRIPTEN)
++        message(FATAL_ERROR "Windows engine inputs require native Windows x64 clang-cl; no MinGW, cross-host or Wasm fallback")
++    endif()
++    if(NOT CMAKE_CXX_STANDARD EQUAL 23 OR NOT CMAKE_BUILD_TYPE STREQUAL "Release" OR
++            NOT CMAKE_MSVC_RUNTIME_LIBRARY STREQUAL "MultiThreaded")
++        message(FATAL_ERROR "Initial optional Windows engine requires C++23 Release and explicit static /MT CRT; ordinary Foundation policy is unchanged")
++    endif()
++    foreach(_environment IN ITEMS CL _CL_ LINK _LINK_)
++        if(NOT "$ENV{${_environment}}" STREQUAL "")
++            message(FATAL_ERROR "Clear ambient Windows compiler/linker flag injection before explicit engine maintenance")
++        endif()
++    endforeach()
++    foreach(_language IN ITEMS C CXX)
++        foreach(_suffix IN ITEMS "" _RELEASE _DEBUG _RELWITHDEBINFO _MINSIZEREL)
++            if("${CMAKE_${_language}_FLAGS${_suffix}}" MATCHES "(^|[ ;])/MDd?($|[ ;])" OR
++                    "${CMAKE_${_language}_FLAGS${_suffix}}" MATCHES "(/arch:AVX|-march=|-mcpu=|-mavx|-mfma|-mf16c)")
++                message(FATAL_ERROR "Windows engine forbids dynamic CRT or a global CPU-floor increase; optimized source leaves remain separately dispatched")
++            endif()
++        endforeach()
++    endforeach()
++    if(NOT EXISTS "${FOUNDATION_NATIVE_WINDOWS_INPUTS}" OR IS_DIRECTORY "${FOUNDATION_NATIVE_WINDOWS_INPUTS}")
++        message(FATAL_ERROR "Windows native engine needs its explicit retained input manifest")
++    endif()
++    file(SIZE "${FOUNDATION_NATIVE_WINDOWS_INPUTS}" _bytes)
++    if(_bytes GREATER 1048576)
++        message(FATAL_ERROR "Windows native-engine input manifest exceeds 1 MiB")
++    endif()
++    _foundation_windows_pin("${FOUNDATION_NATIVE_WINDOWS_INPUTS}" "${FOUNDATION_NATIVE_WINDOWS_INPUTS_SHA256}" "input manifest")
++    file(READ "${FOUNDATION_NATIVE_WINDOWS_INPUTS}" _document)
++    _foundation_windows_keys("${_document}" schema_version kind target build_type crt cpu_baseline
++        os_floor_declaration engine_cxx_standard dependency_prefix toolchain dependency_inventory woff2 libraries)
++    foreach(_field IN ITEMS schema_version engine_cxx_standard)
++        string(JSON _type TYPE "${_document}" ${_field})
++        if(NOT _type STREQUAL "NUMBER")
++            message(FATAL_ERROR "Windows native schema/standard must be JSON numbers")
++        endif()
++    endforeach()
++    foreach(_field IN ITEMS kind target build_type crt cpu_baseline os_floor_declaration woff2)
++        string(JSON _type TYPE "${_document}" ${_field})
++        if(NOT _type STREQUAL "STRING")
++            message(FATAL_ERROR "Windows native policy fields must be JSON strings")
++        endif()
++    endforeach()
++    _foundation_windows_json(_toolchain "${_document}" toolchain)
++    _foundation_windows_keys("${_toolchain}" compiler linker builtins compiler_version msvc_stl windows_sdk)
++    foreach(_field IN ITEMS kind target build_type crt cpu_baseline os_floor_declaration)
++        _foundation_windows_json(_${_field} "${_document}" ${_field})
++    endforeach()
++    _foundation_windows_json(_schema "${_document}" schema_version)
++    _foundation_windows_json(_standard "${_document}" engine_cxx_standard)
++    if(NOT _schema STREQUAL "1" OR NOT _standard STREQUAL "23" OR
++            NOT _kind STREQUAL "foundation-native-engine-windows-inputs" OR
++            NOT _target STREQUAL "windows-x86_64" OR NOT _build_type STREQUAL "Release" OR
++            NOT _crt STREQUAL "static-mt" OR NOT _cpu_baseline STREQUAL "x86_64-sse2" OR
++            NOT _os_floor_declaration STREQUAL "windows-10-1809-unqualified")
++        message(FATAL_ERROR "Windows native-engine manifest target/toolchain/floor declaration differs; no qualification is inferred")
++    endif()
++    _foundation_windows_json(_prefix "${_document}" dependency_prefix)
++    if(NOT IS_ABSOLUTE "${_prefix}" OR NOT IS_DIRECTORY "${_prefix}" OR IS_SYMLINK "${_prefix}" OR
++            "${_prefix}" MATCHES "[;\"\n\r]" OR "${_prefix}" MATCHES "\\$<")
++        message(FATAL_ERROR "Windows native dependencies need an explicit ordinary prefix")
++    endif()
++    file(REAL_PATH "${_prefix}" _prefix)
++    file(REAL_PATH "${FOUNDATION_NATIVE_DEPENDENCY_PREFIX}" _selected_prefix)
++    if(NOT _prefix STREQUAL _selected_prefix OR NOT FOUNDATION_NATIVE_DEPENDENCY_TARGET STREQUAL "windows-x86_64")
++        message(FATAL_ERROR "Windows manifest and port dependency prefix/target disagree")
++    endif()
++    foreach(_tool IN ITEMS compiler linker builtins)
++        _foundation_windows_json(_tool_record "${_document}" toolchain ${_tool})
++        _foundation_windows_keys("${_tool_record}" path sha256)
++        _foundation_windows_object_file(_${_tool} "${_document}" "${_tool}" toolchain ${_tool})
++    endforeach()
++    file(REAL_PATH "${CMAKE_CXX_COMPILER}" _selected_compiler)
++    file(REAL_PATH "${CMAKE_C_COMPILER}" _selected_c_compiler)
++    file(REAL_PATH "${CMAKE_LINKER}" _selected_linker)
++    _foundation_windows_json(_compiler_version "${_document}" toolchain compiler_version)
++    if(NOT _compiler STREQUAL _selected_compiler OR NOT _compiler STREQUAL _selected_c_compiler OR
++            NOT _linker STREQUAL _selected_linker OR
++            NOT _compiler_version STREQUAL CMAKE_CXX_COMPILER_VERSION)
++        message(FATAL_ERROR "Windows selected compiler/linker/version differs from retained inputs")
++    endif()
++    foreach(_sdk IN ITEMS msvc_stl windows_sdk)
++        _foundation_windows_json(_sdk_record "${_document}" toolchain ${_sdk})
++        _foundation_windows_keys("${_sdk_record}" root inventory)
++        _foundation_windows_json(_sdk_root "${_document}" toolchain ${_sdk} root)
++        if(NOT IS_ABSOLUTE "${_sdk_root}" OR NOT IS_DIRECTORY "${_sdk_root}" OR IS_SYMLINK "${_sdk_root}" OR
++                "${_sdk_root}" MATCHES "[;\"\n\r]" OR "${_sdk_root}" MATCHES "\\$<")
++            message(FATAL_ERROR "Windows ${_sdk} needs its separately retained host root")
++        endif()
++        _foundation_windows_object_file(_inventory "${_document}" "${_sdk} inventory" toolchain ${_sdk} inventory)
++        # The explicit producer verifies the complete declared SDK/STL contents;
++        # this stage binds its independently retained inventory, not a scan.
++    endforeach()
++    _foundation_windows_object_file(_dependency_inventory "${_document}" "native dependency inventory" dependency_inventory)
++    _foundation_windows_json(_woff2 "${_document}" woff2)
++    if(NOT _woff2 STREQUAL "ON" AND NOT _woff2 STREQUAL "OFF")
++        message(FATAL_ERROR "Windows manifest must explicitly select WOFF2 ON or OFF")
++    endif()
++    set(_required ICU::data ICU::i18n ICU::uc HarfBuzz::HarfBuzz HarfBuzz::ICU
++        JPEG::JPEG LibXml2::LibXml2 PNG::PNG SQLite3::SQLite3 WebP::libwebp WebP::demux
++        ZLIB::ZLIB CURL::libcurl OpenSSL::SSL OpenSSL::Crypto LibPSL::LibPSL
++        FoundationNative::nghttp2 Brotli::dec Brotli::common)
++    if(_woff2 STREQUAL "ON")
++        list(APPEND _required WOFF2::dec WOFF2::common)
++    endif()
++    string(JSON _count ERROR_VARIABLE _error LENGTH "${_document}" libraries)
++    list(LENGTH _required _expected_count)
++    if(_error OR NOT _count EQUAL _expected_count)
++        message(FATAL_ERROR "Windows native library map must contain exactly the selected closed target set")
++    endif()
++    foreach(_target IN LISTS _required)
++        if(TARGET "${_target}")
++            message(FATAL_ERROR "Windows native target already exists outside the admitted manifest: ${_target}")
++        endif()
++        _foundation_windows_json(_library_record "${_document}" libraries "${_target}")
++        _foundation_windows_keys("${_library_record}" path sha256 includes definitions links)
++        _foundation_windows_object_file(_library "${_document}" "${_target}" libraries "${_target}")
++        cmake_path(IS_PREFIX _prefix "${_library}" NORMALIZE _inside)
++        if(NOT _inside)
++            message(FATAL_ERROR "Windows native library escapes its admitted prefix: ${_target}")
++        endif()
++        add_library("${_target}" STATIC IMPORTED GLOBAL)
++        set_target_properties("${_target}" PROPERTIES IMPORTED_LOCATION "${_library}")
++        foreach(_property IN ITEMS includes definitions links)
++            string(JSON _items ERROR_VARIABLE _error LENGTH "${_document}" libraries "${_target}" ${_property})
++            if(_error OR _items GREATER 128)
++                message(FATAL_ERROR "Invalid bounded Windows native target property: ${_target}/${_property}")
++            endif()
++            set(_values)
++            if(_items GREATER 0)
++                math(EXPR _last "${_items} - 1")
++                foreach(_index RANGE 0 ${_last})
++                    _foundation_windows_json(_value "${_document}" libraries "${_target}" ${_property} ${_index})
++                    if("${_value}" MATCHES "[;\"\n\r]" OR "${_value}" MATCHES "\\$<")
++                        message(FATAL_ERROR "Windows native target property contains executable/list syntax")
++                    endif()
++                    if(_property STREQUAL "includes")
++                        if(NOT IS_ABSOLUTE "${_value}" OR NOT IS_DIRECTORY "${_value}" OR IS_SYMLINK "${_value}")
++                            message(FATAL_ERROR "Windows native target include must be a retained ordinary directory")
++                        endif()
++                        file(REAL_PATH "${_value}" _value)
++                        cmake_path(IS_PREFIX _prefix "${_value}" NORMALIZE _inside)
++                        if(NOT _inside)
++                            message(FATAL_ERROR "Windows native target include escapes the admitted prefix")
++                        endif()
++                    elseif(_property STREQUAL "definitions")
++                        if(NOT _value MATCHES "^[A-Z][A-Z0-9_]*(=[A-Za-z0-9_]+)?$")
++                            message(FATAL_ERROR "Windows native target definition is not a bounded scalar macro")
++                        endif()
++                    elseif(NOT _value IN_LIST _required AND NOT _value MATCHES "^(advapi32|bcrypt|crypt32|iphlpapi|normaliz|ole32|secur32|shell32|shlwapi|user32|version|winmm|ws2_32)$")
++                        message(FATAL_ERROR "Windows native target link escapes the closed target/system set")
++                    endif()
++                    list(APPEND _values "${_value}")
++                endforeach()
++            endif()
++            if(_property STREQUAL "includes")
++                set_target_properties("${_target}" PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${_values}")
++            elseif(_property STREQUAL "definitions")
++                set_target_properties("${_target}" PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${_values}")
++            else()
++                set_target_properties("${_target}" PROPERTIES INTERFACE_LINK_LIBRARIES "${_values}")
++            endif()
++        endforeach()
++    endforeach()
++    set(CLANG_BUILTINS_LIBRARY "${_builtins}" PARENT_SCOPE)
++    set(FOUNDATION_NATIVE_WINDOWS_INPUTS_ADMITTED TRUE PARENT_SCOPE)
++    set(FOUNDATION_NATIVE_WINDOWS_WOFF2 "${_woff2}" PARENT_SCOPE)
++endfunction()
+diff --git a/Source/cmake/OptionsFoundation.cmake b/Source/cmake/OptionsFoundation.cmake
+new file mode 100644
+--- /dev/null
++++ b/Source/cmake/OptionsFoundation.cmake
+@@ -0,0 +1,182 @@
++# Private source-only candidate for the pinned direct WebCore embedder.
++# This is an engine port, not the Foundation project's ordinary CMake profile.
++# Windows remains an explicit follow-up: clang-cl/C++23, native WTF services,
++# Generic RunLoop (no hidden message window), DirectWrite and native resources.
++if (NOT CMAKE_SYSTEM_NAME MATCHES "^(Linux|Windows)$" OR EMSCRIPTEN)
++    message(FATAL_ERROR "PORT=Foundation candidate supports only native Linux x86_64/aarch64; Windows clang-cl and browser builds need their own qualified port configuration")
++endif ()
++if (NOT WTF_CPU_X86_64 AND NOT WTF_CPU_ARM64)
++    message(FATAL_ERROR "PORT=Foundation candidate requires native x86_64 or aarch64 target detection")
++endif ()
++
++set(FOUNDATION_NATIVE_DEPENDENCY_PREFIX "" CACHE PATH "Verified dependencies for this native engine target; never the supplier Wasm sysroot")
++set(FOUNDATION_NATIVE_DEPENDENCY_TARGET "" CACHE STRING "Dependency identity: linux-x86_64 or linux-aarch64")
++if (WIN32)
++    if (NOT WTF_CPU_X86_64 OR WTF_CPU_ARM64 OR NOT COMPILER_IS_CLANG_CL OR NOT MSVC OR
++            NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
++        message(FATAL_ERROR "Optional Windows engine requires native x64 clang-cl; no MinGW/ARM64 fallback")
++    endif ()
++    set(_foundation_dependency_target windows-x86_64)
++elseif (WTF_CPU_ARM64)
++    set(_foundation_dependency_target linux-aarch64)
++else ()
++    set(_foundation_dependency_target linux-x86_64)
++endif ()
++if (NOT IS_ABSOLUTE "${FOUNDATION_NATIVE_DEPENDENCY_PREFIX}" OR NOT IS_DIRECTORY "${FOUNDATION_NATIVE_DEPENDENCY_PREFIX}")
++    message(FATAL_ERROR "Provide an existing absolute FOUNDATION_NATIVE_DEPENDENCY_PREFIX with native target libraries and provenance; no dependency preparation or fallback is performed")
++endif ()
++if (NOT FOUNDATION_NATIVE_DEPENDENCY_TARGET STREQUAL _foundation_dependency_target)
++    message(FATAL_ERROR "FOUNDATION_NATIVE_DEPENDENCY_TARGET must match ${_foundation_dependency_target}; Wasm archives cannot be reused")
++endif ()
++file(REAL_PATH "${FOUNDATION_NATIVE_DEPENDENCY_PREFIX}" FOUNDATION_NATIVE_DEPENDENCY_PREFIX)
++if (FOUNDATION_NATIVE_DEPENDENCY_PREFIX MATCHES "(^|/)(wasm-sysroot|emsdk)(/|$)" OR CMAKE_CXX_COMPILER_TARGET MATCHES "wasm|emscripten")
++    message(FATAL_ERROR "A Wasm dependency prefix/toolchain cannot configure this native candidate")
++endif ()
++
++# Root dependency lookup in the selected prefix. Build tools still run on the
++# host. This does not certify archive architecture/provenance: verify the retained
++# prefix before configuring, and inspect the final native link separately.
++set(CMAKE_FIND_ROOT_PATH "${FOUNDATION_NATIVE_DEPENDENCY_PREFIX}")
++set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
++set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
++set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
++set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
++list(PREPEND CMAKE_PREFIX_PATH "${FOUNDATION_NATIVE_DEPENDENCY_PREFIX}")
++if (WIN32)
++    # Import only the independently pinned native dependency map. In particular
++    # do not invoke supplier Find modules with unconditional pkg_check_modules.
++    include("${CMAKE_CURRENT_LIST_DIR}/FoundationWindowsInputs.cmake")
++    foundation_import_windows_inputs()
++    include(OptionsMSVC)
++    add_definitions(-D_WINDOWS -DNTDDI_VERSION=0x0A000006 -D_WIN32_WINNT=0x0A00
++        -DNOMINMAX -DUNICODE -D_UNICODE -DNOCRYPT -D_CRT_NONSTDC_NO_DEPRECATE
++        -D_SILENCE_CXX23_DENORM_DEPRECATION_WARNING -D_WINSOCKAPI_=
++        -DBIB_ENGINE_PRIVATE_STATIC_COMPONENT=1 -DJS_NO_EXPORT=1
++        -DBIB_FOUNDATION_SYSTEM_DWRITE_ONLY=1)
++    # This is a separate, unqualified optional-engine declaration, not a change
++    # to Foundation's ordinary Windows client/runtime floor.
++    set(FOUNDATION_NATIVE_WINDOWS_FLOOR_DECLARATION "windows-10-1809-unqualified")
++else ()
++set(_foundation_pkgconfig_dirs "${FOUNDATION_NATIVE_DEPENDENCY_PREFIX}/lib/pkgconfig:${FOUNDATION_NATIVE_DEPENDENCY_PREFIX}/share/pkgconfig")
++if (CMAKE_LIBRARY_ARCHITECTURE)
++    string(PREPEND _foundation_pkgconfig_dirs "${FOUNDATION_NATIVE_DEPENDENCY_PREFIX}/lib/${CMAKE_LIBRARY_ARCHITECTURE}/pkgconfig:")
++endif ()
++set(ENV{PKG_CONFIG_LIBDIR} "${_foundation_pkgconfig_dirs}")
++set(ENV{PKG_CONFIG_PATH} "")
++unset(ENV{PKG_CONFIG_SYSROOT_DIR})
++endif ()
++
++find_package(Threads REQUIRED)
++set(CMAKE_C_VISIBILITY_PRESET hidden)
++set(CMAKE_CXX_VISIBILITY_PRESET hidden)
++set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
++add_definitions(-DBUILDING_FOUNDATION_EMBEDDER__)
++
++set(PROJECT_VERSION_MAJOR 1)
++set(PROJECT_VERSION_MINOR 0)
++set(PROJECT_VERSION_MICRO 0)
++set(PROJECT_VERSION 1.0.0)
++
++set(ENABLE_JAVASCRIPTCORE ON)
++set(ENABLE_WEBCORE ON)
++set(ENABLE_WEBKIT OFF)
++set(ENABLE_WEBKIT_LEGACY OFF)
++set(ENABLE_WEBINSPECTORUI OFF)
++set(ENABLE_TOOLS OFF)
++
++WEBKIT_OPTION_BEGIN()
++WEBKIT_OPTION_DEFINE(ENABLE_STATIC_JSC "Build the private engine's JavaScriptCore statically" PUBLIC ON)
++WEBKIT_OPTION_DEFINE(USE_SKIA_CPU_ONLY "Exclude Skia/WebCore graphics driver dependencies" PRIVATE ON)
++WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_JIT PRIVATE OFF)
++WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_DFG_JIT PRIVATE OFF)
++WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_FTL_JIT PRIVATE OFF)
++WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_C_LOOP PRIVATE ON)
++WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_SAMPLING_PROFILER PRIVATE OFF)
++WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_WEBASSEMBLY PRIVATE OFF)
++WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_REMOTE_INSPECTOR PRIVATE OFF)
++WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_SYSTEM_MALLOC PRIVATE ON)
++WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_SKIA PRIVATE ON)
++WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_SKIA_ENCODERS PRIVATE OFF)
++
++# Match the browser prototype's bounded HTML surface, retaining actual DOM,
++# editing, layout, storage and script execution. Video has no registered native
++# media engine; the browser-only media host bridge is not linked here.
++WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_VIDEO PRIVATE ON)
++foreach (_feature IN ITEMS ENABLE_FTPDIR ENABLE_WEB_AUDIO ENABLE_WEBGL ENABLE_WEBGPU
++    ENABLE_MEDIA_SOURCE ENABLE_MEDIA_STREAM ENABLE_WEB_RTC ENABLE_ENCRYPTED_MEDIA
++    ENABLE_GAMEPAD ENABLE_SPEECH_SYNTHESIS ENABLE_NOTIFICATIONS ENABLE_GEOLOCATION
++    ENABLE_FULLSCREEN_API ENABLE_WEBXR ENABLE_XSLT ENABLE_MATHML ENABLE_WEBDRIVER
++    ENABLE_MINIBROWSER ENABLE_API_TESTS USE_AVIF USE_JPEGXL USE_LCMS USE_WOFF2)
++    WEBKIT_OPTION_DEFAULT_PORT_VALUE(${_feature} PRIVATE OFF)
++endforeach ()
++if (WIN32)
++    WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_WOFF2 PRIVATE ${FOUNDATION_NATIVE_WINDOWS_WOFF2})
++    WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_JAVASCRIPT_SHELL PRIVATE OFF)
++endif ()
++WEBKIT_OPTION_END()
++
++if (WIN32)
++    if (ENABLE_JAVASCRIPT_SHELL OR USE_SKIA_ENCODERS OR USE_SKIA_OPENTYPE_SVG OR
++            NOT USE_WOFF2 STREQUAL FOUNDATION_NATIVE_WINDOWS_WOFF2)
++        message(FATAL_ERROR "Windows manifest selects no JS shell, encoders or OpenType-SVG font dependencies and fixes the explicit WOFF2 policy")
++    endif ()
++endif ()
++
++if (NOT ENABLE_STATIC_JSC OR NOT ENABLE_C_LOOP OR NOT USE_SYSTEM_MALLOC OR NOT USE_SKIA OR NOT USE_SKIA_CPU_ONLY)
++    message(FATAL_ERROR "This candidate requires static JSC, CLoop, system malloc and CPU-only Skia")
++endif ()
++if (ENABLE_JIT OR ENABLE_DFG_JIT OR ENABLE_FTL_JIT OR ENABLE_SAMPLING_PROFILER OR ENABLE_WEBASSEMBLY OR ENABLE_REMOTE_INSPECTOR OR ENABLE_WEBGL OR ENABLE_WEBGPU)
++    message(FATAL_ERROR "This candidate excludes JIT, profiler, guest Wasm, inspector and GPU APIs")
++endif ()
++
++# Separate shared embedder behavior from actual compiler/OS restrictions. Never
++# define __EMSCRIPTEN__ on a native target: native WorkQueues/GC remain native.
++SET_AND_EXPOSE_TO_BUILD(USE_FOUNDATION_EMBEDDER ON)
++SET_AND_EXPOSE_TO_BUILD(USE_SKIA_CPU_ONLY ON)
++SET_AND_EXPOSE_TO_BUILD(USE_GENERIC_EVENT_LOOP ON)
++SET_AND_EXPOSE_TO_BUILD(USE_WINDOWS_EVENT_LOOP OFF)
++SET_AND_EXPOSE_TO_BUILD(WTF_DEFAULT_EVENT_LOOP OFF)
++if (WIN32)
++    SET_AND_EXPOSE_TO_BUILD(USE_UNIX_DOMAIN_SOCKETS OFF)
++else ()
++SET_AND_EXPOSE_TO_BUILD(USE_UNIX_DOMAIN_SOCKETS ON)
++endif ()
++SET_AND_EXPOSE_TO_BUILD(USE_INSPECTOR_SOCKET_SERVER OFF)
++SET_AND_EXPOSE_TO_BUILD(USE_CURL ON)
++SET_AND_EXPOSE_TO_BUILD(USE_OPENSSL ON)
++SET_AND_EXPOSE_TO_BUILD(USE_HARFBUZZ ON)
++set(LOWERCASE_EVENT_LOOP_TYPE generic)
++
++if (WIN32)
++    # DirectWrite consumes TTF/OTF/TTC. WOFF1 conversion remains in WebCore;
++    # optional WOFF2 conversion uses exactly the retained decoder/common graph.
++    SET_AND_EXPOSE_TO_BUILD(HAVE_WOFF_SUPPORT OFF)
++    SET_AND_EXPOSE_TO_BUILD(USE_WOFF2 ${FOUNDATION_NATIVE_WINDOWS_WOFF2})
++else ()
++find_package(ICU 70.1 REQUIRED COMPONENTS data i18n uc)
++find_package(HarfBuzz 1.4.2 REQUIRED COMPONENTS ICU)
++find_package(Freetype 2.9.0 REQUIRED)
++find_package(Fontconfig 2.13.0 REQUIRED)
++include(WOFF2Checks)
++if (NOT FREETYPE_WOFF2_SUPPORT_IS_AVAILABLE)
++    message(FATAL_ERROR "Native FreeType needs Brotli/WOFF2 support in the selected dependency prefix")
++endif ()
++SET_AND_EXPOSE_TO_BUILD(HAVE_WOFF_SUPPORT ON)
++find_package(JPEG REQUIRED)
++find_package(LibXml2 2.9.7 REQUIRED)
++find_package(PNG REQUIRED)
++find_package(SQLite3 REQUIRED)
++if (NOT TARGET SQLite3::SQLite3)
++    add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
++endif ()
++find_package(WebP REQUIRED COMPONENTS demux)
++find_package(ZLIB REQUIRED)
++find_package(CURL 7.85.0 REQUIRED)
++find_package(OpenSSL REQUIRED)
++find_package(LibPSL 0.20.2 REQUIRED)
++target_link_libraries(LibPSL::LibPSL INTERFACE ICU::uc)
++endif ()
++
++if (NOT BIB_NATIVE_EMBEDDER_CMAKE OR NOT IS_ABSOLUTE "${BIB_NATIVE_EMBEDDER_CMAKE}" OR NOT EXISTS "${BIB_NATIVE_EMBEDDER_CMAKE}")
++    message(FATAL_ERROR "Provide BIB_NATIVE_EMBEDDER_CMAKE=/absolute/wrapper/src/embedder/native.cmake after composing the native host and CPU source patches")
++endif ()
+diff --git a/Source/cmake/WebKitCommon.cmake b/Source/cmake/WebKitCommon.cmake
+--- a/Source/cmake/WebKitCommon.cmake
++++ b/Source/cmake/WebKitCommon.cmake
+@@ -44,6 +44,7 @@
+     # -----------------------------------------------------------------------------
+     set(ALL_PORTS
+         Emscripten
++        Foundation
+         GTK
+         JSCOnly
+         Mac

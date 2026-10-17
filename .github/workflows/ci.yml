@@ -9,15 +9,70 @@ concurrency:
   group: feedback-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  focused:
-    name: Focused checks (not release qualification)
+  retained-selection:
+    name: Select pinned retained feedback inputs
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      retained: ${{ steps.retained.outputs.retained }}
+      descriptor_sha256: ${{ steps.retained.outputs.descriptor_sha256 }}
+      artifact_name: ${{ steps.retained.outputs.retained == 'true' && format('feedback-retained-{0}-{1}', github.run_id, github.run_attempt) || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 2
+      - name: Acquire only explicitly selected retained feedback inputs
+        id: retained
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build
+          python3 -B tools/appended_ci.py --output build/appended-feedback
+      - name: Require explicit retained selection outputs
+        env:
+          RETAINED: ${{ steps.retained.outputs.retained }}
+          DESCRIPTOR_SHA256: ${{ steps.retained.outputs.descriptor_sha256 }}
+        run: |
+          test "$RETAINED" = true || test "$RETAINED" = false
+          if test "$RETAINED" = true; then test -n "$DESCRIPTOR_SHA256"; fi
+      - name: Share only the pinned original kernel descriptor
+        if: steps.retained.outputs.retained == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: feedback-retained-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/appended-feedback/descriptor.json
+          if-no-files-found: error
+          retention-days: 1
+
+  focused:
+    name: Focused checks (not release qualification)
+    needs: [retained-selection]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Require successful retained input selection
+        env:
+          SELECTION_RESULT: ${{ needs.retained-selection.result }}
+        run: test "$SELECTION_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Read the selected pinned kernel descriptor
+        if: needs.retained-selection.outputs.retained == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.retained-selection.outputs.artifact_name }}
+          path: build/appended-feedback
+      - name: Bind the same retained descriptor for every selector invocation
+        if: needs.retained-selection.outputs.retained == 'true'
+        env:
+          DESCRIPTOR_SHA256: ${{ needs.retained-selection.outputs.descriptor_sha256 }}
+        run: |
+          printf '%s\n' "FOUNDATION_APPENDED_KERNEL_DESCRIPTOR=$GITHUB_WORKSPACE/build/appended-feedback/descriptor.json" \
+            "FOUNDATION_APPENDED_KERNEL_DESCRIPTOR_SHA256=$DESCRIPTOR_SHA256" >> "$GITHUB_ENV"
       - name: Select conservative feedback scope from local Git
         id: changes
         run: python3 -B tools/ci_changes.py
@@ -42,13 +97,32 @@ jobs:
         run: echo 'Focused feedback only. Full tools, platform, package and GUI qualification are separate.' >> "$GITHUB_STEP_SUMMARY"
 
   workflow-syntax:
+    needs: [retained-selection]
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Require successful retained input selection
+        env:
+          SELECTION_RESULT: ${{ needs.retained-selection.result }}
+        run: test "$SELECTION_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 2
+      - name: Read the selected pinned kernel descriptor
+        if: needs.retained-selection.outputs.retained == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.retained-selection.outputs.artifact_name }}
+          path: build/appended-feedback
+      - name: Bind the same retained descriptor for every selector invocation
+        if: needs.retained-selection.outputs.retained == 'true'
+        env:
+          DESCRIPTOR_SHA256: ${{ needs.retained-selection.outputs.descriptor_sha256 }}
+        run: |
+          printf '%s\n' "FOUNDATION_APPENDED_KERNEL_DESCRIPTOR=$GITHUB_WORKSPACE/build/appended-feedback/descriptor.json" \
+            "FOUNDATION_APPENDED_KERNEL_DESCRIPTOR_SHA256=$DESCRIPTOR_SHA256" >> "$GITHUB_ENV"
       - name: Select conservative feedback scope from local Git
         id: changes
         run: python3 -B tools/ci_changes.py
@@ -65,13 +139,32 @@ jobs:
 
   shared-gui:
     name: Shared GUI contracts and generic hosts
+    needs: [retained-selection]
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      - name: Require successful retained input selection
+        env:
+          SELECTION_RESULT: ${{ needs.retained-selection.result }}
+        run: test "$SELECTION_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 2
+      - name: Read the selected pinned kernel descriptor
+        if: needs.retained-selection.outputs.retained == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.retained-selection.outputs.artifact_name }}
+          path: build/appended-feedback
+      - name: Bind the same retained descriptor for every selector invocation
+        if: needs.retained-selection.outputs.retained == 'true'
+        env:
+          DESCRIPTOR_SHA256: ${{ needs.retained-selection.outputs.descriptor_sha256 }}
+        run: |
+          printf '%s\n' "FOUNDATION_APPENDED_KERNEL_DESCRIPTOR=$GITHUB_WORKSPACE/build/appended-feedback/descriptor.json" \
+            "FOUNDATION_APPENDED_KERNEL_DESCRIPTOR_SHA256=$DESCRIPTOR_SHA256" >> "$GITHUB_ENV"
       - name: Select conservative feedback scope from local Git
         id: changes
         run: python3 -B tools/ci_changes.py
@@ -88,13 +181,32 @@ jobs:
 
   changed-tools:
     name: Affected complete infrastructure suites
+    needs: [retained-selection]
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      - name: Require successful retained input selection
+        env:
+          SELECTION_RESULT: ${{ needs.retained-selection.result }}
+        run: test "$SELECTION_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 2
+      - name: Read the selected pinned kernel descriptor
+        if: needs.retained-selection.outputs.retained == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.retained-selection.outputs.artifact_name }}
+          path: build/appended-feedback
+      - name: Bind the same retained descriptor for every selector invocation
+        if: needs.retained-selection.outputs.retained == 'true'
+        env:
+          DESCRIPTOR_SHA256: ${{ needs.retained-selection.outputs.descriptor_sha256 }}
+        run: |
+          printf '%s\n' "FOUNDATION_APPENDED_KERNEL_DESCRIPTOR=$GITHUB_WORKSPACE/build/appended-feedback/descriptor.json" \
+            "FOUNDATION_APPENDED_KERNEL_DESCRIPTOR_SHA256=$DESCRIPTOR_SHA256" >> "$GITHUB_ENV"
       - name: Select conservative feedback scope from local Git
         id: changes
         run: python3 -B tools/ci_changes.py

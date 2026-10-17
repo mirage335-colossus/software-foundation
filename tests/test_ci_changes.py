@@ -145,6 +145,25 @@ class ClassificationTests(unittest.TestCase):
             (root / 'tests/test_consumer.py').write_text("subprocess.run(['consumer.py'])")
             self.assertEqual(ci.infrastructure_suites(['tools/sdk.py'], root), ['consumer'])
 
+    def test_reviewed_policy_path_metadata_does_not_hide_real_script_dependencies(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root / 'tools').mkdir(); (root / 'tests').mkdir()
+            (root / 'tools/agent_edit.py').write_text('')
+            metadata = 'COMPOSITION_FILES = frozenset({"tools/agent_edit.py"})\n'
+            (root / 'tools/appended_policy.py').write_text(metadata)
+            (root / 'tools/consumer.py').write_text('module("agent_edit")\n')
+            (root / 'tests/test_appended_policy.py').write_text('import appended_policy\n')
+            (root / 'tests/test_consumer.py').write_text('import consumer\n')
+            self.assertEqual(['consumer'], ci.infrastructure_suites(['tools/agent_edit.py'], root))
+            (root / 'tools/appended_policy.py').write_text(
+                metadata + 'subprocess.run(["tools/agent_edit.py"])\n')
+            self.assertEqual(['appended_policy', 'consumer'],
+                             ci.infrastructure_suites(['tools/agent_edit.py'], root))
+            (root / 'tools/appended_policy.py').write_text(
+                'COMPOSITION_FILES = frozenset(load("tools/agent_edit.py"))\n')
+            self.assertEqual(['appended_policy', 'consumer'],
+                             ci.infrastructure_suites(['tools/agent_edit.py'], root))
+
 
     def test_shared_test_fixtures_select_transitive_whole_suite_consumers(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -154,6 +173,33 @@ class ClassificationTests(unittest.TestCase):
             (root/'tests/test_first.py').write_text('from . import test_fixture')
             (root/'tests/test_second.py').write_text('import test_first')
             self.assertEqual(ci.infrastructure_suites(['tests/test_fixture.py'], root), ['first', 'fixture', 'second'])
+
+    def test_selected_suite_cannot_impersonate_its_unchanged_production_module(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root / 'tools').mkdir(); (root / 'tests').mkdir()
+            (root / 'tools/agent_edit.py').write_text('')
+            (root / 'tools/ci_changes.py').write_text('')
+            (root / 'tools/consumer.py').write_text('import ci_changes\n')
+            (root / 'tests/test_ci_changes.py').write_text('import agent_edit\n')
+            (root / 'tests/test_consumer.py').write_text('import consumer\n')
+            (root / 'tests/test_fixture_consumer.py').write_text('import test_ci_changes\n')
+            self.assertEqual(['ci_changes', 'fixture_consumer'],
+                             ci.infrastructure_suites(['tools/agent_edit.py'], root))
+            # A real production import preserves the ordinary transitive edge.
+            (root / 'tools/ci_changes.py').write_text('import agent_edit\n')
+            self.assertEqual(['ci_changes', 'consumer', 'fixture_consumer'],
+                             ci.infrastructure_suites(['tools/agent_edit.py'], root))
+
+    def test_production_consumers_of_actual_test_fixtures_remain_in_reference_closure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root / 'tools').mkdir(); (root / 'tests').mkdir()
+            (root / 'tools/agent_edit.py').write_text('')
+            (root / 'tools/consumer.py').write_text('import test_fixture\n')
+            (root / 'tests/test_fixture.py').write_text('import agent_edit\n')
+            (root / 'tests/test_consumer.py').write_text('import consumer\n')
+            (root / 'tests/test_transitive.py').write_text('import test_consumer\n')
+            self.assertEqual(['consumer', 'fixture', 'transitive'],
+                             ci.infrastructure_suites(['tools/agent_edit.py'], root))
 
     def test_actual_whole_suite_runner_rejects_skipped_and_expected_failure_cases(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -418,6 +464,445 @@ class GitSelectionTests(unittest.TestCase):
         self.assertIn('does not qualify', summary.read_text())
 
 
+class AppendedSelectionTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name) / 'source'
+        self.root.mkdir()
+        self.write('src/main.cpp', 'kernel implementation')
+        self.write('src-web-appended/index.html', '<h1>Product</h1>')
+        self.write('src-bin-appended/main.c', 'int app_step(void) { return 0; }')
+        from appended_project import default_document
+        self.document = default_document()
+        self.document['appended']['web'].update(enabled=True, entry='index.html')
+        self.document['appended']['binary']['enabled'] = True
+        self.document['startup']['primary'] = 'web'
+        self.configure()
+        from appended_policy import kernel_source_tree
+        self.inputs = kernel_source_tree(self.root)
+        self.descriptor = {'schema_version': 1, 'kind': 'foundation-kernel', 'carrier': 'html',
+                           'profile': 'both', 'append_format': 1, 'abi': {'major': 1, 'minor': 0},
+                           'capabilities': [], 'services': [], 'boundary_offset': None,
+                           'executable': {'length': 1, 'sha256': '0' * 64},
+                           'provenance': {'scope': 'selector-fixture-only'}, 'kernel_inputs': self.inputs}
+
+    def write(self, name, source):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding='utf-8')
+        return path
+
+    def configure(self): self.write('foundation-project.json', json.dumps(self.document))
+
+    def selection(self, paths, **kwargs):
+        with patch.object(ci, 'changed_paths', return_value=paths):
+            return ci.select(self.root, 'push', {}, '', **kwargs)
+
+    def test_source_inventory_alone_cannot_claim_retained_capability_compatibility(self):
+        result = self.selection(['src-web-appended/index.html'], kernel_inputs=self.inputs)
+        self.assertEqual('appended-maintenance', result['scope'])
+        self.assertTrue(result['kernel_inputs']['eligible'])
+        self.assertTrue(result['maintenance_required'])
+        self.assertFalse(any(result[field] for field in ('build', 'gui', 'retained_eligible')))
+        self.assertEqual('unverified', result['requirement_checks'])
+        self.assertFalse(result['package_requirements_checked'])
+        self.assertIn('capabilities are unverified', result['reason'])
+        self.assertIn('web-check', result['actions'])
+
+    def test_acquisition_selection_allowance_keeps_raw_identity_and_descriptor_contract_checks(self):
+        self.document['kernel']['selection'] = 'foundation'
+        self.configure()
+        result = self.selection(['foundation-project.json'], kernel_descriptor=self.descriptor)
+        self.assertEqual('appended', result['scope'])
+        self.assertTrue(result['retained_eligible'])
+        self.assertFalse(result['build'])
+        self.assertFalse(result['gui'])
+        self.assertEqual('foundation-appended-kernel-v2-acquisition-selection-v1',
+                         result['kernel_inputs']['comparison_policy'])
+        self.assertNotEqual(result['kernel_inputs']['expected_sha256'], result['kernel_inputs']['actual_sha256'])
+        incompatible = self.selection(['foundation-project.json'],
+                                      kernel_descriptor=dict(self.descriptor, profile='binary'))
+        self.assertTrue(incompatible['kernel_inputs']['eligible'])
+        self.assertFalse(incompatible['retained_eligible'])
+        self.assertTrue(incompatible['maintenance_required'])
+        self.assertIn('incompatible', incompatible['reason'])
+
+    def test_new_pure_checkout_and_acquisition_helpers_have_reviewed_feedback_suites(self):
+        paths = ['tools/appended_checkout.py', 'tools/appended_ci.py', '.github/appended-retained.json']
+        result = self.selection(paths, kernel_descriptor=self.descriptor)
+        self.assertEqual('appended', result['scope'])
+        self.assertFalse(result['build'])
+        self.assertFalse(result['gui'])
+        self.assertTrue({'appended_checkout', 'appended_ci'} <= set(result['tool_suites']))
+        self.assertIn('appended_checkout', ci.infrastructure_suites(['tools/appended_checkout.py']))
+        self.assertIn('appended_ci', ci.infrastructure_suites(['tools/appended_ci.py']))
+        self.assertNotIn('apt_repo', result['tool_suites'])
+        self.assertTrue({'build', 'artifact', 'apt_repo'} <=
+                        set(ci.infrastructure_suites(['tools/appended_checkout.py'])))
+
+    def test_selected_profiles_and_components_require_a_compatible_retained_descriptor(self):
+        from appended_policy import kernel_source_tree
+        cases = [('both', 'auto', 'binary', False),
+                 ('binary', 'both', 'binary', False),
+                 ('neither', 'both', 'binary', False),
+                 ('neither', 'minimal', 'binary', False),
+                 ('binary', 'auto', 'both', True),
+                 ('neither', 'auto', 'binary', True),
+                 ('neither', 'both', 'both', True)]
+        for mode, selected_profile, retained_profile, eligible in cases:
+            with self.subTest(mode=mode, selected=selected_profile, retained=retained_profile):
+                for name in ('web', 'binary'):
+                    self.document['appended'][name]['enabled'] = mode in (name, 'both')
+                self.document['startup']['primary'] = 'compiled'
+                self.document['kernel']['profile'] = selected_profile
+                self.configure()
+                descriptor = dict(self.descriptor, profile=retained_profile,
+                                  kernel_inputs=kernel_source_tree(self.root))
+                with patch.object(ci.subprocess, 'run', side_effect=AssertionError('no build fallback')):
+                    result = self.selection(['foundation-project.json'], kernel_descriptor=descriptor)
+                self.assertTrue(result['kernel_inputs']['eligible'])
+                self.assertEqual(eligible, result['retained_eligible'])
+                self.assertEqual(not eligible, result['maintenance_required'])
+                self.assertFalse(result['build'])
+                self.assertFalse(result['gui'])
+                if not eligible:
+                    self.assertIn('retained kernel contract is incompatible', result['reason'])
+
+    def test_nonminimal_selected_profile_without_payload_stays_on_retained_only_route(self):
+        for name in ('web', 'binary'):
+            self.document['appended'][name]['enabled'] = False
+        self.document['startup']['primary'] = 'compiled'
+        self.document['kernel']['profile'] = 'both'
+        self.configure()
+        result = self.selection(['src/main.cpp'])
+        self.assertEqual('appended-maintenance', result['scope'])
+        self.assertTrue(result['maintenance_required'])
+        self.assertFalse(result['build'])
+        self.assertFalse(result['gui'])
+
+    def test_descriptor_inventory_cannot_be_overridden_by_an_unrelated_source_projection(self):
+        unrelated = dict(self.inputs, tree_sha256='f' * 64)
+        result = self.selection(['src-web-appended/index.html'], kernel_inputs=unrelated,
+                                kernel_descriptor=self.descriptor)
+        self.assertTrue(result['maintenance_required'])
+        self.assertFalse(any(result[field] for field in ('build', 'gui', 'retained_eligible')))
+        self.assertIn('inventory differs from the authenticated kernel descriptor', result['reason'])
+
+    def test_malformed_full_descriptor_never_grants_retained_eligibility(self):
+        for changed in ({'profile': 'unrecognized'}, {'abi': {'major': 0, 'minor': 0}},
+                        {'services': ['duplicate', 'duplicate']}, {'carrier': 'unknown'}):
+            with self.subTest(changed=changed):
+                result = self.selection(['src-web-appended/index.html'],
+                                        kernel_descriptor=dict(self.descriptor, **changed))
+                self.assertTrue(result['maintenance_required'])
+                self.assertFalse(any(result[field] for field in ('build', 'gui', 'retained_eligible')))
+                self.assertIn('retained kernel contract unavailable', result['reason'])
+
+    def test_baseline_abi_is_required_even_when_supplied_package_requirements_match_a_different_major(self):
+        descriptor = dict(self.descriptor, abi={'major': 2, 'minor': 0})
+        for requirements in (None, {'abi': {'major': 2, 'minor': 0}, 'services': [], 'capabilities': []}):
+            with self.subTest(requirements=requirements):
+                result = self.selection(['src-web-appended/index.html'], kernel_descriptor=descriptor,
+                                        payload_requirements=requirements)
+                self.assertTrue(result['maintenance_required'])
+                self.assertFalse(result['retained_eligible'])
+                self.assertFalse(result['build'])
+                self.assertIn('Kernel ABI is incompatible', result['reason'])
+
+    def test_explicit_package_abi_service_and_capability_requirements_use_shared_compatibility_checks(self):
+        requirements = {'abi': {'major': 1, 'minor': 1},
+                        'services': ['org.example.counter'], 'capabilities': ['org.example.counter.v1']}
+        descriptor = dict(self.descriptor, abi={'major': 1, 'minor': 1},
+                          services=requirements['services'], capabilities=requirements['capabilities'])
+        accepted = self.selection(['src-web-appended/index.html'], kernel_descriptor=descriptor,
+                                  payload_requirements=requirements)
+        self.assertTrue(accepted['retained_eligible'])
+        self.assertEqual('project-profile-and-explicit-package-requirements', accepted['requirement_checks'])
+        self.assertTrue(accepted['package_requirements_checked'])
+        for changed, reason in (({'abi': {'major': 1, 'minor': 0}}, 'Kernel ABI is incompatible'),
+                                ({'services': []}, 'missing required services'),
+                                ({'capabilities': []}, 'missing required capabilities')):
+            with self.subTest(changed=changed):
+                rejected = self.selection(['src-web-appended/index.html'],
+                                          kernel_descriptor=dict(descriptor, **changed),
+                                          payload_requirements=requirements)
+                self.assertTrue(rejected['maintenance_required'])
+                self.assertFalse(any(rejected[field] for field in ('build', 'gui', 'retained_eligible')))
+                self.assertFalse(rejected['package_requirements_checked'])
+                self.assertIn(reason, rejected['reason'])
+
+    def test_malformed_explicit_package_requirements_are_rejected_without_native_work(self):
+        for requirements in ({}, {'abi': {'major': 1, 'minor': 0}, 'services': [], 'capabilities': [], 'unknown': 1},
+                             {'abi': {'major': 1, 'minor': 0}, 'services': ['same', 'same'], 'capabilities': []}):
+            with self.subTest(requirements=requirements):
+                result = self.selection(['src-web-appended/index.html'], kernel_descriptor=self.descriptor,
+                                        payload_requirements=requirements)
+                self.assertTrue(result['maintenance_required'])
+                self.assertFalse(any(result[field] for field in ('build', 'gui', 'retained_eligible')))
+                self.assertIn('retained kernel contract is incompatible', result['reason'])
+
+    def test_known_mixed_payload_and_product_changes_use_retained_feedback(self):
+        self.write('src-web-appended/index.html', '<h1>Updated product</h1>')
+        self.write('src-bin-appended/main.c', 'int app_step(void) { return 1; }')
+        self.document['application']['name'] = 'Renamed product'
+        self.configure()
+        result = self.selection(['src-web-appended/index.html', 'src-bin-appended/main.c',
+                                 'foundation-project.json'], kernel_descriptor=self.descriptor)
+        self.assertEqual('appended', result['scope'])
+        self.assertFalse(any(result[field] for field in ('build', 'gui', 'maintenance_required')))
+        self.assertTrue(result['retained_eligible'])
+        self.assertEqual('project-profile-and-baseline-abi-only', result['requirement_checks'])
+        self.assertFalse(result['package_requirements_checked'])
+        self.assertEqual('not-run', result['payload_execution'])
+        self.assertEqual('development-feedback-only', result['qualification'])
+        self.assertIn('appended_policy', result['tool_suites'])
+        self.assertTrue({'web-check', 'guest-compile', 'compose'} <= set(result['actions']))
+
+    def test_metadata_narrative_and_tests_select_tooling_without_kernel_work(self):
+        self.write('README.md', 'Downstream project author')
+        self.write('LICENSE', 'New application license; original kernel notices stay pinned')
+        self.write('docs/new-guide.md', 'New application guide')
+        self.write('.agent-pending/new-phase.md', 'Further qualification remains pending')
+        self.write('tests/test_source_identity.py', '# changed pure tooling regression')
+        self.write('tests/new_runtime_test.cpp', '// separate test harness')
+        paths = ['README.md', 'LICENSE', 'docs/new-guide.md', '.agent-pending/new-phase.md',
+                 'tests/test_source_identity.py', 'tests/new_runtime_test.cpp']
+        result = self.selection(paths, kernel_descriptor=self.descriptor)
+        self.assertEqual('appended', result['scope'])
+        self.assertFalse(result['build'])
+        self.assertFalse(result['gui'])
+        self.assertIn('source_identity', result['tool_suites'])
+        self.assertEqual(['tests/new_runtime_test.cpp'], result['test_tooling_required'])
+        self.assertIn('documentation-check', result['actions'])
+        self.assertNotIn('guest-compile', result['actions'])
+
+    def test_missing_or_changed_kernel_inputs_never_fall_back_to_native_builds(self):
+        for name in ('src/main.cpp', 'unknown.input'):
+            with self.subTest(path=name):
+                path = self.write(name, 'changed kernel or unknown input')
+                result = self.selection([name], kernel_descriptor=self.descriptor)
+                self.assertEqual('appended-maintenance', result['scope'])
+                self.assertFalse(any(result[field] for field in ('build', 'gui', 'retained_eligible')))
+                self.assertTrue(result['maintenance_required'])
+                self.assertIn(name, [item['path'] for item in result['kernel_inputs']['differences']])
+                if name == 'src/main.cpp': self.write(name, 'kernel implementation')
+                else: path.unlink()
+        missing = self.selection(['src-web-appended/index.html'])
+        self.assertTrue(missing['maintenance_required'])
+        self.assertFalse(missing['build'])
+        self.assertIn('pinned', missing['reason'])
+
+    def test_unavailable_history_uses_actual_inventory_without_subprocess_builds(self):
+        with patch.object(ci, 'changed_paths', side_effect=ValueError('upstream object absent')), \
+                patch.object(ci.subprocess, 'run', side_effect=AssertionError('no subprocess fallback')):
+            result = ci.select(self.root, 'push', {}, '', kernel_descriptor=self.descriptor)
+        self.assertEqual('appended', result['scope'])
+        self.assertIn('complete pinned', result['comparison_history'])
+        self.assertFalse(result['build'])
+
+    def test_dirty_kernel_edit_is_seen_even_when_git_reports_only_payload(self):
+        self.write('src/main.cpp', 'uncommitted kernel implementation edit')
+        result = self.selection(['src-web-appended/index.html'], kernel_descriptor=self.descriptor)
+        self.assertTrue(result['maintenance_required'])
+        self.assertEqual([{'path': 'src/main.cpp', 'changes': ['content']}],
+                         result['kernel_inputs']['differences'])
+
+    def test_selected_component_source_and_insulation_failures_are_conclusive(self):
+        (self.root / 'src-web-appended/index.html').unlink()
+        missing = self.selection(['src-web-appended/index.html'], kernel_descriptor=self.descriptor)
+        self.assertTrue(missing['maintenance_required'])
+        self.assertIn('source checks unavailable', missing['reason'])
+        self.write('src-web-appended/index.html', '<script>navigator.serial.requestPort()</script>')
+        violation = self.selection(['src-web-appended/index.html'], kernel_descriptor=self.descriptor)
+        self.assertTrue(violation['maintenance_required'])
+        self.assertFalse(violation['insulation']['ok'])
+        self.assertFalse(violation['build'])
+
+    def test_disabled_payload_tree_does_not_become_a_source_prerequisite(self):
+        self.document['appended']['web']['enabled'] = False
+        self.document['startup']['primary'] = 'binary'
+        self.configure()
+        shutil.rmtree(self.root / 'src-web-appended')
+        result = self.selection(['foundation-project.json'], kernel_descriptor=self.descriptor)
+        self.assertEqual('appended', result['scope'])
+        self.assertEqual('binary', result['mode'])
+
+    def test_disabled_binary_changes_do_not_schedule_guest_compilation(self):
+        self.document['appended']['binary']['enabled'] = False
+        self.configure()
+        result = self.selection(['src-bin-appended/main.c'], kernel_descriptor=self.descriptor)
+        self.assertEqual('appended', result['scope'])
+        self.assertEqual('web', result['mode'])
+        self.assertEqual([], result['actions'])
+
+    def test_guest_tool_and_sdk_changes_select_separate_checks_without_implicit_compilation(self):
+        changed = ['tools/appended_compile.py', 'sdk/appended/guest.c', 'sdk/appended/README.md']
+        for name in changed: self.write(name, 'changed guest-only code or instructions')
+        for mode in ('both', 'web'):
+            with self.subTest(mode=mode):
+                self.document['appended']['binary']['enabled'] = mode == 'both'
+                self.configure()
+                result = self.selection(changed, kernel_descriptor=self.descriptor)
+                self.assertEqual('appended', result['scope'])
+                self.assertFalse(result['build'])
+                self.assertFalse(result['gui'])
+                self.assertNotIn('guest-compile', result['actions'])
+                self.assertTrue({'guest-tooling-check', 'sdk-insulation', 'binding-conformance'} <= set(result['actions']))
+                self.assertIn('appended_compile', result['tool_suites'])
+                if mode == 'both':
+                    self.assertIn('module-source-identity-check', result['actions'])
+                    self.assertIn('module-check', result['actions'])
+                else:
+                    self.assertNotIn('module-source-identity-check', result['actions'])
+                    self.assertNotIn('module-check', result['actions'])
+        (self.root / 'foundation-project.json').unlink()
+        inactive = self.selection(changed)
+        self.assertEqual('appended-inactive', inactive['scope'])
+        self.assertFalse(inactive['retained_eligible'])
+        self.assertFalse(inactive['build'])
+        self.assertNotIn('guest-compile', inactive['actions'])
+        self.assertNotIn('module-check', inactive['actions'])
+
+    def test_inactive_sdk_audit_rejects_script_glue_without_inspecting_disabled_payloads(self):
+        (self.root / 'foundation-project.json').unlink()
+        self.write('sdk/appended/guest.c', 'int guest_runtime(void) { return 0; }')
+        self.write('src-bin-appended/disabled.js', 'forbidden inactive source is not a prerequisite')
+        self.write('src-web-appended/disabled.js', 'navigator.serial.requestPort()')
+        changed = ['sdk/appended/guest.c', 'tools/ci_changes.py']
+        with patch.object(ci.subprocess, 'run', side_effect=AssertionError('no compiler or child process')):
+            valid = self.selection(changed)
+        self.assertEqual('appended-inactive', valid['scope'])
+        self.assertTrue(valid['insulation']['ok'])
+        self.assertEqual(1, valid['insulation']['files_scanned'])
+        self.assertNotIn('compose', valid['actions'])
+        self.assertNotIn('guest-compile', valid['actions'])
+        self.write('sdk/appended/guest.c', 'EM_JS(int, application, (), { return 1; });')
+        with patch.object(ci.subprocess, 'run', side_effect=AssertionError('no compiler or child process')):
+            invalid = self.selection(changed)
+        self.assertEqual('appended-maintenance', invalid['scope'])
+        self.assertFalse(invalid['insulation']['ok'])
+        self.assertFalse(invalid['build'])
+        self.assertFalse(invalid['retained_eligible'])
+        self.assertEqual('sdk/appended/guest.c', invalid['insulation']['violations'][0]['path'])
+
+    def test_web_edits_do_not_compile_binary_while_real_binary_edits_can(self):
+        web = self.selection(['src-web-appended/index.html'], kernel_descriptor=self.descriptor)
+        self.assertEqual('appended', web['scope'])
+        self.assertNotIn('guest-compile', web['actions'])
+        binary = self.selection(['src-bin-appended/main.c'], kernel_descriptor=self.descriptor)
+        self.assertIn('guest-compile', binary['actions'])
+        self.assertFalse(binary['build'])
+        with patch.object(ci, 'changed_paths', side_effect=ValueError('history absent')):
+            uncertain = ci.select(self.root, 'push', {}, '', kernel_descriptor=self.descriptor)
+        self.assertEqual('appended', uncertain['scope'])
+        self.assertIn('module-source-identity-check', uncertain['actions'])
+        self.assertNotIn('guest-compile', uncertain['actions'])
+
+    def test_unknown_sdk_or_shared_abi_changes_still_require_maintenance(self):
+        for name in ('sdk/appended/new_runtime.c', 'sdk/appended/extra/README.md',
+                     'include/foundation/appended/abi.h', 'abi/appended/v1/bootstrap.json',
+                     'tools/appended_wasm.py'):
+            with self.subTest(path=name):
+                path = self.write(name, 'unclassified or shared kernel input')
+                result = self.selection([name], kernel_descriptor=self.descriptor)
+                self.assertEqual('appended-maintenance', result['scope'])
+                self.assertFalse(result['build'])
+                self.assertFalse(result['retained_eligible'])
+                path.unlink()
+
+    def test_neither_mode_native_edit_preserves_conventional_feedback(self):
+        self.document['appended']['web']['enabled'] = False
+        self.document['appended']['binary']['enabled'] = False
+        self.document['startup']['primary'] = 'compiled'
+        self.configure()
+        result = self.selection(['src/main.cpp'])
+        self.assertEqual('full', result['scope'])
+        self.assertTrue(result['build'])
+
+    def test_inactive_payload_only_changes_omit_builds_without_claiming_reuse(self):
+        for configured in (True, False):
+            with self.subTest(configured=configured):
+                self.document['appended']['web']['enabled'] = False
+                self.document['appended']['binary']['enabled'] = False
+                self.document['startup']['primary'] = 'compiled'
+                self.configure()
+                if not configured: (self.root / 'foundation-project.json').unlink()
+                with patch.object(ci, 'run_tool_suites', side_effect=AssertionError('selector cannot launch tools')):
+                    result = self.selection(['src-web-appended/index.html', 'src-bin-appended/main.c'])
+                self.assertEqual('appended-inactive', result['scope'])
+                self.assertFalse(any(result[field] for field in ('build', 'gui', 'retained_eligible',
+                                                                 'composition_requested', 'maintenance_required')))
+                self.assertNotIn('guest-compile', result['actions'])
+                self.assertNotIn('compose', result['actions'])
+                self.assertIn('appended_policy', result['tool_suites'])
+                mixed = self.selection(['src-web-appended/index.html', 'src/main.cpp'])
+                self.assertEqual('full', mixed['scope'])
+                self.assertTrue(mixed['build'])
+
+    def test_inactive_payload_and_known_metadata_test_changes_keep_tooling_scope(self):
+        (self.root / 'foundation-project.json').unlink()
+        result = self.selection(['src-bin-appended/main.c', 'README.md', 'docs/new-guide.md',
+                                 'tests/test_ci_changes.py', 'gui/tests/new_event_test.cpp'])
+        self.assertEqual('appended-inactive', result['scope'])
+        self.assertFalse(result['build'])
+        self.assertFalse(result['retained_eligible'])
+        self.assertIn('ci_changes', result['tool_suites'])
+        self.assertEqual(['gui/tests/new_event_test.cpp'], result['test_tooling_required'])
+        self.assertNotIn('guest-compile', result['actions'])
+        self.assertEqual('full', self.selection(['src-bin-appended/main.c', 'docs/unknown-policy.json'])['scope'])
+
+    def test_inactive_missing_tool_inventory_fails_without_native_fallback(self):
+        (self.root / 'foundation-project.json').unlink()
+        with patch.object(ci, 'appended_suites', side_effect=ValueError('tool inventory unavailable')):
+            result = self.selection(['src-bin-appended/main.c'])
+        self.assertEqual('appended-maintenance', result['scope'])
+        self.assertTrue(result['maintenance_required'])
+        self.assertFalse(result['build'])
+
+    def test_invalid_project_or_bad_pin_is_maintenance_without_kernel_fallback(self):
+        self.write('foundation-project.json', '{invalid')
+        result = self.selection(['foundation-project.json'], kernel_descriptor=self.descriptor)
+        self.assertEqual('appended-maintenance', result['scope'])
+        self.assertFalse(result['build'])
+        self.assertIn('invalid appended project', result['reason'])
+        self.configure()
+        result = self.selection([], appended=True, appended_error='kernel descriptor pin mismatch')
+        self.assertTrue(result['maintenance_required'])
+        self.assertEqual('kernel descriptor pin mismatch', result['reason'])
+
+    def test_cli_maintenance_emits_false_build_outputs_then_fails(self):
+        output = self.root.parent / 'outputs'
+        summary = self.root.parent / 'summary'
+        result = subprocess.run([sys.executable, '-B', str(ROOT / 'tools/ci_changes.py'),
+                                 '--root', str(self.root), '--github-output', str(output),
+                                 '--summary', str(summary)], capture_output=True, text=True, timeout=20)
+        self.assertEqual(1, result.returncode)
+        self.assertEqual('appended-maintenance', json.loads(result.stdout)['scope'])
+        self.assertIn('build=false', output.read_text().splitlines())
+        self.assertIn('gui=false', output.read_text().splitlines())
+        self.assertIn('maintenance_required=true', output.read_text().splitlines())
+        self.assertIn('no native or shared-GUI fallback build', summary.read_text())
+        self.assertIn('does not qualify', summary.read_text())
+
+    def test_cli_authenticates_descriptor_before_retained_feedback(self):
+        import appended_container as container
+        manifest = self.root.parent / 'kernel.json'
+        manifest.write_bytes(container.canonical_json(self.descriptor))
+        pin = container.digest(manifest.read_bytes())
+        command = [sys.executable, '-B', str(ROOT / 'tools/ci_changes.py'), '--root', str(self.root),
+                   '--kernel-descriptor', str(manifest), '--kernel-descriptor-sha256']
+        accepted = subprocess.run([*command, pin], capture_output=True, text=True, timeout=20)
+        self.assertEqual(0, accepted.returncode, accepted.stderr)
+        self.assertEqual('appended', json.loads(accepted.stdout)['scope'])
+        rejected = subprocess.run([*command, 'f' * 64], capture_output=True, text=True, timeout=20)
+        self.assertEqual(1, rejected.returncode)
+        result = json.loads(rejected.stdout)
+        self.assertEqual('appended-maintenance', result['scope'])
+        self.assertFalse(result['build'])
+        self.assertIn('independently pinned', result['reason'])
+
+
 class FeedbackWorkflowTests(unittest.TestCase):
     def test_feedback_has_conclusive_gate_and_no_workflow_path_filter(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
@@ -425,13 +910,17 @@ class FeedbackWorkflowTests(unittest.TestCase):
         self.assertNotIn('paths:', workflow.split('permissions:', 1)[0])
         for name, end in (('focused', 'workflow-syntax'), ('workflow-syntax', 'shared-gui')):
             block = workflow.split('  ' + name + ':\n', 1)[1].split('  ' + end + ':\n', 1)[0]
-            self.assertNotIn('    needs:', block)
+            self.assertIn('    needs: [retained-selection]', block)
+            self.assertIn('    if: ${{ always() }}', block)
+            self.assertIn('run: test "$SELECTION_RESULT" = success', block)
             self.assertIn('id: changes', block)
             self.assertIn('test "$SELECTED" = true || test "$SELECTED" = false', block)
             self.assertIn('fetch-depth: 2', block)
         self.assertIn('Focused checks (not release qualification)', workflow)
         tooling = workflow.split('  changed-tools:\n')[1]
-        self.assertNotIn('    needs:', tooling)
+        self.assertIn('    needs: [retained-selection]', tooling)
+        self.assertIn('    if: ${{ always() }}', tooling)
+        self.assertIn('run: test "$SELECTION_RESULT" = success', tooling)
         self.assertIn('--run-tool-suites --tool-jobs auto', tooling)
         self.assertIn("steps.changes.outputs.tools == 'true'", tooling)
         self.assertIn('uses: ./.github/actions/ci-evidence-publish', tooling)
@@ -443,6 +932,31 @@ class FeedbackWorkflowTests(unittest.TestCase):
         self.assertNotIn("lifecycle.py gui-input", gui)
         self.assertNotIn("GH_TOKEN", gui)
         self.assertIn('python3 -B tools/check_docs.py', workflow)
+
+    def test_retained_feedback_acquires_once_and_reuses_one_pin_in_all_conclusive_jobs(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        acquisition = workflow.split('  retained-selection:\n', 1)[1].split('  focused:\n', 1)[0]
+        self.assertEqual(1, workflow.count('python3 -B tools/appended_ci.py'))
+        self.assertIn('GH_TOKEN: ${{ github.token }}', acquisition)
+        self.assertNotIn('secrets.', acquisition)
+        self.assertIn('path: build/appended-feedback/descriptor.json', acquisition)
+        self.assertNotIn('tools/build.py', acquisition)
+        for name, end in (('focused', 'workflow-syntax'), ('workflow-syntax', 'shared-gui'),
+                          ('shared-gui', 'changed-tools'), ('changed-tools', None)):
+            with self.subTest(job=name):
+                block = workflow.split('  ' + name + ':\n', 1)[1]
+                if end: block = block.split('  ' + end + ':\n', 1)[0]
+                self.assertIn('    needs: [retained-selection]', block)
+                self.assertIn('    if: ${{ always() }}', block)
+                self.assertLess(block.index('run: test "$SELECTION_RESULT" = success'),
+                                block.index('actions/checkout@'))
+                self.assertIn("if: needs.retained-selection.outputs.retained == 'true'", block)
+                self.assertIn('actions/download-artifact@', block)
+                self.assertIn('DESCRIPTOR_SHA256: ${{ needs.retained-selection.outputs.descriptor_sha256 }}', block)
+                self.assertIn('FOUNDATION_APPENDED_KERNEL_DESCRIPTOR=$GITHUB_WORKSPACE/build/appended-feedback/descriptor.json', block)
+                self.assertIn('FOUNDATION_APPENDED_KERNEL_DESCRIPTOR_SHA256=$DESCRIPTOR_SHA256', block)
+                self.assertIn('>> "$GITHUB_ENV"', block)
+                self.assertNotIn('GH_TOKEN', block)
 
     def test_package_consumers_are_isolated_and_depend_only_on_own_producer(self):
         workflow = (ROOT / '.github/workflows/candidate.yml').read_text()

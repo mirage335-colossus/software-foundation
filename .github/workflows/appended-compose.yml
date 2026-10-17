@@ -1,0 +1,149 @@
+name: Retained appended candidate (no kernel build)
+
+on:
+  workflow_dispatch:
+    inputs:
+      payload_source:
+        description: Use the frozen group's payload or pack the current checkout against its retained kernels
+        required: true
+        default: frozen-group
+        type: choice
+        options:
+          - frozen-group
+          - checkout
+      source_repository:
+        description: Explicit read-only source OWNER/REPOSITORY containing the retained input-group asset
+        required: true
+        type: string
+      source_tag:
+        description: Exact published source release tag (direct commit tag)
+        required: true
+        type: string
+      source_release_id:
+        description: Exact numeric source release ID
+        required: true
+        type: string
+      source_commit:
+        description: Exact 40-character source release commit SHA
+        required: true
+        type: string
+      group_asset:
+        description: Retained tar input-group asset containing selection.json and its pinned local inputs
+        required: true
+        type: string
+      group_sha256:
+        description: Independently reviewed input-group archive SHA-256
+        required: true
+        type: string
+      selection_sha256:
+        description: Independently reviewed selection.json SHA-256 inside the group
+        required: true
+        type: string
+      checkout_binary:
+        description: Checkout binary/both only; JSON module and proof objects with path (inside retained group) and independent sha256; null for neither/web
+        required: false
+        default: 'null'
+        type: string
+      checkout_requires:
+        description: Checkout only; JSON package requirements object with abi, services and capabilities, or null for existing defaults
+        required: false
+        default: 'null'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  compose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out reviewed composition tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Acquire exact retained source group (authenticated read only)
+        env:
+          GH_TOKEN: ${{ secrets.APPENDED_SOURCE_READ_TOKEN || github.token }}
+          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_TAG: ${{ inputs.source_tag }}
+          SOURCE_RELEASE_ID: ${{ inputs.source_release_id }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          GROUP_ASSET: ${{ inputs.group_asset }}
+          GROUP_SHA256: ${{ inputs.group_sha256 }}
+          SELECTION_SHA256: ${{ inputs.selection_sha256 }}
+        shell: bash
+        run: |
+          mkdir -p build/appended
+          python3 -B tools/appended_release.py fetch-inputs \
+            --source-repository "$SOURCE_REPOSITORY" --source-tag "$SOURCE_TAG" \
+            --source-release-id "$SOURCE_RELEASE_ID" --source-commit "$SOURCE_COMMIT" \
+            --asset "$GROUP_ASSET" --asset-sha256 "$GROUP_SHA256" \
+            --selection-sha256 "$SELECTION_SHA256" --output build/appended/retained \
+            > build/appended/acquisition.json
+      - name: Compose frozen unqualified candidate without native tools
+        if: inputs.payload_source == 'frozen-group'
+        shell: bash
+        run: |
+          ./build.sh appended prepare-release \
+            --selection build/appended/retained/selection.json \
+            --output build/appended/candidate > build/appended/result.json
+      - name: Pack current checkout and compose against retained kernels without native tools
+        if: inputs.payload_source == 'checkout'
+        env:
+          SELECTION_SHA256: ${{ inputs.selection_sha256 }}
+          CHECKOUT_BINARY: ${{ inputs.checkout_binary }}
+          CHECKOUT_REQUIRES: ${{ inputs.checkout_requires }}
+        shell: bash
+        run: |
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, 'tools')
+          from appended_container import canonical_json, resource_path
+          from dependency_archive import object_pairs
+          binary = json.loads(os.environ['CHECKOUT_BINARY'], object_pairs_hook=object_pairs)
+          if binary is not None:
+              if type(binary) is not dict or set(binary) != {'module', 'proof'}:
+                  raise ValueError('checkout_binary requires module and proof references')
+              for reference in binary.values():
+                  if type(reference) is not dict or set(reference) != {'path', 'sha256'}:
+                      raise ValueError('checkout binary references require path and independent sha256')
+                  reference['path'] = 'retained/' + resource_path(reference['path'])
+          request = {'schema_version': 1, 'kind': 'foundation-appended-checkout-request',
+                     'selection': {'path': 'retained/selection.json',
+                                   'sha256': os.environ['SELECTION_SHA256']}, 'binary': binary}
+          requires = json.loads(os.environ['CHECKOUT_REQUIRES'], object_pairs_hook=object_pairs)
+          if requires is not None:
+              request['requires'] = requires
+          with Path('build/appended/checkout-request.json').open('xb') as stream:
+              stream.write(canonical_json(request))
+          PY
+          ./build.sh appended prepare-checkout --project-root . \
+            --request build/appended/checkout-request.json \
+            --output build/appended/checkout > build/appended/result.json
+      - name: Record candidate identity and pending qualification
+        shell: bash
+        run: |
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('build/appended/result.json').read_text())
+          with open(__import__('os').environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as stream:
+              stream.write('Prepared retained-kernel candidate: `' + result['candidate_sha256'] + '`.\n\n')
+              stream.write('Qualification remains incomplete. No release publication or promotion was performed.\n')
+          PY
+      - name: Retain composed candidate and recovery inputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: appended-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/appended/candidate/
+            build/appended/checkout/
+            build/appended/result.json
+            build/appended/acquisition.json
+          if-no-files-found: error
+          retention-days: 7

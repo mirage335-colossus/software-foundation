@@ -1,0 +1,76 @@
+{
+  "diagnostic_OFF_cmake_bytes_unchanged": true,
+  "files": {
+    "portable/BibEngineCopiedDispatch.cpp": {
+      "bytes": 11700,
+      "sha256": "b6b029ede0f1b1105b4524f7aa9522a9ffec660a5f39e3345cf990910820ef8d"
+    },
+    "portable/BibEngineCopiedDispatch.h": {
+      "bytes": 1297,
+      "sha256": "a142a6ec9039b8a9ed16e5f7d6699c1a9c23e74ba90ede08992eeac44b361b03"
+    },
+    "portable/BibEngineCopiedRecord.cpp": {
+      "bytes": 19263,
+      "sha256": "1dee628f15d59e51b8e1fe5b9b32d61a49b70bec7b5d74018c960646d1112556"
+    },
+    "portable/BibEngineCopiedRecord.h": {
+      "bytes": 3776,
+      "sha256": "2de3c52341828d840f29ca8a8cf6fb4b413a95272db8fc6b338e4114b9011b26"
+    },
+    "runtime/BibCopiedPixelBinding.cpp": {
+      "bytes": 17216,
+      "sha256": "4a1078339f082dc88000358bb396a0222da1f2b4055ed4e3182162cad172e2ac"
+    },
+    "runtime/BibEngineCopiedHost.cpp": {
+      "bytes": 29435,
+      "sha256": "9de69e5ca07787bf4722809c8b57cb2c7abcd803c2a141003c235d84db764b1c"
+    },
+    "runtime/BibEngineCopiedHost.h": {
+      "bytes": 6385,
+      "sha256": "d9bf75ef9b9ad8786417319bd933ede58953303df135b84f3b20db000043a639"
+    },
+    "runtime/BibEngineWasmShim.cpp": {
+      "bytes": 3761,
+      "sha256": "29457dd5aa700d814c63dbf8c824a6dda633e717d3ab2c802ba08700c795932e"
+    },
+    "runtime/BibEngineWasmShim.h": {
+      "bytes": 482,
+      "sha256": "a949c7efffbbb856a8728bf159dd748f39d62eae7bab6489284a075bf0572663"
+    },
+    "runtime/embedder.cmake": {
+      "bytes": 29187,
+      "sha256": "f0471f861fae0d97b866bc4058e2bd410e236eb0a58fd4e44173a3d00ae2c591"
+    },
+    "runtime/engine-copied-library.js": {
+      "bytes": 3499,
+      "sha256": "5e82f5e402e3ae4cec2d36d61f8afb66ee24f7efa929c1ef44a6172aa1662ffb"
+    },
+    "runtime/engine-copied-metadata.h.in": {
+      "bytes": 1641,
+      "sha256": "7f248b9f60e11858961d7eedaeb9a6820722ee8df34be5e94fe537616d367805"
+    },
+    "runtime/engine-copied-pre.js": {
+      "bytes": 2275,
+      "sha256": "0cca50e7c06781287d8ddcd9288b915b6845871c3c4c3c93d86e58e86f367e05"
+    },
+    "runtime/generate_copied_metadata.py": {
+      "bytes": 14875,
+      "sha256": "1f19e8cf75aa8d78abdea5c3d227153f4b053740295ee99be391b2cf4739a024"
+    },
+    "runtime/private/EnginePrivate.hpp": {
+      "bytes": 3706,
+      "sha256": "c3edb941a3ff0586d5016c7cafb6a420cec7f0e6882339b7e85264bee3e82dd0"
+    }
+  },
+  "preimages": {
+    "runtime/BibCopiedPixelBinding.cpp": {
+      "path": ".agent-work/appended-implementation-20261016/web-engine-service-adapter/provider-candidate/actual-binding-v1/binding/BibEngineProviderBinding.cpp",
+      "sha256": "83cf143ff64bff2a77623d868e9ad4cdb1954f93101f88e105d0ce0ab56cc3f2"
+    },
+    "runtime/embedder.cmake": {
+      "path": ".agent-work/appended-implementation-20261016/web-engine-service-adapter/provider-candidate/actual-binding-v1/runtime/embedder.cmake",
+      "sha256": "a9babfe9eba40a55238b008f9f69ec2f7cca0e8fa26cd45cc8b4635e443d277e"
+    }
+  },
+  "status": "source-only-WebCore-uncompiled"
+}

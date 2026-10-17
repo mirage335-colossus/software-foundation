@@ -1,0 +1,16 @@
+[package]
+name = "foundation-appended"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.84"
+license = "CC0-1.0"
+description = "Freestanding byte codecs and service calls for Foundation appended guests"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+
+[workspace]

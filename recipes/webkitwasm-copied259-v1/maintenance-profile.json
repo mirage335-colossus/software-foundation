@@ -1,0 +1,98 @@
+{
+  "archive_members": {
+    "JavaScriptCore": 185,
+    "PAL": 24,
+    "Skia": 775,
+    "WTF": 168,
+    "WebCore": 924
+  },
+  "bridge_abi": 65536,
+  "capabilities": "259",
+  "compile_literals": [
+    "-O3", "-Qunused-arguments", "-fPIC", "-fPIE", "-fasynchronous-unwind-tables",
+    "-fcolor-diagnostics", "-fcoroutines", "-fdata-sections", "-fdebug-types-section",
+    "-fdiagnostics-color=always", "-fexceptions", "-fno-exceptions", "-ffunction-sections",
+    "-fno-rtti", "-fno-strict-aliasing", "-fvisibility-inlines-hidden", "-fvisibility=hidden",
+    "-msimd128", "-pipe", "-std=c++23",
+    "-Wall", "-Wcast-align", "-Werror=undefined-inline", "-Werror=undefined-internal",
+    "-Wextra", "-Wformat-security", "-Wmissing-format-attribute", "-Wno-character-conversion",
+    "-Wno-misleading-indentation", "-Wno-noexcept-type", "-Wno-nullability-completeness",
+    "-Wno-parentheses-equality", "-Wno-psabi", "-Wno-tautological-compare", "-Wpointer-arith", "-Wundef",
+    "-DBIB_APP_RESOURCES=1", "-DBIB_ENGINE_PROVIDER_NEUTRAL=1", "-DBIB_FOUNDATION_SERVICES=1",
+    "-DBUILDING_EMSCRIPTEN__", "-DBUILDING_WEBKIT=1", "-DBUILDING_WITH_CMAKE=1",
+    "-DBUILDING_WTF", "-DBUILDING_WebCore", "-DHAVE_CONFIG_H=1", "-DHAVE_HB_FEATURES_H", "-DNDEBUG",
+    "-DPAS_BMALLOC=1", "-DSK_ASSUME_GL=0", "-DSK_ASSUME_GL_ES=1", "-DSK_ASSUME_WEBGL=0",
+    "-DSK_DISABLE_LEGACY_GL_MAKE_NATIVE_INTERFACE", "-DSK_DISABLE_LEGACY_IMAGE_READBUFFER",
+    "-DSK_DISABLE_LEGACY_INIT_DECODERS", "-DSK_DISABLE_LEGACY_PNG_WRITEBUFFER", "-DSK_DISABLE_TRACING",
+    "-DSK_DISABLE_WEBGL_INTERFACE", "-DSK_ENABLE_PRECOMPILE", "-DSK_R32_SHIFT=16", "-DSK_RELEASE",
+    "-DSK_TRIVIAL_ABI=[[clang::trivial_abi]]", "-DSTATICALLY_LINKED_WITH_JavaScriptCore",
+    "-DSTATICALLY_LINKED_WITH_PAL", "-DSTATICALLY_LINKED_WITH_WTF",
+    "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE"
+  ],
+  "engine_objects": [
+    "UnifiedSource-be65d27a-7.cpp",
+    "UnifiedSource-c57e08af-2.cpp",
+    "UnifiedSource-68aea4ac-18.cpp",
+    "UnifiedSource-f74e0903-1.cpp",
+    "UnifiedSource-f74e0903-9.cpp",
+    "RunLoopGeneric.cpp"
+  ],
+  "kind": "foundation-copied259-maintenance-profile-v1",
+  "link_archive_names": [
+    "WebCore", "Skia", "libfreetype.a", "libfontconfig.a", "libxml2.a",
+    "libsqlite3.a", "libcurl.a", "libpsl.a", "libssl.a", "libjpeg.a",
+    "libpng.a", "libz.a", "libwebpdemux.a", "libwebp.a", "libnghttp2.a",
+    "libbrotlidec.a", "libbrotlicommon.a", "libharfbuzz.a", "libharfbuzz-icu.a",
+    "libfontconfig.a", "JavaScriptCore", "PAL", "libcrypto.a", "WTF",
+    "libicuuc.a", "libicudata.a", "libicui18n.a"
+  ],
+  "link_literals": [
+    "-fdiagnostics-color=always", "-fcolor-diagnostics", "-Wextra", "-Wall",
+    "-Wno-character-conversion", "-Werror=undefined-internal", "-Werror=undefined-inline",
+    "-pipe", "-Wno-noexcept-type", "-Wno-nullability-completeness", "-Wno-psabi",
+    "-Wno-misleading-indentation", "-Wno-parentheses-equality", "-Qunused-arguments",
+    "-Wundef", "-Wpointer-arith", "-Wmissing-format-attribute", "-Wformat-security", "-Wcast-align",
+    "-Wno-tautological-compare", "-fasynchronous-unwind-tables", "-fdebug-types-section",
+    "-msimd128", "-fno-strict-aliasing", "-fno-exceptions", "-fno-rtti", "-fcoroutines",
+    "-ffunction-sections", "-fdata-sections", "-O3", "-DNDEBUG", "-fexceptions",
+    "--no-entry", "--profiling-funcs", "-Wl,--gc-sections", "-Wl,--error-limit=0",
+    "-lexports.js"
+  ],
+  "link_settings": {
+    "ALLOW_MEMORY_GROWTH": "1",
+    "CROSS_ORIGIN_STORAGE": "0",
+    "ENVIRONMENT": "worker",
+    "EXIT_RUNTIME": "0",
+    "EXPORTED_FUNCTIONS": "_bib_engine_get_provider_v1,_bib_engine_wasm_bridge_v1,_bib_engine_wasm_dispatch_v1,_malloc,_free",
+    "EXPORTED_RUNTIME_METHODS": "HEAPU8",
+    "EXPORT_ES6": "1",
+    "EXPORT_NAME": "createFoundationRetainedEngine",
+    "INCOMING_MODULE_JS_API": "wasmBinary,noInitialRun,print,printErr,locateFile",
+    "INITIAL_MEMORY": "256MB",
+    "INVOKE_RUN": "0",
+    "MAXIMUM_MEMORY": "4GB",
+    "MODULARIZE": "1",
+    "STACK_SIZE": "8MB",
+    "WASM_ASYNC_COMPILATION": "1"
+  },
+  "metadata_generator": "source/copied-provider/runtime/generate_copied_metadata.py",
+  "name": "webkitwasm-copied259-v1",
+  "physical_input_capabilities": 0,
+  "python_entrypoints": [
+    "upstream/emscripten/em++.py",
+    "upstream/emscripten/emar.py",
+    "upstream/emscripten/emcc.py",
+    "upstream/emscripten/emranlib.py",
+    "upstream/emscripten/tools/file_packager.py"
+  ],
+  "schema_version": 1,
+  "scope": "incremental-neutral-engine-candidate",
+  "wrapper_objects": [
+    "BibEngineWasmShim.cpp", "BibEngineCopiedHost.cpp", "BibEngineCopiedDispatch.cpp",
+    "BibEngineCopiedRecord.cpp", "BibAppResourceProfile.cpp", "BibIDBServer.cpp",
+    "BibMediaPlayer.cpp", "EmbedderStrategies.cpp", "main.cpp",
+    "BibFoundationServiceBridge.cpp", "BibAppResources.cpp", "AppResourceQueue.cpp",
+    "resource_url.cpp", "ProviderGuard.cpp", "LegacyHostAdapters.cpp",
+    "BibCopiedPixelBinding.cpp", "BibEngineProviderPreflight.cpp", "BibEngineProviderCodec.cpp"
+  ]
+}

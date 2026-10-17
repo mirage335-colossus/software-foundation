@@ -61,6 +61,16 @@ is consumed by both widget construction and layout: control identity, kind, text
 font role, order and height have one declaration. Its [header](../gui/shared/application.hpp) exposes only
 `gui::Adapter`. No native object crosses into application code.
 
+The optional [surface companion](../include/foundation/gui/surface.hpp) defines
+generic input, editor and popup values without changing the existing widget
+contract or portable module ABI. Its physical capabilities default to zero;
+the policy utility alone does not supply a backend implementation. The source
+guard permits this exact public include from either side and recursively checks
+its dependencies and [generic implementation](../src/gui/surface.cpp) for both
+backend and application-domain dependencies. Adjacent private headers receive
+no exemption. Additions and changes under `include/foundation/gui/` and
+`src/gui/` also invalidate the incremental guard.
+
 Changing this application-owned definition and shared behavior changes every
 selected host: terminal, framebuffer, FLTK, SDL, Rev, hosted browser and Wasm
 browser. Existing widget capabilities need no per-backend feature layout.
@@ -768,6 +778,32 @@ event handling, presentation retry and queued service request/completion. Native
 sessions centralize service pumping and shutdown. [The browser runtime](../gui/host/browser.hpp)
 is shared by the native bridge and Wasm composition roots. Hosts own platform
 polling, surfaces, transport and resources; shared code owns all feature decisions.
+
+The optional [native Surface composition](../gui/host/native_surface_composition.hpp)
+adds a prepared `NativeSurfaceSessionFactory` for applications that supply a
+generic pixel/input/editor endpoint. The backend creates its window, renderer and
+input hooks before application construction. Its peer accepts a snapshot only
+after matching logical installation and completed render/API work; queued redraws
+are not receipts. Snapshot and bitmap pixel revisions are distinct. The peer owns
+one letterbox/clip transform for both pointer coordinates and native caret
+geometry. HTML, device services and application layout remain above the boundary.
+
+`none`, `mouse_v1` and `editor_v1` are explicit modes. Bare framebuffer output
+provides no input or editor authority. Native peers collect actual raw keys,
+committed text, preedit, selection, focus and pointer facts into the shared bounded
+capture layer; keydown does not manufacture committed text. A reversible pause
+can retain an unsent passage only for its exact original editor basis. Withdrawal
+or a changed basis retires it, and an accepted ticket is never replayed. Weak
+publication handles prevent retained cleanup from borrowing a destroyed backend.
+Actual OS/IME behavior has separate qualification.
+
+Opt-in native runner loops honor `RunnerState`: after a real close request they
+queue shutdown and keep the renderer and endpoint alive while ordinary owner
+turns drain. A nonzero status returns promptly. Provider detach and collection of
+a completed editor result are separate obligations; detach alone is insufficient.
+A bounded timeout preserves unresolved state and returns failure without forcing
+acknowledgement. These overloads preserve the ordinary runner bodies and add no
+engine dependency to generic adapters.
 
 Native FLTK prompts retain keyboard and clipboard focus while the main window
 synchronizes; acceptance or cancellation restores the main window's retained

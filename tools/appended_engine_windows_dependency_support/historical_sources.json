@@ -1,0 +1,83 @@
+{
+  "files": {
+    ".agent-work/appended-implementation-20261016/windows-engine-producer-v1/gap-closure/tool-version-builtins-v1/builtins_protocol.py": {
+      "bytes": 5438,
+      "sha256": "c334b013d3fcc024784182a461f3ee5837b006629da598788df4fe05fb251cc6"
+    },
+    ".agent-work/appended-implementation-20261016/windows-engine-producer-v1/gap-closure/tool-version-builtins-v1/perl/emitter.pl": {
+      "bytes": 806,
+      "sha256": "bd80d964e46d45891b644f9a1018f7bdc7569105021b186407aca093bfe4e137"
+    },
+    ".agent-work/appended-implementation-20261016/windows-engine-producer-v1/gap-closure/tool-version-builtins-v1/perl/parser.py": {
+      "bytes": 1892,
+      "sha256": "05a3c978918b050b5695116675e9dd7d1dbf3748876892d14876aabd2f65ad75"
+    },
+    ".agent-work/appended-implementation-20261016/windows-engine-producer-v1/gap-closure/tool-version-builtins-v1/protocol_contract.py": {
+      "bytes": 1454,
+      "sha256": "478dfa28a66fd3023dbf24803e3b8ef48ec35c12baaf8f3f6947a1c2d0a49d31"
+    },
+    ".agent-work/appended-implementation-20261016/windows-engine-producer-v1/gap-closure/tool-version-builtins-v1/python/emitter.py": {
+      "bytes": 1799,
+      "sha256": "90067e97239cacb1c5cc0d45a53d00df4060207cfc6e17e2a626f95c530573ab"
+    },
+    ".agent-work/appended-implementation-20261016/windows-engine-producer-v1/gap-closure/tool-version-builtins-v1/python/parser.py": {
+      "bytes": 2400,
+      "sha256": "014b378ed23c525dc42ac3719ef0e05db98ef22086b83f3bf375d7b0faaa8ba2"
+    },
+    ".agent-work/appended-implementation-20261016/windows-engine-producer-v1/gap-closure/tool-version-builtins-v1/ruby/emitter.rb": {
+      "bytes": 1285,
+      "sha256": "e8b4a1fea4b6de2fe2853d75706c1ff34aa3f0a384db4dff5e2c5230778c82ff"
+    },
+    ".agent-work/appended-implementation-20261016/windows-engine-producer-v1/gap-closure/tool-version-builtins-v1/ruby/parser.py": {
+      "bytes": 3014,
+      "sha256": "45b43a5afcb97c177b0804c920f7c05fd5ade1447e3d75c799587af42d06ac1a"
+    },
+    ".agent-work/appended-implementation-20261016/windows-engine-producer-v1/gap-closure/tool-version-native-issuer-v2/methods.py": {
+      "bytes": 10027,
+      "sha256": "074d2b4133fbfdc8b71a01ef35b4f12bffa5ca1ba1d12e6ad02476d328d3d371"
+    },
+    ".agent-work/appended-implementation-20261016/windows-engine-producer-v1/gap-closure/tool-version-native-issuer-v2/native_issuer.py": {
+      "bytes": 38713,
+      "sha256": "d78577c042fa56fff6bd64eb7a9c712e48cbfd38c1805a6be55c45915b2c27a0"
+    },
+    ".agent-work/appended-implementation-20261016/windows-engine-producer-v1/gap-closure/tool-version-observations-v1/private/version_candidate.py": {
+      "bytes": 11623,
+      "sha256": "871c7fe6a8cda6d511aa52377ec024b7ccce5972a8fef3fe2247d9c672fd4d10"
+    },
+    "tools/appended_engine_document_contract.py": {
+      "sha256": "2a1bb13756d605c0d2edbdcc62744110d68e88d4b2517753e0ef9a1c7a8c01fd"
+    },
+    "tools/appended_engine_editor_contract.py": {
+      "sha256": "198ca94d231f58fdd027cd8bd1142d6d3fcbdc1e1975d127930eb400e77238c3"
+    },
+    "tools/appended_engine_manifest.py": {
+      "sha256": "6807d4471349f0bb8972ea7dbc257c6b8c8b79530ee32f9dcbca84750680952a"
+    },
+    "tools/appended_engine_native_actions_contract.py": {
+      "sha256": "d2808ae5a424f98984478e1bf287ce628e13aa2a06dd9d73cf45660e6dc3a48e"
+    },
+    "tools/appended_engine_native_consumer.py": {
+      "sha256": "f5d95283a879c6b56ff6875ed6cc476bcad03bb1d6595a3aa8d6eedbb929c902"
+    },
+    "tools/appended_engine_sdk.py": {
+      "sha256": "c04d7de7bcf5387eec890533af314cca3e999a55f1b6dc66d49a3a52581a842e"
+    },
+    "tools/appended_engine_windows_contract.py": {
+      "sha256": "de8d265bfb2b575e45e2675250fbcd0a95411a94c72808f95556ea27fb43b6d4"
+    },
+    "tools/appended_engine_windows_dependency_proof.py": {
+      "bytes": 35435,
+      "sha256": "6d30769578be43268cf9a6226054db79d0e16956e52085fb0f1c4618505b5747"
+    },
+    "tools/appended_engine_windows_handoff.py": {
+      "sha256": "6bbf1209d1cb673b18f7f6ba5e6d8977d57df68c13287c1f592f0c4f64ac556b"
+    },
+    "tools/appended_engine_windows_prototype.py": {
+      "sha256": "3fbc20556abc33366c1288f871ea9e631b9fb77cfe06815aead9a5fda7a56695"
+    },
+    "tools/process_tree.py": {
+      "sha256": "cb68d2449ce3c1aa18a24169466e6f5d425b710fac1c356d5e22deeac14b687d"
+    }
+  },
+  "issuer_relative": ".agent-work/appended-implementation-20261016/windows-engine-producer-v1/gap-closure/tool-version-native-issuer-v2/native_issuer.py"
+}

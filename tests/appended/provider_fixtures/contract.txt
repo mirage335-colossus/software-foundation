@@ -1,0 +1,7 @@
+org.example.increment 1.0
+request operation 1: exactly four bytes, a little-endian u32 operand
+reply operation 1: exactly eight bytes, little-endian u32 operand plus one modulo 2^32, then little-endian u32 invocation count
+invocation count: initially zero, incremented only when operation 1 is executed
+all other operations: service UNKNOWN_OPERATION, empty payload
+maximum request bytes: 4
+maximum reply bytes: 8

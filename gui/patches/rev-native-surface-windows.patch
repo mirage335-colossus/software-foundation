@@ -1,0 +1,325 @@
+--- third_party/rev/source/OS/Window/NativeWindow.win.ixx
++++ third_party/rev/source/OS/Window/NativeWindow.win.ixx
+@@ -15,6 +15,9 @@
+ // Win32
+ #include <windowsx.h>
+ #include <windows.h>
++#include <imm.h>
++#include <algorithm>
++#include <cstring>
+ #include <shellscalingapi.h>
+ #include <setupapi.h>
+ #include <devguid.h>
+@@ -488,6 +491,272 @@
+         bool dirty = false;
+         bool invalidatePending = false;
+         bool destroyed = false;
++
++        // Opt-in native frontend. Kept in the real HWND procedure so scans,
++        // UTF-16 units and IMM composition facts are never reconstructed from
++        // Rev's normalized keyboard state.
++        bool nativeSurfaceEnabled=false, nativeSurfaceCaret=false;
++        bool nativeSurfaceComposing=false;
++        std::uint64_t nativeSurfaceTransaction=0;
++        char16_t nativeSurfaceHighSurrogate=0;
++        unsigned nativeSurfaceHighRepeat=0;
++        RevSurfaceContext nativeSurfaceContext;
++        unsigned nativeSurfaceDepth=0;
++        bool nativeSurfaceSuspendPending=false,nativeSurfaceResetting=false;
++        std::optional<RevSurfaceContext> nativeSurfacePendingContext;
++        void flushNativeSurface() {
++            if(nativeSurfaceDepth)return;
++            // suspend() invalidates earlier queued context; a later context is
++            // the owned successor and must survive the deferred cleanup.
++            auto context=std::move(nativeSurfacePendingContext);nativeSurfacePendingContext.reset();
++            if(nativeSurfaceSuspendPending){nativeSurfaceSuspendPending=false;suspendNativeSurface();}
++            if(context && !installNativeSurfaceContext(*context))failNativeSurface("Native frontend deferred context failed");
++        }
++
++
++        RevSurfaceFacts getNativeSurfaceFacts() const {
++            RevSurfaceFacts facts;facts.scale=scale;facts.render_width=size.w;facts.render_height=size.h;
++            RECT client{};
++            if(handle && GetClientRect(handle,&client)) {facts.width=client.right-client.left;facts.height=client.bottom-client.top;}
++            const HWND focus=GetFocus();facts.focused=focus==handle || (focus && IsChild(handle,focus));
++            facts.active=handle && IsWindowVisible(handle) && !IsIconic(handle);
++            facts.ready=nativeSurfaceEnabled && handle && !destroyed;
++            return facts;
++        }
++        bool captureNativeSurface(bool capture) {
++            if(!handle)return false;
++            if(capture){SetCapture(handle);return GetCapture()==handle;}
++            if(GetCapture()==handle)return ReleaseCapture()!=0;
++            return true;
++        }
++
++        bool enableNativeSurface(bool enabled,bool editor=true) {
++            if (!enabled) {
++                nativeSurfaceEnabled=false;
++                if (nativeSurfaceCaret) {DestroyCaret();nativeSurfaceCaret=false;}
++                nativeSurfaceHighSurrogate=0;nativeSurfaceComposing=false;
++                return true;
++            }
++            nativeSurfaceEnabled=handle!=nullptr;
++            if(nativeSurfaceEnabled && editor) {
++                const HIMC im=ImmGetContext(handle);
++                if(!im)nativeSurfaceEnabled=false;else ImmReleaseContext(handle,im);
++            }
++            return nativeSurfaceEnabled;
++        }
++        bool installNativeSurfaceContext(const RevSurfaceContext& context) {
++            if (!nativeSurfaceEnabled) return false;
++            const auto text=RevSurfaceDetail::utf16(context.surrounding);
++            if (!text || !RevSurfaceDetail::boundary(*text,context.selection_start) ||
++                !RevSurfaceDetail::boundary(*text,context.selection_end) ||
++                context.selection_start>context.selection_end) return false;
++            if(nativeSurfaceDepth){nativeSurfacePendingContext=context;return true;}
++            if(nativeSurfaceSuspendPending){nativeSurfaceSuspendPending=false;suspendNativeSurface();}
++            nativeSurfacePendingContext.reset();
++            nativeSurfaceContext=context;
++            if (!context.enabled || !context.editable) {
++                if (nativeSurfaceCaret) {DestroyCaret();nativeSurfaceCaret=false;}
++                return true;
++            }
++            if (!nativeSurfaceCaret) {
++                if (!CreateCaret(handle,nullptr,std::max(1,context.caret_width),std::max(1,context.caret_height))) return false;
++                nativeSurfaceCaret=true;
++            }
++            if (!SetCaretPos(context.caret_x,context.caret_y)) return false;
++            const HIMC im=ImmGetContext(handle);
++            if (!im) return false;
++            COMPOSITIONFORM composition{};composition.dwStyle=CFS_POINT;
++            composition.ptCurrentPos={context.caret_x,context.caret_y};
++            CANDIDATEFORM candidate{};candidate.dwStyle=CFS_CANDIDATEPOS;
++            candidate.ptCurrentPos={context.caret_x,context.caret_y+std::max(1,context.caret_height)};
++            const bool accepted=ImmSetCompositionWindow(im,&composition) && ImmSetCandidateWindow(im,&candidate);
++            ImmReleaseContext(handle,im);
++            return accepted;
++        }
++        void suspendNativeSurface() {
++            nativeSurfacePendingContext.reset();nativeSurfaceContext.enabled=false;
++            if(nativeSurfaceDepth){nativeSurfaceSuspendPending=true;nativeSurfacePendingContext.reset();return;}
++            struct Reset {bool& value;explicit Reset(bool& v):value(v){value=true;}~Reset(){value=false;}} reset(nativeSurfaceResetting);
++
++            if (nativeSurfaceComposing) {
++                if (const HIMC im=ImmGetContext(handle)) {
++                    ImmNotifyIME(im,NI_COMPOSITIONSTR,CPS_CANCEL,0);ImmReleaseContext(handle,im);
++                }
++            }
++            nativeSurfaceComposing=false;nativeSurfaceHighSurrogate=0;
++            nativeSurfaceContext.enabled=false;
++            if (nativeSurfaceCaret) {DestroyCaret();nativeSurfaceCaret=false;}
++        }
++        bool sendNativeSurface(RevSurfaceEvent value) {
++            WinEvent event{WinEvent::Null};event.surface=std::make_shared<RevSurfaceEvent>(std::move(value));
++            return notifyEvent(std::move(event)).rejected;
++        }
++        static unsigned nativeSurfaceModifiers() {
++            unsigned value=0;
++            if (GetKeyState(VK_SHIFT)&0x8000) value|=1;
++            if (GetKeyState(VK_CONTROL)&0x8000) value|=2;
++            if (GetKeyState(VK_MENU)&0x8000) value|=4;
++            if ((GetKeyState(VK_LWIN)|GetKeyState(VK_RWIN))&0x8000) value|=8;
++            // Ctrl+RightAlt alone does not establish a layout AltGraph fact.
++            return value;
++        }
++        RevSurfaceEvent nativeSurfaceKey(WPARAM vk,LPARAM bits,bool down) {
++            RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::key;event.down=down;
++            const auto scan=unsigned((std::uint64_t(bits)>>16)&255);
++            const bool extended=(std::uint64_t(bits)&(UINT64_C(1)<<24))!=0;
++            event.code=RevSurfaceDetail::pc_code(scan,extended);
++            if (vk==VK_PAUSE) event.code="Pause";
++            if (vk==VK_SNAPSHOT) event.code="PrintScreen";
++            event.location=RevSurfaceDetail::location(event.code);
++            event.repeat=down && (std::uint64_t(bits)&(UINT64_C(1)<<30));
++            event.modifiers=nativeSurfaceModifiers();
++            BYTE state[256]{};wchar_t characters[16]{};
++            // This optional Rev port already requires GetDpiForWindow. The
++            // same OS API floor supports ToUnicodeEx's no-state-change flag4.
++            const int count=GetKeyboardState(state) ? ToUnicodeEx(UINT(vk),scan,state,characters,16,4,GetKeyboardLayout(0)) : 0;
++            if (count>0 && count<=16) {
++                const auto text=RevSurfaceDetail::utf8(std::u16string(characters,characters+count));
++                if (text && !text->empty() && static_cast<unsigned char>((*text)[0])>=32) event.key=*text;
++            } else if (count<0) event.key="Dead";
++            if (event.key.empty()) {
++                switch(vk) {
++                case VK_SHIFT:event.key="Shift";break;case VK_CONTROL:event.key="Control";break;
++                case VK_MENU:event.key=(event.modifiers&16)?"AltGraph":"Alt";break;
++                case VK_LWIN:case VK_RWIN:event.key="Meta";break;
++                case VK_RETURN:event.key="Enter";break;case VK_TAB:event.key="Tab";break;
++                case VK_BACK:event.key="Backspace";break;case VK_ESCAPE:event.key="Escape";break;
++                case VK_DELETE:event.key="Delete";break;case VK_INSERT:event.key="Insert";break;
++                case VK_HOME:event.key="Home";break;case VK_END:event.key="End";break;
++                case VK_PRIOR:event.key="PageUp";break;case VK_NEXT:event.key="PageDown";break;
++                case VK_LEFT:event.key="ArrowLeft";break;case VK_RIGHT:event.key="ArrowRight";break;
++                case VK_UP:event.key="ArrowUp";break;case VK_DOWN:event.key="ArrowDown";break;
++                case VK_APPS:event.key="ContextMenu";break;
++                default:if(vk>=VK_F1 && vk<=VK_F24) event.key="F"+std::to_string(vk-VK_F1+1);else event.key="Unidentified";
++                }
++            }
++            return event;
++        }
++        std::optional<std::u16string> nativeSurfaceImmText(HIMC im,DWORD kind) {
++            const LONG bytes=ImmGetCompositionStringW(im,kind,nullptr,0);
++            if (bytes<0 || bytes%2 || std::size_t(bytes)>RevSurfaceDetail::maximum_text_bytes*2) return {};
++            std::u16string text(std::size_t(bytes)/2,char16_t{});
++            if (bytes && ImmGetCompositionStringW(im,kind,text.data(),DWORD(bytes))!=bytes) return {};
++            if (!RevSurfaceDetail::utf8(text)) return {};
++            return text;
++        }
++        void failNativeSurface(const char* reason) noexcept {
++            nativeSurfaceEnabled=false;
++            try {RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::unavailable;event.text=reason;sendNativeSurface(std::move(event));}catch(...){}
++        }
++        std::optional<LRESULT> nativeSurfaceMessage(HWND h,UINT message,WPARAM wp,LPARAM lp) {
++            if (!nativeSurfaceEnabled) return {};
++            if(nativeSurfaceResetting && (message==WM_IME_STARTCOMPOSITION || message==WM_IME_COMPOSITION || message==WM_IME_ENDCOMPOSITION))return 0;
++            if(message==WM_XBUTTONDOWN || message==WM_XBUTTONDBLCLK){onButtonDown(h,GET_XBUTTON_WPARAM(wp)==XBUTTON1?3:4,lp);return TRUE;}
++            if(message==WM_XBUTTONUP){onButtonUp(h,GET_XBUTTON_WPARAM(wp)==XBUTTON1?3:4,lp);return TRUE;}
++            if(message==WM_RBUTTONUP){onButtonUp(h,1,lp);return DefWindowProcW(h,message,wp,lp);}
++            if(message==WM_CONTEXTMENU) {
++                RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::context;
++                event.keyboard_context=lp==LPARAM(-1);event.x=GET_X_LPARAM(lp);event.y=GET_Y_LPARAM(lp);
++                event.modifiers=nativeSurfaceModifiers();sendNativeSurface(std::move(event));return 0;
++            }
++            if (message==WM_KEYDOWN || message==WM_SYSKEYDOWN || message==WM_KEYUP || message==WM_SYSKEYUP) {
++                const bool down=message==WM_KEYDOWN || message==WM_SYSKEYDOWN;
++                const auto count=unsigned(std::uint64_t(lp)&65535);
++                if(!count || count>64 || (!down && count!=1)){failNativeSurface("Invalid bounded Windows key repeat count");return 0;}
++                bool captured=false;
++                for(unsigned n=0;n<count;++n) {
++                    auto event=nativeSurfaceKey(wp,lp,down);if(n)event.repeat=true;
++                    captured=sendNativeSurface(std::move(event)) || captured;
++                }
++                return captured ? 0 : DefWindowProcW(h,message,wp,lp);
++            }
++            if (message==WM_CHAR) {
++                const auto unit=char16_t(wp);
++                const auto count=unsigned(std::uint64_t(lp)&65535);
++                if(!count || count>64){failNativeSurface("Invalid bounded Windows text repeat count");return 0;}
++                if (unit>=0xd800 && unit<=0xdbff) {
++                    if(nativeSurfaceHighSurrogate){failNativeSurface("Unpaired Windows high surrogate");return 0;}
++                    nativeSurfaceHighSurrogate=unit;nativeSurfaceHighRepeat=count;return 0;
++                }
++                std::u16string units;
++                if (nativeSurfaceHighSurrogate) {
++                    if(count!=nativeSurfaceHighRepeat){failNativeSurface("Unjoined Windows surrogate repeat count");return 0;}
++                    units.push_back(nativeSurfaceHighSurrogate);nativeSurfaceHighSurrogate=0;nativeSurfaceHighRepeat=0;
++                }
++                units.push_back(unit);
++                // Native command controls do not insert text, including NUL.
++                if(units.size()==1 && (unit<32 || unit==127))return 0;
++                const auto text=RevSurfaceDetail::utf8(units);
++                if (!text) {failNativeSurface("Invalid bounded Windows text/IME passage");return 0;}
++                if(text->size()>RevSurfaceDetail::maximum_text_bytes/count){failNativeSurface("Oversized Windows repeated text");return 0;}
++                RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::commit;
++                for(unsigned n=0;n<count;++n)event.text+=*text;
++                const auto selected=RevSurfaceDetail::utf16(event.text);event.selection_start=event.selection_end=selected->size();
++                sendNativeSurface(std::move(event));return 0;
++            }
++            if (message==WM_IME_CHAR)return 0; // GCS_RESULTSTR already owns the Unicode result.
++            if (message==WM_IME_STARTCOMPOSITION) {
++                if (nativeSurfaceTransaction==UINT64_MAX) {failNativeSurface("Invalid bounded Windows text/IME passage");return 0;}
++                ++nativeSurfaceTransaction;nativeSurfaceComposing=true;
++                RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::preedit_begin;event.transaction=nativeSurfaceTransaction;
++                sendNativeSurface(std::move(event));return 0;
++            }
++            if (message==WM_IME_COMPOSITION) {
++                if(!lp) {
++                    if(nativeSurfaceComposing) {
++                        RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::preedit_cancel;event.transaction=nativeSurfaceTransaction;
++                        sendNativeSurface(std::move(event));nativeSurfaceComposing=false;
++                    }
++                    return 0;
++                }
++                const HIMC im=ImmGetContext(h);if (!im) {failNativeSurface("Invalid bounded Windows text/IME passage");return 0;}
++                if ((lp&GCS_RESULTSTR)!=0) {
++                    const auto units=nativeSurfaceImmText(im,GCS_RESULTSTR);
++                    if (!units) {ImmReleaseContext(h,im);failNativeSurface("Invalid bounded Windows text/IME passage");return 0;}
++                    RevSurfaceEvent event;event.kind=nativeSurfaceComposing?RevSurfaceEvent::Kind::preedit_commit:RevSurfaceEvent::Kind::commit;
++                    event.transaction=nativeSurfaceComposing?nativeSurfaceTransaction:0;
++                    event.text=*RevSurfaceDetail::utf8(*units);event.selection_start=event.selection_end=units->size();
++                    sendNativeSurface(std::move(event));nativeSurfaceComposing=false;
++                }
++                if ((lp&(GCS_COMPSTR|GCS_CURSORPOS))!=0) {
++                    if(!nativeSurfaceComposing) {
++                        if(nativeSurfaceTransaction==UINT64_MAX){ImmReleaseContext(h,im);failNativeSurface("Native composition transaction exhausted");return 0;}
++                        ++nativeSurfaceTransaction;nativeSurfaceComposing=true;
++                        RevSurfaceEvent start;start.kind=RevSurfaceEvent::Kind::preedit_begin;start.transaction=nativeSurfaceTransaction;sendNativeSurface(std::move(start));
++                    }
++                    const auto units=nativeSurfaceImmText(im,GCS_COMPSTR);
++                    const LONG caret=ImmGetCompositionStringW(im,GCS_CURSORPOS,nullptr,0);
++                    if (!units || caret<0 || !RevSurfaceDetail::boundary(*units,std::size_t(caret)) || !nativeSurfaceComposing) {
++                        ImmReleaseContext(h,im);failNativeSurface("Invalid bounded Windows text/IME passage");return 0;
++                    }
++                    RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::preedit_update;
++                    event.transaction=nativeSurfaceTransaction;event.text=*RevSurfaceDetail::utf8(*units);
++                    event.selection_start=event.selection_end=std::size_t(caret);sendNativeSurface(std::move(event));
++                }
++                ImmReleaseContext(h,im);return 0;
++            }
++            if (message==WM_IME_ENDCOMPOSITION) {
++                if (nativeSurfaceComposing) {
++                    RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::preedit_cancel;event.transaction=nativeSurfaceTransaction;
++                    sendNativeSurface(std::move(event));nativeSurfaceComposing=false;
++                }
++                return 0;
++            }
++            if (message==WM_IME_REQUEST && (wp==IMR_RECONVERTSTRING || wp==IMR_DOCUMENTFEED)) {
++                const auto units=RevSurfaceDetail::utf16(nativeSurfaceContext.surrounding);
++                if (!units) return 0;
++                const std::size_t required=sizeof(RECONVERTSTRING)+(units->size()+1)*sizeof(char16_t);
++                if (!lp) return LRESULT(required);
++                auto* result=reinterpret_cast<RECONVERTSTRING*>(lp);
++                if (result->dwSize<required) return 0;
++                result->dwVersion=0;result->dwStrLen=DWORD(units->size());result->dwStrOffset=sizeof(RECONVERTSTRING);
++                result->dwCompStrLen=result->dwTargetStrLen=DWORD(nativeSurfaceContext.selection_end-nativeSurfaceContext.selection_start);
++                result->dwCompStrOffset=result->dwTargetStrOffset=DWORD(nativeSurfaceContext.selection_start*sizeof(char16_t));
++                std::memcpy(reinterpret_cast<unsigned char*>(result)+result->dwStrOffset,units->c_str(),(units->size()+1)*sizeof(char16_t));
++                return LRESULT(required);
++            }
++            return {};
++        }
+ 
+         // Number of mouse buttons currently held. Used to drive mouse capture:
+         // capture on the first press, release on the last release. Capture keeps
+@@ -1013,8 +1282,15 @@
+ 
+         // Notify listener callback of event
+         WinEvent notifyEvent(WinEvent event) {
++            struct NativeSurfaceTurn {
++                NativeWindow& owner;bool active;
++                NativeSurfaceTurn(NativeWindow& value,bool selected):owner(value),active(selected){if(active)++owner.nativeSurfaceDepth;}
++                ~NativeSurfaceTurn(){if(active)--owner.nativeSurfaceDepth;}
++            } native_surface_turn(*this,nativeSurfaceEnabled || bool(event.surface));
++
+ 
+             event.subject = this;
++            if(nativeSurfaceEnabled)event.surface_modifiers=nativeSurfaceModifiers();
+ 
+             // NOTE: mouse coordinates are delivered as absolute *screen* pixels
+             // (physical, unscaled). Window converts to window-local logical
+@@ -1130,6 +1406,11 @@
+             // Retrieve instance for all other messages
+             NativeWindow* self = Self(h);
+ 
++            if (self) {
++                try {if(auto result=self->nativeSurfaceMessage(h,msg,wp,lp))return *result;}
++                catch(...){self->failNativeSurface("Native surface callback failed");return 0;}
++            }
++
+             switch (msg) {
+ 
+                 // When the window is first created
+@@ -1297,6 +1578,11 @@
+ 
+                 // When the window is resized
+                 case (WM_SIZE): {
++                    // Keep the real allocated render target for safe redaction
++                    // while the actual minimized client extent is reported0.
++                    if(self->nativeSurfaceEnabled && wp==SIZE_MINIMIZED) {
++                        self->notifyEvent({WinEvent::Type::Minimize});return 0;
++                    }
+ 
+                     self->size.w = LOWORD(lp);
+                     self->size.h = HIWORD(lp);

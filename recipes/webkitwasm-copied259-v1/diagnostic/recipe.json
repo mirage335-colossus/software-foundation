@@ -1,0 +1,1233 @@
+{
+  "inputs": {
+    "archives/dependencies/brotli.tar.gz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "e720a6ca29428b803f4ad165371771f5398faba397edf6778837a18599ea13ff"
+    },
+    "archives/dependencies/curl.tar.xz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "955f6e729ad6b3566260e8fef68620e76ba3c31acf0a18524416a185acf77992"
+    },
+    "archives/dependencies/fontconfig.tar.xz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e"
+    },
+    "archives/dependencies/freetype.tar.gz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "bc5c898e4756d373e0d991bab053036c5eb2aa7c0d5c67e8662ddc6da40c4103"
+    },
+    "archives/dependencies/harfbuzz.tar.xz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "a41b272ceeb920c57263ec851604542d9ec85ee3030506d94662067c7b6ab89e"
+    },
+    "archives/dependencies/icu4c-77_1-src.tgz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "588e431f77327c39031ffbb8843c0e3bc122c211374485fa87dc5f3faff24061"
+    },
+    "archives/dependencies/libjpeg-turbo.tar.gz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "0270f9496ad6d69e743f1e7b9e3e9398f5b4d606b6a47744df4b73df50f62e38"
+    },
+    "archives/dependencies/libpng.tar.gz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "fecc95b46cf05e8e3fc8a414750e0ba5aad00d89e9fdf175e94ff041caf1a03a"
+    },
+    "archives/dependencies/libpsl.tar.gz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "1dcc9ceae8b128f3c0b3f654decd0e1e891afc6ff81098f227ef260449dae208"
+    },
+    "archives/dependencies/libwebp.tar.gz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "12af50c45530f0a292d39a88d952637e43fb2d4ab1883c44ae729840f7273381"
+    },
+    "archives/dependencies/libxml2.tar.xz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "59912db536ab56a3996489ea0299768c7bcffe57169f0235e7f962a91f483590"
+    },
+    "archives/dependencies/nghttp2.tar.xz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "88bb94c9e4fd1c499967f83dece36a78122af7d5fb40da2019c56b9ccc6eb9dd"
+    },
+    "archives/dependencies/openssl.tar.gz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "344d0a79f1a9b08029b0744e2cc401a43f9c90acd1044d09a530b4885a8e9fc0"
+    },
+    "archives/dependencies/sqlite.zip": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "77823cb110929c2bcb0f5d48e4833b5c59a8a6e40cdea3936b99e199dbbe5784"
+    },
+    "archives/dependencies/zlib.tar.gz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+    },
+    "archives/engine/WebKit-aec9d2ad958e716ab4bca4bf03007e6edac7323f-Source-Tools-root.tar.gz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "ffc02dcdbd7fa2a58f72b4fb7f8cd5404df15bb8e6a348cd42206f1d4c7c76b8"
+    },
+    "archives/host-tools/fonts-dejavu-core_2.37-8_all.deb": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "86635b3d25b3655fc11cb3ecc3af59f0bf19643b02b94f2de48bd10253cdba12"
+    },
+    "archives/host-tools/fonts-dejavu-extra_2.37-8_all.deb": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "83128d00e5d7db412fe5a7a4e2ee32aebbf8d9ed560ad611202fb43078f80323"
+    },
+    "archives/host-tools/fonts-dejavu-mono_2.37-8_all.deb": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "3003e98a5debfdeadc7040a7f715fe9fe6fb67f68deacf6049b54e30f07fc014"
+    },
+    "archives/host-tools/gperf_3.2.1-1_amd64.deb": {
+      "mode": 420,
+      "role": "tool",
+      "sha256": "8a09d9ead1899a8ade3ed6205c06f1ce0b50792da8f92f6672a7060410fc226e"
+    },
+    "archives/host-tools/libruby3.3_3.3.8-2_amd64.deb": {
+      "mode": 420,
+      "role": "tool",
+      "sha256": "033d7f7359da6353d29e5cb87ef411357d3841c02fd7d1089897653fec665289"
+    },
+    "archives/host-tools/ruby3.3_3.3.8-2_amd64.deb": {
+      "mode": 420,
+      "role": "tool",
+      "sha256": "10798ffe8edc86d7f9491655a115049a7a77dfbef5dc909dc13803cbb6c47f9b"
+    },
+    "archives/wrapper/WebkitWasm-68c618544e1f8af18ebce346281a6a49766aa194.tar.gz": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "66fcda8af76d3dd51419b9622c1a58e3dd61a1c0344194cfbd49ca246989b949"
+    },
+    "bootstrap/baseline/build-webcore.sh": {
+      "mode": 420,
+      "role": "bootstrap",
+      "sha256": "58726024a135ce3cd8ccbeadb77e23fac5187590f740487846c2d8f4f974d947"
+    },
+    "bootstrap/baseline/curl-tier.sh": {
+      "mode": 420,
+      "role": "bootstrap",
+      "sha256": "d75db911893b68d9c6d691f6a0b2a6caf4891108e9e7b3b79bf4f71e2b7d935c"
+    },
+    "bootstrap/baseline/emscripten-config.py": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "1ec230986d50ba1201e932f126fc297a1cbbb21b626fdbd79fd34fb84487116e"
+    },
+    "bootstrap/baseline/icu.sh": {
+      "mode": 420,
+      "role": "bootstrap",
+      "sha256": "7b7805a7d480a5521997bd050ce0df5c424a6dd8b71d0fd2ce1059c9a14669d4"
+    },
+    "bootstrap/baseline/prebuild-brotli.sh": {
+      "mode": 420,
+      "role": "bootstrap",
+      "sha256": "ffe9b28410e5778f2d426b65d49366abded6cdcbb5fe729fc8c26c67ae1bc87e"
+    },
+    "bootstrap/baseline/webcore-deps.sh": {
+      "mode": 420,
+      "role": "bootstrap",
+      "sha256": "fa7ae3510558c9792f14d4d03d559b7d17e4384cc1c7d12b3c8b4823bb424c1f"
+    },
+    "data/fontconfig/conf.d/10-hinting-slight.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "d138eca2bac3f78d45ff7cfb649ad792caa4a6e61f73cea7cf0ea54b091f1ef4"
+    },
+    "data/fontconfig/conf.d/10-scale-bitmap-fonts.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "df8e99abb6f82384c61978906a45a95794940545da95790d87f01d9391e0894b"
+    },
+    "data/fontconfig/conf.d/10-sub-pixel-none.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "0f00b5cf0ce07062ec65b9b340aa888f6c5fbc215aafebd26781be2d5a13ff6a"
+    },
+    "data/fontconfig/conf.d/10-yes-antialias.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "e6d82a642d1b37f7d24dc37f938b999f00ff7aa4303b2602d04164d53f221005"
+    },
+    "data/fontconfig/conf.d/11-lcdfilter-default.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "76aec9d8dac48faabe1bbde9e887cfb09fa45f30be5f8826e945a394a0097e48"
+    },
+    "data/fontconfig/conf.d/20-unhint-small-vera.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "278732c68c16177f2aa3c7e4ea318b9f720aee13a433c32eb15ba626806c609d"
+    },
+    "data/fontconfig/conf.d/30-metric-aliases.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "3baf25c82e1a14c606d45c212296852be06ae9795d60e84aab573226151450a2"
+    },
+    "data/fontconfig/conf.d/40-nonlatin.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "5c3f7d62a44258d5d9e81a93b1685bee5ab78acb8688b25a43c4c1e749312a84"
+    },
+    "data/fontconfig/conf.d/45-generic.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "24de9f68189d544bb4cc084d9bd8f3a59d8b988a9dc44b11e9877d5add5fc948"
+    },
+    "data/fontconfig/conf.d/45-latin.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "807638284032d8d8f6ed8b014a0edae79a4d4f3c4e70317fdb0bfa8edd66779e"
+    },
+    "data/fontconfig/conf.d/48-spacing.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "99d839cd8aa28854e8f54f26e7200b6e57951f39f56791a0ed473662488bcef6"
+    },
+    "data/fontconfig/conf.d/49-sansserif.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "7849a11ce5243e8bb3d06bcad558737a8682e5122e73c8e427f4c011a2054818"
+    },
+    "data/fontconfig/conf.d/50-user.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "449137ccce57d60bca178d57519ba54e1942d757ad171f3a88cd78df2161c970"
+    },
+    "data/fontconfig/conf.d/51-local.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "dca9d917e1f66f73bfa495943b4d1eaab2d93810a51bc8e600cf4d4e9df03e67"
+    },
+    "data/fontconfig/conf.d/60-generic.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "195bc8605dd23289d42c10d79cc13a5ce4a4b3cf965df5b30ecc0b7149bb951f"
+    },
+    "data/fontconfig/conf.d/60-latin.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "df313037dc3a13daa6eb82483aedfc236157cd3895c557250aa5e72b71ad5508"
+    },
+    "data/fontconfig/conf.d/65-fonts-persian.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "c675fab143a3638346874798be45f51f6878ebec591b4362d83cfffb828ec4ca"
+    },
+    "data/fontconfig/conf.d/65-nonlatin.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "c0b0d517d351834705f7678c4b819e09cb619b116400a9cbe5a70b9d873bfcf1"
+    },
+    "data/fontconfig/conf.d/69-unifont.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "fa97c0cf5f79d70e2dc3dc48155d4c9220cd7c6a8bc95b89c4ebcc517f97479e"
+    },
+    "data/fontconfig/conf.d/80-delicious.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "34f27b7fe9cd83b2b6d46f16ef9c477412f2d7ef63634f86b9b38b79bc4f81ad"
+    },
+    "data/fontconfig/conf.d/90-synthetic.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "cdd0aac7840c664a7127b64db66bdfe8dc22be3774d10bc22f4a41c98de5d85e"
+    },
+    "data/fontconfig/fonts.conf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "0fea9da6f155d7b5d0529be4aef7a1bef2b75601747d28787c2c378e22de2a30"
+    },
+    "data/fonts/DejaVuSans-Bold.ttf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "a4c5bc453ca281d90ea079e596da7ae0dfeb5777497c29ec254e76d97ff6f890"
+    },
+    "data/fonts/DejaVuSans-BoldOblique.ttf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "c35383d5e56add5cc9cdc9f4e4a899f9e540f7c7e49f1901074c2d03af194eff"
+    },
+    "data/fonts/DejaVuSans-Oblique.ttf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "e2f09289f4276309a36b9a93e5a0ac64957ef3eb7158151b243d41f667151ee4"
+    },
+    "data/fonts/DejaVuSans.ttf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "57f73e11f51999432bf7ab22ce55b6f945d5eca1bf824404cfa9ec2e3718c84e"
+    },
+    "data/fonts/DejaVuSansMono-Bold.ttf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "0d3c03d1b667192f91223660a3163325cf83132662fe4d9f7d6e596bf7a995c2"
+    },
+    "data/fonts/DejaVuSansMono.ttf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "54bf827eb99404e8f430c330ad30f063334f637eba0109b6a18d4f566a8e9dd8"
+    },
+    "data/fonts/DejaVuSerif-Bold.ttf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "aac3f559445d23f0f567a243f91f3f6ad6cb4b5cafa1521a3479fffe0637f0bd"
+    },
+    "data/fonts/DejaVuSerif-Italic.ttf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "d843bf414381dd64b89e6c7c954075657b74168521f02b30e11d308558eda1d2"
+    },
+    "data/fonts/DejaVuSerif.ttf": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "8cb29f7db250ebb2551a6ce2c1e0bfd5a0eb520e9e233370db0493e82e1f36f7"
+    },
+    "data/icu/icudt77l.dat": {
+      "mode": 420,
+      "role": "data",
+      "sha256": "310d9b2cb42947fad7f388b09d2ae574e2adeb60ca76abf280438908f20b2d7b"
+    },
+    "licenses/foundation/LICENSE": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "2af1fdbe0af27ba4fe8085562b1ee56264b52a0f001c7a86d7bfed0e7b26a9a8"
+    },
+    "licenses/host-tools/licenses/BSD": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "5d588eb3b157d52112afea935c88a7ff9efddc1e2d95a42c25d3b96ad9055008"
+    },
+    "licenses/host-tools/licenses/GPL-2": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
+    },
+    "licenses/host-tools/licenses/GPL-3": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    "licenses/host-tools/licenses/fonts-dejavu-core.copyright": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "63d3ba759d12804c5b31a9d5940d855c1820d1f5999e6b0872eb1c7ff045fbc9"
+    },
+    "licenses/host-tools/licenses/fonts-dejavu-extra.copyright": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "63d3ba759d12804c5b31a9d5940d855c1820d1f5999e6b0872eb1c7ff045fbc9"
+    },
+    "licenses/host-tools/licenses/fonts-dejavu-mono.copyright": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "63d3ba759d12804c5b31a9d5940d855c1820d1f5999e6b0872eb1c7ff045fbc9"
+    },
+    "licenses/host-tools/licenses/gperf.copyright": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "e6c7cd6ca9acd7ae0795356401851e32ebe32973f9e0a1170e1950b42d22fe8b"
+    },
+    "licenses/host-tools/licenses/libruby3.3.copyright": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "e204965f1ce0e936fba339d0292f6ddc8ff7058a17586b3af2361523a8c18f66"
+    },
+    "licenses/host-tools/licenses/ruby3.3.copyright": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "e204965f1ce0e936fba339d0292f6ddc8ff7058a17586b3af2361523a8c18f66"
+    },
+    "licenses/sqlite/sqlite3.h": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "89b62c671c5964e137409ce034941b7b05a3af2c9875aba41f47f9483d0c2515"
+    },
+    "licenses/wrapper/LICENSING.md": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "130a316696e13459c5b5a53e7ef51f1961333adbb5ce7999634651fe8dca4055"
+    },
+    "licenses/wrapper/third_party/WebKit/Source/JavaScriptCore/COPYING.LIB": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "5094ecb9c9dcd0eadc34f3c11511d9b5535063032bc150164ecd1a5d5a445547"
+    },
+    "licenses/wrapper/third_party/WebKit/Source/ThirdParty/skia/LICENSE": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "5f787c1dee3c56547f09ccc2906ab5f5293c4d8dd6c8654e573216c38e908dbd"
+    },
+    "licenses/wrapper/third_party/WebKit/Source/WTF/LICENSE-LLVM.txt": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "f72b120d1385408e9e380acc020756eb6ba1b461d66c328ea67327ba08d7dcfd"
+    },
+    "licenses/wrapper/third_party/WebKit/Source/WTF/LICENSE-dragonbox.txt": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "9bb1036ef8dcb42c59e2a23c9e465f43e75003e06898faf0edd18de662f3ecb8"
+    },
+    "licenses/wrapper/third_party/WebKit/Source/WTF/LICENSE-libc++.txt": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "c1938c0e9e90639d1e8f5a7f6bebaab83a3642e0ee44295a4c69934686d0bda8"
+    },
+    "licenses/wrapper/third_party/WebKit/Source/WTF/LICENSE-simde.txt": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "75ce0a8c5a7bff42fbd6f8f3b469b518132132c4f4948fb8d02b1ccb5d0df9d8"
+    },
+    "licenses/wrapper/third_party/WebKit/Source/WebCore/LICENSE-APPLE": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "0b5d3a7cc325942567373b0ecd757d07c132e0ebd7c97bfc63f7e1a76094edb4"
+    },
+    "licenses/wrapper/third_party/WebKit/Source/WebCore/LICENSE-LGPL-2": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "7555fa34bc131a75ca56d65c40cc1ea8f9515d23e353d4c15d58573a042f7805"
+    },
+    "licenses/wrapper/third_party/WebKit/Source/WebCore/LICENSE-LGPL-2.1": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "f2b3bd09663381deb99721109d22b47af1213bb43007a8b56a06c6375c8050ce"
+    },
+    "licenses/wrapper/third_party/build-deps/brotli/LICENSE": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94"
+    },
+    "licenses/wrapper/third_party/build-deps/curl/COPYING": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "e18f1989333b70044b2adfb7dc2f905d0119dbdcac3bc9f4bc9d540e3a29de5b"
+    },
+    "licenses/wrapper/third_party/build-deps/fontconfig/COPYING": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "51a51aa9823704fd90bccc616cdd17ebabb5b2b3e9cbde886ca02c7002288067"
+    },
+    "licenses/wrapper/third_party/build-deps/freetype/LICENSE.TXT": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "2e3bbb7d7c5c396368dd0853a790ec29ce5b8647163dde42a0493fb0d6556b2b"
+    },
+    "licenses/wrapper/third_party/build-deps/freetype/docs/FTL.TXT": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "08c135755dd589039470f1fdbb400daaabaaa50d0b366d19cebff4d22986baa1"
+    },
+    "licenses/wrapper/third_party/build-deps/freetype/docs/GPLv2.TXT": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "c4120c6752c910c299e3bd9cb3a46ff262c268303ca2069b61f92f10a5656c18"
+    },
+    "licenses/wrapper/third_party/build-deps/harfbuzz/COPYING": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "ba8f810f2455c2f08e2d56bb49b72f37fcf68f1f4fade38977cfd7372050ad64"
+    },
+    "licenses/wrapper/third_party/build-deps/icu/LICENSE": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "451167c55c0fa447cc2d5632714f5e3c567fe4f1e1badefab2c1333852198aca"
+    },
+    "licenses/wrapper/third_party/build-deps/icu/license.html": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "c62d7697c03979f5056d28b338fafc7a1152820f7b379adf4a9d88cd37160f96"
+    },
+    "licenses/wrapper/third_party/build-deps/libjpeg-turbo/LICENSE.md": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "e548c96c0c09397c94b5c5531836c02ff2c403f1f2b130cad8e3ec9439b5a7cc"
+    },
+    "licenses/wrapper/third_party/build-deps/libjpeg-turbo/README.ijg": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "f4a85f8677ca4e41b185c0a9f7c31a30ddb9ce43c561483ee92ef12db37c2a10"
+    },
+    "licenses/wrapper/third_party/build-deps/libpng/LICENSE": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "7317e078e2d3b5d7ba5a6159e650945153262b44b76f6700f8e9edb261c5143e"
+    },
+    "licenses/wrapper/third_party/build-deps/libpsl/COPYING": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "322392e6001b2b3b0fca705dc9f11f26e12441188ecde50eb1d22909980b2925"
+    },
+    "licenses/wrapper/third_party/build-deps/libpsl/LICENSE": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "322392e6001b2b3b0fca705dc9f11f26e12441188ecde50eb1d22909980b2925"
+    },
+    "licenses/wrapper/third_party/build-deps/libwebp/COPYING": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf"
+    },
+    "licenses/wrapper/third_party/build-deps/libxml2/Copyright": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "7fb0a66f3989f9bd5c7e5438a3de02cd4a7a47dde0aea2f7ea2ba2ff454ee6a4"
+    },
+    "licenses/wrapper/third_party/build-deps/nghttp2/COPYING": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "6b94f3abc1aabd0c72a7c7d92a77f79dda7c8a0cb3df839a97890b4116a2de2a"
+    },
+    "licenses/wrapper/third_party/build-deps/openssl/LICENSE.txt": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a"
+    },
+    "licenses/wrapper/third_party/build-deps/zlib/LICENSE": {
+      "mode": 420,
+      "role": "license",
+      "sha256": "845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243"
+    },
+    "patches/00-webkit-supplier-port.patch": {
+      "mode": 420,
+      "role": "patch",
+      "sha256": "f25940d21c8ba37d62a6d48ea6da25053af1559bde323d0bfc9ba25cad2bca84"
+    },
+    "prelink-plan.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "590630bb19efb09185dc0eada019fd84b03f925d5671398944e4873154b3dabf"
+    },
+    "provenance/baseline/host-tools/freeze.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "61c6bfc18cf785065ca7967455103eeae9d906078f27afa3ab021abbfd435a9f"
+    },
+    "provenance/baseline/host-tools/handoff.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "4d2e19c5a57d0ac8ee8806320aa5d0e0f3663a73bc9ec3d2a07d6905ec372472"
+    },
+    "provenance/baseline/host-tools/manifest.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "cb579a9a2fa1edbedb70701a584127107af2b8b6ef8ad64a871f0954bdb82eac"
+    },
+    "provenance/baseline/receipts/configured-link-closure.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "312df261f7ae2ced5981286ff84d6609c37739883765fcd27f1976e9da2a87f6"
+    },
+    "provenance/baseline/receipts/preparation-commands.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "0da1072057a80f92cd26414b2a658bbd780416612fe1779fdad42ad2da4ff601"
+    },
+    "provenance/baseline/receipts/service-syntax-read-freeze-003.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "95d18a80dcab66783362733e0ba7c85da1c6f5718dbd14e1c238c3a10a294752"
+    },
+    "provenance/baseline/receipts/sysroot-before-engine.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "d1716ae2a26e0bd27dd86c565a2cd062c7377605bbe1dd24257841f501faefaf"
+    },
+    "provenance/baseline/receipts/webkit-modified-inputs.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "98eba87380a8c3182f5d566798a2398fdc13859e9e82ac69db941d43435634e0"
+    },
+    "provenance/baseline/receipts/wrapper-inputs-final.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "aa379dc16fae82e676e0dd19666b6afb58cd05c4e6d15929f6f6c427490db6ec"
+    },
+    "provenance/copied-composition.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "3f3ee24afa640dd2b97887c7ef99d544651877eea43218d581b1bfb59c7d35d3"
+    },
+    "provenance/selected-data-inventory.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "4901d3210a5e92094389be4e2185e24f5c8a9378a29e92675b8d2d1a9cc169bf"
+    },
+    "provenance/source-archive/archive-receipt.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "fec867a2ea7bb6a5d051160db78c1b09e16e92f282246c83b5f9ee2d70472a0e"
+    },
+    "provenance/source-archive/create_archive.py": {
+      "mode": 420,
+      "role": "helper",
+      "sha256": "90cb1377c46559cb872a17186e00fed7d31caec3fb9679d8d6bf3573001ec419"
+    },
+    "provenance/source-archive/pristine-member-manifest.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "e9af73f33d02a0647753e99f8ae33fd2574f9e2dabe72145a16d5d74940e0f7b"
+    },
+    "provenance/source-archive/source-scope.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "2291487e11baf8d8c13090541aef012a49a0162f1803804cd8fe65f4e3484a15"
+    },
+    "provenance/source-archive/supplier-patch-images.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "3eaa618822607c03fb1239c921cde119ff4e2623499bb2b9eb367870c28db93c"
+    },
+    "source/copied-provider/portable/BibEngineCopiedDispatch.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "b6b029ede0f1b1105b4524f7aa9522a9ffec660a5f39e3345cf990910820ef8d"
+    },
+    "source/copied-provider/portable/BibEngineCopiedDispatch.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "a142a6ec9039b8a9ed16e5f7d6699c1a9c23e74ba90ede08992eeac44b361b03"
+    },
+    "source/copied-provider/portable/BibEngineCopiedRecord.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "1dee628f15d59e51b8e1fe5b9b32d61a49b70bec7b5d74018c960646d1112556"
+    },
+    "source/copied-provider/portable/BibEngineCopiedRecord.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "2de3c52341828d840f29ca8a8cf6fb4b413a95272db8fc6b338e4114b9011b26"
+    },
+    "source/copied-provider/runtime/BibCopiedPixelBinding.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "4a1078339f082dc88000358bb396a0222da1f2b4055ed4e3182162cad172e2ac"
+    },
+    "source/copied-provider/runtime/BibEngineCopiedHost.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "9de69e5ca07787bf4722809c8b57cb2c7abcd803c2a141003c235d84db764b1c"
+    },
+    "source/copied-provider/runtime/BibEngineCopiedHost.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "d9bf75ef9b9ad8786417319bd933ede58953303df135b84f3b20db000043a639"
+    },
+    "source/copied-provider/runtime/BibEngineWasmShim.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "29457dd5aa700d814c63dbf8c824a6dda633e717d3ab2c802ba08700c795932e"
+    },
+    "source/copied-provider/runtime/BibEngineWasmShim.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "a949c7efffbbb856a8728bf159dd748f39d62eae7bab6489284a075bf0572663"
+    },
+    "source/copied-provider/runtime/embedder.cmake": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "f0471f861fae0d97b866bc4058e2bd410e236eb0a58fd4e44173a3d00ae2c591"
+    },
+    "source/copied-provider/runtime/engine-copied-library.js": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "5e82f5e402e3ae4cec2d36d61f8afb66ee24f7efa929c1ef44a6172aa1662ffb"
+    },
+    "source/copied-provider/runtime/engine-copied-metadata.h.in": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "7f248b9f60e11858961d7eedaeb9a6820722ee8df34be5e94fe537616d367805"
+    },
+    "source/copied-provider/runtime/engine-copied-pre.js": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "0cca50e7c06781287d8ddcd9288b915b6845871c3c4c3c93d86e58e86f367e05"
+    },
+    "source/copied-provider/runtime/generate_copied_metadata.py": {
+      "mode": 420,
+      "role": "helper",
+      "sha256": "1f19e8cf75aa8d78abdea5c3d227153f4b053740295ee99be391b2cf4739a024"
+    },
+    "source/copied-provider/runtime/private/EnginePrivate.hpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "c3edb941a3ff0586d5016c7cafb6a420cec7f0e6882339b7e85264bee3e82dd0"
+    },
+    "source/engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "8ae65acf35a605f9ebe1b2ea0654683926732e6842ae5c806433618b35d94851"
+    },
+    "source/engine/Source/WebCore/bindings/js/ScriptController.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "8f8e984f18a45631bb4a9e425a69656c6a35651e11fd038cab7d7f11bf625e79"
+    },
+    "source/engine/Source/WebCore/dom/Document.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "b9137b64104a653e113912a5a64c09606aea434cfe0a76c1a4c5e0be86843c42"
+    },
+    "source/engine/Source/WebCore/loader/DocumentLoader.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "f10bd277bc751179b8c0f7bbecda382d46d39e2919f11a0f87bbd4b37e5270bd"
+    },
+    "source/engine/Source/WebCore/workers/Worker.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "fd5f885a5bd6032e1bde897802dc4b59713f32ab3e29ed48145132ec95648ea1"
+    },
+    "source/engine/Source/WebCore/workers/shared/SharedWorker.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "748d4fa6786a246500e5b1667721b0ad9ef980abbbc69b351c0da60e317b8c4f"
+    },
+    "source/foundation/gui/shared/appended_engine_abi.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "36ba680f97282486cb4f782b336fe6f5aeb669f6fcce86d91685298324d7077e"
+    },
+    "source/foundation/include/foundation/appended/engine_provider.h": {
+      "mode": 420,
+      "role": "interface",
+      "sha256": "a8e89da85d34b29a4d1bc454495791fa604b81e3477e48ce8ca902e4333a9c0d"
+    },
+    "source/foundation/third_party/appended-engine/include/EnginePrivate.hpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "c3edb941a3ff0586d5016c7cafb6a420cec7f0e6882339b7e85264bee3e82dd0"
+    },
+    "source/foundation/third_party/appended-engine/include/LegacyHostAdapters.hpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "fdf463196a7a0c93b204969de389469e4a846643d53aa2d13aeb89535795e17c"
+    },
+    "source/foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef"
+    },
+    "source/foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861"
+    },
+    "source/foundation/third_party/appended-engine/src/LegacyHostAdapters.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "6e661dda207a84d944d9b173a6f5ee885ab1070ee48be8e30b2899a7d20c4420"
+    },
+    "source/foundation/third_party/appended-engine/src/ProviderGuard.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "4d7ee19b4f3d6d2bf75c559ca6d81ff00cfebbac65afacd1be74c847281bc5f8"
+    },
+    "source/provider-binding/binding/BibEngineProviderBinding.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "83cf143ff64bff2a77623d868e9ad4cdb1954f93101f88e105d0ce0ab56cc3f2"
+    },
+    "source/provider-binding/binding/BibEngineProviderBinding.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "0cbe896033f71b8ca06b652560567bb0f4db593aafe0a9bacc8b739b879a7299"
+    },
+    "source/provider-binding/binding/BibEngineProviderInputState.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "28421825c3c8bc2cec3c19ab5aa2b834948883bc1cd80d42b6e8739e5c63773e"
+    },
+    "source/provider-binding/binding/BibEngineProviderPreflight.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "dd8c25c5343498106be19b26d96e6b7292bb3e25f10c7b07b191461fdb81c3fb"
+    },
+    "source/provider-binding/binding/BibEngineProviderPreflight.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "20086b2caab4c9b79bc71391ac92a1b630bab193806eb24ecf7b8089cca3d4d4"
+    },
+    "source/provider-binding/codec/BibEngineProviderCatalog.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "d78d1cd891393b7ecc1cb274cb23d7c958e14b89a7c66be3bd427c937317bc69"
+    },
+    "source/provider-binding/codec/BibEngineProviderCodec.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "cfe39239649fda222ac5c610a59b8fa26fc987728efa4694d4d63fb6072ea299"
+    },
+    "source/provider-binding/codec/BibEngineProviderCodec.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "205d6fad4e874ceda8b78d2a46275694f826347f51c1a995de4e149356e6e9ae"
+    },
+    "source/provider-binding/private/EnginePrivate.hpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "fd758e8647e648da6dd7596bac93960efa9232680d7030c11a3b54d0f73fda8c"
+    },
+    "source/provider-binding/schema-catalog.json": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "f624339ff477208df72807c05f7762864a05b5609dc0fd8f3dceea59458f59f9"
+    },
+    "source/wrapper/src/embedder/AppDocumentLifecycle.hpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "e1905491bc7b774394b9d95379233faacb96ca25c581b74780a64b79f53cfa84"
+    },
+    "source/wrapper/src/embedder/AppResourceQueue.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "505a885cdcf80df7933f3aea02d1b11d799922d133dd73e75c4b988e2c0dab80"
+    },
+    "source/wrapper/src/embedder/AppResourceQueue.hpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "e9687eded98f1ac287422f08d09fac689d0a2fe463e707ccd0d5dc2b91a388b7"
+    },
+    "source/wrapper/src/embedder/BibAppResourceHost.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef"
+    },
+    "source/wrapper/src/embedder/BibAppResourceProfile.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "70680c1910cebb8bcf4b74fed2bd6ca4719b89735e9d921de9c5ea66ad8d9c17"
+    },
+    "source/wrapper/src/embedder/BibAppResources.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "233426d0cc0736940e5ae8906b3f5b64541e26d3134921a702d45191f2facc1b"
+    },
+    "source/wrapper/src/embedder/BibAppResources.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "60738d2b19acd8f04e6a52729c66c42b30965e454974e78202c886556161c463"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderDocumentProjection.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "f05ceedb6d7ac04e5e1cb7b5531f02d9e9453b7ff931cd0b5eefd78e2ae7357a"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderLifecycleHooks.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "eafcbd643539d435a5d855c2ac3c0e72a01a9b93d2ed789a334db0a55ac6bf4a"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderRuntime.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "dc3064a7236d646395459562528f95a9c60d6b663c930619c7dac313b10a1653"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderTimerHooks.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "c13f878e8c51b85392dc30887a2ea76d574ef11e6de5862ab51d829045434279"
+    },
+    "source/wrapper/src/embedder/BibFoundationServiceBridge.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "0900f41718a56916dc5d1eb41553d7c096977526ed54e99bea984d30329a5f84"
+    },
+    "source/wrapper/src/embedder/BibFoundationServiceBridge.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "d6da6a09948c24be8212fe5e7f3e9bd42f99cb33ae1478aad96c5bc5f2544358"
+    },
+    "source/wrapper/src/embedder/BibFoundationServiceHost.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861"
+    },
+    "source/wrapper/src/embedder/BibFoundationServicesBootstrap.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "8fecc8b1b8d8c812a393912f82dbacfcc2ee9f7d20a58cb2bac74bdcc85b9b1f"
+    },
+    "source/wrapper/src/embedder/BibIDBServer.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "9489dec1a9de9b15dc756a4b5d37c435cfb38fa3e7ecbd096b396c6ba20e34a7"
+    },
+    "source/wrapper/src/embedder/BibIDBServer.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "e3017071e80aa65f0ebdce2e9a7d44c9574da698496ff0703a16d7024a6a8f8b"
+    },
+    "source/wrapper/src/embedder/BibMediaPlayer.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "ec01b60ed892fe03dea2c51431c4215961730c175b3112d1da93df73f9e61fc6"
+    },
+    "source/wrapper/src/embedder/BibMediaPlayer.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "06790cb37fe559499ed3f8b3f45c91a206c0a9be7b6cf5bdb5aacb34e4f6ba79"
+    },
+    "source/wrapper/src/embedder/BibPageClients.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "33c024bccca3b22033496b6f92c8f1ab9f1ffa4c1cf6ed583966dff9c84fb76b"
+    },
+    "source/wrapper/src/embedder/BibPrototypeBridge.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "494214d9f21d542398d37bab72994c1874936ca15538dbafd301e10ed377a5ad"
+    },
+    "source/wrapper/src/embedder/BibPrototypeSemanticScript.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "639f23dc73cc8b26961f918e43b850abad1cd85d5eafa6c144f5ea97068cea2f"
+    },
+    "source/wrapper/src/embedder/BibPrototypeState.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "3c092e4ab5f8158afaebf829d43b138eb0b0b39dc2b1e14a884ecc0ee052fed7"
+    },
+    "source/wrapper/src/embedder/BibSocketProvider.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "9644ef368dfe0323094a5dffdce8401d046d0b6596ce509c4fcb902ca7b468dd"
+    },
+    "source/wrapper/src/embedder/BibStorage.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "d054ec693ea4657e5a45caf5ffb43507cc37f863141ff1d118c389efed88194d"
+    },
+    "source/wrapper/src/embedder/BibUndoHistory.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2"
+    },
+    "source/wrapper/src/embedder/BibWebSocketChannel.h": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "c8fd71955b4cb609ca44f6afa2e8dc36c027eb913be00c8686704b2d7d082c5d"
+    },
+    "source/wrapper/src/embedder/EmbedderStrategies.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "350f39f61dea3660a1b3e486d13d7856031a2e996bced8cace965e5fbf111b9d"
+    },
+    "source/wrapper/src/embedder/embedder.cmake": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "f0471f861fae0d97b866bc4058e2bd410e236eb0a58fd4e44173a3d00ae2c591"
+    },
+    "source/wrapper/src/embedder/main.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "485ea035f7886f153c5e3976d096413fe584cc65563e4b2a59c7d364d1a86373"
+    },
+    "source/wrapper/src/embedder/resource_url.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "05a1af43bd84e8ba4b4eb2b73070c7f331945806d4e33586f1a447cd0b216671"
+    },
+    "source/wrapper/src/embedder/resource_url.hpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "ef7a3a6ed1d71c6ef355e3cdb77488922239cd2f5c47e1d761b29af1c2bf6132"
+    },
+    "source/wrapper/src/patches/webkit-emscripten.patch": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "f25940d21c8ba37d62a6d48ea6da25053af1559bde323d0bfc9ba25cad2bca84"
+    },
+    "source/wrapper/src/spike/gpu-spike.cpp": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "d28b2752b7dad2e23e829141d4eb1b9f2ec4f406761c39ee00c072af75f5036f"
+    },
+    "source/wrapper/src/spike/wb-spike-pre.js": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "10a4bf241d0d94d1d59abcf8e7cc682361a7c7e460c1b29113ff48cb6962bb9e"
+    },
+    "source/wrapper/src/spike/wb-spike.c": {
+      "mode": 420,
+      "role": "source",
+      "sha256": "b8ac48db81d344435889d3ec777658566468d4ae5479659117b07e5f3804f4d6"
+    },
+    "toolchain/paired-sdk.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "217e8ee79c8f825e52cf92338a841cd7c79836666aaee7cbd1f41ee9e070920a"
+    },
+    "toolchain/wasm-sdk-bootstrap-recipe.json": {
+      "mode": 420,
+      "role": "config",
+      "sha256": "d5d0d342a21b850684dd2d963f4ebb3b21d3c37bf063a6a19b525990b333dc75"
+    },
+    "tools/appended_engine_consumer.py": {
+      "mode": 420,
+      "role": "helper",
+      "sha256": "6f15dbb76ea43209c2d6853788af9fec42ac9d21809708006533fa40d2bbc4f8"
+    },
+    "tools/appended_engine_manifest.py": {
+      "mode": 420,
+      "role": "helper",
+      "sha256": "6807d4471349f0bb8972ea7dbc257c6b8c8b79530ee32f9dcbca84750680952a"
+    },
+    "tools/appended_engine_sdk.py": {
+      "mode": 420,
+      "role": "helper",
+      "sha256": "c04d7de7bcf5387eec890533af314cca3e999a55f1b6dc66d49a3a52581a842e"
+    },
+    "tools/dependency_archive.py": {
+      "mode": 420,
+      "role": "helper",
+      "sha256": "28a2433591726aadcd35fc57e01d6e5c7307a2ed67b64846735b49f693b38d8a"
+    }
+  },
+  "kind": "foundation-appended-engine-recipe",
+  "licenses": [
+    "licenses/foundation/LICENSE",
+    "licenses/host-tools/licenses/BSD",
+    "licenses/host-tools/licenses/GPL-2",
+    "licenses/host-tools/licenses/GPL-3",
+    "licenses/host-tools/licenses/fonts-dejavu-core.copyright",
+    "licenses/host-tools/licenses/fonts-dejavu-extra.copyright",
+    "licenses/host-tools/licenses/fonts-dejavu-mono.copyright",
+    "licenses/host-tools/licenses/gperf.copyright",
+    "licenses/host-tools/licenses/libruby3.3.copyright",
+    "licenses/host-tools/licenses/ruby3.3.copyright",
+    "licenses/sqlite/sqlite3.h",
+    "licenses/wrapper/LICENSING.md",
+    "licenses/wrapper/third_party/WebKit/Source/JavaScriptCore/COPYING.LIB",
+    "licenses/wrapper/third_party/WebKit/Source/ThirdParty/skia/LICENSE",
+    "licenses/wrapper/third_party/WebKit/Source/WTF/LICENSE-LLVM.txt",
+    "licenses/wrapper/third_party/WebKit/Source/WTF/LICENSE-dragonbox.txt",
+    "licenses/wrapper/third_party/WebKit/Source/WTF/LICENSE-libc++.txt",
+    "licenses/wrapper/third_party/WebKit/Source/WTF/LICENSE-simde.txt",
+    "licenses/wrapper/third_party/WebKit/Source/WebCore/LICENSE-APPLE",
+    "licenses/wrapper/third_party/WebKit/Source/WebCore/LICENSE-LGPL-2",
+    "licenses/wrapper/third_party/WebKit/Source/WebCore/LICENSE-LGPL-2.1",
+    "licenses/wrapper/third_party/build-deps/brotli/LICENSE",
+    "licenses/wrapper/third_party/build-deps/curl/COPYING",
+    "licenses/wrapper/third_party/build-deps/fontconfig/COPYING",
+    "licenses/wrapper/third_party/build-deps/freetype/LICENSE.TXT",
+    "licenses/wrapper/third_party/build-deps/freetype/docs/FTL.TXT",
+    "licenses/wrapper/third_party/build-deps/freetype/docs/GPLv2.TXT",
+    "licenses/wrapper/third_party/build-deps/harfbuzz/COPYING",
+    "licenses/wrapper/third_party/build-deps/icu/LICENSE",
+    "licenses/wrapper/third_party/build-deps/icu/license.html",
+    "licenses/wrapper/third_party/build-deps/libjpeg-turbo/LICENSE.md",
+    "licenses/wrapper/third_party/build-deps/libjpeg-turbo/README.ijg",
+    "licenses/wrapper/third_party/build-deps/libpng/LICENSE",
+    "licenses/wrapper/third_party/build-deps/libpsl/COPYING",
+    "licenses/wrapper/third_party/build-deps/libpsl/LICENSE",
+    "licenses/wrapper/third_party/build-deps/libwebp/COPYING",
+    "licenses/wrapper/third_party/build-deps/libxml2/Copyright",
+    "licenses/wrapper/third_party/build-deps/nghttp2/COPYING",
+    "licenses/wrapper/third_party/build-deps/openssl/LICENSE.txt",
+    "licenses/wrapper/third_party/build-deps/zlib/LICENSE"
+  ],
+  "options": {
+    "rendering": "cpu",
+    "script_enabled": true,
+    "thread_model": "single"
+  },
+  "patches": [
+    {
+      "path": "patches/00-webkit-supplier-port.patch",
+      "postimages": {
+        "Source/JavaScriptCore/CMakeLists.txt": "9c1d35769d1ee7a7ecc018357aab762d665ce4a292b6229ebcda5e68f1bc76f3",
+        "Source/JavaScriptCore/PlatformEmscripten.cmake": "4c57a71b7c86ad3f4c0eef92a64d89a5efa96057dab1bd0faf79eb52088d45ee",
+        "Source/JavaScriptCore/runtime/JSCBytecodeCacheVersion.cpp": "d46448fc14aa3bb5d414a94f5bbeaeb74bab056ecea7e55eb8bfc4836c971342",
+        "Source/JavaScriptCore/runtime/JSCell.cpp": "5461fdc7dfa9ba3d9c9f682fc6e9baab5644c50a75aeffde4816566b1f1dbb59",
+        "Source/JavaScriptCore/runtime/MathCommon.cpp": "1dee1b37df64c6183134d7153a23854799cd1cf9ce1fd95d2fa633568085e2cf",
+        "Source/JavaScriptCore/runtime/Options.cpp": "6365e4df84e35a67a99ac0f3244deea0c0bf8cd1a4c583b7758b5ad3963f18cd",
+        "Source/JavaScriptCore/shell/CMakeLists.txt": "b8e2452937dec3dc3bd5061142290e51f8acb6e1a66adeaab1b6840c5848f97f",
+        "Source/WTF/wtf/FileHandle.h": "3f0263740d22fc807dd70a18ad85c5c8d4fcf5ae93f6e49ff69cf2211470dc61",
+        "Source/WTF/wtf/PlatformEmscripten.cmake": "a5417eb9578fe3d6a8a50b0daa2f3945fb8fa3d12bf427d022826cc2f07234b3",
+        "Source/WTF/wtf/RawHex.h": "da43a5d4e0ad86036790461ad57a49f90f68c33175463825e6342d84d5bc88a8",
+        "Source/WTF/wtf/WorkQueue.cpp": "241bdbbe2b338607591aa65910c6974ae79e9a609e454ea9d9e92fc88ed1215e",
+        "Source/WTF/wtf/generic/RunLoopGeneric.cpp": "6a4d76fca6593234c952965759a348eea4702593b4f2c1af99a4c2485f38d516",
+        "Source/WTF/wtf/generic/WorkQueueGeneric.cpp": "ff873ce6b16c6008545c29dd7a22f3e753d9392bdad0d94e1858708961431cae",
+        "Source/WTF/wtf/posix/ThreadingPOSIX.cpp": "430daed10c43edb469723cbf362191573ebe0b92cc2ae94651dfbec9c1d279b7",
+        "Source/WebCore/Modules/indexeddb/server/IDBBackingStore.h": "2217aa99ee5e79360dbd25aaaa95996f7137614ed47c9219baa82f633f1a8e9f",
+        "Source/WebCore/Modules/websockets/WebSocket.cpp": "b38797b100a4a10d26cc89ae74a6afda08e94714fefe9d76a44a25c95c2d6c0b",
+        "Source/WebCore/PAL/pal/PlatformEmscripten.cmake": "6917d69d6f80f3149a370a35666c056e170b67a228696a0f5995ed6b2beb9215",
+        "Source/WebCore/PlatformEmscripten.cmake": "eb645c21ece86bc85ff5fc738a4d7f4c8f7c6531d5798be002954b414d7dfad3",
+        "Source/WebCore/accessibility/AXCoreObject.h": "1f0a5fb35c4e98b869e6bc5cd04fd1ad3aa46c2ad365ee9cc4c6b1a333e704cd",
+        "Source/WebCore/accessibility/emscripten/AXObjectCacheEmscripten.cpp": "2a7caed8c51fedb36ea3299df5edf2453230fae1332ad980faf4d69bd8003924",
+        "Source/WebCore/accessibility/emscripten/AccessibilityObjectEmscripten.cpp": "f79f74902ce6b39a05577658a4887620ac6e601ad97bf91d1111fa4426699485",
+        "Source/WebCore/bindings/js/IDBBindingUtilities.cpp": "f7720ed52ad8ff17214ae0741a71cc997ba8773523d2956c7a2a26bc2f7ad004",
+        "Source/WebCore/crypto/emscripten/CryptoStubsEmscripten.cpp": "4e70ae4d48049b33ff46fdfe6d0f8a1f3bd2f92cd45b9ea8c57c148de4f4726d",
+        "Source/WebCore/editing/emscripten/EditorEmscripten.cpp": "be6cc34a4b156ba6b74995c9aa1ac309ae8e45f5b20607781717a0596d692c84",
+        "Source/WebCore/fileapi/AsyncFileStream.cpp": "c92d9d9fb2c5122fa7ae7a78dc91553ef7299635a261fb5f2c979d881000b9ea",
+        "Source/WebCore/loader/DocumentLoader.cpp": "1a1def4c499130511e30b368d3287cebdeadfc498e3af043f96062a8fbba2b6a",
+        "Source/WebCore/loader/EmptyClients.h": "fc629614cfb0a5402ba5cb738bab40c8f13281d43acee66548cfeda24fcf16a0",
+        "Source/WebCore/loader/EmptyFrameLoaderClient.h": "81c6f2260bf9fb8463c0c1fbc738406d6a4e744fa25fc8dbf6d969f825e76e82",
+        "Source/WebCore/loader/WorkerThreadableLoader.cpp": "ede77575ebef6d73ffc3ad391f430ae559c6e7d125f082f2684cf27c41be9c4a",
+        "Source/WebCore/platform/Pasteboard.h": "9778fc7620c752ed4649bbd63daa30721ec20c94fb47f7b59dd576788b9be895",
+        "Source/WebCore/platform/ScrollAnimator.cpp": "48a2972036458101ac8bccc2c0c4a540d2649608e3bd5a898535987f568f86df",
+        "Source/WebCore/platform/ScrollAnimator.h": "274bd16b8ba655b903049f602e6cc5edb359aca481eebf17bd9a639435190acc",
+        "Source/WebCore/platform/WebCorePersistentCoders.cpp": "0630b3b48f30d5b658a8b6c0ed1d422d50d0d7e1c5d30909e0a3238893d9e88a",
+        "Source/WebCore/platform/emscripten/MIMETypeRegistryEmscripten.cpp": "472f3debec355ab7382e52047c01f11f6e345412a36e1cabb3c7ef20a978da68",
+        "Source/WebCore/platform/emscripten/PasteboardEmscripten.cpp": "41ed6a44ac90e299e927192a0fee3946b958d96fa87226594f707e3e97b37bcf",
+        "Source/WebCore/platform/emscripten/PlatformKeyboardEventEmscripten.cpp": "1fccc12276cc85201e1189c54d632e32580e0b727f59e8a565df98cedc8fa77f",
+        "Source/WebCore/platform/emscripten/PlatformScreenEmscripten.cpp": "517e2915463eaf2743e62f6cd3cb5c859bd226233bc50cc7a61eec22d11c662f",
+        "Source/WebCore/platform/emscripten/ScrollbarThemeEmscripten.cpp": "4aa3ee46a88ee5c381510ec80df27937e1808418209c0bb859189247729f377e",
+        "Source/WebCore/platform/emscripten/ThemeEmscripten.cpp": "5e4b74c92c69b0b3df270e40cfc94547ec6ec06c031c8658770ace787943b95a",
+        "Source/WebCore/platform/emscripten/UserAgentEmscripten.cpp": "4514b2851fb3f6626ebc21fb52db9a2fa95180e7fea5e6b30cfd97725534bd7a",
+        "Source/WebCore/platform/generic/KeyedDecoderGeneric.cpp": "80f2b6102cb23cf8913f3b7b6f5674eeee0d29c67d291ec1becc1d627f8d7e5a",
+        "Source/WebCore/platform/generic/KeyedEncoderGeneric.cpp": "dd1849f333971d2b73b6450a30b8482214db6ae9e67da917ceb8c2c7908fb309",
+        "Source/WebCore/platform/graphics/ImageFrameWorkQueue.cpp": "f3f235bbbb448ba224b9248d9ab334a08f2831988b9a5ed5ad504889847d86b1",
+        "Source/WebCore/platform/graphics/MediaPlayer.cpp": "bf30705a07d9670533a8cd86c90fad8cfb95debeafea352c6ccafdc4919313bd",
+        "Source/WebCore/platform/graphics/emscripten/GLStubsEmscripten.cpp": "d3cdcb34bda6ccd0d44c161a42e269773b32d8ac790ed93a2b9e73826a298b47",
+        "Source/WebCore/platform/graphics/emscripten/PlatformDisplayEmscripten.cpp": "626172c786cf3ca8d31677a5171e3732a482e1179f5953f162573f914e2bddf4",
+        "Source/WebCore/platform/graphics/emscripten/PlatformDisplayEmscripten.h": "fec9e242fc6aaee50b3b1faa84c4494f94a7b77223c089b03359c3d571980477",
+        "Source/WebCore/platform/graphics/emscripten/SystemFontDatabaseEmscripten.cpp": "edddcbd03a7e4d4c90f8b15288a1b67f8bc87c39861e70f5cacff52d60438d8d",
+        "Source/WebCore/platform/graphics/skia/ImageBufferSkiaAcceleratedBackend.cpp": "482b34e3019f86a2393bf716f961bd586498da6829cd2352207dcee374f1f625",
+        "Source/WebCore/platform/graphics/skia/PlatformDisplaySkia.cpp": "fca442d37aa53777761aff29ccda990f49cf58b3cdd018e1bfa23f17e6284939",
+        "Source/WebCore/platform/network/curl/CurlContext.cpp": "ab2ee1d8891d8587c4cf89bff464eac1ccd714d66c0f007950cf803849ab4ecb",
+        "Source/WebCore/platform/network/curl/CurlContext.h": "db34737d7a3796850d4d22e353c18a3c37f8206b1bec092038fbd1a2b7437e28",
+        "Source/WebCore/platform/network/curl/CurlRequest.cpp": "cbeee7d1d28cc7d1e10ad08ae5cdf7bf6cb007e7ed8404c8752cb386bdac2a59",
+        "Source/WebCore/platform/network/curl/CurlRequestScheduler.cpp": "8aee38121716f68316a713bdd74bad0dadc6a1836e6adc280bf40169a1d146a8",
+        "Source/WebCore/platform/network/curl/CurlRequestScheduler.h": "cc5d94f1ce65a2ad49c3beb6e3fccf2410e8a677b802b5c887ee2ab70b26efba",
+        "Source/WebCore/platform/network/curl/CurlStream.cpp": "b95157e308c03678283de5aaeb401099534cecc455c930f67c13f7d40c8bc58c",
+        "Source/WebCore/platform/network/curl/CurlStream.h": "ff2e2cf73edbad1f290195737c0a91a1a827a96fa3e20e4ddcc18acf0eb0f848",
+        "Source/WebCore/platform/network/curl/CurlStreamScheduler.cpp": "664028272499ce619e6accf18883d7e1c01ea9748d448dcee65a94d1d1f2eaf1",
+        "Source/WebCore/platform/network/curl/CurlStreamScheduler.h": "e37811955689fa312070d17737a843b7c6508fb86b5cdf267c2bc17d0a971228",
+        "Source/WebCore/platform/network/emscripten/CurlSSLHandleEmscripten.cpp": "81ebaaa4d1b7991140562e4ba5a4dd6719236498155c9657192688849dc133de",
+        "Source/WebCore/platform/network/emscripten/NetworkStateNotifierEmscripten.cpp": "da8c20a534b1631db2dbabe0023907f55d3a8a1d4f2b3595026bd57c06d5b086",
+        "Source/WebCore/rendering/emscripten/RenderThemeEmscripten.cpp": "5ea91d6412ea09112860cced39a8a091b084d1820d93eda6a4aa94d75ec3e09a",
+        "Source/WebCore/workers/Worker.cpp": "85e8c975a079c2d2cfaea92378006fed0ba53169e51d30b9a7a2b6777ddc90ad",
+        "Source/WebCore/workers/WorkerGlobalScope.cpp": "849ec6e33855bdff22ee3c72fb7dd32b7884e2a75d4b7a2cbb630ab05785c841",
+        "Source/WebCore/workers/WorkerMessagingProxy.cpp": "ba22a535374514da5b6c6f4fbfe8764d69a2e5e77cd357396a7481a325fda14f",
+        "Source/WebCore/workers/WorkerRunLoop.cpp": "8e36919d59a608f092a5317d15b788ddb78f7046b7996376365c98adf7c225d2",
+        "Source/cmake/OptionsEmscripten.cmake": "c127c73be0051e421b2f7ac46d1145d75108e71183a59e7f1d32ff2fff4df9d8",
+        "Source/cmake/WebKitCommon.cmake": "5a594cf7bcc07c425dea6d8d4ea2c73c25349932adc41a4f1034a9b805841436"
+      },
+      "preimages": {
+        "Source/JavaScriptCore/CMakeLists.txt": "8e0e24eec5bf7077de0858e41a1a5bbf942cb74c233df8296b800f2407c261c6",
+        "Source/JavaScriptCore/PlatformEmscripten.cmake": null,
+        "Source/JavaScriptCore/runtime/JSCBytecodeCacheVersion.cpp": "5783a06d7f636312f591dc9fc3076bf235b20fa45ef8b5e024f0f014b34a9233",
+        "Source/JavaScriptCore/runtime/JSCell.cpp": "43ae8172d3797cd0a9321c40db6bd08b933a98f3ebf257e4a7f46d9d97375b77",
+        "Source/JavaScriptCore/runtime/MathCommon.cpp": "a24a993223ac8d83a8f6bd401dcdc80340c64e1678f06c34112057a4848d1ff9",
+        "Source/JavaScriptCore/runtime/Options.cpp": "3de4bcd3e975a0ee3e2162792db110868b893af1da3707adc81d056b7d27875f",
+        "Source/JavaScriptCore/shell/CMakeLists.txt": "11a13d614f18aa4736da245bfd4b4025feadbafab51c34de8bbc3b5d8d422521",
+        "Source/WTF/wtf/FileHandle.h": "a784b994e5978bb0cf59de8e5759135558e0d97169c354e1e84f062aca6d894f",
+        "Source/WTF/wtf/PlatformEmscripten.cmake": null,
+        "Source/WTF/wtf/RawHex.h": "1c898f8e14de0a71d52599ec73928881da6646d7079f9f84c7ce37aa9ad0d681",
+        "Source/WTF/wtf/WorkQueue.cpp": "4f6cf10e7425494ac844ed98d50c237c47876e87863ee4a373af9ffcebde2e2a",
+        "Source/WTF/wtf/generic/RunLoopGeneric.cpp": "50060ed6bb646d57ea8b00cbdbb0977b60adc0ca307a0e047670b8f886e6d59a",
+        "Source/WTF/wtf/generic/WorkQueueGeneric.cpp": "ba5a07d6e3492edc87b06d06ddaecb7e4219ed755c2ca2a15055fe771d8cbeed",
+        "Source/WTF/wtf/posix/ThreadingPOSIX.cpp": "a6829572bdc48865b64d23a1b0787cd1109c24899dd1ac83504eb33cd2f79913",
+        "Source/WebCore/Modules/indexeddb/server/IDBBackingStore.h": "fd98887e36001c99023ab9a93b55848cc74a2a47269a8008c9fbe93eb4741525",
+        "Source/WebCore/Modules/websockets/WebSocket.cpp": "166817982b193e620b6238f16826e041c6d84c1fe526a039cc08636937017341",
+        "Source/WebCore/PAL/pal/PlatformEmscripten.cmake": null,
+        "Source/WebCore/PlatformEmscripten.cmake": null,
+        "Source/WebCore/accessibility/AXCoreObject.h": "129a621cb64e1a7524dc7a3e0795615f46902734f1c857733770be78246588e3",
+        "Source/WebCore/accessibility/emscripten/AXObjectCacheEmscripten.cpp": null,
+        "Source/WebCore/accessibility/emscripten/AccessibilityObjectEmscripten.cpp": null,
+        "Source/WebCore/bindings/js/IDBBindingUtilities.cpp": "19941574477124216ab485e215383e73b2cc8f73d114256eaa1dd19839711a0c",
+        "Source/WebCore/crypto/emscripten/CryptoStubsEmscripten.cpp": null,
+        "Source/WebCore/editing/emscripten/EditorEmscripten.cpp": null,
+        "Source/WebCore/fileapi/AsyncFileStream.cpp": "644c7bbfdbe43c8e60a0f8029a5f9dc0e3b89b8ccc9004a8ce2c8bcebed3be73",
+        "Source/WebCore/loader/DocumentLoader.cpp": "4584051405a64f16c9ddeabae4216d08cc371d0eb1e02369d63784c545433bb2",
+        "Source/WebCore/loader/EmptyClients.h": "b69b53550f113fc79c279bc42a16eaa1739f22bf1c2526e34b4783b8c2b0b5e0",
+        "Source/WebCore/loader/EmptyFrameLoaderClient.h": "f18a525d3e36cb2a319997faf8d23afa3e46ecd19bebc60dc4bd693d0e430913",
+        "Source/WebCore/loader/WorkerThreadableLoader.cpp": "3a70d3a7510c75af5bf66928b794516da719f9a8e697b1d92885a47ceea9d27b",
+        "Source/WebCore/platform/Pasteboard.h": "60c4af725f1c083e892e07ea045b8f35af1d2bfaff73b83699d52245b12592ec",
+        "Source/WebCore/platform/ScrollAnimator.cpp": "19d7160920dca1dbb87eaa2e00f1b21407417cac3a77b49b1ab64206464d2aa9",
+        "Source/WebCore/platform/ScrollAnimator.h": "43bf76d10d7df3f7dbcf3eecb2e340fd229d05626d5232fa171b06133cbaa816",
+        "Source/WebCore/platform/WebCorePersistentCoders.cpp": "de477f719941bcca285b9dcc46a43630378a68b55e9e687d089d6b5ff9f8177b",
+        "Source/WebCore/platform/emscripten/MIMETypeRegistryEmscripten.cpp": null,
+        "Source/WebCore/platform/emscripten/PasteboardEmscripten.cpp": null,
+        "Source/WebCore/platform/emscripten/PlatformKeyboardEventEmscripten.cpp": null,
+        "Source/WebCore/platform/emscripten/PlatformScreenEmscripten.cpp": null,
+        "Source/WebCore/platform/emscripten/ScrollbarThemeEmscripten.cpp": null,
+        "Source/WebCore/platform/emscripten/ThemeEmscripten.cpp": null,
+        "Source/WebCore/platform/emscripten/UserAgentEmscripten.cpp": null,
+        "Source/WebCore/platform/generic/KeyedDecoderGeneric.cpp": "d97f8cedf5d6f36358908e34a60333fd33fd36dbdf9a5d5f3958e69099a670c2",
+        "Source/WebCore/platform/generic/KeyedEncoderGeneric.cpp": "599c845b36ce6bf75567296cda1e4c748189b46658ed897af9502a4f8b1a8510",
+        "Source/WebCore/platform/graphics/ImageFrameWorkQueue.cpp": "c0c89235326a3080f24e99a95c898af91a7357b2c48d52c8f37369dfdd6dc299",
+        "Source/WebCore/platform/graphics/MediaPlayer.cpp": "0c25a4d9d70108e66d59284ecc9ac4f950ac0e9c9d566da4c887318aa0976565",
+        "Source/WebCore/platform/graphics/emscripten/GLStubsEmscripten.cpp": null,
+        "Source/WebCore/platform/graphics/emscripten/PlatformDisplayEmscripten.cpp": null,
+        "Source/WebCore/platform/graphics/emscripten/PlatformDisplayEmscripten.h": null,
+        "Source/WebCore/platform/graphics/emscripten/SystemFontDatabaseEmscripten.cpp": null,
+        "Source/WebCore/platform/graphics/skia/ImageBufferSkiaAcceleratedBackend.cpp": "a08437b557e1c6525104506f0eb2284997ced1572a32527083c6bf3599c24825",
+        "Source/WebCore/platform/graphics/skia/PlatformDisplaySkia.cpp": "1f2840dce772d8b9de4e797090814a6a1914063fb0773a7f6e634ff33f2a4f8d",
+        "Source/WebCore/platform/network/curl/CurlContext.cpp": "87ddc7517832e2eac05825d0f9bebf856d7a430995c99d584d4a96d0502d749e",
+        "Source/WebCore/platform/network/curl/CurlContext.h": "3412ee8797d2ee4ebb12ac15cd1b1551978c906c59efa75eb438e398f8888bf4",
+        "Source/WebCore/platform/network/curl/CurlRequest.cpp": "796659328af35ad39b0f5812b5b04ea8ba1b5054293ebc014600d436511121cf",
+        "Source/WebCore/platform/network/curl/CurlRequestScheduler.cpp": "abea01099a991eea15ef0222723377f4ac52e2afe8b7963a6362571e504f3ca1",
+        "Source/WebCore/platform/network/curl/CurlRequestScheduler.h": "e729b09f9a9fa70e205e748809f7b60b07b463a1232095670d8cf1c2e7ec2b1b",
+        "Source/WebCore/platform/network/curl/CurlStream.cpp": "f4b26be4380fe37c2f38f034635c2e1177e635513411b6c7fbd2c97a7b955324",
+        "Source/WebCore/platform/network/curl/CurlStream.h": "fadcf66a28fd34fa179876704ab6bc5fc87fd4c97faac6bb4fe5f339ce854381",
+        "Source/WebCore/platform/network/curl/CurlStreamScheduler.cpp": "2efdf5245c5ad14e6fcdddcb6fe6120807ccd0c3bccbfa9c0d6900e78b9bef71",
+        "Source/WebCore/platform/network/curl/CurlStreamScheduler.h": "1a5a6aebe186e729de4b82e33e5023aea458d17fc3ec917bb50424cc078a66f4",
+        "Source/WebCore/platform/network/emscripten/CurlSSLHandleEmscripten.cpp": null,
+        "Source/WebCore/platform/network/emscripten/NetworkStateNotifierEmscripten.cpp": null,
+        "Source/WebCore/rendering/emscripten/RenderThemeEmscripten.cpp": null,
+        "Source/WebCore/workers/Worker.cpp": "894493e11f6e7c750ea1c942b9096048a364f2ec6ad8021adacda66c2d156a1d",
+        "Source/WebCore/workers/WorkerGlobalScope.cpp": "092b42f3fb4ef09d941dbb5588e95ec5c93728a12b62d3bf664d43a3e27cdc49",
+        "Source/WebCore/workers/WorkerMessagingProxy.cpp": "f8b354700939bdf5f3c99aaf4ff59ea991cc24bc48822eed6a2e141dda6830c6",
+        "Source/WebCore/workers/WorkerRunLoop.cpp": "625762a12e9494ba69a119b1985627248e4fad72b8ff4726d998b6f431b9af23",
+        "Source/cmake/OptionsEmscripten.cmake": null,
+        "Source/cmake/WebKitCommon.cmake": "3641e8aa1f924f415f0a9787173ef27581eb8935b1c2bb8dcc4d8ebbad9887e0"
+      },
+      "tree": "engine"
+    }
+  ],
+  "producer_version": 1,
+  "provider": {
+    "abi_major": 1,
+    "abi_minor": 0,
+    "binding": "copied-owner-bridge",
+    "format": "browser-module",
+    "header": "source/foundation/include/foundation/appended/engine_provider.h",
+    "header_sha256": "a8e89da85d34b29a4d1bc454495791fa604b81e3477e48ce8ca902e4333a9c0d"
+  },
+  "schema_version": 1,
+  "suppliers": {
+    "engine": {
+      "archive": "archives/engine/WebKit-aec9d2ad958e716ab4bca4bf03007e6edac7323f-Source-Tools-root.tar.gz",
+      "commit": "aec9d2ad958e716ab4bca4bf03007e6edac7323f",
+      "repository": "https://github.com/WebKit/WebKit.git"
+    },
+    "wrapper": {
+      "archive": "archives/wrapper/WebkitWasm-68c618544e1f8af18ebce346281a6a49766aa194.tar.gz",
+      "commit": "68c618544e1f8af18ebce346281a6a49766aa194",
+      "repository": "https://github.com/theogbob/WebkitWasm"
+    }
+  },
+  "target": {
+    "pointer_bits": 32,
+    "processor": "wasm32",
+    "system": "Emscripten",
+    "triple": "wasm32-emscripten"
+  },
+  "toolchain": {
+    "cxx_standard": 23,
+    "identity_sha256": "217e8ee79c8f825e52cf92338a841cd7c79836666aaee7cbd1f41ee9e070920a",
+    "paired_sdk_sha256": "217e8ee79c8f825e52cf92338a841cd7c79836666aaee7cbd1f41ee9e070920a",
+    "runtime_policy": "paired-emscripten",
+    "target_baseline": "Initial diagnostic source compilation: non-pthread wasm32 CPU engine in one direct Worker; fixed 800x600. Full production retention and runtime are not established."
+  }
+}

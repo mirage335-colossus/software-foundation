@@ -1,0 +1,347 @@
+{
+  "artifact_root": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation",
+  "artifacts": [
+    {
+      "bytes": 2482,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/CAPTURE.json",
+      "sha256": "f638096946b596a7fcb8baf9219a8bc3d41e4dac1199504c13a99c159966147e"
+    },
+    {
+      "bytes": 8925,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/SOURCE-PROJECTION.json",
+      "sha256": "3e24da0ecd438bfdef8eda78daa216a90605e8b1cc13be23b5ab501653722e37"
+    },
+    {
+      "bytes": 10018,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/README.md",
+      "sha256": "5ffb7af196252251ccdb01a6ebcf645c5c1bdf38f4f8399618f3655f1e988fe4"
+    },
+    {
+      "bytes": 12173,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/prepare_overlay.py",
+      "sha256": "5a7c998b087560e03f825243aaab6747d4eda6af3fb3852728c55cdb5319e4f7"
+    },
+    {
+      "bytes": 10900,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/check_overlay.py",
+      "sha256": "e91d3a33785220655b5a4a72cb5c4a5afc437396d6d143e64f31771b59c7e531"
+    },
+    {
+      "bytes": 15859,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/run_policy_checks.py",
+      "sha256": "8d9611d9410478cbf680a3461ea56adc5a9f633e4e7b7b8054f9f6272ec3eae3"
+    },
+    {
+      "bytes": 10500,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/policy-checks-v5/SUMMARY.json",
+      "sha256": "f2feaa02342cb096d9650a0e9c0decbb8c4a9f168f4fa36f3e67037cf2f95131"
+    },
+    {
+      "bytes": 23961,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/windows-engine-source-final.patch",
+      "sha256": "3f9e712e923b649604605d26c80e3b9dc69f08d79b5547e5a31c5b9ae0ed8cad"
+    },
+    {
+      "bytes": 5361,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/windows-provider-graph-final.patch",
+      "sha256": "e777109576541e6658f6011067cc5ebc046b2c74e8d42d079ded51e021e471da"
+    },
+    {
+      "bytes": 5240,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/patches-final/cmake__native-provider.cmake.patch",
+      "sha256": "550cde1afe219f8b817c7de2b11bdbdf48a4efe546788b2e21fa1da3a94ebe77"
+    },
+    {
+      "bytes": 121,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/patches-final/cmake__native-provider.def.patch",
+      "sha256": "c88f30846849c56b5e233a9da97e02a355425ce55d5add0172f31f64bec22a8a"
+    },
+    {
+      "bytes": 1231,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/patches-final/source__engine__Source__ThirdParty__skia__src__utils__win__SkDWrite.cpp.patch",
+      "sha256": "0651f3e2fff9de532b280100c37d0fc0f474610b6341e8dc883b0640616c395e"
+    },
+    {
+      "bytes": 700,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/patches-final/source__engine__Source__WTF__wtf__ExportMacros.h.patch",
+      "sha256": "3d4b17ab5340aa68cbd1aab69b4651fb4b8b098ac43c26c3c5f00988a71164ca"
+    },
+    {
+      "bytes": 817,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/patches-final/source__engine__Source__WTF__wtf__PlatformFoundation.cmake.patch",
+      "sha256": "f76df9fb8ef725a3957a8825169fe857bd8712692663ed47ed3c79d0d99eee1f"
+    },
+    {
+      "bytes": 1609,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/patches-final/source__engine__Source__WebCore__PlatformFoundation.cmake.patch",
+      "sha256": "eeace42c5d4150352a1d933c7c748628550d18308685b8ad4f3754d78e7be9d5"
+    },
+    {
+      "bytes": 14245,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/patches-final/source__engine__Source__cmake__FoundationWindowsInputs.cmake.patch",
+      "sha256": "36bfbe1f868447f8d79de389ff0db5b2e2d7f34098336557329f5e635020c872"
+    },
+    {
+      "bytes": 5527,
+      "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/patches-final/source__engine__Source__cmake__OptionsFoundation.cmake.patch",
+      "sha256": "ea22d74a4db1ae9441b440e58270e88175f80cd1f40233af493a59f1397f23cf"
+    }
+  ],
+  "canonical_edits": false,
+  "captured_predecessor_recipe": "recipes/webkitwasm-native-v1",
+  "checks": {
+    "Linux_selected_active_policy_and_source_order_identical": true,
+    "actual_native_assertions": 0,
+    "cmake_cases": 42,
+    "elapsed_seconds_approx": 4.04773709300207,
+    "eleven_source_inputs_unchanged": true,
+    "limited_source_macro_cases": 15,
+    "whole_budget_seconds": 30,
+    "zero_failures": true,
+    "zero_fuzz_forward_and_reverse_patch_replay": true
+  },
+  "compiler_SDK_native_runtime_or_browser_executed": false,
+  "destination": "recipes/webkitwasm-native-rich4083-v1",
+  "files": [
+    {
+      "after_sha256": "d9cb0a857e789f7d8a96a8ab7b2582e843526a1c639a7f29a7a7145cba172198",
+      "before_sha256": "3df11903e7a235da975cc176de552e8bc12a90266fea3a793ec7e7f491f42d08",
+      "bytes": 18983,
+      "canonical_proposal": "recipes/webkitwasm-native-rich4083-v1/cmake/native-provider.cmake",
+      "changed": true,
+      "integration": "Windows hunk-only rebase; retain rich graph source closure",
+      "logical_origin": {
+        "bytes": 16830,
+        "path": "cmake/native-provider.cmake",
+        "role": "canonical-owner-readhold",
+        "sha256": "3df11903e7a235da975cc176de552e8bc12a90266fea3a793ec7e7f491f42d08",
+        "source": "recipes/webkitwasm-native-v1/cmake/native-provider.cmake"
+      },
+      "patch": "cmake__native-provider.cmake.patch",
+      "path": "cmake/native-provider.cmake",
+      "postimage": {
+        "bytes": 18983,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/cmake/native-provider.cmake",
+        "sha256": "d9cb0a857e789f7d8a96a8ab7b2582e843526a1c639a7f29a7a7145cba172198"
+      },
+      "preimage": {
+        "bytes": 16830,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/cmake/native-provider.cmake",
+        "sha256": "3df11903e7a235da975cc176de552e8bc12a90266fea3a793ec7e7f491f42d08"
+      }
+    },
+    {
+      "after_sha256": "759baba198bb681e4730b0deba1b5beecc079577ffa712aae2fdd062417f93ab",
+      "before_sha256": null,
+      "bytes": 39,
+      "canonical_proposal": "recipes/webkitwasm-native-rich4083-v1/cmake/native-provider.def",
+      "changed": true,
+      "integration": "Windows hunk-only rebase; retain rich graph source closure",
+      "logical_origin": {
+        "role": "new-project-maintained-source",
+        "source": null
+      },
+      "patch": "cmake__native-provider.def.patch",
+      "path": "cmake/native-provider.def",
+      "postimage": {
+        "bytes": 39,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/cmake/native-provider.def",
+        "sha256": "759baba198bb681e4730b0deba1b5beecc079577ffa712aae2fdd062417f93ab"
+      },
+      "preimage": null
+    },
+    {
+      "after_sha256": "755c219fcc2e121022fec2260f06a0adcf2e0abfc79c619dc7fcd128a017a314",
+      "before_sha256": "fa286bdffb5393ff387c2a98c1289f88dd273fa2d9bc48d2d83b0c7390a04ccf",
+      "bytes": 5287,
+      "canonical_proposal": "recipes/webkitwasm-native-rich4083-v1/source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+      "changed": true,
+      "integration": "exact engine-leaf join",
+      "logical_origin": {
+        "bytes": 4819,
+        "path": "source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+        "role": "finite-audit-supplier-source",
+        "sha256": "fa286bdffb5393ff387c2a98c1289f88dd273fa2d9bc48d2d83b0c7390a04ccf",
+        "source": ".agent-work/appended-implementation-20261016/webkit-engine-probe/wrapper/third_party/WebKit/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp"
+      },
+      "patch": "source__engine__Source__ThirdParty__skia__src__utils__win__SkDWrite.cpp.patch",
+      "path": "source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+      "postimage": {
+        "bytes": 5287,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+        "sha256": "755c219fcc2e121022fec2260f06a0adcf2e0abfc79c619dc7fcd128a017a314"
+      },
+      "preimage": {
+        "bytes": 4819,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+        "sha256": "fa286bdffb5393ff387c2a98c1289f88dd273fa2d9bc48d2d83b0c7390a04ccf"
+      }
+    },
+    {
+      "after_sha256": "35267c903c4c07a53835d7a045a6d138a0b5a9687d61bf237f0a6b27ec8dcf99",
+      "before_sha256": "b281f4e76aa73c6f4c7aa9b25d0f462b699757b50bb1988bba5617edb1c02ad2",
+      "bytes": 3132,
+      "canonical_proposal": "recipes/webkitwasm-native-rich4083-v1/source/engine/Source/WTF/wtf/ExportMacros.h",
+      "changed": true,
+      "integration": "exact engine-leaf join",
+      "logical_origin": {
+        "bytes": 2787,
+        "path": "source/engine/Source/WTF/wtf/ExportMacros.h",
+        "role": "finite-audit-supplier-source",
+        "sha256": "b281f4e76aa73c6f4c7aa9b25d0f462b699757b50bb1988bba5617edb1c02ad2",
+        "source": ".agent-work/appended-implementation-20261016/webkit-engine-probe/wrapper/third_party/WebKit/Source/WTF/wtf/ExportMacros.h"
+      },
+      "patch": "source__engine__Source__WTF__wtf__ExportMacros.h.patch",
+      "path": "source/engine/Source/WTF/wtf/ExportMacros.h",
+      "postimage": {
+        "bytes": 3132,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WTF/wtf/ExportMacros.h",
+        "sha256": "35267c903c4c07a53835d7a045a6d138a0b5a9687d61bf237f0a6b27ec8dcf99"
+      },
+      "preimage": {
+        "bytes": 2787,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WTF/wtf/ExportMacros.h",
+        "sha256": "b281f4e76aa73c6f4c7aa9b25d0f462b699757b50bb1988bba5617edb1c02ad2"
+      }
+    },
+    {
+      "after_sha256": "aab6d2367bc3e17ae3266ede1a05393634aad4325e729e8f119a28df21b1d552",
+      "before_sha256": "eb28eca8e5c33ca5d94c92c9caea0ae4260204d2c7f82cbbd0f0b4703fbc1a0e",
+      "bytes": 569,
+      "canonical_proposal": "recipes/webkitwasm-native-rich4083-v1/source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+      "changed": true,
+      "integration": "exact engine-leaf join",
+      "logical_origin": {
+        "bytes": 534,
+        "path": "source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+        "role": "canonical-owner-readhold",
+        "sha256": "eb28eca8e5c33ca5d94c92c9caea0ae4260204d2c7f82cbbd0f0b4703fbc1a0e",
+        "source": "recipes/webkitwasm-native-v1/source/engine/Source/WTF/wtf/PlatformFoundation.cmake"
+      },
+      "patch": "source__engine__Source__WTF__wtf__PlatformFoundation.cmake.patch",
+      "path": "source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+      "postimage": {
+        "bytes": 569,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+        "sha256": "aab6d2367bc3e17ae3266ede1a05393634aad4325e729e8f119a28df21b1d552"
+      },
+      "preimage": {
+        "bytes": 534,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+        "sha256": "eb28eca8e5c33ca5d94c92c9caea0ae4260204d2c7f82cbbd0f0b4703fbc1a0e"
+      }
+    },
+    {
+      "after_sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+      "before_sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+      "bytes": 375,
+      "canonical_proposal": "recipes/webkitwasm-native-rich4083-v1/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+      "changed": false,
+      "integration": "exact engine-leaf join",
+      "logical_origin": {
+        "bytes": 375,
+        "path": "source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+        "role": "canonical-owner-readhold",
+        "sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+        "source": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake"
+      },
+      "patch": null,
+      "path": "source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+      "postimage": {
+        "bytes": 375,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+        "sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e"
+      },
+      "preimage": {
+        "bytes": 375,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+        "sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e"
+      }
+    },
+    {
+      "after_sha256": "1fb90b0f1c1a070916c26f4466d4698987be786e403f3a7877b49ad2232bf827",
+      "before_sha256": "2a3dc63db03ff84c4e963400400e7f5e939f6195540c9929e54c28e29e80198b",
+      "bytes": 3042,
+      "canonical_proposal": "recipes/webkitwasm-native-rich4083-v1/source/engine/Source/WebCore/PlatformFoundation.cmake",
+      "changed": true,
+      "integration": "exact engine-leaf join",
+      "logical_origin": {
+        "bytes": 2245,
+        "path": "source/engine/Source/WebCore/PlatformFoundation.cmake",
+        "role": "canonical-owner-readhold",
+        "sha256": "2a3dc63db03ff84c4e963400400e7f5e939f6195540c9929e54c28e29e80198b",
+        "source": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/PlatformFoundation.cmake"
+      },
+      "patch": "source__engine__Source__WebCore__PlatformFoundation.cmake.patch",
+      "path": "source/engine/Source/WebCore/PlatformFoundation.cmake",
+      "postimage": {
+        "bytes": 3042,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WebCore/PlatformFoundation.cmake",
+        "sha256": "1fb90b0f1c1a070916c26f4466d4698987be786e403f3a7877b49ad2232bf827"
+      },
+      "preimage": {
+        "bytes": 2245,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WebCore/PlatformFoundation.cmake",
+        "sha256": "2a3dc63db03ff84c4e963400400e7f5e939f6195540c9929e54c28e29e80198b"
+      }
+    },
+    {
+      "after_sha256": "37c9c52bc6d8c69eb75e47d07b967e2bc4c2762f7dad642dcf77b214f8ab7dc0",
+      "before_sha256": null,
+      "bytes": 13874,
+      "canonical_proposal": "recipes/webkitwasm-native-rich4083-v1/source/engine/Source/cmake/FoundationWindowsInputs.cmake",
+      "changed": true,
+      "integration": "exact engine-leaf join",
+      "logical_origin": {
+        "role": "new-project-maintained-source",
+        "source": null
+      },
+      "patch": "source__engine__Source__cmake__FoundationWindowsInputs.cmake.patch",
+      "path": "source/engine/Source/cmake/FoundationWindowsInputs.cmake",
+      "postimage": {
+        "bytes": 13874,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/cmake/FoundationWindowsInputs.cmake",
+        "sha256": "37c9c52bc6d8c69eb75e47d07b967e2bc4c2762f7dad642dcf77b214f8ab7dc0"
+      },
+      "preimage": null
+    },
+    {
+      "after_sha256": "e77730469c3d5d5f9baf4b8b5137941396425d309602d59630832b91b0d0ad3c",
+      "before_sha256": "4215dd73f0428704fe77ee0e499f8ab90237159500aab1003e1a7e34aa063d23",
+      "bytes": 9615,
+      "canonical_proposal": "recipes/webkitwasm-native-rich4083-v1/source/engine/Source/cmake/OptionsFoundation.cmake",
+      "changed": true,
+      "integration": "exact engine-leaf join",
+      "logical_origin": {
+        "bytes": 7461,
+        "path": "source/engine/Source/cmake/OptionsFoundation.cmake",
+        "role": "canonical-owner-readhold",
+        "sha256": "4215dd73f0428704fe77ee0e499f8ab90237159500aab1003e1a7e34aa063d23",
+        "source": "recipes/webkitwasm-native-v1/source/engine/Source/cmake/OptionsFoundation.cmake"
+      },
+      "patch": "source__engine__Source__cmake__OptionsFoundation.cmake.patch",
+      "path": "source/engine/Source/cmake/OptionsFoundation.cmake",
+      "postimage": {
+        "bytes": 9615,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/cmake/OptionsFoundation.cmake",
+        "sha256": "e77730469c3d5d5f9baf4b8b5137941396425d309602d59630832b91b0d0ad3c"
+      },
+      "preimage": {
+        "bytes": 7461,
+        "path": "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/.agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/cmake/OptionsFoundation.cmake",
+        "sha256": "4215dd73f0428704fe77ee0e499f8ab90237159500aab1003e1a7e34aa063d23"
+      }
+    }
+  ],
+  "integration_notes": [
+    "Engine leaf postimages exact-match join only; retain actions11 PlatformEvent/PlatformKeyboardEvent baseline leaves unchanged.",
+    "Graph is Windows hunk donor only; preserve rich 28-TU source list, source-family policy and paired rich metadata/binding gates.",
+    "Graph predecessor was 3df11903; owner later changed comments/diagnostics to 8998b637.",
+    "New input importer consistency does not certify real inventories, archive architecture/CRT, toolchain or dependency versions; explicit producer must verify these before configure.",
+    "Actual Windows minimum/runtime/PE sole export+imports/DirectWrite rich behavior remain unqualified; Windows 1809 is optional engine-only unqualified declaration."
+  ],
+  "kind": "Windows-source-only-private-overlay-released-for-reviewed-integration",
+  "pixel_recipe_must_remain_frozen": true,
+  "production_eligible": false,
+  "status": "source-only-not-qualified"
+}

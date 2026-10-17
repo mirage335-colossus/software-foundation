@@ -5,6 +5,28 @@
   "build_requirements": "docs/building.md",
   "optional_integrations": [
     {
+      "name": "webkitwasm-copied259-source",
+      "upstream_repository": "https://github.com/theogbob/WebkitWasm",
+      "acquisition": "reviewed 75-file source projection and exact patches; complete supplier archives remain separately retained, with no automatic downloads",
+      "identity_record": "third_party/appended-engine/providers/webkitwasm/copied-v1/PROVENANCE.json",
+      "revision_policy": "Exact wrapper and WebKit commits, source projection, patch and notice digests; historical diagnostic inputs are not a runnable production recipe.",
+      "maintenance_document": "recipes/webkitwasm-copied259-v1/README.md",
+      "license_status": "Original source headers and eleven selected supplier/core notices retained; complete linkage source, notice and redistribution obligations remain to be established.",
+      "distributed_by_default": false,
+      "qualification": "Source snapshot and diagnostic baseline evidence only; no production copied-provider SDK or native engine port is qualified."
+    },
+    {
+      "name": "wasm3-appended",
+      "upstream_repository": "https://github.com/wasm3/wasm3",
+      "acquisition": "verified checkout-contained source and exact complete upstream source archive; no configure-time downloads",
+      "identity_record": "third_party/wasm3/manifest.json",
+      "revision_policy": "Exact reviewed commit and archive digest, checked before optional binary-kernel configuration.",
+      "maintenance_document": "third_party/wasm3/README.md",
+      "license_status": "MIT with retained upstream LICENSE and xxHash BSD notice; both installed with optional binary kernels.",
+      "distributed_by_default": false,
+      "qualification": "Focused implementation evidence only; new kernel profiles require their own applicable platform and release qualification."
+    },
+    {
       "name": "gui-boundary",
       "upstream_repository": "https://github.com/mirage335-colossus/gui-boundary",
       "acquisition": "checkout-contained verified source group; explicit external source/group override",

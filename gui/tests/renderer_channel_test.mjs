@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
 import {MessageChannel} from 'node:worker_threads';
 import {pathToFileURL} from 'node:url';
+import {readFile} from 'node:fs/promises';
 const {clonePacket,validateRendererOperation,publicSnapshot,createHostChannel,createRendererRequests} = await import(pathToFileURL(process.argv[2]));
 const {Client,MAX_OPERATION_BYTES} = await import(pathToFileURL(process.argv[3]));
+// Existing binary HTML prefixes use the original fixed module graph. Optional
+// rich protocol injection must not add imports or exports to this shared node.
+const channelSource=await readFile(pathToFileURL(process.argv[2]),'utf8');
+assert.deepEqual([...channelSource.matchAll(/import\s*\{[^}]*\}\s*from\s*['"]([^'"]+)['"]/g)].map(value=>value[1]),['./browser_limits.mjs']);
+assert.deepEqual([...channelSource.matchAll(/export\s+(?:function|class|const)\s+([A-Za-z_$][\w$]*)/g)].map(value=>value[1]).sort(),
+  ['clonePacket','validateRendererOperation','publicSnapshot','createHostChannel','createRendererRequests'].sort());
+assert(!/\bimport\s*\(/.test(channelSource),'Legacy channel acquired a dynamic dependency');
 const protocol='foundation-renderer-v1',generation='test-generation';
 const flush=async()=>{for(let n=0;n<8;++n)await new Promise(resolve=>setImmediate(resolve));};
 const key={id:'editor',generation:'1'};
@@ -183,4 +191,90 @@ for(const malicious of [
   ports.port2.postMessage({protocol,type:'bound',generation});await flush();ports.port2.postMessage(malicious);await flush();
   assert.equal(failures.length,1);assert.equal(client.ack,0n);channel.close();ports.port2.close();client.close();
 }
-console.log('Typed current renderer intents, initial-only guards, exact retry, ordered state/completions, bounded stalled state and protocol rejection passed');
+// A trusted native owner can suspend input without a legacy dialog descriptor.
+// A descriptor still requires suspension, and the injected validator owns shape.
+for(const entry of [
+  {service:null,active:true,reject:false},
+  {service:{id:'7',kind:2},active:true,reject:false},
+  {service:{id:'7',kind:2},active:false,reject:true},
+  {service:null,active:1,reject:true}
+]){
+  const ports=new MessageChannel(),failures=[],client=new Client(async()=>assert.fail('No exchange'),()=>{});
+  const surfaceProtocol={validateSurfaceState(snapshot,surface){if(typeof surface.serviceActive!=='boolean')throw Error('Invalid service suspension');},validateSurfaceOperation(){assert.fail('No operation');}};
+  const channel=createHostChannel({port:ports.port1,generation,client,surfaceProtocol,onFailure:error=>failures.push(error)});
+  channel.accept({...state(0),service:entry.service,surface:{serviceActive:entry.active}});
+  assert.equal(failures.length,entry.reject?1:0);
+  channel.close();ports.port2.close();client.close();
+}
+console.log('Typed current renderer intents, initial-only guards, exact retry, ordered state/completions, bounded stalled state, native service authority and protocol rejection passed');
+
+// Document values use the same serial Client/isolated state ACK route, without
+// changing the legacy channel graph or importing a feature-specific backend.
+const {validateDocumentState,validateDocumentOperation,validateDocumentReply}=await import(new URL('../host/browser_document_endpoint.mjs',import.meta.url));
+const documentProtocol=Object.freeze({validateDocumentState,validateDocumentOperation,validateDocumentReply});
+const emptyDocument=(extra={})=>({version:1,publicationRevision:'0',available:true,phase:'idle',observation:null,draft:null,pending:null,document:null,...extra});
+const documentState=(ack,extra={},reply=null)=>({...state(ack),document:emptyDocument(extra),documentReply:reply});
+const documentSubmit={type:'documentSubmit',version:1,intent:{kind:'observe'}};
+const documentTake={type:'documentTake',version:1,ticket:'53'};
+const documentReply=(sequence,operation,completion=null)=>({sequence:String(sequence),operation,admission:'accepted',ticket:'53',completion});
+assert.throws(()=>validateRendererOperation(documentSubmit,snapshot('old')),/not delegated/);
+assert.deepEqual(validateRendererOperation(documentSubmit,snapshot('old'),undefined,null,null,null,documentProtocol,emptyDocument()),documentSubmit);
+assert.throws(()=>validateRendererOperation({...documentSubmit,intent:{kind:'observe',nativeLease:'53'}},snapshot('old'),undefined,null,null,null,documentProtocol,emptyDocument()));
+for(const create of [createHostChannel,createRendererRequests])assert.throws(()=>create({documentProtocol:{validateDocumentState}}),/document protocol/);
+{
+  const ports=new MessageChannel(),scheduler=sched(),accepted=[],presented=[],failures=[],sent=[];let channel;
+  const client=new Client(async envelope=>{
+    sent.push(envelope);const take=envelope.operation.type==='documentTake';
+    return documentState(envelope.seq,take?{phase:'idle'}:{phase:'waitingTake',pending:'53'},documentReply(envelope.seq,take?'take':'submit',take?{ticket:'53',outcome:'completed',observation:null,draft:null,detail:''}:null));
+  },value=>channel?.accept(value));client.accept(documentState(0));
+  channel=createHostChannel({port:ports.port1,generation,client,scheduler,documentProtocol,onBound:()=>channel.accept(client.state),onFailure:error=>failures.push(error)});
+  const renderer=createRendererRequests({port:ports.port2,generation,documentProtocol,acceptSnapshot(...args){accepted.push(args);},present(value){presented.push(value);},onFailure:error=>failures.push(error)});
+  await flush();const submitReply=await renderer.send(documentSubmit);
+  assert.equal(submitReply.sequence,'1');assert.equal(accepted.at(-1)[6].phase,'waitingTake');assert.equal(accepted.at(-1)[7].sequence,'1');assert.equal(accepted.at(-1)[3],false,'A document-only capability must not invent a physical surface');
+  const completion=await renderer.send(documentTake);assert.equal(completion.completion.outcome,'completed');assert.equal(accepted.at(-1)[6].pending,null);assert.equal(accepted.at(-1)[7].sequence,'2');assert.equal(presented.length,3);assert.equal(sent.length,2);assert.equal(failures.length,0);
+  channel.close();renderer.close();client.close();assert.equal(scheduler.timers.size,0);
+}
+// Every paired document metadata state is retained in order while a child is
+// stalled, even when no editor protocol is present. Existing bounds still apply.
+{
+  const ports=new MessageChannel(),scheduler=sched(),received=[],failures=[];const client=new Client(async()=>assert.fail('No exchange'),()=>{});client.accept(documentState(0));
+  const channel=createHostChannel({port:ports.port1,generation,client,scheduler,documentProtocol,onBound:()=>channel.accept(client.state),onFailure:error=>failures.push(error)});
+  ports.port2.onmessage=event=>received.push(event.data);ports.port2.start();ports.port2.postMessage({protocol,type:'bound',generation});await flush();
+  for(const phase of ['queued','waitingAck','waitingTake'])channel.accept(documentState(0,{phase,pending:'53'}));
+  assert.equal(received.length,1);
+  for(let n=0;n<3;++n){ports.port2.postMessage({protocol,type:'stateAck',generation,revision:received.at(-1).revision});await flush();assert.equal(received.at(-1).document.phase,['queued','waitingAck','waitingTake'][n]);}
+  assert.equal(received.length,4);assert.equal(failures.length,0);channel.close();ports.port2.close();client.close();assert.equal(scheduler.timers.size,0);
+}
+// A modal service permits local Take metadata, while ordinary Submit remains
+// subject to the same service-ownership guard as other application input.
+{
+  const ports=new MessageChannel(),scheduler=sched(),sent=[],failures=[];let channel;
+  const current=(ack,reply=null)=>({...documentState(ack,{pending:'53',phase:'waitingAck'},reply),service:{id:'7',kind:2}});
+  const client=new Client(async envelope=>{sent.push(envelope);return current(envelope.seq,documentReply(envelope.seq,'take'));},value=>channel?.accept(value));client.accept(current(0));
+  channel=createHostChannel({port:ports.port1,generation,client,scheduler,documentProtocol,onBound:()=>channel.accept(client.state),onFailure:error=>failures.push(error)});
+  const renderer=createRendererRequests({port:ports.port2,generation,documentProtocol,acceptSnapshot(){},present(){},onFailure:error=>failures.push(error)});
+  await flush();await assert.rejects(renderer.send(documentSubmit),/host service is active/);assert.equal(sent.length,0);assert.equal(client.ack,0n);
+  assert.equal((await renderer.send(documentTake)).sequence,'1');assert.equal(sent.length,1);assert.equal(failures.length,0);channel.close();renderer.close();client.close();
+}
+for(const invalidState of [
+  {...documentState(0),document:emptyDocument({publicationRevision:'2'})},
+  {...documentState(0),documentReply:{...documentReply('1','submit'),nativeAck:true}},
+  (()=>{const value=documentState(0);delete value.documentReply;return value;})()
+]){
+  const ports=new MessageChannel(),failures=[],client=new Client(async()=>assert.fail('No exchange'),()=>{});client.accept(documentState(0));
+  const channel=createHostChannel({port:ports.port1,generation,client,documentProtocol,onFailure:error=>failures.push(error)});channel.accept(invalidState);assert.equal(failures.length,1);channel.close();ports.port2.close();client.close();
+}
+// The child validates the paired values before its acceptance/paint callbacks.
+{
+  const ports=new MessageChannel(),failures=[];let callbacks=0;ports.port1.onmessage=()=>{};ports.port1.start();
+  const renderer=createRendererRequests({port:ports.port2,generation,documentProtocol,acceptSnapshot(){++callbacks;},present(){++callbacks;},onFailure:error=>failures.push(error)});
+  ports.port1.postMessage({protocol,type:'state',generation,revision:'1',snapshot:snapshot('old'),barrier:true,cancelPointers:false,document:emptyDocument({publicationRevision:'2'}),documentReply:null});await flush();assert.equal(callbacks,0);assert.equal(failures.length,1);renderer.close();ports.port1.close();
+}
+// A crossed GUI acknowledgment cannot resolve a typed document request.
+{
+  const ports=new MessageChannel(),scheduler=sched(),failures=[];let channel;
+  const client=new Client(async envelope=>documentState(envelope.seq,{pending:'53'},documentReply('99','submit')),value=>channel?.accept(value));client.accept(documentState(0));
+  channel=createHostChannel({port:ports.port1,generation,client,scheduler,documentProtocol,onBound:()=>channel.accept(client.state),onFailure:error=>failures.push(error)});
+  const renderer=createRendererRequests({port:ports.port2,generation,documentProtocol,acceptSnapshot(){},present(){}});await flush();const pending=renderer.send(documentSubmit).catch(error=>error);await flush();assert.equal(failures.length,1);renderer.close();assert.match((await pending).message,/closed/);channel.close();client.close();assert.equal(scheduler.timers.size,0);
+}
+console.log('Optional document delegation, ordered paired states, original GUI acknowledgment correlation, service metadata Take, strict child validation and legacy graph preservation passed');

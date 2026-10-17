@@ -50,6 +50,79 @@ def retained_base(names):
 
 
 class LatestReleaseTests(unittest.TestCase):
+    def test_appended_projects_reject_before_remote_or_producer_work(self):
+        for mode in ('web', 'binary', 'both'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                project = L.appended_project.default_document()
+                for component in ('web', 'binary'):
+                    project['appended'][component]['enabled'] = mode in (component, 'both')
+                project['appended']['web']['entry'] = 'index.html'
+                (root / L.appended_project.CONFIG_NAME).write_text(json.dumps(project))
+                # Missing payload roots must not divert this classification
+                # guard into a source/toolchain/producer operation.
+                with mock.patch.object(L.delivery, 'location', side_effect=AssertionError('request work')) as location, \
+                        mock.patch.object(L.ci, 'release_matrix', side_effect=AssertionError('producer work')) as matrix, \
+                        mock.patch.object(L.delivery, 'Remote', side_effect=AssertionError('remote work')) as remote, \
+                        mock.patch.object(L.subprocess, 'run', side_effect=AssertionError('child work')) as child:
+                    with self.assertRaisesRegex(ValueError, 'retained-only appended-compose.*configured project checkout'):
+                        L.preflight(request(), root=root)
+                    location.assert_not_called()
+                    matrix.assert_not_called()
+                    remote.assert_not_called()
+                    child.assert_not_called()
+
+    def test_nonminimal_kernel_selection_rejects_even_without_payload(self):
+        for profile in ('web', 'binary', 'both'):
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                project = L.appended_project.default_document()
+                project['kernel']['profile'] = profile
+                (root / L.appended_project.CONFIG_NAME).write_text(json.dumps(project))
+                with mock.patch.object(L.ci, 'release_matrix', side_effect=AssertionError('producer work')) as matrix, \
+                        mock.patch.object(L.delivery, 'Remote', side_effect=AssertionError('remote work')) as remote, \
+                        mock.patch.object(L.subprocess, 'run', side_effect=AssertionError('child work')) as child:
+                    with self.assertRaisesRegex(ValueError, 'retained-only appended-compose'):
+                        L.preflight(request(False), root=root)
+                    matrix.assert_not_called()
+                    remote.assert_not_called()
+                    child.assert_not_called()
+
+    def test_ordinary_project_defaults_preserve_preflight_result(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with mock.patch.object(L, 'ROOT', root):
+                default = L.preflight(request(False), remote=False)
+            expected = dict(request(False), core_provider='rust', tag='v1',
+                rust_recipes={target: L.ci.rust_recipe(target) for target in L.ci.STANDARD},
+                matrix=L.ci.release_matrix(request(False)['recipes'], 'core', core_provider='rust'),
+                intent='prepare only; no public candidate, certification or Latest change')
+            self.assertEqual(default, expected)
+            for profile in ('auto', 'minimal'):
+                with self.subTest(profile=profile):
+                    project = L.appended_project.default_document()
+                    project['kernel']['profile'] = profile
+                    (root / L.appended_project.CONFIG_NAME).write_text(json.dumps(project))
+                    explicit = L.preflight(request(False), remote=False, root=root)
+                    self.assertEqual(json.dumps(explicit, sort_keys=True), json.dumps(default, sort_keys=True))
+
+    def test_malformed_project_rejects_before_remote_or_producer_work(self):
+        malformed = ('{', '[]', '{"schema_version":1,"schema_version":1}')
+        for raw in malformed:
+            with self.subTest(raw=raw), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / L.appended_project.CONFIG_NAME).write_text(raw)
+                with mock.patch.object(L.delivery, 'location', side_effect=AssertionError('request work')) as location, \
+                        mock.patch.object(L.ci, 'release_matrix', side_effect=AssertionError('producer work')) as matrix, \
+                        mock.patch.object(L.delivery, 'Remote', side_effect=AssertionError('remote work')) as remote, \
+                        mock.patch.object(L.subprocess, 'run', side_effect=AssertionError('child work')) as child:
+                    with self.assertRaises(L.appended_project.ProjectError):
+                        L.preflight(request(), root=root)
+                    location.assert_not_called()
+                    matrix.assert_not_called()
+                    remote.assert_not_called()
+                    child.assert_not_called()
+
     def test_cli_creates_fresh_receipt_parent_without_overwriting(self):
         # Supply a fixture request and preflight response in a fresh child;
         # argument parsing, Git identity and file publication remain real.

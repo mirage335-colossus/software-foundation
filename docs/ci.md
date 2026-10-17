@@ -10,6 +10,14 @@ They are starting points for a newly hosted repository. Local success does not
 prove that hosted jobs, permissions, runner labels, or release settings have
 been exercised.
 
+Appended applications use the [retained-carrier feedback and composition
+route](appended-applications.md#retained-ci-and-recoverable-candidates). Its
+optional acquisition request selects an exact existing input group; current
+checkout preparation packs page resources and an independently compiled guest
+without a native build. Missing reuse inputs fail with maintenance required.
+Ordinary Latest rejects appended or nonminimal profiles before launching its
+producers. These paths do not publish or qualify an application implicitly.
+
 Application workflow entry points default `core_provider` to `rust`, with an
 explicit `cpp` compatibility choice. Linux development feedback declares its
 distribution `rustc`/Cargo setup and selects the actual package tools; it also

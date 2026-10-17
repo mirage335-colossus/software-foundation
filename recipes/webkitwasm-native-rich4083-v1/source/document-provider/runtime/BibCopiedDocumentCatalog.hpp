@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: CC0-1.0
+// Engine-private leaf facts, no GUI dependency or enabled-provider claim.
+#pragma once
+#include "EnginePrivate.hpp"
+#include "appended_engine_input_profile.hpp"
+#include "engine_editor_protocol.h"
+#include "engine_editor_pins.hpp"
+#include <foundation/appended/engine_provider_document_actions_v1.h>
+namespace bib::provider_candidate::document_catalog {
+inline constexpr std::uint64_t capabilities = 1795, physical_capabilities = 2003;
+inline constexpr auto physical_catalog = foundation::appended::engine_input::kInputCatalogSha256;
+inline constexpr std::array<std::uint8_t,32> schema{0xf1,0x1f,0xd0,0x61,0x35,0x0f,0x8d,0x66,0x3d,0xbc,0xde,0xc7,0xcf,0x0a,0x06,0x3e,0x4f,0xb0,0xff,0x35,0x64,0xd2,0x85,0x07,0x66,0x90,0xf5,0x8e,0x8a,0x84,0x14,0x3d};
+inline constexpr std::array<std::uint8_t,32> ack_schema{0x1e,0xb6,0xc2,0xd4,0xf5,0x6a,0xce,0xbc,0x14,0x23,0xd9,0xe2,0xb5,0xbf,0x9a,0x17,0x17,0xa9,0x99,0x63,0xa5,0xc3,0xf1,0x1f,0x4b,0x9d,0x7b,0x0f,0xe3,0x3b,0x50,0xf5};
+inline constexpr std::array<std::uint8_t,32> base_header{0xa8,0xe8,0x9d,0xa8,0x5d,0x34,0xb2,0x9a,0x4d,0x1b,0xc4,0x54,0x49,0x57,0x91,0xfa,0x60,0x4b,0x81,0xe3,0x47,0x7e,0x48,0xce,0x8c,0xa9,0x02,0xe4,0x33,0x3a,0x9c,0x0d};
+inline constexpr std::array<std::uint8_t,32> extension_header{0x7b,0x04,0x7b,0xae,0x4d,0x00,0x72,0xef,0x15,0x6e,0xa9,0x4b,0xa6,0x37,0x56,0x6d,0x56,0x3f,0xea,0x3a,0x95,0xd4,0x3c,0x4c,0x63,0x14,0xaf,0xc9,0x19,0xb1,0xd6,0x26};
+inline constexpr std::array<std::uint8_t,32> contract{0xab,0xa7,0x80,0x0e,0x6a,0xab,0x18,0x98,0xf3,0x61,0x4f,0x0b,0x1a,0xc5,0x3e,0x59,0xb9,0xf6,0x22,0xbf,0x1e,0x9d,0x3a,0x41,0x3f,0x50,0xd6,0x72,0xa3,0x66,0x22,0x98};
+inline constexpr std::array<std::uint8_t,32> catalog{0x6e,0x55,0x5d,0x4c,0x3b,0xb7,0x1f,0xbc,0x96,0x5e,0x1c,0xa4,0x96,0x71,0xfa,0xb6,0x4d,0x74,0x49,0x13,0xe1,0x8f,0x45,0xb9,0xba,0x27,0x35,0x05,0xe0,0xc6,0xbc,0xf5};
+inline constexpr std::array<Operation,1> queries{{
+    {BIB_ENGINE_QUERY_DOCUMENT_FORMS_V2, BIB_ENGINE_DOCUMENT_V2_QUERY_BYTES,
+     BIB_ENGINE_DOCUMENT_V2_REPLY_CAPACITY, BIB_ENGINE_CAP_SEMANTIC_SNAPSHOT_V2, schema}}};
+inline constexpr std::array<Operation,2> commands{{
+    {BIB_ENGINE_COMMAND_FORM_ACTION_V2, BIB_ENGINE_DOCUMENT_V2_MAX_ACTION_BYTES,
+     BIB_ENGINE_DOCUMENT_V2_REPLY_CAPACITY, BIB_ENGINE_CAP_FORM_ACTION_V2, schema},
+    {BIB_ENGINE_COMMAND_ACK_FORM_ACTION_V2, BIB_ENGINE_DOCUMENT_V2_ACK_REQUEST_BYTES,
+     BIB_ENGINE_DOCUMENT_V2_ACK_REPLY_CAPACITY, BIB_ENGINE_CAP_FORM_ACTION_V2, ack_schema}}};
+// The modern160/32/80 catalog is copied as typed operation facts, never the
+// obsolete physical467 prototype records. This alone enables no provider.
+inline constexpr std::array<Operation,3> physical_inputs{{
+    {1,160,16,BIB_ENGINE_CAP_KEY_V1,foundation::appended::engine_input::kKeySchema},
+    {3,32,16,BIB_ENGINE_CAP_FOCUS_V1,foundation::appended::engine_input::kFocusSchema},
+    {5,80,16,BIB_ENGINE_CAP_POINTER_V1,foundation::appended::engine_input::kMouseSchema}}};
+inline constexpr std::array<Operation,5> physical_commands{{
+    physical_inputs[0],physical_inputs[1],physical_inputs[2],commands[0],commands[1]}};
+// New opt-in editor catalog; pin values come from the common editor pin leaf.
+// This references the exact released common leaf, never a local hash fork.
+// No protocol hash is synthesized from capability bits.
+namespace editor_pins = foundation::appended::engine_editor;
+inline constexpr std::uint64_t editor_capabilities = BIB_ENGINE_EDITOR_CAPABILITIES;
+inline constexpr auto editor_header = editor_pins::kHeaderSha256;
+inline constexpr auto editor_contract = editor_pins::kContractSha256;
+inline constexpr auto editor_catalog = editor_pins::kCatalogSha256;
+inline constexpr auto editor_schema = editor_pins::kSchema;
+inline constexpr std::array<Operation,2> editor_queries{{queries[0],
+    {BIB_ENGINE_QUERY_EDITOR_PROJECTION_V1,BIB_ENGINE_EDITOR_MAX_QUERY_BYTES,
+     BIB_ENGINE_EDITOR_REPLY_CAPACITY,BIB_ENGINE_CAP_COMPOSITION_V1,editor_schema}}};
+inline constexpr std::array<Operation,7> editor_commands{{
+    physical_inputs[0],physical_inputs[1],physical_inputs[2],commands[0],commands[1],
+    {BIB_ENGINE_COMMAND_EDITOR_OBSERVATION_V1,BIB_ENGINE_EDITOR_MAX_WIRE_BYTES,
+     BIB_ENGINE_EDITOR_REPLY_CAPACITY,BIB_ENGINE_CAP_COMPOSITION_V1,editor_schema},
+    {BIB_ENGINE_COMMAND_EDITOR_REVOKE_V1,BIB_ENGINE_EDITOR_MAX_WIRE_BYTES,
+     BIB_ENGINE_EDITOR_REPLY_CAPACITY,BIB_ENGINE_CAP_COMPOSITION_V1,editor_schema}}};
+// Explicit kind4. The inherited operation/schema records are copied unchanged;
+// neither this table nor the extra bit widens any preceding profile.
+inline constexpr std::uint64_t actions_capabilities = BIB_ENGINE_DOCUMENT_ACTIONS_V1_PROVIDER_CAPABILITIES;
+inline constexpr std::array<std::uint8_t,32> actions_header{0xe7,0x48,0xf3,0x99,0x55,0x75,0x97,0xc5,0x10,0xcb,0xcf,0x45,0x7d,0xc9,0x62,0x08,0xc7,0xbf,0xd5,0xeb,0xbd,0xe3,0x29,0x8a,0x7c,0xf3,0xf4,0x9e,0x7e,0x05,0x75,0x4f};
+inline constexpr std::array<std::uint8_t,32> actions_contract{0x33,0xe2,0x3c,0x89,0x72,0x49,0x7a,0x64,0x95,0x6a,0x76,0x5b,0x24,0xa6,0x15,0x38,0xfe,0x1c,0xfc,0xab,0xe6,0xbe,0x80,0xaf,0x8e,0x19,0xce,0xb0,0xe4,0x01,0xe2,0x21};
+inline constexpr std::array<std::uint8_t,32> actions_catalog{0xf2,0x20,0x35,0x8e,0xdc,0x36,0xeb,0x08,0x3f,0xd5,0x67,0x61,0x1f,0x5d,0x0e,0xbb,0x5f,0x60,0x7f,0xe3,0xfd,0x90,0xe1,0xc8,0x3c,0xcd,0x7a,0x85,0xa5,0x69,0x0b,0xe5};
+inline constexpr std::array<std::uint8_t,32> actions_schema{0xb5,0x60,0x3e,0xc7,0x3b,0x05,0xff,0x2e,0xfb,0x4b,0x0a,0x94,0x05,0xb9,0x80,0x95,0x78,0x9d,0xe4,0xcc,0x2a,0x95,0x0e,0x7b,0x69,0x81,0x3a,0x18,0x45,0xcd,0x9d,0x64};
+inline constexpr std::array<std::uint8_t,32> actions_ack_schema{0xa4,0x79,0x3c,0xe2,0x84,0x17,0xff,0xa9,0x7b,0x75,0x43,0x44,0x62,0x4c,0x9d,0x9d,0x78,0x09,0x3a,0xcb,0xa5,0x79,0x2b,0xde,0x00,0x6c,0x7b,0x95,0x48,0x2d,0xfc,0xbe};
+inline constexpr std::array<Operation,9> actions_commands{{
+    editor_commands[0],editor_commands[1],editor_commands[2],editor_commands[3],editor_commands[4],
+    editor_commands[5],editor_commands[6],
+    {BIB_ENGINE_COMMAND_DOCUMENT_ACTION_V1,BIB_ENGINE_DOCUMENT_ACTIONS_V1_REQUEST_BYTES,
+     BIB_ENGINE_DOCUMENT_ACTIONS_V1_REPLY_CAPACITY,BIB_ENGINE_CAP_DOCUMENT_ACTIONS_V1,actions_schema},
+    {BIB_ENGINE_COMMAND_ACK_DOCUMENT_ACTION_V1,BIB_ENGINE_DOCUMENT_ACTIONS_V1_ACK_REQUEST_BYTES,
+     BIB_ENGINE_DOCUMENT_ACTIONS_V1_ACK_REPLY_CAPACITY,BIB_ENGINE_CAP_DOCUMENT_ACTIONS_V1,actions_ack_schema}}};
+inline constexpr auto actions_queries = editor_queries;
+static_assert(actions_capabilities == (editor_capabilities | BIB_ENGINE_CAP_DOCUMENT_ACTIONS_V1));
+static_assert(editor_capabilities == (physical_capabilities | BIB_ENGINE_CAP_COMPOSITION_V1));
+static_assert(physical_capabilities == (capabilities | BIB_ENGINE_CAP_KEY_V1 |
+    BIB_ENGINE_CAP_FOCUS_V1 | BIB_ENGINE_CAP_POINTER_V1));
+static_assert(capabilities == (BIB_ENGINE_CAP_SERVICE_QUEUE | BIB_ENGINE_CAP_APP_BUNDLE |
+    BIB_ENGINE_CAP_DIRTY_RGBA8 | BIB_ENGINE_CAP_SEMANTIC_SNAPSHOT_V2 | BIB_ENGINE_CAP_FORM_ACTION_V2));
+}

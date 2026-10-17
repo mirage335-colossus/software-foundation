@@ -1,0 +1,29 @@
+{
+  "generated_artifacts_vendored": false,
+  "generated_header_sha256": "0f6f181cf349e69e4916fc92255db53db796deeba7a34c1abee7114792f51c81",
+  "kind": "foundation-copied259-historical-diagnostic-identities",
+  "limitations": [
+    "The three adjacent diagnostic JSON snapshots preserve their original exact bytes. They are not a runnable retained source root at this directory: large supplier/dependency/data inputs, original exact helpers, toolchain constraints and other referenced files remain external.",
+    "The original SDK bootstrap archive/group location is unresolved; baseline thin-archive members/configuration/header closure are separate prerequisites.",
+    "No actual copied-engine factory/Wasm, runtime evidence, binary manifest, provider proof, retained binary group or production eligibility was supplied by source metadata generation.",
+    "Capability and profile values are source declarations; generated metadata does not establish implemented behavior. Native/physical successor and ABI-version-two work are separate and not included."
+  ],
+  "metadata_generator_sha256": "1f19e8cf75aa8d78abdea5c3d227153f4b053740295ee99be391b2cf4739a024",
+  "metadata_receipt_sha256": "17579f94ae7e6706c6bd1d3b0550c27c6b9b337ef7c65e931c1ecdff1d198bc0",
+  "prelink_plan_sha256": "590630bb19efb09185dc0eada019fd84b03f925d5671398944e4873154b3dabf",
+  "provider_build_sha256": "2c243b7646ad9ff88f44aed0c2f4fd3179018bf727d43d5c5f5910b3aef9b2c0",
+  "recipe_sha256": "74d69f9f75cc1d3cfb20e16841c3970ab4eb1598016ef281fcba7c9ca00e15b9",
+  "retention_freeze_sha256": "bce23f7b63b959763cb38e002c9c0140ef63abdc2a82d9bbd5d07d5720502871",
+  "schema_version": 1,
+  "source_profile": {
+    "bridge_abi": 65536,
+    "capabilities": "259",
+    "native_service_inventory": [],
+    "physical_input_capabilities": 0,
+    "provider_abi_major": 1,
+    "provider_abi_minor": 0,
+    "script_enabled": true
+  },
+  "sources_sha256": "4629ca530f28b051a16d3c458948d5278882368d9d97d3cfa28436e8aa184ef1",
+  "status": "source-metadata-only-no-engine-runtime-or-production-eligibility"
+}

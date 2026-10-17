@@ -36,7 +36,7 @@ def ignored_source_path(name):
             private_environment_path(name) or '__pycache__' in parts or name.endswith('.pyc'))
 
 
-def source_files_without_git(root):
+def source_files_without_git(root, *, exclude=None, prune=None):
     """Prune generated trees before enumeration; never follow source links."""
     def failed(error):
         raise error
@@ -48,17 +48,27 @@ def source_files_without_git(root):
         directories[:] = [name for name in directories
                           if '__pycache__' not in (parent / name).parts and
                           not private_environment_path(parent / name) and
-                          (parent / name).parts[0] not in ('build', '.agent-work', '.git')]
+                          (parent / name).parts[0] not in ('build', '.agent-work', '.git') and
+                          not (prune and prune((parent / name).as_posix()))]
         for name in [*directories, *filenames]:
             relative_name = (parent / name).as_posix()
-            if ignored_source_path(relative_name):
+            if ignored_source_path(relative_name) or exclude and exclude(relative_name):
                 continue
             path = Path(directory) / name
             if path.is_file() or path.is_symlink():
                 yield relative_name
 
 
-def selected_files(root):
+def selected_files(root, *, exclude=None, prune=None):
+    """Select a complete source inventory or an explicitly reviewed projection.
+
+    With no exclusion this retains the original complete-source contract. A
+    component projection may exclude reviewed paths from link/type inspection
+    and restored inventory comparison. Only an explicit prune predicate skips
+    directory traversal: a directory with a document's name must not hide its
+    unknown descendants. Unknown inputs still participate in the comparison and
+    every selected input receives normal checks.
+    """
     root = Path(root).resolve(strict=True)
     if (root / '.git').exists():
         result = subprocess.check_output(['git', '-C', str(root), 'ls-files', '--cached', '--others', '--exclude-standard', '-z'])
@@ -66,14 +76,16 @@ def selected_files(root):
     elif (root / 'source.json').is_file():
         names = set(read_json(root / 'source.json')['files'])
         # Extra source files cannot silently disappear from a restored snapshot.
-        actual = set(source_files_without_git(root))
+        if exclude:
+            names = {name for name in names if not exclude(name)}
+        actual = set(source_files_without_git(root, exclude=exclude, prune=prune))
         if names != actual:
             raise ValueError('restored source inventory changed')
     else:
-        names = set(source_files_without_git(root))
+        names = set(source_files_without_git(root, exclude=exclude, prune=prune))
     result = {}
     for name in sorted(names):
-        if ignored_source_path(name):
+        if ignored_source_path(name) or exclude and exclude(name):
             continue
         path = root.joinpath(*relative(name).parts)
         if path.is_symlink() or root not in path.resolve().parents:
@@ -85,10 +97,12 @@ def selected_files(root):
     return result
 
 
-def snapshot_paths(root, supplement=None):
-    files = selected_files(root)
+def snapshot_paths(root, supplement=None, *, exclude=None, prune=None):
+    files = selected_files(root, exclude=exclude, prune=prune)
     if supplement:
-        extra = selected_files(supplement)
+        extra_exclude = (lambda name: exclude(SUPPLEMENT_PREFIX + name)) if exclude else None
+        extra_prune = (lambda name: prune(SUPPLEMENT_PREFIX + name)) if prune else None
+        extra = selected_files(supplement, exclude=extra_exclude, prune=extra_prune)
         retained = {name: path for name, path in files.items() if name.startswith(SUPPLEMENT_PREFIX)}
         expected = {SUPPLEMENT_PREFIX + name: path for name, path in extra.items()}
         if retained and ({name: digest(path) for name, path in retained.items()} != {name: digest(path) for name, path in expected.items()}):
@@ -97,7 +111,7 @@ def snapshot_paths(root, supplement=None):
     return files
 
 
-def portable_executables(root, paths):
+def portable_executables(root, paths, *, exclude=None):
     """Windows cannot represent POSIX mode bits; retain reviewed source metadata.
 
     Bytes and complete path inventory are still recomputed. POSIX always inspects
@@ -112,9 +126,10 @@ def portable_executables(root, paths):
         for row in raw.split(b'\0'):
             if not row: continue
             metadata, name = row.split(b'\t', 1)
+            decoded = name.decode('utf-8')
+            if exclude and exclude(decoded): continue
             mode, _, stage = metadata.split()
             if stage != b'0': raise ValueError('unmerged source index cannot define portable modes')
-            decoded = name.decode('utf-8')
             if mode not in (b'100644', b'100755') or decoded in seen:
                 raise ValueError('unsupported or duplicate source index mode')
             seen.add(decoded)
@@ -124,10 +139,13 @@ def portable_executables(root, paths):
     if authority is not None:
         data = read_json(authority / 'source.json')
         names = data.get('executables')
+        prefix = '' if authority == root else root.relative_to(authority).as_posix() + '/'
+        if exclude and isinstance(names, list):
+            names = [name for name in names if not (isinstance(name, str) and name.startswith(prefix) and
+                                                    exclude(name[len(prefix):]))]
         if (not isinstance(names, list) or len(names) != len(set(names)) or
                 any(not isinstance(n, str) or n not in data.get('files', {}) for n in names)):
             raise ValueError('invalid retained executable inventory')
-        prefix = '' if authority == root else root.relative_to(authority).as_posix() + '/'
         return {name[len(prefix):] for name in names if name.startswith(prefix)} & set(paths)
     return {name for name, path in paths.items() if path.stat().st_mode & 0o111}
 

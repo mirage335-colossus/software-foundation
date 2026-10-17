@@ -1,0 +1,155 @@
+--- a/source/document-provider/runtime/BibNativeDocumentActionsBinding.cpp
++++ b/source/document-provider/runtime/BibNativeDocumentActionsBinding.cpp
+@@ -1,7 +1,11 @@
+ // SPDX-License-Identifier: CC0-1.0
+-// NEW explicit1795/2003/2035/4083 overlay. Actual WebCore source is unparsed/unqualified.
++// Native fixed rich4083 binding. Actual WebCore compile/runtime remains unqualified.
+ #include "config.h"
+-#include "BibCopiedDocumentBinding.hpp"
++#include "BibNativeProviderBootstrap.hpp"
++#include "BibNativeProviderOnce.hpp"
++#include "EnginePrivate.hpp"
++#include "LegacyHostAdapters.hpp"
++#include BIB_NATIVE_PROVIDER_METADATA_HEADER
+ #include "BibCopiedDocumentCatalog.hpp"
+ #include "BibDocumentPhysicalProvider.hpp"
+ #ifndef BIB_ENGINE_PROVIDER_EDITOR_V1
+@@ -46,9 +50,15 @@
+ #include <span>
+ #include <thread>
+ 
+-#if !defined(__EMSCRIPTEN__) || !BIB_ENGINE_PROVIDER_NEUTRAL || BIB_PTHREAD || !BIB_ENGINE_PROVIDER_DOCUMENT_V2
+-#error "Document binding requires an explicit non-pthread copied document composition"
+-#endif
++#if defined(__EMSCRIPTEN__) || defined(__EMSCRIPTEN_PTHREADS__) || !BIB_ENGINE_PROVIDER_NATIVE || !BIB_ENGINE_PROVIDER_NEUTRAL || !BIB_ENGINE_PROVIDER_DOCUMENT_V2 || !BIB_ENGINE_PROVIDER_EDITOR_V1 || !BIB_ENGINE_PROVIDER_DOCUMENT_ACTIONS_V1
++#error "Native rich binding requires explicit native64 neutral actions+editor"
++#endif
++#if !defined(__linux__) && !defined(_WIN32)
++#error "Native rich binding requires a reviewed Linux or Windows target"
++#endif
++static_assert(sizeof(void*) == 8);
++namespace M = foundation::appended::native_provider_actions_metadata;
++static_assert(M::metadataValid());
+ 
+ namespace bib::provider_candidate {
+ namespace {
+@@ -58,13 +68,15 @@
+ namespace A = BIB::NativeDocumentActionsV1;
+ #endif
+ namespace C = BIB::FormsV2Combined;
++// Private discriminator; this DSO installs only the fixed actions4 profile.
++enum class DocumentBindingProfile : std::uint32_t { pixel=1, physical=2, editor=3, actions=4 };
+ struct State final {
+     BibEngineBuildV1 build{};
+     BibEngineLimitsV1 limits{};
+     ServiceRetentionLimits retention{};
+     const std::thread::id owner{std::this_thread::get_id()};
+     std::uint64_t worker{}, instance{};
+-    DocumentBindingProfile profile{DocumentBindingProfile::pixel};
++    const DocumentBindingProfile profile{DocumentBindingProfile::actions};
+     std::atomic<bool> binding_fault{};
+     BibEngineHostV1 host{};
+     std::unique_ptr<LegacyHostAdapters> adapters;
+@@ -82,7 +94,15 @@
+ };
+ // Process lifetime. No reset/unload/destructor cleanup export is provided.
+ State* state;
+-std::atomic<std::uint64_t> next_instance{1};
++constinit NativeProviderOnce bindingOnce;
++constinit std::atomic<std::uint64_t> nextRuntimeIdentity{1};
++std::uint64_t reserveRuntimeIdentity() noexcept
++{
++    auto value = nextRuntimeIdentity.load(std::memory_order_relaxed);
++    do { if (!value || value == UINT64_MAX) return 0; }
++    while (!nextRuntimeIdentity.compare_exchange_weak(value, value + 1, std::memory_order_relaxed));
++    return value;
++}
+ bool owner(const State& s) noexcept { return s.owner == std::this_thread::get_id(); }
+ bool faulted(const State& s) noexcept {
+     return s.binding_fault.load(std::memory_order_acquire) || (s.adapters && s.adapters->callback_faulted());
+@@ -349,7 +369,10 @@
+     return s.publisher->retireActionMetadata(nativeIdentity(original->expected),original->request_sequence,
+         bytes(original->payload)) ? BIB_ENGINE_OK : BIB_ENGINE_INVALID;
+ }
+-std::int32_t preflight(void*, const BibEngineStartV1* start) {
++std::int32_t preflight(void* raw, const BibEngineStartV1* start) noexcept {
++    if (!raw) return BIB_ENGINE_INVALID;
++    // Inert owner comparison before Guard permanently retains or commits START.
++    if (!owner(*static_cast<const State*>(raw))) return BIB_ENGINE_WRONG_THREAD;
+     return start ? validateActualStart(*start) : BIB_ENGINE_INVALID;
+ }
+ std::int32_t install(void* raw, const BibEngineHostV1* host, const BibEngineStartV1* start, std::uint64_t instance)
+@@ -534,34 +557,31 @@
+ }
+ } // namespace
+ 
+-std::int32_t bindActualWebCoreDocumentProvider(const BibEngineBuildV1& build, const BibEngineLimitsV1& limits,
+-    ServiceRetentionLimits retention, std::uint64_t worker, DocumentBindingProfile profile) noexcept
+-{
+-    const bool actions=profile==DocumentBindingProfile::actions;
+-    const bool editor=editorProfile(profile);
+-    const bool physical=physicalProfile(profile);
+-#if !(BIB_ENGINE_PROVIDER_EDITOR_V1)
+-    if (editor) return BIB_ENGINE_UNSUPPORTED;
+-#endif
+-#if !(BIB_ENGINE_PROVIDER_DOCUMENT_ACTIONS_V1)
+-    if (actions) return BIB_ENGINE_UNSUPPORTED;
+-#endif
+-    if (state || (profile!=DocumentBindingProfile::pixel && !physical) || !worker
+-        || build.target_system != BIB_ENGINE_TARGET_BROWSER_WASM || build.target_processor != BIB_ENGINE_CPU_WASM32
+-        || build.pointer_bits != 32 || build.fixed_viewport_width != 800 || build.fixed_viewport_height != 600
+-        || build.capabilities != (actions ? D::actions_capabilities : editor ? D::editor_capabilities : physical ? D::physical_capabilities : D::capabilities)
+-        || std::memcmp(build.contract_header_sha256,(actions ? D::actions_contract : editor ? D::editor_contract : D::contract).data(),32)
+-        || !retention.max_retained_calls || retention.max_retained_bytes < 64 || !actualResourceLimits(limits)
+-        || limits.maximum_command_bytes < (editor ? BIB_ENGINE_EDITOR_MAX_WIRE_BYTES : BIB_ENGINE_DOCUMENT_V2_MAX_ACTION_BYTES)
+-        || limits.maximum_query_bytes < (editor ? BIB_ENGINE_EDITOR_MAX_QUERY_BYTES : BIB_ENGINE_DOCUMENT_V2_QUERY_BYTES) || limits.maximum_reply_bytes < N::maxReplyBytes
+-        || limits.maximum_service_message_bytes < 384) return BIB_ENGINE_UNSUPPORTED;
+-    auto instance=next_instance.load(std::memory_order_relaxed);
+-    do { if (!instance || instance == UINT64_MAX) return BIB_ENGINE_LIMIT; }
+-    while (!next_instance.compare_exchange_weak(instance,instance+1,std::memory_order_relaxed));
++namespace {
++// Only the Once winner may enter this fixed-actions metadata factory.
++std::int32_t bindNativeDocumentActionsProvider()
++{
++    constexpr auto profile = DocumentBindingProfile::actions;
++    constexpr bool actions=true, editor=true, physical=true;
++    const auto& build = M::build;
++    const auto& limits = M::limits;
++    const auto retention = M::retention;
++    if (state || !M::metadataValid()
++        || build.target_system != M::targetSystem || build.target_processor != M::targetProcessor
++        || build.pointer_bits != 64 || build.fixed_viewport_width != 800 || build.fixed_viewport_height != 600
++        || build.capabilities != D::actions_capabilities
++        || std::memcmp(build.contract_header_sha256,D::actions_contract.data(),32)
++        || limits.maximum_command_bytes != 1048576 || limits.maximum_query_bytes != 236
++        || limits.maximum_reply_bytes != 1048576 || limits.maximum_service_message_bytes != 1048576
++        || retention.max_retained_calls != 64 || retention.max_retained_bytes != 4194304
++        || !actualResourceLimits(limits)) return BIB_ENGINE_UNSUPPORTED;
++    const auto instance = reserveRuntimeIdentity();
++    const auto worker = reserveRuntimeIdentity();
++    if (!instance || !worker) return BIB_ENGINE_LIMIT;
+     try {
+         auto candidate=std::make_unique<State>();
+         candidate->build=build; candidate->limits=limits; candidate->retention=retention;
+-        candidate->worker=worker; candidate->instance=instance; candidate->profile=profile;
++        candidate->worker=worker; candidate->instance=instance;
+         auto* retained=candidate.get();
+         C::Hooks nativeHooks;
+         nativeHooks.onEngineThread=[retained] { return owner(*retained) && !faulted(*retained); };
+@@ -643,7 +663,15 @@
+         if (status) return status;
+         state=candidate.release();
+         return BIB_ENGINE_OK;
+-    } catch (...) { return BIB_ENGINE_LIMIT; }
++    } catch (const std::bad_alloc&) { return BIB_ENGINE_LIMIT; }
++    catch (...) { return BIB_ENGINE_PROCESS_EXIT_REQUIRED; }
++}
++} // namespace
++
++std::int32_t ensureNativeDocumentProviderBound() noexcept
++{
++    return bindingOnce.ensure([] { return bindNativeDocumentActionsProvider(); },
++        []() noexcept { return state && owner(*state); });
+ }
+ } // namespace bib::provider_candidate
+ 

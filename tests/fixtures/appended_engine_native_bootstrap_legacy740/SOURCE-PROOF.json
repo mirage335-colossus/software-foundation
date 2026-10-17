@@ -1,0 +1,38 @@
+{
+  "files": {
+    "abi/appended/engine_editor_protocol.h": {
+      "bytes": 3049,
+      "mode": 420,
+      "sha256": "bdd9bf16765513be402481ab85dd596263fd4ac66a0dfc1dcc7ba5314ec85034"
+    },
+    "gui/shared/engine_editor_pins.hpp": {
+      "bytes": 982,
+      "mode": 420,
+      "sha256": "911d54e7477028f73f6133382cc1304529115593e8b8367f165e60bd96cba937"
+    },
+    "include/foundation/appended/engine_provider.h": {
+      "bytes": 11657,
+      "mode": 420,
+      "sha256": "a8e89da85d34b29a4d1bc454495791fa604b81e3477e48ce8ca902e4333a9c0d"
+    },
+    "include/foundation/appended/engine_provider_document_v2.h": {
+      "bytes": 4128,
+      "mode": 420,
+      "sha256": "7b047bae4d0072ef156ea94ba637566d563fea3a95d43c4c6314afc919b1d626"
+    },
+    "third_party/appended-engine/include/EnginePrivate.hpp": {
+      "bytes": 9871,
+      "mode": 420,
+      "sha256": "b83560bf81705739aeaaacf9e9b8bc8799e6ddd60266bc05a2d1fff8aa12456e"
+    },
+    "third_party/appended-engine/src/ProviderGuard.cpp": {
+      "bytes": 68918,
+      "mode": 420,
+      "sha256": "74084a0d77e7c32a493f42be2e6538a0151039ba92cba8bb5cdfc37a48831b90"
+    }
+  },
+  "production_eligible": false,
+  "provenance": "native-engine-bootstrap-implementation/focused-run-2 closed source snapshot",
+  "scope": "frozen-historical-editor740-guard-test-only",
+  "source_run_result_sha256": "06c74bdbf78c8956a786ef7d78d052f5ae252af9dd0a9d7c5e12e6d0cd8ba002"
+}

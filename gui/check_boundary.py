@@ -11,6 +11,49 @@ import re
 import sys
 
 PUBLIC_GUI = {'gui/contract.hpp', 'gui/layout.hpp', 'gui/runtime.hpp'}
+# These optional companions are generic infrastructure, not application-domain
+# headers. Keep the full include name: gui/surface.hpp and adjacent foundation
+# headers do not inherit the exception.
+PUBLIC_GUI_COMPANIONS = {'foundation/gui/surface.hpp', 'foundation/gui/surface_editor.hpp',
+                         'foundation/gui/document_values.hpp', 'foundation/gui/document_endpoint.hpp'}
+# The complete readonly document leaf reuses the existing public form values.
+# Only this exact include edge is admitted; generic hosts cannot include the
+# form implementation contract directly. Its transitive closure is still checked.
+PUBLIC_GUI_COMPANION_DEPENDENCIES = {
+    'foundation/gui/document_values.hpp': {'foundation/appended/document_forms.hpp'}}
+# These names retain their existing namespace after a mechanical public-leaf
+# relocation. No controller, presenter, request ledger or application is public.
+PUBLIC_GUI_VALUE_SYMBOLS = {
+    'DocumentVersion', 'DocumentNodeKind', 'DocumentWhiteSpace', 'DocumentNode',
+    'DocumentPoint', 'DocumentSelection', 'DocumentSnapshot', 'DocumentEditorState',
+    'DocumentNodeMetadata', 'DocumentNativeOffsetKind', 'DocumentNativePoint',
+    'DocumentNativeSelection', 'DocumentWireSelection', 'DocumentDecodeDegradation',
+    'DocumentSemanticReply', 'NativeFormsDocumentObservation'}
+# Seeing a complete form value does not delegate its shared draft behavior to
+# a host. This checks the fully qualified spelling; it is not C++ alias analysis.
+PRIVATE_DOCUMENT_BEHAVIOR = re.compile(r'\bfoundation\s*::\s*appended\s*::\s*FormDraft\b')
+# Reviewed application entry types and preparation factory may be selected only
+# by direct composition roots. Generic host helpers cannot name them.
+COMPOSITION_SYMBOLS = {'Application', 'AppendedApplication', 'AppendedEngineApplication',
+                       'AppendedEngineDocumentApplication', 'EnginePrimaryRegionApplication',
+                       'SemanticPrimaryDocumentApplication',
+                       'NativeEngineDocumentComposition',
+                       'NativeEngineBitmapComposition',
+                       'EngineSurfacePort', 'EngineEditorPort', 'BoundEngineEditorPort',
+                       'prepare_engine_html_package', 'demo_native_services'}
+COMPOSITION_HEADERS = {'shared/application.hpp', 'shared/appended_application.hpp',
+                       'shared/appended_engine_document_application.hpp',
+                       'shared/engine_primary_region_application.hpp',
+                       'shared/semantic_primary_document_application.hpp',
+                       'shared/appended_engine_application.hpp', 'shared/appended_engine_abi.h',
+                       'shared/appended_engine_module.hpp',
+                       'shared/appended_demo_services.hpp',
+                       'shared/native_engine_document_composition.hpp',
+                       'shared/native_engine_bitmap_composition.hpp',
+                       'shared/native_engine_loader.hpp'}
+# Native composition alone locates its verified carrier. This does not grant
+# generic runners access to application storage or other Foundation headers.
+COMPOSITION_DOMAIN_HEADERS = {'foundation/appended/startup.hpp'}
 SOURCE_SUFFIXES = {'.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx',
                    '.ipp', '.tpp', '.inc', '.ixx', '.cppm', '.rs'}
 # Keep string contents while removing comments, so includes and widget IDs remain
@@ -128,7 +171,8 @@ def shared_violations(source):
             continue
         name = posixpath.normpath(include.replace('\\', '/'))
         gui = re.search(r'(?:^|/)(gui/.*)$', name)
-        if gui and gui[1] not in PUBLIC_GUI:
+        if gui and name not in PUBLIC_GUI_COMPANIONS and (
+                name.startswith('foundation/gui/') or gui[1] not in PUBLIC_GUI):
             result.append(include)
         if any(part.lower() in ('fl', 'sdl', 'sdl2', 'backends', 'hosts', 'host')
                for part in name.split('/')) or re.search(r'(?:^|/)(?:windows\.h|SDL[^/]*)$', name, re.I):
@@ -146,7 +190,9 @@ def without_includes(source):
 
 
 def composition_root(root, path):
-    return path.parent == root / 'hosts' and path.name.endswith(('_main.cpp', '_main.rs'))
+    return path.parent == root / 'hosts' and (
+        path.name.endswith(('_main.cpp', '_main.rs')) or
+        path.name == 'appended_engine_native_entry.hpp')
 
 
 def sources(directory):
@@ -170,6 +216,9 @@ def resolve_include(root, path, name, quoted=True):
 def analyze(root):
     root = Path(root).resolve()
     failures, dependencies, visited = [], set(), set()
+    companion_headers = {root.parent / 'include' / name for name in PUBLIC_GUI_COMPANIONS}
+    companion_dependencies = {(root.parent / 'include' / parent, root.parent / 'include' / child)
+        for parent, children in PUBLIC_GUI_COMPANION_DEPENDENCIES.items() for child in children}
     shared_paths = sources(root / 'shared')
     identities = {'entries.'}
     for path in shared_paths:
@@ -186,30 +235,41 @@ def analyze(root):
         visited.add(key); dependencies.add(path)
         if path.suffix == '.rs':
             source = path.read_text()
-            issues = rust_violations(source) if layer == 'shared' else []
-            if layer == 'host':
+            issues = rust_violations(source) if layer in ('shared', 'generic') else []
+            if layer in ('host', 'generic'):
                 code, literals = rust_code(source)
                 if any(value.startswith('entries.') or value in identities for value in literals.values()):
-                    issues.append('application identity in Rust host')
-                if re.search(r'\bfoundation\s*::\s*(?:Store|Record|InsertResult|InsertError)\b', code) or re.search(
+                    issues.append('application identity in Rust ' + layer)
+                domain = (r'\b(?:Store|Record|InsertResult|InsertError)\b' if layer == 'generic' else
+                          r'\bfoundation\s*::\s*(?:Store|Record|InsertResult|InsertError)\b')
+                if re.search(domain, code) or re.search(
                         r'\buse\s+foundation\s*::\s*\{[^;]*(?:Store|Record|InsertResult|InsertError)\b', code):
-                    issues.append('application domain dependency in Rust host')
+                    issues.append('application domain dependency in Rust ' + layer)
+                if PRIVATE_DOCUMENT_BEHAVIOR.search(code):
+                    issues.append('shared document draft behavior in Rust ' + layer)
                 app_types = re.findall(r'\bfoundation\s*::\s*ui\s*::\s*(\w+)', code)
-                if any(name != 'Application' or not composition_root(root, path) for name in app_types):
-                    issues.append('application implementation in Rust host')
+                if any(name not in PUBLIC_GUI_VALUE_SYMBOLS and
+                       (name not in COMPOSITION_SYMBOLS or not composition_root(root, path)) for name in app_types):
+                    issues.append('application implementation in Rust ' + layer)
             failures.extend(str(path) + ': ' + issue for issue in issues)
             return
         text = uncomment(path.read_text())
-        issues = shared_violations(text) if layer == 'shared' else []
-        if layer == 'host':
+        issues = shared_violations(text) if layer in ('shared', 'generic') else []
+        if layer in ('host', 'generic'):
             literals = re.findall(r'"((?:\\.|[^"\\])*)"', without_includes(text))
             if any(value.startswith('entries.') or value in identities for value in literals):
-                issues.append('application identity in host')
-            if re.search(r'\bfoundation\s*::\s*(?:Store|Record|InsertResult|InsertError)\b', text):
-                issues.append('application domain dependency in host')
+                issues.append('application identity in ' + layer)
+            code = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', '""', text)
+            domain = (r'\b(?:Store|Record|InsertResult|InsertError)\b' if layer == 'generic' else
+                      r'\bfoundation\s*::\s*(?:Store|Record|InsertResult|InsertError)\b')
+            if re.search(domain, code):
+                issues.append('application domain dependency in ' + layer)
+            if PRIVATE_DOCUMENT_BEHAVIOR.search(code):
+                issues.append('shared document draft behavior in ' + layer)
             app_types = re.findall(r'\bfoundation\s*::\s*ui\s*::\s*(\w+)', text)
-            if any(name != 'Application' or not composition_root(root, path) for name in app_types):
-                issues.append('application implementation in host')
+            if any(name not in PUBLIC_GUI_VALUE_SYMBOLS and
+                   (name not in COMPOSITION_SYMBOLS or not composition_root(root, path)) for name in app_types):
+                issues.append('application implementation in ' + layer)
         for name, quoted in include_entries(text):
             if name is None:
                 if layer == 'host': issues.append('computed include hides host dependency boundary')
@@ -220,18 +280,26 @@ def analyze(root):
                 issues.append(str(error)); continue
             if target is None:
                 continue
-            if layer == 'shared' and any(directory in target.parents for directory in (root/'host', root/'hosts')):
+            if (layer == 'host' and target == root / 'hosts/appended_engine_native_entry.hpp'
+                    and not composition_root(root, path)):
+                issues.append('application composition root through ' + name)
+                continue
+            if layer in ('shared', 'generic') and any(directory in target.parents for directory in (root/'host', root/'hosts')):
                 issues.append('host dependency through ' + name); continue
-            if layer == 'host' and root.parent / 'include/foundation' in target.parents:
+            if (layer in ('host', 'generic') and root.parent / 'include/foundation' in target.parents
+                    and target not in companion_headers and (path, target) not in companion_dependencies):
+                if layer == 'host' and composition_root(root, path) and target.relative_to(root.parent / 'include').as_posix() in COMPOSITION_DOMAIN_HEADERS:
+                    dependencies.add(target)
+                    continue
                 issues.append('application domain header through ' + name); continue
-            if layer == 'host' and root / 'shared' in target.parents:
+            if layer in ('host', 'generic') and root / 'shared' in target.parents:
                 # Composition roots may name the public application type. A
                 # helper cannot smuggle feature code into generic host services.
-                if target != root/'shared/application.hpp' or not composition_root(root, path):
+                if layer == 'generic' or target.relative_to(root).as_posix() not in COMPOSITION_HEADERS or not composition_root(root, path):
                     issues.append('shared application implementation through ' + name)
                 dependencies.add(target)
                 continue
-            walk(target, layer)
+            walk(target, 'generic' if target in companion_headers else layer)
         failures.extend(str(path) + ': ' + issue for issue in issues)
 
     for path in shared_paths:
@@ -242,6 +310,11 @@ def analyze(root):
     for directory in ('host', 'hosts'):
         for path in sources(root / directory):
             walk(path.resolve(), 'host')
+    # Generic companions may be unused by this example. Check their implementation
+    # and literal include closure even without a shared/host include edge.
+    for directory in ('include/foundation/gui', 'src/gui'):
+        for path in sources(root.parent / directory):
+            walk(path.resolve(), 'generic')
     return sorted(set(failures)), sorted(dependencies)
 
 

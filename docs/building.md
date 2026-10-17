@@ -10,6 +10,51 @@ and packaging. The wrapper provides predictable defaults and validation; it
 must not become an independent build system. Read [testing](testing.md) for
 test selection and [portability](portability.md) before promising that a
 package runs on another computer.
+The optional [appended application tools](appended-applications.md) dispatch
+before native toolchain selection. Packaging/replacing their payloads invokes no
+native configure, compiler, linker or install step. Initial binary-kernel
+production is an explicit maintenance operation. Initial rich-browser Foundation
+maintenance also has source admission, restricted to `--kernel-maintenance
+--appended-profile web` or `both`, GUI/Wasm and a verified paired Emscripten SDK.
+It requires a complete retained neutral engine group and four independent
+`--engine-recipe-sha256`, `--engine-manifest-sha256`, `--engine-proof-sha256` and
+`--engine-runtime-sha256` pins. The wrapper verifies them before tool discovery
+or configuration; direct CMake revalidates after compiler initialization and
+before the optional graph. Neither route builds or fetches the neutral engine.
+No production-eligible group/runtime proof exists yet, so this route currently
+fails closed. The ordinary default remains neither appended layer.
+The separate explicit `engine-maintenance plan|build` operation prepares a
+copied259 engine candidate from pinned retained source, SDK and baseline reuse
+inputs. Its closed CMake graph has no full supplier-build fallback; payload and
+integrity operations never select it. Later incremental attempts passed the
+repaired compilation and archive readbacks. The separate raw-export repair
+subsequently passed strict inspection, as did the modern document pixel candidate.
+Their original failed attempts remain recorded. Actual runtime checks and
+retained-SDK admission remain prerequisites. See [engine maintenance](appended-applications.md#explicit-retained-engine-maintenance).
+Its separate document-v2 producer is available through `engine-maintenance
+document-plan|document-build`; these actions likewise dispatch before native
+provider/toolchain selection and require their own pinned retained inputs.
+The separate Linux prototype namespaces `native-engine-prototype plan|build`
+and `native-engine-dependencies plan|build` prepare the first native provider
+and its offline dependency prefix. Their passive plans require complete explicit
+inputs; missing inputs produce named diagnostics and never trigger another
+builder. These are unfinished native-production tools, not an eligible engine
+SDK. A costly first native build requires the applicable diagnostic authorization
+under [development checks](../AGENTS.md#development-checks-and-manual-qualification).
+See [the initial rich producer procedure](appended-applications.md#initial-rich-browser-producer)
+for the required command shape, separate Foundation receipt and pure
+`appended rich-browser-kernel` packaging step. Its explicit
+`--developer-unqualified` flag cannot bypass actual runtime or compiled-profile
+facts. This tooling is not a runnable rich-engine release.
+An explicit `--engine-physical-input` selects the separate physical467 contract
+for web/both maintenance. It requires that contract's eligible retained group
+and pins; the default continues to select copied259. Direct CMake uses
+`FOUNDATION_APPENDED_ENGINE_PHYSICAL_INPUT=ON`. Successful physical admission
+generates the private `appended-engine-physical-input/` profile header and enables
+the matching host composition. The pure carrier producer separately requires
+`appended rich-browser-kernel --physical-input`, the same-directory generated
+`gui/web-physical` assets and the original physical runtime receipt. These flags
+do not build or qualify an engine; no eligible physical group exists yet.
 The [shell script inventory](shell-scripts.md) identifies the Bourne-compatible
 project wrappers and the helpers that retain modern POSIX shell requirements.
 

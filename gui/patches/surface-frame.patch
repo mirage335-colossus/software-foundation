@@ -1,0 +1,68 @@
+--- renderer_frame.mjs
++++ renderer_surface_frame.mjs
+@@ -1,4 +1,5 @@
+-import {Renderer} from './renderer_dom.mjs';
++import {Renderer} from './renderer_surface_dom.mjs';
++import {validateSurfaceState,validateSurfaceOperation} from './browser_surface_protocol.mjs';
+ import {createBrowserPresenter} from './browser_presenter.mjs';
+ import {createRendererRequests} from './renderer_channel.mjs';
+ import {CHANNEL_PROTOCOL} from './browser_limits.mjs';
+@@ -12,12 +13,14 @@
+   // The initial document owns its endpoint before announcing readiness. A
+   // navigation can replace the WindowProxy, but cannot receive this endpoint.
+   const ports = new host.MessageChannel();
++  const surfaceProtocol={validateSurfaceState,validateSurfaceOperation};
+   let bound = false, closed = false, requests = null, renderer = null, presenter = null;
++  let surfaceProfile=null,surfaceConnection=null,surfaceStarted=false,surfaceBasis=null,surfacePaintBarrier=false;
+   const close = () => {
+-    if (closed) return; closed = true;
++    if (closed) return; closed = true; surfaceConnection=null;
+     host.removeEventListener('pagehide',close);
+     ports.port1.onmessage = null; ports.port1.onmessageerror = null; ports.port1.close();
+-    requests?.close(); presenter?.close(); renderer?.destroy();
++    requests?.close(); presenter?.close(); renderer?.destroy(); document.querySelector('#stage')?.setAttribute('inert','');
+   };
+   const connect = event => {
+     if (closed) return;
+@@ -25,12 +28,35 @@
+     const plain = data && !Array.isArray(data) && typeof data === 'object' && [Object.prototype,null].includes(Object.getPrototypeOf(data));
+     if (!plain || data.protocol !== CHANNEL_PROTOCOL || data.generation !== generation || bound || data.type !== 'connect' || Object.keys(data).length !== 3 || !['protocol','type','generation'].every(key=>Object.hasOwn(data,key)) || event.ports?.length) { close(); return; }
+     bound = true;
+-    renderer = new Renderer(document.querySelector('#stage'),document.querySelector('#pages'),operation=>requests.send(operation),document,
+-      {sendEdit:(key,value)=>requests.send({type:'editIntent',key,value})});
+-    presenter = createBrowserPresenter(snapshot=>renderer.render(snapshot),host);
+-    requests = createRendererRequests({port:ports.port1,generation,
+-      acceptSnapshot(snapshot,cancelPointers) { renderer.acceptSnapshot(snapshot); if (cancelPointers || snapshot.closed) renderer.cancelPointers(); },
+-      present(snapshot,barrier) { presenter.accept({snapshot,error:'',service:null}); if (barrier) presenter.flush(); },
++    requests = createRendererRequests({port:ports.port1,generation,surfaceProtocol,
++      acceptSnapshot(snapshot,cancelPointers,surface=null,hasSurface=false) {
++        if(closed)return;
++        if(surfaceProfile===null){
++          surfaceProfile=hasSurface;
++          const options={sendEdit:(key,value)=>requests.send({type:'editIntent',key,value})};
++          if(surfaceProfile)options.surface={onFailure:error=>{if(!error.stale)close();}};
++          renderer=new Renderer(document.querySelector('#stage'),document.querySelector('#pages'),operation=>requests.send(operation),document,options);
++          presenter=createBrowserPresenter(value=>renderer.render(value),host);
++        }
++        if(surfaceProfile!==hasSurface)throw Error('Renderer surface profile changed');
++        const p=surface?.presentation;
++        const basis=surfaceProfile?JSON.stringify(p?[p.identity.owner,p.identity.generation,p.identity.epoch,p.identity.context,p.bounds,p.clip,p.available]:null):null;
++        surfacePaintBarrier=basis!==surfaceBasis;surfaceBasis=basis;
++        renderer.acceptSnapshot(snapshot,surface,Boolean(surface?.serviceActive));
++        if(cancelPointers||snapshot.closed)renderer.cancelPointers();
++        if(surfaceProfile&&!surfaceStarted&&!cancelPointers&&!surface?.serviceActive&&!snapshot.closed){
++          surfaceStarted=true;
++          const connection=renderer.connectSurface();surfaceConnection=connection;
++          Promise.resolve(connection).then(ready=>{if(!closed&&surfaceConnection===connection&&!ready)close();},()=>{if(!closed&&surfaceConnection===connection)close();});
++        }
++      },
++      present(snapshot,barrier) {
++        if(closed)return;
++        presenter.accept({snapshot,error:'',service:null});
++        // A new physical owner or geometry must be painted in this state task;
++        // an old DOM position cannot grant the new accepted owner input.
++        if(barrier||surfacePaintBarrier)presenter.flush();surfacePaintBarrier=false;
++      },
+       onFailure:close});
+   };
+   ports.port1.onmessage = connect; ports.port1.onmessageerror = close; ports.port1.start();

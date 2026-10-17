@@ -10,7 +10,9 @@ foundation_gui_inputs()
 # The Python guard selects source types; CMake must still invalidate its stamp.
 file(GLOB_RECURSE foundation_gui_owned_sources LIST_DIRECTORIES FALSE CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/shared/*" "${CMAKE_CURRENT_SOURCE_DIR}/host/*"
-    "${CMAKE_CURRENT_SOURCE_DIR}/hosts/*" "${CMAKE_CURRENT_SOURCE_DIR}/../rust/*")
+    "${CMAKE_CURRENT_SOURCE_DIR}/hosts/*" "${CMAKE_CURRENT_SOURCE_DIR}/../rust/*"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../include/foundation/gui/*"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/gui/*")
 execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/check_boundary.py" --dependencies
     OUTPUT_VARIABLE foundation_gui_transitive_sources COMMAND_ERROR_IS_FATAL ANY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${foundation_gui_transitive_sources})
@@ -31,6 +33,26 @@ target_link_libraries(foundation_gui_application PUBLIC foundation_gui_boundary 
 target_include_directories(foundation_gui_application PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 set_target_properties(foundation_gui_application PROPERTIES CXX_EXTENSIONS OFF)
 foundation_options(foundation_gui_application)
+
+# Generic native presentation and editor values remain optional infrastructure;
+# declaring these targets adds no engine or appended runtime to ordinary hosts.
+if(NOT EMSCRIPTEN)
+    if(NOT TARGET foundation_gui_surface)
+        add_library(foundation_gui_surface STATIC EXCLUDE_FROM_ALL "${PROJECT_SOURCE_DIR}/src/gui/surface.cpp")
+        target_include_directories(foundation_gui_surface PUBLIC "${PROJECT_SOURCE_DIR}/include")
+        target_compile_features(foundation_gui_surface PUBLIC cxx_std_20)
+        set_target_properties(foundation_gui_surface PROPERTIES CXX_EXTENSIONS OFF)
+        foundation_options(foundation_gui_surface)
+    endif()
+    add_library(foundation_gui_native_surface STATIC EXCLUDE_FROM_ALL
+        host/native_surface.cpp host/native_editor_capture.cpp)
+    target_link_libraries(foundation_gui_native_surface PUBLIC foundation_gui_boundary foundation_gui_surface)
+    target_include_directories(foundation_gui_native_surface PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_features(foundation_gui_native_surface PUBLIC cxx_std_20)
+    set_target_properties(foundation_gui_native_surface PROPERTIES CXX_EXTENSIONS OFF)
+    add_dependencies(foundation_gui_native_surface foundation_gui_contract)
+    foundation_options(foundation_gui_native_surface)
+endif()
 
 function(gui_warnings target)
     foundation_options(${target})
@@ -86,6 +108,32 @@ function(foundation_gui_sdl_display_test name)
 endfunction()
 if(BUILD_TESTING)
     add_custom_target(foundation-gui-tests)
+    if(NOT EMSCRIPTEN)
+        find_package(Threads REQUIRED)
+        foreach(_native_surface_fixture native_surface native_surface_composition native_editor_capture)
+            string(REPLACE "_" "-" _native_surface_selector "${_native_surface_fixture}")
+            add_executable(foundation_gui_${_native_surface_fixture}_test EXCLUDE_FROM_ALL
+                "tests/${_native_surface_fixture}_test.cpp")
+            target_link_libraries(foundation_gui_${_native_surface_fixture}_test PRIVATE
+                foundation_gui_native_surface Threads::Threads)
+            foundation_gui_check(${_native_surface_selector}
+                foundation_gui_${_native_surface_fixture}_test focused)
+        endforeach()
+        add_executable(foundation_gui_native_framebuffer_surface_peer_test EXCLUDE_FROM_ALL
+            tests/native_framebuffer_surface_peer_test.cpp)
+        target_compile_definitions(foundation_gui_native_framebuffer_surface_peer_test PRIVATE
+            FOUNDATION_FRAMEBUFFER_SESSION_FIXTURE=1)
+        target_link_libraries(foundation_gui_native_framebuffer_surface_peer_test PRIVATE
+            foundation_gui_native_surface Threads::Threads)
+        set(_native_framebuffer_fixture_output
+            "${CMAKE_CURRENT_BINARY_DIR}/test-output/native-framebuffer-surface-peer")
+        file(MAKE_DIRECTORY "${_native_framebuffer_fixture_output}")
+        add_test(NAME foundation.gui.native-framebuffer-surface-peer
+            COMMAND foundation_gui_native_framebuffer_surface_peer_test "${_native_framebuffer_fixture_output}")
+        foundation_test_prerequisites(foundation.gui.native-framebuffer-surface-peer
+            foundation_gui_native_framebuffer_surface_peer_test)
+        set_tests_properties(foundation.gui.native-framebuffer-surface-peer PROPERTIES LABELS "gui;focused" TIMEOUT 90)
+    endif()
 endif()
 find_program(FOUNDATION_NODE_EXECUTABLE NAMES node nodejs)
 foundation_gui_headers()
@@ -96,7 +144,8 @@ foundation_gui_repatch(patch-inputs/web-transfer.hpp web-context.patch patch-inp
 foundation_gui_repatch(patch-inputs/web-context.hpp web-shortcuts.patch patch-inputs/web-shortcuts.hpp)
 foundation_gui_repatch(patch-inputs/web-shortcuts.hpp web-masked-text.patch patch-inputs/web-masked.hpp)
 foundation_gui_repatch(patch-inputs/web-masked.hpp nonvisual-command-web.patch patch-inputs/web-commands.hpp)
-foundation_gui_repatch(patch-inputs/web-commands.hpp text-frame-web.patch include/gui/web.hpp)
+foundation_gui_repatch(patch-inputs/web-commands.hpp text-frame-web.patch patch-inputs/web-framed.hpp)
+foundation_gui_repatch(patch-inputs/web-framed.hpp surface-web-session.patch include/gui/web.hpp)
 foundation_gui_patch(backends/web/renderer.mjs web-ordering.patch patch-inputs/renderer-ordered.mjs)
 foundation_gui_repatch(patch-inputs/renderer-ordered.mjs web-responsiveness.patch patch-inputs/renderer-responsive.mjs)
 foundation_gui_repatch(patch-inputs/renderer-responsive.mjs web-file-services.patch patch-inputs/renderer-services.mjs)
@@ -109,6 +158,9 @@ foundation_gui_repatch(patch-inputs/renderer-commands.mjs wheel-chaining-rendere
 foundation_gui_repatch(patch-inputs/renderer-wheels.mjs wheel-accumulation-renderer.patch patch-inputs/renderer-accumulated.mjs)
 foundation_gui_repatch(patch-inputs/renderer-accumulated.mjs text-frame-renderer.patch patch-inputs/renderer-framed.mjs)
 foundation_gui_repatch(patch-inputs/renderer-framed.mjs web-context-routing-renderer.patch web/renderer_dom.mjs)
+# The optional surface renderer is a generated extension of the same source.
+# Keep the existing renderer graph for retained binary-only browser packages.
+foundation_gui_repatch(web/renderer_dom.mjs surface-renderer.patch web/renderer_surface_dom.mjs)
 configure_file(host/renderer_compat.mjs "${CMAKE_CURRENT_BINARY_DIR}/web/renderer.mjs" COPYONLY)
 foundation_gui_patch(backends/web/boot.mjs web-lifecycle.patch patch-inputs/boot-lifecycle.mjs)
 foundation_gui_repatch(patch-inputs/boot-lifecycle.mjs web-presentation.patch patch-inputs/boot-presentation.mjs)
@@ -122,6 +174,22 @@ foreach(module IN LISTS foundation_web_modules)
     configure_file("host/${module}.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/${module}.mjs" COPYONLY)
     list(APPEND foundation_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web/${module}.mjs")
 endforeach()
+set(foundation_surface_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web/renderer_surface_dom.mjs")
+foreach(module browser_surface browser_surface_protocol)
+    configure_file("host/${module}.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/${module}.mjs" COPYONLY)
+    list(APPEND foundation_surface_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web/${module}.mjs")
+endforeach()
+# The richer child uses a separate generated entry; retained binary packages
+# continue to use the original renderer_frame and child bundle graph.
+configure_file(host/renderer_frame.mjs "${CMAKE_CURRENT_BINARY_DIR}/patch-inputs/renderer-surface-frame.mjs" COPYONLY)
+foundation_gui_repatch(patch-inputs/renderer-surface-frame.mjs surface-frame.patch web/renderer_surface_frame.mjs)
+list(APPEND foundation_surface_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web/renderer_surface_frame.mjs")
+# The explicit mouse profile has its own complete asset directory. Its stable
+# basenames let the producer project the six data fields from that same graph.
+foundation_gui_repatch(web/renderer_surface_dom.mjs mouse-surface-renderer.patch
+    web-physical/renderer_surface_dom.mjs)
+foundation_gui_repatch(patch-inputs/renderer-surface-frame.mjs mouse-surface-frame.patch
+    web-physical/renderer_surface_frame.mjs)
 if(BUILD_TESTING AND FOUNDATION_NODE_EXECUTABLE)
     add_test(NAME foundation.gui.worker COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/worker_test.mjs"
@@ -146,7 +214,29 @@ if(BUILD_TESTING AND FOUNDATION_NODE_EXECUTABLE)
     add_test(NAME foundation.gui.browser-services COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_services_test.mjs"
         "${CMAKE_CURRENT_BINARY_DIR}/web/browser_services.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/browser_client.mjs")
-    foreach(name browser-responsiveness browser-presenter file-browser browser-channel browser-embedding browser-services)
+    add_test(NAME foundation.gui.browser-surface-channel COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_surface_channel_test.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web/renderer_channel.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web/browser_client.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web/browser_surface_protocol.mjs")
+    add_test(NAME foundation.gui.browser-surface-frame COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_surface_frame_test.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web/renderer_surface_frame.mjs")
+    add_test(NAME foundation.gui.browser-surface-renderer COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_surface_renderer_test.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web/renderer_surface_dom.mjs")
+    add_test(NAME foundation.gui.browser-mouse-frame COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_surface_frame_test.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web-physical/renderer_surface_frame.mjs" mouse_v1)
+    add_test(NAME foundation.gui.browser-mouse-renderer COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_surface_renderer_test.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web-physical/renderer_surface_dom.mjs" mouse_v1)
+    add_test(NAME foundation.gui.browser-surface-input COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_surface_test.mjs")
+    add_test(NAME foundation.gui.browser-surface-protocol COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_surface_protocol_test.mjs")
+    foreach(name browser-responsiveness browser-presenter file-browser browser-channel browser-embedding browser-services
+            browser-surface-channel browser-surface-frame browser-surface-renderer browser-surface-input browser-surface-protocol
+            browser-mouse-frame browser-mouse-renderer)
         foundation_test_prerequisites(foundation.gui.${name})
         set_tests_properties(foundation.gui.${name} PROPERTIES LABELS "gui;focused" TIMEOUT 30)
     endforeach()
@@ -167,8 +257,60 @@ execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tools/br
     --assets "${CMAKE_CURRENT_BINARY_DIR}/web"
     --output "${CMAKE_CURRENT_BINARY_DIR}/web/renderer_child_bundle.mjs"
     COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tools/browser_surface_bundle.py"
+    --assets "${CMAKE_CURRENT_BINARY_DIR}/web"
+    --output "${CMAKE_CURRENT_BINARY_DIR}/web/renderer_surface_child_bundle.mjs"
+    COMMAND_ERROR_IS_FATAL ANY)
+list(APPEND foundation_surface_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web/renderer_surface_child_bundle.mjs")
+set(foundation_physical_web_assets
+    "${CMAKE_CURRENT_BINARY_DIR}/web-physical/renderer_surface_dom.mjs"
+    "${CMAKE_CURRENT_BINARY_DIR}/web-physical/renderer_surface_frame.mjs")
+foreach(_physical_source IN LISTS foundation_web_assets)
+    get_filename_component(_physical_name "${_physical_source}" NAME)
+    configure_file("${_physical_source}" "${CMAKE_CURRENT_BINARY_DIR}/web-physical/${_physical_name}" COPYONLY)
+    list(APPEND foundation_physical_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web-physical/${_physical_name}")
+endforeach()
+foreach(module browser_surface browser_surface_protocol)
+    configure_file("host/${module}.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web-physical/${module}.mjs" COPYONLY)
+    list(APPEND foundation_physical_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web-physical/${module}.mjs")
+endforeach()
+execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tools/browser_surface_bundle.py"
+    --assets "${CMAKE_CURRENT_BINARY_DIR}/web-physical"
+    --output "${CMAKE_CURRENT_BINARY_DIR}/web-physical/renderer_surface_child_bundle.mjs"
+    COMMAND_ERROR_IS_FATAL ANY)
+list(APPEND foundation_physical_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web-physical/renderer_surface_child_bundle.mjs")
+set(foundation_editor_web_assets)
+if(FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE STREQUAL "editor")
+    # Extend the actual physical postimages. Existing browser profiles keep
+    # their renderer modules and inert bundle inventories unchanged.
+    foundation_gui_repatch(web-physical/renderer_surface_dom.mjs editor-surface-renderer.patch
+        web-editor/renderer_editor_dom.mjs)
+    foundation_gui_repatch(web-physical/renderer_surface_frame.mjs editor-surface-frame.patch
+        web-editor/renderer_editor_frame.mjs)
+    set(foundation_editor_web_assets
+        "${CMAKE_CURRENT_BINARY_DIR}/web-editor/renderer_editor_dom.mjs"
+        "${CMAKE_CURRENT_BINARY_DIR}/web-editor/renderer_editor_frame.mjs")
+    foreach(_editor_source IN LISTS foundation_physical_web_assets)
+        get_filename_component(_editor_name "${_editor_source}" NAME)
+        configure_file("${_editor_source}" "${CMAKE_CURRENT_BINARY_DIR}/web-editor/${_editor_name}" COPYONLY)
+        list(APPEND foundation_editor_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web-editor/${_editor_name}")
+    endforeach()
+    foreach(module browser_surface_editor_text browser_surface_editor_controller
+            browser_surface_editor browser_surface_editor_integration browser_editor_endpoint
+            browser_document_endpoint)
+        configure_file("host/${module}.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web-editor/${module}.mjs" COPYONLY)
+        list(APPEND foundation_editor_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web-editor/${module}.mjs")
+    endforeach()
+    execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tools/browser_editor_bundle.py"
+        --assets "${CMAKE_CURRENT_BINARY_DIR}/web-editor"
+        --output "${CMAKE_CURRENT_BINARY_DIR}/web-editor/renderer_editor_child_bundle.mjs"
+        COMMAND_ERROR_IS_FATAL ANY)
+    list(APPEND foundation_editor_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web-editor/renderer_editor_child_bundle.mjs")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/tools/browser_editor_bundle.py")
+endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/tools/browser_bundle.py")
+    "${CMAKE_SOURCE_DIR}/tools/browser_bundle.py" "${CMAKE_SOURCE_DIR}/tools/browser_surface_bundle.py")
 configure_file(hosts/web_host.py "${CMAKE_CURRENT_BINARY_DIR}/web/serve.py" COPYONLY)
 if(FOUNDATION_GUI_DISTRIBUTABLE)
     foreach(notice third_party/rev-deps/glew-LICENSE.txt third_party/rev-deps/freetype-LICENSE.TXT
@@ -184,6 +326,19 @@ if(FOUNDATION_GUI_DISTRIBUTABLE)
     install(FILES ${foundation_web_assets} "${CMAKE_CURRENT_BINARY_DIR}/web/host.py"
         "${CMAKE_CURRENT_BINARY_DIR}/web/serve.py"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/software-foundation/web")
+    if(FOUNDATION_APPENDED_PROFILE MATCHES "^(web|both)$")
+        install(FILES ${foundation_surface_web_assets}
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/software-foundation/web")
+        if(FOUNDATION_APPENDED_ENGINE_PHYSICAL_INPUT OR
+                FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE STREQUAL "physical")
+            install(FILES ${foundation_physical_web_assets}
+                DESTINATION "${CMAKE_INSTALL_DATADIR}/software-foundation/web-physical")
+        endif()
+        if(FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE STREQUAL "editor")
+            install(FILES ${foundation_editor_web_assets}
+                DESTINATION "${CMAKE_INSTALL_DATADIR}/software-foundation/web-editor")
+        endif()
+    endif()
     install(FILES "${lock_path}" DESTINATION "${CMAKE_INSTALL_DOCDIR}/gui-boundary")
     foreach(index RANGE 0 ${license_last})
         string(JSON license_file GET "${lock}" redistribution license_files ${index})
@@ -192,6 +347,7 @@ if(FOUNDATION_GUI_DISTRIBUTABLE)
             DESTINATION "${CMAKE_INSTALL_DOCDIR}/gui-boundary/${license_directory}")
     endforeach()
 endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/AppendedGui.cmake")
 if(EMSCRIPTEN)
     foundation_gui_executable(foundation-gui-web-wasm hosts/wasm_main.cpp)
     set_target_properties(foundation-gui-web-wasm PROPERTIES OUTPUT_NAME gui_web_wasm SUFFIX .js)
@@ -270,8 +426,49 @@ if(FOUNDATION_GUI_REV)
     foundation_gui_executable(foundation-gui-rev hosts/rev_main.cpp)
     target_link_libraries(foundation-gui-rev PRIVATE gui_rev_adapter)
 endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/AppendedNativeGui.cmake")
 if(BUILD_TESTING)
+    if(FOUNDATION_GUI_FLTK)
+        add_executable(foundation_gui_native_fltk_surface_test EXCLUDE_FROM_ALL
+            tests/native_fltk_surface_test.cpp)
+        foundation_gui_fltk_surface_target(foundation_gui_native_fltk_surface_test)
+        target_link_libraries(foundation_gui_native_fltk_surface_test PRIVATE Threads::Threads)
+        foundation_options(foundation_gui_native_fltk_surface_test)
+        foreach(_fltk_surface_case mouse viewport keys committed independent preedit
+                cancelled selection dead-keys capture paused-capture)
+            set(_fltk_surface_test "foundation.gui.native-fltk-surface-${_fltk_surface_case}")
+            add_test(NAME ${_fltk_surface_test}
+                COMMAND foundation_gui_native_fltk_surface_test ${_fltk_surface_case})
+            foundation_test_prerequisites(${_fltk_surface_test} foundation_gui_native_fltk_surface_test)
+            set_tests_properties(${_fltk_surface_test} PROPERTIES LABELS "gui;focused" TIMEOUT 90)
+        endforeach()
+        add_executable(foundation_gui_fltk_surface_runner_test EXCLUDE_FROM_ALL
+            tests/fltk_surface_runner_test.cpp)
+        foundation_gui_fltk_surface_target(foundation_gui_fltk_surface_runner_test)
+        target_link_libraries(foundation_gui_fltk_surface_runner_test PRIVATE Threads::Threads)
+        foundation_options(foundation_gui_fltk_surface_runner_test)
+        foundation_gui_check(fltk-surface-runner foundation_gui_fltk_surface_runner_test focused)
+    endif()
+    if(FOUNDATION_GUI_REV)
+        # The fixture supplies fake window transport methods against the actual
+        # prepared declarations. It links no Rev toolkit, GL context or window.
+        add_executable(foundation_gui_native_rev_surface_test EXCLUDE_FROM_ALL
+            tests/native_rev_surface_test.cpp host/native_rev_surface_peer.cpp)
+        target_include_directories(foundation_gui_native_rev_surface_test BEFORE PRIVATE
+            "${CMAKE_CURRENT_BINARY_DIR}/rev"
+            "${CMAKE_CURRENT_BINARY_DIR}/rev-generated/source/OS/Window")
+        target_link_libraries(foundation_gui_native_rev_surface_test PRIVATE
+            foundation_gui_native_surface Threads::Threads)
+        foundation_options(foundation_gui_native_rev_surface_test)
+        foundation_gui_check(native-rev-surface foundation_gui_native_rev_surface_test focused)
+    endif()
     if(FOUNDATION_GUI_SDL)
+        add_executable(foundation_gui_native_sdl_surface_test EXCLUDE_FROM_ALL
+            tests/native_sdl_surface_test.cpp)
+        target_link_libraries(foundation_gui_native_sdl_surface_test PRIVATE
+            foundation_gui_native_sdl_surface Threads::Threads)
+        foundation_options(foundation_gui_native_sdl_surface_test)
+        foundation_gui_check(native-sdl-surface foundation_gui_native_sdl_surface_test focused)
         add_executable(foundation_gui_sdl_touch_test "${CMAKE_SOURCE_DIR}/tests/gui_sdl_touch.cpp")
         target_link_libraries(foundation_gui_sdl_touch_test PRIVATE foundation_gui_application foundation_gui_sdl)
         target_include_directories(foundation_gui_sdl_touch_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")

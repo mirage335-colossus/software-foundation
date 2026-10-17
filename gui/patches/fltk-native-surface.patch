@@ -1,0 +1,101 @@
+--- a/adapter.hpp
++++ b/adapter.hpp
+@@ -33,10 +33,28 @@
+         explicit Window(Adapter& owner) : Fl_Double_Window(640, 480), owner_(owner) {}
+         void resize(int x, int y, int w, int h) override {
+             Fl_Double_Window::resize(x,y,w,h);
++            if(owner_.native_event_) {owner_.native_sync_revision_=owner_.native_draw_revision_=0;owner_.sync_pending_=true;}
++            if(owner_.native_resize_)owner_.native_resize_(w,h);
+             if(owner_.started_ && !owner_.closed()) {
+                 owner_.cancel_pointer();
+                 owner_.dispatch(ResizeEvent{{double(w),double(h)},1});
+             }
++        }
++        void draw() override {
++            const auto revision=owner_.native_sync_revision_;
++            if(owner_.native_paint_)owner_.native_paint_([this](int width,int height){
++                // Base-widget geometry only: no native resize, child relayout,
++                // event pump or lifecycle notification during offscreen drawing.
++                const int old_width=w(),old_height=h();
++                struct Restore { Window& window;int width,height;~Restore(){window.Fl_Widget::resize(window.x(),window.y(),width,height);} } restore{*this,old_width,old_height};
++                Fl_Widget::resize(x(),y(),width,height);Fl_Double_Window::draw();
++            });
++            else Fl_Double_Window::draw();
++            // Canvas errors are captured by the ordinary adapter, not thrown.
++            // Only a complete draw of the installed current snapshot is a receipt.
++            if(owner_.native_event_ && revision && revision==owner_.snapshot().revision &&
++               revision==owner_.native_sync_revision_ && owner_.error_.empty())
++                owner_.native_draw_revision_=revision;
+         }
+         int handle(int event) override {
+             // FocusOut precedes iconification on native window managers. Child
+@@ -46,11 +64,14 @@
+                 // A presentation must never activate or focus another control.
+                 if(owner_.refreshing_)return 1;
+                 owner_.native_unfocused_=false;
+-                if(!owner_.service_)if(const auto key=owner_.focused();key)
++                if(!owner_.native_event_ && !owner_.service_)if(const auto key=owner_.focused();key)
+                     if(auto* native=owner_.native_widget(*key);native&&native->take_focus())return 1;
+             }
+             if(event==FL_HIDE||(event==FL_UNFOCUS&&!contains(Fl::focus())))owner_.native_unfocused_=true;
+             if(event==FL_HIDE||event==FL_UNFOCUS)owner_.cancel_pointer();
++            // Opt-in generic raw surface hooks run after ordinary lifecycle
++            // bookkeeping and before widget/shortcut interpretation.
++            if(owner_.native_event_)if(auto handled=owner_.native_event_(event))return *handled;
+             // FLTK also routes unhandled Escape as a shortcut; its default
+             // window handler would close the application on that path.
+             if(event==FL_KEYDOWN||(event==FL_SHORTCUT&&Fl::event_key()==FL_Escape)) {
+@@ -413,6 +434,10 @@
+     std::optional<ServiceResult> completed_service_;
+     bool service_return_focus_=false;
+     bool started_=false,refreshing_=false,native_unfocused_=false;
++    std::function<std::optional<int>(int)> native_event_;
++    std::function<void(int,int)> native_resize_;
++    std::function<void(const std::function<void(int,int)>&)> native_paint_;
++    std::uint64_t native_sync_revision_=0,native_draw_revision_=0;
+     bool sync_pending_=true;
+     struct PointerCapture {WidgetKey key;Point origin,last;};
+     std::optional<PointerCapture> pointer_capture_;
+@@ -682,6 +707,7 @@
+         const bool revoke_pointer=snapshot().client_size!=view.client_size||snapshot().display_scale!=view.display_scale||
+             snapshot().active_page!=view.active_page||snapshot().modal_root!=view.modal_root;
+         RetainedAdapter::present(std::move(view));
++        if(native_event_)native_sync_revision_=native_draw_revision_=0;
+         sync_pending_=true;
+         if(pointer_capture_) {
+             const auto* widget=find_widget(snapshot(),pointer_capture_->key);
+@@ -699,6 +725,26 @@
+         if(!started_)window_->size(std::max(1,int(snapshot().client_size.width)),std::max(1,int(snapshot().client_size.height)));
+         sync();window_->show();started_=true;
+     }
++    // Optional raw capability path. The ordinary show()/widget path is unchanged.
++    void native_surface_hooks(std::function<std::optional<int>(int)> event,
++                              std::function<void(int,int)> resized,
++                              std::function<void(const std::function<void(int,int)>&)> paint={}) {
++        (void)closed(); native_event_=std::move(event);native_resize_=std::move(resized);native_paint_=std::move(paint);
++    }
++    void prepare_native_surface(const std::string& title,int width,int height) {
++        policy().require_interaction();
++        if(started_||!native_event_||width<=0||height<=0)throw std::logic_error("Invalid native surface staging");
++        window_->copy_label(title.c_str());window_->size(width,height);window_->show();started_=true;
++    }
++    void native_surface_draw_now() {
++        (void)closed();
++        if(!native_event_||!snapshot().revision||native_sync_revision_!=snapshot().revision||!window_->shown())
++            throw std::logic_error("Native surface has no completely installed drawable revision");
++        // Real synchronous logical drawing also works for an unmapped/minimized
++        // native drawable. A queued redraw alone cannot acknowledge redaction.
++        window_->make_current();window_->redraw();window_->draw();
++    }
++    std::uint64_t native_surface_drawn_revision() const { return native_draw_revision_; }
+     Fl_Window& window() {return *window_;}
+     // Native test probes stay outside the public, toolkit-independent contract.
+     Fl_Widget* native_widget(const WidgetKey& key) {
+@@ -839,6 +885,7 @@
+                 if(auto* native=native_widget(*key))native->take_focus();
+             } else if(Fl::focus()&&window_->contains(Fl::focus()))Fl::focus(nullptr);
+         }
++        if(native_event_)native_sync_revision_=snapshot().revision;
+         window_->redraw();sync_pending_=false;
+     }
+     void invalidate(const WidgetKey& key,PixelRect damage) override {

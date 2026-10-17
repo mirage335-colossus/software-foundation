@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 
+import appended_project
 import ci_plan as ci
 import github_release as delivery
 
@@ -16,7 +17,12 @@ ROOT = Path(__file__).resolve().parents[1]
 STAGES = ('prepare', 'regression', 'application', 'certification', 'promotion')
 
 
-def preflight(request, *, transport=None, remote=True):
+def preflight(request, *, transport=None, remote=True, root=None):
+    project = appended_project.load_project(ROOT if root is None else root, check_sources=False)
+    if project.mode != 'neither' or project.selected_profile != 'minimal':
+        raise ValueError('ordinary Latest requires project mode neither and the minimal kernel profile; '
+                         'use the retained-only appended-compose workflow '
+                         '(.github/workflows/appended-compose.yml) from the configured project checkout')
     required = {'repository', 'source_commit', 'run_id', 'attempt', 'tag', 'profile',
                 'recipes', 'gui_group', 'graphics_archive_url', 'execute', 'jobs'}
     if (not isinstance(request, dict) or not required <= set(request) or

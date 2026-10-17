@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {'windows-x86_64': ('Windows', 'x64'), 'linux-x86_64': ('Linux', 'x64'),
            'linux-aarch64': ('Linux', 'arm64')}
 BUILD_SUITES = ('test_plan', 'ci_retry', 'package_wasm', 'import_wasm')
-SUITES = ('process_tree', 'windows_graphics', 'ci_plan', 'github_release', 'ci_transport', 'latest_release', 'windows_hosts', 'agent_board') + BUILD_SUITES
+SUITES = ('process_tree', 'process_tree_observation', 'windows_graphics', 'ci_plan', 'github_release', 'ci_transport', 'latest_release', 'windows_hosts', 'windows_engine_publication', 'windows_engine_source_reader', 'windows_process_cap', 'agent_board') + BUILD_SUITES
 INTERPRETERS = ('runner-default', '3.12', '3.14')
 REPETITIONS = (1, 5, 20)
 CASE_SECONDS = 120
@@ -150,6 +150,9 @@ def source_files(suite, target):
         return sorted(source_identity.snapshot_paths(ROOT))
     paths = ['tools/host_contracts.py', 'tools/run_tests.py', 'tools/process_tree.py',
              case_file.relative_to(ROOT).as_posix()]
+    if suite in ('windows_engine_publication', 'windows_engine_source_reader'):
+        paths += ['tools/appended_engine_windows_publication.py',
+                  'tools/appended_engine_windows_contract.py']
     if suite == 'agent_board':
         paths += ['tools/agent_board.py', '.github/workflows/host-contracts.yml']
     if suite == 'windows_hosts':
@@ -164,8 +167,10 @@ def source_files(suite, target):
 def execute(target, suite, selection, count, output, environ=None):
     if target not in TARGETS or suite not in SUITES or selection not in INTERPRETERS or count not in REPETITIONS:
         raise ValueError('unsupported diagnostic selection')
-    if suite == 'windows_hosts' and target != 'windows-x86_64':
-        raise ValueError('windows_hosts requires its native Windows host')
+    if suite in run_tests.DIAGNOSTICS:
+        required = run_tests.DIAGNOSTICS[suite][1]
+        if TARGETS[target][0] != required:
+            raise ValueError(suite + ' requires its native ' + required + ' host')
     environ = dict(os.environ if environ is None else environ)
     # Windows normalizes environment keys; a plain snapshot loses that lookup behavior.
     windows = platform.system() == 'Windows'

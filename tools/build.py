@@ -5,12 +5,12 @@ import hashlib
 import json
 import os
 import re
+import stat
 from pathlib import Path
 import subprocess
 import sys
 import time
 
-import windows_compiler
 from sdk_environment import require_clean
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,6 +55,58 @@ def sdk_identity(root):
         sys.path.insert(0, tools)
     from sdk_manifest import verify_sdk
     return verify_sdk(root)
+
+
+def engine_consumer_identity(args, sdk_sha256, kernel_target):
+    """Inspect retained bytes only; no factory, compiler or SDK tool is run."""
+    native_actions = getattr(args, "engine_native_actions_profile", None)
+    native_document = getattr(args, "engine_native_document_profile", None)
+    document = getattr(args, "engine_document_profile", None)
+    if native_actions:
+        from appended_engine_native_consumer import verify_actions_kernel_consumer as verify_kernel_consumer
+        selection = {"actions_profile": native_actions}
+    elif native_document:
+        from appended_engine_native_consumer import verify_kernel_consumer
+        selection = {"document_profile": native_document}
+    elif document == "editor":
+        from appended_engine_editor_consumer import verify_kernel_consumer
+        selection = {"paired_sdk": sdk_sha256, "editor_profile": document}
+    elif document:
+        from appended_engine_document_consumer import verify_kernel_consumer
+        selection = {"paired_sdk": sdk_sha256, "document_profile": document}
+    else:
+        from appended_engine_consumer import PHYSICAL_BINDING, verify_kernel_consumer
+        selection = {"paired_sdk": sdk_sha256}
+        if args.engine_physical_input:
+            selection["required_binding"] = PHYSICAL_BINDING
+    # Preserve the nominated path for the consumer's ancestor/link checks.
+    group = args.engine_group.absolute()
+    pins = {name: getattr(args, "engine_" + name + "_sha256")
+            for name in ("recipe", "manifest", "proof", "runtime")}
+    inspection = verify_kernel_consumer(group, expected_recipe=pins["recipe"],
+        expected_manifest=pins["manifest"], expected_proof=pins["proof"],
+        expected_runtime=pins["runtime"], kernel_target=kernel_target,
+        **selection)
+    # as_dict owns a JSON-compatible metadata copy, without any asset/report bytes.
+    metadata = inspection.as_dict()
+    identity = {"root": str(group), "pins": pins, "paired_sdk_sha256": sdk_sha256,
+                "kernel_target": kernel_target, "consumer": metadata}
+    if args.engine_physical_input:
+        identity["physical_input"] = True
+    if native_document:
+        identity["native_document_profile"] = native_document
+    if native_actions:
+        identity["native_actions_profile"] = native_actions
+    if document:
+        identity["document_profile"] = document
+    return identity
+
+
+def recheck_engine_input(identity):
+    """Recheck every complete group file against the admitted owned inspection."""
+    from appended_engine_sdk import group_snapshot
+    if group_snapshot(Path(identity["root"]), identity["pins"]["recipe"]) != identity["consumer"]["group_files"]:
+        raise ValueError("retained engine group changed during execution; use unchanged inputs and a fresh build tree")
 
 
 def rust_sdk_identity(root, cpp_sdk=None):
@@ -130,6 +182,7 @@ def cache_identity(build):
 
 
 def run(command, **kwargs):
+    import windows_compiler
     print("+ " + subprocess.list2cmdline([str(x) for x in command]), flush=True)
     windows_compiler.run(command, cwd=ROOT, **kwargs)
 
@@ -181,8 +234,121 @@ class PhaseTimings:
                 temporary.unlink(missing_ok=True)
 
 
-def main(argv=None):
+_MAX_CONFIGURE_INCLUDE_BYTES = 1048576
+
+
+def _configure_include_record(path, sha256):
+    """Admit one pinned private include; no options is a filesystem-free path."""
+    if path is None and sha256 is None:
+        return None
+    if (not isinstance(path, (str, Path)) or not isinstance(sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", sha256)):
+        raise ValueError("private configure include requires an absolute path and lowercase SHA256 together")
+    nominated = Path(path)
+    if (not nominated.is_absolute() or ".." in nominated.parts
+            or any(char in str(nominated) for char in (";", "\r", "\n", "\0", "\\"))):
+        raise ValueError("private configure include path is not a literal absolute CMake path")
+    if os.name != "posix" or not getattr(os, "O_NOFOLLOW", 0) or not getattr(os, "O_NONBLOCK", 0):
+        raise ValueError("private configure include requires qualified POSIX no-follow file reads")
+    if nominated.resolve(strict=True) != nominated:
+        raise ValueError("private configure include path contains a symbolic alias")
+
+    def facts(value):
+        return (value.st_dev, value.st_ino, value.st_mode, value.st_nlink,
+                value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+
+    before = nominated.lstat()
+    if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+            or before.st_size > _MAX_CONFIGURE_INCLUDE_BYTES):
+        raise ValueError("private configure include must be one bounded ordinary independent file")
+    opener = lambda name, flags: os.open(name, flags | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with open(nominated, "rb", opener=opener) as stream:
+        opened = os.fstat(stream.fileno())
+        if facts(before) != facts(opened):
+            raise ValueError("private configure include changed before its descriptor opened")
+        raw = stream.read(_MAX_CONFIGURE_INCLUDE_BYTES + 1)
+        closed = os.fstat(stream.fileno())
+    after = nominated.lstat()
+    if (facts(before) != facts(opened) or facts(opened) != facts(closed)
+            or facts(closed) != facts(after) or nominated.resolve(strict=True) != nominated
+            or len(raw) != before.st_size or len(raw) > _MAX_CONFIGURE_INCLUDE_BYTES):
+        raise ValueError("private configure include changed during its bounded read")
+    if hashlib.sha256(raw).hexdigest() != sha256:
+        raise ValueError("private configure include SHA256 differs")
+    return {"path": str(nominated), "bytes": len(raw), "sha256": sha256,
+            "mode": stat.S_IMODE(after.st_mode), "dev": after.st_dev, "ino": after.st_ino,
+            "mtime_ns": after.st_mtime_ns, "ctime_ns": after.st_ctime_ns, "nlink": after.st_nlink}
+
+
+def _recheck_configure_include(record):
+    if _configure_include_record(record["path"], record["sha256"]) != record:
+        raise ValueError("private configure include physical identity changed during configuration")
+
+
+def main(argv=None, *, configure_include=None, configure_include_sha256=None):
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if (configure_include is not None or configure_include_sha256 is not None) and arguments and arguments[0] in (
+            "native-engine-prototype", "native-engine-dependencies", "engine-maintenance", "engine-sdk",
+            "project", "appended", "editor",
+            "native-engine-windows-inputs", "native-engine-windows-handoff",
+            "native-engine-windows-prototype", "native-engine-windows-prepare",
+            "native-engine-windows-source-replay", "native-engine-windows-dependencies"):
+        raise ValueError("private configure includes apply only to the ordinary build entry")
+    if arguments and arguments[0] == 'native-engine-windows-inputs':
+        import appended_engine_windows_contract
+        return appended_engine_windows_contract.cli(arguments[1:])
+    if arguments and arguments[0] == 'native-engine-windows-handoff':
+        import appended_engine_windows_handoff
+        return appended_engine_windows_handoff.cli(arguments[1:])
+    if arguments and arguments[0] == 'native-engine-windows-prototype':
+        import appended_engine_windows_prototype
+        return appended_engine_windows_prototype.cli(arguments[1:])
+    if arguments and arguments[0] == 'native-engine-windows-prepare':
+        import appended_engine_windows_prepare
+        return appended_engine_windows_prepare.cli(arguments[1:])
+    if arguments and arguments[0] == 'native-engine-windows-source-replay':
+        import appended_engine_windows_source_replay
+        return appended_engine_windows_source_replay.cli(arguments[1:])
+    if arguments and arguments[0] == 'native-engine-windows-dependencies':
+        import appended_engine_windows_dependencies
+        return appended_engine_windows_dependencies.cli(arguments[1:])
+    if arguments and arguments[0] == "native-engine-prototype":
+        import appended_engine_native_prototype
+        return appended_engine_native_prototype.cli(arguments[1:])
+    if arguments and arguments[0] == "native-engine-dependencies":
+        import appended_engine_native_dependencies
+        return appended_engine_native_dependencies.cli(arguments[1:])
+    if arguments and arguments[0] == "engine-maintenance":
+        # Explicit retained-input production has its own closed CMake graph.
+        # Payload replacement and passive engine-sdk operations never select it.
+        if len(arguments) > 1 and arguments[1] in ("document-plan", "document-build"):
+            import appended_engine_document_maintenance
+            from process_tree import ProcessTreeError
+            try:
+                return appended_engine_document_maintenance.main(
+                    [arguments[1].removeprefix("document-"), *arguments[2:]])
+            except (TypeError, ProcessTreeError) as error:
+                # Preserve the standalone producer's bounded CLI failures under
+                # this entry point; neither condition may select another build.
+                raise ValueError("document engine maintenance: " + str(error)) from error
+        import appended_engine_maintenance
+        return appended_engine_maintenance.main(arguments[1:])
+    if arguments and arguments[0] == "engine-sdk":
+        # Retained-engine integrity operations have no producer/build fallback.
+        # Dispatch before application, native SDK and compiler selection.
+        import appended_engine_sdk
+        return appended_engine_sdk.main(arguments[1:])
+    if arguments and arguments[0] in ("project", "appended"):
+        # Payload iteration is isolated from native provider/SDK selection and
+        # must never enter configure, install or the native target graph.
+        if arguments[0] == "project":
+            import appended_project
+            options = arguments[1:]
+            if "--root" not in options and not any(value.startswith("--root=") for value in options):
+                options += ["--root", str(ROOT)]
+            return appended_project.main(options)
+        import appended
+        return appended.main(arguments[1:])
     if arguments and arguments[0] == "editor":
         # Dispatch before application provider, package and Rust-tool selection.
         import importlib.util
@@ -190,7 +356,13 @@ def main(argv=None):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module.main(arguments[1:])
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, epilog=
+        "Independent application layers: build.sh project --help; build.sh appended --help. "
+        "Retained engine integrity: build.sh engine-sdk --help. "
+        "Explicit retained engine production: build.sh engine-maintenance --help. "
+        "Document engine production: build.sh engine-maintenance document-plan --help; "
+        "build.sh engine-maintenance document-build --help. "
+        "Payload and integrity actions never invoke the native build graph.")
     parser.add_argument("action", nargs="?", choices=("build", "test", "package", "portable-package"), default="build")
     parser.add_argument("preset", nargs="?", choices=("dev", "release", "asan"), default=None)
     parser.add_argument("--verify-package", action="store_true", help="relocate and verify produced archives, including the installed CMake consumer")
@@ -209,6 +381,23 @@ def main(argv=None):
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--core-provider", choices=("rust", "cpp"), default="rust",
                         help="private core validation implementation (default: rust; cpp is explicit compatibility mode)")
+    parser.add_argument("--appended-profile", choices=("binary", "web", "both"),
+                        help="explicit initial kernel capability build (requires --kernel-maintenance)")
+    parser.add_argument("--kernel-maintenance", action="store_true",
+                        help="explicitly allow building kernel capabilities; payload actions never use this flag")
+    parser.add_argument("--engine-group", type=Path,
+                        help="complete retained neutral engine group for explicit web/both maintenance")
+    parser.add_argument("--engine-physical-input", action="store_true",
+                        help="explicitly select the verified physical467/mouse-v1 engine contract (web/both maintenance only)")
+    parser.add_argument("--engine-document-profile", choices=("pixel", "physical", "editor"),
+                        help="explicitly select a verified browser document-v2 or editor2035 engine contract (web/both maintenance only)")
+    parser.add_argument("--engine-native-document-profile", choices=("pixel",),
+                        help="explicitly select verified native pixel1795 document-v2 maintenance with its existing native SDK/export")
+    parser.add_argument("--engine-native-actions-profile", choices=("document-actions-v1",),
+                        help="explicitly select verified native4083 document actions with an existing native SDK/export")
+    for pin in ("recipe", "manifest", "proof", "runtime"):
+        parser.add_argument("--engine-" + pin + "-sha256",
+                            help="independent retained engine " + pin + " SHA256 (web/both only)")
     parser.add_argument("--rust-sdk", type=Path, help="verified Rust extension paired with the selected target SDK")
     parser.add_argument("--windows-dependencies", type=Path, help="verified restored Windows dependency export")
     parser.add_argument("--dependency-group", type=Path, action="append", default=[],
@@ -234,14 +423,52 @@ def main(argv=None):
     timings = PhaseTimings(args.timings)
     status = "failed"
     try:
-        result = execute(args, parser, timings)
+        if configure_include is None and configure_include_sha256 is None:
+            result = execute(args, parser, timings)
+        else:
+            result = execute(args, parser, timings, configure_include=configure_include,
+                             configure_include_sha256=configure_include_sha256)
         status = "passed"
         return result
     finally:
         timings.finish(status)
 
 
-def execute(args, parser, timings):
+def execute(args, parser, timings, *, configure_include=None, configure_include_sha256=None):
+    if args.appended_profile and not args.kernel_maintenance:
+        parser.error("--appended-profile requires explicit --kernel-maintenance; use appended compose for payload changes")
+    from appended_project import load_project
+    # Missing configuration selects the ordinary application; malformed paths,
+    # including dangling links, must fail before native tool selection.
+    project = load_project(ROOT)
+    if project.configured:
+        selected_profile = project.selected_profile
+        if (project.mode != "neither" or selected_profile != "minimal") and not args.kernel_maintenance:
+            parser.error("this project selects appended payloads or kernel capabilities; use project inspect and appended compile/pack/compose; "
+                         "kernel compilation requires explicit --kernel-maintenance")
+        if selected_profile != "minimal" and args.appended_profile != selected_profile:
+            parser.error("selected " + selected_profile + " kernel maintenance requires --appended-profile " + selected_profile + "; "
+                         "no implicit capability build was selected")
+        if (project.kernel_profile != "auto" and
+                (args.appended_profile or "minimal") != selected_profile):
+            parser.error("the requested kernel build does not match the explicitly selected kernel.profile; "
+                         "update project configuration before maintenance")
+    rich_profile = args.appended_profile in ("web", "both")
+    engine_selections = (args.engine_physical_input, args.engine_document_profile,
+                         args.engine_native_document_profile, args.engine_native_actions_profile)
+    if sum(bool(value) for value in engine_selections) > 1:
+        parser.error("select only one retained engine input/document/native-document/native-actions contract")
+    engine_options = [args.engine_group, *(getattr(args, "engine_" + pin + "_sha256")
+                                          for pin in ("recipe", "manifest", "proof", "runtime"))]
+    if rich_profile:
+        if not all(engine_options):
+            parser.error("web/both kernel maintenance requires --engine-group and all four independent "
+                         "--engine-{recipe,manifest,proof,runtime}-sha256 pins; no kernel build was started")
+        for pin in ("recipe", "manifest", "proof", "runtime"):
+            if not re.fullmatch(r"[0-9a-f]{64}", getattr(args, "engine_" + pin + "_sha256")):
+                parser.error("--engine-" + pin + "-sha256 must be a lowercase SHA256")
+    elif any(engine_options) or any(engine_selections):
+        parser.error("retained engine flags apply only to explicit --appended-profile web or both")
     if args.rust_sdk and args.core_provider != "rust":
         parser.error("--rust-sdk requires --core-provider rust")
     if bool(args.wasm_package) != bool(args.wasm_package_sha256):
@@ -279,11 +506,65 @@ def execute(args, parser, timings):
         parser.error("host checks require GUI inputs")
     if "wasm" in backends and (backends != ["wasm"] or not args.sdk or args.host_tests):
         parser.error("Wasm requires one backend and a prepared SDK; native host tests are separate")
-    jobs, test_jobs = job_limits(args)
+    configure_include_input = None
+    if configure_include is not None or configure_include_sha256 is not None:
+        configure_include_input = timings.call("configure_include_verification", _configure_include_record,
+                                               configure_include, configure_include_sha256)
+    engine_identity = None
+    engine_sdk_identity = None
+    if rich_profile:
+        native_document = bool(args.engine_native_document_profile)
+        native_actions = bool(args.engine_native_actions_profile)
+        native_engine = native_document or native_actions
+        if native_engine:
+            if native_actions:
+                native_backends = {"terminal", "sdl", "fltk", "rev", "framebuffer"}
+                if not has_gui or "wasm" in backends or not set(backends) & native_backends or args.host_tests:
+                    parser.error("native actions kernel maintenance requires GUI inputs and at least one native backend; host tests are separate")
+            elif not has_gui or "wasm" in backends or "terminal" not in backends or args.host_tests:
+                parser.error("native document kernel maintenance requires GUI inputs and a native terminal backend")
+            if bool(args.sdk) == bool(args.windows_dependencies) or args.dependency_prefix or args.wasm_package:
+                parser.error("native document kernel maintenance requires exactly one existing verified native --sdk or --windows-dependencies export")
+            sdk_input = args.sdk or args.windows_dependencies
+        else:
+            if backends != ["wasm"] or not has_gui or not args.sdk or args.host_tests:
+                parser.error("web/both kernel maintenance requires GUI inputs, --gui-backends wasm and an existing verified --sdk")
+            if args.windows_dependencies or args.dependency_prefix or args.wasm_package:
+                parser.error("web/both kernel maintenance accepts only its paired browser SDK and retained engine group")
+            sdk_input = args.sdk
+        # This pure inventory/consumer admission precedes GUI restoration, build
+        # capacity selection and every host/compiler program lookup.
+        sdk = sdk_input.resolve(strict=True)
+        require_clean()
+        engine_sdk_identity = timings.call("sdk_verification", sdk_identity, sdk)
+        document = (sdk / "sdk.json").read_bytes()
+        if hashlib.sha256(document).hexdigest() != engine_sdk_identity:
+            raise ValueError("prepared SDK changed during retained-engine admission")
+        sdk_target = json.loads(document)["target"]
+        kernel_target = {name: sdk_target[name] for name in ("system", "processor", "triple")}
+        kernel_target["pointer_bits"] = 64 if native_engine else 32
+        if native_engine:
+            native_pair = (kernel_target["system"], kernel_target["processor"])
+            if native_pair not in {("Linux", "x86_64"), ("Linux", "aarch64"), ("Windows", "x86_64")}:
+                parser.error("native document kernel maintenance requires Linux x86_64/aarch64 or Windows x86_64")
+            if (args.sdk and kernel_target["system"] != "Linux" or
+                    args.windows_dependencies and (kernel_target["system"] != "Windows" or os.name != "nt" or not args.portable)):
+                parser.error("native document targets require the existing Linux SDK or native portable Windows dependency-export route")
+        elif kernel_target != {"system": "Emscripten", "processor": "wasm32",
+                               "triple": "wasm32-emscripten", "pointer_bits": 32}:
+            parser.error("web/both kernel maintenance currently requires the Emscripten wasm32 browser SDK")
+        engine_identity = timings.call("engine_verification", engine_consumer_identity,
+                                      args, engine_sdk_identity, kernel_target)
     suffix = (("-sdk" if args.sdk else "")
               + ("-rust-sdk" if args.rust_sdk else "-rust" if args.core_provider == "rust" else "")
-              + ("-gui" if has_gui else ""))
+              + ("-gui" if has_gui else "")
+              + ("-appended-" + args.appended_profile if args.appended_profile else ""))
     build = args.build_dir.resolve() if args.build_dir else ROOT / "build" / (preset + suffix + ("-portable" if args.portable else ""))
+    if engine_identity and (build / "wrapper-identity.json").exists():
+        previous = json.loads((build / "wrapper-identity.json").read_text(encoding="utf-8"))
+        if previous.get("appended_engine") != engine_identity or previous.get("appended_profile") != args.appended_profile:
+            raise ValueError("retained engine identity/profile changed; use a fresh build tree")
+    jobs, test_jobs = job_limits(args)
     timings.context = {"action": args.action, "preset": preset, "build_directory": str(build),
                        "warm_tree_at_start": (build / "CMakeCache.txt").is_file(),
                        "build_jobs": jobs, "test_jobs": test_jobs, "core_provider": args.core_provider}
@@ -303,6 +584,17 @@ def execute(args, parser, timings):
                  "-DFOUNDATION_SANITIZERS=" + ("ON" if preset == "asan" else "OFF"),
                  "-DFOUNDATION_PORTABLE=" + ("ON" if args.portable else "OFF"),
                  "-DFOUNDATION_DISTRIBUTION_TESTS=" + ("ON" if args.distribution_tests else "OFF")]
+    configure.append("-DFOUNDATION_APPENDED_PROFILE=" + (args.appended_profile or "none"))
+    configure.append("-DFOUNDATION_APPENDED_KERNEL_MAINTENANCE=" + ("ON" if args.kernel_maintenance else "OFF"))
+    configure.append("-DFOUNDATION_APPENDED_ENGINE_PHYSICAL_INPUT=" + ("ON" if args.engine_physical_input else "OFF"))
+    configure.append("-DFOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE=" + (args.engine_document_profile or ""))
+    configure.append("-DFOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE=" + (args.engine_native_document_profile or ""))
+    configure.append("-DFOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE=" + (args.engine_native_actions_profile or ""))
+    configure.append("-DFOUNDATION_APPENDED_ENGINE_NATIVE_DEPENDENCY_GROUP=")
+    configure.append("-DFOUNDATION_APPENDED_ENGINE_GROUP=" + (engine_identity["root"] if engine_identity else ""))
+    for pin in ("recipe", "manifest", "proof", "runtime"):
+        configure.append("-DFOUNDATION_APPENDED_ENGINE_" + pin.upper() + "_SHA256=" +
+                         (engine_identity["pins"][pin] if engine_identity else ""))
     for name in ("fltk", "rev", "sdl"):
         configure.append("-DFOUNDATION_GUI_" + name.upper() + "=" + ("ON" if args.gui_source and name in backends else "OFF"))
     configure += ["-DFOUNDATION_GUI_WEB=" + ("ON" if "hosted-web" in backends else "OFF"),
@@ -314,8 +606,15 @@ def execute(args, parser, timings):
                 "windows_dependencies": None,
                 "environment": {key: os.environ.get(key) for key in
                  ("CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS", "CMAKE_GENERATOR")}}
+    if configure_include_input is not None:
+        configure.append("-DCMAKE_PROJECT_INCLUDE=" + configure_include_input["path"])
+        identity["configure_include"] = {key: configure_include_input[key] for key in ("path", "sha256")}
     if gui_group_identity:
         identity["gui_input_group"] = gui_group_identity
+    if args.appended_profile:
+        identity["appended_profile"] = args.appended_profile
+    if engine_identity:
+        identity["appended_engine"] = engine_identity
     if args.dependency_prefix:
         if args.sdk or args.windows_dependencies:
             parser.error("native development prefix cannot be combined with a prepared SDK")
@@ -323,6 +622,8 @@ def execute(args, parser, timings):
         prefix_root = args.dependency_prefix.resolve(strict=True)
         identity["dependency_prefix"] = {"root": str(prefix_root), **timings.call("dependency_verification", verify, prefix_root)}
         configure += ["-DFOUNDATION_DEPENDENCY_PREFIX=" + str(prefix_root)]
+    if engine_identity:
+        timings.call("engine_verification", recheck_engine_input, engine_identity)
     programs = host_programs()
     child_environment = os.environ.copy()
     if args.core_provider == "rust":
@@ -344,7 +645,10 @@ def execute(args, parser, timings):
             require_clean()
         except ValueError as error:
             parser.error(str(error))
-        identity["sdk"] = {"root": str(sdk), "sha256": timings.call("sdk_verification", sdk_identity, sdk)}
+        selected_sdk_identity = timings.call("sdk_verification", sdk_identity, sdk)
+        if engine_sdk_identity and selected_sdk_identity != engine_sdk_identity:
+            raise ValueError("prepared SDK changed after retained-engine admission")
+        identity["sdk"] = {"root": str(sdk), "sha256": selected_sdk_identity}
         is_browser = json.loads((sdk / "sdk.json").read_text(encoding="utf-8"))["target"]["system"] == "Emscripten"
         if is_browser != (backends == ["wasm"]):
             raise ValueError("prepared SDK target and selected GUI backend disagree")
@@ -403,7 +707,9 @@ def execute(args, parser, timings):
         metadata = read_json(dependencies / "sdk.json")
         if metadata.get("kind") != "windows-dependencies" or metadata.get("recipe_id") not in dependency_ids:
             raise ValueError("Windows dependency export needs its complete matching retained group")
-        timings.call("sdk_verification", verify_sdk, dependencies, release=True)
+        selected_windows_sdk_identity = timings.call("sdk_verification", verify_sdk, dependencies, release=True)
+        if engine_sdk_identity and selected_windows_sdk_identity != engine_sdk_identity:
+            raise ValueError("native Windows SDK changed after retained-engine admission")
         retained = next(item for item in identity["dependencies"] if item["recipe"] == metadata["recipe_id"])
         archived, _ = inspect_manifest_archive(Path(retained["root"]) / names(metadata["recipe_id"])[0], "sdk.json")
         if archived != metadata:
@@ -416,6 +722,8 @@ def execute(args, parser, timings):
         verify_windows_linker(metadata["external_toolchain"]["minimum_linker"])
         timings.call("sdk_verification", verify_inventory, dependencies, metadata["files"], exclude=("sdk.json",))
         identity["windows_dependencies"] = {"root": str(dependencies), "sha256": hashlib.sha256((dependencies / "sdk.json").read_bytes()).hexdigest()}
+        if args.engine_native_document_profile or args.engine_native_actions_profile:
+            configure += ["-DFOUNDATION_APPENDED_ENGINE_NATIVE_DEPENDENCY_GROUP=" + retained["root"]]
         installed = dependencies / "prefix/installed/x64-windows-static"
         prefix = installed if installed.is_dir() else dependencies / "prefix"
         configure += ["-DCMAKE_PREFIX_PATH=" + str(prefix), "-DFOUNDATION_WINDOWS_DEPENDENCIES=" + str(dependencies)]
@@ -464,7 +772,26 @@ def execute(args, parser, timings):
     timings.context["source_tree_sha256"] = source_before.get("tree_sha256")
     timings.context["sdk_sha256"] = identity["sdk"]["sha256"] if identity["sdk"] else None
     timings.context["rust_sdk_sha256"] = identity["rust_sdk"]["sha256"] if identity["rust_sdk"] else None
-    timings.call("configure", run, configure, env=child_environment)
+    if engine_identity:
+        timings.call("engine_verification", recheck_engine_input, engine_identity)
+    if configure_include_input is not None:
+        timings.call("configure_include_verification", _recheck_configure_include, configure_include_input)
+    configure_failure = None
+    try:
+        timings.call("configure", run, configure, env=child_environment)
+    except BaseException as error:
+        configure_failure = error
+        raise
+    finally:
+        if configure_include_input is not None:
+            try:
+                timings.call("configure_include_verification", _recheck_configure_include, configure_include_input)
+            except Exception as error:
+                if configure_failure is not None:
+                    raise ValueError("private configure include verification also failed after configure: " + str(error)) from configure_failure
+                raise
+    if engine_identity:
+        timings.call("engine_verification", recheck_engine_input, engine_identity)
     cache_stamp.write_text(json.dumps(timings.call("configuration_verification", cache_identity, build), indent=2) + "\n")
     targets = ["all"]
     exact_selection = None
@@ -476,7 +803,11 @@ def execute(args, parser, timings):
         else:
             targets = ["foundation-tests" + ("-" + args.label if args.label else "")]
     if not args.configure_only and targets:
+        if engine_identity:
+            timings.call("engine_verification", recheck_engine_input, engine_identity)
         timings.call("compile", run, [programs["cmake"], "--build", str(build), "--parallel", str(jobs), "--target", *targets], env=child_environment)
+        if engine_identity:
+            timings.call("engine_verification", recheck_engine_input, engine_identity)
     if exact_selection is not None and timings.call("test_selection", named_selection, build, args.tests, programs, child_environment) != exact_selection:
         raise ValueError("named test inventory or prerequisites changed during compilation")
     if timings.call("source_verification", source_tree, ROOT, args.gui_source) != source_before:
@@ -509,7 +840,11 @@ def execute(args, parser, timings):
                          env=test_environment, timeout=60)
         timings.call("test_execution", run, command, env=test_environment)
     elif args.action == "package":
+        if engine_identity:
+            timings.call("engine_verification", recheck_engine_input, engine_identity)
         timings.call("package", run, [programs["cpack"], "--config", str(build / "CPackConfig.cmake"), "-C", "Release"], env=child_environment)
+        if engine_identity:
+            timings.call("engine_verification", recheck_engine_input, engine_identity)
         if args.verify_package:
             archives = sorted([*(build / "packages").glob("*.tar.gz"), *(build / "packages").glob("*.zip")])
             if not archives:
@@ -550,6 +885,8 @@ def execute(args, parser, timings):
         raise ValueError("native development prefix changed during execution")
     if args.wasm_package:
         timings.call("source_verification", verify_input, package, args.wasm_package_sha256, ROOT)
+    if engine_identity:
+        timings.call("engine_verification", recheck_engine_input, engine_identity)
     return 0
 
 

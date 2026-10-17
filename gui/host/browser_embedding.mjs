@@ -9,13 +9,23 @@ const attribute = value => String(value).replaceAll('&','&amp;').replaceAll('"',
 
 // The privileged API has one composition. The child bundle is inert data in
 // this realm: neither its entry point nor any renderer module is imported here.
-export function createEmbeddedFrontend({mount,initialState,exchange,release=()=>{},host=globalThis,status=()=>{},serviceHost=host,startupTimeout=10000,pollingInterval=25}) {
+export function createEmbeddedFrontend({mount,initialState,exchange,release=()=>{},host=globalThis,status=()=>{},serviceHost=host,startupTimeout=10000,pollingInterval=25,
+  channelFactory=createHostChannel,rendererBundle=null}) {
   if (!mount || typeof exchange !== 'function') throw Error('Embedded frontend requires a mount and transport');
-  if (CHILD_PROTOCOL !== CHANNEL_PROTOCOL || CHILD_SANDBOX !== 'allow-scripts' || !CHILD_CSP.includes(`'sha256-${CHILD_SCRIPT_SHA256}'`) || /<\/script/i.test(CHILD_SCRIPT) || /<\/style/i.test(CHILD_STYLE)) throw Error('Invalid isolated renderer bundle');
+  if (typeof channelFactory !== 'function') throw Error('Embedded frontend requires a channel factory');
+  // Only trusted composition code selects another generated pure-data bundle.
+  // Capture its fields once; no renderer code executes in this parent realm.
+  const selected = rendererBundle ?? {CHILD_SCRIPT,CHILD_SCRIPT_SHA256,CHILD_STYLE,CHILD_CSP,CHILD_SANDBOX,CHILD_PROTOCOL};
+  const script = selected.CHILD_SCRIPT, scriptHash = selected.CHILD_SCRIPT_SHA256,
+    style = selected.CHILD_STYLE, csp = selected.CHILD_CSP,
+    sandbox = selected.CHILD_SANDBOX, protocol = selected.CHILD_PROTOCOL;
+  if (![script,scriptHash,style,csp,sandbox,protocol].every(value=>typeof value === 'string') ||
+      protocol !== CHANNEL_PROTOCOL || sandbox !== 'allow-scripts' || !csp.includes(`'sha256-${scriptHash}'`) ||
+      /<\/script/i.test(script) || /<\/style/i.test(style)) throw Error('Invalid isolated renderer bundle');
   const document = host.document, frame = document.createElement('iframe');
   const random = new Uint8Array(32); host.crypto.getRandomValues(random);
   const generation = Array.from(random,value=>value.toString(16).padStart(2,'0')).join('');
-  let state = 'created', loaded = false, announced = false, transferred = false, released = false, bootstrapPort = null, channel = null, observer = null, stopPolling = ()=>{}, startupTimer = null;
+  let state = 'created', loaded = false, announced = false, transferred = false, released = false, initialized = false, bootstrapPort = null, channel = null, observer = null, stopPolling = ()=>{}, startupTimer = null;
   let resolveReady, rejectReady;
   const ready = new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
   // Callers may dispose during startup without having attached their await yet.
@@ -38,11 +48,11 @@ export function createEmbeddedFrontend({mount,initialState,exchange,release=()=>
   };
   const close = (reason=Error('Embedded frontend closed')) => {
     if (state === 'closed' || state === 'closing') return;
-    const wasReady = state === 'ready'; state = 'closing';
+    state = 'closing';
     if (startupTimer !== null) host.clearTimeout(startupTimer); startupTimer = null;
     cleanupListeners(); lifetime.abort(); services.close(); stopPolling(); observer?.disconnect(); channel?.close(); bootstrapPort?.close(); bootstrapPort = null; client.close(); frame.remove();
     if (!released) { released = true; Promise.resolve().then(release).catch(error=>status(`Could not release application: ${error.message}`)); }
-    state = 'closed'; if (!wasReady) rejectReady(reason instanceof Error ? reason : Error('Embedded frontend closed'));
+    state = 'closed'; if (!initialized) rejectReady(reason instanceof Error ? reason : Error('Embedded frontend closed'));
   };
   const fail = error => {
     if (state === 'closed' || state === 'closing') return;
@@ -51,11 +61,13 @@ export function createEmbeddedFrontend({mount,initialState,exchange,release=()=>
   const bind = () => {
     if (!loaded || !announced || transferred || state === 'closed') return;
     transferred = true;
-    channel = createHostChannel({port:bootstrapPort,generation,client,scheduler:host,timeout:startupTimeout,onFailure:fail,onBound:()=>{
+    const onBound = () => {
       if (state !== 'awaiting') return;
+      if (channel === null) { fail(Error('Renderer channel bound before ownership')); return; }
       state = 'ready'; if (startupTimer !== null) host.clearTimeout(startupTimer); startupTimer = null;
       host.removeEventListener('message',handshake);
       channel.accept(client.state);
+      if (state !== 'ready') return;
       let previousSize = '';
       const resize = () => {
         if (state !== 'ready') return;
@@ -64,9 +76,15 @@ export function createEmbeddedFrontend({mount,initialState,exchange,release=()=>
         if (signature !== previousSize) { previousSize = signature; client.send({type:'resize',width,height,scale},'resize').catch(error=>status(error.message)); }
       };
       observer = new host.ResizeObserver(resize); observer.observe(mount); resize();
-      stopPolling = startPolling(client,host,pollingInterval); resolveReady();
-    }});
-    bootstrapPort.postMessage({protocol:CHANNEL_PROTOCOL,type:'connect',generation});
+      stopPolling = startPolling(client,host,pollingInterval); initialized = true; resolveReady();
+    };
+    try {
+      const created = channelFactory({port:bootstrapPort,generation,client,scheduler:host,timeout:startupTimeout,onFailure:fail,onBound});
+      if (!created || typeof created.accept !== 'function' || typeof created.close !== 'function') throw Error('Invalid renderer channel');
+      if (state === 'closed' || state === 'closing') { created.close(); return; }
+      channel = created;
+      bootstrapPort.postMessage({protocol:CHANNEL_PROTOCOL,type:'connect',generation});
+    } catch (error) { fail(error); }
   };
   const handshake = event => {
     if (state !== 'awaiting' || event.source !== frame.contentWindow || event.origin !== 'null') return;
@@ -84,7 +102,7 @@ export function createEmbeddedFrontend({mount,initialState,exchange,release=()=>
   Object.assign(frame.style,{border:'0',display:'block',width:'100%',height:'100%'});
   frame.addEventListener('load',load); frame.addEventListener('error',frameError);
   host.addEventListener('message',handshake); host.addEventListener('pagehide',close,{once:true});
-  frame.srcdoc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${attribute(CHILD_CSP)}"><meta name="foundation-channel" content="${attribute(generation)}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${CHILD_STYLE}\n#viewport{height:100vh;min-height:0}</style></head><body><main id="viewport"><div id="stage"><nav id="pages" aria-label="Pages"></nav></div></main><script>${CHILD_SCRIPT}</script></body></html>`;
+  frame.srcdoc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${attribute(csp)}"><meta name="foundation-channel" content="${attribute(generation)}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${style}\n#viewport{height:100vh;min-height:0}</style></head><body><main id="viewport"><div id="stage"><nav id="pages" aria-label="Pages"></nav></div></main><script>${script}</script></body></html>`;
   state = 'awaiting';
   startupTimer = host.setTimeout(()=>fail(Error('Renderer startup timed out')),startupTimeout);
   try { client.accept(initialState); mount.append(frame); } catch (error) { fail(error); }

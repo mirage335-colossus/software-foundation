@@ -1,0 +1,54 @@
+{
+  "diagnostic_identities": "recipes/webkitwasm-copied259-v1/diagnostic/identities.json",
+  "kind": "foundation-copied259-reviewed-source-snapshot",
+  "license": "CC0-1.0 notices preserved in original provider sources; supplier/core notices are separately retained. No complete license or redistribution verdict is made.",
+  "not_provided": [
+    "engine-factory-or-Wasm-artifact",
+    "generated-metadata-header-or-provider-build-artifact",
+    "production-retained-engine-SDK-group",
+    "actual-runtime-provider-proof",
+    "native-or-physical-successor",
+    "new-public-ABI-version",
+    "implicit-build-download-or-fetch-action"
+  ],
+  "path_root": "repository-root",
+  "projection": {
+    "path": "recipes/webkitwasm-copied259-v1/source-projection.json",
+    "sha256": "1253db384081e6017ffb3ceb96800703423f698354178e731060b31b1e1f5d1b",
+    "source_count": 75
+  },
+  "public_header_policy": "The frozen canonical provider ABI1.0 header is in the recipe source snapshot. The live checkout include/foundation/appended/engine_provider.h remains root-owned; never infer exact historical identity from its pathname.",
+  "schema_version": 1,
+  "selected_source_notices": {
+    "count": 11,
+    "path": "recipes/webkitwasm-copied259-v1/notices/INDEX.json",
+    "sha256": "74b53a552a65939e85fb656d7766c2dec7a42f9479bec9186adf77cd14b88b03"
+  },
+  "source_manifest": {
+    "path": "third_party/appended-engine/providers/webkitwasm/copied-v1/SOURCE-MANIFEST.json",
+    "sha256": "ffd4d7182e048c8c11a1afd35e911123ae3788493488ca759c408b8e43fe12d0",
+    "source_count": 15
+  },
+  "source_profile": {
+    "bridge_abi": 65536,
+    "capabilities": "259",
+    "native_service_inventory": [],
+    "physical_input_capabilities": 0,
+    "provider_abi_major": 1,
+    "provider_abi_minor": 0,
+    "script_enabled": true
+  },
+  "status": "promoted-source-only-no-actual-copied-engine-build-or-runtime",
+  "suppliers": {
+    "engine": {
+      "archive": "archives/engine/WebKit-aec9d2ad958e716ab4bca4bf03007e6edac7323f-Source-Tools-root.tar.gz",
+      "commit": "aec9d2ad958e716ab4bca4bf03007e6edac7323f",
+      "repository": "https://github.com/WebKit/WebKit.git"
+    },
+    "wrapper": {
+      "archive": "archives/wrapper/WebkitWasm-68c618544e1f8af18ebce346281a6a49766aa194.tar.gz",
+      "commit": "68c618544e1f8af18ebce346281a6a49766aa194",
+      "repository": "https://github.com/theogbob/WebkitWasm"
+    }
+  }
+}

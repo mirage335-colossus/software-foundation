@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "kind": "finite-native-dependency-recipe-source-review-v1",
+  "maximum_reader_jobs": 1,
+  "maximum_seconds_each_attempt": 55,
+  "members": [
+    {
+      "archive": "nghttp2.tar.xz",
+      "archive_sha256": "88bb94c9e4fd1c499967f83dece36a78122af7d5fb40da2019c56b9ccc6eb9dd",
+      "member": "nghttp2-1.64.0/lib/CMakeLists.txt",
+      "bytes": 2858,
+      "sha256": "4065ef9b6f19ed3d90103d2f00408449b5f5cc7eb6687964764c15ccbff88367",
+      "saved": "nghttp2-1.64.0__lib__CMakeLists.txt"
+    },
+    {
+      "archive": "curl.tar.xz",
+      "archive_sha256": "955f6e729ad6b3566260e8fef68620e76ba3c31acf0a18524416a185acf77992",
+      "member": "curl-8.17.0/lib/CMakeLists.txt",
+      "bytes": 13969,
+      "sha256": "e270a3c27d22b0d091cf94ccf4f6e94904bb20af923bb4ab04911ae2b229f8a8",
+      "saved": "curl-8.17.0__lib__CMakeLists.txt"
+    },
+    {
+      "archive": "fontconfig.tar.xz",
+      "archive_sha256": "63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e",
+      "member": "fontconfig-2.15.0/Makefile.am",
+      "bytes": 6181,
+      "sha256": "071d1abc7099f0920585bb14fc7a04d66e30ceab3d90b8b062d18ce14f93f861",
+      "saved": "fontconfig-2.15.0__Makefile.am"
+    },
+    {
+      "archive": "fontconfig.tar.xz",
+      "archive_sha256": "63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e",
+      "member": "fontconfig-2.15.0/src/Makefile.am",
+      "bytes": 6015,
+      "sha256": "0bf4324b83c9422aeb0bec115bed29726bd928f0b50bd2ce78644b33bec5d009",
+      "saved": "fontconfig-2.15.0__src__Makefile.am"
+    },
+    {
+      "archive": "fontconfig.tar.xz",
+      "archive_sha256": "63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e",
+      "member": "fontconfig-2.15.0/fc-case/Makefile.am",
+      "bytes": 1505,
+      "sha256": "1068df25c5e32ea725644f0d186cd5e87f88c93d5d52d3cd33f3a0186d3a2dc7",
+      "saved": "fontconfig-2.15.0__fc-case__Makefile.am"
+    },
+    {
+      "archive": "fontconfig.tar.xz",
+      "archive_sha256": "63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e",
+      "member": "fontconfig-2.15.0/fc-lang/Makefile.am",
+      "bytes": 5621,
+      "sha256": "ab8218a0360288c99c0792b537b650f8c947852317c37916b66386b7954b7755",
+      "saved": "fontconfig-2.15.0__fc-lang__Makefile.am"
+    },
+    {
+      "archive": "icu4c-77_1-src.tgz",
+      "archive_sha256": "588e431f77327c39031ffbb8843c0e3bc122c211374485fa87dc5f3faff24061",
+      "member": "icu/source/Makefile.in",
+      "bytes": 16161,
+      "sha256": "600e8ee07997394b97f5b5206dabbc3a46f0edd826cbf2b2a489fbbba2b4931d",
+      "saved": "icu__source__Makefile.in"
+    },
+    {
+      "archive": "icu4c-77_1-src.tgz",
+      "archive_sha256": "588e431f77327c39031ffbb8843c0e3bc122c211374485fa87dc5f3faff24061",
+      "member": "icu/source/data/Makefile.in",
+      "bytes": 12762,
+      "sha256": "864620ade910b0374c237f1681e909b47d336a67748b9c61d0f3fc213dde9eb8",
+      "saved": "icu__source__data__Makefile.in"
+    },
+    {
+      "archive": "curl.tar.xz",
+      "archive_sha256": "955f6e729ad6b3566260e8fef68620e76ba3c31acf0a18524416a185acf77992",
+      "member": "curl-8.17.0/lib/curl_config.h.cmake",
+      "bytes": 22706,
+      "sha256": "5d6a72c1005fbe86c8a9e99cdea81d7b7029cd5027bfaae4158e97659403fcd1",
+      "saved": "curl-8.17.0__lib__curl_config.h.cmake"
+    },
+    {
+      "archive": "curl.tar.xz",
+      "archive_sha256": "955f6e729ad6b3566260e8fef68620e76ba3c31acf0a18524416a185acf77992",
+      "member": "curl-8.17.0/CMake/FindBrotli.cmake",
+      "bytes": 2890,
+      "sha256": "b28efcd656dcf1d3063b426be9461a93c409b4b00eeedfc1e6966d1a3ac92eaf",
+      "saved": "curl-8.17.0__CMake__FindBrotli.cmake"
+    },
+    {
+      "archive": "curl.tar.xz",
+      "archive_sha256": "955f6e729ad6b3566260e8fef68620e76ba3c31acf0a18524416a185acf77992",
+      "member": "curl-8.17.0/CMake/FindNGHTTP2.cmake",
+      "bytes": 3057,
+      "sha256": "5ebff4c15c06d2aaf4949b4038e217b750dba5ff9feb72ad83f2a024dec27745",
+      "saved": "curl-8.17.0__CMake__FindNGHTTP2.cmake"
+    },
+    {
+      "archive": "curl.tar.xz",
+      "archive_sha256": "955f6e729ad6b3566260e8fef68620e76ba3c31acf0a18524416a185acf77992",
+      "member": "curl-8.17.0/CMake/FindLibpsl.cmake",
+      "bytes": 3006,
+      "sha256": "23aed35ef52e74c56b9529ac75b72b396eeb6b4c6fcd0bd72a99948b32365226",
+      "saved": "curl-8.17.0__CMake__FindLibpsl.cmake"
+    }
+  ],
+  "attempts": [
+    {
+      "result": "complete-eight-granted-members",
+      "elapsed_seconds": 0.981
+    },
+    {
+      "result": "missing-exact-member",
+      "member": "curl-8.17.0/CMake/FindLibPSL.cmake",
+      "completed_members": 3,
+      "elapsed_seconds": 0.087
+    },
+    {
+      "result": "corrected-single-granted-member",
+      "member": "curl-8.17.0/CMake/FindLibpsl.cmake",
+      "elapsed_seconds": 0.145
+    }
+  ],
+  "native_configure_compile_link_test_calls": 0
+}

@@ -1,0 +1,34 @@
+--- backends/rev/adapter.hpp
++++ backends/rev/adapter.hpp
+@@ -2,8 +2,17 @@
+ #include "gui/retained_adapter.hpp"
+ #include "gui/runtime.hpp"
+ #include <memory>
++#include <functional>
+ 
++struct RevSurfaceEvent;
++struct RevSurfaceContext;
++struct RevSurfaceFacts;
+ namespace gui::rev {
++// Owned generic records only; no Foundation application or renderer identity.
++struct NativeSurfaceHooks {
++    std::function<bool(const RevSurfaceEvent&)> event;
++    std::function<void(const RevSurfaceFacts&,bool transform_changed)> lifecycle;
++};
+ class Probe;
+ // No module, window-system, or graphics types cross this implementation header.
+ // Like the native event loop, every operation belongs to the creating thread.
+@@ -31,6 +40,13 @@
+     const std::string& error() const;
+     bool service_active() const;
+     bool service(ServiceRequest request, std::function<void(ServiceResult)> completion);
++    // Optional generic raw/editor frontend; ordinary hosts do not enable it.
++    void native_surface(std::shared_ptr<NativeSurfaceHooks>,bool editor);
++    void native_surface_window(std::string title,int width,int height);
++    RevSurfaceFacts native_surface_facts() const;
++    void native_surface_context(const RevSurfaceContext&);
++    void native_surface_suspend(bool retire_pointer=false);
++    bool native_surface_capture(bool);
+     // Reads the actual rendered OpenGL target, with top-to-bottom opaque RGB.
+     BitmapImage capture();
+ private:

@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import {MessageChannel} from 'node:worker_threads';
-import {webcrypto} from 'node:crypto';
+import {webcrypto,createHash} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {runInNewContext} from 'node:vm';
 const {createEmbeddedFrontend}=await import(pathToFileURL(process.argv[2]));
 const {browserComposition}=await import(pathToFileURL(process.argv[3]));
-const {CHILD_SCRIPT}=await import(new URL('./renderer_child_bundle.mjs',pathToFileURL(process.argv[2])));
+const bundle=await import(new URL('./renderer_child_bundle.mjs',pathToFileURL(process.argv[2])));
+const {CHILD_SCRIPT}=bundle;
+const {createHostChannel}=await import(new URL('./renderer_channel.mjs',pathToFileURL(process.argv[2])));
 const protocol='foundation-renderer-v1';
 const flush=async()=>{for(let n=0;n<8;++n)await new Promise(resolve=>setImmediate(resolve));};
 assert.equal(browserComposition('file:///app.html#renderer=isolated'),'isolated');
@@ -23,7 +25,7 @@ class Element {
 const initial={epoch:'SECRET-EPOCH-NEVER-DISPLAYED',ack:'0',error:'',service:null,snapshot:{revision:'1',title:'Fixture',palette:{},width:10,height:10,scale:1,pages:[],activePage:null,widgets:[],measurements:[],keyBindings:[],focus:null,popup:null,closed:false}};
 function environment(){
   let next=0;const events=new Map(),timers=new Map(),mount={clientWidth:100,clientHeight:80,append(frame){this.frame=frame;}};
-  const host={crypto:webcrypto,devicePixelRatio:1,MessageChannel,document:{createElement:tag=>new Element(tag)},
+  const host={crypto:webcrypto,devicePixelRatio:1,MessageChannel,document:{createElement:tag=>{++host.created;return new Element(tag);}},created:0,
     setTimeout(run){timers.set(++next,run);return next;},clearTimeout(id){timers.delete(id);},
     addEventListener(kind,callback){(events.get(kind)||events.set(kind,new Set()).get(kind)).add(callback);},removeEventListener(kind,callback){events.get(kind)?.delete(callback);},
     ResizeObserver:class {observe(){}disconnect(){host.disconnected=(host.disconnected||0)+1;}}};
@@ -97,4 +99,56 @@ function child(env,frontend,{ack=true}={}){
   childPort.onmessage({data:Object.assign([],{protocol,type:'connect',generation:'child-generation'}),ports:[]});
   assert.equal(closed,true);
 }
-console.log('Fixed opaque sandbox, strict selectors, document-owned startup channel, navigation/startup revocation and idempotent teardown passed');
+// A separate trusted composition can select another inert generated child
+// bundle and inject its validator-aware channel without changing the old graph.
+{
+  const env=environment(),reads=new Map();let channels=0,releases=0;
+  const script=CHILD_SCRIPT+'\n// alternate-generated-child';
+  const hash=createHash('sha256').update(script).digest('base64');
+  const values={...bundle,CHILD_SCRIPT:script,CHILD_SCRIPT_SHA256:hash,CHILD_STYLE:bundle.CHILD_STYLE+'\n/* alternate-child-style */',CHILD_CSP:bundle.CHILD_CSP.replace(bundle.CHILD_SCRIPT_SHA256,hash)};
+  const rendererBundle=Object.fromEntries(Object.keys(values).map(key=>[key,undefined]));
+  for(const key of Object.keys(values))Object.defineProperty(rendererBundle,key,{get(){reads.set(key,(reads.get(key)||0)+1);return values[key];}});
+  const frontend=createEmbeddedFrontend({mount:env.mount,initialState:initial,host:env.host,rendererBundle,
+    channelFactory:options=>{++channels;return createHostChannel(options);},release:()=>++releases,exchange:async envelope=>({...initial,ack:envelope.seq})});
+  assert(frontend.frame.srcdoc.includes('alternate-generated-child'));assert(frontend.frame.srcdoc.includes('alternate-child-style'));
+  for(const key of ['CHILD_SCRIPT','CHILD_SCRIPT_SHA256','CHILD_STYLE','CHILD_CSP','CHILD_SANDBOX','CHILD_PROTOCOL'])assert.equal(reads.get(key),1,key);
+  const renderer=child(env,frontend);frontend.frame.emit('load');await frontend.ready;await flush();assert.equal(channels,1);
+  frontend.close();await flush();assert.equal(releases,1);renderer.ports.port1.close();
+}
+for(const change of [
+  {CHILD_SCRIPT:undefined},{CHILD_SCRIPT_SHA256:42},{CHILD_PROTOCOL:'other'},
+  {CHILD_SANDBOX:'allow-scripts allow-same-origin'},{CHILD_CSP:"default-src 'none'"},
+  {CHILD_SCRIPT:'</script>'},{CHILD_STYLE:'</style>'}
+]){
+  const env=environment();
+  assert.throws(()=>createEmbeddedFrontend({mount:env.mount,initialState:initial,host:env.host,rendererBundle:{...bundle,...change},exchange:async()=>assert.fail('Invalid bundle reached transport')}),/bundle/);
+  assert.equal(env.host.created,0);assert.equal(env.timers.size,0);assert.equal(env.mount.frame,undefined);
+}
+// A failing or prematurely bound injected channel cannot strand the iframe,
+// transferred endpoint or application lease before ownership is established.
+for(const mode of ['throw','invalid','early-bound','early-failure','accept-failure','observer-failure']){
+  const env=environment();let releases=0,closes=0;
+  if(mode==='observer-failure')env.host.ResizeObserver=class {constructor(){throw Error('Observer fixture failure');}};
+  const channelFactory=options=>{
+    if(mode==='throw')throw Error('Factory fixture failure');
+    if(mode==='invalid')return {};
+    const result=mode==='accept-failure'?{
+      accept(){options.onFailure(Error('Accept fixture failure'));},
+      close(){++closes;options.port.close();}
+    }:createHostChannel(options);
+    if(mode==='accept-failure'){options.port.onmessage=()=>options.onBound();options.port.start();}
+    if(mode==='early-bound')options.onBound();
+    if(mode==='early-failure')options.onFailure(Error('Early fixture failure'));
+    if(mode==='early-bound'||mode==='early-failure'){
+      const close=result.close;result.close=()=>{++closes;close();};
+    }
+    return result;
+  };
+  const frontend=createEmbeddedFrontend({mount:env.mount,initialState:initial,host:env.host,channelFactory,release:()=>++releases,exchange:async()=>assert.fail('Failed startup reached transport')});
+  const renderer=child(env,frontend);frontend.frame.emit('load');
+  await assert.rejects(frontend.ready,/fixture failure|Invalid renderer channel|before ownership/i);await flush();
+  assert(frontend.frame.removed,mode);assert.equal(releases,1,mode);assert.equal(env.timers.size,0,mode);assert.equal(env.events.get('message').size,0,mode);
+  if(['early-bound','early-failure','accept-failure'].includes(mode))assert.equal(closes,1,mode);
+  frontend.close();await flush();assert.equal(releases,1,mode);renderer.ports.port1.close();
+}
+console.log('Opaque sandbox, strict selectors, document-owned channel, trusted bundle injection, startup ownership failures and idempotent teardown passed');

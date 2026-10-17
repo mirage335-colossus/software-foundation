@@ -1,0 +1,366 @@
+{
+  "commands": [
+    {
+      "capability_numeric": 16,
+      "definition": {
+        "byte_order": "little",
+        "capability": "BIB_ENGINE_CAP_KEY_V1",
+        "decoder_state": "stateless-no-held-state",
+        "maximum_input_bytes": 160,
+        "name": "physical-key",
+        "operation": 1,
+        "optional_version": {
+          "major": 1,
+          "minor": 0
+        },
+        "reply_payload_bytes": 0,
+        "required_reply_capacity": 16,
+        "trailing_bytes": "reject",
+        "unknown_field_values": "reject-with-BIB_ENGINE_INVALID",
+        "wire": {
+          "fixed_bytes": 32,
+          "fixed_u32": [
+            {
+              "name": "phase",
+              "offset_bytes": 0,
+              "values": {
+                "down": 0,
+                "up": 1
+              }
+            },
+            {
+              "maximum": 3,
+              "minimum": 0,
+              "name": "location",
+              "offset_bytes": 4
+            },
+            {
+              "allowed_mask": 31,
+              "name": "modifiers",
+              "offset_bytes": 8
+            },
+            {
+              "allowed_values": [
+                0,
+                1
+              ],
+              "name": "repeat",
+              "offset_bytes": 12
+            },
+            {
+              "maximum": 64,
+              "minimum": 1,
+              "name": "key_length",
+              "offset_bytes": 16,
+              "unit": "bytes"
+            },
+            {
+              "maximum": 64,
+              "minimum": 0,
+              "name": "code_length",
+              "offset_bytes": 20,
+              "unit": "bytes"
+            }
+          ],
+          "fixed_u64": [
+            {
+              "minimum": 1,
+              "name": "input_context",
+              "offset_bytes": 24
+            }
+          ],
+          "tail": [
+            {
+              "encoding": "UTF-8-scalar-no-NUL",
+              "length_field": "key_length",
+              "name": "key"
+            },
+            {
+              "encoding": "ASCII-0x21..0x7e-or-empty",
+              "length_field": "code_length",
+              "name": "code"
+            }
+          ],
+          "tail_offset_bytes": 32,
+          "validation": [
+            "payload length equals 32 + key_length + code_length exactly",
+            "up requires repeat zero",
+            "all key/code/location/modifier combinations accepted without normalization",
+            "input_context must equal the active provider context immediately before effects",
+            "raw down/up carry no committed text and never manufacture Char",
+            "native virtual key and legacy identifier are private deterministic compatibility mappings"
+          ]
+        }
+      },
+      "maximum_input_bytes": 160,
+      "operation": 1,
+      "required_reply_capacity": 16,
+      "schema_sha256": "86b7baad1c95bfb8de3e6b7a9a7c433b528278bbcf84199ca0b2b4ee6134dbc9"
+    },
+    {
+      "capability_numeric": 64,
+      "definition": {
+        "byte_order": "little",
+        "capability": "BIB_ENGINE_CAP_FOCUS_V1",
+        "maximum_input_bytes": 32,
+        "name": "surface-context-and-focus",
+        "operation": 3,
+        "optional_version": {
+          "major": 1,
+          "minor": 0
+        },
+        "reply_payload_bytes": 0,
+        "required_reply_capacity": 16,
+        "trailing_bytes": "reject",
+        "unknown_field_values": "reject-with-BIB_ENGINE_INVALID",
+        "wire": {
+          "fixed_bytes": 32,
+          "fixed_u32": [
+            {
+              "name": "action",
+              "offset_bytes": 0,
+              "values": {
+                "bind_context": 1,
+                "focus": 0,
+                "retire_context": 2
+              }
+            },
+            {
+              "allowed_values": [
+                0,
+                1
+              ],
+              "name": "focused",
+              "offset_bytes": 4
+            },
+            {
+              "allowed_values": [
+                0,
+                1
+              ],
+              "name": "active",
+              "offset_bytes": 8
+            },
+            {
+              "name": "cause",
+              "offset_bytes": 12,
+              "values": {
+                "direct": 0,
+                "external": 3,
+                "owned_popup": 1,
+                "owned_service": 2
+              }
+            }
+          ],
+          "fixed_u64": [
+            {
+              "name": "input_context",
+              "offset_bytes": 16
+            },
+            {
+              "name": "expected_context",
+              "offset_bytes": 24
+            }
+          ],
+          "validation": [
+            "exact32bytes; focused and active independent booleans",
+            "focus: nonzero input_context equals active context and expected_context; cause direct/external from renderer or explicit trusted native causes only",
+            "bind_context: focused/active/cause all0; expected_context0; current active context0; input_context nonzero and strictly greater than provider persistent highest_context",
+            "bind_context changes metadata only and invokes no Page/JSC/focus callback",
+            "retire_context: focused/active0; input_context0; expected_context equals nonzero active context; cause owned_popup/owned_service/external only",
+            "retire removes current input authority and active mouse token before native cancellation/focus callbacks; no synthetic up/click",
+            "same-document context cannot resurrect; highest_context persists across navigation; no wrapping",
+            "DocumentV1/request_sequence validated separately by actual provider guard; kernel alone validates full GUI Identity mapping"
+          ]
+        }
+      },
+      "maximum_input_bytes": 32,
+      "operation": 3,
+      "required_reply_capacity": 16,
+      "schema_sha256": "eef60cda2aa7b791641b0e5082d551ec37c10b8d92ca4cc71f13be0af45321d9"
+    },
+    {
+      "capability_numeric": 128,
+      "definition": {
+        "authority": "kernel validates complete frozen Surface Identity and event sequence at sole trusted gateway; provider validates exact bound input_context/capture token/DocumentV1/request sequence; provider does not claim widget or presentation validation",
+        "button_bits": {
+          "0": 1,
+          "1": 4,
+          "2": 2,
+          "3": 8,
+          "4": 16
+        },
+        "byte_order": "little",
+        "capability": "BIB_ENGINE_CAP_POINTER_V1",
+        "click_count_policy": "0 means not supplied by physical source, mapped explicitly to native fallback1; values1..3 only from an actually qualified source; first PointerEvent-only source emits0; no multi-click gesture support advertised",
+        "context_keyboard_metadata": "Normal native focus/selection anchor; stock DOM context buttons0 and empty modifiers. Wire heldmask/token validate retained host authority and do not claim recovered mouse metadata.",
+        "context_lifecycle": "FOCUS operation3 successor new hash32 bytes: action focus/bind_context/retire_context, bools/cause, u64 input_context at16 and u64 expected_context at24; bind only after old context retires; provider persistent highest context forbids reuse; kernel maps complete accepted context basis; no new operation or CABI change",
+        "context_policy": "Preserve exact active token/heldmask across normal native context intent; no synthetic cancel/up/click or custom private state restore. Use normal EventHandler context path and omit native-menu-only cleanup when no OS popup showed.",
+        "coordinate_policy": "command coordinates are engine-window CSS pixels derived by the sole trusted kernel from owner-local generic coordinates and the frozen presentation transform; mouse keeps double; wheel native hit point floors engine-window coordinates; screen points are synthetic unless a separate authentic mapping exists",
+        "fixed_bytes": 80,
+        "fixed_f64": [
+          {
+            "finite": true,
+            "format": "IEEE-754-binary64",
+            "maximum_absolute_value": 1000000,
+            "name": "x",
+            "offset": 48
+          },
+          {
+            "finite": true,
+            "format": "IEEE-754-binary64",
+            "maximum_absolute_value": 1000000,
+            "name": "y",
+            "offset": 56
+          },
+          {
+            "finite": true,
+            "format": "IEEE-754-binary64",
+            "maximum_absolute_value": 1000000,
+            "name": "wheel_x",
+            "offset": 64
+          },
+          {
+            "finite": true,
+            "format": "IEEE-754-binary64",
+            "maximum_absolute_value": 1000000,
+            "name": "wheel_y",
+            "offset": 72
+          }
+        ],
+        "fixed_u32": [
+          {
+            "name": "phase",
+            "offset": 0,
+            "values": {
+              "cancel": 4,
+              "context": 5,
+              "down": 1,
+              "move": 0,
+              "up": 2,
+              "wheel": 3
+            }
+          },
+          {
+            "equals": 0,
+            "meaning": "single-mouse-and-standard-context-intent",
+            "name": "kind",
+            "offset": 4
+          },
+          {
+            "maximum": 4,
+            "minimum": 0,
+            "name": "button",
+            "offset": 8
+          },
+          {
+            "allowed_mask": 31,
+            "name": "buttons",
+            "offset": 12
+          },
+          {
+            "maximum": 3,
+            "minimum": 0,
+            "name": "clicks",
+            "offset": 16
+          },
+          {
+            "allowed_mask": 31,
+            "name": "modifiers",
+            "offset": 20
+          },
+          {
+            "name": "context_origin",
+            "offset": 24,
+            "values": {
+              "keyboard": 1,
+              "pointer": 0
+            }
+          },
+          {
+            "equals": 0,
+            "name": "reserved",
+            "offset": 28
+          }
+        ],
+        "fixed_u64": [
+          {
+            "name": "input_context",
+            "nonzero": true,
+            "offset": 32
+          },
+          {
+            "meaning": "exact-authoritative-host-token-never-native-PointerID",
+            "name": "capture_token",
+            "offset": 40
+          }
+        ],
+        "maximum_input_bytes": 80,
+        "name": "single-mouse-context-intent",
+        "namespace": "foundation.engine.input.mouse",
+        "native_move_button_policy": "Normal native-platform held-button priority Left,Middle,Right,Back,Forward; None only idle; heldmask independently exact. No EventHandler/PointerCaptureController mutation absent observed standard-path defect.",
+        "no_promises": [
+          "touch",
+          "pen",
+          "multiple simultaneous mouse pointers",
+          "physical ticks",
+          "hardware precision",
+          "original timestamps",
+          "raw relative movement or pointer lock",
+          "authentic global coordinates",
+          "native context-menu popup implementation",
+          "UA back/forward navigation",
+          "multi-click gesture support without qualified click-count capture"
+        ],
+        "operation": 5,
+        "optional_version": {
+          "major": 1,
+          "minor": 0
+        },
+        "reply_payload_bytes": 0,
+        "required_reply_capacity": 16,
+        "surface_feature_bit": 13,
+        "surface_mouse_input_version": 1,
+        "surface_protocol_version": 1,
+        "trailing_bytes": "reject",
+        "validation": [
+          "down/up: clicks0..3; exact one changed bit agrees with button; wheel fields zero; context_origin0",
+          "move/wheel/cancel/context: button0 and clicks0",
+          "move: unchanged held buttons, exact active token or idle token0",
+          "wheel: unchanged held buttons and exact active token or idle token0; nonzero normalized stroke",
+          "cancel: exact active token, buttons/modifiers/x/y/wheels zero; native dispatch uses retained last point",
+          "context: wheels0; idle token0 requires buttons0; active capture requires its exact token and held buttons; context does not mutate capture or held buttons",
+          "context pointer origin uses real point and allowed modifiers; keyboard origin requires x/y/modifiers0 because this is context intent, not a recovered physical mouse record",
+          "context_origin0 except context phase",
+          "input_context equals explicitly bound live provider context; expected DocumentV1 and request_sequence independently match",
+          "first down: fresh nonzero capture token greater than persistent high water; chord down/up retain exact token; only final up/cancel/actual authority retirement retires",
+          "unused fields zero; no native effect or state change on stateless decoding rejection; provider guard may already consume the command sequence before binding state validation"
+        ],
+        "wheel_policy": "positive-right/down normalized CSS pixels; canonical wheel values are finite binary32-representable doubles; reject both deltas zero; map platform deltas negative; ScrollByPixelWheelEvent; precise=false; phases and momentum=None; synthetic ticks=-pixels/120 for deprecated compatibility only"
+      },
+      "maximum_input_bytes": 80,
+      "operation": 5,
+      "required_reply_capacity": 16,
+      "schema_sha256": "6a15d0e2f814564ce263824dd782335bb327b886e982aefec32476a29b0fd4a3"
+    }
+  ],
+  "first_copied259": "unchanged; empty catalog; unsupported COMMAND/QUERY",
+  "hash_rule": "SHA256 of each definition only, sorted compact ASCII JSON without final newline",
+  "kind": "foundation-engine-physical-input-catalog-draft",
+  "mouse_input_schema_version": 1,
+  "optional_contract": {
+    "major": 1,
+    "minor": 0
+  },
+  "predecessor_pointer_draft_sha256": "cfde7db48cfe2668ce1a0d6433f0d170f3cedbda99688e8738760cff130728eb",
+  "proposed_provider_capabilities": "467",
+  "proposed_surface_capabilities": "8225",
+  "public_c_abi": "unchanged",
+  "queries": [],
+  "selected_deltas_from_pointer_child": [
+    "context preserves active exact capture instead of rejected-while-held or invented cancellation; normal native path needs no selected EventHandler/PointerCaptureController patch",
+    "clicks0 explicitly unknown; initial source does not claim multi-click support or require compatibility-event correlation"
+  ],
+  "status": "SOURCE-DESIGN-ONLY-NOT-IMPLEMENTED-OR-QUALIFIED",
+  "surface_protocol_version": 1
+}

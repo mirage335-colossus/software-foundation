@@ -34,6 +34,285 @@ class GuiBoundaryTests(unittest.TestCase):
             self.assertTrue(shared_violations(source), source)
         self.assertFalse(shared_violations('#include <gui/contract.hpp>\ngui::Adapter& adapter;'))
 
+    def test_generic_surface_companion_is_public_to_shared_and_host_code(self):
+        self.assertEqual([], shared_violations('#include <foundation/gui/surface.hpp>\n'))
+        for name in ('gui/surface.hpp', 'foundation/gui/private.hpp', 'foundation/gui/contract.hpp',
+                     'foundation/gui/detail/surface.hpp', 'other/gui/surface.hpp'):
+            self.assertTrue(shared_violations('#include <' + name + '>\n'), name)
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary); root = project / 'gui'
+            for directory in ('shared', 'host'):
+                (root / directory).mkdir(parents=True)
+                (root / directory / 'consumer.cpp').write_text(
+                    '#include <foundation/gui/surface.hpp>\n'
+                    'foundation::gui_surface::Capabilities* capabilities;\n')
+            header = project / 'include/foundation/gui/surface.hpp'
+            header.parent.mkdir(parents=True)
+            header.write_text('#include <cstdint>\nnamespace foundation::gui_surface { struct Capabilities; }\n')
+            failures, dependencies = _guard.analyze(root)
+            self.assertEqual([], failures)
+            self.assertIn(header.resolve(), dependencies)
+            private = header.with_name('private.hpp')
+            private.write_text('void private_helper();\n')
+            for directory in ('shared', 'host'):
+                consumer = root / directory / 'consumer.cpp'
+                consumer.write_text('#include <foundation/gui/private.hpp>\n')
+                failures = _guard.tree_violations(root)
+                self.assertTrue(any(str(consumer) in failure for failure in failures), directory)
+                consumer.write_text('#include <foundation/gui/surface.hpp>\n')
+
+    def test_generic_editor_companion_preserves_the_application_boundary(self):
+        self.assertEqual([], shared_violations('#include <foundation/gui/surface_editor.hpp>\n'))
+        for name in ('gui/surface_editor.hpp', 'foundation/gui/detail/surface_editor.hpp',
+                     'foundation/gui/native_editor_controller.hpp'):
+            self.assertTrue(shared_violations('#include <' + name + '>\n'), name)
+        with tempfile.TemporaryDirectory(prefix='generic editor boundary ') as temporary:
+            project = Path(temporary); root = project / 'gui'
+            for directory in ('shared', 'host', 'hosts'):
+                (root / directory).mkdir(parents=True)
+            consumer = root / 'host/editor.hpp'
+            consumer.write_text('#include <foundation/gui/surface_editor.hpp>\n'
+                'foundation::gui_editor::Packet* packet;\n')
+            header = project / 'include/foundation/gui/surface_editor.hpp'
+            header.parent.mkdir(parents=True)
+            neutral = 'namespace foundation::gui_editor { struct Packet; }\n'
+            header.write_text(neutral)
+            failures, dependencies = _guard.analyze(root)
+            self.assertEqual([], failures)
+            self.assertIn(header.resolve(), dependencies)
+            private = root / 'shared/native_editor_controller.hpp'
+            private.write_text('namespace foundation::ui::native_editor { class Controller; }\n')
+            domain = project / 'include/foundation/store.hpp'
+            domain.write_text('namespace foundation { class Store; }\n')
+            engine = root / 'shared/engine_editor_profile.hpp'
+            engine.write_text('struct EngineEditorFacts;\n')
+            for forbidden in ('#include "../../../gui/shared/native_editor_controller.hpp"\n',
+                              '#include "../../../gui/shared/engine_editor_profile.hpp"\n',
+                              '#include <foundation/store.hpp>\n',
+                              'foundation::ui::native_editor::Controller* controller;\n',
+                              '#include <SDL.h>\n'):
+                header.write_text(neutral + forbidden)
+                self.assertTrue(_guard.tree_violations(root), forbidden)
+            header.write_text(neutral)
+            for symbol in ('EngineEditorPort', 'BoundEngineEditorPort'):
+                source = '#include "../shared/appended_engine_application.hpp"\n' + \
+                    'foundation::ui::' + symbol + '* port;\n'
+                (root / 'shared/appended_engine_application.hpp').write_text(
+                    'namespace foundation::ui { struct ' + symbol + '; }\n')
+                main = root / 'hosts/appended_main.cpp'; main.write_text(source)
+                self.assertEqual([], _guard.tree_violations(root), symbol)
+                helper = root / 'host/helper.hpp'; helper.write_text(source)
+                self.assertTrue(_guard.tree_violations(root), symbol)
+                helper.unlink(); main.unlink()
+
+    def test_generic_document_values_and_endpoint_have_exact_public_names(self):
+        for name in ('document_values.hpp', 'document_endpoint.hpp'):
+            self.assertEqual([], shared_violations('#include <foundation/gui/' + name + '>\n'))
+        for name in ('gui/document_values.hpp', 'foundation/gui/detail/document_values.hpp',
+                     'foundation/gui/private_document.hpp', 'foundation/gui/document_endpoint_private.hpp'):
+            self.assertTrue(shared_violations('#include <' + name + '>\n'), name)
+        expected = {'DocumentVersion', 'DocumentNodeKind', 'DocumentWhiteSpace', 'DocumentNode',
+            'DocumentPoint', 'DocumentSelection', 'DocumentSnapshot', 'DocumentEditorState',
+            'DocumentNodeMetadata', 'DocumentNativeOffsetKind', 'DocumentNativePoint',
+            'DocumentNativeSelection', 'DocumentWireSelection', 'DocumentDecodeDegradation',
+            'DocumentSemanticReply', 'NativeFormsDocumentObservation'}
+        self.assertEqual(expected, _guard.PUBLIC_GUI_VALUE_SYMBOLS)
+        with tempfile.TemporaryDirectory(prefix='generic document boundary ') as temporary:
+            project = Path(temporary); root = project / 'gui'
+            for directory in ('shared', 'host', 'hosts'):
+                (root / directory).mkdir(parents=True)
+            consumer = root / 'host/document.hpp'
+            public = project / 'include/foundation/gui'; public.mkdir(parents=True)
+            values = public / 'document_values.hpp'
+            values.write_text('#include <foundation/appended/document_forms.hpp>\n'
+                'namespace foundation::ui { struct DocumentSnapshot; }\n')
+            endpoint = public / 'document_endpoint.hpp'
+            endpoint.write_text('#include <foundation/gui/document_values.hpp>\n'
+                'namespace foundation::gui_document { struct State; }\n')
+            forms = project / 'include/foundation/appended/document_forms.hpp'
+            forms.parent.mkdir(); forms.write_text('namespace foundation::appended { struct FormVersion; }\n')
+            source = '#include <foundation/gui/document_endpoint.hpp>\n'
+            for symbol in expected:
+                consumer.write_text(source + 'foundation::ui::' + symbol + '* value;\n')
+                failures, dependencies = _guard.analyze(root)
+                self.assertEqual([], failures, symbol)
+                for path in (values, endpoint, forms): self.assertIn(path.resolve(), dependencies)
+            for symbol in ('AppendedDocument', 'AppendedDocumentForms', 'DocumentProjection',
+                           'DocumentEngineRequest', 'EngineDocumentBroker', 'NativeFormsDocumentObservationPrivate'):
+                consumer.write_text(source + 'foundation::ui::' + symbol + '* private_value;\n')
+                self.assertTrue(_guard.tree_violations(root), symbol)
+            consumer.write_text(source + 'foundation::appended::FormDraft* private_draft;\n')
+            self.assertTrue(any('shared document draft behavior' in failure
+                for failure in _guard.tree_violations(root)))
+            consumer.write_text(source)
+            rust = root / 'host/document.rs'
+            rust.write_text('use foundation::appended::FormDraft;\n')
+            self.assertTrue(any('shared document draft behavior in Rust' in failure
+                for failure in _guard.tree_violations(root)))
+            rust.unlink()
+            consumer.write_text('#include <foundation/appended/document_forms.hpp>\n')
+            self.assertTrue(_guard.tree_violations(root), 'direct generic form implementation include')
+
+    def test_generic_document_leaf_checks_its_exact_form_dependency_closure(self):
+        with tempfile.TemporaryDirectory(prefix='generic document dependency ') as temporary:
+            project = Path(temporary); root = project / 'gui'
+            (root / 'host').mkdir(parents=True); (root / 'shared').mkdir()
+            (root / 'host/document.hpp').write_text('#include <foundation/gui/document_endpoint.hpp>\n')
+            public = project / 'include/foundation/gui'; public.mkdir(parents=True)
+            values = public / 'document_values.hpp'
+            values.write_text('#include <foundation/appended/document_forms.hpp>\n')
+            endpoint = public / 'document_endpoint.hpp'
+            endpoint.write_text('#include <foundation/gui/document_values.hpp>\n')
+            forms = project / 'include/foundation/appended/document_forms.hpp'
+            forms.parent.mkdir(); forms.write_text('void form_values();\n')
+            domain = project / 'include/foundation/store.hpp'; domain.write_text('class Store;\n')
+            private = forms.with_name('private.hpp'); private.write_text('void private_helper();\n')
+            self.assertEqual([], _guard.tree_violations(root))
+            for forbidden in ('#include <foundation/store.hpp>\n', '#include "private.hpp"\n',
+                              'foundation::Store* domain;\n', '#include <SDL.h>\n'):
+                forms.write_text(forbidden)
+                self.assertTrue(_guard.tree_violations(root), forbidden)
+            forms.write_text('void form_values();\n')
+            # The exception belongs to the leaf's exact edge, not every public
+            # companion or an adjacent Foundation header.
+            endpoint.write_text('#include <foundation/appended/document_forms.hpp>\n')
+            self.assertTrue(_guard.tree_violations(root))
+            endpoint.write_text('#include <foundation/gui/document_values.hpp>\n')
+            values.write_text('#include <foundation/appended/private.hpp>\n')
+            self.assertTrue(_guard.tree_violations(root))
+
+    def test_generic_surface_companion_checks_nested_backend_and_domain_dependencies(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary); root = project / 'gui'
+            (root / 'shared').mkdir(parents=True)
+            (root / 'shared/consumer.cpp').write_text('#include <foundation/gui/surface.hpp>\n')
+            (root / 'shared/view.hpp').write_text('const char* id = "records.add";\n')
+            header = project / 'include/foundation/gui/surface.hpp'
+            header.parent.mkdir(parents=True)
+            header.write_text('#include "../../../helpers/bridge.hpp"\n')
+            bridge = project / 'helpers/bridge.hpp'; bridge.parent.mkdir()
+            bridge.write_text('#include "nested.hpp"\n')
+            nested = bridge.with_name('nested.hpp')
+            nested.write_text('void generic_helper();\n')
+            (project / 'include/foundation/store.hpp').write_text('namespace foundation { class Store; }\n')
+            failures, dependencies = _guard.analyze(root)
+            self.assertEqual([], failures)
+            for path in (header, bridge, nested):
+                self.assertIn(path.resolve(), dependencies)
+            for source in ('#include <FL/Fl.H>\n', 'using Native = SDL_Window;\n',
+                           '#include <foundation/store.hpp>\n', 'foundation::Store* domain;\n',
+                           'namespace foundation { Store* domain; }\n',
+                           'const char* id = "records.add";\n',
+                           '#include "../gui/shared/view.hpp"\n',
+                           '#define HEADER <FL/Fl.H>\n#include HEADER\n'):
+                with self.subTest(source=source):
+                    nested.write_text(source)
+                    failures = _guard.tree_violations(root)
+                    self.assertTrue(any(str(nested) in failure for failure in failures), failures)
+
+    def test_native_bitmap_entry_header_stays_at_the_composition_root(self):
+        with tempfile.TemporaryDirectory(prefix='native bitmap entry boundary ') as temporary:
+            project = Path(temporary); root = project / 'gui'
+            for directory in ('shared', 'host', 'hosts'):
+                (root / directory).mkdir(parents=True)
+            (root / 'shared/native_engine_bitmap_composition.hpp').write_text(
+                'namespace foundation::ui { class NativeEngineBitmapComposition; }\n')
+            startup = project / 'include/foundation/appended/startup.hpp'
+            startup.parent.mkdir(parents=True)
+            startup.write_text('void startup_value();\n')
+            entry = root / 'hosts/appended_engine_native_entry.hpp'
+            source = '#include "../shared/native_engine_bitmap_composition.hpp"\n' + \
+                '#include <foundation/appended/startup.hpp>\n' + \
+                'foundation::ui::NativeEngineBitmapComposition* composition;\n'
+            entry.write_text(source)
+            main = root / 'hosts/appended_engine_sdl_main.cpp'
+            main.write_text('#include "appended_engine_native_entry.hpp"\n')
+            self.assertEqual([], _guard.tree_violations(root))
+            helper = root / 'host/helper.hpp'
+            helper.write_text('#include "../hosts/appended_engine_native_entry.hpp"\n')
+            self.assertTrue(any('application composition root' in failure
+                for failure in _guard.tree_violations(root)))
+            helper.write_text(source)
+            self.assertTrue(_guard.tree_violations(root))
+            helper.unlink()
+            entry.with_name('other_entry.hpp').write_text(source)
+            self.assertTrue(_guard.tree_violations(root))
+
+    def test_unused_generic_surface_implementation_is_checked_by_real_entry_point(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary).resolve(); root = project / 'gui'; root.mkdir()
+            guard = root / 'check_boundary.py'
+            guard.write_bytes((ROOT / 'gui/check_boundary.py').read_bytes())
+            header = project / 'include/foundation/gui/surface.hpp'
+            header.parent.mkdir(parents=True)
+            header.write_text('namespace foundation::gui_surface { struct Capabilities; }\n')
+            source = project / 'src/gui/surface.cpp'; source.parent.mkdir(parents=True)
+            source.write_text('#include <foundation/gui/surface.hpp>\n')
+            result = subprocess.run([sys.executable, '-B', str(guard), '--dependencies'],
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(0, result.returncode, result.stderr)
+            for path in (header, source):
+                self.assertIn(str(path), result.stdout)
+            helper = project / 'helpers/nested.hpp'; helper.parent.mkdir()
+            source.write_text('#include "../../helpers/nested.hpp"\n')
+            for content in ('using Native = SDL_Window;\n', 'foundation::Store* domain;\n'):
+                helper.write_text(content)
+                result = subprocess.run([sys.executable, '-B', str(guard)],
+                    capture_output=True, text=True, timeout=15)
+                self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertIn(str(helper), result.stderr)
+            helper.write_text('void generic_helper();\n')
+            result = subprocess.run([sys.executable, '-B', str(guard)],
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_real_source_tree_including_generic_surface_passes_boundary(self):
+        failures, dependencies = _guard.analyze(ROOT / 'gui')
+        self.assertEqual([], failures)
+        for relative in ('include/foundation/gui/surface.hpp', 'src/gui/surface.cpp'):
+            self.assertIn((ROOT / relative).resolve(), dependencies)
+
+    def test_incremental_build_rechecks_new_generic_surface_and_nested_helpers(self):
+        cmake = (ROOT / 'gui/CMakeLists.txt').read_text()
+        block = 'file(GLOB_RECURSE' + cmake.split('file(GLOB_RECURSE', 1)[1].split(
+            'add_library(foundation_gui_application STATIC', 1)[0]
+        with tempfile.TemporaryDirectory(prefix='incremental generic surface ') as temporary:
+            project = Path(temporary) / 'source'; root = project / 'gui'; root.mkdir(parents=True)
+            (root / 'check_boundary.py').write_bytes((ROOT / 'gui/check_boundary.py').read_bytes())
+            (root / 'CMakeLists.txt').write_text(
+                'cmake_minimum_required(VERSION 3.24)\nproject(BoundaryGuard LANGUAGES NONE)\n' +
+                'find_package(Python3 REQUIRED COMPONENTS Interpreter)\n' + block)
+            build = Path(temporary) / 'build'
+            subprocess.run(['cmake', '-G', 'Ninja', '-S', str(root), '-B', str(build)],
+                check=True, capture_output=True, text=True, timeout=30)
+            def check():
+                return subprocess.run(['cmake', '--build', str(build), '--target', 'foundation_gui_contract'],
+                    capture_output=True, text=True, timeout=30)
+            def change(path, contents):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(contents)
+                tick = max(time.time_ns(), path.stat().st_mtime_ns + 10_000_000,
+                           (build / 'boundary-checked').stat().st_mtime_ns + 10_000_000)
+                os.utime(path, ns=(tick, tick))
+            result = check(); self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            header = project / 'include/foundation/gui/surface.hpp'
+            change(header, 'using Native = SDL_Window;\n')
+            result = check(); self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertIn('surface.hpp', result.stdout + result.stderr)
+            change(header, 'namespace foundation::gui_surface { struct Capabilities; }\n')
+            result = check(); self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            source = project / 'src/gui/surface.cpp'
+            change(source, 'foundation::Store* domain;\n')
+            result = check(); self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertIn('surface.cpp', result.stdout + result.stderr)
+            helper = project / 'helpers/nested.hpp'
+            change(helper, 'void generic_helper();\n')
+            change(source, '#include <foundation/gui/surface.hpp>\n#include "../../helpers/nested.hpp"\n')
+            result = check(); self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            change(helper, '#include <FL/Fl.H>\n')
+            result = check(); self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertIn('nested.hpp', result.stdout + result.stderr)
+
     def test_rust_tripwire_rejects_backend_imports_calls_and_linkage(self):
         for source in ('use sdl2::video::Window;', 'use fltk::{app, window};',
                        'extern crate rev as renderer;', 'use gui::framebuffer::Adapter;',
@@ -300,6 +579,253 @@ const CHAR: char = 'x';
             (root / 'helpers/bridge.hpp').write_text('#include "../shared/application.hpp"\n')
             self.assertTrue(any('bridge.hpp' in failure for failure in _guard.tree_violations(root)))
 
+    def test_appended_composition_type_does_not_open_generic_host_helpers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'gui'
+            for directory in ('shared', 'host', 'hosts'):
+                (root / directory).mkdir(parents=True)
+            (root / 'shared/private_view.hpp').write_text('class PrivateView {};\n')
+            main = root / 'hosts/appended_main.cpp'
+            helper = root / 'host/service.hpp'
+            for name, header in (("AppendedApplication", "appended_application.hpp"),
+                                 ("AppendedEngineApplication", "appended_engine_application.hpp"),
+                                 ("EnginePrimaryRegionApplication", "engine_primary_region_application.hpp"),
+                                 ("SemanticPrimaryDocumentApplication", "semantic_primary_document_application.hpp"),
+                                 ("AppendedEngineDocumentApplication", "appended_engine_document_application.hpp"),
+                                 ("NativeEngineDocumentComposition", "native_engine_document_composition.hpp"),
+                                 ("EngineSurfacePort", "appended_engine_application.hpp")):
+                (root / 'shared' / header).write_text('class ' + name + ' {};\n')
+                main.write_text('#include "shared/' + header + '"\n'
+                                'foundation::ui::' + name + '* application;\n')
+                self.assertEqual([], _guard.tree_violations(root))
+                for source in ('foundation::ui::' + name + '* application;\n',
+                               '#include "shared/' + header + '"\n'):
+                    helper.write_text(source)
+                    self.assertTrue(_guard.tree_violations(root), source)
+                helper.unlink()
+            for header in ('appended_engine_abi.h', 'appended_engine_module.hpp', 'native_engine_loader.hpp'):
+                (root / 'shared' / header).write_text('#include <stdint.h>\n')
+                main.write_text('#include "shared/' + header + '"\n')
+                self.assertEqual([], _guard.tree_violations(root))
+                helper.write_text('#include "shared/' + header + '"\n')
+                self.assertTrue(_guard.tree_violations(root))
+                helper.unlink()
+            startup = root.parent / 'include/foundation/appended/startup.hpp'
+            startup.parent.mkdir(parents=True)
+            startup.write_text('void load_self();\n')
+            main.write_text('#include <foundation/appended/startup.hpp>\n')
+            self.assertEqual([], _guard.tree_violations(root))
+            helper.write_text('#include <foundation/appended/startup.hpp>\n')
+            self.assertTrue(_guard.tree_violations(root))
+            helper.unlink()
+            main.write_text('void entry() { foundation::ui::prepare_engine_html_package(); }\n')
+            self.assertEqual([], _guard.tree_violations(root))
+            helper.write_text('void dispatch() { foundation::ui::prepare_engine_html_package(); }\n')
+            self.assertTrue(_guard.tree_violations(root))
+            helper.unlink()
+            for source in ('foundation::ui::PrivateView* state;\n',
+                           '#include "shared/private_view.hpp"\n'):
+                main.write_text(source)
+                self.assertTrue(_guard.tree_violations(root), source)
+
+    def test_demo_services_exact_declaration_and_factory_are_composition_root_only(self):
+        with tempfile.TemporaryDirectory(prefix='demo service composition boundary ') as temporary:
+            root = Path(temporary) / 'gui'
+            for directory in ('shared', 'host', 'hosts'):
+                (root / directory).mkdir(parents=True)
+            header = root / 'shared/appended_demo_services.hpp'
+            implementation = root / 'shared/appended_demo_services.cpp'
+            for path in (header, implementation):
+                path.write_bytes((ROOT / 'gui/shared' / path.name).read_bytes())
+            main = root / 'hosts/appended_demo_main.cpp'
+            source = '#include "../shared/appended_demo_services.hpp"\n' + \
+                'void compose() { auto registrations = foundation::ui::demo_native_services(); }\n'
+            main.write_text(source)
+            failures, dependencies = _guard.analyze(root)
+            self.assertEqual([], failures)
+            for path in (header, implementation, main):
+                self.assertIn(path.resolve(), dependencies)
+            extra = root / 'shared/appended_demo_services_extra.hpp'
+            extra.write_text('void unrelated_service_factory();\n')
+            for forbidden in ('#include "../shared/appended_demo_services_extra.hpp"\n',
+                              'void compose() { foundation::ui::demo_native_services_extra(); }\n'):
+                with self.subTest(contract=forbidden):
+                    main.write_text(forbidden)
+                    self.assertTrue(any(str(main) in failure for failure in _guard.tree_violations(root)))
+            main.write_text(source)
+            helper = root / 'hosts/ordinary_helper.hpp'
+            helper.write_text(source)
+            self.assertTrue(any(str(helper) in failure for failure in _guard.tree_violations(root)))
+
+    def test_demo_services_factory_name_and_include_stay_out_of_generic_host_helpers(self):
+        with tempfile.TemporaryDirectory(prefix='demo service direct helper boundary ') as temporary:
+            root = Path(temporary) / 'gui'
+            for directory in ('shared', 'host', 'hosts'):
+                (root / directory).mkdir(parents=True)
+            for name in ('appended_demo_services.hpp', 'appended_demo_services.cpp'):
+                (root / 'shared' / name).write_bytes((ROOT / 'gui/shared' / name).read_bytes())
+            (root / 'hosts/appended_demo_main.cpp').write_text(
+                '#include "../shared/appended_demo_services.hpp"\n'
+                'void compose() { auto registrations = foundation::ui::demo_native_services(); }\n')
+            self.assertEqual([], _guard.tree_violations(root))
+            helper = root / 'host/service.hpp'
+            for source in ('#include "../shared/appended_demo_services.hpp"\n',
+                           'void dispatch() { foundation::ui::demo_native_services(); }\n'):
+                with self.subTest(source=source):
+                    helper.write_text(source)
+                    failures = _guard.tree_violations(root)
+                    self.assertTrue(any(str(helper) in failure for failure in failures), failures)
+            helper.unlink()
+            self.assertEqual([], _guard.tree_violations(root))
+
+    def test_demo_services_factory_name_and_include_cannot_escape_through_transitive_helpers(self):
+        with tempfile.TemporaryDirectory(prefix='demo service transitive helper boundary ') as temporary:
+            root = Path(temporary) / 'gui'
+            for directory in ('shared', 'helpers', 'host', 'hosts'):
+                (root / directory).mkdir(parents=True)
+            for name in ('appended_demo_services.hpp', 'appended_demo_services.cpp'):
+                (root / 'shared' / name).write_bytes((ROOT / 'gui/shared' / name).read_bytes())
+            main = root / 'hosts/appended_demo_main.cpp'
+            main.write_text('#include "../shared/appended_demo_services.hpp"\n'
+                '#include "../helpers/bridge.hpp"\n'
+                'void compose() { auto registrations = foundation::ui::demo_native_services(); }\n')
+            bridge = root / 'helpers/bridge.hpp'; bridge.write_text('#include "nested.hpp"\n')
+            nested = root / 'helpers/nested.hpp'; nested.write_text('void generic_helper();\n')
+            failures, dependencies = _guard.analyze(root)
+            self.assertEqual([], failures)
+            self.assertIn(bridge.resolve(), dependencies)
+            self.assertIn(nested.resolve(), dependencies)
+            for source in ('#include "../shared/appended_demo_services.hpp"\n',
+                           'void dispatch() { foundation::ui::demo_native_services(); }\n'):
+                with self.subTest(source=source):
+                    nested.write_text(source)
+                    failures = _guard.tree_violations(root)
+                    self.assertTrue(any(str(nested) in failure for failure in failures), failures)
+
+    def test_demo_service_identity_stays_forbidden_in_roots_and_helpers_after_body_moves(self):
+        with tempfile.TemporaryDirectory(prefix='demo service identity boundary ') as temporary:
+            root = Path(temporary) / 'gui'
+            for directory in ('shared', 'helpers', 'host', 'hosts'):
+                (root / directory).mkdir(parents=True)
+            header = root / 'shared/appended_demo_services.hpp'
+            implementation = root / 'shared/appended_demo_services.cpp'
+            for path in (header, implementation):
+                path.write_bytes((ROOT / 'gui/shared' / path.name).read_bytes())
+            self.assertNotIn('"demo.echo"', header.read_text())
+            self.assertIn('"demo.echo"', implementation.read_text())
+            main = root / 'hosts/appended_demo_main.cpp'
+            main.write_text('#include "../shared/appended_demo_services.hpp"\n'
+                '#include "../helpers/bridge.hpp"\n'
+                'void compose() { auto registrations = foundation::ui::demo_native_services(); }\n')
+            helper = root / 'host/service.hpp'; helper.write_text('void generic_service();\n')
+            (root / 'helpers/bridge.hpp').write_text('#include "nested.hpp"\n')
+            nested = root / 'helpers/nested.hpp'; nested.write_text('void generic_helper();\n')
+            self.assertEqual([], _guard.tree_violations(root))
+            for consumer in (main, helper, nested):
+                with self.subTest(consumer=consumer.relative_to(root)):
+                    source = consumer.read_text()
+                    consumer.write_text(source + 'const char* service_name = "demo.echo";\n')
+                    failures = _guard.tree_violations(root)
+                    self.assertTrue(any(str(consumer) in failure and 'application identity' in failure
+                                        for failure in failures), failures)
+                    consumer.write_text(source)
+            self.assertEqual([], _guard.tree_violations(root))
+
+    def test_demo_services_pure_cmake_leaf_precedes_optional_gui_profiles(self):
+        helper_include = 'include("${CMAKE_CURRENT_LIST_DIR}/AppendedDemoServices.cmake")'
+        common = (ROOT / 'cmake/AppendedCommon.cmake').read_text()
+        gui = (ROOT / 'cmake/AppendedGui.cmake').read_text()
+        self.assertEqual(1, common.splitlines().count(helper_include))
+        marker = '# Optional compositions share the generic GUI boundary.'
+        self.assertEqual(1, gui.count(marker))
+        prefix = gui.split(marker, 1)[0]
+        self.assertTrue(prefix.startswith(helper_include + '\n'))
+        leaf = 'foundation_gui_appended_demo_services'
+        terminal = ['foundation_gui_native_terminal_' + kind + mode + '_test'
+                    for kind in ('main_', 'actions_main_') for mode in ('web', 'both')]
+        # Only declarations before the optional-profile guard are exercised.
+        # The real production engine graph and Common's other targets are outside
+        # this LANGUAGES NONE fixture; Common's actual helper include is replayed.
+        with tempfile.TemporaryDirectory(prefix='demo services cmake declarations ') as temporary:
+            root = Path(temporary); source = root / 'source'; cmake = source / 'cmake'
+            cmake.mkdir(parents=True)
+            (source / 'include').mkdir()
+            implementation = source / 'gui/shared/appended_demo_services.cpp'
+            implementation.parent.mkdir(parents=True)
+            implementation.write_bytes((ROOT / 'gui/shared/appended_demo_services.cpp').read_bytes())
+            (cmake / 'AppendedDemoServices.cmake').write_bytes(
+                (ROOT / 'cmake/AppendedDemoServices.cmake').read_bytes())
+            (cmake / 'AppendedGuiPrefix.cmake').write_text(prefix)
+            (cmake / 'CommonDemoServices.cmake').write_text(helper_include + '\n')
+            (source / 'CMakeLists.txt').write_text('''cmake_minimum_required(VERSION 3.20)
+project(DemoServicesDeclarations LANGUAGES NONE)
+# Select the declaration branch explicitly; no platform executable is built.
+set(CMAKE_SYSTEM_NAME Linux)
+set(EMSCRIPTEN FALSE)
+set(FOUNDATION_NODE_EXECUTABLE "")
+function(add_library target)
+  file(APPEND "${CMAKE_BINARY_DIR}/add_library.txt" "${target}|${ARGN}\\n")
+  _add_library(${target} INTERFACE)
+endfunction()
+function(add_executable target)
+  file(APPEND "${CMAKE_BINARY_DIR}/add_executable.txt" "${target}|${ARGN}\\n")
+  _add_library(${target} INTERFACE)
+endfunction()
+foreach(command target_link_libraries target_include_directories target_compile_features
+    set_target_properties add_dependencies foundation_options)
+  function(${command} target)
+    file(APPEND "${CMAKE_BINARY_DIR}/${CMAKE_CURRENT_FUNCTION}.txt" "${target}|${ARGN}\\n")
+  endfunction()
+endforeach()
+foreach(command target_compile_definitions foundation_gui_check add_test
+    foundation_test_prerequisites set_tests_properties)
+  function(${command})
+  endfunction()
+endforeach()
+if(COMMON_FIRST)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CommonDemoServices.cmake")
+endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AppendedGuiPrefix.cmake")
+# Both includers and a repeated direct include share the real GLOBAL guard.
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AppendedDemoServices.cmake")
+''')
+            for profile, testing, common_first in (('none', False, False), ('none', True, False),
+                                                    ('web', True, True), ('both', True, True)):
+                with self.subTest(profile=profile, testing=testing, common_first=common_first):
+                    build = root / (profile + ('-tests' if testing else '-production'))
+                    result = subprocess.run(['cmake', '-S', str(source), '-B', str(build),
+                        '-DFOUNDATION_APPENDED_PROFILE=' + profile,
+                        '-DBUILD_TESTING=' + ('ON' if testing else 'OFF'),
+                        '-DCOMMON_FIRST=' + ('ON' if common_first else 'OFF')],
+                        capture_output=True, text=True, timeout=15)
+                    self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+                    def records(command):
+                        path = build / (command + '.txt')
+                        return [line.split('|', 1) for line in path.read_text().splitlines()] \
+                            if path.exists() else []
+
+                    self.assertEqual([[leaf, 'STATIC;EXCLUDE_FROM_ALL;' + implementation.as_posix()]],
+                                     records('add_library'))
+                    expected_executables = ['foundation_gui_terminal_runner_test'] + terminal if testing else []
+                    self.assertEqual(expected_executables, [target for target, _ in records('add_executable')])
+                    self.assertEqual([[leaf, 'PUBLIC;' + (source / 'include').as_posix()]],
+                        [record for record in records('target_include_directories') if record[0] == leaf])
+                    self.assertEqual([[leaf, 'PUBLIC;cxx_std_20']],
+                        [record for record in records('target_compile_features') if record[0] == leaf])
+                    self.assertEqual([[leaf, 'PROPERTIES;CXX_EXTENSIONS;OFF']],
+                        [record for record in records('set_target_properties') if record[0] == leaf])
+                    self.assertEqual([[leaf, '']],
+                        [record for record in records('foundation_options') if record[0] == leaf])
+                    self.assertFalse([record for record in records('add_dependencies') if record[0] == leaf])
+                    links = records('target_link_libraries')
+                    expected_links = [['foundation_gui_terminal_runner_test', 'PRIVATE;foundation_gui_boundary']]
+                    expected_links += [[target, 'PRIVATE;foundation_gui_boundary;' + leaf] for target in terminal]
+                    self.assertEqual(expected_links if testing else [], links)
+                    cache = (build / 'CMakeCache.txt').read_text()
+                    self.assertNotIn('CMAKE_C_COMPILER:', cache)
+                    self.assertNotIn('CMAKE_CXX_COMPILER:', cache)
+
     def test_header_mirror_uses_final_patch_bytes_and_preserves_incremental_outputs(self):
         inputs = (ROOT / 'cmake/GuiInputs.cmake').read_text()
         patcher = 'function(foundation_gui_patch' + inputs.split('function(foundation_gui_patch',1)[1].split('endfunction()',1)[0] + 'endfunction()\n'
@@ -409,7 +935,11 @@ const CHAR: char = 'x';
             self.assertNotIn("foundation::Store", path.read_text())
         cmake = (ROOT / "gui/CMakeLists.txt").read_text()
         self.assertNotIn("using Example", cmake)
-        self.assertNotIn("string(REPLACE", cmake)
+        self.assertNotIn('"entries.', cmake)
+        self.assertNotIn("foundation::Store", cmake)
+        selector = 'string(REPLACE "_" "-" _native_surface_selector "${_native_surface_fixture}")'
+        self.assertEqual(1, cmake.count(selector))
+        self.assertNotIn("string(REPLACE", cmake.replace(selector, ""))
         for name in ("FLTK", "SDL", "REV", "WEB"):
             self.assertIn("FOUNDATION_GUI_" + name, cmake)
 
@@ -428,6 +958,15 @@ const CHAR: char = 'x';
         with tempfile.TemporaryDirectory(prefix="gui Windows macros ") as directory:
             source = Path(directory) / "source"; source.mkdir()
             (source / "shared").mkdir(); (source / "include").mkdir()
+            # The real application fragment declares optional generic targets.
+            # Supply their actual sources; EXCLUDE_FROM_ALL keeps this build
+            # focused on the direct and application-linked macro consumers.
+            for original, relative in (("src/gui/surface.cpp", "src/gui/surface.cpp"),
+                    ("gui/host/native_surface.cpp", "host/native_surface.cpp"),
+                    ("gui/host/native_editor_capture.cpp", "host/native_editor_capture.cpp")):
+                destination = source / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes((ROOT / original).read_bytes())
             header = """#pragma once
 #include <algorithm>
 #ifdef FIXTURE_WINDOWS_HEADERS
@@ -562,6 +1101,9 @@ endfunction()
             block = block.replace("INTERFACE SDL2::SDL2-static)", "INTERFACE SDL2::SDL2)")
         with tempfile.TemporaryDirectory(prefix="SDL linkage ") as temporary:
             root = Path(temporary); source = root / "source"; source.mkdir()
+            peer = source / "host/native_sdl_surface_peer.cpp"
+            peer.parent.mkdir()
+            peer.write_bytes((ROOT / "gui/host/native_sdl_surface_peer.cpp").read_bytes())
             (source / "static.c").write_text("int fixture_value(void) { return 3; }\n")
             (source / "shared.c").write_text("int fixture_value(void) { return 7; }\n")
             (source / "entry.c").write_text("int fixture_value(void); int fixture_entry(void) { return fixture_value(); }\n")
@@ -579,9 +1121,12 @@ add_library(SDL2::SDL2-static ALIAS fixture_static)
 """
             (source / "SDL2Config.cmake").write_text(config)
             project = """cmake_minimum_required(VERSION 3.24)
-project(PortableSdlSelection LANGUAGES C)
+project(PortableSdlSelection LANGUAGES C CXX)
 set(SDL2_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(FOUNDATION_GUI_SDL ON)
+add_custom_target(foundation_gui_contract)
+function(foundation_options target)
+endfunction()
 function(foundation_gui_patch)
 endfunction()
 function(foundation_gui_executable name source)
@@ -618,14 +1163,21 @@ endfunction()
         # Execute the real composition block in CMake. The fixture replaces only
         # the toolkit build, so this stays independent of native SDK availability.
         cmake = (ROOT / "gui/CMakeLists.txt").read_text()
-        block = cmake.split("if(FOUNDATION_GUI_REV)\n", 1)[1].split("\nif(BUILD_TESTING)", 1)[0]
+        block = cmake.split("if(FOUNDATION_GUI_REV)\n", 1)[1].split("\nendif()", 1)[0] + "\nendif()\n"
         block = (ROOT / "cmake/GuiNativeBackends.cmake").read_text() + "\nif(FOUNDATION_GUI_REV)\n" + block
         with tempfile.TemporaryDirectory(prefix="rev dependency ") as directory:
             root = Path(directory)
             source = root / "source"; source.mkdir()
+            peer = source / "host/native_rev_surface_peer.cpp"
+            peer.parent.mkdir()
+            peer.write_bytes((ROOT / "gui/host/native_rev_surface_peer.cpp").read_bytes())
+            (source / "toolkit.cpp").write_text("void fixture_rev_toolkit() {}\n")
             project = """cmake_minimum_required(VERSION 3.24)
-project(RevDependencySelection LANGUAGES NONE)
+project(RevDependencySelection LANGUAGES CXX)
 set(FOUNDATION_GUI_REV ON)
+add_custom_target(foundation_gui_contract)
+function(foundation_options target)
+endfunction()
 function(foundation_gui_repatch source patch output)
     foundation_gui_patch("${source}" "${patch}" "${output}")
 endfunction()
@@ -638,6 +1190,7 @@ if(GUI_REV_BUNDLED_DEPS)
 else()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/selection.txt" "system")
 endif()
+add_library(gui_rev_toolkit STATIC EXCLUDE_FROM_ALL "${CMAKE_CURRENT_SOURCE_DIR}/toolkit.cpp")
 ]=])
     endif()
 endfunction()

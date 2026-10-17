@@ -1,0 +1,360 @@
+--- third_party/rev/source/OS/Window/NativeWindow.lnx.ixx
++++ third_party/rev/source/OS/Window/NativeWindow.lnx.ixx
+@@ -13,6 +13,9 @@
+ #include <poll.h>
+ 
+ #include <X11/Xlib.h>
++#include <X11/XKBlib.h>
++#include <cwchar>
++#include <bit>
+ #include <X11/Xutil.h>
+ #include <X11/Xatom.h>
+ #include <X11/keysym.h>
+@@ -185,6 +188,296 @@
+         bool ownsVisual = true;
+         EventCallback callback;
+         XIC inputContext = nullptr;
++        bool nativeSurfaceEnabled=false, nativeSurfaceEditor=false, nativeSurfaceComposing=false;
++        bool nativeSurfaceInLookup=false, nativeSurfaceDone=false;
++        std::uint64_t nativeSurfaceTransaction=0;
++        std::vector<std::uint32_t> nativeSurfacePreedit;
++        std::size_t nativeSurfacePreeditCaret=0;
++        std::unordered_map<unsigned,bool> nativeSurfaceHeld;
++        XkbDescPtr nativeSurfaceKeyboard=nullptr;
++        RevSurfaceContext nativeSurfaceContext;
++        unsigned nativeSurfaceDepth=0;
++        bool nativeSurfaceSuspendPending=false,nativeSurfaceResetting=false;
++        std::optional<RevSurfaceContext> nativeSurfacePendingContext;
++        void flushNativeSurface() {
++            if(nativeSurfaceDepth)return;
++            // suspend() invalidates earlier queued context; a later context is
++            // the owned successor and must survive the deferred cleanup.
++            auto context=std::move(nativeSurfacePendingContext);nativeSurfacePendingContext.reset();
++            if(nativeSurfaceSuspendPending){nativeSurfaceSuspendPending=false;suspendNativeSurface();}
++            if(context && !installNativeSurfaceContext(*context))failNativeSurface("Native frontend deferred context failed");
++        }
++
++        bool sendNativeSurface(RevSurfaceEvent value) {
++            WinEvent event{WinEvent::Null};event.surface=std::make_shared<RevSurfaceEvent>(std::move(value));
++            return notifyEvent(std::move(event)).rejected;
++        }
++        void failNativeSurface(const char* reason) noexcept {
++            nativeSurfaceEnabled=false;
++            try {
++                RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::unavailable;event.text=reason;
++                sendNativeSurface(std::move(event));
++            } catch (...) {}
++        }
++        std::string nativeSurfacePreeditText() const {
++            std::string result;
++            for (auto scalar:nativeSurfacePreedit) if (!RevSurfaceDetail::append_scalar(result,scalar))
++                throw std::runtime_error("Invalid bounded XIM preedit");
++            return result;
++        }
++        std::size_t nativeSurfaceCaret16() const {
++            std::size_t result=0;
++            for(std::size_t n=0;n<nativeSurfacePreeditCaret;++n) result+=nativeSurfacePreedit[n]>0xffff?2:1;
++            return result;
++        }
++        void publishNativePreedit() {
++            RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::preedit_update;
++            event.transaction=nativeSurfaceTransaction;event.text=nativeSurfacePreeditText();
++            event.selection_start=event.selection_end=nativeSurfaceCaret16();sendNativeSurface(std::move(event));
++        }
++        static int nativeSurfaceStart(XIC,XPointer client,XPointer) noexcept {
++            auto& self=*reinterpret_cast<NativeWindow*>(client);
++            if(self.nativeSurfaceResetting)return 0;
++            try {
++                if (!self.nativeSurfaceEnabled || self.nativeSurfaceComposing || self.nativeSurfaceTransaction==UINT64_MAX)
++                    throw std::runtime_error("XIM composition start is unavailable or ambiguous");
++                ++self.nativeSurfaceTransaction;self.nativeSurfaceComposing=true;self.nativeSurfaceDone=false;
++                self.nativeSurfacePreedit.clear();self.nativeSurfacePreeditCaret=0;
++                RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::preedit_begin;event.transaction=self.nativeSurfaceTransaction;
++                self.sendNativeSurface(std::move(event));return int(RevSurfaceDetail::maximum_text_bytes);
++            } catch (...) {self.failNativeSurface("Invalid XIM composition start");return 0;}
++        }
++        static void nativeSurfaceDraw(XIC,XPointer client,XPointer data) noexcept {
++            auto& self=*reinterpret_cast<NativeWindow*>(client);
++            if(self.nativeSurfaceResetting)return;
++            try {
++                auto* change=reinterpret_cast<XIMPreeditDrawCallbackStruct*>(data);
++                if (!self.nativeSurfaceComposing || !change || change->chg_first<0 || change->chg_length<0 ||
++                    std::size_t(change->chg_first)>self.nativeSurfacePreedit.size() ||
++                    std::size_t(change->chg_length)>self.nativeSurfacePreedit.size()-std::size_t(change->chg_first))
++                    throw std::runtime_error("Invalid XIM preedit replacement");
++                std::vector<std::uint32_t> inserted;
++                if (change->text) {
++                    const auto& text=*change->text;
++                    if (text.length>RevSurfaceDetail::maximum_text_bytes) throw std::runtime_error("XIM preedit exceeds bound");
++                    if (text.encoding_is_wchar) {
++                        if (!text.string.wide_char && text.length) throw std::runtime_error("Missing XIM wide text");
++                        for(unsigned n=0;n<text.length;++n) inserted.push_back(std::uint32_t(text.string.wide_char[n]));
++                    } else {
++                        if (!text.string.multi_byte && text.length) throw std::runtime_error("Missing XIM locale text");
++                        const char* next=text.string.multi_byte;std::mbstate_t state{};
++                        for(unsigned n=0;n<text.length;++n) {
++                            wchar_t scalar{};const auto consumed=std::mbrtowc(&scalar,next,MB_CUR_MAX,&state);
++                            if (consumed==0 || consumed==std::size_t(-1) || consumed==std::size_t(-2))
++                                throw std::runtime_error("Malformed XIM locale text");
++                            inserted.push_back(std::uint32_t(scalar));next+=consumed;
++                        }
++                    }
++                }
++                auto next=self.nativeSurfacePreedit;
++                const auto begin=next.begin()+change->chg_first;
++                next.erase(begin,begin+change->chg_length);
++                next.insert(next.begin()+change->chg_first,inserted.begin(),inserted.end());
++                if (next.size()>RevSurfaceDetail::maximum_text_bytes || change->caret<0 || std::size_t(change->caret)>next.size())
++                    throw std::runtime_error("Invalid XIM caret");
++                self.nativeSurfacePreedit=std::move(next);self.nativeSurfacePreeditCaret=std::size_t(change->caret);
++                self.publishNativePreedit();
++            } catch (...) {self.failNativeSurface("Malformed or oversized XIM preedit");}
++        }
++        static void nativeSurfaceCaret(XIC,XPointer client,XPointer data) noexcept {
++            auto& self=*reinterpret_cast<NativeWindow*>(client);
++            if(self.nativeSurfaceResetting)return;
++            try {
++                auto* caret=reinterpret_cast<XIMPreeditCaretCallbackStruct*>(data);
++                if (!caret || !self.nativeSurfaceComposing) throw std::runtime_error("Unexpected XIM caret");
++                auto position=self.nativeSurfacePreeditCaret;
++                switch(caret->direction) {
++                case XIMAbsolutePosition:
++                    if(caret->position<0) throw std::runtime_error("Negative XIM caret");
++                    position=std::size_t(caret->position);break;
++                case XIMForwardChar:if(position<self.nativeSurfacePreedit.size())++position;break;
++                case XIMBackwardChar:if(position)--position;break;
++                case XIMLineStart:position=0;break;
++                case XIMLineEnd:position=self.nativeSurfacePreedit.size();break;
++                case XIMDontChange:break;
++                default:throw std::runtime_error("Unsupported explicit XIM caret passage");
++                }
++                if(position>self.nativeSurfacePreedit.size())throw std::runtime_error("XIM caret out of range");
++                self.nativeSurfacePreeditCaret=position;caret->position=int(position);self.publishNativePreedit();
++            } catch (...) {self.failNativeSurface("Unsupported or invalid XIM caret passage");}
++        }
++        static void nativeSurfaceDoneCallback(XIC,XPointer client,XPointer) noexcept {
++            auto& self=*reinterpret_cast<NativeWindow*>(client);
++            if(self.nativeSurfaceResetting)return;
++            // Done contains no committed/cancelled value. Only the owned lookup
++            // passage can join its actual result. Never turn last preedit into a
++            // guessed commit or use a timeout to invent a cancellation.
++            self.nativeSurfaceDone=true;
++            if (!self.nativeSurfaceInLookup) self.failNativeSurface("XIM preedit end lacks a joined native lookup result");
++        }
++
++        unsigned nativeSurfaceModifiers(unsigned state) const {
++            const unsigned altMask=XkbKeysymToModifiers(xDisplay,XK_Alt_L)|XkbKeysymToModifiers(xDisplay,XK_Alt_R);
++            const unsigned metaMask=XkbKeysymToModifiers(xDisplay,XK_Super_L)|XkbKeysymToModifiers(xDisplay,XK_Super_R);
++            const unsigned graphMask=XkbKeysymToModifiers(xDisplay,XK_ISO_Level3_Shift);
++            return ((state&ShiftMask)?1:0)|((state&ControlMask)?2:0)|((state&altMask)?4:0)|((state&metaMask)?8:0)|((state&graphMask)?16:0);
++        }
++        unsigned nativeSurfacePointerModifiers=0;
++        RevSurfaceFacts getNativeSurfaceFacts() const {
++            RevSurfaceFacts facts;facts.scale=scale;facts.render_width=size.w;facts.render_height=size.h;
++            XWindowAttributes attributes{};
++            if(xDisplay && xWindow && XGetWindowAttributes(xDisplay,xWindow,&attributes)) {
++                facts.width=attributes.width;facts.height=attributes.height;
++                facts.active=attributes.map_state==IsViewable && !minimized;
++            }
++            ::Window focused{};int revert{};
++            if(xDisplay){XGetInputFocus(xDisplay,&focused,&revert);facts.focused=focused==xWindow;}
++            facts.ready=nativeSurfaceEnabled && xDisplay && xWindow;
++            return facts;
++        }
++        bool captureNativeSurface(bool capture) {
++            if(!xDisplay || !xWindow)return false;
++            if(!capture){XUngrabPointer(xDisplay,CurrentTime);XFlush(xDisplay);return true;}
++            return XGrabPointer(xDisplay,xWindow,False,ButtonPressMask|ButtonReleaseMask|PointerMotionMask,
++                GrabModeAsync,GrabModeAsync,None,None,CurrentTime)==GrabSuccess;
++        }
++
++        bool enableNativeSurface(bool enabled,bool editor=true) {
++            if (!enabled) {
++                nativeSurfaceEnabled=false;nativeSurfaceEditor=false;nativeSurfaceHeld.clear();
++                if(nativeSurfaceKeyboard){XkbFreeKeyboard(nativeSurfaceKeyboard,XkbAllComponentsMask,True);nativeSurfaceKeyboard=nullptr;}
++                return true;
++            }
++            if(!xDisplay || !xWindow)return false;
++            nativeSurfaceKeyboard=XkbGetMap(xDisplay,XkbAllClientInfoMask,XkbUseCoreKbd);
++            if(!nativeSurfaceKeyboard || XkbGetNames(xDisplay,XkbKeyNamesMask,nativeSurfaceKeyboard)!=Success) {
++                enableNativeSurface(false);return false;
++            }
++            nativeSurfaceEnabled=true;nativeSurfaceEditor=editor;
++            if(!editor)return true;
++            if(!inputMethod){enableNativeSurface(false);return false;}
++            if(inputContext){XDestroyIC(inputContext);inputContext=nullptr;}
++            XIMCallback start{reinterpret_cast<XPointer>(this),std::bit_cast<XIMProc>(&nativeSurfaceStart)};
++            XIMCallback draw{reinterpret_cast<XPointer>(this),std::bit_cast<XIMProc>(&nativeSurfaceDraw)};
++            XIMCallback caret{reinterpret_cast<XPointer>(this),std::bit_cast<XIMProc>(&nativeSurfaceCaret)};
++            XIMCallback done{reinterpret_cast<XPointer>(this),std::bit_cast<XIMProc>(&nativeSurfaceDoneCallback)};
++            XVaNestedList attributes=XVaCreateNestedList(0,XNPreeditStartCallback,&start,XNPreeditDrawCallback,&draw,
++                XNPreeditCaretCallback,&caret,XNPreeditDoneCallback,&done,nullptr);
++            if(!attributes){enableNativeSurface(false);return false;}
++            inputContext=XCreateIC(inputMethod,XNInputStyle,XIMPreeditCallbacks|XIMStatusNothing,
++                XNClientWindow,xWindow,XNFocusWindow,xWindow,XNPreeditAttributes,attributes,nullptr);
++            XFree(attributes);
++            if(!inputContext){enableNativeSurface(false);return false;}
++            return true;
++        }
++        bool installNativeSurfaceContext(const RevSurfaceContext& context) {
++            const auto text=RevSurfaceDetail::utf16(context.surrounding);
++            if(!nativeSurfaceEnabled || !text || !RevSurfaceDetail::boundary(*text,context.selection_start) ||
++                !RevSurfaceDetail::boundary(*text,context.selection_end) || context.selection_start>context.selection_end)return false;
++            if(nativeSurfaceDepth){nativeSurfacePendingContext=context;return true;}
++            if(nativeSurfaceSuspendPending){nativeSurfaceSuspendPending=false;suspendNativeSurface();}
++            nativeSurfacePendingContext.reset();
++            nativeSurfaceContext=context;
++            if(!nativeSurfaceEditor || !context.enabled || !context.editable)return true;
++            if(!inputContext)return false;
++            if(context.caret_x<-32768 || context.caret_x>32767 || context.caret_y<-32768 || context.caret_y>32767)return false;
++            XPoint spot{short(context.caret_x),short(context.caret_y)};
++            XVaNestedList attributes=XVaCreateNestedList(0,XNSpotLocation,&spot,nullptr);
++            if(!attributes)return false;
++            char* rejected=XSetICValues(inputContext,XNPreeditAttributes,attributes,nullptr);
++            XFree(attributes);return rejected==nullptr;
++        }
++        void suspendNativeSurface() {
++            nativeSurfacePendingContext.reset();nativeSurfaceContext.enabled=false;
++            if(nativeSurfaceDepth){nativeSurfaceSuspendPending=true;nativeSurfacePendingContext.reset();return;}
++            struct Reset {bool& value;explicit Reset(bool& v):value(v){value=true;}~Reset(){value=false;}} reset(nativeSurfaceResetting);
++
++            nativeSurfaceContext.enabled=false;
++            nativeSurfaceComposing=false;nativeSurfaceDone=false;nativeSurfacePreedit.clear();
++            if(inputContext) {char* discarded=Xutf8ResetIC(inputContext);if(discarded)XFree(discarded);}
++        }
++        std::string nativeSurfaceCode(unsigned keycode) const {
++            if(!nativeSurfaceKeyboard || !nativeSurfaceKeyboard->names || keycode<nativeSurfaceKeyboard->min_key_code || keycode>nativeSurfaceKeyboard->max_key_code)return {};
++            const std::string name(nativeSurfaceKeyboard->names->keys[keycode].name,4);
++            static constexpr const char* row1[]{"KeyQ","KeyW","KeyE","KeyR","KeyT","KeyY","KeyU","KeyI","KeyO","KeyP","BracketLeft","BracketRight"};
++            static constexpr const char* row2[]{"KeyA","KeyS","KeyD","KeyF","KeyG","KeyH","KeyJ","KeyK","KeyL","Semicolon","Quote","Backslash"};
++            static constexpr const char* row3[]{"KeyZ","KeyX","KeyC","KeyV","KeyB","KeyN","KeyM","Comma","Period","Slash"};
++            const unsigned number=name[2]>='0'&&name[2]<='9'&&name[3]>='0'&&name[3]<='9'?unsigned((name[2]-'0')*10+name[3]-'0'):0;
++            if(name.starts_with("AE") && number>=1 && number<=12) return number<=9?"Digit"+std::to_string(number):number==10?"Digit0":number==11?"Minus":"Equal";
++            if(name.starts_with("AD") && number>=1 && number<=12)return row1[number-1];
++            if(name.starts_with("AC") && number>=1 && number<=12)return row2[number-1];
++            if(name.starts_with("AB") && number>=1 && number<=10)return row3[number-1];
++            if(name.starts_with("FK") && number>=1 && number<=24)return "F"+std::to_string(number);
++            static const std::unordered_map<std::string,std::string> named{{"ESC\0","Escape"},{"TLDE","Backquote"},{"BKSP","Backspace"},{"TAB\0","Tab"},{"RTRN","Enter"},{"CAPS","CapsLock"},{"LFSH","ShiftLeft"},{"RTSH","ShiftRight"},{"LCTL","ControlLeft"},{"RCTL","ControlRight"},{"LALT","AltLeft"},{"RALT","AltRight"},{"LWIN","MetaLeft"},{"RWIN","MetaRight"},{"SPCE","Space"},{"MENU","ContextMenu"},{"UP\0\0","ArrowUp"},{"DOWN","ArrowDown"},{"LEFT","ArrowLeft"},{"RGHT","ArrowRight"},{"HOME","Home"},{"END\0","End"},{"PGUP","PageUp"},{"PGDN","PageDown"},{"INS\0","Insert"},{"DELE","Delete"},{"NMLK","NumLock"},{"KPEN","NumpadEnter"},{"KPDV","NumpadDivide"},{"KPMU","NumpadMultiply"},{"KPSU","NumpadSubtract"},{"KPAD","NumpadAdd"},{"KPDL","NumpadDecimal"},{"LSGT","IntlBackslash"}};
++            auto lookup=name;while(!lookup.empty() && lookup.back()==0)lookup.pop_back();
++            auto found=named.find(lookup);if(found!=named.end())return found->second;
++            if(name.starts_with("KP") && name[2]>='0' && name[2]<='9')return "Numpad"+std::string(1,name[2]);
++            return {};
++        }
++        RevSurfaceEvent nativeSurfaceKey(const XKeyEvent& key,bool down) {
++            RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::key;event.down=down;
++            event.code=nativeSurfaceCode(key.keycode);event.location=RevSurfaceDetail::location(event.code);
++            event.repeat=down && nativeSurfaceHeld.contains(key.keycode);
++            if(down && !event.repeat && nativeSurfaceHeld.size()==64) {failNativeSurface("Native key bound exceeded");return event;}
++            if(down)nativeSurfaceHeld[key.keycode]=true;else nativeSurfaceHeld.erase(key.keycode);
++            const unsigned altMask=XkbKeysymToModifiers(xDisplay,XK_Alt_L)|XkbKeysymToModifiers(xDisplay,XK_Alt_R);
++            const unsigned metaMask=XkbKeysymToModifiers(xDisplay,XK_Super_L)|XkbKeysymToModifiers(xDisplay,XK_Super_R);
++            const unsigned graphMask=XkbKeysymToModifiers(xDisplay,XK_ISO_Level3_Shift);
++            event.modifiers=((key.state&ShiftMask)?1:0)|((key.state&ControlMask)?2:0)|((key.state&altMask)?4:0)|((key.state&metaMask)?8:0)|((key.state&graphMask)?16:0);
++            unsigned consumed{};KeySym symbol{};XkbLookupKeySym(xDisplay,KeyCode(key.keycode),key.state,&consumed,&symbol);
++            const unsigned own=(symbol==XK_Shift_L || symbol==XK_Shift_R)?1:(symbol==XK_Control_L || symbol==XK_Control_R)?2:
++                (symbol==XK_Alt_L || symbol==XK_Alt_R)?4:(symbol==XK_Super_L || symbol==XK_Super_R)?8:symbol==XK_ISO_Level3_Shift?16:0;
++            if(down)event.modifiers|=own;else event.modifiers&=~own;
++            const auto scalar=(symbol&0xff000000)==0x01000000?std::uint32_t(symbol&0xffffff):symbol>=32 && symbol<=255?std::uint32_t(symbol):0;
++            if(scalar)RevSurfaceDetail::append_scalar(event.key,scalar);
++            else if(symbol>=XK_F1 && symbol<=XK_F35)event.key="F"+std::to_string(symbol-XK_F1+1);
++            else {
++                switch(symbol) {
++                case XK_Shift_L:case XK_Shift_R:event.key="Shift";break;
++                case XK_Control_L:case XK_Control_R:event.key="Control";break;
++                case XK_Alt_L:case XK_Alt_R:event.key="Alt";break;
++                case XK_Super_L:case XK_Super_R:event.key="Meta";break;
++                case XK_ISO_Level3_Shift:event.key="AltGraph";break;
++                case XK_Return:case XK_KP_Enter:event.key="Enter";break;
++                case XK_Tab:case XK_ISO_Left_Tab:event.key="Tab";break;
++                case XK_Escape:event.key="Escape";break;case XK_BackSpace:event.key="Backspace";break;
++                case XK_Left:event.key="ArrowLeft";break;case XK_Right:event.key="ArrowRight";break;
++                case XK_Up:event.key="ArrowUp";break;case XK_Down:event.key="ArrowDown";break;
++                case XK_Home:event.key="Home";break;case XK_End:event.key="End";break;
++                case XK_Page_Up:event.key="PageUp";break;case XK_Page_Down:event.key="PageDown";break;
++                case XK_Insert:event.key="Insert";break;case XK_Delete:event.key="Delete";break;
++                case XK_Menu:event.key="ContextMenu";break;
++                default:event.key="Unidentified";
++                }
++            }
++            return event;
++        }
++        void nativeSurfaceLookup(XKeyEvent& key) {
++            nativeSurfaceInLookup=true;nativeSurfaceDone=false;
++            struct End {bool& value;~End(){value=false;}} end{nativeSurfaceInLookup};
++            std::vector<char> buffer(256);KeySym symbol{};Status status{};
++            int count=inputContext?Xutf8LookupString(inputContext,&key,buffer.data(),int(buffer.size()),&symbol,&status):0;
++            if(status==XBufferOverflow) {
++                if(count<0 || std::size_t(count)>RevSurfaceDetail::maximum_text_bytes){failNativeSurface("Oversized XIM committed text");return;}
++                buffer.resize(std::size_t(count)+1);
++                count=Xutf8LookupString(inputContext,&key,buffer.data(),int(buffer.size()),&symbol,&status);
++            }
++            if(count<0 || std::size_t(count)>RevSurfaceDetail::maximum_text_bytes || std::size_t(count)>buffer.size()) {failNativeSurface("Invalid bounded XIM lookup");return;}
++            if(count>0 && (status==XLookupChars || status==XLookupBoth)) {
++                std::string text(buffer.data(),std::size_t(count));
++                if(!RevSurfaceDetail::utf16(text)){failNativeSurface("Malformed XIM UTF8 committed text");return;}
++                // Key command control characters are not committed text.
++                if(text.size()==1 && (static_cast<unsigned char>(text[0])<32 || text[0]==127))return;
++                RevSurfaceEvent event;event.kind=nativeSurfaceComposing?RevSurfaceEvent::Kind::preedit_commit:RevSurfaceEvent::Kind::commit;
++                event.transaction=nativeSurfaceComposing?nativeSurfaceTransaction:0;event.text=std::move(text);
++                const auto units=RevSurfaceDetail::utf16(event.text);event.selection_start=event.selection_end=units->size();
++                sendNativeSurface(std::move(event));nativeSurfaceComposing=false;nativeSurfacePreedit.clear();
++            } else if(nativeSurfaceDone && nativeSurfaceComposing) {
++                RevSurfaceEvent event;event.kind=RevSurfaceEvent::Kind::preedit_cancel;event.transaction=nativeSurfaceTransaction;
++                sendNativeSurface(std::move(event));nativeSurfaceComposing=false;nativeSurfacePreedit.clear();
++            }
++        }
++
+         ::Cursor xCursor = 0;
+ #if REV_HAS_XSYNC
+         XSyncCounter syncCounter = None;
+@@ -447,6 +740,13 @@
+         }
+ 
+         WinEvent notifyEvent(WinEvent event) {
++            struct NativeSurfaceTurn {
++                NativeWindow& owner;bool active;
++                NativeSurfaceTurn(NativeWindow& value,bool selected):owner(value),active(selected){if(active)++owner.nativeSurfaceDepth;}
++                ~NativeSurfaceTurn(){if(active)--owner.nativeSurfaceDepth;}
++            } native_surface_turn(*this,nativeSurfaceEnabled || bool(event.surface));
++
++            if(nativeSurfaceEnabled)event.surface_modifiers=nativeSurfacePointerModifiers;
+             event.subject = this;
+ 
+             // Keep desktop coordinates in signed physical pixels. Window alone
+@@ -948,6 +1248,36 @@
+                 auto it = windows.find(ev.xany.window);
+                 if (it != windows.end()) self = it->second;
+                 if (!self) continue;
++
++                if (self->nativeSurfaceEnabled) {
++                    if(ev.type==FocusIn) {
++                        char actual[32]{};XQueryKeymap(xDisplay,actual);
++                        for(auto key=self->nativeSurfaceHeld.begin();key!=self->nativeSurfaceHeld.end();) {
++                            const auto code=key->first;
++                            if(code>255 || !(static_cast<unsigned char>(actual[code/8])&(1u<<(code%8))))key=self->nativeSurfaceHeld.erase(key);
++                            else ++key;
++                        }
++                    }
++                    if(ev.type==MotionNotify)self->nativeSurfacePointerModifiers=self->nativeSurfaceModifiers(ev.xmotion.state);
++                    else if(ev.type==ButtonPress || ev.type==ButtonRelease)self->nativeSurfacePointerModifiers=self->nativeSurfaceModifiers(ev.xbutton.state);
++                    if((ev.type==ButtonPress || ev.type==ButtonRelease) && ev.xbutton.button>=8) {
++                        if(ev.xbutton.button<=9)self->notifyEvent({WinEvent::MouseButton,3+ev.xbutton.button-8,
++                            ev.type==ButtonPress?std::uint64_t(Press):std::uint64_t(Release),ev.xbutton.x_root,ev.xbutton.y_root});
++                        continue;
++                    }
++                    if ((ev.type==KeyPress || ev.type==KeyRelease) && ev.xkey.keycode) {
++                        bool repeatedRelease=false;
++                        if(ev.type==KeyRelease && XPending(xDisplay)>0) {
++                            XEvent next{};XPeekEvent(xDisplay,&next);
++                            repeatedRelease=next.type==KeyPress && next.xkey.window==ev.xkey.window &&
++                                next.xkey.keycode==ev.xkey.keycode && next.xkey.time==ev.xkey.time;
++                        }
++                        if(!repeatedRelease) self->sendNativeSurface(self->nativeSurfaceKey(ev.xkey,ev.type==KeyPress));
++                        if(ev.type==KeyRelease){(void)XFilterEvent(&ev,self->xWindow);continue;}
++                    }
++                    if (XFilterEvent(&ev,self->xWindow)) continue;
++                    if (ev.type==KeyPress) {self->nativeSurfaceLookup(ev.xkey);continue;}
++                }
+ 
+                 switch (ev.type) {
+                     case ClientMessage:

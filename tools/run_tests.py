@@ -44,6 +44,8 @@ def inapplicable(case, system):
         return 'Native Debian Rust symlink and package-ownership fixtures belong to Linux runners; retained SDK and Windows ownership checks remain required.'
     if system != 'Linux' and name == 'test_release_check.ReleaseCheckTests.test_apt_timeout_stops_descendant_before_cleanup':
         return 'Native Linux APT descendant fixture belongs to Linux runners.'
+    if system != 'Linux' and name.startswith('test_process_tree_observation.CompatibilityAndControl.'):
+        return 'Linux supervisor argv/signal/control fixtures belong to Linux runners.'
     if system != 'Linux' and name.startswith('test_process_tree.LinuxSubreaper.'):
         return 'Native Linux descendant supervision belongs to the Linux runner.'
     if system != 'Windows' and name == 'test_process_tree.NativeProcessTree.test_windows_child_cannot_break_out_of_its_job':
@@ -137,7 +139,12 @@ def publish(path, value):
 
 
 # Opt-in host diagnostics are deliberately outside normal test_*.py discovery.
-DIAGNOSTICS = {'windows_hosts': ('tests/diagnostics/windows_hosts.py', 'Windows')}
+DIAGNOSTICS = {
+    'windows_hosts': ('tests/diagnostics/windows_hosts.py', 'Windows'),
+    'windows_engine_publication': ('tests/diagnostics/windows_engine_publication.py', 'Windows'),
+    'windows_engine_source_reader': ('tests/diagnostics/windows_engine_source_reader.py', 'Windows'),
+    'windows_process_cap': ('tests/diagnostics/windows_process_cap.py', 'Windows'),
+}
 
 
 def suite_source(suite, system=None):

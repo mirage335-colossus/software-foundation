@@ -479,11 +479,33 @@ cmake_language(DEFER CALL foundation_finalize_test_prerequisites)
                     self.assertEqual(current, identity)
                 identity = current
 
+    def test_supported_entry_import_keeps_standalone_provider_unloaded(self):
+        import subprocess
+        script = """
+import importlib.util
+import json
+from pathlib import Path
+import sys
+
+tools = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(tools))
+spec = importlib.util.spec_from_file_location('entry_import_probe', tools / 'build.py')
+entry = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(entry)
+print(json.dumps({name: name in sys.modules for name in ('windows_compiler', 'process_tree')}))
+"""
+        result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', script,
+                                 str(builder.ROOT / 'tools')],
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {'windows_compiler': False, 'process_tree': False})
+
     def test_supported_build_regions_use_explicit_compiler_owner(self):
         from unittest.mock import patch
+        import windows_compiler
         for command in (['cmake', '--preset', 'release'], ['cmake', '--build', 'tree'],
                         ['ctest', '--test-dir', 'tree'], ['cpack', '--config', 'tree/CPackConfig.cmake']):
-            with self.subTest(command=command), patch.object(builder.windows_compiler, 'run') as run:
+            with self.subTest(command=command), patch.object(windows_compiler, 'run') as run:
                 builder.run(command, env={'PATH': 'selected-toolkit'})
             run.assert_called_once_with(command, cwd=builder.ROOT, env={'PATH': 'selected-toolkit'})
 

@@ -13,6 +13,9 @@ being advertised; omission must never be disguised as successful coverage.
 | --- | --- | --- |
 | ARCH-1 | Application behavior MUST have one owner independent of UI and platform adapters | [Architecture](architecture.md), [GUI boundary](gui-boundary.md) |
 | API-1 | Public interfaces MUST state input bounds, ownership, lifetime, errors, concurrency and compatibility | Public headers and independent contract tests |
+| APPEND-1 | Optional payload composition MUST preserve exact finalized kernel bytes and MUST fail rather than implicitly rebuild incompatible/missing kernels | [Appended applications](appended-applications.md), container and invocation checks |
+| APPEND-2 | Independent forks MUST support neither/either/both source selections, with application behavior insulated from backend implementation | Project configuration, source policy and generic view fixtures |
+| APPEND-3 | Portable C/C++/Rust module developers MUST use a bounded versioned value ABI without script glue or per-platform payload libraries | Guest SDK, ABI schemas and module checks |
 | BUILD-1 | One build graph MUST reuse common targets across enabled executables | CMake targets and [building](building.md) |
 | BUILD-2 | Toolchain/configuration changes MUST use a fresh compatible tree or explicitly verified cache identity | Wrapper identity and [SDK](sdk.md) |
 | DEP-1 | Every shipped external component MUST be traceable to pinned source, supplier, terms, patches and upgrade checks | [Dependencies](dependencies.md) |

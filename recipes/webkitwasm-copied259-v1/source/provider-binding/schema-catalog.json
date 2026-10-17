@@ -1,0 +1,307 @@
+{
+  "status": "source-only-codec-no-engine-execution",
+  "profile": "browser-wasm32-cpu-direct-owner-v1",
+  "definition_hash": {
+    "algorithm": "sha256",
+    "input": "definition only",
+    "json": {
+      "sort_keys": true,
+      "separators": [
+        ",",
+        ":"
+      ],
+      "ensure_ascii": true
+    },
+    "encoding": "ascii"
+  },
+  "commands": [
+    {
+      "schema_sha256": "481a03327d474215ece90db94e9cd20fc4482ce993fd8d115ac45ea217c0eba4",
+      "definition": {
+        "name": "key",
+        "operation": 1,
+        "capability": "BIB_ENGINE_CAP_KEY_V1",
+        "byte_order": "little",
+        "trailing_bytes": "reject",
+        "maximum_input_bytes": 33120,
+        "required_reply_capacity": 16,
+        "reply_payload_bytes": 0,
+        "decoder_state": "stateless-no-held-state",
+        "unknown_field_values": "reject-with-BIB_ENGINE_INVALID",
+        "wire": {
+          "fixed_bytes": 32,
+          "fixed_u32": [
+            {
+              "name": "phase",
+              "offset_bytes": 0,
+              "values": {
+                "down": 0,
+                "up": 1,
+                "committed_text": 2
+              }
+            },
+            {
+              "name": "location",
+              "offset_bytes": 4,
+              "equals": 0
+            },
+            {
+              "name": "modifiers",
+              "offset_bytes": 8,
+              "allowed_mask": 15
+            },
+            {
+              "name": "repeat",
+              "offset_bytes": 12,
+              "allowed_values": [
+                0,
+                1
+              ]
+            },
+            {
+              "name": "virtual_key",
+              "offset_bytes": 16,
+              "minimum": 0,
+              "maximum": 65535
+            },
+            {
+              "name": "key_length",
+              "offset_bytes": 20,
+              "unit": "bytes",
+              "minimum": 0,
+              "maximum": 256
+            },
+            {
+              "name": "code_length",
+              "offset_bytes": 24,
+              "unit": "bytes",
+              "minimum": 0,
+              "maximum": 64
+            },
+            {
+              "name": "text_length",
+              "offset_bytes": 28,
+              "unit": "bytes",
+              "minimum": 0,
+              "maximum": 32768
+            }
+          ],
+          "tail_offset_bytes": 32,
+          "tail": [
+            {
+              "name": "key",
+              "length_field": "key_length"
+            },
+            {
+              "name": "code",
+              "length_field": "code_length"
+            },
+            {
+              "name": "text",
+              "length_field": "text_length"
+            }
+          ],
+          "tail_encoding": {
+            "encoding": "UTF-8",
+            "scalar_values_only": true,
+            "nul": "reject",
+            "reject": [
+              "overlong encodings",
+              "surrogate code points U+D800..U+DFFF",
+              "code points above U+10FFFF",
+              "invalid leading bytes",
+              "isolated or invalid continuation bytes",
+              "truncated multibyte sequences"
+            ]
+          },
+          "validation": [
+            "input bytes equal 32 + key_length + code_length + text_length exactly",
+            "each tail field is independently valid strict UTF-8 without NUL",
+            "phase down or up requires text_length zero",
+            "phase committed_text requires key_length and code_length zero",
+            "phase committed_text requires location, repeat, virtual_key and modifiers zero",
+            "phase committed_text requires text_length nonzero",
+            "down and up do not synthesize committed text",
+            "maximum_input_bytes is the advertised envelope bound; phase rules still apply"
+          ]
+        }
+      }
+    },
+    {
+      "schema_sha256": "9c3087d053bb52f43e9ad2b07518758bf7dd940143262b4335b6549ad9e9b2bb",
+      "definition": {
+        "name": "focus",
+        "operation": 3,
+        "capability": "BIB_ENGINE_CAP_FOCUS_V1",
+        "byte_order": "little",
+        "trailing_bytes": "reject",
+        "maximum_input_bytes": 16,
+        "required_reply_capacity": 16,
+        "reply_payload_bytes": 0,
+        "decoder_state": "stateless-no-held-state",
+        "unknown_field_values": "reject-with-BIB_ENGINE_INVALID",
+        "wire": {
+          "fixed_bytes": 16,
+          "fixed_u32": [
+            {
+              "name": "focused",
+              "offset_bytes": 0,
+              "allowed_values": [
+                0,
+                1
+              ]
+            },
+            {
+              "name": "active",
+              "offset_bytes": 4,
+              "allowed_values": [
+                0,
+                1
+              ]
+            },
+            {
+              "name": "cause",
+              "offset_bytes": 8,
+              "values": {
+                "direct": 0,
+                "external": 3
+              }
+            },
+            {
+              "name": "reserved",
+              "offset_bytes": 12,
+              "equals": 0
+            }
+          ],
+          "validation": [
+            "input bytes equal 16 exactly",
+            "focused and active are independent booleans"
+          ]
+        }
+      }
+    },
+    {
+      "schema_sha256": "cd5abc72da40f3c6274e10694bc8f503768d25b720a7c1ed945dda876d3e2924",
+      "definition": {
+        "name": "pointer",
+        "operation": 5,
+        "capability": "BIB_ENGINE_CAP_POINTER_V1",
+        "byte_order": "little",
+        "trailing_bytes": "reject",
+        "maximum_input_bytes": 72,
+        "required_reply_capacity": 16,
+        "reply_payload_bytes": 0,
+        "decoder_state": "stateless-no-held-state",
+        "unknown_field_values": "reject-with-BIB_ENGINE_INVALID",
+        "wire": {
+          "subprofile": "mouse-only-v1",
+          "fixed_bytes": 72,
+          "fixed_u32": [
+            {
+              "name": "phase",
+              "offset_bytes": 0,
+              "values": {
+                "move": 0,
+                "down": 1,
+                "up": 2,
+                "wheel": 3,
+                "cancel": 4
+              }
+            },
+            {
+              "name": "kind",
+              "offset_bytes": 4,
+              "values": {
+                "mouse": 0
+              }
+            },
+            {
+              "name": "button",
+              "offset_bytes": 8,
+              "minimum": 0,
+              "maximum": 2
+            },
+            {
+              "name": "buttons",
+              "offset_bytes": 12,
+              "allowed_mask": 7
+            },
+            {
+              "name": "clicks",
+              "offset_bytes": 16,
+              "minimum": 0,
+              "maximum": 3
+            },
+            {
+              "name": "modifiers",
+              "offset_bytes": 20,
+              "allowed_mask": 15
+            },
+            {
+              "name": "reserved0",
+              "offset_bytes": 24,
+              "equals": 0
+            },
+            {
+              "name": "reserved1",
+              "offset_bytes": 28,
+              "equals": 0
+            }
+          ],
+          "fixed_u64": [
+            {
+              "name": "logical_pointer_id",
+              "offset_bytes": 32,
+              "equals": 1
+            }
+          ],
+          "fixed_f64": [
+            {
+              "name": "x",
+              "offset_bytes": 40,
+              "format": "IEEE-754 binary64",
+              "finite": true,
+              "maximum_absolute_value": 2147483647
+            },
+            {
+              "name": "y",
+              "offset_bytes": 48,
+              "format": "IEEE-754 binary64",
+              "finite": true,
+              "maximum_absolute_value": 2147483647
+            },
+            {
+              "name": "wheel_x",
+              "offset_bytes": 56,
+              "format": "IEEE-754 binary64",
+              "finite": true,
+              "maximum_absolute_value": 2147483647
+            },
+            {
+              "name": "wheel_y",
+              "offset_bytes": 64,
+              "format": "IEEE-754 binary64",
+              "finite": true,
+              "maximum_absolute_value": 2147483647
+            }
+          ],
+          "validation": [
+            "input bytes equal 72 exactly",
+            "phase down or up requires clicks in 1..3",
+            "phase move, wheel or cancel requires button and clicks zero",
+            "phase other than wheel requires wheel_x and wheel_y zero",
+            "phase cancel requires buttons and modifiers zero",
+            "logical_pointer_id is exactly 1 and maps to WebCore::mousePointerID",
+            "logical_pointer_id is never a raw native pointer ID",
+            "all coordinates and wheel deltas are finite and have absolute value <= 2147483647",
+            "zero floating values include positive and negative zero",
+            "held-button, modifier transition and sequence state are outside stateless decode"
+          ]
+        }
+      }
+    }
+  ],
+  "queries": [],
+  "query_policy": "no generic queries are defined by this source-only codec",
+  "operation_policy": "unknown operation returns BIB_ENGINE_UNSUPPORTED"
+}

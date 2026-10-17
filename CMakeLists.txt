@@ -27,6 +27,31 @@ if(FOUNDATION_PORTABLE AND MSVC)
 endif()
 option(FOUNDATION_BUILD_GUI "Build optional pinned GUI boundary examples" OFF)
 set(FOUNDATION_GUI_SOURCE "" CACHE PATH "Explicit pinned GUI boundary checkout")
+# Appended profile options.
+set(FOUNDATION_APPENDED_PROFILE "none" CACHE STRING "Optional appended kernel capabilities: none, binary, web or both")
+set_property(CACHE FOUNDATION_APPENDED_PROFILE PROPERTY STRINGS none binary web both)
+option(FOUNDATION_APPENDED_KERNEL_MAINTENANCE "Explicitly permit initial kernel capability production" OFF)
+option(FOUNDATION_APPENDED_ENGINE_PHYSICAL_INPUT "Explicitly select the verified physical467/mouse-v1 engine contract" OFF)
+set(FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE "" CACHE STRING "Explicit browser document-v2 engine profile: empty, pixel, physical or editor")
+set_property(CACHE FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE PROPERTY STRINGS "" pixel physical editor)
+set(FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE "" CACHE STRING "Explicit native document-v2 engine profile: empty or pixel")
+set_property(CACHE FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE PROPERTY STRINGS "" pixel)
+set(FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE "" CACHE STRING "Explicit native document-actions engine profile: empty or document-actions-v1")
+set_property(CACHE FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE PROPERTY STRINGS "" document-actions-v1)
+set(FOUNDATION_APPENDED_ENGINE_NATIVE_DEPENDENCY_GROUP "" CACHE PATH "Matching retained Windows dependency export group for explicit native document production")
+set(FOUNDATION_APPENDED_ENGINE_GROUP "" CACHE PATH "Complete retained neutral engine group")
+foreach(_engine_pin RECIPE MANIFEST PROOF RUNTIME)
+  set(FOUNDATION_APPENDED_ENGINE_${_engine_pin}_SHA256 "" CACHE STRING "Independent retained engine ${_engine_pin} SHA256")
+endforeach()
+if(NOT FOUNDATION_APPENDED_PROFILE MATCHES "^(none|binary|web|both)$")
+  message(FATAL_ERROR "FOUNDATION_APPENDED_PROFILE must be none, binary, web or both")
+endif()
+if(DEFINED FOUNDATION_CONFIGURED_APPENDED_PROFILE AND
+    NOT FOUNDATION_CONFIGURED_APPENDED_PROFILE STREQUAL FOUNDATION_APPENDED_PROFILE)
+  message(FATAL_ERROR "Appended kernel capabilities changed; configure a fresh build directory")
+endif()
+set(FOUNDATION_CONFIGURED_APPENDED_PROFILE "${FOUNDATION_APPENDED_PROFILE}" CACHE INTERNAL "Configured appended capability profile" FORCE)
+# End appended profile options.
 
 set(FOUNDATION_CORE_PROVIDER "rust" CACHE STRING "Text validation implementation: rust (default) or cpp")
 set_property(CACHE FOUNDATION_CORE_PROVIDER PROPERTY STRINGS cpp rust)
@@ -115,6 +140,307 @@ if(EMSCRIPTEN)
 endif()
 
 find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
+# Appended retained-input admission.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/foundation-project.json" OR
+    IS_SYMLINK "${CMAKE_CURRENT_SOURCE_DIR}/foundation-project.json")
+  execute_process(COMMAND "${Python3_EXECUTABLE}" -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/appended_project.py" inspect
+    --root "${CMAKE_CURRENT_SOURCE_DIR}" --json
+    OUTPUT_VARIABLE _foundation_project COMMAND_ERROR_IS_FATAL ANY)
+  string(JSON _foundation_project_mode GET "${_foundation_project}" mode)
+  string(JSON _foundation_project_profile GET "${_foundation_project}" selected_profile)
+  string(JSON _foundation_project_profile_setting GET "${_foundation_project}" project kernel profile)
+  if((NOT _foundation_project_mode STREQUAL "neither" OR
+      NOT _foundation_project_profile STREQUAL "minimal") AND FOUNDATION_APPENDED_PROFILE STREQUAL "none")
+    message(FATAL_ERROR "This project uses appended payloads: compose retained kernels, or explicitly configure the required kernel capability profile for maintenance")
+  endif()
+  if(NOT _foundation_project_profile STREQUAL "minimal" AND
+      NOT FOUNDATION_APPENDED_PROFILE STREQUAL _foundation_project_profile)
+    message(FATAL_ERROR "The requested kernel build does not match the selected project kernel profile; no implicit capability build is selected")
+  endif()
+  if(NOT _foundation_project_profile_setting STREQUAL "auto")
+    set(_foundation_requested_project_profile "${FOUNDATION_APPENDED_PROFILE}")
+    if(_foundation_requested_project_profile STREQUAL "none")
+      set(_foundation_requested_project_profile "minimal")
+    endif()
+    if(NOT _foundation_requested_project_profile STREQUAL _foundation_project_profile)
+      message(FATAL_ERROR "The requested kernel build does not match the explicitly selected kernel.profile")
+    endif()
+  endif()
+endif()
+# Never trust a caller-supplied -D admission boolean. The strict verifier below
+# alone establishes this local value for the graph included by this configure.
+set(FOUNDATION_APPENDED_ENGINE_CONSUMER_VERIFIED FALSE)
+set(FOUNDATION_APPENDED_ENGINE_DOCUMENT_CONSUMER_VERIFIED FALSE)
+set(FOUNDATION_APPENDED_ENGINE_NATIVE_CONSUMER_VERIFIED FALSE)
+set(FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_CONSUMER_VERIFIED FALSE)
+set(FOUNDATION_APPENDED_ENGINE_EDITOR_CONSUMER_VERIFIED FALSE)
+set(FOUNDATION_APPENDED_ENGINE_EDITOR_DIRECTORY "")
+if(NOT FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE MATCHES "^(|pixel|physical|editor)$")
+  message(FATAL_ERROR "The browser document engine profile must be empty, pixel, physical or editor")
+endif()
+if(NOT FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE MATCHES "^(|pixel)$")
+  message(FATAL_ERROR "The native document engine profile must be empty or pixel; native physical input is not admitted")
+endif()
+if(NOT FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE MATCHES "^(|document-actions-v1)$")
+  message(FATAL_ERROR "The native actions engine profile must be empty or document-actions-v1")
+endif()
+if((FOUNDATION_APPENDED_ENGINE_PHYSICAL_INPUT AND
+    (FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE OR FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE)) OR
+    (FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE AND FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE))
+  message(FATAL_ERROR "Select only one retained engine input/document/native-document contract")
+endif()
+if(FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE AND
+    (FOUNDATION_APPENDED_ENGINE_PHYSICAL_INPUT OR FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE OR
+     FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE))
+  message(FATAL_ERROR "Select only one retained engine input/document/native-document/actions contract")
+endif()
+if(FOUNDATION_APPENDED_ENGINE_PHYSICAL_INPUT AND
+    (NOT FOUNDATION_APPENDED_PROFILE MATCHES "^(web|both)$" OR NOT FOUNDATION_APPENDED_KERNEL_MAINTENANCE))
+  message(FATAL_ERROR "Physical engine input requires explicit web or both kernel maintenance")
+endif()
+if((FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE OR FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE OR
+    FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE) AND
+    (NOT FOUNDATION_APPENDED_PROFILE MATCHES "^(web|both)$" OR NOT FOUNDATION_APPENDED_KERNEL_MAINTENANCE))
+  message(FATAL_ERROR "Document engine profiles require explicit web or both kernel maintenance")
+endif()
+if(FOUNDATION_APPENDED_ENGINE_NATIVE_DEPENDENCY_GROUP AND
+    NOT (FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE OR FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE))
+  message(FATAL_ERROR "The native kernel dependency group applies only to explicit native document production")
+endif()
+if(FOUNDATION_APPENDED_PROFILE MATCHES "^(web|both)$")
+  if(NOT FOUNDATION_APPENDED_KERNEL_MAINTENANCE)
+    message(FATAL_ERROR "Rich kernel production requires explicit FOUNDATION_APPENDED_KERNEL_MAINTENANCE=ON")
+  endif()
+  set(_foundation_engine_native FALSE)
+  if(FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE OR FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE)
+    set(_foundation_engine_native TRUE)
+  endif()
+  if(NOT FOUNDATION_BUILD_GUI OR NOT FOUNDATION_GUI_SOURCE)
+    message(FATAL_ERROR "Rich kernel production requires verified GUI inputs")
+  endif()
+  if(_foundation_engine_native)
+    if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR
+        NOT CMAKE_SYSTEM_NAME MATCHES "^(Linux|Windows)$")
+      message(FATAL_ERROR "Native document kernel production requires an admitted Linux or Windows 64-bit target")
+    endif()
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+      if(NOT FOUNDATION_WINDOWS_DEPENDENCIES OR NOT FOUNDATION_APPENDED_ENGINE_NATIVE_DEPENDENCY_GROUP OR
+          FOUNDATION_SDK_ROOT OR NOT MSVC OR NOT FOUNDATION_PORTABLE)
+        message(FATAL_ERROR "Native Windows document production requires its existing verified portable MSVC dependency export")
+      endif()
+      set(_foundation_engine_sdk_root "${FOUNDATION_WINDOWS_DEPENDENCIES}")
+    else()
+      if(NOT FOUNDATION_SDK_ROOT OR FOUNDATION_WINDOWS_DEPENDENCIES OR FOUNDATION_APPENDED_ENGINE_NATIVE_DEPENDENCY_GROUP)
+        message(FATAL_ERROR "Native Linux document production requires its existing verified native SDK")
+      endif()
+      set(_foundation_engine_sdk_root "${FOUNDATION_SDK_ROOT}")
+    endif()
+  elseif(NOT FOUNDATION_SDK_ROOT OR NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR
+      NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
+    message(FATAL_ERROR "Rich kernel production requires GUI inputs and its existing verified Emscripten wasm32 SDK")
+  elseif(FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE STREQUAL "editor" AND
+      NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "wasm32")
+    message(FATAL_ERROR "Editor kernel production requires the configured Emscripten wasm32 processor")
+  else()
+    set(_foundation_engine_sdk_root "${FOUNDATION_SDK_ROOT}")
+  endif()
+  if(NOT FOUNDATION_APPENDED_ENGINE_GROUP)
+    message(FATAL_ERROR "Rich kernel production requires a complete retained engine group and all four independent pins")
+  endif()
+  foreach(_engine_pin RECIPE MANIFEST PROOF RUNTIME)
+    set(_engine_value "${FOUNDATION_APPENDED_ENGINE_${_engine_pin}_SHA256}")
+    string(LENGTH "${_engine_value}" _engine_pin_length)
+    if(NOT _engine_pin_length EQUAL 64 OR NOT _engine_value MATCHES "^[0-9a-f]+$")
+      message(FATAL_ERROR "Rich kernel production requires independent lowercase SHA256 ${_engine_pin} pin")
+    endif()
+  endforeach()
+  execute_process(COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tools/sdk_verify.py"
+    "${_foundation_engine_sdk_root}" OUTPUT_VARIABLE _foundation_engine_sdk_sha256
+    OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+  file(SHA256 "${_foundation_engine_sdk_root}/sdk.json" _foundation_engine_sdk_observed)
+  if(NOT _foundation_engine_sdk_observed STREQUAL _foundation_engine_sdk_sha256)
+    message(FATAL_ERROR "The paired SDK changed during retained-engine admission")
+  endif()
+  file(READ "${_foundation_engine_sdk_root}/sdk.json" _foundation_engine_sdk)
+  string(JSON _foundation_engine_target_system GET "${_foundation_engine_sdk}" target system)
+  string(JSON _foundation_engine_target_processor GET "${_foundation_engine_sdk}" target processor)
+  string(JSON _foundation_engine_target_triple GET "${_foundation_engine_sdk}" target triple)
+  if(_foundation_engine_native)
+    set(_foundation_engine_actual_processor "${CMAKE_SYSTEM_PROCESSOR}")
+    if(_foundation_engine_actual_processor MATCHES "^(AMD64|amd64)$")
+      set(_foundation_engine_actual_processor "x86_64")
+    elseif(_foundation_engine_actual_processor MATCHES "^(arm64|ARM64)$")
+      set(_foundation_engine_actual_processor "aarch64")
+    endif()
+    if(NOT _foundation_engine_target_system STREQUAL CMAKE_SYSTEM_NAME OR
+        NOT _foundation_engine_target_processor STREQUAL _foundation_engine_actual_processor OR
+        NOT ((_foundation_engine_target_system STREQUAL "Linux" AND _foundation_engine_target_processor MATCHES "^(x86_64|aarch64)$") OR
+             (_foundation_engine_target_system STREQUAL "Windows" AND _foundation_engine_target_processor STREQUAL "x86_64")))
+      message(FATAL_ERROR "Native document engine SDK target differs from the configured admitted native target")
+    endif()
+  elseif(NOT _foundation_engine_target_system STREQUAL "Emscripten" OR
+      NOT _foundation_engine_target_processor STREQUAL "wasm32" OR
+      NOT _foundation_engine_target_triple STREQUAL "wasm32-emscripten")
+    message(FATAL_ERROR "The retained rich engine requires the paired Emscripten wasm32 SDK")
+  endif()
+  if(NOT (_foundation_engine_native AND CMAKE_SYSTEM_NAME STREQUAL "Windows"))
+    file(REAL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchains/sdk.cmake" _foundation_engine_required_toolchain)
+    file(REAL_PATH "${CMAKE_TOOLCHAIN_FILE}" _foundation_engine_selected_toolchain
+      BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    if(NOT _foundation_engine_selected_toolchain STREQUAL _foundation_engine_required_toolchain)
+      message(FATAL_ERROR "Rich kernel production requires cmake/toolchains/sdk.cmake from this source tree")
+    endif()
+    string(JSON _foundation_engine_cxx GET "${_foundation_engine_sdk}" target cxx_compiler)
+    file(REAL_PATH "${_foundation_engine_sdk_root}/${_foundation_engine_cxx}" _foundation_engine_expected_cxx)
+    file(REAL_PATH "${CMAKE_CXX_COMPILER}" _foundation_engine_actual_cxx)
+    if(NOT _foundation_engine_actual_cxx STREQUAL _foundation_engine_expected_cxx)
+      message(FATAL_ERROR "The paired SDK and configured CXX compiler differ; use the retained SDK toolchain in a fresh tree")
+    endif()
+    if(CMAKE_C_COMPILER)
+      string(JSON _foundation_engine_c ERROR_VARIABLE _foundation_engine_missing_c
+        GET "${_foundation_engine_sdk}" target c_compiler)
+      if(_foundation_engine_missing_c)
+        if(_foundation_engine_native)
+          message(FATAL_ERROR "The native rich SDK does not declare the configured C compiler")
+        else()
+          set(_foundation_engine_c "bin/emcc")
+        endif()
+      endif()
+      file(REAL_PATH "${_foundation_engine_sdk_root}/${_foundation_engine_c}" _foundation_engine_expected_c)
+      file(REAL_PATH "${CMAKE_C_COMPILER}" _foundation_engine_actual_c)
+      if(NOT _foundation_engine_actual_c STREQUAL _foundation_engine_expected_c)
+        message(FATAL_ERROR "The paired SDK and configured C compiler differ; use the retained SDK toolchain in a fresh tree")
+      endif()
+    endif()
+  endif()
+  set(_foundation_engine_target_json "${CMAKE_CURRENT_BINARY_DIR}/appended-engine-kernel-target.json")
+  string(JSON _foundation_engine_kernel_target GET "${_foundation_engine_sdk}" target)
+  string(JSON _foundation_engine_target_length LENGTH "${_foundation_engine_kernel_target}")
+  math(EXPR _foundation_engine_target_last "${_foundation_engine_target_length} - 1")
+  foreach(_index RANGE ${_foundation_engine_target_last} 0 -1)
+    string(JSON _member MEMBER "${_foundation_engine_kernel_target}" ${_index})
+    if(NOT _member MATCHES "^(system|processor|triple)$")
+      string(JSON _foundation_engine_kernel_target REMOVE "${_foundation_engine_kernel_target}" "${_member}")
+    endif()
+  endforeach()
+  if(_foundation_engine_native)
+    set(_foundation_engine_pointer_bits 64)
+  else()
+    set(_foundation_engine_pointer_bits 32)
+  endif()
+  string(JSON _foundation_engine_kernel_target SET "${_foundation_engine_kernel_target}"
+    pointer_bits ${_foundation_engine_pointer_bits})
+  file(WRITE "${_foundation_engine_target_json}" "${_foundation_engine_kernel_target}\n")
+  if(_foundation_engine_native)
+    set(_foundation_engine_native_sdk_command
+      --sdk-sha256 "${_foundation_engine_sdk_sha256}"
+      --kernel-target-json "${_foundation_engine_target_json}"
+      --cxx-compiler "${CMAKE_CXX_COMPILER}")
+    if(CMAKE_C_COMPILER)
+      list(APPEND _foundation_engine_native_sdk_command --c-compiler "${CMAKE_C_COMPILER}")
+    endif()
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+      list(APPEND _foundation_engine_native_sdk_command
+        --windows-dependencies "${FOUNDATION_WINDOWS_DEPENDENCIES}"
+        --dependency-group "${FOUNDATION_APPENDED_ENGINE_NATIVE_DEPENDENCY_GROUP}"
+        --linker "${CMAKE_LINKER}")
+    else()
+      list(APPEND _foundation_engine_native_sdk_command --sdk "${FOUNDATION_SDK_ROOT}"
+        --sysroot "${CMAKE_SYSROOT}" --toolchain "${_foundation_engine_selected_toolchain}")
+    endif()
+    execute_process(COMMAND "${Python3_EXECUTABLE}" -B
+      "${CMAKE_CURRENT_SOURCE_DIR}/tools/appended_engine_kernel_sdk.py"
+      ${_foundation_engine_native_sdk_command}
+      OUTPUT_VARIABLE _foundation_engine_native_sdk_facts OUTPUT_STRIP_TRAILING_WHITESPACE
+      COMMAND_ERROR_IS_FATAL ANY)
+  endif()
+  set(_foundation_engine_sdk_arguments --paired-sdk-sha256 "${_foundation_engine_sdk_sha256}")
+  if(_foundation_engine_native)
+    set(_foundation_engine_consumer_command
+      "${CMAKE_CURRENT_SOURCE_DIR}/tools/appended_engine_native_profile.py"
+      --build-dir "${CMAKE_CURRENT_BINARY_DIR}")
+    if(FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE)
+      list(APPEND _foundation_engine_consumer_command
+        --actions-profile "${FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE}")
+    else()
+      list(APPEND _foundation_engine_consumer_command
+        --document-profile "${FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE}")
+    endif()
+    set(_foundation_engine_sdk_arguments)
+  elseif(FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE STREQUAL "editor")
+    set(_foundation_engine_consumer_command
+      "${CMAKE_CURRENT_SOURCE_DIR}/tools/appended_engine_editor_profile.py"
+      --build-root "${CMAKE_CURRENT_BINARY_DIR}" --editor-profile editor)
+  elseif(FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE)
+    set(_foundation_engine_consumer_command
+      "${CMAKE_CURRENT_SOURCE_DIR}/tools/appended_engine_document_profile.py"
+      --build-root "${CMAKE_CURRENT_BINARY_DIR}" --document-profile "${FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE}")
+  elseif(FOUNDATION_APPENDED_ENGINE_PHYSICAL_INPUT)
+    # This adapter calls the strict physical consumer once and emits a private
+    # header only after complete retained-group and runtime admission succeeds.
+    set(_foundation_engine_consumer_command
+      "${CMAKE_CURRENT_SOURCE_DIR}/tools/appended_engine_input_profile.py"
+      --build-root "${CMAKE_CURRENT_BINARY_DIR}")
+  else()
+    set(_foundation_engine_consumer_command
+      "${CMAKE_CURRENT_SOURCE_DIR}/tools/appended_engine_consumer.py" verify)
+  endif()
+  execute_process(COMMAND "${Python3_EXECUTABLE}" -B ${_foundation_engine_consumer_command}
+    --group "${FOUNDATION_APPENDED_ENGINE_GROUP}"
+    --recipe-sha256 "${FOUNDATION_APPENDED_ENGINE_RECIPE_SHA256}"
+    --manifest-sha256 "${FOUNDATION_APPENDED_ENGINE_MANIFEST_SHA256}"
+    --proof-sha256 "${FOUNDATION_APPENDED_ENGINE_PROOF_SHA256}"
+    --runtime-sha256 "${FOUNDATION_APPENDED_ENGINE_RUNTIME_SHA256}"
+    --kernel-target-json "${_foundation_engine_target_json}"
+    ${_foundation_engine_sdk_arguments}
+    OUTPUT_VARIABLE _foundation_engine_consumer OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY)
+  string(SHA256 _foundation_engine_identity
+    "${FOUNDATION_APPENDED_ENGINE_GROUP}\n${FOUNDATION_APPENDED_ENGINE_RECIPE_SHA256}\n${FOUNDATION_APPENDED_ENGINE_MANIFEST_SHA256}\n${FOUNDATION_APPENDED_ENGINE_PROOF_SHA256}\n${FOUNDATION_APPENDED_ENGINE_RUNTIME_SHA256}\n${_foundation_engine_sdk_sha256}\n${_foundation_engine_consumer}")
+  if(FOUNDATION_APPENDED_ENGINE_PHYSICAL_INPUT)
+    string(SHA256 _foundation_engine_identity "physical-input=ON\n${_foundation_engine_identity}")
+  endif()
+  if(FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE OR FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE)
+    string(SHA256 _foundation_engine_identity
+      "document=${FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE}\nnative-document=${FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE}\n${_foundation_engine_identity}")
+  endif()
+  if(FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE)
+    string(SHA256 _foundation_engine_identity
+      "native-actions=${FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE}\n${_foundation_engine_identity}")
+  endif()
+  if(_foundation_engine_native)
+    string(SHA256 _foundation_engine_identity "${_foundation_engine_native_sdk_facts}\n${_foundation_engine_identity}")
+  endif()
+  if(DEFINED FOUNDATION_CONFIGURED_APPENDED_ENGINE_IDENTITY AND
+      NOT FOUNDATION_CONFIGURED_APPENDED_ENGINE_IDENTITY STREQUAL _foundation_engine_identity)
+    message(FATAL_ERROR "Retained engine identity changed; configure a fresh build directory")
+  endif()
+  set(FOUNDATION_CONFIGURED_APPENDED_ENGINE_IDENTITY "${_foundation_engine_identity}"
+    CACHE INTERNAL "Configured retained engine complete consumer identity" FORCE)
+  set(FOUNDATION_APPENDED_ENGINE_CONSUMER_VERIFIED TRUE)
+  if(_foundation_engine_native)
+    set(FOUNDATION_APPENDED_ENGINE_NATIVE_CONSUMER_VERIFIED TRUE)
+    if(FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_PROFILE)
+      set(FOUNDATION_APPENDED_ENGINE_NATIVE_ACTIONS_CONSUMER_VERIFIED TRUE)
+    endif()
+  elseif(FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE STREQUAL "editor")
+    set(FOUNDATION_APPENDED_ENGINE_EDITOR_CONSUMER_VERIFIED TRUE)
+    set(FOUNDATION_APPENDED_ENGINE_EDITOR_DIRECTORY "${PROJECT_BINARY_DIR}/appended-engine-editor-profile")
+  elseif(FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE)
+    set(FOUNDATION_APPENDED_ENGINE_DOCUMENT_CONSUMER_VERIFIED TRUE)
+  endif()
+else()
+  if(FOUNDATION_APPENDED_ENGINE_GROUP)
+    message(FATAL_ERROR "Retained engine inputs apply only to web or both kernel maintenance")
+  endif()
+  foreach(_engine_pin RECIPE MANIFEST PROOF RUNTIME)
+    if(FOUNDATION_APPENDED_ENGINE_${_engine_pin}_SHA256)
+      message(FATAL_ERROR "Retained engine pins apply only to web or both kernel maintenance")
+    endif()
+  endforeach()
+endif()
+# End appended retained-input admission.
 include(cmake/RustComponent.cmake)
 foundation_rust_component(foundation_core)
 include(cmake/ImportWasm.cmake)
@@ -200,9 +526,39 @@ if(BUILD_TESTING)
   foundation_test_prerequisites(core.text_status foundation_text_status_test)
   if(NOT EMSCRIPTEN)
     foundation_test_prerequisites(docs.links)
+    set(_document_label_fixture "${CMAKE_CURRENT_BINARY_DIR}/generated/document_label_association_fixture.cpp")
+    add_custom_command(OUTPUT "${_document_label_fixture}"
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+      COMMAND "${Python3_EXECUTABLE}" -B
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_document_label_association_fixture.py"
+        --source "${CMAKE_CURRENT_SOURCE_DIR}/recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp"
+        --template "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/document_label_association/branch_fixture.cpp.in"
+        --output "${_document_label_fixture}"
+      DEPENDS tools/generate_document_label_association_fixture.py
+        tests/fixtures/document_label_association/branch_fixture.cpp.in
+        recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp
+      VERBATIM)
+    add_executable(appended_document_label_association_test EXCLUDE_FROM_ALL "${_document_label_fixture}")
+    target_compile_features(appended_document_label_association_test PRIVATE cxx_std_20)
+    set_target_properties(appended_document_label_association_test PROPERTIES CXX_EXTENSIONS OFF)
+    add_test(NAME foundation.appended.document-label-association
+      COMMAND appended_document_label_association_test)
+    set_tests_properties(foundation.appended.document-label-association PROPERTIES
+      LABELS "fast;tools;integration" TIMEOUT 20)
+    foundation_test_prerequisites(foundation.appended.document-label-association
+      appended_document_label_association_test)
   endif()
   # Only explicitly named suites run; adding one requires registering its label.
-  set(_tool_suites browser_bundle package_wasm import_wasm ci_retry build build_capacity rev_probe ci_changes package_notices agent_board test_plan artifact gui_boundary gui_source_group gui_visual coverage certification ci_plan qualification_tasks process_tree host_contracts sdk sdk_retention rust_build rust_sdk rust_workflow dependencies source_identity release portability release_check run_tests github_release ci_transport ci_artifacts ci_cleanup ci_cleanup_repository ci_cleanup_previous ci_cleanup_drafts ci_cleanup_expired workflow_storage legacy_artifacts verify_legacy_preservation screenshots gallery_browser latest_release windows_graphics windows_compiler)
+  set(_tool_suites appended_entry appended_project appended_container appended_policy appended_compile appended_wasm appended_kernel browser_bundle package_wasm import_wasm ci_retry build build_capacity rev_probe ci_changes package_notices agent_board test_plan artifact gui_boundary gui_source_group gui_visual coverage certification ci_plan qualification_tasks process_tree host_contracts sdk sdk_retention rust_build rust_sdk rust_workflow dependencies source_identity release portability release_check run_tests github_release ci_transport ci_artifacts ci_cleanup ci_cleanup_repository ci_cleanup_previous ci_cleanup_drafts ci_cleanup_expired workflow_storage legacy_artifacts verify_legacy_preservation screenshots gallery_browser latest_release windows_graphics windows_compiler)
+  list(APPEND _tool_suites appended_wasm3 appended_release appended_providers_sdk package_appended_wasm
+    appended_ci)
+  list(APPEND _tool_suites appended_qualification appended_release_check appended_delivery)
+  list(APPEND _tool_suites appended_guest_check appended_install_check appended_browser_check)
+  list(APPEND _tool_suites process_tree_observation appended_engine_windows_dependency_support
+    appended_engine_windows_tool_versions)
+  list(APPEND _tool_suites document_label_association_fixture)
+  list(APPEND _tool_suites engine_document_contract appended_rich_entry appended_document_entry appended_engine_kernel_sdk
+    appended_native_terminal_cmake appended_native_gui_graph)
   set(_platform_exclusions "{}")
   if(UNIX)
     list(APPEND _tool_suites fork)
@@ -211,8 +567,47 @@ if(BUILD_TESTING)
   endif()
   # Docker account IDs, ownership and privilege fixtures apply to Linux hosts.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND _tool_suites container_job prepare_dependencies sdk_paths sdk_build_runtime ci_apt offline_acceptance offline_namespace)
+    list(APPEND _tool_suites container_job prepare_dependencies sdk_paths sdk_build_runtime ci_apt offline_acceptance offline_namespace
+      appended_checkout
+      appended_engine_sdk appended_engine_consumer appended_engine_maintenance appended_engine_donor package_appended_engine_wasm browser_surface_bundle
+      appended_engine_document_contract appended_engine_document_consumer appended_engine_document_profile
+      appended_engine_document_maintenance appended_engine_document_metadata
+      appended_engine_document_sources appended_engine_document_reuse completed_work_resume
+      appended_engine_successful_donor appended_engine_document_source_successful_donor
+      appended_engine_editor_contract appended_engine_editor_consumer appended_engine_editor_profile browser_editor_bundle
+      appended_editor_cmake
+      appended_engine_native_binary appended_engine_native_consumer appended_engine_native_profile
+      appended_engine_native_sources appended_engine_native_metadata appended_engine_native_bootstrap
+      appended_engine_native_actions_contract appended_engine_native_actions_sources
+      appended_engine_native_actions_metadata appended_engine_native_actions_cmake appended_engine_native_actions_bootstrap
+      appended_engine_native_inputs appended_engine_native_role7 appended_engine_native_prototype appended_engine_native_dependencies
+      appended_engine_native_sdk appended_engine_native_original_proof appended_native_dispatch
+      appended_engine_windows_contract appended_engine_windows_handoff appended_engine_windows_prototype
+      appended_engine_windows_publication appended_engine_windows_prepare appended_engine_windows_source_replay
+      appended_engine_windows_dependency_proof appended_engine_windows_dependencies
+      package_appended_engine_document_wasm)
   else()
+    string(JSON _platform_exclusions SET "${_platform_exclusions}" "tools.appended_checkout" "\"Current-checkout POSIX executable-mode, identity, symlink and owned-FD publication fixtures are currently qualified on Linux only\"")
+    string(JSON _platform_exclusions SET "${_platform_exclusions}" "tools.appended_engine_sdk" "\"Retained-engine filesystem adapter fixtures are currently qualified on Linux only\"")
+    foreach(_rich_tool appended_engine_consumer appended_engine_maintenance appended_engine_donor package_appended_engine_wasm browser_surface_bundle
+        appended_engine_document_contract appended_engine_document_consumer appended_engine_document_profile
+        appended_engine_document_maintenance appended_engine_document_metadata
+        appended_engine_document_sources appended_engine_document_reuse completed_work_resume
+        appended_engine_successful_donor appended_engine_document_source_successful_donor
+        appended_engine_editor_contract appended_engine_editor_consumer appended_engine_editor_profile browser_editor_bundle
+        appended_editor_cmake
+        appended_engine_native_binary appended_engine_native_consumer appended_engine_native_profile
+        appended_engine_native_sources appended_engine_native_metadata appended_engine_native_bootstrap
+        appended_engine_native_actions_contract appended_engine_native_actions_sources
+        appended_engine_native_actions_metadata appended_engine_native_actions_cmake appended_engine_native_actions_bootstrap
+        appended_engine_native_inputs appended_engine_native_role7 appended_engine_native_prototype appended_engine_native_dependencies
+        appended_engine_native_sdk appended_engine_native_original_proof appended_native_dispatch
+        appended_engine_windows_contract appended_engine_windows_handoff appended_engine_windows_prototype
+        appended_engine_windows_publication appended_engine_windows_prepare appended_engine_windows_source_replay
+        appended_engine_windows_dependency_proof appended_engine_windows_dependencies
+        package_appended_engine_document_wasm)
+      string(JSON _platform_exclusions SET "${_platform_exclusions}" "tools.${_rich_tool}" "\"Rich retained-engine and renderer filesystem fixtures are currently qualified on Linux only\"")
+    endforeach()
     foreach(suite container_job prepare_dependencies sdk_paths sdk_build_runtime ci_apt offline_acceptance offline_namespace)
       string(JSON _platform_exclusions SET "${_platform_exclusions}" "tools.${suite}" "\"Linux native dependency and container qualification is not scheduled on this host\"")
     endforeach()
@@ -262,12 +657,23 @@ if(BUILD_TESTING)
   endif()
 endif()
 
+if(FOUNDATION_APPENDED_PROFILE STREQUAL "binary")
+  include(cmake/Appended.cmake)
+elseif(FOUNDATION_APPENDED_PROFILE MATCHES "^(web|both)$" AND EMSCRIPTEN)
+  include(cmake/AppendedEngine.cmake)
+elseif(FOUNDATION_APPENDED_PROFILE MATCHES "^(web|both)$")
+  include(cmake/Appended.cmake)
+endif()
+
 if(FOUNDATION_BUILD_GUI)
   add_subdirectory(gui)
 endif()
 if(BUILD_TESTING)
   if(TEST integration.install)
     set(install_prerequisites foundation-cli foundation_core)
+    if(TARGET foundation-appended-kernel)
+      list(APPEND install_prerequisites foundation-appended-kernel)
+    endif()
     if(TARGET foundation-gui-hosts)
       list(APPEND install_prerequisites foundation-gui-hosts)
     endif()

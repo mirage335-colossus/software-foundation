@@ -59,3 +59,15 @@ Windows recipe keeps Microsoft host tools separate from redistributable inputs.
 Every prepared group contains matched binary/source/checksum assets and complete
 inner inventories. Every binary release retains its own exact copies. See
 [the SDK lifecycle](../docs/sdk.md) and [release assembly](../docs/releases.md).
+
+## Optional rich-engine inputs
+
+[The retained engine format](appended-engine/README.md) defines complete
+source/binary/checksum groups and strict integrity, export and restore tooling.
+These groups keep a future engine's C++23 producer separate from the C++20
+application host and bind its exact sources, patches, tools, data and notices.
+The reviewed [copied259 source projection](../recipes/webkitwasm-copied259-v1/README.md)
+preserves the selected implementation and provenance. The actual
+[baseline engine probe](../docs/appended-web-feasibility.md) supplies diagnostic
+evidence; production build/import integration and runtime qualification remain
+in progress. Ordinary configuration acquires no engine inputs.

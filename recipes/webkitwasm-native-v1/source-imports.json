@@ -1,0 +1,1671 @@
+{
+  "inputs": {
+    "README.md": {
+      "bytes": 10579,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "provenance",
+      "sha256": "e8791ef5e75b41b5c82552a61c83dc7d7ae1b7fd63d06280aca3587ed705ea2f",
+      "tracked_path": "recipes/webkitwasm-native-v1/README.md"
+    },
+    "cmake/native-provider.cmake": {
+      "bytes": 16765,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "config",
+      "sha256": "8998b637b212f9ec777c121516771578acea0632d99b5cdb277fae68b4ef6140",
+      "tracked_path": "recipes/webkitwasm-native-v1/cmake/native-provider.cmake"
+    },
+    "cmake/native-provider.exports": {
+      "bytes": 75,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "config",
+      "sha256": "7f213cc46d69584be1de79014e89815a61ae53c29b1effe4de6b1955be7de312",
+      "tracked_path": "recipes/webkitwasm-native-v1/cmake/native-provider.exports"
+    },
+    "inspect_sources.py": {
+      "bytes": 9052,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "helper",
+      "sha256": "a3ab5c3cadefafef01cf8ec1d9bb4b8c30da5c892f897ae7aea2c6b100899fb1",
+      "tracked_path": "recipes/webkitwasm-native-v1/inspect_sources.py"
+    },
+    "notices/foundation/LICENSE": {
+      "bytes": 7361,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "license",
+      "sha256": "2af1fdbe0af27ba4fe8085562b1ee56264b52a0f001c7a86d7bfed0e7b26a9a8",
+      "tracked_path": "recipes/webkitwasm-native-v1/notices/foundation/LICENSE"
+    },
+    "notices/wrapper/LICENSING.md": {
+      "bytes": 1286,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "license",
+      "sha256": "130a316696e13459c5b5a53e7ef51f1961333adbb5ce7999634651fe8dca4055",
+      "tracked_path": "recipes/webkitwasm-native-v1/notices/wrapper/LICENSING.md"
+    },
+    "notices/wrapper/third_party/WebKit/Source/JavaScriptCore/COPYING.LIB": {
+      "bytes": 25584,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "license",
+      "sha256": "5094ecb9c9dcd0eadc34f3c11511d9b5535063032bc150164ecd1a5d5a445547",
+      "tracked_path": "recipes/webkitwasm-native-v1/notices/wrapper/third_party/WebKit/Source/JavaScriptCore/COPYING.LIB"
+    },
+    "notices/wrapper/third_party/WebKit/Source/ThirdParty/skia/LICENSE": {
+      "bytes": 1507,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "license",
+      "sha256": "5f787c1dee3c56547f09ccc2906ab5f5293c4d8dd6c8654e573216c38e908dbd",
+      "tracked_path": "recipes/webkitwasm-native-v1/notices/wrapper/third_party/WebKit/Source/ThirdParty/skia/LICENSE"
+    },
+    "notices/wrapper/third_party/WebKit/Source/WTF/LICENSE-LLVM.txt": {
+      "bytes": 12263,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "license",
+      "sha256": "f72b120d1385408e9e380acc020756eb6ba1b461d66c328ea67327ba08d7dcfd",
+      "tracked_path": "recipes/webkitwasm-native-v1/notices/wrapper/third_party/WebKit/Source/WTF/LICENSE-LLVM.txt"
+    },
+    "notices/wrapper/third_party/WebKit/Source/WTF/LICENSE-dragonbox.txt": {
+      "bytes": 13858,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "license",
+      "sha256": "9bb1036ef8dcb42c59e2a23c9e465f43e75003e06898faf0edd18de662f3ecb8",
+      "tracked_path": "recipes/webkitwasm-native-v1/notices/wrapper/third_party/WebKit/Source/WTF/LICENSE-dragonbox.txt"
+    },
+    "notices/wrapper/third_party/WebKit/Source/WTF/LICENSE-libc++.txt": {
+      "bytes": 3493,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "license",
+      "sha256": "c1938c0e9e90639d1e8f5a7f6bebaab83a3642e0ee44295a4c69934686d0bda8",
+      "tracked_path": "recipes/webkitwasm-native-v1/notices/wrapper/third_party/WebKit/Source/WTF/LICENSE-libc++.txt"
+    },
+    "notices/wrapper/third_party/WebKit/Source/WTF/LICENSE-simde.txt": {
+      "bytes": 1077,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "license",
+      "sha256": "75ce0a8c5a7bff42fbd6f8f3b469b518132132c4f4948fb8d02b1ccb5d0df9d8",
+      "tracked_path": "recipes/webkitwasm-native-v1/notices/wrapper/third_party/WebKit/Source/WTF/LICENSE-simde.txt"
+    },
+    "notices/wrapper/third_party/WebKit/Source/WebCore/LICENSE-APPLE": {
+      "bytes": 1313,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "license",
+      "sha256": "0b5d3a7cc325942567373b0ecd757d07c132e0ebd7c97bfc63f7e1a76094edb4",
+      "tracked_path": "recipes/webkitwasm-native-v1/notices/wrapper/third_party/WebKit/Source/WebCore/LICENSE-APPLE"
+    },
+    "notices/wrapper/third_party/WebKit/Source/WebCore/LICENSE-LGPL-2": {
+      "bytes": 25378,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "license",
+      "sha256": "7555fa34bc131a75ca56d65c40cc1ea8f9515d23e353d4c15d58573a042f7805",
+      "tracked_path": "recipes/webkitwasm-native-v1/notices/wrapper/third_party/WebKit/Source/WebCore/LICENSE-LGPL-2"
+    },
+    "notices/wrapper/third_party/WebKit/Source/WebCore/LICENSE-LGPL-2.1": {
+      "bytes": 26536,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "license",
+      "sha256": "f2b3bd09663381deb99721109d22b47af1213bb43007a8b56a06c6375c8050ce",
+      "tracked_path": "recipes/webkitwasm-native-v1/notices/wrapper/third_party/WebKit/Source/WebCore/LICENSE-LGPL-2.1"
+    },
+    "patches/native-platform-engine.patch": {
+      "bytes": 52750,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "patch",
+      "sha256": "276448f690e4a5d7d73aeb9211037b8e6e83523965b88de2f7c576ea39e48aee",
+      "tracked_path": "recipes/webkitwasm-native-v1/patches/native-platform-engine.patch"
+    },
+    "patches/native-provider-bootstrap.patch": {
+      "bytes": 2627,
+      "mode": 420,
+      "origin": {
+        "kind": "native-bootstrap-source-implementation"
+      },
+      "role": "patch",
+      "sha256": "5e9a2fd8723f2904aaedf795497dace782e97ed02eb443de08986e26f64c9e6d",
+      "tracked_path": "recipes/webkitwasm-native-v1/patches/native-provider-bootstrap.patch"
+    },
+    "patches/native-provider-runtime.patch": {
+      "bytes": 121786,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "patch",
+      "sha256": "d88c27ed2f52f85cf22e0a38e56a4b372586d3ee5c245d731a017d255351c634",
+      "tracked_path": "recipes/webkitwasm-native-v1/patches/native-provider-runtime.patch"
+    },
+    "patches/supplier-webkit-emscripten.patch": {
+      "bytes": 137242,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "patch",
+      "sha256": "f25940d21c8ba37d62a6d48ea6da25053af1559bde323d0bfc9ba25cad2bca84",
+      "tracked_path": "recipes/webkitwasm-native-v1/patches/supplier-webkit-emscripten.patch"
+    },
+    "prelink-config.json": {
+      "bytes": 627,
+      "mode": 420,
+      "origin": {
+        "kind": "native-bootstrap-source-implementation"
+      },
+      "role": "config",
+      "sha256": "80a845dab3340db41664485756dfccae992550c9765e44afacbcec79f2d8704e",
+      "tracked_path": "recipes/webkitwasm-native-v1/prelink-config.json"
+    },
+    "provenance.json": {
+      "bytes": 80716,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "provenance",
+      "sha256": "d6337e6f5bbdcf8c3afa9bfb4781e1105932dac4567d7e75968e2310bca960a5",
+      "tracked_path": "recipes/webkitwasm-native-v1/provenance.json"
+    },
+    "runtime/generate_native_metadata.py": {
+      "bytes": 24658,
+      "mode": 420,
+      "origin": {
+        "kind": "native-bootstrap-source-implementation"
+      },
+      "role": "helper",
+      "sha256": "0ce275f55e82ec57ad755037ab17c23d6bebf69da29284295bf27e5998aec894",
+      "tracked_path": "recipes/webkitwasm-native-v1/runtime/generate_native_metadata.py"
+    },
+    "runtime/native-provider-metadata.h.in": {
+      "bytes": 7637,
+      "mode": 420,
+      "origin": {
+        "kind": "native-bootstrap-source-implementation"
+      },
+      "role": "config",
+      "sha256": "170b25660de8f4eb7bd6ceee1093ec7a6e77cd4b374efc5309d917ed6186dbaa",
+      "tracked_path": "recipes/webkitwasm-native-v1/runtime/native-provider-metadata.h.in"
+    },
+    "source/document-provider/native/CombinedFormsIdentity.hpp": {
+      "bytes": 1285,
+      "mode": 420,
+      "origin": {
+        "bytes": 1285,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/document-provider/native/CombinedFormsIdentity.hpp",
+        "selection": "unchanged",
+        "sha256": "021b04f0d1a6ad99e37c8d1e8f4b71f8a94402095494b29a62f5638b5e27519f",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/native/CombinedFormsIdentity.hpp"
+      },
+      "role": "source",
+      "sha256": "021b04f0d1a6ad99e37c8d1e8f4b71f8a94402095494b29a62f5638b5e27519f",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/native/CombinedFormsIdentity.hpp"
+    },
+    "source/document-provider/native/NativeDocumentV2Publisher.cpp": {
+      "bytes": 70313,
+      "mode": 420,
+      "origin": {
+        "bytes": 70313,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/document-provider/native/NativeDocumentV2Publisher.cpp",
+        "selection": "unchanged",
+        "sha256": "bbc219cc50258478cf84fbaf7be0c70f6b9ab9c0ac90dd6a164a70bc587db5e5",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp"
+      },
+      "role": "source",
+      "sha256": "bbc219cc50258478cf84fbaf7be0c70f6b9ab9c0ac90dd6a164a70bc587db5e5",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/native/NativeDocumentV2Publisher.cpp"
+    },
+    "source/document-provider/native/NativeDocumentV2Publisher.hpp": {
+      "bytes": 5018,
+      "mode": 420,
+      "origin": {
+        "bytes": 5018,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/document-provider/native/NativeDocumentV2Publisher.hpp",
+        "selection": "unchanged",
+        "sha256": "bf47e449f8b6c26dace18ed90a9e1ef38fcc796a7035d95bcc50eb6b31373258",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.hpp"
+      },
+      "role": "source",
+      "sha256": "bf47e449f8b6c26dace18ed90a9e1ef38fcc796a7035d95bcc50eb6b31373258",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/native/NativeDocumentV2Publisher.hpp"
+    },
+    "source/document-provider/native/NativeFormsV2Combined.cpp": {
+      "bytes": 39829,
+      "mode": 420,
+      "origin": {
+        "bytes": 39829,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/document-provider/native/NativeFormsV2Combined.cpp",
+        "selection": "unchanged",
+        "sha256": "2bc9f9ceca00c644920e2911438dadcf0642257bf43b530863f618deb36dd7ff",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeFormsV2Combined.cpp"
+      },
+      "role": "source",
+      "sha256": "2bc9f9ceca00c644920e2911438dadcf0642257bf43b530863f618deb36dd7ff",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/native/NativeFormsV2Combined.cpp"
+    },
+    "source/document-provider/native/NativeFormsV2Combined.hpp": {
+      "bytes": 9247,
+      "mode": 420,
+      "origin": {
+        "bytes": 9247,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/document-provider/native/NativeFormsV2Combined.hpp",
+        "selection": "unchanged",
+        "sha256": "2b8b5f39bccf1221bdf32c09ae9a12b68a1c757f38ee30c95b6489fe01ab3c2c",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeFormsV2Combined.hpp"
+      },
+      "role": "source",
+      "sha256": "2b8b5f39bccf1221bdf32c09ae9a12b68a1c757f38ee30c95b6489fe01ab3c2c",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/native/NativeFormsV2Combined.hpp"
+    },
+    "source/document-provider/native/SharedNativeControlGuard.hpp": {
+      "bytes": 6674,
+      "mode": 420,
+      "origin": {
+        "bytes": 6674,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/document-provider/native/SharedNativeControlGuard.hpp",
+        "selection": "unchanged",
+        "sha256": "8f8672072b825a204a2c1d45bfd7aaca341660f4863f325a621cb46add119d90",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/native/SharedNativeControlGuard.hpp"
+      },
+      "role": "source",
+      "sha256": "8f8672072b825a204a2c1d45bfd7aaca341660f4863f325a621cb46add119d90",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/native/SharedNativeControlGuard.hpp"
+    },
+    "source/document-provider/portable/NativeDocumentV2Codec.cpp": {
+      "bytes": 15995,
+      "mode": 420,
+      "origin": {
+        "bytes": 15995,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/document-provider/portable/NativeDocumentV2Codec.cpp",
+        "selection": "unchanged",
+        "sha256": "f5c421c32a58e62be9423fb7c983b4f703dcb6c48b689c2a6643e3fb5f558040",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Codec.cpp"
+      },
+      "role": "source",
+      "sha256": "f5c421c32a58e62be9423fb7c983b4f703dcb6c48b689c2a6643e3fb5f558040",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/portable/NativeDocumentV2Codec.cpp"
+    },
+    "source/document-provider/portable/NativeDocumentV2Codec.hpp": {
+      "bytes": 3044,
+      "mode": 420,
+      "origin": {
+        "bytes": 3044,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/document-provider/portable/NativeDocumentV2Codec.hpp",
+        "selection": "unchanged",
+        "sha256": "5b58e3be4bdfebe4a3ddc6f4c57053a4ef91c7193e784ecb7b90519876fd5d90",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Codec.hpp"
+      },
+      "role": "source",
+      "sha256": "5b58e3be4bdfebe4a3ddc6f4c57053a4ef91c7193e784ecb7b90519876fd5d90",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/portable/NativeDocumentV2Codec.hpp"
+    },
+    "source/document-provider/portable/NativeDocumentV2Types.cpp": {
+      "bytes": 17620,
+      "mode": 420,
+      "origin": {
+        "bytes": 17620,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/document-provider/portable/NativeDocumentV2Types.cpp",
+        "selection": "unchanged",
+        "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Types.cpp"
+      },
+      "role": "source",
+      "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/portable/NativeDocumentV2Types.cpp"
+    },
+    "source/document-provider/portable/NativeDocumentV2Types.hpp": {
+      "bytes": 6780,
+      "mode": 420,
+      "origin": {
+        "bytes": 6780,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/document-provider/portable/NativeDocumentV2Types.hpp",
+        "selection": "unchanged",
+        "sha256": "815ef2dd3e17f677ad872319ce45bc3db4a950a1be9d1ee509a47637dedbf442",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Types.hpp"
+      },
+      "role": "source",
+      "sha256": "815ef2dd3e17f677ad872319ce45bc3db4a950a1be9d1ee509a47637dedbf442",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/portable/NativeDocumentV2Types.hpp"
+    },
+    "source/document-provider/runtime/BibCopiedDocumentCatalog.hpp": {
+      "bytes": 2378,
+      "mode": 420,
+      "origin": {
+        "bytes": 2378,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/document-provider/runtime/BibCopiedDocumentCatalog.hpp",
+        "selection": "unchanged",
+        "sha256": "4b44fa2fbfea73ef269dd3146320b8d37fc04f24f958fe5a529fa43093a2d6d1",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/runtime/BibCopiedDocumentCatalog.hpp"
+      },
+      "role": "source",
+      "sha256": "4b44fa2fbfea73ef269dd3146320b8d37fc04f24f958fe5a529fa43093a2d6d1",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/runtime/BibCopiedDocumentCatalog.hpp"
+    },
+    "source/document-provider/runtime/BibNativeDocumentBinding.cpp": {
+      "bytes": 20054,
+      "mode": 420,
+      "origin": {
+        "kind": "native-bootstrap-source-implementation"
+      },
+      "role": "source",
+      "sha256": "cee9b2d80153afa13d382264fa2d9ad3037348fae7f33c362205d0f9ffa65d85",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/runtime/BibNativeDocumentBinding.cpp"
+    },
+    "source/engine/Source/JavaScriptCore/PlatformFoundation.cmake": {
+      "bytes": 308,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "af0379ab6abd02ba51503745ee538ebbe617a59362d12d10eb84d78c1bd73696",
+        "preimage_sha256": null
+      },
+      "role": "source",
+      "sha256": "af0379ab6abd02ba51503745ee538ebbe617a59362d12d10eb84d78c1bd73696",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/JavaScriptCore/PlatformFoundation.cmake"
+    },
+    "source/engine/Source/ThirdParty/skia/CMakeLists.txt": {
+      "bytes": 40298,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "a501f7a251a176e8ff09679168aa4739b78001d6c68519b710a62754ce715896",
+        "preimage_sha256": "7d12e1266411156d199a9ef330929f7e43985904b2b4f52020c2a951f5aa9eae"
+      },
+      "role": "source",
+      "sha256": "a501f7a251a176e8ff09679168aa4739b78001d6c68519b710a62754ce715896",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/ThirdParty/skia/CMakeLists.txt"
+    },
+    "source/engine/Source/WTF/wtf/FileSystem.h": {
+      "bytes": 9621,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-windows-native-seam",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "84a321371103fd12e54fb22d1ca0d17c028e7254f6f2688bb68674b2a22090aa",
+        "postimage_sha256": "1dc6325b56723112cffcd9aa43711d3ac850e07084efa0766a4c246cbf02dd8d",
+        "preimage_sha256": "e8788ef827d7f971b10459996dd9f57ecc179992830b524991367b018c2e83d1"
+      },
+      "role": "source",
+      "sha256": "1dc6325b56723112cffcd9aa43711d3ac850e07084efa0766a4c246cbf02dd8d",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WTF/wtf/FileSystem.h"
+    },
+    "source/engine/Source/WTF/wtf/PlatformFoundation.cmake": {
+      "bytes": 534,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "eb28eca8e5c33ca5d94c92c9caea0ae4260204d2c7f82cbbd0f0b4703fbc1a0e",
+        "preimage_sha256": null
+      },
+      "role": "source",
+      "sha256": "eb28eca8e5c33ca5d94c92c9caea0ae4260204d2c7f82cbbd0f0b4703fbc1a0e",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WTF/wtf/PlatformFoundation.cmake"
+    },
+    "source/engine/Source/WTF/wtf/PlatformLegacy.h": {
+      "bytes": 3776,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-windows-native-seam",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "84a321371103fd12e54fb22d1ca0d17c028e7254f6f2688bb68674b2a22090aa",
+        "postimage_sha256": "ece1a0ec605f32d6a413fc8e4ec3d458fa1d47e01a571281c2ba0e5df1b5db4b",
+        "preimage_sha256": "50e4e901c002f0a3b9f8f45c645cfae7fc03385ea9f138b3734433423f4ad0e6"
+      },
+      "role": "source",
+      "sha256": "ece1a0ec605f32d6a413fc8e4ec3d458fa1d47e01a571281c2ba0e5df1b5db4b",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WTF/wtf/PlatformLegacy.h"
+    },
+    "source/engine/Source/WTF/wtf/URL.cpp": {
+      "bytes": 40733,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-windows-native-seam",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "84a321371103fd12e54fb22d1ca0d17c028e7254f6f2688bb68674b2a22090aa",
+        "postimage_sha256": "3c18a74cee6ed6ce03ddb6c7ef100561c8f4c48c32b7d6dbf70e0df00fd69f00",
+        "preimage_sha256": "755ace726376e6661842298b2ee45f5fb2bf14aca3d8d6f90db76e30abb1ac9b"
+      },
+      "role": "source",
+      "sha256": "3c18a74cee6ed6ce03ddb6c7ef100561c8f4c48c32b7d6dbf70e0df00fd69f00",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WTF/wtf/URL.cpp"
+    },
+    "source/engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp": {
+      "bytes": 12234,
+      "mode": 420,
+      "origin": {
+        "bytes": 12234,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp",
+        "selection": "unchanged",
+        "sha256": "8ae65acf35a605f9ebe1b2ea0654683926732e6842ae5c806433618b35d94851",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp"
+      },
+      "role": "source",
+      "sha256": "8ae65acf35a605f9ebe1b2ea0654683926732e6842ae5c806433618b35d94851",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp"
+    },
+    "source/engine/Source/WebCore/CMakeLists.txt": {
+      "bytes": 131281,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "dbfc8264a8d608b68df0e13138db54e7b0334787b83935a9b9a46cd3b8e9089a",
+        "preimage_sha256": "ddcf29ed2a8689370b18fefc9f7ee5a796cfbe77a5333d997839b81543bcf9d3"
+      },
+      "role": "source",
+      "sha256": "dbfc8264a8d608b68df0e13138db54e7b0334787b83935a9b9a46cd3b8e9089a",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/CMakeLists.txt"
+    },
+    "source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake": {
+      "bytes": 375,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+        "preimage_sha256": null
+      },
+      "role": "source",
+      "sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake"
+    },
+    "source/engine/Source/WebCore/PlatformFoundation.cmake": {
+      "bytes": 2245,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "2a3dc63db03ff84c4e963400400e7f5e939f6195540c9929e54c28e29e80198b",
+        "preimage_sha256": null
+      },
+      "role": "source",
+      "sha256": "2a3dc63db03ff84c4e963400400e7f5e939f6195540c9929e54c28e29e80198b",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/PlatformFoundation.cmake"
+    },
+    "source/engine/Source/WebCore/accessibility/AXCoreObject.h": {
+      "bytes": 74729,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "3cca85a18ccae5c53c646864fdca88c7adb11fde023da6d817e94515178c8fbf",
+        "preimage_sha256": "1f0a5fb35c4e98b869e6bc5cd04fd1ad3aa46c2ad365ee9cc4c6b1a333e704cd"
+      },
+      "role": "source",
+      "sha256": "3cca85a18ccae5c53c646864fdca88c7adb11fde023da6d817e94515178c8fbf",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/accessibility/AXCoreObject.h"
+    },
+    "source/engine/Source/WebCore/bindings/js/ScriptController.cpp": {
+      "bytes": 41875,
+      "mode": 420,
+      "origin": {
+        "bytes": 41875,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/engine/Source/WebCore/bindings/js/ScriptController.cpp",
+        "selection": "unchanged",
+        "sha256": "8f8e984f18a45631bb4a9e425a69656c6a35651e11fd038cab7d7f11bf625e79",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/engine/Source/WebCore/bindings/js/ScriptController.cpp"
+      },
+      "role": "source",
+      "sha256": "8f8e984f18a45631bb4a9e425a69656c6a35651e11fd038cab7d7f11bf625e79",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/bindings/js/ScriptController.cpp"
+    },
+    "source/engine/Source/WebCore/dom/Document.cpp": {
+      "bytes": 447362,
+      "mode": 420,
+      "origin": {
+        "bytes": 447362,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/engine/Source/WebCore/dom/Document.cpp",
+        "selection": "unchanged",
+        "sha256": "b9137b64104a653e113912a5a64c09606aea434cfe0a76c1a4c5e0be86843c42",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/engine/Source/WebCore/dom/Document.cpp"
+      },
+      "role": "source",
+      "sha256": "b9137b64104a653e113912a5a64c09606aea434cfe0a76c1a4c5e0be86843c42",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/dom/Document.cpp"
+    },
+    "source/engine/Source/WebCore/loader/DocumentLoader.cpp": {
+      "bytes": 113637,
+      "mode": 420,
+      "origin": {
+        "bytes": 113637,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/engine/Source/WebCore/loader/DocumentLoader.cpp",
+        "selection": "unchanged",
+        "sha256": "f10bd277bc751179b8c0f7bbecda382d46d39e2919f11a0f87bbd4b37e5270bd",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/engine/Source/WebCore/loader/DocumentLoader.cpp"
+      },
+      "role": "source",
+      "sha256": "f10bd277bc751179b8c0f7bbecda382d46d39e2919f11a0f87bbd4b37e5270bd",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/loader/DocumentLoader.cpp"
+    },
+    "source/engine/Source/WebCore/platform/MainThreadSharedTimer.cpp": {
+      "bytes": 2817,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-windows-native-seam",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "84a321371103fd12e54fb22d1ca0d17c028e7254f6f2688bb68674b2a22090aa",
+        "postimage_sha256": "a6e576ff64416e65986646f960b3897ba949a4d8c2d0430c88a40ad9ccc7a00f",
+        "preimage_sha256": "c6c3d5fc29ee8080bd9150b6080d9cb59984768b87853d16b614069e2b89e1b8"
+      },
+      "role": "source",
+      "sha256": "a6e576ff64416e65986646f960b3897ba949a4d8c2d0430c88a40ad9ccc7a00f",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/MainThreadSharedTimer.cpp"
+    },
+    "source/engine/Source/WebCore/platform/MainThreadSharedTimer.h": {
+      "bytes": 2745,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-windows-native-seam",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "84a321371103fd12e54fb22d1ca0d17c028e7254f6f2688bb68674b2a22090aa",
+        "postimage_sha256": "4310cce122e2e911d806497ab5bd7fcbe391f2e9b763d25e47cb75e2644906ee",
+        "preimage_sha256": "6c6445f60b70fe72f5f57de6f1a91895ac05e23ddc8de0f98fb4f3cde45e8c4c"
+      },
+      "role": "source",
+      "sha256": "4310cce122e2e911d806497ab5bd7fcbe391f2e9b763d25e47cb75e2644906ee",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/MainThreadSharedTimer.h"
+    },
+    "source/engine/Source/WebCore/platform/Pasteboard.h": {
+      "bytes": 15480,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "ae5906c0e092fe20715784f4ffbce386175c86b66b9ade60e50c723b08bd86e0",
+        "preimage_sha256": "9778fc7620c752ed4649bbd63daa30721ec20c94fb47f7b59dd576788b9be895"
+      },
+      "role": "source",
+      "sha256": "ae5906c0e092fe20715784f4ffbce386175c86b66b9ade60e50c723b08bd86e0",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/Pasteboard.h"
+    },
+    "source/engine/Source/WebCore/platform/ScrollAnimator.cpp": {
+      "bytes": 18309,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "d755ff6799a6408b03f44f86c312cb87bc9b077ada6ead760eafeb169dd51edb",
+        "preimage_sha256": "48a2972036458101ac8bccc2c0c4a540d2649608e3bd5a898535987f568f86df"
+      },
+      "role": "source",
+      "sha256": "d755ff6799a6408b03f44f86c312cb87bc9b077ada6ead760eafeb169dd51edb",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/ScrollAnimator.cpp"
+    },
+    "source/engine/Source/WebCore/platform/ScrollAnimator.h": {
+      "bytes": 7859,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "0066fcd06df3cf6a97648a14ef18516b812fc5b667e23b86ad48e453b2da35e2",
+        "preimage_sha256": "274bd16b8ba655b903049f602e6cc5edb359aca481eebf17bd9a639435190acc"
+      },
+      "role": "source",
+      "sha256": "0066fcd06df3cf6a97648a14ef18516b812fc5b667e23b86ad48e453b2da35e2",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/ScrollAnimator.h"
+    },
+    "source/engine/Source/WebCore/platform/Skia.cmake": {
+      "bytes": 1582,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "07d4ca84546110400010580966d1b9998c29b8e0eceecf03fc85ea587c2ca531",
+        "preimage_sha256": "24e8a85e3211a0e4732e392b6805bf6f6d06c0991161822857502efb11c8270f"
+      },
+      "role": "source",
+      "sha256": "07d4ca84546110400010580966d1b9998c29b8e0eceecf03fc85ea587c2ca531",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/Skia.cmake"
+    },
+    "source/engine/Source/WebCore/platform/SourcesSkia.txt": {
+      "bytes": 3044,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "295c1f70ee44dd803c49159e5a61053385b926014642ea7d51421e139f9d7f97",
+        "preimage_sha256": "32cb85b321c4e25a68ea20bad08706eb12cc535f9fd3bb75e374d98c6beba448"
+      },
+      "role": "source",
+      "sha256": "295c1f70ee44dd803c49159e5a61053385b926014642ea7d51421e139f9d7f97",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/SourcesSkia.txt"
+    },
+    "source/engine/Source/WebCore/platform/graphics/FontCache.h": {
+      "bytes": 11830,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-windows-native-seam",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "84a321371103fd12e54fb22d1ca0d17c028e7254f6f2688bb68674b2a22090aa",
+        "postimage_sha256": "c66cc572ca4f5cd7c84335dd3ffed36a5eb83486b4c3cd0d29e6b52a6d543f82",
+        "preimage_sha256": "0bade227ad6a637335a67c61a33ffb2b7db8901acc8ecb3ed608f7645b848f74"
+      },
+      "role": "source",
+      "sha256": "c66cc572ca4f5cd7c84335dd3ffed36a5eb83486b4c3cd0d29e6b52a6d543f82",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/FontCache.h"
+    },
+    "source/engine/Source/WebCore/platform/graphics/ImageBuffer.cpp": {
+      "bytes": 21655,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "b613e290301f66c502796838441e47c997c0f87e795af979161f29fbb25deae6",
+        "preimage_sha256": "9c5ef7fef99ee8bc8e4fcead989901904dd8a99dbe34b1803ed349cd3abe03f5"
+      },
+      "role": "source",
+      "sha256": "b613e290301f66c502796838441e47c997c0f87e795af979161f29fbb25deae6",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/ImageBuffer.cpp"
+    },
+    "source/engine/Source/WebCore/platform/graphics/NativeImage.h": {
+      "bytes": 4418,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "bdd95da5d96ab25f5c92345feaa1980959800a0ec2c3ca0360897847980093d9",
+        "preimage_sha256": "21aa63c605209c77d72f5aa0492f69249e8ac5d080a1b28fdee3ef03f6f399b6"
+      },
+      "role": "source",
+      "sha256": "bdd95da5d96ab25f5c92345feaa1980959800a0ec2c3ca0360897847980093d9",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/NativeImage.h"
+    },
+    "source/engine/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp": {
+      "bytes": 18280,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-windows-native-seam",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "84a321371103fd12e54fb22d1ca0d17c028e7254f6f2688bb68674b2a22090aa",
+        "postimage_sha256": "50b7027ecbed3d3d84f3e8f9f91f280e06eb521d29e0e43693399c9cf1080717",
+        "preimage_sha256": "636df4f7e8d70fc63cb26c47bec62364361769f2940e8d30374313e8f51f50b7"
+      },
+      "role": "source",
+      "sha256": "50b7027ecbed3d3d84f3e8f9f91f280e06eb521d29e0e43693399c9cf1080717",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp"
+    },
+    "source/engine/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.cpp": {
+      "bytes": 50585,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "5be12ab0499725bf9ed18322dddf23e5ea3061d96c658b38654b06d352d40f24",
+        "preimage_sha256": "35568c5e86da55391a5a0d8c49052378ebd7c4328aef470982aa3383b74ffe68"
+      },
+      "role": "source",
+      "sha256": "5be12ab0499725bf9ed18322dddf23e5ea3061d96c658b38654b06d352d40f24",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.cpp"
+    },
+    "source/engine/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.h": {
+      "bytes": 8297,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "4e774f3d1d3d82fb9074e2e8a48bcfe900d6fb4a100385d0dda19a30fd84d267",
+        "preimage_sha256": "24aab08d7c295936d52b7d37883b3407314f4e054ea94995bd6ead9d58fbaca3"
+      },
+      "role": "source",
+      "sha256": "4e774f3d1d3d82fb9074e2e8a48bcfe900d6fb4a100385d0dda19a30fd84d267",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.h"
+    },
+    "source/engine/Source/WebCore/platform/graphics/skia/ImageBufferUtilitiesSkia.cpp": {
+      "bytes": 5236,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "68bac7ee355becb94b551057562e1fdf68a870143d0d275f4fca7755eda1ffed",
+        "preimage_sha256": "f372b43d15fbc008f558c030f02fba3f0214594f2019bd06d8e117aa5ddf7062"
+      },
+      "role": "source",
+      "sha256": "68bac7ee355becb94b551057562e1fdf68a870143d0d275f4fca7755eda1ffed",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/ImageBufferUtilitiesSkia.cpp"
+    },
+    "source/engine/Source/WebCore/platform/graphics/skia/NativeImageSkia.cpp": {
+      "bytes": 4851,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "b1b884fad24eabbc7c66bd7401d7fa582bd2d7f2e0b7bc513f764dab45bee8db",
+        "preimage_sha256": "c6941a1829b8500f67b9094f018ce5739b4c877f434e6cf0bed0d54865950ba9"
+      },
+      "role": "source",
+      "sha256": "b1b884fad24eabbc7c66bd7401d7fa582bd2d7f2e0b7bc513f764dab45bee8db",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/NativeImageSkia.cpp"
+    },
+    "source/engine/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.cpp": {
+      "bytes": 7487,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-windows-native-seam",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "84a321371103fd12e54fb22d1ca0d17c028e7254f6f2688bb68674b2a22090aa",
+        "postimage_sha256": "23139744d35351476cb003aeed9ad323bd42f33de9f8de50a85bd6dec083668b",
+        "preimage_sha256": "dcdcd34b3310baa1a9517c7f47e497e283a145e0143b43e5a719743fcb07c117"
+      },
+      "role": "source",
+      "sha256": "23139744d35351476cb003aeed9ad323bd42f33de9f8de50a85bd6dec083668b",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.cpp"
+    },
+    "source/engine/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.h": {
+      "bytes": 2121,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-windows-native-seam",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "84a321371103fd12e54fb22d1ca0d17c028e7254f6f2688bb68674b2a22090aa",
+        "postimage_sha256": "fe9dbc48e2aa294c14d3277f089e9c1d2677c6db4b155ec250f9b1047c1366b1",
+        "preimage_sha256": "b215b5eb7d353e2b2a98327dee8999b17d778da455ac0917fe2df5215ef2e19e"
+      },
+      "role": "source",
+      "sha256": "fe9dbc48e2aa294c14d3277f089e9c1d2677c6db4b155ec250f9b1047c1366b1",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.h"
+    },
+    "source/engine/Source/WebCore/workers/Worker.cpp": {
+      "bytes": 14423,
+      "mode": 420,
+      "origin": {
+        "bytes": 14423,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/engine/Source/WebCore/workers/Worker.cpp",
+        "selection": "unchanged",
+        "sha256": "fd5f885a5bd6032e1bde897802dc4b59713f32ab3e29ed48145132ec95648ea1",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/engine/Source/WebCore/workers/Worker.cpp"
+      },
+      "role": "source",
+      "sha256": "fd5f885a5bd6032e1bde897802dc4b59713f32ab3e29ed48145132ec95648ea1",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/workers/Worker.cpp"
+    },
+    "source/engine/Source/WebCore/workers/shared/SharedWorker.cpp": {
+      "bytes": 8877,
+      "mode": 420,
+      "origin": {
+        "bytes": 8877,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/engine/Source/WebCore/workers/shared/SharedWorker.cpp",
+        "selection": "unchanged",
+        "sha256": "748d4fa6786a246500e5b1667721b0ad9ef980abbbc69b351c0da60e317b8c4f",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/engine/Source/WebCore/workers/shared/SharedWorker.cpp"
+      },
+      "role": "source",
+      "sha256": "748d4fa6786a246500e5b1667721b0ad9ef980abbbc69b351c0da60e317b8c4f",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/workers/shared/SharedWorker.cpp"
+    },
+    "source/engine/Source/cmake/OptionsFoundation.cmake": {
+      "bytes": 7461,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "4215dd73f0428704fe77ee0e499f8ab90237159500aab1003e1a7e34aa063d23",
+        "preimage_sha256": null
+      },
+      "role": "source",
+      "sha256": "4215dd73f0428704fe77ee0e499f8ab90237159500aab1003e1a7e34aa063d23",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/cmake/OptionsFoundation.cmake"
+    },
+    "source/engine/Source/cmake/WebKitCommon.cmake": {
+      "bytes": 20633,
+      "mode": 420,
+      "origin": {
+        "component": "frozen-linux-native-candidate",
+        "kind": "frozen-native-platform-postimage",
+        "manifest_sha256": "db19c93f786f66a6817e6060afd3cd58c01c040ba9eede6a5ef48e8067666484",
+        "postimage_sha256": "c7d60fffc5d7ec8e01821299ddd017a2fc72efafdfe12a6e2e3d25483f7a3c55",
+        "preimage_sha256": "5a594cf7bcc07c425dea6d8d4ea2c73c25349932adc41a4f1034a9b805841436"
+      },
+      "role": "source",
+      "sha256": "c7d60fffc5d7ec8e01821299ddd017a2fc72efafdfe12a6e2e3d25483f7a3c55",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/engine/Source/cmake/WebKitCommon.cmake"
+    },
+    "source/foundation/abi/engine/document-v2/action-ack.json": {
+      "bytes": 3170,
+      "mode": 420,
+      "origin": {
+        "bytes": 3170,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/abi/engine/document-v2/action-ack.json",
+        "selection": "unchanged",
+        "sha256": "1eb6c2d4f56acebc1423d9e2b5bf9a1717a99963a5c3f11f4b9d7b0fe33b50f5",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/abi/engine/document-v2/action-ack.json"
+      },
+      "role": "source",
+      "sha256": "1eb6c2d4f56acebc1423d9e2b5bf9a1717a99963a5c3f11f4b9d7b0fe33b50f5",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/abi/engine/document-v2/action-ack.json"
+    },
+    "source/foundation/abi/engine/document-v2/catalog.json": {
+      "bytes": 3667,
+      "mode": 420,
+      "origin": {
+        "bytes": 3667,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/abi/engine/document-v2/catalog.json",
+        "selection": "unchanged",
+        "sha256": "6e555d4c3bb71fbc965e1ca49671fab64d744913e18f45b9ba273505e0c6bcf5",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/abi/engine/document-v2/catalog.json"
+      },
+      "role": "source",
+      "sha256": "6e555d4c3bb71fbc965e1ca49671fab64d744913e18f45b9ba273505e0c6bcf5",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/abi/engine/document-v2/catalog.json"
+    },
+    "source/foundation/abi/engine/document-v2/contract.json": {
+      "bytes": 415,
+      "mode": 420,
+      "origin": {
+        "bytes": 415,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/abi/engine/document-v2/contract.json",
+        "selection": "unchanged",
+        "sha256": "aba7800e6aab1898f3614f0b1ac53e59b9f622bf1e9d3a413f50d672a3662298",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/abi/engine/document-v2/contract.json"
+      },
+      "role": "source",
+      "sha256": "aba7800e6aab1898f3614f0b1ac53e59b9f622bf1e9d3a413f50d672a3662298",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/abi/engine/document-v2/contract.json"
+    },
+    "source/foundation/abi/engine/document-v2/schema-definition.json": {
+      "bytes": 10025,
+      "mode": 420,
+      "origin": {
+        "bytes": 10025,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/abi/engine/document-v2/schema-definition.json",
+        "selection": "unchanged",
+        "sha256": "f11fd061350f8d663dbcdec7cf0a063e4fb0ff3564d285076690f58e8a84143d",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/abi/engine/document-v2/schema-definition.json"
+      },
+      "role": "source",
+      "sha256": "f11fd061350f8d663dbcdec7cf0a063e4fb0ff3564d285076690f58e8a84143d",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/abi/engine/document-v2/schema-definition.json"
+    },
+    "source/foundation/include/foundation/appended/abi.h": {
+      "bytes": 5730,
+      "mode": 420,
+      "origin": {
+        "bytes": 5730,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/include/foundation/appended/abi.h",
+        "selection": "unchanged",
+        "sha256": "41a32aa4f6a0c423a3cc620a2f9aa464abd910358ed5be0985849646cffbce10",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/include/foundation/appended/abi.h"
+      },
+      "role": "source",
+      "sha256": "41a32aa4f6a0c423a3cc620a2f9aa464abd910358ed5be0985849646cffbce10",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/include/foundation/appended/abi.h"
+    },
+    "source/foundation/include/foundation/appended/document_forms.hpp": {
+      "bytes": 9402,
+      "mode": 420,
+      "origin": {
+        "bytes": 9402,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/include/foundation/appended/document_forms.hpp",
+        "selection": "unchanged",
+        "sha256": "b08e3099854c2911efa4e4f25bc9e7c90423381746ca4e45dd80469c39a9a27a",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/include/foundation/appended/document_forms.hpp"
+      },
+      "role": "source",
+      "sha256": "b08e3099854c2911efa4e4f25bc9e7c90423381746ca4e45dd80469c39a9a27a",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/include/foundation/appended/document_forms.hpp"
+    },
+    "source/foundation/include/foundation/appended/engine_provider.h": {
+      "bytes": 11657,
+      "mode": 420,
+      "origin": {
+        "bytes": 11657,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/include/foundation/appended/engine_provider.h",
+        "selection": "unchanged",
+        "sha256": "a8e89da85d34b29a4d1bc454495791fa604b81e3477e48ce8ca902e4333a9c0d",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/include/foundation/appended/engine_provider.h"
+      },
+      "role": "source",
+      "sha256": "a8e89da85d34b29a4d1bc454495791fa604b81e3477e48ce8ca902e4333a9c0d",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/include/foundation/appended/engine_provider.h"
+    },
+    "source/foundation/include/foundation/appended/engine_provider_document_v2.h": {
+      "bytes": 4128,
+      "mode": 420,
+      "origin": {
+        "bytes": 4128,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/include/foundation/appended/engine_provider_document_v2.h",
+        "selection": "unchanged",
+        "sha256": "7b047bae4d0072ef156ea94ba637566d563fea3a95d43c4c6314afc919b1d626",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/include/foundation/appended/engine_provider_document_v2.h"
+      },
+      "role": "source",
+      "sha256": "7b047bae4d0072ef156ea94ba637566d563fea3a95d43c4c6314afc919b1d626",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/include/foundation/appended/engine_provider_document_v2.h"
+    },
+    "source/foundation/include/foundation/appended/registry.hpp": {
+      "bytes": 7654,
+      "mode": 420,
+      "origin": {
+        "bytes": 7654,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/include/foundation/appended/registry.hpp",
+        "selection": "unchanged",
+        "sha256": "66a303aabdf91018f119cd954db0eba1e06f594946141adac0447e8b2ec6e7fa",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/include/foundation/appended/registry.hpp"
+      },
+      "role": "source",
+      "sha256": "66a303aabdf91018f119cd954db0eba1e06f594946141adac0447e8b2ec6e7fa",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/include/foundation/appended/registry.hpp"
+    },
+    "source/foundation/src/appended/abi.cpp": {
+      "bytes": 11363,
+      "mode": 420,
+      "origin": {
+        "bytes": 11363,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/src/appended/abi.cpp",
+        "selection": "unchanged",
+        "sha256": "a65e71b9859d57c9e383e5c10a327b79e4a007de6684685ac020ca66c4b7d99d",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/src/appended/abi.cpp"
+      },
+      "role": "source",
+      "sha256": "a65e71b9859d57c9e383e5c10a327b79e4a007de6684685ac020ca66c4b7d99d",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/src/appended/abi.cpp"
+    },
+    "source/foundation/src/appended/document_forms.cpp": {
+      "bytes": 26599,
+      "mode": 420,
+      "origin": {
+        "bytes": 26599,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/src/appended/document_forms.cpp",
+        "selection": "unchanged",
+        "sha256": "0a6b72f8724be6cc48b92afa810c2f15591befdab6ddb0e812a64f7eade41ed5",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/src/appended/document_forms.cpp"
+      },
+      "role": "source",
+      "sha256": "0a6b72f8724be6cc48b92afa810c2f15591befdab6ddb0e812a64f7eade41ed5",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/src/appended/document_forms.cpp"
+    },
+    "source/foundation/third_party/appended-engine/include/EnginePrivate.hpp": {
+      "bytes": 7168,
+      "mode": 420,
+      "origin": {
+        "bytes": 7168,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/third_party/appended-engine/include/EnginePrivate.hpp",
+        "selection": "unchanged",
+        "sha256": "edfd276aa01f94d0b15fc1a944f9d099a4e5e7f06426a57e3804c023a4c15d16",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/third_party/appended-engine/include/EnginePrivate.hpp"
+      },
+      "role": "source",
+      "sha256": "edfd276aa01f94d0b15fc1a944f9d099a4e5e7f06426a57e3804c023a4c15d16",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/third_party/appended-engine/include/EnginePrivate.hpp"
+    },
+    "source/foundation/third_party/appended-engine/include/LegacyHostAdapters.hpp": {
+      "bytes": 5253,
+      "mode": 420,
+      "origin": {
+        "bytes": 5253,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/third_party/appended-engine/include/LegacyHostAdapters.hpp",
+        "selection": "unchanged",
+        "sha256": "fdf463196a7a0c93b204969de389469e4a846643d53aa2d13aeb89535795e17c",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/third_party/appended-engine/include/LegacyHostAdapters.hpp"
+      },
+      "role": "source",
+      "sha256": "fdf463196a7a0c93b204969de389469e4a846643d53aa2d13aeb89535795e17c",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/third_party/appended-engine/include/LegacyHostAdapters.hpp"
+    },
+    "source/foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h": {
+      "bytes": 3162,
+      "mode": 420,
+      "origin": {
+        "bytes": 3162,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h",
+        "selection": "unchanged",
+        "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h"
+      },
+      "role": "source",
+      "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h"
+    },
+    "source/foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h": {
+      "bytes": 3227,
+      "mode": 420,
+      "origin": {
+        "bytes": 3227,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h",
+        "selection": "unchanged",
+        "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h"
+      },
+      "role": "source",
+      "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h"
+    },
+    "source/foundation/third_party/appended-engine/src/LegacyHostAdapters.cpp": {
+      "bytes": 18120,
+      "mode": 420,
+      "origin": {
+        "bytes": 18120,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/third_party/appended-engine/src/LegacyHostAdapters.cpp",
+        "selection": "unchanged",
+        "sha256": "6e661dda207a84d944d9b173a6f5ee885ab1070ee48be8e30b2899a7d20c4420",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/third_party/appended-engine/src/LegacyHostAdapters.cpp"
+      },
+      "role": "source",
+      "sha256": "6e661dda207a84d944d9b173a6f5ee885ab1070ee48be8e30b2899a7d20c4420",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/third_party/appended-engine/src/LegacyHostAdapters.cpp"
+    },
+    "source/foundation/third_party/appended-engine/src/ProviderGuard.cpp": {
+      "bytes": 52956,
+      "mode": 420,
+      "origin": {
+        "bytes": 51525,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/foundation/third_party/appended-engine/src/ProviderGuard.cpp",
+        "preimage_sha256": "dcac577c612cce0faf8692afde0481f6a0723e297aa5eba4a2c6c5e707d7333d",
+        "selection": "native-bootstrap-and-owner-gate-adaptation",
+        "sha256": "dcac577c612cce0faf8692afde0481f6a0723e297aa5eba4a2c6c5e707d7333d",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp"
+      },
+      "role": "source",
+      "sha256": "61b516cc59eab6b80ec329191a1de5d34b24fbf23c7152ea4a228dc2d23faa11",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp"
+    },
+    "source/native/BibNativeProviderBootstrap.hpp": {
+      "bytes": 976,
+      "mode": 420,
+      "origin": {
+        "kind": "native-source-recipe-input"
+      },
+      "role": "source",
+      "sha256": "79dc3d50ed01233cb263ba1404f8b0249918b02806b67bb513565cfd95bf383e",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/native/BibNativeProviderBootstrap.hpp"
+    },
+    "source/native/BibNativeProviderOnce.hpp": {
+      "bytes": 2862,
+      "mode": 420,
+      "origin": {
+        "kind": "native-bootstrap-source-implementation"
+      },
+      "role": "source",
+      "sha256": "3848f57570997b6885642cf507094c99f7a1823f6932a77659b45cdf316a34ef",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/native/BibNativeProviderOnce.hpp"
+    },
+    "source/provider-binding/binding/BibEngineProviderPreflight.cpp": {
+      "bytes": 3246,
+      "mode": 420,
+      "origin": {
+        "bytes": 3246,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/provider-binding/binding/BibEngineProviderPreflight.cpp",
+        "selection": "unchanged",
+        "sha256": "dd8c25c5343498106be19b26d96e6b7292bb3e25f10c7b07b191461fdb81c3fb",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/provider-binding/binding/BibEngineProviderPreflight.cpp"
+      },
+      "role": "source",
+      "sha256": "dd8c25c5343498106be19b26d96e6b7292bb3e25f10c7b07b191461fdb81c3fb",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/provider-binding/binding/BibEngineProviderPreflight.cpp"
+    },
+    "source/provider-binding/binding/BibEngineProviderPreflight.h": {
+      "bytes": 500,
+      "mode": 420,
+      "origin": {
+        "bytes": 500,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/provider-binding/binding/BibEngineProviderPreflight.h",
+        "selection": "unchanged",
+        "sha256": "20086b2caab4c9b79bc71391ac92a1b630bab193806eb24ecf7b8089cca3d4d4",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/provider-binding/binding/BibEngineProviderPreflight.h"
+      },
+      "role": "source",
+      "sha256": "20086b2caab4c9b79bc71391ac92a1b630bab193806eb24ecf7b8089cca3d4d4",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/provider-binding/binding/BibEngineProviderPreflight.h"
+    },
+    "source/wrapper/src/embedder/AppDocumentLifecycle.hpp": {
+      "bytes": 12630,
+      "mode": 420,
+      "origin": {
+        "bytes": 12630,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/AppDocumentLifecycle.hpp",
+        "selection": "unchanged",
+        "sha256": "e1905491bc7b774394b9d95379233faacb96ca25c581b74780a64b79f53cfa84",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/AppDocumentLifecycle.hpp"
+      },
+      "role": "source",
+      "sha256": "e1905491bc7b774394b9d95379233faacb96ca25c581b74780a64b79f53cfa84",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/AppDocumentLifecycle.hpp"
+    },
+    "source/wrapper/src/embedder/AppResourceQueue.cpp": {
+      "bytes": 7297,
+      "mode": 420,
+      "origin": {
+        "bytes": 7297,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/AppResourceQueue.cpp",
+        "selection": "unchanged",
+        "sha256": "505a885cdcf80df7933f3aea02d1b11d799922d133dd73e75c4b988e2c0dab80",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/AppResourceQueue.cpp"
+      },
+      "role": "source",
+      "sha256": "505a885cdcf80df7933f3aea02d1b11d799922d133dd73e75c4b988e2c0dab80",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/AppResourceQueue.cpp"
+    },
+    "source/wrapper/src/embedder/AppResourceQueue.hpp": {
+      "bytes": 5098,
+      "mode": 420,
+      "origin": {
+        "bytes": 5098,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/AppResourceQueue.hpp",
+        "selection": "unchanged",
+        "sha256": "e9687eded98f1ac287422f08d09fac689d0a2fe463e707ccd0d5dc2b91a388b7",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/AppResourceQueue.hpp"
+      },
+      "role": "source",
+      "sha256": "e9687eded98f1ac287422f08d09fac689d0a2fe463e707ccd0d5dc2b91a388b7",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/AppResourceQueue.hpp"
+    },
+    "source/wrapper/src/embedder/BibAppResourceHost.h": {
+      "bytes": 3162,
+      "mode": 420,
+      "origin": {
+        "bytes": 3162,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibAppResourceHost.h",
+        "selection": "unchanged",
+        "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibAppResourceHost.h"
+      },
+      "role": "source",
+      "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibAppResourceHost.h"
+    },
+    "source/wrapper/src/embedder/BibAppResourceProfile.cpp": {
+      "bytes": 1087,
+      "mode": 420,
+      "origin": {
+        "bytes": 1087,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibAppResourceProfile.cpp",
+        "selection": "unchanged",
+        "sha256": "70680c1910cebb8bcf4b74fed2bd6ca4719b89735e9d921de9c5ea66ad8d9c17",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibAppResourceProfile.cpp"
+      },
+      "role": "source",
+      "sha256": "70680c1910cebb8bcf4b74fed2bd6ca4719b89735e9d921de9c5ea66ad8d9c17",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibAppResourceProfile.cpp"
+    },
+    "source/wrapper/src/embedder/BibAppResources.cpp": {
+      "bytes": 38484,
+      "mode": 420,
+      "origin": {
+        "bytes": 38484,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibAppResources.cpp",
+        "selection": "unchanged",
+        "sha256": "721665012a8a352c23dd961a3fdae881cbc6a815cdbdfd207185fb2df5ffe08d",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibAppResources.cpp"
+      },
+      "role": "source",
+      "sha256": "721665012a8a352c23dd961a3fdae881cbc6a815cdbdfd207185fb2df5ffe08d",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibAppResources.cpp"
+    },
+    "source/wrapper/src/embedder/BibAppResources.h": {
+      "bytes": 5365,
+      "mode": 420,
+      "origin": {
+        "bytes": 5365,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibAppResources.h",
+        "selection": "unchanged",
+        "sha256": "60738d2b19acd8f04e6a52729c66c42b30965e454974e78202c886556161c463",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibAppResources.h"
+      },
+      "role": "source",
+      "sha256": "60738d2b19acd8f04e6a52729c66c42b30965e454974e78202c886556161c463",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibAppResources.h"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderDocumentProjection.h": {
+      "bytes": 1478,
+      "mode": 420,
+      "origin": {
+        "bytes": 1478,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibEngineProviderDocumentProjection.h",
+        "selection": "unchanged",
+        "sha256": "f05ceedb6d7ac04e5e1cb7b5531f02d9e9453b7ff931cd0b5eefd78e2ae7357a",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibEngineProviderDocumentProjection.h"
+      },
+      "role": "source",
+      "sha256": "f05ceedb6d7ac04e5e1cb7b5531f02d9e9453b7ff931cd0b5eefd78e2ae7357a",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibEngineProviderDocumentProjection.h"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderLifecycleHooks.h": {
+      "bytes": 1290,
+      "mode": 420,
+      "origin": {
+        "bytes": 1290,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibEngineProviderLifecycleHooks.h",
+        "selection": "unchanged",
+        "sha256": "b4c2a1f33860a5c3e0d1b5229ff9a3c3735ad19f9f7b205f39765deab17cd016",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibEngineProviderLifecycleHooks.h"
+      },
+      "role": "source",
+      "sha256": "b4c2a1f33860a5c3e0d1b5229ff9a3c3735ad19f9f7b205f39765deab17cd016",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibEngineProviderLifecycleHooks.h"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderRuntime.h": {
+      "bytes": 2721,
+      "mode": 420,
+      "origin": {
+        "bytes": 2721,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibEngineProviderRuntime.h",
+        "selection": "unchanged",
+        "sha256": "e7b69210d5ffc82a0f8260f79658031ea63fb0292e99eb342f3a9b90b4e4bf4b",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibEngineProviderRuntime.h"
+      },
+      "role": "source",
+      "sha256": "e7b69210d5ffc82a0f8260f79658031ea63fb0292e99eb342f3a9b90b4e4bf4b",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibEngineProviderRuntime.h"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderTimerHooks.h": {
+      "bytes": 724,
+      "mode": 420,
+      "origin": {
+        "bytes": 724,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibEngineProviderTimerHooks.h",
+        "selection": "unchanged",
+        "sha256": "c13f878e8c51b85392dc30887a2ea76d574ef11e6de5862ab51d829045434279",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibEngineProviderTimerHooks.h"
+      },
+      "role": "source",
+      "sha256": "c13f878e8c51b85392dc30887a2ea76d574ef11e6de5862ab51d829045434279",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibEngineProviderTimerHooks.h"
+    },
+    "source/wrapper/src/embedder/BibFoundationServiceBridge.cpp": {
+      "bytes": 32902,
+      "mode": 420,
+      "origin": {
+        "bytes": 32902,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibFoundationServiceBridge.cpp",
+        "selection": "unchanged",
+        "sha256": "a8a9e3901158e5e5bc697b427dfcbc75d465f5b4a5068db46c792cf7b75c0be8",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibFoundationServiceBridge.cpp"
+      },
+      "role": "source",
+      "sha256": "a8a9e3901158e5e5bc697b427dfcbc75d465f5b4a5068db46c792cf7b75c0be8",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibFoundationServiceBridge.cpp"
+    },
+    "source/wrapper/src/embedder/BibFoundationServiceBridge.h": {
+      "bytes": 3720,
+      "mode": 420,
+      "origin": {
+        "bytes": 3720,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibFoundationServiceBridge.h",
+        "selection": "unchanged",
+        "sha256": "d6da6a09948c24be8212fe5e7f3e9bd42f99cb33ae1478aad96c5bc5f2544358",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibFoundationServiceBridge.h"
+      },
+      "role": "source",
+      "sha256": "d6da6a09948c24be8212fe5e7f3e9bd42f99cb33ae1478aad96c5bc5f2544358",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibFoundationServiceBridge.h"
+    },
+    "source/wrapper/src/embedder/BibFoundationServiceHost.h": {
+      "bytes": 3227,
+      "mode": 420,
+      "origin": {
+        "bytes": 3227,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibFoundationServiceHost.h",
+        "selection": "unchanged",
+        "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibFoundationServiceHost.h"
+      },
+      "role": "source",
+      "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibFoundationServiceHost.h"
+    },
+    "source/wrapper/src/embedder/BibFoundationServicesBootstrap.h": {
+      "bytes": 21260,
+      "mode": 420,
+      "origin": {
+        "bytes": 21260,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibFoundationServicesBootstrap.h",
+        "selection": "unchanged",
+        "sha256": "8fecc8b1b8d8c812a393912f82dbacfcc2ee9f7d20a58cb2bac74bdcc85b9b1f",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibFoundationServicesBootstrap.h"
+      },
+      "role": "source",
+      "sha256": "8fecc8b1b8d8c812a393912f82dbacfcc2ee9f7d20a58cb2bac74bdcc85b9b1f",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibFoundationServicesBootstrap.h"
+    },
+    "source/wrapper/src/embedder/BibIDBServer.cpp": {
+      "bytes": 23158,
+      "mode": 420,
+      "origin": {
+        "bytes": 22553,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibIDBServer.cpp",
+        "selection": "native-worker-queued-idb-teardown",
+        "sha256": "9489dec1a9de9b15dc756a4b5d37c435cfb38fa3e7ecbd096b396c6ba20e34a7",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibIDBServer.cpp"
+      },
+      "role": "source",
+      "sha256": "cdca200dfd9596db0b2951f2710b426783a998232a1d10ada1ad785c7ac31071",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibIDBServer.cpp"
+    },
+    "source/wrapper/src/embedder/BibIDBServer.h": {
+      "bytes": 9834,
+      "mode": 420,
+      "origin": {
+        "bytes": 9834,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibIDBServer.h",
+        "selection": "unchanged",
+        "sha256": "e3017071e80aa65f0ebdce2e9a7d44c9574da698496ff0703a16d7024a6a8f8b",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibIDBServer.h"
+      },
+      "role": "source",
+      "sha256": "e3017071e80aa65f0ebdce2e9a7d44c9574da698496ff0703a16d7024a6a8f8b",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibIDBServer.h"
+    },
+    "source/wrapper/src/embedder/BibMediaPlayer.h": {
+      "bytes": 1858,
+      "mode": 420,
+      "origin": {
+        "bytes": 1858,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibMediaPlayer.h",
+        "selection": "unchanged",
+        "sha256": "06790cb37fe559499ed3f8b3f45c91a206c0a9be7b6cf5bdb5aacb34e4f6ba79",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibMediaPlayer.h"
+      },
+      "role": "source",
+      "sha256": "06790cb37fe559499ed3f8b3f45c91a206c0a9be7b6cf5bdb5aacb34e4f6ba79",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibMediaPlayer.h"
+    },
+    "source/wrapper/src/embedder/BibNativeMediaDisabled.cpp": {
+      "bytes": 373,
+      "mode": 420,
+      "origin": {
+        "kind": "native-disabled-media-leaf"
+      },
+      "role": "source",
+      "sha256": "9e05b72ac8848f01d3d2d2dc1964f0eec4a24170a482ee8597486532d0041a73",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibNativeMediaDisabled.cpp"
+    },
+    "source/wrapper/src/embedder/BibPageClients.h": {
+      "bytes": 28627,
+      "mode": 420,
+      "origin": {
+        "bytes": 28627,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibPageClients.h",
+        "selection": "unchanged",
+        "sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibPageClients.h"
+      },
+      "role": "source",
+      "sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibPageClients.h"
+    },
+    "source/wrapper/src/embedder/BibPrototypeState.h": {
+      "bytes": 462,
+      "mode": 420,
+      "origin": {
+        "bytes": 462,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibPrototypeState.h",
+        "selection": "unchanged",
+        "sha256": "3c092e4ab5f8158afaebf829d43b138eb0b0b39dc2b1e14a884ecc0ee052fed7",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibPrototypeState.h"
+      },
+      "role": "source",
+      "sha256": "3c092e4ab5f8158afaebf829d43b138eb0b0b39dc2b1e14a884ecc0ee052fed7",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibPrototypeState.h"
+    },
+    "source/wrapper/src/embedder/BibSocketProvider.h": {
+      "bytes": 1852,
+      "mode": 420,
+      "origin": {
+        "bytes": 1852,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibSocketProvider.h",
+        "selection": "unchanged",
+        "sha256": "9644ef368dfe0323094a5dffdce8401d046d0b6596ce509c4fcb902ca7b468dd",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibSocketProvider.h"
+      },
+      "role": "source",
+      "sha256": "9644ef368dfe0323094a5dffdce8401d046d0b6596ce509c4fcb902ca7b468dd",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibSocketProvider.h"
+    },
+    "source/wrapper/src/embedder/BibStorage.h": {
+      "bytes": 7617,
+      "mode": 420,
+      "origin": {
+        "bytes": 7617,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibStorage.h",
+        "selection": "unchanged",
+        "sha256": "d054ec693ea4657e5a45caf5ffb43507cc37f863141ff1d118c389efed88194d",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibStorage.h"
+      },
+      "role": "source",
+      "sha256": "d054ec693ea4657e5a45caf5ffb43507cc37f863141ff1d118c389efed88194d",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibStorage.h"
+    },
+    "source/wrapper/src/embedder/BibUndoHistory.h": {
+      "bytes": 2662,
+      "mode": 420,
+      "origin": {
+        "bytes": 2662,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibUndoHistory.h",
+        "selection": "unchanged",
+        "sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibUndoHistory.h"
+      },
+      "role": "source",
+      "sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibUndoHistory.h"
+    },
+    "source/wrapper/src/embedder/BibWebSocketChannel.h": {
+      "bytes": 25372,
+      "mode": 420,
+      "origin": {
+        "bytes": 25372,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/BibWebSocketChannel.h",
+        "selection": "unchanged",
+        "sha256": "c8fd71955b4cb609ca44f6afa2e8dc36c027eb913be00c8686704b2d7d082c5d",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/BibWebSocketChannel.h"
+      },
+      "role": "source",
+      "sha256": "c8fd71955b4cb609ca44f6afa2e8dc36c027eb913be00c8686704b2d7d082c5d",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/BibWebSocketChannel.h"
+    },
+    "source/wrapper/src/embedder/EmbedderStrategies.cpp": {
+      "bytes": 33538,
+      "mode": 420,
+      "origin": {
+        "bytes": 33538,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/EmbedderStrategies.cpp",
+        "selection": "unchanged",
+        "sha256": "350f39f61dea3660a1b3e486d13d7856031a2e996bced8cace965e5fbf111b9d",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/EmbedderStrategies.cpp"
+      },
+      "role": "source",
+      "sha256": "350f39f61dea3660a1b3e486d13d7856031a2e996bced8cace965e5fbf111b9d",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/EmbedderStrategies.cpp"
+    },
+    "source/wrapper/src/embedder/main.cpp": {
+      "bytes": 39552,
+      "mode": 420,
+      "origin": {
+        "bytes": 155877,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/main.cpp",
+        "selection": "native-neutral-branch-and-target-gate",
+        "sha256": "8c2f98835df730b17c0fb0f5bb5807c2ddaf9559797a59598173d95d02a70449",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/main.cpp"
+      },
+      "role": "source",
+      "sha256": "dc624e796c0e6b3dcf37d95a1c9e95f2c428186044124e48c6bd92cc7cdadf89",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/main.cpp"
+    },
+    "source/wrapper/src/embedder/resource_url.cpp": {
+      "bytes": 6751,
+      "mode": 420,
+      "origin": {
+        "bytes": 6751,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/resource_url.cpp",
+        "selection": "unchanged",
+        "sha256": "05a1af43bd84e8ba4b4eb2b73070c7f331945806d4e33586f1a447cd0b216671",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/resource_url.cpp"
+      },
+      "role": "source",
+      "sha256": "05a1af43bd84e8ba4b4eb2b73070c7f331945806d4e33586f1a447cd0b216671",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/resource_url.cpp"
+    },
+    "source/wrapper/src/embedder/resource_url.hpp": {
+      "bytes": 2167,
+      "mode": 420,
+      "origin": {
+        "bytes": 2167,
+        "kind": "released-document-pixel-import",
+        "logical_path": "source/wrapper/src/embedder/resource_url.hpp",
+        "selection": "unchanged",
+        "sha256": "ef7a3a6ed1d71c6ef355e3cdb77488922239cd2f5c47e1d761b29af1c2bf6132",
+        "tracked_path": "recipes/webkitwasm-document-v2/source/wrapper/src/embedder/resource_url.hpp"
+      },
+      "role": "source",
+      "sha256": "ef7a3a6ed1d71c6ef355e3cdb77488922239cd2f5c47e1d761b29af1c2bf6132",
+      "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/resource_url.hpp"
+    }
+  },
+  "kind": "foundation-native-engine-source-inputs",
+  "limits": {
+    "maximum_entries": 256,
+    "maximum_file_bytes": 8388608,
+    "maximum_total_bytes": 33554432
+  },
+  "profile": "pixel",
+  "provenance": {
+    "bootstrap_implemented": true,
+    "bootstrap_patch": "patches/native-provider-bootstrap.patch",
+    "bootstrap_scope": "source-only-no-native-webcore-build",
+    "linux_only_configuration": true,
+    "native_platform_patch": "patches/native-platform-engine.patch",
+    "record": "provenance.json",
+    "runtime_patch": "patches/native-provider-runtime.patch",
+    "selected_notices": 11,
+    "sha256": "d6337e6f5bbdcf8c3afa9bfb4781e1105932dac4567d7e75968e2310bca960a5",
+    "supplier_patch": "patches/supplier-webkit-emscripten.patch"
+  },
+  "requirements": [
+    "closed-retained-native-source-recipe-and-provider-build",
+    "target-qualified-native-dependency-baseline",
+    "native-compile-link-runtime"
+  ],
+  "schema_version": 1,
+  "scope": "native-source-candidate-only",
+  "suppliers": {
+    "engine": "aec9d2ad958e716ab4bca4bf03007e6edac7323f",
+    "wrapper": "68c618544e1f8af18ebce346281a6a49766aa194"
+  }
+}

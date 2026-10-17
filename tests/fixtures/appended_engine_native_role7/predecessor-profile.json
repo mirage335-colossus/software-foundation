@@ -1,0 +1,45 @@
+{
+  "direct_translation_units": 32,
+  "engine_files": 48,
+  "graph": {
+    "path": "recipes/webkitwasm-native-rich4083-v1/cmake/native-provider.cmake",
+    "sha256": "a19c8e7ddd7f1c4f15b143ca33a4826bec806ad0bd95137ac5a6059811d6dab1"
+  },
+  "kind": "foundation-native-engine-prototype-profile-v1",
+  "producer_inputs": [
+    "recipes/webkitwasm-native-rich4083-v1/native-prototype-profile.json",
+    "recipes/webkitwasm-native-rich4083-v1/producer/diagnostic-host-policy-v1.json",
+    "recipes/webkitwasm-native-rich4083-v1/producer/native-initial-cache.cmake",
+    "recipes/webkitwasm-native-rich4083-v1/producer/native-private-runtime.cmake",
+    "recipes/webkitwasm-native-rich4083-v1/producer/native-sdk-toolchain.cmake.in",
+    "recipes/webkitwasm-native-rich4083-v1/producer/private-cpp-runtime-policy-v1.json",
+    "recipes/webkitwasm-native-rich4083-v1/producer/runtime-probe/CMakeLists.txt",
+    "recipes/webkitwasm-native-rich4083-v1/producer/runtime-probe/runtime_probe.cpp",
+    "recipes/webkitwasm-native-rich4083-v1/producer/verify-provider.cmake",
+    "tools/appended_engine_native_inputs.py",
+    "tools/appended_engine_native_original_proof.py",
+    "tools/appended_engine_native_prototype.py",
+    "tools/appended_engine_native_sdk.py",
+    "tools/process_tree.py"
+  ],
+  "profile": "document-actions-v1",
+  "provenance": {
+    "path": "recipes/webkitwasm-native-rich4083-v1/provenance.json",
+    "sha256": "2aa879d01c40f61d84f889adf33533f8c097b8029f681d05e005e845b7ae475e"
+  },
+  "recipe_directory": "recipes/webkitwasm-native-rich4083-v1",
+  "required_toolchain_kind": "foundation-native-engine-prototype-private-sdk-toolchain-v1",
+  "schema_version": 1,
+  "scope": "first-native-engine-baseline-candidate",
+  "source_files": 157,
+  "source_map": {
+    "path": "recipes/webkitwasm-native-rich4083-v1/source-imports.json",
+    "sha256": "8246997243d88907d57187404e497f5aa055fca5507625c6ee37534040b15b41"
+  },
+  "target": {
+    "pointer_bits": 64,
+    "processor": "x86_64",
+    "system": "Linux",
+    "triple": "x86_64-buildroot-linux-gnu"
+  }
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Raw candidate maintenance probe</title>
+<style>html,body{margin:0;background:#ffffff;color:#102030}p{padding:20px;background:#d0e0f0}</style>
+<p id="result">RAW_RUNTIME_WAITING</p>
+<script>
+'use strict';
+(async function () {
+  const host = globalThis.foundation;
+  if (!host || typeof host.discover !== 'function' || typeof host.acknowledge !== 'function')
+    throw new Error('The actual shared Foundation service facade is unavailable');
+  const schema = Uint8Array.from({length:32}, (_, index) => index + 1);
+  const service = await host.discover('demo.echo', {major:1,minMinor:0,maxMinor:0,schema});
+  if (!service || typeof service.call !== 'function' || service.descriptor.name !== 'demo.echo' ||
+      service.descriptor.major !== 1 || service.descriptor.minor !== 0 || service.descriptor.maxReplyBytes !== 1024)
+    throw new Error('The actual application echo descriptor differs');
+  if (host.acknowledge() !== 0) throw new Error('Original discovery ACK failed');
+  const payload = new TextEncoder().encode('foundation-raw-candidate-echo-v1');
+  const reply = await service.call(1, payload);
+  if (!(reply instanceof Uint8Array) || reply.length !== payload.length ||
+      !payload.every((byte, index) => reply[index] === byte)) throw new Error('Original native echo reply differs');
+  if (host.acknowledge() !== 0) throw new Error('Original echo ACK failed');
+  document.getElementById('result').textContent = 'RAW_RUNTIME_ECHO_OK';
+})().catch(function () { document.getElementById('result').textContent = 'RAW_RUNTIME_FAILED'; });
+</script>

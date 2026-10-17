@@ -1,0 +1,17 @@
+{
+  "icu": ["77.1", "588e431f77327c39031ffbb8843c0e3bc122c211374485fa87dc5f3faff24061", 27384265, "tar-gzip", "icu", []],
+  "zlib": ["1.3.1", "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23", 1512791, "tar-gzip", "zlib-1.3.1", []],
+  "brotli": ["1.1.0", "e720a6ca29428b803f4ad165371771f5398faba397edf6778837a18599ea13ff", 511969, "tar-gzip", "brotli-1.1.0", []],
+  "png": ["1.6.43", "fecc95b46cf05e8e3fc8a414750e0ba5aad00d89e9fdf175e94ff041caf1a03a", 1554715, "tar-gzip", "libpng-1.6.43", ["zlib"]],
+  "jpeg": ["3.0.4", "0270f9496ad6d69e743f1e7b9e3e9398f5b4d606b6a47744df4b73df50f62e38", 2400356, "tar-gzip", "libjpeg-turbo-3.0.4", []],
+  "webp": ["1.4.0", "12af50c45530f0a292d39a88d952637e43fb2d4ab1883c44ae729840f7273381", 3800514, "tar-gzip", "libwebp-1.4.0", []],
+  "freetype": ["2.13.3", "bc5c898e4756d373e0d991bab053036c5eb2aa7c0d5c67e8662ddc6da40c4103", 2482495, "tar-gzip", "freetype-VER-2-13-3", ["brotli", "zlib", "png"]],
+  "harfbuzz": ["9.0.0", "a41b272ceeb920c57263ec851604542d9ec85ee3030506d94662067c7b6ab89e", 17895360, "tar-xz", "harfbuzz-9.0.0", ["freetype", "icu"]],
+  "xml2": ["2.12.9", "59912db536ab56a3996489ea0299768c7bcffe57169f0235e7f962a91f483590", 2643456, "tar-xz", "libxml2-2.12.9", ["icu", "zlib"]],
+  "sqlite": ["3.46.1", "77823cb110929c2bcb0f5d48e4833b5c59a8a6e40cdea3936b99e199dbbe5784", 2764032, "zip", "sqlite-amalgamation-3460100", []],
+  "openssl": ["3.5.0", "344d0a79f1a9b08029b0744e2cc401a43f9c90acd1044d09a530b4885a8e9fc0", 53136912, "tar-gzip", "openssl-3.5.0", []],
+  "nghttp2": ["1.64.0", "88bb94c9e4fd1c499967f83dece36a78122af7d5fb40da2019c56b9ccc6eb9dd", 1676124, "tar-xz", "nghttp2-1.64.0", []],
+  "psl": ["0.21.5", "1dcc9ceae8b128f3c0b3f654decd0e1e891afc6ff81098f227ef260449dae208", 7624251, "tar-gzip", "libpsl-0.21.5", ["icu"]],
+  "curl": ["8.17.0", "955f6e729ad6b3566260e8fef68620e76ba3c31acf0a18524416a185acf77992", 2797000, "tar-xz", "curl-8.17.0", ["openssl", "zlib", "brotli", "nghttp2", "psl"]],
+  "fontconfig": ["2.15.0", "63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e", 1447820, "tar-xz", "fontconfig-2.15.0", ["freetype", "harfbuzz", "xml2", "icu", "zlib"]]
+}

@@ -1,15 +1,16 @@
 --- backends/framebuffer/main_sdl.cpp
 +++ backends/framebuffer/main_sdl.cpp
-@@ -1,4 +1,7 @@
+@@ -1,4 +1,8 @@
 -#include "host.hpp"
 +#include "host/native_session.hpp"
++#include "host/native_sdl_surface_peer.hpp"
 +#include "host/framebuffer_touch.hpp"
 +#include "host/event_budget.hpp"
 +#include <gui/framebuffer.hpp>
  #include <SDL.h>
  #include <cstring>
  #include <iostream>
-@@ -17,6 +20,8 @@
+@@ -17,6 +21,8 @@
  std::optional<gui::Key> translate(SDL_Keycode key,SDL_Keymod mods) {
      if((mods&KMOD_CTRL)!=0) {
          if(key==SDLK_a)return gui::Key::select_all;
@@ -18,7 +19,7 @@
          if(key==SDLK_n)return gui::Key::next_page;
          if(key==SDLK_p)return gui::Key::previous_page;
          if(key==SDLK_q)return gui::Key::quit;
-@@ -46,7 +51,7 @@
+@@ -46,7 +52,7 @@
      if(adapter.prompt()||adapter.popup())return;
      const auto focused=adapter.focused();if(!focused)return;
      const auto* widget=gui::find_widget(adapter.snapshot(),*focused);
@@ -27,7 +28,7 @@
      const auto selection=adapter.text_selection(*focused);
      const auto first=std::min(selection.anchor,selection.caret),last=std::max(selection.anchor,selection.caret);
      if(first==last)return;
-@@ -54,11 +59,16 @@
+@@ -54,11 +60,16 @@
      require(SDL_SetClipboardText(value.c_str())==0,"Clipboard write failed");
      if(key==SDLK_x)adapter.text("");
  }
@@ -46,7 +47,7 @@
          int width=0,height=0,physical_width=0,physical_height=0;
          SDL_GetWindowSize(window,&width,&height);require(SDL_GetRendererOutputSize(renderer,&physical_width,&physical_height)==0,"Cannot query renderer size");
          (void)physical_height;
-@@ -70,55 +80,48 @@
+@@ -70,55 +81,48 @@
          const auto symbol=event.key.keysym.sym;
          if((mods&KMOD_CTRL)!=0&&(symbol==SDLK_c||symbol==SDLK_v||symbol==SDLK_x))clipboard(adapter,symbol);
          else if(const auto translated=translate(symbol,mods))adapter.key(*translated,(mods&KMOD_CTRL)!=0,(mods&KMOD_SHIFT)!=0,(mods&KMOD_ALT)!=0);
@@ -88,12 +89,7 @@
 -void push_key(SDL_Keycode key,SDL_Keymod mods=KMOD_NONE) {
 -    SDL_Event event{};event.type=SDL_KEYDOWN;event.key.keysym.sym=key;event.key.keysym.mod=mods;
 -    require(SDL_PushEvent(&event)==1,"Cannot inject SDL key");
-+struct Passive {
-+    static constexpr bool testing = false;
-+    template<class Session> void start(Session&) {}
-+    template<class Session> void frame(Session&, SDL_Window*, const gui::Frame&) {}
-+};
- }
+-}
 -void push_text(const char* text) {
 -    SDL_Event event{};event.type=SDL_TEXTINPUT;SDL_strlcpy(event.text.text,text,sizeof(event.text.text));
 -    require(SDL_PushEvent(&event)==1,"Cannot inject SDL text");
@@ -113,6 +109,12 @@
 -}
 -}
 -int main(int argc,char** argv) {
++struct Passive {
++    static constexpr bool testing = false;
++    template<class Session> void start(Session&) {}
++    template<class Session> void frame(Session&, SDL_Window*, const gui::Frame&) {}
++};
++}
 +namespace foundation::host {
 +template<Application App, class Observer = Passive>
 +int run_sdl(int argc, char**, Observer observer = {}) {
@@ -132,7 +134,7 @@
          const auto initial=session.adapter.frame();
          Window window(SDL_CreateWindow(session.adapter.snapshot().title.c_str(),SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
              int(initial.width),int(initial.height),SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI|(self_test?SDL_WINDOW_HIDDEN:0)),SDL_DestroyWindow);
-@@ -127,13 +130,14 @@
+@@ -127,13 +131,14 @@
          require(bool(renderer),"Renderer creation failed");
          Texture texture(nullptr,SDL_DestroyTexture);unsigned texture_width=0,texture_height=0;std::uint64_t displayed=0;
          SDL_StartTextInput();
@@ -151,7 +153,7 @@
              }
              session.tick();if(session.adapter.closed())break;
              const auto frame=session.adapter.frame(displayed);
-@@ -150,20 +154,10 @@
+@@ -150,20 +155,59 @@
              }
              require(SDL_RenderClear(renderer.get())==0,"Renderer clear failed");
              require(SDL_RenderCopy(renderer.get(),texture.get(),nullptr,nullptr)==0,"Frame presentation failed");SDL_RenderPresent(renderer.get());displayed=frame.revision;
@@ -172,6 +174,56 @@
          SDL_StopTextInput();
 -        if(self_test) {if(!verified||!resized)throw std::runtime_error("SDL self-test closed too early");std::cout<<"SDL window, input, prompt, resize, texture upload and close passed\n";}
      } catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}
+-}
 +    return 0;
- }
++}
++// Optional native Surface composition. The original three-argument overload
++// above retains its exact Session, flags, semantic events and observer contract.
++// The runner stages the real peer before constructing the selected App.
++template<class App, class Observer, class Factory>
++int run_sdl(int argc, char**, Observer observer, Factory factory) {
++    try {
++        if (argc != 1) throw std::invalid_argument("This host accepts no arguments");
++        Sdl sdl;
++        std::unique_ptr<NativeSdlSurfacePeer> peer;
++        const auto mode=factory.mode;
++        factory.prepare_peer=[&peer,mode](gui::Adapter& concrete,const NativeSurfaceWindow& window,NativeSurfaceIngress ingress) {
++            // This runner constructs exactly this concrete backend below.
++            peer=std::make_unique<NativeSdlSurfacePeer>(static_cast<gui::FramebufferAdapter&>(concrete),window,std::move(ingress),mode,Observer::testing);
++            return peer->peer();
++        };
++        NativeSession<App,gui::FramebufferAdapter,Factory> session(std::move(factory));
++        if (!peer) throw std::logic_error("SDL native Surface peer was not staged");
++        observer.start(session);
++        auto dispatch=[&](const SDL_Event& input) {
++            const bool consumed=peer->event(input);
++            if (input.type==SDL_WINDOWEVENT && input.window.windowID!=SDL_GetWindowID(peer->window())) return;
++            if (input.type==SDL_QUIT || (input.type==SDL_WINDOWEVENT && input.window.event==SDL_WINDOWEVENT_CLOSE))
++                session.adapter.key(gui::Key::quit);
++            (void)consumed;
++        };
++        return run_native_sdl_surface_loop(session,[&](int timeout) {
++            SDL_Event input{};
++            if (SDL_WaitEventTimeout(&input,timeout)) {
++                dispatch(input);
++                EventBudget budget;
++                while (budget.take()) {
++                    const auto state=session.runner_state();
++                    if (state.exit_code || state.close_complete || !SDL_PollEvent(&input)) break;
++                    dispatch(input);
++                }
++            }
++        },[&] {
++            peer->redraw();
++            observer.frame(session,peer->window(),peer->frame());
++        });
++    } catch(const std::exception& error) { std::cerr<<error.what()<<'\n';return 1; }
++}
++
++// A typed factory in the trailing third slot cannot be mistaken for an Observer.
++template<class App>
++int run_sdl(int argc,char** argv,NativeSurfaceSessionFactory<App> factory) {
++    return run_sdl<App>(argc,argv,Passive{},std::move(factory));
++}
++
 +}

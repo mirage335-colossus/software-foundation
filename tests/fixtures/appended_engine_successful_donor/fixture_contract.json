@@ -1,0 +1,57 @@
+{
+  "archive_member_counts": [
+    924,
+    185,
+    24,
+    168,
+    775
+  ],
+  "archive_order": [
+    "WebCore",
+    "JavaScriptCore",
+    "PAL",
+    "WTF",
+    "Skia"
+  ],
+  "authority_negatives": [
+    "missing Root acceptance",
+    "outer failure restamped as success",
+    "inner returncode not integer zero",
+    "original qualified owner not natural closed",
+    "passive worker or result reference differs",
+    "original freeze/packet/handle/commands path or SHA differs",
+    "source/profile/SDK/flags/EH/noRTTI/header/VFS namespace differs"
+  ],
+  "compiled_ids": [
+    "NativeDocumentV2Publisher.cpp",
+    "BibEngineDocumentWasmShim.cpp"
+  ],
+  "compiled_objects": 2,
+  "imported_archives": 5,
+  "imported_objects": 49,
+  "kind": "independent-successful-donor-fixture-expectations-v1",
+  "legacy_direct_ids": [
+    "AppResourceQueue.cpp",
+    "BibAppResourceProfile.cpp",
+    "BibAppResources.cpp",
+    "BibClipboardStore.cpp",
+    "BibCopiedDocumentBinding.cpp",
+    "BibEngineCopiedDocumentDispatch.cpp",
+    "BibEngineCopiedHost.cpp",
+    "BibEngineCopiedRecord.cpp",
+    "BibEngineProviderPreflight.cpp"
+  ],
+  "legacy_failed_work_maximum": 25,
+  "opaque_members": 2060,
+  "repacked_archives": 0,
+  "replacement_count": 16,
+  "runtime_or_admission_claim": false,
+  "selected_objects": 51,
+  "shape_negatives": [
+    "missing, duplicate, unknown or reordered import",
+    "Publisher or Shim imported",
+    "five archive name/order/count/report/table/physical identity mismatch",
+    "requested donor failure falls back",
+    "completed-work and successful-donor selected together"
+  ]
+}

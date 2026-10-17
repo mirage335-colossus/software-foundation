@@ -1,0 +1,2276 @@
+--- /dev/null
++++ b/portable/BibEngineCopiedDispatch.cpp
+@@ -0,0 +1,212 @@
++// SPDX-License-Identifier: CC0-1.0
++#include "BibEngineCopiedDispatch.h"
++#include <algorithm>
++#include <array>
++#include <climits>
++#include <cstring>
++#include <limits>
++#include <vector>
++
++namespace bib::copied {
++namespace {
++bool same(const BibEngineDocumentV1& a,const BibEngineDocumentV1& b) noexcept {
++    return a.application_instance==b.application_instance && a.document_sequence==b.document_sequence
++        && a.service_generation==b.service_generation;
++}
++BibEngineDocumentV1 identity(const Record& r) noexcept { return {r.instance,r.document,r.generation}; }
++void useIdentity(Record& r,const BibEngineDocumentV1& d) noexcept {
++    r.instance=d.application_instance; r.document=d.document_sequence; r.generation=d.service_generation;
++}
++std::uint64_t get64(std::span<const std::uint8_t> v) noexcept {
++    std::uint64_t out=0; for(unsigned i=0;i<8;++i) out|=std::uint64_t(v[i])<<(i*8); return out;
++}
++std::uint32_t get32(std::span<const std::uint8_t> v) noexcept {
++    std::uint32_t out=0; for(unsigned i=0;i<4;++i) out|=std::uint32_t(v[i])<<(i*8); return out;
++}
++void put32(std::span<std::uint8_t> out,std::uint32_t value) noexcept {
++    for(unsigned i=0;i<4;++i) out[i]=static_cast<std::uint8_t>(value>>(i*8));
++}
++bool nonzero(const std::uint8_t* p) noexcept {
++    return std::any_of(p,p+32,[](auto c){return c!=0;});
++}
++bool overlap(std::span<const std::uint8_t> in,std::span<std::uint8_t> out) noexcept {
++    const auto a=reinterpret_cast<std::uintptr_t>(in.data()),b=reinterpret_cast<std::uintptr_t>(out.data());
++    return (in.size()>UINTPTR_MAX-a || out.size()>UINTPTR_MAX-b)
++        || (!in.empty() && !out.empty() && a<b+out.size() && b<a+in.size());
++}
++std::uint32_t control(std::int32_t status,CopiedHost& host) noexcept {
++    switch(status) {
++    case BIB_ENGINE_OK:return 0;
++    case BIB_ENGINE_INVALID:return 2;
++    case BIB_ENGINE_UNSUPPORTED:return 7;
++    case BIB_ENGINE_WRONG_THREAD:case BIB_ENGINE_REENTRANT:return 5;
++    case BIB_ENGINE_STALE:return 3;
++    case BIB_ENGINE_LIMIT:return 4;
++    case BIB_ENGINE_CLOSED:return 6;
++    default:host.fail("Unknown or terminal provider result");
++    }
++}
++template<class F> auto actual(F&& f,CopiedHost& host) noexcept -> decltype(f()) {
++    try { return f(); } catch(...) { host.fail("Exception crossed private provider C ABI"); }
++}
++struct DispatchScope {
++    CopiedHost& host;
++    bool& active;
++    ~DispatchScope() { host.end_dispatch(); active=false; }
++};
++struct PairTurn {
++    CopiedHost& host;
++    bool entered{};
++    explicit PairTurn(CopiedHost& value):host(value) {
++        if(host.enter_engine()!=0) host.fail("Delivery outer native turn was not admitted");
++        entered=true;
++    }
++    ~PairTurn() { if(entered) host.leave_engine(); }
++};
++}
++
++BibEngineLimitsV1 copiedLimits() noexcept {
++    return {sizeof(BibEngineLimitsV1),33120,1,16,1048576,8,64,0,67108864,134217728};
++}
++CopiedDispatch::CopiedDispatch(const BibEngineProviderV1& p,CopiedHost& h,std::string_view profile) noexcept
++    :provider_(p),host_(h),profile_(profile) {
++    const auto& b=p.build;
++    valid_=p.size==sizeof(p) && p.abi_major==1 && p.abi_minor==0 && !p.reserved
++        && b.size==sizeof(b) && b.layout_revision==1 && b.target_system==BIB_ENGINE_TARGET_BROWSER_WASM
++        && b.target_processor==BIB_ENGINE_CPU_WASM32 && b.pointer_bits==32 && b.lifetime==1
++        && b.maximum_starts==1 && !b.reserved && b.fixed_viewport_width==800 && b.fixed_viewport_height==600
++        && b.capabilities==259 && nonzero(b.contract_header_sha256) && nonzero(b.build_identity_sha256)
++        && nonzero(b.source_recipe_sha256) && p.start && p.advance && p.current_document && p.deliver_services
++        && p.collect_service_ack && p.dispose_retired_service_document && !profile.empty() && profile.size()<=1024
++        && h.table().persistence==nullptr;
++    const auto fixed=copiedLimits();
++    const auto& l=p.limits;
++    valid_=valid_ && l.size==sizeof(l) && !l.reserved
++        && l.maximum_command_bytes>=fixed.maximum_command_bytes && l.maximum_query_bytes>=fixed.maximum_query_bytes
++        && l.maximum_reply_bytes>=fixed.maximum_reply_bytes && l.maximum_service_message_bytes>=fixed.maximum_service_message_bytes
++        && l.maximum_retired_documents>=fixed.maximum_retired_documents && l.maximum_inflight_resources>=fixed.maximum_inflight_resources
++        && l.maximum_resource_response_bytes>=fixed.maximum_resource_response_bytes
++        && l.maximum_retained_resource_bytes>=fixed.maximum_retained_resource_bytes;
++}
++
++std::int32_t CopiedDispatch::dispatch(std::uint32_t op,std::span<const std::uint8_t> input,
++    std::span<std::uint8_t> output) noexcept {
++    // Reject complete-capacity/shape/aliasing errors before retaining/calling.
++    const auto required=requiredEngineReplyBytes(op);
++    if(!required) return -3;
++    if(output.size()<required) return -2;
++    if(input.size()>maxBodyBytes+headerBytes || overlap(input,output)) return -1;
++    Record request;
++    if(readRecord(op,input,request)!=Status::ok || !validEngineRequest(request)) return -1;
++    if(!valid_) return -3;
++    if(owner_!=std::this_thread::get_id() || active_ || host_.poisoned()) return -4;
++    if(worker_ && worker_!=request.worker) return -1;
++    auto reply=[&](Record r,std::uint32_t status,std::span<const std::uint8_t> body={}) noexcept {
++        std::size_t written=0;
++        if(writeReply(r,status,body,output,written)!=Status::ok || written>INT32_MAX)
++            host_.fail("Prepared complete copied reply could not be written");
++        return static_cast<std::int32_t>(written);
++    };
++    if(op==0) return reply(request,0,{reinterpret_cast<const std::uint8_t*>(profile_.data()),profile_.size()});
++    // Known-but-unadvertised operations have no allocations or provider turns.
++    if(op==4 || op==5) return reply(request,7);
++    if(op==1 && attempted_) return reply(request,6);
++    if(op!=1 && (!started_ || request.instance!=instance_)) return reply(request,6);
++    if(op==1 && (request.instance || request.document || request.generation)) return -1;
++    if(op!=1 && op!=6 && op!=7 && op!=8 && !same(identity(request),host_.current_identity())) return -1;
++
++    std::vector<std::uint8_t> retained;
++    Start config;
++    try { retained.assign(input.begin(),input.end()); } catch(...) { return reply(request,4); }
++    Record captured;
++    if(readRecord(op,retained,captured)!=Status::ok) return -1;
++    if(op==1) {
++        const auto parsed=decodeStart(captured.body,config);
++        if(parsed==Status::invalid) return -1;
++        if(parsed!=Status::ok) return reply(request,4);
++    }
++    if(!host_.begin_dispatch(captured)) return -4;
++    active_=true; worker_=captured.worker;
++    DispatchScope dispatchScope{host_,active_};
++    auto resultRecord=captured;
++    std::array<std::uint8_t,8> body{};
++    switch(op) {
++    case 1: {
++        attempted_=true;
++        BibEngineStartV1 start{};
++        start.size=sizeof(start); start.raster_output=1; start.required_capabilities=259; start.limits=copiedLimits();
++        start.entry_url={reinterpret_cast<const std::uint8_t*>(config.entry.data()),static_cast<std::uint32_t>(config.entry.size()),0};
++        std::copy(config.packageSHA.begin(),config.packageSHA.end(),start.application_package_sha256);
++        BibEngineStartResultV1 result{}; result.size=sizeof(result);
++        const auto code=actual([&]{return provider_.start(&host_.table(),&start,&result);},host_);
++        if(code>0 || code<-8 || result.size!=sizeof(result) || result.phase>2)
++            host_.fail("Malformed actual START result");
++        put32(body,static_cast<std::uint32_t>(code)); put32(std::span(body).subspan(4),result.phase);
++        const auto adopted=host_.current_identity();
++        if(code==0) {
++            if(result.phase!=2 || !result.application_instance || adopted.application_instance!=result.application_instance)
++                host_.fail("START did not retain the actual adopted application instance");
++            started_=true; instance_=result.application_instance; useIdentity(resultRecord,adopted);
++        } else if(result.phase>=1) useIdentity(resultRecord,{result.application_instance,adopted.document_sequence,adopted.service_generation});
++        return reply(resultRecord,0,body);
++    }
++    case 2: {
++        const BibEngineAdvanceV1 advance{sizeof(advance),first_ready_?1u:0u,instance_};
++        const auto code=actual([&]{return provider_.advance(&advance);},host_);
++        useIdentity(resultRecord,host_.current_identity());
++        return reply(resultRecord,control(code,host_));
++    }
++    case 3: {
++        BibEngineDocumentV1 current{};
++        const auto code=actual([&]{return provider_.current_document(instance_,&current);},host_);
++        if(code==0) {
++            if(!current.document_sequence || !current.service_generation || current.application_instance!=instance_)
++                host_.fail("CURRENT did not return an actual nonzero ready identity");
++            first_ready_=true; useIdentity(resultRecord,current);
++        }
++        return reply(resultRecord,control(code,host_));
++    }
++    case 6: {
++        const auto doc=identity(captured);
++        const BibEngineBytesV1 completion{captured.body.data(),static_cast<std::uint32_t>(captured.body.size()),0};
++        std::uint32_t disposition=2;
++        {
++            PairTurn turn(host_);
++            const auto code=actual([&]{return provider_.deliver_services(&doc,&completion);},host_);
++            if(code==0) {
++                host_.clear_ack_observation();
++                const auto status=actual([&]{return provider_.collect_service_ack(&doc);},host_);
++                const auto observed=host_.ack_observation();
++                if(status>13 || observed.count>1 || (!observed.count && status!=0 && status!=2) || (observed.count &&
++                    (!same(observed.document,doc) || !observed.through || observed.control!=0 || status!=2 || observed.status!=status)))
++                    host_.fail("Initial ACK staging returned malformed or uncertain result");
++                // A navigation/close may make the guarded collector return2
++                // without callback. Accept real delivery; never claim an ACK.
++                disposition=1;
++            } else if(code!=-1 && code!=-5 && code!=-6) host_.fail("Terminal actual completion delivery result");
++        }
++        put32(body,disposition); return reply(resultRecord,0,std::span(body).first(4));
++    }
++    case 7: {
++        const auto doc=identity(captured); const auto through=get64(captured.body);
++        const auto expected=get32(captured.body.subspan(8));
++        if(expected>13) host_.fail("Uncertain ACK receipt supplied for collection");
++        host_.clear_ack_observation();
++        const auto status=actual([&]{return provider_.collect_service_ack(&doc);},host_);
++        const auto observed=host_.ack_observation();
++        if(observed.count!=1 || observed.control!=0 || !same(observed.document,doc) || observed.through!=through
++            || observed.status!=expected || status!=expected)
++            host_.fail("ACK collection did not read the exact cached actual receipt");
++        put32(body,status==0?1u:2u); return reply(resultRecord,0,std::span(body).first(4));
++    }
++    case 8: {
++        const auto doc=identity(captured);
++        const auto code=actual([&]{return provider_.dispose_retired_service_document(instance_,doc.service_generation);},host_);
++        if(code!=0) host_.fail("Actual retired controller disposal failed; retry forbidden");
++        if(!host_.forget_disposed_document(doc)) host_.fail("Disposed document was not the exact retained callback identity");
++        put32(body,0); return reply(resultRecord,0,std::span(body).first(4));
++    }
++    default:host_.fail("Unreachable copied operation");
++    }
++}
++} // namespace bib::copied
+--- /dev/null
++++ b/portable/BibEngineCopiedDispatch.h
+@@ -0,0 +1,32 @@
++// SPDX-License-Identifier: CC0-1.0
++// Source-only copied endpoint. Fake-provider tests do not qualify WebCore.
++#pragma once
++#include "BibEngineCopiedRecord.h"
++#include "../runtime/BibEngineCopiedHost.h"
++#include <foundation/appended/engine_provider.h>
++#include <cstdint>
++#include <span>
++#include <string_view>
++#include <thread>
++
++namespace bib::copied {
++[[nodiscard]] BibEngineLimitsV1 copiedLimits() noexcept;
++
++class CopiedDispatch final {
++public:
++    // Composition owns these process-lived objects/bytes before marker access.
++    CopiedDispatch(const BibEngineProviderV1&, CopiedHost&, std::string_view profile) noexcept;
++    [[nodiscard]] std::uint32_t marker() const noexcept { return valid_ ? 65536u : 0u; }
++    // Local spans only. The scalar Wasm wrapper separately proves actual memory
++    // bounds before forming them. Every entered provider exception is terminal.
++    std::int32_t dispatch(std::uint32_t, std::span<const std::uint8_t>,
++        std::span<std::uint8_t>) noexcept;
++private:
++    BibEngineProviderV1 provider_{};
++    CopiedHost& host_;
++    std::string_view profile_;
++    const std::thread::id owner_{std::this_thread::get_id()};
++    bool valid_{}, active_{}, attempted_{}, started_{}, first_ready_{};
++    std::uint64_t worker_{}, instance_{};
++};
++} // namespace bib::copied
+--- /dev/null
++++ b/portable/BibEngineCopiedRecord.cpp
+@@ -0,0 +1,456 @@
++// SPDX-License-Identifier: CC0-1.0
++// Source-only copied bridge codec; no JSC, host imports or provider calls.
++#include "BibEngineCopiedRecord.h"
++
++#include <algorithm>
++#include <limits>
++#include <utility>
++
++namespace bib::copied {
++namespace {
++
++using Bytes = std::span<const std::uint8_t>;
++using MutableBytes = std::span<std::uint8_t>;
++
++std::uint64_t get(Bytes bytes, std::size_t offset, unsigned count) noexcept {
++    std::uint64_t value = 0;
++    for (unsigned index = 0; index < count; ++index)
++        value |= static_cast<std::uint64_t>(bytes[offset + index]) << (8 * index);
++    return value;
++}
++
++void put(MutableBytes bytes, std::size_t offset, std::uint64_t value,
++    unsigned count) noexcept {
++    for (unsigned index = 0; index < count; ++index)
++        bytes[offset + index] = static_cast<std::uint8_t>(value >> (8 * index));
++}
++
++bool overlap(Bytes input, MutableBytes output) noexcept {
++    if (input.empty() || output.empty()) return false;
++    const auto left = reinterpret_cast<std::uintptr_t>(input.data());
++    const auto right = reinterpret_cast<std::uintptr_t>(output.data());
++    // Difference comparisons avoid end-address overflow even for hostile spans.
++    return left <= right ? right - left < input.size() : left - right < output.size();
++}
++
++bool validRecordFields(const Record& record) noexcept {
++    return record.op <= 0xffff && record.worker && record.source <= 2 &&
++        (record.body.empty() || record.body.data()) &&
++        record.body.size() <= std::numeric_limits<std::uint32_t>::max() - headerBytes;
++}
++
++void writeHeader(const Record& record, std::size_t bodyBytes,
++    MutableBytes output) noexcept {
++    std::fill_n(output.begin(), headerBytes, std::uint8_t{});
++    output[0] = 'F'; output[1] = 'K'; output[2] = 'B'; output[3] = '1';
++    put(output, 4, 1, 2); put(output, 6, record.op, 2);
++    put(output, 8, headerBytes + bodyBytes, 4);
++    put(output, 16, record.worker, 8); put(output, 24, record.instance, 8);
++    put(output, 32, record.document, 8); put(output, 40, record.generation, 8);
++    put(output, 48, record.transfer, 8); put(output, 56, record.source, 4);
++    put(output, 64, bodyBytes, 4);
++}
++
++int hex(char ch) noexcept {
++    if (ch >= '0' && ch <= '9') return ch - '0';
++    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
++    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
++    return -1;
++}
++
++bool digest(std::string_view text) noexcept {
++    bool nonzero = false;
++    if (text.size() != 64) return false;
++    for (const auto ch : text) {
++        if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) return false;
++        nonzero = nonzero || ch != '0';
++    }
++    return nonzero;
++}
++
++bool scalar(Bytes bytes, std::size_t& position, std::uint32_t& value) noexcept {
++    if (position == bytes.size()) return false;
++    const auto first = bytes[position++];
++    value = first;
++    if (first < 0x80) return true;
++    unsigned following = 0;
++    std::uint32_t minimum = 0;
++    if (first >= 0xc2 && first <= 0xdf) {
++        following = 1; minimum = 0x80; value = first & 0x1f;
++    } else if (first >= 0xe0 && first <= 0xef) {
++        following = 2; minimum = 0x800; value = first & 0x0f;
++    } else if (first >= 0xf0 && first <= 0xf4) {
++        following = 3; minimum = 0x10000; value = first & 0x07;
++    } else return false;
++    if (following > bytes.size() - position) return false;
++    for (unsigned index = 0; index < following; ++index) {
++        const auto next = bytes[position++];
++        if ((next & 0xc0) != 0x80) return false;
++        value = (value << 6) | (next & 0x3f);
++    }
++    return value >= minimum && value <= 0x10ffff &&
++        !(value >= 0xd800 && value <= 0xdfff);
++}
++
++bool unreserved(unsigned char ch) noexcept {
++    return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
++        (ch >= '0' && ch <= '9') || ch == '-' || ch == '.' || ch == '_' || ch == '~';
++}
++
++bool equalFold(std::string_view left, std::string_view right) noexcept {
++    if (left.size() != right.size()) return false;
++    for (std::size_t index = 0; index < left.size(); ++index) {
++        const auto ch = left[index];
++        const auto folded = ch >= 'A' && ch <= 'Z' ? static_cast<char>(ch - 'A' + 'a') : ch;
++        if (folded != right[index]) return false;
++    }
++    return true;
++}
++
++bool dosName(std::string_view segment) noexcept {
++    const auto base = segment.substr(0, segment.find('.'));
++    if (equalFold(base, "con") || equalFold(base, "prn") ||
++        equalFold(base, "aux") || equalFold(base, "nul")) return true;
++    if (base.size() < 4 ||
++        (!equalFold(base.substr(0, 3), "com") && !equalFold(base.substr(0, 3), "lpt")))
++        return false;
++    const auto suffix = base.substr(3);
++    return (suffix.size() == 1 && suffix[0] >= '1' && suffix[0] <= '9') ||
++        suffix == "\xc2\xb9" || suffix == "\xc2\xb2" || suffix == "\xc2\xb3";
++}
++
++class StartParser {
++public:
++    explicit StartParser(Bytes bytes)
++        : text_(reinterpret_cast<const char*>(bytes.data()), bytes.size()) { }
++
++    Status parse(Start& output) {
++        skip();
++        if (!take('{')) return Status::invalid;
++        skip();
++        std::uint32_t seen = 0;
++        std::string package;
++        Start candidate;
++        for (unsigned index = 0; index < 7; ++index) {
++            std::string key;
++            if (!string(key, 21, Status::invalid)) return status_;
++            skip();
++            if (!take(':')) return Status::invalid;
++            skip();
++            unsigned field = 7;
++            constexpr std::array<std::string_view, 7> keys{
++                "raster_output", "width", "height", "entry_url", "package_sha256",
++                "required_capabilities", "persistence_seed"};
++            for (unsigned item = 0; item < keys.size(); ++item)
++                if (key == keys[item]) field = item;
++            if (field == 7 || (seen & (1u << field))) return Status::invalid;
++            seen |= 1u << field;
++            switch (field) {
++            case 0: if (!token("true")) return Status::invalid; break;
++            case 1: if (!token("800")) return Status::invalid; break;
++            case 2: if (!token("600")) return Status::invalid; break;
++            case 3:
++                if (!string(candidate.entry, maxEntryBytes, Status::limit)) return status_;
++                break;
++            case 4:
++                if (!string(package, 64, Status::invalid)) return status_;
++                break;
++            case 5: {
++                std::string capabilities;
++                if (!string(capabilities, 3, Status::invalid)) return status_;
++                if (capabilities != "259") return Status::invalid;
++                break;
++            }
++            case 6: {
++                std::string seed;
++                if (!string(seed, 0, Status::invalid)) return status_;
++                break;
++            }
++            default: return Status::invalid;
++            }
++            skip();
++            if (!take(index == 6 ? '}' : ',')) return Status::invalid;
++            skip();
++        }
++        if (seen != 0x7f || position_ != text_.size() || !digest(package) ||
++            !validEntryURL(candidate.entry, package)) return Status::invalid;
++        for (std::size_t index = 0; index < candidate.packageSHA.size(); ++index)
++            candidate.packageSHA[index] = static_cast<std::uint8_t>(
++                (hex(package[2 * index]) << 4) | hex(package[2 * index + 1]));
++        output = std::move(candidate);
++        return Status::ok;
++    }
++
++private:
++    void skip() noexcept {
++        while (position_ < text_.size()) {
++            const auto ch = text_[position_];
++            if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') break;
++            ++position_;
++        }
++    }
++
++    bool take(char ch) noexcept {
++        if (position_ == text_.size() || text_[position_] != ch) return false;
++        ++position_;
++        return true;
++    }
++
++    bool token(std::string_view value) noexcept {
++        if (!text_.substr(position_).starts_with(value)) return false;
++        position_ += value.size();
++        return true;
++    }
++
++    bool hexQuad(std::uint32_t& value) noexcept {
++        if (text_.size() - position_ < 4) return false;
++        value = 0;
++        for (unsigned index = 0; index < 4; ++index) {
++            const auto nibble = hex(text_[position_++]);
++            if (nibble < 0) return false;
++            value = (value << 4) | static_cast<std::uint32_t>(nibble);
++        }
++        return true;
++    }
++
++    bool append(std::string& output, char ch, std::size_t maximum, Status overflow) {
++        if (output.size() == maximum) { status_ = overflow; return false; }
++        output.push_back(ch);
++        return true;
++    }
++
++    bool appendScalar(std::string& output, std::uint32_t value,
++        std::size_t maximum, Status overflow) {
++        if (!value) return false;
++        std::array<char, 4> encoded{};
++        std::size_t length = 0;
++        if (value < 0x80) encoded[length++] = static_cast<char>(value);
++        else if (value < 0x800) {
++            encoded[length++] = static_cast<char>(0xc0 | (value >> 6));
++            encoded[length++] = static_cast<char>(0x80 | (value & 0x3f));
++        } else if (value < 0x10000) {
++            encoded[length++] = static_cast<char>(0xe0 | (value >> 12));
++            encoded[length++] = static_cast<char>(0x80 | ((value >> 6) & 0x3f));
++            encoded[length++] = static_cast<char>(0x80 | (value & 0x3f));
++        } else {
++            encoded[length++] = static_cast<char>(0xf0 | (value >> 18));
++            encoded[length++] = static_cast<char>(0x80 | ((value >> 12) & 0x3f));
++            encoded[length++] = static_cast<char>(0x80 | ((value >> 6) & 0x3f));
++            encoded[length++] = static_cast<char>(0x80 | (value & 0x3f));
++        }
++        if (length > maximum - output.size()) { status_ = overflow; return false; }
++        output.append(encoded.data(), length);
++        return true;
++    }
++
++    bool string(std::string& output, std::size_t maximum, Status overflow) {
++        if (!take('"')) return false;
++        while (position_ < text_.size()) {
++            const auto ch = static_cast<unsigned char>(text_[position_++]);
++            if (ch == '"') return true;
++            if (ch < 0x20) return false;
++            if (ch != '\\') {
++                if (!append(output, static_cast<char>(ch), maximum, overflow)) return false;
++                continue;
++            }
++            if (position_ == text_.size()) return false;
++            const auto escape = text_[position_++];
++            char decoded = 0;
++            switch (escape) {
++            case '"': decoded = '"'; break;
++            case '\\': decoded = '\\'; break;
++            case '/': decoded = '/'; break;
++            case 'b': decoded = '\b'; break;
++            case 'f': decoded = '\f'; break;
++            case 'n': decoded = '\n'; break;
++            case 'r': decoded = '\r'; break;
++            case 't': decoded = '\t'; break;
++            case 'u': {
++                std::uint32_t value = 0;
++                if (!hexQuad(value)) return false;
++                if (value >= 0xd800 && value <= 0xdbff) {
++                    std::uint32_t low = 0;
++                    if (!take('\\') || !take('u') || !hexQuad(low) ||
++                        low < 0xdc00 || low > 0xdfff) return false;
++                    value = 0x10000 + ((value - 0xd800) << 10) + (low - 0xdc00);
++                } else if (value >= 0xdc00 && value <= 0xdfff) return false;
++                if (!appendScalar(output, value, maximum, overflow)) return false;
++                continue;
++            }
++            default: return false;
++            }
++            if (!append(output, decoded, maximum, overflow)) return false;
++        }
++        return false;
++    }
++
++    std::string_view text_;
++    std::size_t position_{};
++    Status status_{Status::invalid};
++};
++
++} // namespace
++
++Status readRecord(std::uint32_t expectedOp, Bytes input, Record& output) noexcept {
++    if (expectedOp > 0xffff || input.size() < headerBytes || !input.data() ||
++        input.size() > std::numeric_limits<std::uint32_t>::max() ||
++        input[0] != 'F' || input[1] != 'K' || input[2] != 'B' || input[3] != '1' ||
++        get(input, 4, 2) != 1 || get(input, 6, 2) != expectedOp ||
++        get(input, 8, 4) != input.size() || get(input, 12, 4) ||
++        get(input, 60, 4) || get(input, 68, 4) ||
++        get(input, 64, 4) != input.size() - headerBytes ||
++        !get(input, 16, 8) || get(input, 56, 4) > 2) return Status::invalid;
++    Record candidate{expectedOp, get(input, 16, 8), get(input, 24, 8),
++        get(input, 32, 8), get(input, 40, 8), get(input, 48, 8),
++        static_cast<std::uint32_t>(get(input, 56, 4)), input.subspan(headerBytes)};
++    output = candidate;
++    return Status::ok;
++}
++
++Status readReceipt(std::uint32_t requestOp, Bytes input, Record& output,
++    std::uint32_t& control, std::uint32_t& service) noexcept {
++    if (requestOp >= 0x8000 || input.size() < receiptBytes) return Status::invalid;
++    Record candidate;
++    if (readRecord(requestOp | 0x8000, input, candidate) != Status::ok) return Status::invalid;
++    const auto observedControl = static_cast<std::uint32_t>(get(candidate.body, 0, 4));
++    const auto observedService = static_cast<std::uint32_t>(get(candidate.body, 4, 4));
++    if (observedControl > 8 || observedService > 14) return Status::invalid;
++    candidate.op = requestOp;
++    candidate.body = candidate.body.subspan(8);
++    output = candidate;
++    control = observedControl;
++    service = observedService;
++    return Status::ok;
++}
++
++bool validEngineRequest(const Record& record) noexcept {
++    if (!validRecordFields(record) || record.op > 8 || record.source ||
++        record.body.size() > maxBodyBytes ||
++        (record.document && !record.instance) ||
++        (record.generation && (!record.instance || !record.document))) return false;
++    if (record.op == 0 || record.op == 1) {
++        if (record.instance || record.document || record.generation || record.transfer) return false;
++        return record.op == 0 ? record.body.empty() : !record.body.empty();
++    }
++    if (record.op <= 5) return !record.transfer && record.body.empty();
++    if (!record.instance || !record.document || !record.generation || !record.transfer) return false;
++    if (record.op == 6) return record.body.size() >= 64;
++    if (record.op == 7) return record.body.size() == 12 && get(record.body, 0, 8) &&
++        get(record.body, 8, 4) <= 14;
++    return record.body.empty();
++}
++
++std::size_t requiredEngineReplyBytes(std::uint32_t op) noexcept {
++    if (op == 0) return receiptBytes + 1024;
++    if (op == 1) return receiptBytes + 8;
++    if (op <= 5) return receiptBytes;
++    if (op <= 8) return receiptBytes + 4;
++    return 0;
++}
++
++Status writeRecord(const Record& record, MutableBytes output,
++    std::size_t& written) noexcept {
++    if (!validRecordFields(record) || (!output.empty() && !output.data())) return Status::invalid;
++    const auto total = headerBytes + record.body.size();
++    if (output.size() < total) return Status::limit;
++    if (overlap(record.body, output.first(total))) return Status::invalid;
++    writeHeader(record, record.body.size(), output);
++    std::copy(record.body.begin(), record.body.end(), output.begin() + headerBytes);
++    written = total;
++    return Status::ok;
++}
++
++Status writeReceipt(const Record& record, std::uint32_t control,
++    std::uint32_t service, Bytes body, MutableBytes output,
++    std::size_t& written) noexcept {
++    if (record.op >= 0x8000 || control > 8 || service > 14 ||
++        (!body.empty() && !body.data()) ||
++        body.size() > std::numeric_limits<std::uint32_t>::max() - receiptBytes ||
++        (!output.empty() && !output.data())) return Status::invalid;
++    Record response = record;
++    response.op |= 0x8000;
++    response.body = body;
++    if (!validRecordFields(response)) return Status::invalid;
++    const auto total = receiptBytes + body.size();
++    if (output.size() < total) return Status::limit;
++    if (overlap(body, output.first(total))) return Status::invalid;
++    writeHeader(response, body.size() + 8, output);
++    put(output, 72, control, 4); put(output, 76, service, 4);
++    std::copy(body.begin(), body.end(), output.begin() + receiptBytes);
++    written = total;
++    return Status::ok;
++}
++
++Status writeReply(const Record& record, std::uint32_t control, Bytes body,
++    MutableBytes output, std::size_t& written) noexcept {
++    return writeReceipt(record, control, 0, body, output, written);
++}
++
++bool validUTF8(Bytes input) noexcept {
++    if (!input.empty() && !input.data()) return false;
++    std::size_t position = 0;
++    while (position < input.size()) {
++        std::uint32_t value = 0;
++        if (!scalar(input, position, value)) return false;
++    }
++    return true;
++}
++
++bool validEntryURL(std::string_view entry, std::string_view packageSHA) noexcept {
++    if (entry.size() > maxEntryBytes || !digest(packageSHA) ||
++        !entry.starts_with("app://") || entry.size() <= 71 ||
++        entry.substr(6, 64) != packageSHA || entry[70] != '/' ||
++        entry.find_first_of("?#") != std::string_view::npos) return false;
++    const auto encoded = entry.substr(71);
++    std::array<std::uint8_t, 240> path{};
++    std::size_t length = 0;
++    for (std::size_t position = 0; position < encoded.size(); ++position) {
++        auto byte = static_cast<unsigned char>(encoded[position]);
++        if (byte == '%') {
++            if (encoded.size() - position < 3) return false;
++            const auto high = hex(encoded[position + 1]);
++            const auto low = hex(encoded[position + 2]);
++            if (high < 0 || low < 0) return false;
++            byte = static_cast<unsigned char>((high << 4) | low);
++            if (byte == '/' || byte == '\\' || byte == '%' || unreserved(byte)) return false;
++            position += 2;
++        } else if (byte == ' ') return false;
++        if (length == path.size() || byte == '\\' || byte == ':' || byte == '%' ||
++            byte == '?' || byte == '#' || byte == '<' || byte == '>' || byte == '"' ||
++            byte == '|' || byte == '*') return false;
++        path[length++] = byte;
++    }
++    const Bytes bytes(path.data(), length);
++    std::size_t position = 0;
++    while (position < length) {
++        std::uint32_t value = 0;
++        if (!scalar(bytes, position, value) || value < 0x20 ||
++            (value >= 0x7f && value <= 0x9f)) return false;
++    }
++    const std::string_view text(reinterpret_cast<const char*>(path.data()), length);
++    if (!text.starts_with("web/")) return false;
++    std::size_t start = 0;
++    unsigned depth = 0;
++    while (start <= text.size()) {
++        const auto end = text.find('/', start);
++        const auto segment = text.substr(start, end == std::string_view::npos ? end : end - start);
++        if (segment.empty() || segment == "." || segment == ".." ||
++            segment.back() == '.' || segment.back() == ' ' || dosName(segment) || ++depth > 16)
++            return false;
++        if (end == std::string_view::npos) break;
++        start = end + 1;
++    }
++    return true;
++}
++
++Status decodeStart(Bytes input, Start& output) noexcept {
++    if (input.size() > maxBodyBytes) return Status::limit;
++    if (input.empty() || !input.data() || !validUTF8(input)) return Status::invalid;
++    try {
++        return StartParser(input).parse(output);
++    } catch (...) {
++        return Status::limit;
++    }
++}
++
++} // namespace bib::copied
+--- /dev/null
++++ b/portable/BibEngineCopiedRecord.h
+@@ -0,0 +1,83 @@
++// SPDX-License-Identifier: CC0-1.0
++// Source-only copied bridge codec. No engine objects, callbacks or initialization.
++#pragma once
++
++#include <array>
++#include <cstddef>
++#include <cstdint>
++#include <span>
++#include <string>
++#include <string_view>
++
++namespace bib::copied {
++
++inline constexpr std::size_t headerBytes = 72;
++inline constexpr std::size_t receiptBytes = 80;
++inline constexpr std::size_t maxBodyBytes = 1048576;
++inline constexpr std::size_t maxEntryBytes = 4096;
++
++enum class Status : std::uint32_t { ok = 0, invalid = 2, limit = 4 };
++
++// Logical scalar values only; this structure is never serialized by layout.
++// readRecord/readReceipt borrow their body from the caller's input span.
++struct Record {
++    std::uint32_t op{};
++    std::uint64_t worker{};
++    std::uint64_t instance{};
++    std::uint64_t document{};
++    std::uint64_t generation{};
++    std::uint64_t transfer{};
++    std::uint32_t source{};
++    std::span<const std::uint8_t> body;
++};
++
++struct Start {
++    std::string entry;
++    std::array<std::uint8_t, 32> packageSHA{};
++};
++
++// Generic FKB1 records permit source 0..2 and any exact 16-bit operation.
++// Operation-specific limits and live authority belong to their respective
++// caller. No parser mutates its output arguments on failure.
++[[nodiscard]] Status readRecord(std::uint32_t expectedOp,
++    std::span<const std::uint8_t> input, Record& output) noexcept;
++[[nodiscard]] Status readReceipt(std::uint32_t requestOp,
++    std::span<const std::uint8_t> input, Record& output,
++    std::uint32_t& control, std::uint32_t& service) noexcept;
++
++// Static copied-engine request policy. The shim additionally validates the
++// exact live worker/instance/document/generation and transaction authority.
++// COLLECT status14 is structurally known but must poison in the dispatcher.
++[[nodiscard]] bool validEngineRequest(const Record&) noexcept;
++// Reserve this complete maximum BEFORE any provider/host effect. Zero is an
++// unknown operation. DESCRIBE includes its entire <=1024-byte JSON allowance.
++[[nodiscard]] std::size_t requiredEngineReplyBytes(std::uint32_t op) noexcept;
++
++// All writes are allocation-free, explicit little endian and all-or-nothing.
++// Input body/output overlap is rejected; the shim separately rejects caller
++// input/output overlap before retaining an input snapshot. written is unchanged
++// on failure. LIMIT means the complete selected record does not fit.
++[[nodiscard]] Status writeRecord(const Record&,
++    std::span<std::uint8_t> output, std::size_t& written) noexcept;
++[[nodiscard]] Status writeReceipt(const Record&, std::uint32_t control,
++    std::uint32_t service, std::span<const std::uint8_t> body,
++    std::span<std::uint8_t> output, std::size_t& written) noexcept;
++[[nodiscard]] Status writeReply(const Record&, std::uint32_t control,
++    std::span<const std::uint8_t> body, std::span<std::uint8_t> output,
++    std::size_t& written) noexcept;
++
++// Strict scalar UTF-8 and the inert, canonical package resource URL policy.
++// URL policy mirrors the current package resource normalizer, additionally
++// forbidding query/fragment in START. Neither helper allocates.
++[[nodiscard]] bool validUTF8(std::span<const std::uint8_t>) noexcept;
++[[nodiscard]] bool validEntryURL(std::string_view entry,
++    std::string_view packageSHA) noexcept;
++
++// Exact seven-field JSON. Numeric viewport fields are lexical JSON integers
++// (800 and 600); no fractional/exponent coercion, bool/string conversion or
++// unknown fields. Escaped keys compare after decoding. Strings own their
++// decoded UTF-8 bytes. All allocation/other exceptions become LIMIT and leave
++// output unchanged. The 1MiB body and 4096-byte decoded entry limits apply.
++[[nodiscard]] Status decodeStart(std::span<const std::uint8_t>, Start&) noexcept;
++
++} // namespace bib::copied
+--- a/runtime/BibCopiedPixelBinding.cpp
++++ b/runtime/BibCopiedPixelBinding.cpp
+@@ -1,5 +1,6 @@
+ // SPDX-License-Identifier: CC0-1.0
+-// PRIVATE SOURCE OVERLAY. Real WebCore APIs below remain uncompiled/unexecuted.
++// PRIVATE COPIED259 SUCCESSOR. Real WebCore APIs remain uncompiled/unexecuted.
++// Input helper bodies are inherited but unadvertised: no command/query catalog.
+ #include "config.h"
+ #include "BibEngineProviderBinding.h"
+ #include "BibEngineProviderCatalog.h"
+@@ -41,8 +42,8 @@
+ 
+ namespace bib::provider_candidate {
+ namespace {
+-constexpr std::uint64_t actual_caps=BIB_ENGINE_CAP_SERVICE_QUEUE|BIB_ENGINE_CAP_APP_BUNDLE
+-    |BIB_ENGINE_CAP_KEY_V1|BIB_ENGINE_CAP_FOCUS_V1|BIB_ENGINE_CAP_POINTER_V1|BIB_ENGINE_CAP_DIRTY_RGBA8;
++constexpr std::uint64_t actual_caps=BIB_ENGINE_CAP_SERVICE_QUEUE|BIB_ENGINE_CAP_APP_BUNDLE|BIB_ENGINE_CAP_DIRTY_RGBA8;
++static_assert(actual_caps==259);
+ struct State final {
+     BibEngineBuildV1 build{};
+     BibEngineLimitsV1 limits{};
+@@ -141,7 +142,7 @@
+     // cancelled controller state so the next physical press is a fresh stream.
+     capture.reset();
+ }
+-std::int32_t command(void* raw,const BibEngineCommandV1* request,BibEngineReplyBufferV1*,BibEngineCommandResultV1* output) {
++[[maybe_unused]] std::int32_t command(void* raw,const BibEngineCommandV1* request,BibEngineReplyBufferV1*,BibEngineCommandResultV1* output) {
+     auto& s=*static_cast<State*>(raw);
+     if (!request || !output || faulted(s)) return BIB_ENGINE_PROCESS_EXIT_REQUIRED;
+     codec::Input input;
+@@ -222,7 +223,7 @@
+     const auto result=entered(); // All inner returns destroy locks/Bridge guard.
+     return faulted(s) ? BIB_ENGINE_PROCESS_EXIT_REQUIRED : result;
+ }
+-std::int32_t query(void*,const BibEngineQueryV1*,BibEngineReplyBufferV1*,BibEngineQueryResultV1*) { return BIB_ENGINE_UNSUPPORTED; }
++[[maybe_unused]] std::int32_t query(void*,const BibEngineQueryV1*,BibEngineReplyBufferV1*,BibEngineQueryResultV1*) { return BIB_ENGINE_UNSUPPORTED; }
+ std::int32_t deliveryStatus(int value) {
+     switch (value) {
+     case BIB_FOUNDATION_SERVICE_DELIVERY_ACCEPTED: return BIB_ENGINE_OK;
+@@ -278,8 +279,8 @@
+     if (!candidate) return BIB_ENGINE_LIMIT;
+     candidate->build=build; candidate->limits=limits; candidate->retention=retention; candidate->instance=instance;
+     EnginePrivateV1 engine{sizeof(EnginePrivateV1),private_interface_version,build,limits,instance,candidate.get(),
+-        command_catalog.data(),static_cast<std::uint32_t>(command_catalog.size()),nullptr,0,preflight,start,advance,current,
+-        command,query,deliver,collect,dispose,install};
++        nullptr,0,nullptr,0,preflight,start,advance,current,
++        nullptr,nullptr,deliver,collect,dispose,install};
+     const auto status=bind_engine_private(engine);
+     if (status) return status;
+     state=candidate.release(); // Process-lived after binding; never a host object.
+--- /dev/null
++++ b/runtime/BibEngineCopiedHost.cpp
+@@ -0,0 +1,505 @@
++// SPDX-License-Identifier: CC0-1.0
++#include "BibEngineCopiedHost.h"
++#include "appended_engine_abi.h"
++#include <algorithm>
++#include <bit>
++#include <cmath>
++#include <cstdlib>
++#include <limits>
++#include <new>
++#include <string_view>
++
++namespace bib::copied {
++namespace {
++using Span = std::span<const std::uint8_t>;
++constexpr std::uint64_t maximum_response = 64ULL * 1024 * 1024;
++constexpr std::uint64_t maximum_retained = 128ULL * 1024 * 1024;
++constexpr std::uint32_t service_invalid = 1, service_unavailable = 2,
++    service_invalid_handle = 7, service_limit = 8, service_closed = 10;
++std::uint64_t get(Span bytes, std::size_t offset, unsigned count) noexcept {
++    std::uint64_t value{};
++    for (unsigned i = 0; i < count; ++i) value |= std::uint64_t(bytes[offset + i]) << (i * 8);
++    return value;
++}
++void put(std::span<std::uint8_t> bytes, std::size_t offset, std::uint64_t value, unsigned count) noexcept {
++    for (unsigned i = 0; i < count; ++i) bytes[offset + i] = static_cast<std::uint8_t>(value >> (i * 8));
++}
++bool same(const BibEngineDocumentV1& a, const BibEngineDocumentV1& b) noexcept {
++    return a.application_instance == b.application_instance && a.document_sequence == b.document_sequence &&
++        a.service_generation == b.service_generation;
++}
++bool prospective(const BibEngineDocumentV1& d) noexcept {
++    return d.application_instance && d.document_sequence && !d.service_generation;
++}
++bool mime_valid(Span mime) noexcept {
++    if (mime.empty() || mime.size() > 127) return false;
++    const std::string_view value(reinterpret_cast<const char*>(mime.data()), mime.size());
++    const auto slash = value.find('/');
++    return slash && slash != std::string_view::npos && slash + 1 < value.size() &&
++        value.find('/', slash + 1) == std::string_view::npos &&
++        std::all_of(value.begin(), value.end(), [](char c) {
++            return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == '/';
++        });
++}
++bool scalar_utf8(Span bytes) noexcept {
++    for (std::size_t i = 0; i < bytes.size();) {
++        const auto c = bytes[i++];
++        if (!c) return false;
++        if (c < 0x80) continue;
++        unsigned count{};
++        std::uint32_t value{}, minimum{};
++        if (c >= 0xc2 && c <= 0xdf) { count = 1; value = c & 0x1fu; minimum = 0x80; }
++        else if (c >= 0xe0 && c <= 0xef) { count = 2; value = c & 0x0fu; minimum = 0x800; }
++        else if (c >= 0xf0 && c <= 0xf4) { count = 3; value = c & 0x07u; minimum = 0x10000; }
++        else return false;
++        if (count > bytes.size() - i) return false;
++        while (count--) {
++            const auto tail = bytes[i++];
++            if ((tail & 0xc0u) != 0x80u) return false;
++            value = (value << 6) | (tail & 0x3fu);
++        }
++        if (value < minimum || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) return false;
++    }
++    return true;
++}
++std::int32_t provider_control(std::uint32_t control) noexcept {
++    switch (control) {
++    case FOUNDATION_ENGINE_OK: return BIB_ENGINE_OK;
++    case FOUNDATION_ENGINE_EMPTY:
++    case FOUNDATION_ENGINE_STALE: return BIB_ENGINE_STALE;
++    case FOUNDATION_ENGINE_LIMIT: return BIB_ENGINE_LIMIT;
++    case FOUNDATION_ENGINE_CLOSED: return BIB_ENGINE_CLOSED;
++    case FOUNDATION_ENGINE_UNSUPPORTED: return BIB_ENGINE_UNSUPPORTED;
++    case FOUNDATION_ENGINE_CONFLICT: return BIB_ENGINE_REENTRANT;
++    default: return BIB_ENGINE_INVALID;
++    }
++}
++} // namespace
++
++CopiedHost::CopiedHost(Import transport, Fatal fatal, void* context) noexcept
++    : import_(transport), fatal_(fatal), context_(context) {
++    table_ = {sizeof(table_), BIB_ENGINE_ABI_MAJOR, BIB_ENGINE_ABI_MINOR, 0, this,
++        c_wake, c_timer, c_damage, nullptr, c_enter, c_leave, c_begin, c_close,
++        c_submit, c_cancel, c_ack, c_begin_epoch, c_retire_epoch};
++    for (auto& value : epochs_) value.owner = this;
++}
++
++[[noreturn]] void CopiedHost::fail(const char* reason) noexcept {
++    poisoned_.store(true, std::memory_order_relaxed);
++    // No stack unwind, lease release, final TURN_LEAVE or recoverable return.
++    if (fatal_) fatal_(context_, reason);
++    std::abort();
++}
++bool CopiedHost::begin_dispatch(const Record& r) noexcept {
++    if (poisoned() || !import_ || active_ || importing_ || depth_ || std::this_thread::get_id() != thread_ ||
++        !r.worker || r.source || (worker_ && worker_ != r.worker)) return false;
++    worker_ = r.worker;
++    dispatch_ = {r.instance, r.document, r.generation};
++    transfer_ = r.transfer;
++    active_ = true;
++    ack_ = {};
++    return true;
++}
++void CopiedHost::end_dispatch() noexcept {
++    if (poisoned()) return;
++    if (!active_ || importing_ || depth_ || std::this_thread::get_id() != thread_) fail("unbalanced copied host dispatch");
++    active_ = false;
++}
++void CopiedHost::require_callback() noexcept {
++    if (poisoned() || !active_ || !depth_ || importing_ || std::this_thread::get_id() != thread_)
++        fail("copied host callback outside guarded owner turn");
++}
++CopiedHost::Receipt CopiedHost::rpc(std::uint32_t op, const BibEngineDocumentV1& d,
++    std::uint64_t transfer, std::uint32_t source, Span body, std::span<std::uint8_t> request,
++    std::span<std::uint8_t> response, bool begin) noexcept {
++    if (poisoned() || !active_ || importing_ || std::this_thread::get_id() != thread_) fail("invalid copied host import scope");
++    const Record input{op, worker_, d.application_instance, d.document_sequence, d.service_generation, transfer, source, body};
++    std::size_t written{};
++    if (writeRecord(input, request, written) != Status::ok || written > UINT32_MAX || response.size() > UINT32_MAX)
++        fail("copied host request bounds");
++    std::int32_t result{};
++    importing_ = true;
++    try {
++        result = import_(context_, op, request.data(), static_cast<std::uint32_t>(written), response.data(),
++            static_cast<std::uint32_t>(response.size()));
++    } catch (...) { fail("copied host import exception"); }
++    importing_ = false;
++    if (result < 0 || static_cast<std::uint32_t>(result) > response.size()) fail("copied host transport failure");
++    Receipt receipt;
++    if (readReceipt(op, Span(response.data(), static_cast<std::size_t>(result)), receipt.record,
++            receipt.control, receipt.service) != Status::ok || receipt.service >= 14)
++        fail("malformed or uncertain copied host receipt");
++    const auto& r = receipt.record;
++    const bool generation_matches = r.generation == d.service_generation ||
++        (begin && receipt.control == FOUNDATION_ENGINE_OK && !receipt.service && !d.service_generation && r.generation);
++    if (r.worker != worker_ || r.instance != d.application_instance || r.document != d.document_sequence ||
++        !generation_matches || r.transfer != transfer || r.source != source ||
++        (receipt.control != FOUNDATION_ENGINE_OK && !receipt.service &&
++            op != FOUNDATION_ENGINE_BEGIN_DOCUMENT))
++        fail("copied host receipt authority mismatch");
++    return receipt;
++}
++
++std::uint32_t CopiedHost::enter_engine() noexcept {
++    if (poisoned() || !active_ || importing_ || std::this_thread::get_id() != thread_ || depth_ == 64)
++        fail("invalid copied host engine entry");
++    if (depth_) { ++depth_; return 0; }
++    std::array<std::uint8_t, headerBytes> request{};
++    std::array<std::uint8_t, receiptBytes> response{};
++    const auto r = rpc(FOUNDATION_ENGINE_TURN_ENTER, dispatch_, transfer_, 0, {}, request, response);
++    if (!r.record.body.empty()) fail("unexpected native turn receipt body");
++    if (!r.control && !r.service) depth_ = 1;
++    return r.service;
++}
++void CopiedHost::leave_engine() noexcept {
++    if (poisoned()) return;
++    require_callback();
++    if (--depth_) return;
++    std::array<std::uint8_t, headerBytes> request{};
++    std::array<std::uint8_t, receiptBytes> response{};
++    // dispatch_ is immutable even after BEGIN adopts a new native instance.
++    const auto r = rpc(FOUNDATION_ENGINE_TURN_LEAVE, dispatch_, transfer_, 0, {}, request, response);
++    if (r.control || r.service || !r.record.body.empty()) fail("native turn leave refused");
++}
++void CopiedHost::adopt(const BibEngineDocumentV1& d) noexcept {
++    if (!d.application_instance || !d.document_sequence ||
++        (current_.application_instance && d.application_instance != current_.application_instance) ||
++        d.document_sequence < highest_document_sequence_) fail("invalid copied document adoption");
++    if (current_.document_sequence == d.document_sequence && current_.service_generation &&
++        d.service_generation && d.service_generation != current_.service_generation) fail("copied document generation replacement");
++    // A late resource callback cannot erase service authority already bound.
++    if (current_.document_sequence == d.document_sequence && !d.service_generation && current_.service_generation) return;
++    current_ = d;
++    highest_document_sequence_ = d.document_sequence;
++}
++CopiedHost::Document* CopiedHost::document(std::uint64_t generation) noexcept {
++    if (!generation) return nullptr;
++    const auto found = std::find_if(documents_.begin(), documents_.end(), [&](const auto& d) {
++        return d.identity.service_generation == generation;
++    });
++    return found == documents_.end() ? nullptr : &*found;
++}
++CopiedHost::Epoch* CopiedHost::epoch(std::uint64_t token) noexcept {
++    if (!token) return nullptr;
++    const auto found = std::find_if(epochs_.begin(), epochs_.end(), [&](const auto& e) { return e.token == token; });
++    return found == epochs_.end() ? nullptr : &*found;
++}
++std::uint64_t CopiedHost::begin_document(const BibEngineDocumentV1* prospective_document) noexcept {
++    require_callback();
++    if (!prospective_document || !prospective(*prospective_document)) return 0;
++    const auto slot = std::find_if(documents_.begin(), documents_.end(), [](const auto& d) { return !d.identity.service_generation; });
++    if (slot == documents_.end()) return 0;
++    std::array<std::uint8_t, headerBytes> request{};
++    std::array<std::uint8_t, receiptBytes> response{};
++    const auto r = rpc(FOUNDATION_ENGINE_BEGIN_DOCUMENT, *prospective_document, 0, 0, {}, request, response, true);
++    if (!r.record.body.empty()) fail("unexpected service begin body");
++    if (r.control || r.service) return 0;
++    const auto generation = r.record.generation;
++    if (!generation || document(generation)) fail("duplicate copied service generation");
++    const BibEngineDocumentV1 adopted{r.record.instance, r.record.document, generation};
++    *slot = {adopted, 0, false};
++    // Kernel BEGIN retires its previous active queue atomically.
++    for (auto& d : documents_) if (&d != &*slot && !d.closed && d.identity.service_generation) {
++        d.closed = true;
++        retire_document_resources(d.identity);
++    }
++    adopt(adopted);
++    for (auto& e : epochs_) if (e.token && e.identity.application_instance == adopted.application_instance &&
++        e.identity.document_sequence == adopted.document_sequence) e.identity = adopted;
++    return generation;
++}
++void CopiedHost::close_document(std::uint64_t generation) noexcept {
++    require_callback();
++    auto* d = document(generation);
++    if (!d || d->closed) return;
++    std::array<std::uint8_t, headerBytes> request{};
++    std::array<std::uint8_t, receiptBytes> response{};
++    const auto r = rpc(FOUNDATION_ENGINE_CLOSE_DOCUMENT, d->identity, 0, 0, {}, request, response);
++    if (r.control || r.service || !r.record.body.empty()) fail("service document close refused");
++    d->closed = true;
++    retire_document_resources(d->identity);
++    // Mirror the copied browser endpoint's transport metadata: closing the
++    // exact latest tuple keeps its instance but clears document authority.
++    // Closing an older tuple must preserve any newer prospective reservation.
++    if (same(current_, d->identity)) current_ = {current_.application_instance, 0, 0};
++}
++bool CopiedHost::forget_disposed_document(const BibEngineDocumentV1& identity) noexcept {
++    if (poisoned() || !active_ || importing_ || depth_ || std::this_thread::get_id() != thread_) return false;
++    auto* d = document(identity.service_generation);
++    if (!d || !same(d->identity, identity) || !d->closed) return false;
++    *d = {};
++    return true;
++}
++std::uint32_t CopiedHost::service(std::uint32_t op, std::uint64_t generation, std::uint64_t sequence,
++    const BibEngineBytesV1* bytes, std::uint32_t source) noexcept {
++    require_callback();
++    auto* d = document(generation);
++    if (!d) return service_invalid_handle;
++    // ACK readback remains legal on retained closed queues.
++    if (d->closed && op != FOUNDATION_ENGINE_STAGE_ACK) return service_closed;
++    if (source > 2 || (bytes && (bytes->reserved || (!bytes->data && bytes->length)))) return service_invalid;
++    if (bytes && bytes->length > maxBodyBytes) return service_limit;
++    if (!bytes && !sequence) return service_invalid;
++    std::array<std::uint8_t, 8> sequence_body{};
++    put(sequence_body, 0, sequence, 8);
++    const Span body = bytes ? Span(bytes->data, bytes->length) : Span(sequence_body);
++    std::array<std::uint8_t, receiptBytes> response{};
++    Receipt r;
++    try {
++        std::vector<std::uint8_t> request(headerBytes + body.size());
++        r = rpc(op, d->identity, 0, source, body, request, response);
++    } catch (const std::bad_alloc&) { return service_limit; }
++    catch (...) { fail("copied service request allocation failure"); }
++    if (!r.record.body.empty()) fail("unexpected service callback body");
++    if (op == FOUNDATION_ENGINE_STAGE_ACK) {
++        if (ack_.count == UINT32_MAX) fail("ACK observation overflow");
++        ++ack_.count;
++        ack_.document = d->identity;
++        ack_.through = sequence;
++        ack_.status = r.service;
++        ack_.control = r.control;
++    }
++    return r.service;
++}
++
++std::size_t CopiedHost::active_resource_contexts() const noexcept {
++    return static_cast<std::size_t>(std::count_if(epochs_.begin(), epochs_.end(), [](const auto& e) { return e.token != 0; }));
++}
++std::size_t CopiedHost::outstanding_resource_leases() const noexcept {
++    return static_cast<std::size_t>(std::count_if(leases_.begin(), leases_.end(), [](const auto& l) { return l.token != 0; }));
++}
++void CopiedHost::clear_retired(Epoch& e) noexcept {
++    if (e.retired && !e.leases) { e = {}; e.owner = this; }
++}
++void CopiedHost::retire_document_resources(const BibEngineDocumentV1& identity) noexcept {
++    // The actual kernel service CLOSE/BEGIN retires matching resource contexts
++    // atomically and may already prune zero-lease contexts. Supplier destruction
++    // can report its explicit retirement later: never send that known duplicate
++    // to an epoch the kernel has already removed. Outstanding real leases keep
++    // the local context pinned until their matching release succeeds.
++    for (auto& e : epochs_) if (e.token && e.identity.application_instance == identity.application_instance &&
++        e.identity.document_sequence == identity.document_sequence) {
++        e.retired = true;
++        clear_retired(e);
++    }
++}
++std::int32_t CopiedHost::begin_epoch(const BibEngineDocumentV1* prospective_document, BibEngineResourceEpochV1* out) noexcept {
++    require_callback();
++    if (!out) return BIB_ENGINE_INVALID;
++    *out = {};
++    if (!prospective_document || !prospective(*prospective_document)) return BIB_ENGINE_INVALID;
++    const auto slot = std::find_if(epochs_.begin(), epochs_.end(), [](const auto& e) { return !e.token; });
++    if (slot == epochs_.end()) return BIB_ENGINE_LIMIT;
++    std::array<std::uint8_t, headerBytes> request{};
++    std::array<std::uint8_t, receiptBytes + 8> response{};
++    const auto r = rpc(FOUNDATION_ENGINE_BEGIN_RESOURCE_EPOCH, *prospective_document, 0, 0, {}, request, response);
++    if (r.control || r.service) {
++        if (!r.record.body.empty()) fail("unexpected rejected epoch body");
++        return r.control ? provider_control(r.control) : BIB_ENGINE_INVALID;
++    }
++    if (r.record.body.size() != 8) fail("malformed epoch token");
++    const auto token = get(r.record.body, 0, 8);
++    if (!token || epoch(token)) fail("duplicate copied resource epoch");
++    *slot = {this, *prospective_document, token, 0, false};
++    adopt(*prospective_document);
++    *out = {sizeof(*out), 0, token, &*slot, c_resolve, c_release};
++    return BIB_ENGINE_OK;
++}
++void CopiedHost::retire_epoch(std::uint64_t token) noexcept {
++    require_callback();
++    auto* e = epoch(token);
++    if (!e || e->retired) return;
++    std::array<std::uint8_t, 8> body{};
++    put(body, 0, token, 8);
++    std::array<std::uint8_t, headerBytes + 8> request{};
++    std::array<std::uint8_t, receiptBytes> response{};
++    const auto r = rpc(FOUNDATION_ENGINE_RETIRE_RESOURCE_EPOCH, e->identity, 0, 0, body, request, response);
++    if (r.control || r.service || !r.record.body.empty()) fail("resource epoch retirement refused");
++    e->retired = true;
++    clear_retired(*e);
++}
++void CopiedHost::release_kernel(Epoch& e, std::uint64_t token) noexcept {
++    if (!token || poisoned()) return;
++    std::array<std::uint8_t, 8> body{};
++    put(body, 0, token, 8);
++    std::array<std::uint8_t, headerBytes + 8> request{};
++    std::array<std::uint8_t, receiptBytes> response{};
++    const auto r = rpc(FOUNDATION_ENGINE_RESOURCE_RELEASE, e.identity, 0, 0, body, request, response);
++    if (r.control || r.service || !r.record.body.empty()) fail("resource lease release refused");
++}
++std::int32_t CopiedHost::resolve(Epoch& e, const BibEngineResourceRequestV1* input, BibEngineResourceResponseV1* out) noexcept {
++    require_callback();
++    if (!out) return BIB_ENGINE_INVALID;
++    *out = {};
++    if (!input || input->size != sizeof(*input) || input->reserved || input->method.reserved ||
++        input->resolved_url.reserved || !input->method.data || !input->resolved_url.data ||
++        !input->resolved_url.length || input->resolved_url.length > 4096) return BIB_ENGINE_INVALID;
++    if (!e.token || e.retired || input->resource_epoch != e.token) return BIB_ENGINE_STALE;
++    const std::string_view method(reinterpret_cast<const char*>(input->method.data), input->method.length);
++    if ((method != "GET" && method != "HEAD") || !scalar_utf8(Span(input->resolved_url.data, input->resolved_url.length)))
++        return BIB_ENGINE_INVALID;
++    const auto slot = std::find_if(leases_.begin(), leases_.end(), [](const auto& l) { return !l.token; });
++    if (slot == leases_.end() || !next_lease_) return BIB_ENGINE_LIMIT;
++    std::array<std::uint8_t, 16 + 4096> body{};
++    put(body, 0, e.token, 8); put(body, 8, method == "HEAD" ? 1u : 0u, 4); put(body, 12, input->resolved_url.length, 4);
++    std::copy_n(input->resolved_url.data, input->resolved_url.length, body.begin() + 16);
++    std::array<std::uint8_t, headerBytes + 16 + 4096> request{};
++    std::array<std::uint8_t, receiptBytes + 32 + 127> response{};
++    const auto r = rpc(FOUNDATION_ENGINE_RESOURCE_RESOLVE, e.identity, 0, 0,
++        Span(body).first(16 + input->resolved_url.length), request, response);
++    if (r.control || r.service) {
++        if (!r.record.body.empty()) fail("unexpected rejected resource body");
++        return r.control ? provider_control(r.control) : BIB_ENGINE_INVALID;
++    }
++    const auto metadata = r.record.body;
++    if (metadata.size() < 32) fail("truncated copied resource metadata");
++    const auto http = get(metadata, 0, 4), mime_length = get(metadata, 4, 4),
++        body_length = get(metadata, 8, 8), content_length = get(metadata, 16, 8), kernel_lease = get(metadata, 24, 8);
++    if (mime_length != metadata.size() - 32 || !mime_valid(metadata.subspan(32)) ||
++        http < 200 || http > 599 || http / 100 == 3 ||
++        (http == 200 && !kernel_lease) || (http != 200 && (kernel_lease || body_length || content_length)) ||
++        (method == "HEAD" && body_length) || (method == "GET" && body_length != content_length))
++        fail("invalid copied resource metadata");
++    if (kernel_lease && std::any_of(leases_.begin(), leases_.end(), [&](const auto& held) {
++        return held.token && held.kernel_token == kernel_lease;
++    })) fail("duplicate live kernel resource lease");
++    if (body_length > maximum_response || content_length > maximum_response || body_length > maximum_retained - retained_bytes_) {
++        release_kernel(e, kernel_lease);
++        return BIB_ENGINE_LIMIT;
++    }
++    // Allocation failures are known locally. The actual kernel lease is released
++    // once; transport uncertainty instead traps before this cleanup can run.
++    std::vector<std::uint8_t> copied_body;
++    std::vector<std::uint8_t> read_response;
++    try {
++        copied_body.resize(static_cast<std::size_t>(body_length));
++        if (body_length) read_response.resize(receiptBytes + static_cast<std::size_t>(std::min<std::uint64_t>(body_length, maxBodyBytes)));
++    } catch (const std::bad_alloc&) { release_kernel(e, kernel_lease); return BIB_ENGINE_LIMIT; }
++    catch (...) { release_kernel(e, kernel_lease); return BIB_ENGINE_LIMIT; }
++    std::array<std::uint8_t, 20> read_body{};
++    std::array<std::uint8_t, headerBytes + 20> read_request{};
++    for (std::uint64_t offset = 0; offset < body_length;) {
++        const auto count = static_cast<std::uint32_t>(std::min<std::uint64_t>(maxBodyBytes, body_length - offset));
++        put(read_body, 0, kernel_lease, 8); put(read_body, 8, offset, 8); put(read_body, 16, count, 4);
++        const auto read = rpc(FOUNDATION_ENGINE_RESOURCE_READ, e.identity, 0, 0, read_body, read_request, read_response);
++        if (read.control || read.service || read.record.body.size() != count) fail("copied resource read refused or short");
++        std::copy(read.record.body.begin(), read.record.body.end(), copied_body.begin() + static_cast<std::ptrdiff_t>(offset));
++        offset += count;
++    }
++    slot->epoch = &e;
++    slot->kernel_token = kernel_lease;
++    slot->body = std::move(copied_body);
++    slot->mime_length = static_cast<std::uint32_t>(mime_length);
++    std::copy(metadata.begin() + 32, metadata.end(), slot->mime.begin());
++    std::uint64_t local_lease{};
++    if (kernel_lease) {
++        local_lease = next_lease_;
++        next_lease_ = local_lease == UINT64_MAX ? 0 : local_lease + 1;
++        slot->token = local_lease;
++        ++e.leases;
++        retained_bytes_ += body_length;
++    }
++    // Error MIME is immutable and shared by this profile: no lease-less borrowed
++    // span may depend on an unoccupied lease slot that the next resolve reuses.
++    static constexpr std::uint8_t error_mime[]{'t','e','x','t','/','p','l','a','i','n'};
++    if (!kernel_lease && !std::equal(metadata.begin() + 32, metadata.end(), std::begin(error_mime), std::end(error_mime)))
++        fail("unexpected lease-less resource MIME");
++    *out = {sizeof(*out), static_cast<std::uint32_t>(http), local_lease,
++        {kernel_lease ? slot->mime.data() : error_mime, static_cast<std::uint32_t>(mime_length), 0},
++        body_length ? slot->body.data() : nullptr, body_length, content_length};
++    return BIB_ENGINE_OK;
++}
++void CopiedHost::release(Epoch& e, std::uint64_t token) noexcept {
++    require_callback();
++    if (!token) return;
++    const auto found = std::find_if(leases_.begin(), leases_.end(), [&](const auto& l) { return l.token == token && l.epoch == &e; });
++    if (found == leases_.end()) return;
++    const auto kernel_token = found->kernel_token;
++    const auto size = found->body.size();
++    // Mark consumed before the import; an import reentry cannot double-release.
++    found->token = 0;
++    release_kernel(e, kernel_token);
++    retained_bytes_ -= size;
++    --e.leases;
++    *found = {};
++    clear_retired(e);
++}
++
++void CopiedHost::damage(const BibEngineDamageV1* input) noexcept {
++    require_callback();
++    if (!input || input->size != sizeof(*input) || input->format != 1 || !input->bytes ||
++        input->x < 0 || input->y < 0 || input->width <= 0 || input->height <= 0 ||
++        input->x > 800 || input->width > 800 - input->x || input->y > 600 || input->height > 600 - input->y ||
++        input->stride_bytes != static_cast<std::uint32_t>(input->width) * 4 ||
++        input->length != input->stride_bytes * static_cast<std::uint32_t>(input->height) ||
++        !input->frame_revision || input->frame_revision <= producer_revision_) fail("invalid copied damage geometry or producer revision");
++    auto* d = document(input->document.service_generation);
++    // Resource reservation advances copied transport metadata before provisional
++    // navigation commits. The old nonclosed service document may still paint;
++    // only its exact committed map entry supplies raster authority.
++    if (!d || d->closed || !same(d->identity, input->document) || d->frame == UINT64_MAX ||
++        (!d->frame && (input->x || input->y || input->width != 800 || input->height != 600))) fail("invalid copied damage document or first frame");
++    for (std::size_t i = 3; i < input->length; i += 4) if (input->bytes[i] != 255) fail("nonopaque copied damage");
++    try {
++        std::vector<std::uint8_t> body(48 + input->length);
++        put(body, 0, 1, 4); put(body, 4, 800, 4); put(body, 8, 600, 4); put(body, 12, input->stride_bytes, 4);
++        put(body, 16, static_cast<std::uint32_t>(input->x), 4); put(body, 20, static_cast<std::uint32_t>(input->y), 4);
++        put(body, 24, static_cast<std::uint32_t>(input->width), 4); put(body, 28, static_cast<std::uint32_t>(input->height), 4);
++        put(body, 32, d->frame, 8); put(body, 40, d->frame + 1, 8);
++        std::copy_n(input->bytes, input->length, body.begin() + 48);
++        std::vector<std::uint8_t> request(headerBytes + body.size());
++        std::array<std::uint8_t, receiptBytes> response{};
++        const auto r = rpc(FOUNDATION_ENGINE_FRAME_COMMIT, d->identity, 0, 0, body, request, response);
++        if (r.control || r.service || !r.record.body.empty()) fail("copied frame commit refused");
++    } catch (...) { fail("copied damage allocation failure"); }
++    ++d->frame;
++    producer_revision_ = input->frame_revision;
++}
++void CopiedHost::timer(double delay, std::uint32_t armed) noexcept {
++    require_callback();
++    if (!std::isfinite(delay) || delay < 0 || armed > 1) fail("invalid copied timer");
++    const double clamped = armed ? std::min(delay, 86400000.0) : 0.0;
++    std::array<std::uint8_t, 12> body{};
++    put(body, 0, std::bit_cast<std::uint64_t>(clamped), 8); put(body, 8, armed, 4);
++    importing_ = true;
++    std::int32_t status{};
++    try { status = import_(context_, FOUNDATION_RETAINED_ENGINE_HOST_TIMER, body.data(), static_cast<std::uint32_t>(body.size()), nullptr, 0); }
++    catch (...) { fail("copied timer import exception"); }
++    importing_ = false;
++    if (status) fail("copied timer notification refused");
++}
++void CopiedHost::wake() noexcept {
++    if (poisoned() || !import_) fail("copied wake on terminal host");
++    // No owner bookkeeping, reentry, pump or service dispatch: import only queues.
++    std::int32_t status{};
++    try { status = import_(context_, FOUNDATION_RETAINED_ENGINE_HOST_WAKE, nullptr, 0, nullptr, 0); }
++    catch (...) { fail("copied wake import exception"); }
++    if (status) fail("copied wake notification refused");
++}
++
++void BIB_ENGINE_CALL CopiedHost::c_wake(void* p) noexcept { static_cast<CopiedHost*>(p)->wake(); }
++void BIB_ENGINE_CALL CopiedHost::c_timer(void* p, double delay, std::uint32_t armed) noexcept { static_cast<CopiedHost*>(p)->timer(delay, armed); }
++void BIB_ENGINE_CALL CopiedHost::c_damage(void* p, const BibEngineDamageV1* d) noexcept { static_cast<CopiedHost*>(p)->damage(d); }
++std::uint32_t BIB_ENGINE_CALL CopiedHost::c_enter(void* p) noexcept { return static_cast<CopiedHost*>(p)->enter_engine(); }
++void BIB_ENGINE_CALL CopiedHost::c_leave(void* p) noexcept { static_cast<CopiedHost*>(p)->leave_engine(); }
++std::uint64_t BIB_ENGINE_CALL CopiedHost::c_begin(void* p, const BibEngineDocumentV1* d) noexcept { return static_cast<CopiedHost*>(p)->begin_document(d); }
++void BIB_ENGINE_CALL CopiedHost::c_close(void* p, std::uint64_t generation) noexcept { static_cast<CopiedHost*>(p)->close_document(generation); }
++std::uint32_t BIB_ENGINE_CALL CopiedHost::c_submit(void* p, std::uint64_t generation, const BibEngineBytesV1* b, std::uint32_t source) noexcept {
++    if (!b) return service_invalid;
++    return static_cast<CopiedHost*>(p)->service(FOUNDATION_ENGINE_SUBMIT, generation, 0, b, source);
++}
++std::uint32_t BIB_ENGINE_CALL CopiedHost::c_cancel(void* p, std::uint64_t generation, std::uint64_t sequence) noexcept {
++    return static_cast<CopiedHost*>(p)->service(FOUNDATION_ENGINE_CANCEL, generation, sequence, nullptr, 0);
++}
++std::uint32_t BIB_ENGINE_CALL CopiedHost::c_ack(void* p, std::uint64_t generation, std::uint64_t sequence) noexcept {
++    return static_cast<CopiedHost*>(p)->service(FOUNDATION_ENGINE_STAGE_ACK, generation, sequence, nullptr, 0);
++}
++std::int32_t BIB_ENGINE_CALL CopiedHost::c_begin_epoch(void* p, const BibEngineDocumentV1* d, BibEngineResourceEpochV1* out) noexcept {
++    return static_cast<CopiedHost*>(p)->begin_epoch(d, out);
++}
++void BIB_ENGINE_CALL CopiedHost::c_retire_epoch(void* p, std::uint64_t epoch_token) noexcept { static_cast<CopiedHost*>(p)->retire_epoch(epoch_token); }
++std::int32_t BIB_ENGINE_CALL CopiedHost::c_resolve(void* p, const BibEngineResourceRequestV1* input, BibEngineResourceResponseV1* out) noexcept {
++    auto& e = *static_cast<Epoch*>(p); return e.owner->resolve(e, input, out);
++}
++void BIB_ENGINE_CALL CopiedHost::c_release(void* p, std::uint64_t token) noexcept { auto& e = *static_cast<Epoch*>(p); e.owner->release(e, token); }
++} // namespace bib::copied
+--- /dev/null
++++ b/runtime/BibEngineCopiedHost.h
+@@ -0,0 +1,139 @@
++// SPDX-License-Identifier: CC0-1.0
++// Source-only successor. No WebCore or generated-Wasm qualification implied.
++#pragma once
++#include <foundation/appended/engine_provider.h>
++#include "../portable/BibEngineCopiedRecord.h"
++#include <array>
++#include <atomic>
++#include <cstddef>
++#include <cstdint>
++#include <span>
++#include <thread>
++#include <vector>
++
++namespace bib::copied {
++
++// Import arguments always name this engine's own memory. The JS adapter copies
++// them to/from the independently owned kernel instance before returning.
++using HostImport = std::int32_t (*)(void*, std::uint32_t, const std::uint8_t*,
++    std::uint32_t, std::uint8_t*, std::uint32_t);
++// Must terminate without C++ unwinding. A returning callback is followed by abort.
++using HostFatal = void (*)(void*, const char*) noexcept;
++
++struct AckObservation {
++    std::uint32_t count{};
++    BibEngineDocumentV1 document{};
++    std::uint64_t through{};
++    std::uint32_t status{};
++    std::uint32_t control{};
++};
++
++// Process-lived callback shell. Never destroy/reset it after provider retention.
++// Except WAKE, every method and callback runs on the construction thread.
++class CopiedHost final {
++public:
++    using Import = HostImport;
++    using Fatal = HostFatal;
++    CopiedHost(Import, Fatal, void* context) noexcept;
++    CopiedHost(const CopiedHost&) = delete;
++    CopiedHost& operator=(const CopiedHost&) = delete;
++
++    bool begin_dispatch(const Record&) noexcept;
++    void end_dispatch() noexcept;
++    const BibEngineHostV1& table() const noexcept { return table_; }
++    BibEngineDocumentV1 current_identity() const noexcept { return current_; }
++    bool poisoned() const noexcept { return poisoned_.load(std::memory_order_relaxed); }
++    // The shim holds this outer scope across DELIVER and its initial collector.
++    // Actual ProviderGuard/Bridge scopes nest inside it, without remote reentry.
++    std::uint32_t enter_engine() noexcept;
++    void leave_engine() noexcept;
++    void clear_ack_observation() noexcept { ack_ = {}; }
++    AckObservation ack_observation() const noexcept { return ack_; }
++    // Called only after the real provider successfully disposes this old tuple.
++    bool forget_disposed_document(const BibEngineDocumentV1&) noexcept;
++    [[noreturn]] void fail(const char*) noexcept;
++
++    std::size_t active_resource_contexts() const noexcept;
++    std::size_t outstanding_resource_leases() const noexcept;
++    std::uint64_t retained_resource_bytes() const noexcept { return retained_bytes_; }
++    std::uint32_t local_depth() const noexcept { return depth_; }
++
++private:
++    struct Document {
++        BibEngineDocumentV1 identity{};
++        std::uint64_t frame{};
++        bool closed{};
++    };
++    struct Epoch {
++        CopiedHost* owner{};
++        BibEngineDocumentV1 identity{};
++        std::uint64_t token{};
++        std::uint32_t leases{};
++        bool retired{};
++    };
++    struct Lease {
++        Epoch* epoch{};
++        std::uint64_t token{}, kernel_token{};
++        std::vector<std::uint8_t> body;
++        std::array<std::uint8_t, 127> mime{};
++        std::uint32_t mime_length{};
++    };
++    struct Receipt {
++        Record record;
++        std::uint32_t control{}, service{};
++    };
++    Receipt rpc(std::uint32_t, const BibEngineDocumentV1&, std::uint64_t transfer,
++        std::uint32_t source, std::span<const std::uint8_t> body,
++        std::span<std::uint8_t> request, std::span<std::uint8_t> response,
++        bool begin_document = false) noexcept;
++    void require_callback() noexcept;
++    void adopt(const BibEngineDocumentV1&) noexcept;
++    Document* document(std::uint64_t) noexcept;
++    Epoch* epoch(std::uint64_t) noexcept;
++    void clear_retired(Epoch&) noexcept;
++    void retire_document_resources(const BibEngineDocumentV1&) noexcept;
++    void release_kernel(Epoch&, std::uint64_t) noexcept;
++    std::uint32_t service(std::uint32_t, std::uint64_t, std::uint64_t,
++        const BibEngineBytesV1*, std::uint32_t) noexcept;
++    std::uint64_t begin_document(const BibEngineDocumentV1*) noexcept;
++    void close_document(std::uint64_t) noexcept;
++    std::int32_t begin_epoch(const BibEngineDocumentV1*, BibEngineResourceEpochV1*) noexcept;
++    void retire_epoch(std::uint64_t) noexcept;
++    std::int32_t resolve(Epoch&, const BibEngineResourceRequestV1*, BibEngineResourceResponseV1*) noexcept;
++    void release(Epoch&, std::uint64_t) noexcept;
++    void damage(const BibEngineDamageV1*) noexcept;
++    void timer(double, std::uint32_t) noexcept;
++    void wake() noexcept;
++
++    static void BIB_ENGINE_CALL c_wake(void*) noexcept;
++    static void BIB_ENGINE_CALL c_timer(void*, double, std::uint32_t) noexcept;
++    static void BIB_ENGINE_CALL c_damage(void*, const BibEngineDamageV1*) noexcept;
++    static std::uint32_t BIB_ENGINE_CALL c_enter(void*) noexcept;
++    static void BIB_ENGINE_CALL c_leave(void*) noexcept;
++    static std::uint64_t BIB_ENGINE_CALL c_begin(void*, const BibEngineDocumentV1*) noexcept;
++    static void BIB_ENGINE_CALL c_close(void*, std::uint64_t) noexcept;
++    static std::uint32_t BIB_ENGINE_CALL c_submit(void*, std::uint64_t, const BibEngineBytesV1*, std::uint32_t) noexcept;
++    static std::uint32_t BIB_ENGINE_CALL c_cancel(void*, std::uint64_t, std::uint64_t) noexcept;
++    static std::uint32_t BIB_ENGINE_CALL c_ack(void*, std::uint64_t, std::uint64_t) noexcept;
++    static std::int32_t BIB_ENGINE_CALL c_begin_epoch(void*, const BibEngineDocumentV1*, BibEngineResourceEpochV1*) noexcept;
++    static void BIB_ENGINE_CALL c_retire_epoch(void*, std::uint64_t) noexcept;
++    static std::int32_t BIB_ENGINE_CALL c_resolve(void*, const BibEngineResourceRequestV1*, BibEngineResourceResponseV1*) noexcept;
++    static void BIB_ENGINE_CALL c_release(void*, std::uint64_t) noexcept;
++
++    Import import_;
++    Fatal fatal_;
++    void* context_;
++    const std::thread::id thread_{std::this_thread::get_id()};
++    BibEngineHostV1 table_{};
++    std::atomic<bool> poisoned_{};
++    bool active_{}, importing_{};
++    std::uint32_t depth_{};
++    std::uint64_t worker_{}, transfer_{}, next_lease_{1}, retained_bytes_{}, producer_revision_{}, highest_document_sequence_{};
++    BibEngineDocumentV1 dispatch_{}, current_{};
++    AckObservation ack_{};
++    // One current + eight retired service documents, two independent contexts.
++    std::array<Document, 9> documents_{};
++    std::array<Epoch, 2> epochs_{};
++    std::array<Lease, 64> leases_{};
++};
++} // namespace bib::copied
+--- /dev/null
++++ b/runtime/BibEngineWasmShim.cpp
+@@ -0,0 +1,71 @@
++// SPDX-License-Identifier: CC0-1.0
++// Actual source composition; not compiled or runtime-qualified by helper tests.
++#include "BibEngineWasmShim.h"
++#include "BibEngineCopiedHost.h"
++#include "../portable/BibEngineCopiedDispatch.h"
++#include "BibEngineProviderBinding.h"
++#include "BibCopiedMetadata.generated.h"
++#include <algorithm>
++#include <climits>
++#include <cstring>
++#include <new>
++
++#if !defined(__EMSCRIPTEN__) || defined(__EMSCRIPTEN_PTHREADS__) || BIB_PTHREAD || !BIB_ENGINE_PROVIDER_NEUTRAL
++#error "The copied shim requires the explicit non-pthread browser CPU provider"
++#endif
++static_assert(sizeof(void*)==4 && CHAR_BIT==8);
++
++extern "C" int32_t bib_engine_copied_host_v1(uint32_t,const uint8_t*,uint32_t,uint8_t*,uint32_t);
++namespace {
++using bib::copied::CopiedDispatch;
++using bib::copied::CopiedHost;
++CopiedHost* copiedHost;
++CopiedDispatch* copiedDispatch;
++
++[[noreturn]] void fatal(void*,const char*) noexcept { __builtin_trap(); }
++int32_t imported(void*,uint32_t op,const uint8_t* in,uint32_t length,uint8_t* out,uint32_t capacity) {
++    return bib_engine_copied_host_v1(op,in,length,out,capacity);
++}
++bool matchingBuild(const BibEngineBuildV1& b,const BibEngineBuildV1& expected) noexcept {
++    return b.size==expected.size && b.layout_revision==expected.layout_revision
++        && b.target_system==expected.target_system && b.target_processor==expected.target_processor
++        && b.pointer_bits==expected.pointer_bits && b.lifetime==expected.lifetime
++        && b.maximum_starts==expected.maximum_starts && b.reserved==0
++        && b.fixed_viewport_width==expected.fixed_viewport_width && b.fixed_viewport_height==expected.fixed_viewport_height
++        && b.capabilities==expected.capabilities
++        && !std::memcmp(b.contract_header_sha256,expected.contract_header_sha256,32)
++        && !std::memcmp(b.build_identity_sha256,expected.build_identity_sha256,32)
++        && !std::memcmp(b.source_recipe_sha256,expected.source_recipe_sha256,32);
++}
++// Metadata-only runtime composition. No Page/JSC/Package or host call occurs.
++// All retained objects intentionally live for the Wasm instance's entire life.
++__attribute__((constructor)) void composeCopiedProvider() noexcept {
++    using namespace foundation::appended::copied_metadata;
++    if(copiedDispatch || !metadataValid()) return;
++    try {
++        const auto limits=bib::copied::copiedLimits();
++        const auto status=bib::provider_candidate::bindActualWebCoreProvider(build,limits,{64,4194304});
++        if(status!=BIB_ENGINE_OK) return;
++        BibEngineProviderV1 provider{};
++        if(bib_engine_get_provider_v1(1,0,sizeof(provider),&provider)!=BIB_ENGINE_OK
++            || !matchingBuild(provider.build,build)) return;
++        copiedHost=new(std::nothrow) CopiedHost(imported,fatal,nullptr);
++        if(!copiedHost) return;
++        copiedDispatch=new(std::nothrow) CopiedDispatch(provider,*copiedHost,profile_json);
++        // A failed composition never publishes a valid marker or retry path.
++    } catch(...) { copiedDispatch=nullptr; }
++}
++bool localSpan(const void* pointer,uint32_t size) noexcept {
++    const auto begin=static_cast<uint64_t>(reinterpret_cast<uintptr_t>(pointer));
++    const auto bytes=static_cast<uint64_t>(__builtin_wasm_memory_size(0))*UINT64_C(65536);
++    return (!size || pointer) && begin<=bytes && static_cast<uint64_t>(size)<=bytes-begin;
++}
++}
++extern "C" uint32_t bib_engine_wasm_bridge_v1(void) {
++    return copiedDispatch?copiedDispatch->marker():0;
++}
++extern "C" int32_t bib_engine_wasm_dispatch_v1(uint32_t op,const uint8_t* input,
++    uint32_t length,uint8_t* output,uint32_t capacity) {
++    if(!copiedDispatch || !localSpan(input,length) || !localSpan(output,capacity)) return -1;
++    return copiedDispatch->dispatch(op,{input,length},{output,capacity});
++}
+--- /dev/null
++++ b/runtime/BibEngineWasmShim.h
+@@ -0,0 +1,15 @@
++// SPDX-License-Identifier: CC0-1.0
++// Private scalar copied endpoint. Pointers belong to this engine memory only.
++#ifndef BIB_ENGINE_COPIED_WASM_SHIM_V1_H
++#define BIB_ENGINE_COPIED_WASM_SHIM_V1_H
++#include <stdint.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++uint32_t bib_engine_wasm_bridge_v1(void);
++int32_t bib_engine_wasm_dispatch_v1(uint32_t operation, const uint8_t* input,
++    uint32_t input_length, uint8_t* output, uint32_t output_capacity);
++#ifdef __cplusplus
++}
++#endif
++#endif
+--- a/runtime/embedder.cmake
++++ b/runtime/embedder.cmake
+@@ -40,10 +40,43 @@
+ 
+     set(_bib_guard_source "${BIB_ENGINE_PROVIDER_SOURCE_ROOT}/third_party/appended-engine/src/ProviderGuard.cpp")
+     set(_bib_adapters_source "${BIB_ENGINE_PROVIDER_SOURCE_ROOT}/third_party/appended-engine/src/LegacyHostAdapters.cpp")
+-    set(_bib_binding_source "${BIB_ENGINE_PROVIDER_BINDING_ROOT}/binding/BibEngineProviderBinding.cpp")
++    set(BIB_ENGINE_COPIED_SOURCE_ROOT "" CACHE PATH "Absolute reviewed copied-wasm-shim-v1 successor source root")
++    set(BIB_ENGINE_COPIED_GENERATED_DIR "" CACHE PATH "Absolute build-tree-only directory with generated metadata outputs")
++    if (NOT IS_ABSOLUTE "${BIB_ENGINE_COPIED_SOURCE_ROOT}" OR NOT IS_DIRECTORY "${BIB_ENGINE_COPIED_SOURCE_ROOT}")
++        message(FATAL_ERROR "BIB_ENGINE_COPIED_SOURCE_ROOT must name the complete reviewed copied successor; no diagnostic fallback")
++    endif ()
++    if (NOT IS_ABSOLUTE "${BIB_ENGINE_COPIED_GENERATED_DIR}" OR NOT IS_DIRECTORY "${BIB_ENGINE_COPIED_GENERATED_DIR}")
++        message(FATAL_ERROR "Generate reviewed metadata in an explicit build-only directory before this graph is configured")
++    endif ()
++    cmake_path(IS_PREFIX BIB_ENGINE_COPIED_SOURCE_ROOT "${BIB_ENGINE_COPIED_GENERATED_DIR}" NORMALIZE _bib_generated_inside_source)
++    if (_bib_generated_inside_source)
++        message(FATAL_ERROR "Generated identity cannot be placed inside retained copied source inputs")
++    endif ()
++    cmake_path(IS_PREFIX CMAKE_BINARY_DIR "${BIB_ENGINE_COPIED_GENERATED_DIR}" NORMALIZE _bib_generated_inside_build)
++    if (NOT _bib_generated_inside_build)
++        message(FATAL_ERROR "Copied generated metadata must be inside this explicit CMake binary tree")
++    endif ()
++    set(_bib_binding_source "${BIB_ENGINE_COPIED_SOURCE_ROOT}/runtime/BibCopiedPixelBinding.cpp")
++    set(_bib_copied_sources
++        "${BIB_ENGINE_COPIED_SOURCE_ROOT}/runtime/BibEngineWasmShim.cpp"
++        "${BIB_ENGINE_COPIED_SOURCE_ROOT}/runtime/BibEngineCopiedHost.cpp"
++        "${BIB_ENGINE_COPIED_SOURCE_ROOT}/portable/BibEngineCopiedDispatch.cpp"
++        "${BIB_ENGINE_COPIED_SOURCE_ROOT}/portable/BibEngineCopiedRecord.cpp"
++    )
++    set(_bib_copied_metadata "${BIB_ENGINE_COPIED_GENERATED_DIR}/BibCopiedMetadata.generated.h")
++    set(_bib_copied_provider_build "${BIB_ENGINE_COPIED_GENERATED_DIR}/provider-build.json")
++    set(_bib_copied_pre "${BIB_ENGINE_COPIED_SOURCE_ROOT}/runtime/engine-copied-pre.js")
++    set(_bib_copied_library "${BIB_ENGINE_COPIED_SOURCE_ROOT}/runtime/engine-copied-library.js")
++    foreach (_bib_file ${_bib_copied_sources} "${_bib_copied_metadata}" "${_bib_copied_provider_build}" "${_bib_copied_pre}" "${_bib_copied_library}")
++        if (NOT EXISTS "${_bib_file}" OR IS_DIRECTORY "${_bib_file}")
++            message(FATAL_ERROR "Missing complete copied factory input ${_bib_file}; no configure/build/download fallback")
++        endif ()
++    endforeach ()
+     set(_bib_preflight_source "${BIB_ENGINE_PROVIDER_BINDING_ROOT}/binding/BibEngineProviderPreflight.cpp")
+     set(_bib_codec_source "${BIB_ENGINE_PROVIDER_BINDING_ROOT}/codec/BibEngineProviderCodec.cpp")
+     set(_bib_neutral_sources
++        ${_bib_copied_sources}
++        "${_bib_copied_metadata}"
+         "${BIB_EMBEDDER_DIR}/BibAppResourceProfile.cpp"
+         "${BIB_EMBEDDER_DIR}/BibIDBServer.cpp"
+         "${BIB_EMBEDDER_DIR}/BibMediaPlayer.cpp"
+@@ -75,7 +108,7 @@
+         "${BIB_ENGINE_PROVIDER_SOURCE_ROOT}/include/foundation/appended/engine_provider.h"
+         "${BIB_ENGINE_PROVIDER_SOURCE_ROOT}/third_party/appended-engine/include/EnginePrivate.hpp"
+         "${BIB_ENGINE_PROVIDER_SOURCE_ROOT}/third_party/appended-engine/include/LegacyHostAdapters.hpp"
+-        "${BIB_ENGINE_PROVIDER_BINDING_ROOT}/private/EnginePrivate.hpp"
++        "${BIB_ENGINE_COPIED_SOURCE_ROOT}/runtime/private/EnginePrivate.hpp"
+     )
+         if (NOT EXISTS "${_bib_header}" OR IS_DIRECTORY "${_bib_header}")
+             message(FATAL_ERROR "Missing reviewed canonical provider input: ${_bib_header}")
+@@ -102,10 +135,14 @@
+     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_bib_timer_source}")
+ 
+     add_executable(BibEmbedder ${_bib_neutral_sources})
+-    set_target_properties(BibEmbedder PROPERTIES OUTPUT_NAME embedder)
++    set_target_properties(BibEmbedder PROPERTIES OUTPUT_NAME foundation-retained-engine SUFFIX ".mjs")
+     target_include_directories(BibEmbedder PRIVATE
+-        "${BIB_ENGINE_PROVIDER_BINDING_ROOT}/private"
++        "${BIB_ENGINE_COPIED_GENERATED_DIR}"
++        "${BIB_ENGINE_COPIED_SOURCE_ROOT}/runtime"
++        "${BIB_ENGINE_COPIED_SOURCE_ROOT}/portable"
++        "${BIB_ENGINE_COPIED_SOURCE_ROOT}/runtime/private"
+         "${BIB_ENGINE_PROVIDER_SOURCE_ROOT}/include"
++        "${BIB_ENGINE_PROVIDER_SOURCE_ROOT}/gui/shared"
+         "${BIB_ENGINE_PROVIDER_SOURCE_ROOT}/third_party/appended-engine/include"
+         "${BIB_ENGINE_PROVIDER_BINDING_ROOT}"
+         "${BIB_ENGINE_PROVIDER_BINDING_ROOT}/binding"
+@@ -127,6 +164,7 @@
+         "${BIB_EMBEDDER_DIR}/main.cpp"
+         "${_bib_binding_source}"
+         "${BIB_EMBEDDER_DIR}/BibAppResources.cpp"
++        "${BIB_ENGINE_COPIED_SOURCE_ROOT}/runtime/BibEngineWasmShim.cpp"
+         APPEND PROPERTY COMPILE_DEFINITIONS BIB_ENGINE_PROVIDER_NEUTRAL=1)
+     set_property(SOURCE
+         "${BIB_EMBEDDER_DIR}/main.cpp"
+@@ -144,6 +182,7 @@
+     # Only pure guard/host/codec helpers and the released resource adapter need
+     # EH. Existing main, service bridge and engine objects retain their flags.
+     set_property(SOURCE
++        ${_bib_copied_sources}
+         "${_bib_guard_source}"
+         "${_bib_adapters_source}"
+         "${_bib_binding_source}"
+@@ -157,13 +196,23 @@
+     # Proposed source-only link mode, not a parsed/linked factory claim. There
+     # is no supplier engine-pre.js, diagnostic auto-main, owner archive,
+     # CandidateComposition/demo service or GPU-spike target in this branch.
+-    # The copied transport shim/extra exports require their own later reviewed
+-    # source integration; no arbitrary export list or build identity is inferred.
++    # The copied transport is engine-generic: no application owner archive,
++    # payload-specific link, supplier pre-JS or permissive extra exports.
+     target_link_options(BibEmbedder PRIVATE
+         -fexceptions
+         "SHELL:--no-entry"
+         "SHELL:-sINVOKE_RUN=0"
+-        "SHELL:-sEXPORTED_FUNCTIONS=_bib_engine_get_provider_v1"
++        "SHELL:-sMODULARIZE=1"
++        "SHELL:-sEXPORT_ES6=1"
++        "SHELL:-sEXPORT_NAME=createFoundationRetainedEngine"
++        "SHELL:-sENVIRONMENT=worker"
++        "SHELL:-sWASM_ASYNC_COMPILATION=1"
++        "SHELL:-sCROSS_ORIGIN_STORAGE=0"
++        "SHELL:-sEXPORTED_FUNCTIONS=_bib_engine_get_provider_v1,_bib_engine_wasm_bridge_v1,_bib_engine_wasm_dispatch_v1,_malloc,_free"
++        "SHELL:-sEXPORTED_RUNTIME_METHODS=HEAPU8"
++        "SHELL:-sINCOMING_MODULE_JS_API=wasmBinary,noInitialRun,print,printErr,locateFile"
++        "SHELL:--pre-js ${_bib_copied_pre}"
++        "SHELL:--js-library ${_bib_copied_library}"
+         "SHELL:-sSTACK_SIZE=8MB"
+         "SHELL:-sINITIAL_MEMORY=256MB"
+         "SHELL:-sALLOW_MEMORY_GROWTH=1"
+@@ -172,7 +221,26 @@
+         "SHELL:-Wl,--error-limit=0"
+         "SHELL:--profiling-funcs"
+     )
+-    # Retain the reviewed engine data inputs; these are not application payloads.
++    # JS/custom import/generated metadata are real dependencies. The generator
++    # is an explicit separate provenance step; this CMake overlay never mutates
++    # source recipes, downloads inputs, or invents a build identity.
++    set_property(TARGET BibEmbedder APPEND PROPERTY LINK_DEPENDS
++        "${_bib_copied_pre}" "${_bib_copied_library}" "${_bib_copied_metadata}" "${_bib_copied_provider_build}")
++    # Retain the COMPLETE reviewed engine data closure; these are not app payloads.
++    if (NOT IS_ABSOLUTE "${JSC_EMBED_ICU_DATA_FILE}" OR NOT EXISTS "${JSC_EMBED_ICU_DATA_FILE}" OR IS_DIRECTORY "${JSC_EMBED_ICU_DATA_FILE}")
++        message(FATAL_ERROR "Copied engine requires the exact retained ICU data file")
++    endif ()
++    foreach (_bib_data_dir BIB_FONTCONFIG_ETC_DIR BIB_FONTS_DIR)
++        if (NOT IS_ABSOLUTE "${${_bib_data_dir}}" OR NOT IS_DIRECTORY "${${_bib_data_dir}}")
++            message(FATAL_ERROR "Copied engine requires complete retained ${_bib_data_dir}; no system/network fallback")
++        endif ()
++    endforeach ()
++    file(GLOB_RECURSE _bib_fontconfig_files CONFIGURE_DEPENDS LIST_DIRECTORIES false "${BIB_FONTCONFIG_ETC_DIR}/*")
++    file(GLOB_RECURSE _bib_font_files CONFIGURE_DEPENDS LIST_DIRECTORIES false "${BIB_FONTS_DIR}/*")
++    if (NOT _bib_fontconfig_files OR NOT _bib_font_files)
++        message(FATAL_ERROR "Copied embedded font/config closure is empty")
++    endif ()
++    set_property(TARGET BibEmbedder APPEND PROPERTY LINK_DEPENDS "${JSC_EMBED_ICU_DATA_FILE}" ${_bib_fontconfig_files} ${_bib_font_files})
+     if (JSC_EMBED_ICU_DATA_FILE)
+         target_link_options(BibEmbedder PRIVATE
+             "SHELL:--embed-file ${JSC_EMBED_ICU_DATA_FILE}@${JSC_EMBED_ICU_DATA_FILE}")
+--- /dev/null
++++ b/runtime/engine-copied-library.js
+@@ -0,0 +1,75 @@
++// SPDX-License-Identifier: CC0-1.0
++// One engine-local import. The captured Worker's callback performs engine.read,
++// kernel.call and engine.write: owned copies across separate module memories.
++// These scalar arguments are never forwarded as pointers into kernel memory.
++addToLibrary({
++  $bibEngineCopiedHost__deps: ['$wasmMemory', '$HEAPU8'],
++  $bibEngineCopiedHost__postset: 'bibEngineCopiedHost.initialize();',
++  $bibEngineCopiedHost: {
++    callback: null,
++    poisoned: false,
++    active: false,
++    initialize: function() {
++      var callback = Module['foundationEngineHost'];
++      if (typeof callback !== 'function')
++        throw Error('Missing copied engine Worker host');
++      this.callback = callback;
++    },
++    trap: function() {
++      this.poisoned = true;
++      // A terminal callback must escape the Wasm export, so createCopiedEndpoint
++      // poisons it and suppresses frees/destructors. Returning -4 here could let
++      // native exception handling turn uncertainty into a clean reply.
++      throw new WebAssembly.RuntimeError('Terminal copied engine host failure');
++    },
++    u32: function(value) {
++      // Imported Wasm i32 pointers may arrive signed, including the upper half
++      // of a wasm32 memory. Reject JS values that are not actual i32/u32 bits.
++      if (!Number.isInteger(value) || value < -2147483648 || value > 4294967295)
++        return this.trap();
++      return value >>> 0;
++    },
++    heap: function() {
++      // Reacquire after every host invocation, which may grow either endpoint.
++      if (!(HEAPU8 instanceof Uint8Array) || !(HEAPU8.buffer instanceof ArrayBuffer) ||
++          HEAPU8.byteOffset !== 0 || HEAPU8.byteLength === 0 ||
++          HEAPU8.byteLength !== HEAPU8.buffer.byteLength || HEAPU8.buffer !== wasmMemory.buffer)
++        return this.trap();
++      return HEAPU8;
++    },
++    span: function(heap, pointer, length) {
++      if ((length !== 0 && pointer === 0) || pointer > heap.byteLength ||
++          length > heap.byteLength - pointer) return this.trap();
++    },
++    call: function(operation, input, length, output, capacity) {
++      if (this.poisoned || this.active) return this.trap();
++      operation = this.u32(operation); input = this.u32(input);
++      length = this.u32(length); output = this.u32(output); capacity = this.u32(capacity);
++      var heap = this.heap();
++      this.span(heap, input, length); this.span(heap, output, capacity);
++      if (length && capacity && input < output + capacity && output < input + length)
++        return this.trap();
++      this.active = true;
++      try {
++        var result = this.callback(operation, input, length, output, capacity);
++        // The pinned Worker returns 0 for notifications or a copied reply byte
++        // count. Any negative status, promise, oversized or noninteger result is
++        // uncertain after a host call and must terminate this endpoint.
++        if (!Number.isInteger(result) || result < 0 || result > capacity)
++          return this.trap();
++        heap = this.heap();
++        this.span(heap, input, length); this.span(heap, output, capacity);
++        return result;
++      } catch (_) {
++        return this.trap();
++      } finally {
++        this.active = false;
++      }
++    }
++  },
++  bib_engine_copied_host_v1__deps: ['$bibEngineCopiedHost'],
++  bib_engine_copied_host_v1__sig: 'iiiiii',
++  bib_engine_copied_host_v1: function(operation, input, length, output, capacity) {
++    return bibEngineCopiedHost.call(operation, input, length, output, capacity);
++  }
++});
+--- /dev/null
++++ b/runtime/engine-copied-metadata.h.in
+@@ -0,0 +1,35 @@
++// SPDX-License-Identifier: CC0-1.0
++// Generated in the owned build tree by generate_copied_metadata.py.
++// Constants describe source composition; they are not engine runtime evidence.
++#ifndef FOUNDATION_APPENDED_COPIED_ENGINE_METADATA_H
++#define FOUNDATION_APPENDED_COPIED_ENGINE_METADATA_H
++#include <array>
++#include <cstdint>
++#include <foundation/appended/engine_provider.h>
++
++namespace foundation::appended::copied_metadata {
++inline constexpr std::uint64_t capabilities = UINT64_C(259);
++inline constexpr std::uint32_t bridge_abi = 65536u;
++inline constexpr std::array<std::uint8_t, 32> contract_header_sha256 = {{@CONTRACT_BYTES@}};
++inline constexpr std::array<std::uint8_t, 32> build_identity_sha256 = {{@BUILD_BYTES@}};
++inline constexpr std::array<std::uint8_t, 32> source_recipe_sha256 = {{@RECIPE_BYTES@}};
++inline constexpr char profile_json[] = @PROFILE_JSON@;
++inline constexpr BibEngineBuildV1 build = {
++    sizeof(BibEngineBuildV1), BIB_ENGINE_LAYOUT_V1,
++    BIB_ENGINE_TARGET_BROWSER_WASM, BIB_ENGINE_CPU_WASM32, 32u,
++    BIB_ENGINE_LIFETIME_PROCESS, 1u, 0u, 800u, 600u, capabilities,
++    {@CONTRACT_BYTES@}, {@BUILD_BYTES@}, {@RECIPE_BYTES@}
++};
++constexpr bool metadataValid() noexcept
++{
++    const auto nonzero = [](const auto& bytes) {
++        for (auto byte : bytes) if (byte != 0) return true;
++        return false;
++    };
++    return nonzero(contract_header_sha256) && nonzero(build_identity_sha256)
++        && nonzero(source_recipe_sha256) && capabilities == UINT64_C(259)
++        && bridge_abi == 65536u && build.pointer_bits == 32u;
++}
++static_assert(metadataValid());
++} // namespace foundation::appended::copied_metadata
++#endif
+--- /dev/null
++++ b/runtime/engine-copied-pre.js
+@@ -0,0 +1,38 @@
++// SPDX-License-Identifier: CC0-1.0
++// Factory-local input checks. This file neither starts an engine nor changes
++// the Worker's exact own-Wasm/data locator. The compiled incoming API must
++// explicitly receive wasmBinary; the pinned SDK's default omits it.
++(() => {
++  if (typeof WorkerGlobalScope !== 'function' ||
++      !(globalThis instanceof WorkerGlobalScope) ||
++      typeof DedicatedWorkerGlobalScope !== 'function' ||
++      !(globalThis instanceof DedicatedWorkerGlobalScope) ||
++      typeof self === 'undefined' || self !== globalThis ||
++      typeof ENVIRONMENT_IS_WORKER === 'undefined' || !ENVIRONMENT_IS_WORKER ||
++      typeof ENVIRONMENT_IS_WEB !== 'undefined' && ENVIRONMENT_IS_WEB ||
++      typeof ENVIRONMENT_IS_NODE !== 'undefined' && ENVIRONMENT_IS_NODE ||
++      typeof ENVIRONMENT_IS_SHELL !== 'undefined' && ENVIRONMENT_IS_SHELL ||
++      typeof ENVIRONMENT_IS_PTHREAD !== 'undefined' && ENVIRONMENT_IS_PTHREAD ||
++      typeof ENVIRONMENT_IS_WASM_WORKER !== 'undefined' && ENVIRONMENT_IS_WASM_WORKER)
++    throw Error('Copied engine requires its direct dedicated browser Worker');
++  const typed = Object.getPrototypeOf(Uint8Array.prototype);
++  const read = name => Object.getOwnPropertyDescriptor(typed, name).get;
++  const tag = read(Symbol.toStringTag), buffer = read('buffer');
++  const offset = read('byteOffset'), length = read('byteLength');
++  const binary = Module['wasmBinary'];
++  let data, size;
++  try {
++    if (tag.call(binary) !== 'Uint8Array') throw Error();
++    data = buffer.call(binary); size = length.call(binary);
++    if (!(data instanceof ArrayBuffer) || offset.call(binary) !== 0 ||
++        size === 0 || size > 256 * 1048576 || size !== data.byteLength) throw Error();
++  } catch (_) {
++    throw Error('Copied engine requires complete owned nonshared Wasm bytes');
++  }
++  if (Module['noInitialRun'] !== true || typeof Module['locateFile'] !== 'function' ||
++      typeof Module['foundationEngineHost'] !== 'function')
++    throw Error('Copied engine requires deferred startup and its retained Worker host');
++  // Own a factory-local copy before asynchronous instantiation can yield. No
++  // bytes are fetched and no Blob-relative name or fallback URL is invented.
++  Module['wasmBinary'] = new Uint8Array(new Uint8Array(data, 0, size));
++})();
+--- /dev/null
++++ b/runtime/generate_copied_metadata.py
+@@ -0,0 +1,316 @@
++#!/usr/bin/env python3
++"""Generate copied-provider build identities without invoking any build tool.
++
++The retained recipe binds this script, its adjacent template, the complete
++prelink plan and all semantic inputs. Exact recipe bytes determine recipe_id.
++The provider-build output has the consumer's exact field set and contains no
++hash of itself; only the generated header embeds its output-byte hash. Both
++outputs must live in an existing, disjoint, owned build root. The later link
++receipt must inventory their exact bytes and this invocation separately.
++"""
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import re
++import stat
++import sys
++import tempfile
++
++sys.dont_write_bytecode = True
++MAX_DOCUMENT = 32 * 1024 * 1024
++BINDING = 'copied-owner-bridge/direct-worker-v1'
++CONFIGURATION = {
++    'profile': 'browser-wasm32-cpu-direct-owner-v1', 'modularized': True,
++    'esm': True, 'auto_main': False, 'pthread': False, 'shared_memory': False,
++    'fixed_viewport_width': 800, 'fixed_viewport_height': 600,
++}
++CIRCULAR_FIELDS = frozenset((
++    'recipe_id', 'source_recipe_sha256', 'build_sha256',
++    'build_identity_sha256', 'provider_build_sha256', 'generated_header_sha256',
++    'final_factory_sha256', 'final_wasm_sha256', 'final_output_sha256',
++))
++
++
++def encoded(value):
++    # Exactly tools/dependency_archive.py:encoded, also used by the consumer.
++    return (json.dumps(value, indent=2, sort_keys=True, ensure_ascii=True) + '\n').encode()
++
++
++def digest(raw):
++    return hashlib.sha256(raw).hexdigest()
++
++
++def pairs(items):
++    result = {}
++    for name, value in items:
++        if name in result:
++            raise ValueError('duplicate JSON field: ' + name)
++        result[name] = value
++    return result
++
++
++def document(raw):
++    if len(raw) > MAX_DOCUMENT:
++        raise ValueError('metadata input exceeds 32 MiB')
++    def invalid(value):
++        raise ValueError('invalid JSON constant: ' + value)
++    return json.loads(raw, object_pairs_hook=pairs, parse_constant=invalid)
++
++
++def ordinary(path, directory):
++    path = Path(path)
++    if not path.is_absolute():
++        raise ValueError('all generator paths must be absolute')
++    # Do not normalize links or parent traversals into apparently safe paths.
++    if '..' in path.parts or '.' in path.parts:
++        raise ValueError('generator paths must be canonical')
++    for item in reversed((path, *path.parents)):
++        state = item.lstat()
++        wanted = directory if item == path else True
++        if (stat.S_ISLNK(state.st_mode)
++                or (stat.S_ISDIR(state.st_mode) if wanted else stat.S_ISREG(state.st_mode)) is False
++                or getattr(state, 'st_file_attributes', 0) & 0x400
++                or not wanted and state.st_nlink != 1):
++            raise ValueError('generator paths must be ordinary unlinked entries: ' + str(item))
++    if path.resolve(strict=True) != path:
++        raise ValueError('generator paths must be canonical')
++    return path
++
++
++def read_file(path):
++    path = ordinary(path, False)
++    state = path.stat()
++    if state.st_size > MAX_DOCUMENT:
++        raise ValueError('metadata input exceeds 32 MiB: ' + str(path))
++    raw = path.read_bytes()
++    after = path.stat()
++    if (state.st_dev, state.st_ino, state.st_size, state.st_mtime_ns) != (
++            after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
++        raise ValueError('metadata input changed while reading: ' + str(path))
++    return raw
++
++
++def within(path, root):
++    try:
++        return path.relative_to(root)
++    except ValueError:
++        raise ValueError('path is outside its declared root: ' + str(path)) from None
++
++
++def retained(path, root, inputs, raw=None, role=None):
++    path = ordinary(path, False)
++    name = within(path, root).as_posix()
++    item = inputs.get(name)
++    if not isinstance(item, dict) or role is not None and item.get('role') != role:
++        raise ValueError('required generator input is absent from recipe: ' + name)
++    raw = path.read_bytes() if raw is None else raw
++    if digest(raw) != item.get('sha256'):
++        raise ValueError('retained generator input hash mismatch: ' + name)
++    return raw
++
++
++def output_path(path, build_root, source_root):
++    path = Path(path)
++    if not path.is_absolute() or '..' in path.parts:
++        raise ValueError('output path must be absolute and canonical')
++    within(path, build_root)
++    if path == build_root or source_root == path or source_root in path.parents:
++        raise ValueError('generated outputs must be outside retained sources')
++    ordinary(path.parent, True)
++    if path.exists() or path.is_symlink():
++        ordinary(path, False)
++    return path
++
++
++def reject_circular(value):
++    if isinstance(value, dict):
++        if CIRCULAR_FIELDS.intersection(value):
++            raise ValueError('prelink plan contains a circular generated identity')
++        for child in value.values():
++            reject_circular(child)
++    elif isinstance(value, list):
++        for child in value:
++            reject_circular(child)
++
++
++def output_snapshot(path):
++    if not path.exists() and not path.is_symlink():
++        return None
++    raw = read_file(path)
++    state = path.stat()
++    return (state.st_dev, state.st_ino, state.st_size, state.st_mtime_ns, raw)
++
++
++def write_output(path, raw, before):
++    # The caller explicitly designates this owned build root. Recheck the exact
++    # old entry and bytes before atomically replacing a named generated output;
++    # a changed or newly introduced foreign entry fails closed. All temporary
++    # files stay in that same owned directory, outside retained sources.
++    if output_snapshot(path) != before:
++        raise ValueError('generated output changed before save: ' + str(path))
++    if before is not None and before[-1] == raw:
++        return
++    descriptor, temporary = tempfile.mkstemp(prefix='.' + path.name + '.', dir=path.parent)
++    temporary = Path(temporary)
++    temporary_state = temporary.stat()
++    try:
++        with os.fdopen(descriptor, 'wb') as stream:
++            os.fchmod(stream.fileno(), 0o644)
++            stream.write(raw)
++            stream.flush()
++            os.fsync(stream.fileno())
++        if output_snapshot(path) != before:
++            raise ValueError('generated output changed during save: ' + str(path))
++        os.replace(temporary, path)
++    finally:
++        if temporary.exists():
++            state = temporary.lstat()
++            if (state.st_dev, state.st_ino) != (temporary_state.st_dev, temporary_state.st_ino):
++                raise ValueError('temporary metadata output changed; preserving it: ' + str(temporary))
++            temporary.unlink()
++
++
++def generate(args):
++    source_root = ordinary(args.source_root, True)
++    build_root = ordinary(args.build_root, True)
++    if (source_root == build_root or source_root in build_root.parents
++            or build_root in source_root.parents):
++        raise ValueError('source and build roots must be disjoint')
++    recipe_path = ordinary(args.recipe, False)
++    if recipe_path != source_root / 'recipe.json':
++        raise ValueError('recipe must be the retained root recipe.json')
++    raw_recipe = read_file(recipe_path)
++    recipe = document(raw_recipe)
++    inputs = recipe.get('inputs') if isinstance(recipe, dict) else None
++    if not isinstance(inputs, dict) or not inputs:
++        raise ValueError('recipe must retain complete producer inputs')
++    # Verify producing helpers before importing any retained Python. No bytecode
++    # cache is permitted in the immutable source tree.
++    for name in ('tools/appended_engine_manifest.py', 'tools/dependency_archive.py',
++                 'tools/appended_engine_sdk.py'):
++        retained(source_root / name, source_root, inputs, role='helper')
++    generator_path = ordinary(Path(__file__).absolute(), False)
++    template_path = generator_path.with_name('engine-copied-metadata.h.in')
++    retained(generator_path, source_root, inputs)
++    raw_template = retained(template_path, source_root, inputs)
++    sys.path.insert(0, str(source_root / 'tools'))
++    try:
++        spec = importlib.util.spec_from_file_location(
++            '_foundation_copied_retained_manifest', source_root / 'tools/appended_engine_manifest.py')
++        module = importlib.util.module_from_spec(spec)
++        spec.loader.exec_module(module)
++        checked_recipe, recipe_id, input_inventory = module.verify_inputs(source_root)
++    finally:
++        sys.path.pop(0)
++    if encoded(recipe) != encoded(checked_recipe) or recipe_id != digest(raw_recipe):
++        raise ValueError('recipe changed during complete source verification')
++    # Nonzero identities are mandatory, including the toolchain/paired SDK.
++    def nonzero_hashes(value):
++        if isinstance(value, dict):
++            for name, child in value.items():
++                if ('sha256' in name and isinstance(child, str)
++                        and re.fullmatch('0{64}', child)):
++                    raise ValueError('zero identity is forbidden: ' + name)
++                nonzero_hashes(child)
++        elif isinstance(value, list):
++            for child in value:
++                nonzero_hashes(child)
++    nonzero_hashes(recipe)
++    if recipe['target']['system'] != 'Emscripten' or recipe['target']['processor'] != 'wasm32':
++        raise ValueError('metadata is only for the browser-wasm32 copied profile')
++    if recipe['provider']['binding'] != 'copied-owner-bridge':
++        raise ValueError('metadata requires copied-owner provider binding')
++    if recipe['provider']['abi_major'] != 1 or recipe['provider']['abi_minor'] != 0:
++        raise ValueError('metadata requires exact copied provider ABI 1.0')
++    contract_path = ordinary(args.contract_header, False)
++    if contract_path != source_root / recipe['provider']['header']:
++        raise ValueError('contract header differs from retained provider interface')
++    contract_hash = digest(retained(contract_path, source_root, inputs, role='interface'))
++    if contract_hash != recipe['provider']['header_sha256']:
++        raise ValueError('contract header identity differs from recipe')
++    plan_path = ordinary(args.build_plan, False)
++    raw_plan = retained(plan_path, source_root, inputs)
++    plan = document(raw_plan)
++    if (not isinstance(plan, dict) or type(plan.get('schema_version')) is not int
++            or plan['schema_version'] != 1
++            or plan.get('kind') != 'foundation-copied-engine-prelink-plan-v1'):
++        raise ValueError('invalid retained copied-engine prelink plan')
++    reject_circular(plan)
++    for name in ('target', 'toolchain', 'options'):
++        if name not in plan or encoded(plan[name]) != encoded(recipe[name]):
++            raise ValueError('prelink plan differs from recipe ' + name)
++    for name, expected in (('binding', BINDING), ('configuration', CONFIGURATION),
++                           ('capabilities', '259'), ('bridge_abi', 65536)):
++        if name in plan and encoded(plan[name]) != encoded(expected):
++            raise ValueError('prelink plan differs from fixed copied profile ' + name)
++    build = {
++        'schema_version': 1, 'kind': 'foundation-neutral-engine-provider-build-v1',
++        'target': recipe['target'], 'toolchain': recipe['toolchain'], 'options': recipe['options'],
++        'source_recipe_sha256': recipe_id, 'source_inputs_sha256': digest(encoded(inputs)),
++        'contract_header_sha256': contract_hash, 'binding': BINDING,
++        'configuration': CONFIGURATION, 'capabilities': '259', 'bridge_abi': 65536,
++    }
++    raw_build = encoded(build)
++    build_hash = digest(raw_build)
++    profile = {
++        'schema_version': 1, 'kind': 'foundation-copied-engine-v1',
++        'target': 'browser-wasm32', 'binding': BINDING, 'pointer_bits': 32,
++        'pthread': False, 'shared_memory': False, 'bridge_abi': 65536,
++        'capabilities': '259', 'contract_sha256': contract_hash,
++        'build_sha256': build_hash, 'source_recipe_sha256': recipe_id,
++    }
++    # The wire profile is compact deterministic JSON, <=1024 UTF-8 bytes.
++    profile_json = json.dumps(profile, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
++    if len(profile_json.encode()) > 1024:
++        raise ValueError('copied profile exceeds DESCRIBE bound')
++    replacements = {
++        '@CONTRACT_BYTES@': ', '.join('0x' + contract_hash[i:i + 2] for i in range(0, 64, 2)),
++        '@BUILD_BYTES@': ', '.join('0x' + build_hash[i:i + 2] for i in range(0, 64, 2)),
++        '@RECIPE_BYTES@': ', '.join('0x' + recipe_id[i:i + 2] for i in range(0, 64, 2)),
++        '@PROFILE_JSON@': json.dumps(profile_json, ensure_ascii=True),
++    }
++    header = raw_template.decode('utf-8')
++    for key, value in replacements.items():
++        if key not in header:
++            raise ValueError('metadata template is missing placeholder: ' + key)
++        header = header.replace(key, value)
++    if re.search(r'@[A-Z_]+@', header):
++        raise ValueError('unresolved metadata template placeholder')
++    raw_header = header.encode('utf-8')
++    output_header = output_path(args.output_header, build_root, source_root)
++    output_build = output_path(args.output_build, build_root, source_root)
++    if output_header == output_build:
++        raise ValueError('metadata output roles must be distinct')
++    # Finish complete validation before writing either result. Reverify all
++    # retained bytes after the calculations, rather than trusting old digests.
++    before_header, before_build = output_snapshot(output_header), output_snapshot(output_build)
++    final_recipe, final_id, final_inventory = module.verify_inputs(source_root)
++    if (encoded(final_recipe) != encoded(recipe) or final_id != recipe_id
++            or encoded(final_inventory) != encoded(input_inventory)):
++        raise ValueError('retained metadata inputs changed before output')
++    if read_file(recipe_path) != raw_recipe or retained(plan_path, source_root, inputs) != raw_plan:
++        raise ValueError('metadata inputs changed before output')
++    write_output(output_build, raw_build, before_build)
++    write_output(output_header, raw_header, before_header)
++    return {'recipe_id': recipe_id, 'provider_build_sha256': build_hash,
++            'contract_header_sha256': contract_hash, 'generated_header_sha256': digest(raw_header),
++            'prelink_plan_sha256': digest(raw_plan), 'scope': 'source-metadata-only-no-runtime-evidence'}
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    for name in ('source-root', 'build-root', 'recipe', 'build-plan', 'contract-header',
++                 'output-header', 'output-build'):
++        parser.add_argument('--' + name, required=True, type=Path)
++    try:
++        result = generate(parser.parse_args())
++    except (OSError, ValueError, TypeError, KeyError, UnicodeError) as error:
++        parser.exit(1, 'copied metadata: ' + str(error) + '\n')
++    sys.stdout.buffer.write(encoded(result))
++
++
++if __name__ == '__main__':
++    main()
+--- /dev/null
++++ b/runtime/private/EnginePrivate.hpp
+@@ -0,0 +1,66 @@
++// SPDX-License-Identifier: CC0-1.0
++// Private source candidate; no WebCore implementation is supplied here.
++#pragma once
++#include <foundation/appended/engine_provider.h>
++#include <array>
++#include <cstdint>
++
++namespace bib::provider_candidate {
++inline constexpr std::uint64_t known_capabilities = (UINT64_C(1) << 9) - 1;
++inline constexpr std::uint32_t private_interface_version = 1;
++inline constexpr std::array<std::uint8_t, 32> contract_header_sha256{
++    0xa8,0xe8,0x9d,0xa8,0x5d,0x34,0xb2,0x9a,0x4d,0x1b,0xc4,0x54,0x49,0x57,0x91,0xfa,
++    0x60,0x4b,0x81,0xe3,0x47,0x7e,0x48,0xce,0x8c,0xa9,0x02,0xe4,0x33,0x3a,0x9c,0x0d};
++
++// All catalog/implementation/context bytes and code are engine-private and
++// process-lived. Missing handlers cannot enable a capability. Schema hashes
++// identify the exact future catalog; no real catalog or engine binding exists.
++struct Operation {
++    std::uint32_t kind;
++    std::uint32_t maximum_input_bytes;
++    std::uint32_t required_reply_capacity;
++    std::uint64_t capability;
++    std::array<std::uint8_t, 32> schema;
++};
++
++struct EnginePrivateV1 {
++    std::uint32_t size;
++    std::uint32_t version;
++    BibEngineBuildV1 build;
++    BibEngineLimitsV1 limits;
++    std::uint64_t application_instance; // Fresh nonzero composition-issued ID.
++    void* context;
++    const Operation* commands;
++    std::uint32_t command_count;
++    const Operation* queries;
++    std::uint32_t query_count;
++    // Preflight is strictly inert: no callback, retention, engine execution or
++    // effect. Its complete copied config and limits are validated before commit.
++    // Validate the full canonical resource URL/decoding, package digest and
++    // copied profile/limits here, without invoking resource callbacks. The host
++    // supplies a verified immutable Package; the real entry response is checked
++    // during loading before its Document receives author bytes.
++    std::int32_t (*preflight)(void*, const BibEngineStartV1*);
++    // Called only after permanent callback/config retention and PROCESS_COMMITTED.
++    // The outer guard owns enter_engine/leave_engine around this entire call.
++    std::int32_t (*start)(void*, const BibEngineHostV1*, const BibEngineStartV1*, std::uint64_t);
++    std::int32_t (*advance)(void*, const BibEngineAdvanceV1*);
++    // Exact identity read: no allocation, JS, callback, pump or document adoption.
++    std::int32_t (*current_document)(void*, std::uint64_t, BibEngineDocumentV1*);
++    // Core burns sequence before dispatch. A nonzero result is consumed-unknown;
++    // the backend never decides that an entered effect is safe to retry.
++    std::int32_t (*command)(void*, const BibEngineCommandV1*, BibEngineReplyBufferV1*, BibEngineCommandResultV1*);
++    std::int32_t (*query)(void*, const BibEngineQueryV1*, BibEngineReplyBufferV1*, BibEngineQueryResultV1*);
++    std::int32_t (*deliver_services)(void*, const BibEngineDocumentV1*, const BibEngineBytesV1*);
++    std::uint32_t (*collect_service_ack)(void*, const BibEngineDocumentV1*);
++    std::int32_t (*dispose_retired_service_document)(void*, std::uint64_t, std::uint64_t);
++    // Required explicit private operation for advertised APP_BUNDLE. It receives
++    // the copied host table; only a future real resource adapter may provide it.
++    std::int32_t (*install_resources)(void*, const BibEngineHostV1*, const BibEngineStartV1*, std::uint64_t);
++};
++
++// One private binding, before query/start. This symbol is not part of the public
++// table or a Wasm bridge and does not qualify an SDK/provider. A missing binding
++// makes the C getter return UNSUPPORTED without populating a callable table.
++std::int32_t bind_engine_private(const EnginePrivateV1&) noexcept;
++} // namespace bib::provider_candidate

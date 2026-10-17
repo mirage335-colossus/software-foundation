@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: CC0-1.0
+// Generated only in an owned disjoint output tree. Source facts are not runtime evidence.
+// profile_json uses the existing host's exact 24-field document-v2 contract;
+// full limits are checked separately in C metadata and provider-build.json.
+#ifndef FOUNDATION_APPENDED_DOCUMENT_COPIED_ENGINE_METADATA_H
+#define FOUNDATION_APPENDED_DOCUMENT_COPIED_ENGINE_METADATA_H
+#include <array>
+#include <cstdint>
+#include <string_view>
+#include <foundation/appended/engine_provider_document_v2.h>
+#include "BibEngineCopiedDocumentFacts.h"
+
+namespace foundation::appended::document_copied_metadata {
+inline constexpr std::uint64_t capabilities = UINT64_C(1795);
+inline constexpr std::uint32_t bridge_abi = 65536u;
+inline constexpr std::array<std::uint8_t, 32> contract_header_sha256 = {{@CONTRACT_SHA256_BYTES@}};
+inline constexpr std::array<std::uint8_t, 32> base_header_sha256 = {{@BASE_HEADER_SHA256_BYTES@}};
+inline constexpr std::array<std::uint8_t, 32> document_header_sha256 = {{@DOCUMENT_HEADER_SHA256_BYTES@}};
+inline constexpr std::array<std::uint8_t, 32> document_catalog_sha256 = {{@DOCUMENT_CATALOG_SHA256_BYTES@}};
+inline constexpr std::array<std::uint8_t, 32> semantic_snapshot_schema_sha256 = {{@SEMANTIC_SNAPSHOT_SCHEMA_SHA256_BYTES@}};
+inline constexpr std::array<std::uint8_t, 32> form_action_schema_sha256 = {{@FORM_ACTION_SCHEMA_SHA256_BYTES@}};
+inline constexpr std::array<std::uint8_t, 32> ack_schema_sha256 = {{@ACK_SCHEMA_SHA256_BYTES@}};
+inline constexpr std::array<std::uint8_t, 32> build_identity_sha256 = {{@BUILD_IDENTITY_SHA256_BYTES@}};
+inline constexpr std::array<std::uint8_t, 32> source_recipe_sha256 = {{@SOURCE_RECIPE_SHA256_BYTES@}};
+inline constexpr char profile_json[] = @PROFILE_JSON@;
+inline constexpr BibEngineBuildV1 build = {
+    sizeof(BibEngineBuildV1), BIB_ENGINE_LAYOUT_V1,
+    BIB_ENGINE_TARGET_BROWSER_WASM, BIB_ENGINE_CPU_WASM32, 32u,
+    BIB_ENGINE_LIFETIME_PROCESS, 1u, 0u, 800u, 600u, capabilities,
+    {@CONTRACT_SHA256_BYTES@}, {@BUILD_IDENTITY_SHA256_BYTES@}, {@SOURCE_RECIPE_SHA256_BYTES@}
+};
+inline constexpr BibEngineLimitsV1 limits = {
+    sizeof(BibEngineLimitsV1), 6246u, 48u, 1048576u, 1048576u,
+    8u, 64u, 0u, UINT64_C(67108864), UINT64_C(134217728)
+};
+constexpr bool metadataConstantsValid() noexcept
+{
+    const auto nonzero = [](const auto& bytes) {
+        for (auto byte : bytes) if (byte != 0) return true;
+        return false;
+    };
+    return sizeof(BibEngineLimitsV1) == 48u
+        && nonzero(build_identity_sha256) && nonzero(source_recipe_sha256)
+        && capabilities == UINT64_C(1795) && bridge_abi == 65536u
+        && build.pointer_bits == 32u && sizeof(profile_json) > 1u
+        && sizeof(profile_json) - 1u <= bib::copied::documentCopiedFactsCapacity;
+}
+static_assert(metadataConstantsValid());
+inline bool metadataValid() noexcept
+{
+    return metadataConstantsValid() && bib::copied::documentCopiedFactsMatch(
+        std::string_view(profile_json, sizeof(profile_json) - 1u), build, limits);
+}
+} // namespace foundation::appended::document_copied_metadata
+#endif

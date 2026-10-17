@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: CC0-1.0
+// Generated in the owned build tree by generate_copied_metadata.py.
+// Constants describe source composition; they are not engine runtime evidence.
+#ifndef FOUNDATION_APPENDED_COPIED_ENGINE_METADATA_H
+#define FOUNDATION_APPENDED_COPIED_ENGINE_METADATA_H
+#include <array>
+#include <cstdint>
+#include <foundation/appended/engine_provider.h>
+
+namespace foundation::appended::copied_metadata {
+inline constexpr std::uint64_t capabilities = UINT64_C(259);
+inline constexpr std::uint32_t bridge_abi = 65536u;
+inline constexpr std::array<std::uint8_t, 32> contract_header_sha256 = {{@CONTRACT_BYTES@}};
+inline constexpr std::array<std::uint8_t, 32> build_identity_sha256 = {{@BUILD_BYTES@}};
+inline constexpr std::array<std::uint8_t, 32> source_recipe_sha256 = {{@RECIPE_BYTES@}};
+inline constexpr char profile_json[] = @PROFILE_JSON@;
+inline constexpr BibEngineBuildV1 build = {
+    sizeof(BibEngineBuildV1), BIB_ENGINE_LAYOUT_V1,
+    BIB_ENGINE_TARGET_BROWSER_WASM, BIB_ENGINE_CPU_WASM32, 32u,
+    BIB_ENGINE_LIFETIME_PROCESS, 1u, 0u, 800u, 600u, capabilities,
+    {@CONTRACT_BYTES@}, {@BUILD_BYTES@}, {@RECIPE_BYTES@}
+};
+constexpr bool metadataValid() noexcept
+{
+    const auto nonzero = [](const auto& bytes) {
+        for (auto byte : bytes) if (byte != 0) return true;
+        return false;
+    };
+    return nonzero(contract_header_sha256) && nonzero(build_identity_sha256)
+        && nonzero(source_recipe_sha256) && capabilities == UINT64_C(259)
+        && bridge_abi == 65536u && build.pointer_bits == 32u;
+}
+static_assert(metadataValid());
+} // namespace foundation::appended::copied_metadata
+#endif

@@ -1,0 +1,46 @@
+{
+  "cpu": {
+    "baseline": "sse2",
+    "source_dispatch": "supplier-per-source-reviewed"
+  },
+  "execution_host": {
+    "distribution": {
+      "codename": "trixie",
+      "id": "debian",
+      "version_id": "13"
+    },
+    "libc": {
+      "family": "glibc",
+      "version": "2.41"
+    },
+    "processor": "x86_64",
+    "system": "Linux"
+  },
+  "kernel_rebuild": false,
+  "kind": "foundation-native-diagnostic-host-policy-v1",
+  "native_engine_execution": false,
+  "policy_id": "linux-x86_64-debian13-trixie-glibc2.41-diagnostic-v1",
+  "production_eligible": false,
+  "program_roles": [
+    "python",
+    "perl",
+    "ruby",
+    "gperf",
+    "cmake",
+    "ninja",
+    "sh"
+  ],
+  "schema_version": 1,
+  "scope": "native-engine-diagnostic-build-host-only",
+  "sdk_original_host": {
+    "glibc": "2.36",
+    "processor": "x86_64",
+    "system": "Linux"
+  },
+  "target": {
+    "glibc": "2.36",
+    "processor": "x86_64",
+    "system": "Linux",
+    "triple": "x86_64-buildroot-linux-gnu"
+  }
+}

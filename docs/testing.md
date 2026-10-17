@@ -346,6 +346,33 @@ executables exist. Ordinary shards use the same complete prerequisite registry. 
 
 ## Focused host diagnostics
 
+The SDK-free Publisher label regression can be selected without building an
+engine or application:
+
+```sh
+./build.sh test dev --core-provider cpp \
+  --test tools.document_label_association_fixture \
+  --test foundation.appended.document-label-association
+```
+
+The Python generator extracts the maintained Publisher's association, joining
+and equality code into a small host C++ fixture. The tests cover ordinary hidden
+labels and refusal for affected or uncertain controls. This checks selected
+production logic with a fake DOM boundary; it does not qualify the actual engine.
+
+The completed-donor continuation and portable Windows tool-version checks also
+have script-only selections:
+
+```sh
+./build.sh test dev --core-provider cpp \
+  --test tools.appended_engine_successful_donor \
+  --test tools.appended_engine_document_source_successful_donor \
+  --test tools.appended_engine_windows_tool_versions
+```
+
+The donor fixtures run on Linux; the tool-version fixtures are registered on
+every host. These selections do not build an engine or application.
+
 The manual [Host contract diagnostics workflow](../.github/workflows/host-contracts.yml)
 runs one complete `process_tree`, `windows_graphics`, `ci_plan`, `github_release`,
 `ci_transport`, `latest_release`, `agent_board`, `test_plan`, `ci_retry`, `package_wasm` or `import_wasm` unit suite
@@ -361,6 +388,16 @@ The `latest_release` selection also binds the complete maintained source invento
 because its orchestration fixtures inspect workflow and helper files. It requires
 no compiler setup, application build or SDK acquisition.
 These diagnostic receipts never qualify a release.
+
+The `process_tree_observation` suite adds inert protocol and control checks; its
+Linux supervisor-specific cases are explicitly excluded on other hosts. It is
+also registered as `tools.process_tree_observation` in the normal test graph.
+Three additional CLI-only Windows diagnostics live outside ordinary discovery:
+`windows_process_cap`, `windows_engine_publication` and
+`windows_engine_source_reader`. Select them explicitly through
+`tools/host_contracts.py --target windows-x86_64 --suite NAME
+--interpreter runner-default --repetitions 1 --output PATH` on Windows. They do
+not run as part of the default application build or ordinary unit suite.
 
 The opt-in `windows_hosts` suite requires Windows and exercises the actual
 installed MSVC compiler and Firefox. It compiles the same native probe with the

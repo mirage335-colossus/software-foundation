@@ -1,0 +1,829 @@
+{
+  "archive_members": {
+    "JavaScriptCore": 185,
+    "PAL": 24,
+    "Skia": 775,
+    "WTF": 168,
+    "WebCore": 924
+  },
+  "bridge_abi": 65536,
+  "capabilities": "1795",
+  "compile_literals": [
+    "-O3",
+    "-Qunused-arguments",
+    "-fPIC",
+    "-fPIE",
+    "-fasynchronous-unwind-tables",
+    "-fcolor-diagnostics",
+    "-fcoroutines",
+    "-fdata-sections",
+    "-fdebug-types-section",
+    "-fdiagnostics-color=always",
+    "-fexceptions",
+    "-fno-exceptions",
+    "-ffunction-sections",
+    "-fno-rtti",
+    "-fno-strict-aliasing",
+    "-fvisibility-inlines-hidden",
+    "-fvisibility=hidden",
+    "-msimd128",
+    "-pipe",
+    "-std=c++23",
+    "-Wall",
+    "-Wcast-align",
+    "-Werror=undefined-inline",
+    "-Werror=undefined-internal",
+    "-Wextra",
+    "-Wformat-security",
+    "-Wmissing-format-attribute",
+    "-Wno-character-conversion",
+    "-Wno-misleading-indentation",
+    "-Wno-noexcept-type",
+    "-Wno-nullability-completeness",
+    "-Wno-parentheses-equality",
+    "-Wno-psabi",
+    "-Wno-tautological-compare",
+    "-Wpointer-arith",
+    "-Wundef",
+    "-DBIB_APP_RESOURCES=1",
+    "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+    "-DBIB_FOUNDATION_SERVICES=1",
+    "-DBUILDING_EMSCRIPTEN__",
+    "-DBUILDING_WEBKIT=1",
+    "-DBUILDING_WITH_CMAKE=1",
+    "-DBUILDING_WTF",
+    "-DBUILDING_WebCore",
+    "-DHAVE_CONFIG_H=1",
+    "-DHAVE_HB_FEATURES_H",
+    "-DNDEBUG",
+    "-DPAS_BMALLOC=1",
+    "-DSK_ASSUME_GL=0",
+    "-DSK_ASSUME_GL_ES=1",
+    "-DSK_ASSUME_WEBGL=0",
+    "-DSK_DISABLE_LEGACY_GL_MAKE_NATIVE_INTERFACE",
+    "-DSK_DISABLE_LEGACY_IMAGE_READBUFFER",
+    "-DSK_DISABLE_LEGACY_INIT_DECODERS",
+    "-DSK_DISABLE_LEGACY_PNG_WRITEBUFFER",
+    "-DSK_DISABLE_TRACING",
+    "-DSK_DISABLE_WEBGL_INTERFACE",
+    "-DSK_ENABLE_PRECOMPILE",
+    "-DSK_R32_SHIFT=16",
+    "-DSK_RELEASE",
+    "-DSK_TRIVIAL_ABI=[[clang::trivial_abi]]",
+    "-DSTATICALLY_LINKED_WITH_JavaScriptCore",
+    "-DSTATICALLY_LINKED_WITH_PAL",
+    "-DSTATICALLY_LINKED_WITH_WTF",
+    "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE",
+    "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+    "-DBIB_PTHREAD=0"
+  ],
+  "declared_source_aliases": [
+    {
+      "canonical": "source/foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h",
+      "paths": [
+        "source/foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h",
+        "source/wrapper/src/embedder/BibAppResourceHost.h"
+      ],
+      "postimages": {
+        "source/foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef",
+        "source/wrapper/src/embedder/BibAppResourceHost.h": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef"
+      },
+      "preimages": {
+        "source/foundation/third_party/appended-engine/include/legacy/BibAppResourceHost.h": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef",
+        "source/wrapper/src/embedder/BibAppResourceHost.h": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef"
+      }
+    },
+    {
+      "canonical": "source/foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h",
+      "paths": [
+        "source/foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h",
+        "source/wrapper/src/embedder/BibFoundationServiceHost.h"
+      ],
+      "postimages": {
+        "source/foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861",
+        "source/wrapper/src/embedder/BibFoundationServiceHost.h": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861"
+      },
+      "preimages": {
+        "source/foundation/third_party/appended-engine/include/legacy/BibFoundationServiceHost.h": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861",
+        "source/wrapper/src/embedder/BibFoundationServiceHost.h": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861"
+      }
+    }
+  ],
+  "derived_commands": {
+    "AppResourceQueue.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "BibAppResourceProfile.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "BibAppResources.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "BibCopiedDocumentBinding.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "BibEngineCopiedDocumentDispatch.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "BibEngineCopiedHost.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "BibEngineCopiedRecord.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "BibEngineDocumentWasmShim.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "BibEngineProviderPreflight.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "BibFoundationServiceBridge.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "BibIDBServer.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "BibMediaPlayer.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "EmbedderStrategies.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "LegacyHostAdapters.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "NativeDocumentV2Codec.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "NativeDocumentV2Publisher.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "NativeDocumentV2Types.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "NativeFormsV2Combined.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "ProviderGuard.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "UnifiedSource-68aea4ac-18.cpp": {
+      "append": [
+        "-I{sources}/source/engine/Source/WebCore"
+      ],
+      "donor_source": "UnifiedSource-68aea4ac-18.cpp",
+      "remove": []
+    },
+    "UnifiedSource-be65d27a-7.cpp": {
+      "append": [
+        "-I{sources}/source/engine/Source/WebCore"
+      ],
+      "donor_source": "UnifiedSource-be65d27a-7.cpp",
+      "remove": []
+    },
+    "UnifiedSource-c57e08af-2.cpp": {
+      "append": [
+        "-I{sources}/source/engine/Source/WebCore"
+      ],
+      "donor_source": "UnifiedSource-c57e08af-2.cpp",
+      "remove": []
+    },
+    "UnifiedSource-f74e0903-1.cpp": {
+      "append": [
+        "-I{sources}/source/engine/Source/WebCore"
+      ],
+      "donor_source": "UnifiedSource-f74e0903-1.cpp",
+      "remove": []
+    },
+    "UnifiedSource-f74e0903-9.cpp": {
+      "append": [
+        "-I{sources}/source/engine/Source/WebCore"
+      ],
+      "donor_source": "UnifiedSource-f74e0903-9.cpp",
+      "remove": []
+    },
+    "abi.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "document_forms.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "main.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    },
+    "resource_url.cpp": {
+      "append": [
+        "-I{generated}",
+        "-I{sources}/include",
+        "-I{sources}/source/document-provider/runtime",
+        "-I{sources}/source/document-provider/portable",
+        "-I{sources}/source/document-provider/native",
+        "-I{sources}/source/foundation/third_party/appended-engine/include",
+        "-I{sources}/source/foundation/include",
+        "-I{sources}/source/provider-binding/binding",
+        "-I{sources}/source/wrapper/src/embedder",
+        "-DBIB_APP_RESOURCES=1",
+        "-DBIB_ENGINE_PROVIDER_DOCUMENT_V2=1",
+        "-DBIB_ENGINE_PROVIDER_NEUTRAL=1",
+        "-DBIB_FOUNDATION_SERVICES=1",
+        "-DBIB_PTHREAD=0",
+        "-fexceptions"
+      ],
+      "donor_source": "main.cpp",
+      "remove": []
+    }
+  },
+  "direct_objects": [
+    "BibCopiedDocumentBinding.cpp",
+    "BibEngineDocumentWasmShim.cpp",
+    "BibEngineCopiedDocumentDispatch.cpp",
+    "NativeDocumentV2Publisher.cpp",
+    "BibEngineCopiedRecord.cpp",
+    "main.cpp",
+    "BibAppResources.cpp",
+    "BibFoundationServiceBridge.cpp",
+    "NativeDocumentV2Codec.cpp",
+    "NativeDocumentV2Types.cpp",
+    "document_forms.cpp",
+    "abi.cpp",
+    "ProviderGuard.cpp",
+    "LegacyHostAdapters.cpp",
+    "BibEngineProviderPreflight.cpp",
+    "BibEngineCopiedHost.cpp",
+    "resource_url.cpp",
+    "AppResourceQueue.cpp",
+    "BibAppResourceProfile.cpp",
+    "EmbedderStrategies.cpp",
+    "BibIDBServer.cpp",
+    "BibMediaPlayer.cpp",
+    "NativeFormsV2Combined.cpp"
+  ],
+  "document_profile": "pixel",
+  "engine_objects": [
+    "UnifiedSource-be65d27a-7.cpp",
+    "UnifiedSource-c57e08af-2.cpp",
+    "UnifiedSource-68aea4ac-18.cpp",
+    "UnifiedSource-f74e0903-1.cpp",
+    "UnifiedSource-f74e0903-9.cpp",
+    "RunLoopGeneric.cpp"
+  ],
+  "exceptions": [
+    "BibCopiedDocumentBinding.cpp",
+    "BibEngineDocumentWasmShim.cpp",
+    "BibEngineCopiedDocumentDispatch.cpp",
+    "NativeDocumentV2Publisher.cpp",
+    "BibEngineCopiedRecord.cpp",
+    "BibAppResources.cpp",
+    "NativeDocumentV2Codec.cpp",
+    "NativeDocumentV2Types.cpp",
+    "document_forms.cpp",
+    "abi.cpp",
+    "ProviderGuard.cpp",
+    "LegacyHostAdapters.cpp",
+    "BibEngineProviderPreflight.cpp",
+    "BibEngineCopiedHost.cpp",
+    "resource_url.cpp",
+    "AppResourceQueue.cpp",
+    "NativeFormsV2Combined.cpp"
+  ],
+  "kind": "foundation-document-v2-maintenance-profile-v1",
+  "link_archive_names": [
+    "WebCore",
+    "Skia",
+    "libfreetype.a",
+    "libfontconfig.a",
+    "libxml2.a",
+    "libsqlite3.a",
+    "libcurl.a",
+    "libpsl.a",
+    "libssl.a",
+    "libjpeg.a",
+    "libpng.a",
+    "libz.a",
+    "libwebpdemux.a",
+    "libwebp.a",
+    "libnghttp2.a",
+    "libbrotlidec.a",
+    "libbrotlicommon.a",
+    "libharfbuzz.a",
+    "libharfbuzz-icu.a",
+    "libfontconfig.a",
+    "JavaScriptCore",
+    "PAL",
+    "libcrypto.a",
+    "WTF",
+    "libicuuc.a",
+    "libicudata.a",
+    "libicui18n.a"
+  ],
+  "link_literals": [
+    "-fdiagnostics-color=always",
+    "-fcolor-diagnostics",
+    "-Wextra",
+    "-Wall",
+    "-Wno-character-conversion",
+    "-Werror=undefined-internal",
+    "-Werror=undefined-inline",
+    "-pipe",
+    "-Wno-noexcept-type",
+    "-Wno-nullability-completeness",
+    "-Wno-psabi",
+    "-Wno-misleading-indentation",
+    "-Wno-parentheses-equality",
+    "-Qunused-arguments",
+    "-Wundef",
+    "-Wpointer-arith",
+    "-Wmissing-format-attribute",
+    "-Wformat-security",
+    "-Wcast-align",
+    "-Wno-tautological-compare",
+    "-fasynchronous-unwind-tables",
+    "-fdebug-types-section",
+    "-msimd128",
+    "-fno-strict-aliasing",
+    "-fno-exceptions",
+    "-fno-rtti",
+    "-fcoroutines",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-O3",
+    "-DNDEBUG",
+    "-fexceptions",
+    "--no-entry",
+    "--profiling-funcs",
+    "-lexports.js",
+    "-Wl,--gc-sections",
+    "-Wl,--error-limit=0"
+  ],
+  "link_settings": {
+    "ALLOW_MEMORY_GROWTH": "1",
+    "CROSS_ORIGIN_STORAGE": "0",
+    "ENVIRONMENT": "worker",
+    "EXIT_RUNTIME": "0",
+    "EXPORTED_FUNCTIONS": "_bib_engine_get_provider_v1,_bib_engine_wasm_bridge_v1,_bib_engine_wasm_dispatch_v1,_bib_engine_wasm_document_facts_v1,_bib_engine_wasm_document_configure_v1,_malloc,_free",
+    "EXPORTED_RUNTIME_METHODS": "HEAPU8",
+    "EXPORT_ES6": "1",
+    "EXPORT_NAME": "createFoundationRetainedEngine",
+    "INCOMING_MODULE_JS_API": "wasmBinary,noInitialRun,print,printErr,locateFile",
+    "INITIAL_MEMORY": "256MB",
+    "INVOKE_RUN": "0",
+    "MAXIMUM_MEMORY": "4GB",
+    "MODULARIZE": "1",
+    "STACK_SIZE": "8MB",
+    "WASM_ASYNC_COMPILATION": "1"
+  },
+  "metadata_generator": "source/document-provider/runtime/generate_document_metadata.py",
+  "name": "webkitwasm-copied1795-ndv2-v1",
+  "owner_postimages": {
+    "RunLoopGeneric.cpp": [
+      "source/engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp"
+    ],
+    "UnifiedSource-68aea4ac-18.cpp": [
+      "source/engine/Source/WebCore/bindings/js/ScriptController.cpp"
+    ],
+    "UnifiedSource-be65d27a-7.cpp": [
+      "source/engine/Source/WebCore/dom/Document.cpp"
+    ],
+    "UnifiedSource-c57e08af-2.cpp": [
+      "source/engine/Source/WebCore/loader/DocumentLoader.cpp"
+    ],
+    "UnifiedSource-f74e0903-1.cpp": [
+      "source/engine/Source/WebCore/workers/Worker.cpp"
+    ],
+    "UnifiedSource-f74e0903-9.cpp": [
+      "source/engine/Source/WebCore/workers/shared/SharedWorker.cpp"
+    ]
+  },
+  "physical_input_capabilities": 0,
+  "python_entrypoints": [
+    "upstream/emscripten/em++.py",
+    "upstream/emscripten/emar.py",
+    "upstream/emscripten/emcc.py",
+    "upstream/emscripten/emranlib.py",
+    "upstream/emscripten/tools/file_packager.py"
+  ],
+  "schema_version": 1,
+  "scope": "incremental-neutral-engine-candidate",
+  "source_bindings": {
+    "AppResourceQueue.cpp": "source/wrapper/src/embedder/AppResourceQueue.cpp",
+    "BibAppResourceProfile.cpp": "source/wrapper/src/embedder/BibAppResourceProfile.cpp",
+    "BibAppResources.cpp": "source/wrapper/src/embedder/BibAppResources.cpp",
+    "BibCopiedDocumentBinding.cpp": "source/document-provider/runtime/BibCopiedDocumentBinding.cpp",
+    "BibEngineCopiedDocumentDispatch.cpp": "source/document-provider/portable/BibEngineCopiedDocumentDispatch.cpp",
+    "BibEngineCopiedHost.cpp": "source/document-provider/runtime/BibEngineCopiedHost.cpp",
+    "BibEngineCopiedRecord.cpp": "source/document-provider/portable/BibEngineCopiedRecord.cpp",
+    "BibEngineDocumentWasmShim.cpp": "source/document-provider/runtime/BibEngineDocumentWasmShim.cpp",
+    "BibEngineProviderPreflight.cpp": "source/provider-binding/binding/BibEngineProviderPreflight.cpp",
+    "BibFoundationServiceBridge.cpp": "source/wrapper/src/embedder/BibFoundationServiceBridge.cpp",
+    "BibIDBServer.cpp": "source/wrapper/src/embedder/BibIDBServer.cpp",
+    "BibMediaPlayer.cpp": "source/wrapper/src/embedder/BibMediaPlayer.cpp",
+    "EmbedderStrategies.cpp": "source/wrapper/src/embedder/EmbedderStrategies.cpp",
+    "LegacyHostAdapters.cpp": "source/foundation/third_party/appended-engine/src/LegacyHostAdapters.cpp",
+    "NativeDocumentV2Codec.cpp": "source/document-provider/portable/NativeDocumentV2Codec.cpp",
+    "NativeDocumentV2Publisher.cpp": "source/document-provider/native/NativeDocumentV2Publisher.cpp",
+    "NativeDocumentV2Types.cpp": "source/document-provider/portable/NativeDocumentV2Types.cpp",
+    "NativeFormsV2Combined.cpp": "source/document-provider/native/NativeFormsV2Combined.cpp",
+    "ProviderGuard.cpp": "source/foundation/third_party/appended-engine/src/ProviderGuard.cpp",
+    "RunLoopGeneric.cpp": "source/engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp",
+    "UnifiedSource-68aea4ac-18.cpp": "source/engine/unified/UnifiedSource-68aea4ac-18.cpp",
+    "UnifiedSource-be65d27a-7.cpp": "source/engine/unified/UnifiedSource-be65d27a-7.cpp",
+    "UnifiedSource-c57e08af-2.cpp": "source/engine/unified/UnifiedSource-c57e08af-2.cpp",
+    "UnifiedSource-f74e0903-1.cpp": "source/engine/unified/UnifiedSource-f74e0903-1.cpp",
+    "UnifiedSource-f74e0903-9.cpp": "source/engine/unified/UnifiedSource-f74e0903-9.cpp",
+    "abi.cpp": "source/foundation/src/appended/abi.cpp",
+    "document_forms.cpp": "source/foundation/src/appended/document_forms.cpp",
+    "main.cpp": "source/wrapper/src/embedder/main.cpp",
+    "resource_url.cpp": "source/wrapper/src/embedder/resource_url.cpp"
+  },
+  "source_map_sha256": "8a9f48da9087465667467c3e5a84f6150ce55270571342b70b5b4f17c9bd6d09"
+}

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "kind": "foundation-original-engine-provider-glue",
+  "status": "generic-guards-implemented-real-engine-binding-unimplemented",
+  "license": "CC0-1.0 notices retained in source files",
+  "canonical_header": "include/foundation/appended/engine_provider.h",
+  "canonical_header_sha256": "a8e89da85d34b29a4d1bc454495791fa604b81e3477e48ce8ca902e4333a9c0d",
+  "private_helper_checkpoint_sha256": "820f1911280a60d2d401c657ea65968465a46095f14b8f3d51f4f84d54c385ec",
+  "prior_proposal_header_sha256": "96ce688dfe924a4f078120e9c84104d7aecab09ae09a8011a8bd1154013bb8c3",
+  "legacy_inputs": [
+    {
+      "path": "include/legacy/BibFoundationServiceHost.h",
+      "kind": "foundation-original-private-service-host-contract",
+      "sha256": "22534c9856bb54f247e4e87937aa39bee0898572ec9d64d1c3db3ddff5d98861"
+    },
+    {
+      "path": "include/legacy/BibAppResourceHost.h",
+      "kind": "foundation-original-private-resource-bundle-host-contract",
+      "sha256": "7d3bb10ca76c1affd98279f83bf584d5c875f8b38d95cfb035f1d5bc8b049cef"
+    }
+  ],
+  "source_context": {
+    "wrapper_commit": "68c618544e1f8af18ebce346281a6a49766aa194",
+    "webkit_commit": "aec9d2ad958e716ab4bca4bf03007e6edac7323f",
+    "note": "Context pins only. No supplier engine source or binary is included by this glue."
+  },
+  "not_provided": [
+    "actual-engine-private-binding",
+    "selected-production-engine-recipe",
+    "native-or-browser-engine-artifact",
+    "target-runtime-qualification",
+    "portable-guest-SDK-interface"
+  ]
+}

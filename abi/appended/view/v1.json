@@ -1,0 +1,41 @@
+{
+  "name": "foundation.view",
+  "major": 1,
+  "minor": 0,
+  "encoding": "foundation appended canonical TLV v1; integers little-endian; f64 IEEE754 little-endian; enum values below are wire values, never native layouts",
+  "limits": {"widgets": 256, "commands": 128, "pages": 64, "shortcuts": 128, "lifetime_identities": 4096, "resource_identities": 1024, "records_total": 1024, "bitmap_bytes_total": 262144, "raster_bytes_total": 16777216, "host_service_requests_lifetime": 64, "queued_events": 64, "identifier_bytes": 128, "text_field_bytes": 65536},
+  "rules": [
+    "Each request is an ordinary registry request with replay protection and generation binding. Unknown optional fields are ignored; unknown must-understand fields reject the complete request. Required fields are required regardless of field flags.",
+    "replace is a full replacement. Omitted collections are empty, omitted state/spec fields use public GUI defaults, and omitted client width/height/scale retain their authoritative previous values. A replacement must name the latest accepted revision; revisions start at zero and never wrap.",
+    "Decode, bounds, complete public GUI validation, resource identity and widget/command lifetime validation finish before authoritative state changes. Rejection leaves state and revision unchanged. The reply acknowledges accepted authoritative state; presentation may remain pending after an adapter failure and is retried without repeating guest work.",
+    "Widget and command IDs share one lifetime namespace. A retained widget's entire spec and a retained command's scope are immutable within its generation. Removed IDs, changed specs/scopes and changes between widget/command require a strictly greater generation. Historical generations remain reserved until shutdown.",
+    "Bitmap sources are immutable owned tightly packed images. Source IDs share one resource namespace. Equal current ID/revision must have identical dimensions, format and bytes; changed or reintroduced sources require a greater revision. Bitmap rows run top to bottom; mono1 high bit is leftmost. No native pointer or function is encoded.",
+    "Every module invocation and callback is serialized. Services only accept owned values during invocation; adapter presentation and queued input delivery happen after the invocation returns. Queue exhaustion closes the instance rather than dropping an ending pointer gesture or completion. Input while a newer presentation is pending is rejected.",
+    "Events name exact widget/command generations, carry the accepted view revision, and are normalized against authoritative enabled/visible/modal/page/text policy. Sourced command activation additionally requires the adapter's current focus. Unknown event kinds are errors for consumers.",
+    "This initial capability includes widget snapshots, immutable bitmap resources, nonvisual commands, pages, shortcuts and asynchronous generic host services. It does not expose imperative focus, selection, scrolling, palette changes, text measurement or HTML/document engines. Do not infer those capabilities from discovery. Layout coordinates are application supplied logical client units."
+  ],
+  "operations": {
+    "1": {"name": "replace", "request": {"1": "expected_revision:u64 required", "2": "title:utf8", "3": "client_width:f64", "4": "client_height:f64", "5": "display_scale:f64", "6": "widgets:record_list<widget> required", "7": "commands:record_list<command>", "8": "pages:record_list<page>", "9": "active_page:utf8 (empty clears)", "10": "modal_root:record<key>", "11": "shortcuts:record_list<shortcut>", "12": "page_bar:record<rect>"}, "reply": {"1": "accepted_revision:u64"}},
+    "2": {"name": "host_service", "request": {"1": "id:u64 required nonzero unique for instance", "2": "kind:u32 required", "3": "title:utf8", "4": "value:utf8", "5": "byte_limit:u32 default 32768 maximum65536"}, "reply": {}, "kinds": {"1": "open_file", "2": "save_file", "3": "prompt", "4": "clipboard_write", "5": "open_location", "6": "read_text", "7": "write_text"}}
+  },
+  "records": {
+    "key": {"1": "id:utf8 required nonempty", "2": "generation:u64 required nonzero"},
+    "rect": {"1": "x:f64 required", "2": "y:f64 required", "3": "width:f64 required", "4": "height:f64 required"},
+    "size": {"1": "width:f64 required", "2": "height:f64 required"},
+    "font": {"1": "size:f64 default14", "2": "bold:bool defaultfalse", "3": "tone:u32 default1 (1normal 2muted 3accent 4error)"},
+    "widget": {"1": "id:utf8 required", "2": "generation:u64 required", "3": "kind:u32 required (1group 2label 3button 4toggle 5choice 6text 7list 8bitmap 9menu)", "4": "bounds:record<rect> required", "5": "parent:utf8", "6": "page:utf8", "7": "text:utf8", "8": "label:utf8", "9": "placeholder:utf8", "10": "help:utf8", "11": "accessible_name:utf8", "12": "enabled:bool defaulttrue", "13": "visible:bool defaulttrue", "14": "checked:bool defaultfalse", "15": "selected:utf8 (empty clears)", "16": "multiline:bool", "17": "read_only:bool", "18": "max_text_bytes:u32 default1048576", "19": "submit:u32 default1 (1none 2enter 3control_enter)", "20": "wrap:u32 default1 (1none 2word)", "21": "font:record<font>", "22": "options:record_list<option>", "23": "records:record_list<row>", "24": "content_size:record<size>", "25": "content_clip:record<rect>", "26": "row_height:f64 default28", "27": "activate_on_select:bool", "28": "follow_tail:bool", "29": "pointer_input:bool", "30": "binding:utf8", "31": "display_text:utf8", "32": "bitmap:record<bitmap>", "33": "actions:record_list<option>", "34": "masked:bool", "35": "text_frame:bool defaulttrue", "36": "context_input:bool"},
+    "option": {"1": "id:utf8 required", "2": "label:utf8", "3": "value:utf8", "4": "enabled:bool defaulttrue"},
+    "row": {"1": "id:utf8 required", "2": "accessible_text:utf8", "3": "cells:record_list<cell>", "4": "enabled:bool defaulttrue", "5": "activatable:bool"},
+    "cell": {"1": "text:utf8", "2": "bounds:record<rect>", "3": "font:record<font>", "4": "wrap:u32 default1 (1none 2word)"},
+    "bitmap": {"1": "source_id:utf8 required nonempty", "2": "revision:u64 required nonzero", "3": "width:u32 required nonzero maximum4096", "4": "height:u32 required nonzero maximum4096", "5": "format:u32 required (1mono1 2gray8 3rgb24)", "6": "pixels:bytes required exact tightly packed size"},
+    "command": {"1": "id:utf8 required", "2": "generation:u64 required", "3": "enabled:bool defaulttrue", "4": "scope:record<key>"},
+    "page": {"1": "id:utf8 required", "2": "label:utf8", "3": "enabled:bool defaulttrue", "4": "visible:bool defaulttrue"},
+    "shortcut": {"1": "key:u32 required (1escape 2enter 3f1 through14f12 15z 16y)", "2": "target:record<key> required", "3": "control:bool", "4": "shift:bool", "5": "alt:bool", "6": "focus:record<key>"},
+    "pointer": {"1": "kind:u32 required (1click 2double_click 3move 4wheel 5press 6release 7cancel 8context_menu)", "2": "x:f64 required", "3": "y:f64 required", "4": "wheel_x:f64", "5": "wheel_y:f64", "6": "modifiers:u32 bits1control2shift4alt", "7": "pointer_id:u64", "8": "clicks:u32"}
+  },
+  "events": {
+    "envelope": "kind EVENT, instance generation, monotonically increasing nonzero sequence, discovered view interface handle; delivered through foundation_app_dispatch_v1",
+    "1": {"name": "input", "fields": {"1": "accepted_revision:u64 required", "2": "event_kind:u32 required (1widget 2page 3resize)", "3": "target:record<key> for widget", "4": "input_kind:u32 for widget (1activate 2set_checked 3edit_text 4choose_option 5select_record 6activate_record 7submit_text 8invoke_action 9pointer)", "5": "value:utf8 for edit/choice/row/action", "6": "base_text:utf8 for edit", "7": "checked:bool for set_checked", "8": "source:record<key> for sourced activation", "9": "pointer:record<pointer>", "10": "page_id:utf8 for page", "11": "client_width:f64 for resize", "12": "client_height:f64 for resize", "13": "display_scale:f64 for resize"}},
+    "2": {"name": "host_service_completion", "fields": {"1": "id:u64 required", "2": "status:u32 required (1success 2cancelled 3error)", "3": "value:utf8", "4": "error:utf8"}}
+  }
+}

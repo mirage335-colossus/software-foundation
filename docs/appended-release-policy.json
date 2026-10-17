@@ -1,0 +1,421 @@
+{
+  "schema_version": 1,
+  "kind": "foundation-appended-qualification-policy",
+  "profiles": {
+    "binary-linux-x86_64-terminal": {
+      "description": "Binary payload and one retained Linux x86_64 terminal archive. Every declared gate requires actual evidence; this profile is not execution authorization.",
+      "artifacts": {
+        "linux-x86_64-terminal": {
+          "target": "linux-x86_64",
+          "backend": "terminal",
+          "carrier": "elf",
+          "baseline": "debian-12",
+          "channels": [
+            "archive"
+          ]
+        }
+      },
+      "checks": [
+        {
+          "id": "composition-integrity",
+          "artifact": null,
+          "scope": "composition-integrity",
+          "target": "composition",
+          "backend": "none",
+          "environment": "portable",
+          "assertions": [
+            "frozen-subject",
+            "selected-artifact",
+            "retained-prefix",
+            "payload-mode",
+            "archive-inventory",
+            "input-unchanged"
+          ]
+        },
+        {
+          "id": "offline-recompose",
+          "artifact": null,
+          "scope": "offline-recompose",
+          "target": "composition",
+          "backend": "none",
+          "environment": "portable",
+          "assertions": [
+            "frozen-subject",
+            "selected-artifact",
+            "exact-recomposition",
+            "retained-inputs-only",
+            "input-unchanged"
+          ]
+        },
+        {
+          "id": "guest-source",
+          "artifact": null,
+          "scope": "guest-source",
+          "target": "portable-wasm32",
+          "backend": "guest",
+          "environment": "sdk-host",
+          "assertions": [
+            "guest-source",
+            "guest-sdk",
+            "guest-compile",
+            "guest-tests",
+            "no-kernel-build"
+          ]
+        },
+        {
+          "id": "linux-x86_64-terminal-retained-runtime",
+          "artifact": "linux-x86_64-terminal",
+          "scope": "retained-runtime",
+          "target": "linux-x86_64",
+          "backend": "terminal",
+          "environment": "debian-12",
+          "assertions": [
+            "frozen-subject",
+            "selected-artifact",
+            "actual-host",
+            "extracted-inventory",
+            "actual-retained-runtime",
+            "runtime-scenario",
+            "process-tree-joined",
+            "runtime-unchanged",
+            "input-unchanged"
+          ]
+        },
+        {
+          "id": "linux-x86_64-terminal-install-upgrade",
+          "artifact": "linux-x86_64-terminal",
+          "scope": "install-upgrade",
+          "target": "linux-x86_64",
+          "backend": "terminal",
+          "environment": "debian-12",
+          "assertions": [
+            "clean-install",
+            "upgrade",
+            "remove",
+            "preserved-application-state"
+          ]
+        }
+      ],
+      "kernel_scopes": [
+        "source",
+        "archive",
+        "recovery",
+        "abi"
+      ],
+      "kernel_assertions": [
+        "sealed-kernel",
+        "loader-contract",
+        "module-profile",
+        "service-abi"
+      ]
+    },
+    "binary-browser-wasm32": {
+      "description": "Binary-defined browser views in the retained Wasm carrier, with actual Firefox and Chromium checks. This does not qualify an internal HTML payload.",
+      "artifacts": {
+        "browser-wasm32": {
+          "target": "web-wasm32",
+          "backend": "web",
+          "carrier": "html",
+          "baseline": "wasm32-browser",
+          "channels": [
+            "archive"
+          ]
+        }
+      },
+      "checks": [
+        {
+          "id": "composition-integrity",
+          "artifact": null,
+          "scope": "composition-integrity",
+          "target": "composition",
+          "backend": "none",
+          "environment": "portable",
+          "assertions": [
+            "frozen-subject",
+            "selected-artifact",
+            "retained-prefix",
+            "payload-mode",
+            "archive-inventory",
+            "input-unchanged"
+          ]
+        },
+        {
+          "id": "offline-recompose",
+          "artifact": null,
+          "scope": "offline-recompose",
+          "target": "composition",
+          "backend": "none",
+          "environment": "portable",
+          "assertions": [
+            "frozen-subject",
+            "selected-artifact",
+            "exact-recomposition",
+            "retained-inputs-only",
+            "input-unchanged"
+          ]
+        },
+        {
+          "id": "guest-source",
+          "artifact": null,
+          "scope": "guest-source",
+          "target": "portable-wasm32",
+          "backend": "guest",
+          "environment": "sdk-host",
+          "assertions": [
+            "guest-source",
+            "guest-sdk",
+            "guest-compile",
+            "guest-tests",
+            "no-kernel-build"
+          ]
+        },
+        {
+          "id": "browser-wasm32-retained-runtime",
+          "artifact": "browser-wasm32",
+          "scope": "retained-runtime",
+          "target": "web-wasm32",
+          "backend": "web",
+          "environment": "wasm32-browser",
+          "assertions": [
+            "frozen-subject",
+            "selected-artifact",
+            "actual-host",
+            "extracted-inventory",
+            "actual-retained-runtime",
+            "runtime-scenario",
+            "process-tree-joined",
+            "runtime-unchanged",
+            "input-unchanged"
+          ]
+        },
+        {
+          "id": "browser-wasm32-install-upgrade",
+          "artifact": "browser-wasm32",
+          "scope": "install-upgrade",
+          "target": "web-wasm32",
+          "backend": "web",
+          "environment": "wasm32-browser",
+          "assertions": [
+            "clean-install",
+            "upgrade",
+            "remove",
+            "preserved-application-state"
+          ]
+        },
+        {
+          "id": "browser-wasm32-firefox",
+          "artifact": "browser-wasm32",
+          "scope": "browser",
+          "target": "web-wasm32",
+          "backend": "web",
+          "environment": "firefox",
+          "assertions": [
+            "actual-browser",
+            "application-scenario",
+            "retained-runtime"
+          ]
+        },
+        {
+          "id": "browser-wasm32-chromium",
+          "artifact": "browser-wasm32",
+          "scope": "browser",
+          "target": "web-wasm32",
+          "backend": "web",
+          "environment": "chromium",
+          "assertions": [
+            "actual-browser",
+            "application-scenario",
+            "retained-runtime"
+          ]
+        }
+      ],
+      "kernel_scopes": [
+        "source",
+        "archive",
+        "recovery",
+        "abi"
+      ],
+      "kernel_assertions": [
+        "sealed-kernel",
+        "loader-contract",
+        "module-profile",
+        "service-abi"
+      ]
+    },
+    "binary-linux-and-browser": {
+      "description": "One portable binary payload shared by the two exact retained artifacts; recover the guest once and qualify each declared runtime and delivery channel.",
+      "artifacts": {
+        "linux-x86_64-terminal": {
+          "target": "linux-x86_64",
+          "backend": "terminal",
+          "carrier": "elf",
+          "baseline": "debian-12",
+          "channels": [
+            "archive"
+          ]
+        },
+        "browser-wasm32": {
+          "target": "web-wasm32",
+          "backend": "web",
+          "carrier": "html",
+          "baseline": "wasm32-browser",
+          "channels": [
+            "archive"
+          ]
+        }
+      },
+      "checks": [
+        {
+          "id": "composition-integrity",
+          "artifact": null,
+          "scope": "composition-integrity",
+          "target": "composition",
+          "backend": "none",
+          "environment": "portable",
+          "assertions": [
+            "frozen-subject",
+            "selected-artifact",
+            "retained-prefix",
+            "payload-mode",
+            "archive-inventory",
+            "input-unchanged"
+          ]
+        },
+        {
+          "id": "offline-recompose",
+          "artifact": null,
+          "scope": "offline-recompose",
+          "target": "composition",
+          "backend": "none",
+          "environment": "portable",
+          "assertions": [
+            "frozen-subject",
+            "selected-artifact",
+            "exact-recomposition",
+            "retained-inputs-only",
+            "input-unchanged"
+          ]
+        },
+        {
+          "id": "guest-source",
+          "artifact": null,
+          "scope": "guest-source",
+          "target": "portable-wasm32",
+          "backend": "guest",
+          "environment": "sdk-host",
+          "assertions": [
+            "guest-source",
+            "guest-sdk",
+            "guest-compile",
+            "guest-tests",
+            "no-kernel-build"
+          ]
+        },
+        {
+          "id": "linux-x86_64-terminal-retained-runtime",
+          "artifact": "linux-x86_64-terminal",
+          "scope": "retained-runtime",
+          "target": "linux-x86_64",
+          "backend": "terminal",
+          "environment": "debian-12",
+          "assertions": [
+            "frozen-subject",
+            "selected-artifact",
+            "actual-host",
+            "extracted-inventory",
+            "actual-retained-runtime",
+            "runtime-scenario",
+            "process-tree-joined",
+            "runtime-unchanged",
+            "input-unchanged"
+          ]
+        },
+        {
+          "id": "linux-x86_64-terminal-install-upgrade",
+          "artifact": "linux-x86_64-terminal",
+          "scope": "install-upgrade",
+          "target": "linux-x86_64",
+          "backend": "terminal",
+          "environment": "debian-12",
+          "assertions": [
+            "clean-install",
+            "upgrade",
+            "remove",
+            "preserved-application-state"
+          ]
+        },
+        {
+          "id": "browser-wasm32-retained-runtime",
+          "artifact": "browser-wasm32",
+          "scope": "retained-runtime",
+          "target": "web-wasm32",
+          "backend": "web",
+          "environment": "wasm32-browser",
+          "assertions": [
+            "frozen-subject",
+            "selected-artifact",
+            "actual-host",
+            "extracted-inventory",
+            "actual-retained-runtime",
+            "runtime-scenario",
+            "process-tree-joined",
+            "runtime-unchanged",
+            "input-unchanged"
+          ]
+        },
+        {
+          "id": "browser-wasm32-install-upgrade",
+          "artifact": "browser-wasm32",
+          "scope": "install-upgrade",
+          "target": "web-wasm32",
+          "backend": "web",
+          "environment": "wasm32-browser",
+          "assertions": [
+            "clean-install",
+            "upgrade",
+            "remove",
+            "preserved-application-state"
+          ]
+        },
+        {
+          "id": "browser-wasm32-firefox",
+          "artifact": "browser-wasm32",
+          "scope": "browser",
+          "target": "web-wasm32",
+          "backend": "web",
+          "environment": "firefox",
+          "assertions": [
+            "actual-browser",
+            "application-scenario",
+            "retained-runtime"
+          ]
+        },
+        {
+          "id": "browser-wasm32-chromium",
+          "artifact": "browser-wasm32",
+          "scope": "browser",
+          "target": "web-wasm32",
+          "backend": "web",
+          "environment": "chromium",
+          "assertions": [
+            "actual-browser",
+            "application-scenario",
+            "retained-runtime"
+          ]
+        }
+      ],
+      "kernel_scopes": [
+        "source",
+        "archive",
+        "recovery",
+        "abi"
+      ],
+      "kernel_assertions": [
+        "sealed-kernel",
+        "loader-contract",
+        "module-profile",
+        "service-abi"
+      ]
+    }
+  }
+}

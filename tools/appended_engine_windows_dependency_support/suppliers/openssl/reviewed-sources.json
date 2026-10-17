@@ -1,0 +1,160 @@
+{
+  "generated_public_headers": [
+    "asn1.h",
+    "asn1t.h",
+    "bio.h",
+    "cmp.h",
+    "cms.h",
+    "comp.h",
+    "conf.h",
+    "configuration.h",
+    "core_names.h",
+    "crmf.h",
+    "crypto.h",
+    "ct.h",
+    "err.h",
+    "ess.h",
+    "fipskey.h",
+    "lhash.h",
+    "ocsp.h",
+    "opensslv.h",
+    "pkcs12.h",
+    "pkcs7.h",
+    "safestack.h",
+    "srp.h",
+    "ssl.h",
+    "ui.h",
+    "x509.h",
+    "x509_acert.h",
+    "x509_vfy.h",
+    "x509v3.h"
+  ],
+  "reviewed_original_files": {
+    "Configurations/00-base-templates.conf": {
+      "bytes": 6946,
+      "sha256": "29362786b6daeeea7c137283158e2c0454c2495b3a329d88b2f2adfc98f17a7b"
+    },
+    "Configurations/10-main.conf": {
+      "bytes": 93227,
+      "sha256": "ac5501e7bff0f4384db0537307b362bf1bcb120d8b5859e5f08bd796e78feaea"
+    },
+    "Configurations/50-win-clang-cl.conf": {
+      "bytes": 1342,
+      "sha256": "0bd4348b007f79f158c32f2ed19396a410cb7daf2133290f86810b418d66b5b9"
+    },
+    "Configurations/common0.tmpl": {
+      "bytes": 1324,
+      "sha256": "aa5afd98d4cad920099be90dd991884c21b3f4598bffd2e22c8552872cc5fc88"
+    },
+    "Configurations/gentemplate.pm": {
+      "bytes": 21361,
+      "sha256": "5369476abe699ad62423477ddbd669745d3522b0145dbbc10ca62f68d0dd3f9f"
+    },
+    "Configurations/platform.pm": {
+      "bytes": 304,
+      "sha256": "4c1a28423e707872bc2faf864e01cf30efb70854ef1d5f16d62b2d84fc522c67"
+    },
+    "Configurations/platform/BASE.pm": {
+      "bytes": 3753,
+      "sha256": "ab8d97b27a3f82817d437f532330f18baf5fb3b8bbaf9e22c49d7ef92c52f0c2"
+    },
+    "Configurations/platform/Windows.pm": {
+      "bytes": 1979,
+      "sha256": "00034cc5580883e601549eacd08ab8a21a700856a451a585c5fa182d0246c23a"
+    },
+    "Configurations/platform/Windows/MSVC.pm": {
+      "bytes": 1160,
+      "sha256": "d4346092402119e4bdcde734c4894d78a90866d10500f0b2a6b1cf34645cac26"
+    },
+    "Configurations/windows-checker.pm": {
+      "bytes": 653,
+      "sha256": "4482231a2685daada6064b7e2dc831121af2f94ddd6cc3d86ad3db892abf5b2e"
+    },
+    "Configurations/windows-makefile.tmpl": {
+      "bytes": 47030,
+      "sha256": "352e8f4afc93313045671c40714696a107d21971ec7c02a04642f48a18e594df"
+    },
+    "Configure": {
+      "bytes": 141964,
+      "sha256": "db1366a2926a4d8466e8fe546695a9cf6b5d0aafdd7ededad1e6669d90b94041"
+    },
+    "INSTALL.md": {
+      "bytes": 71231,
+      "sha256": "a31767954ee48575d2b762290efa9f1d03ce1bda0900b8271c6e751986827753"
+    },
+    "NOTES-PERL.md": {
+      "bytes": 4995,
+      "sha256": "2d5b6d027a60fc65b9f1a0e994e6ad1b94f36d6b9f126da6598601c314cdedeb"
+    },
+    "NOTES-WINDOWS.md": {
+      "bytes": 10695,
+      "sha256": "5620f77fbd3988f5e22e9411b3c0bc75a999b627b52b28085628b054ef7ed1d0"
+    },
+    "build.info": {
+      "bytes": 5849,
+      "sha256": "cfd189b24d22dc630504919b12f90d74e1f0d46c32e027fc6ad67525b51f8bb0"
+    },
+    "configdata.pm.in": {
+      "bytes": 16746,
+      "sha256": "1307f07fb384a396d932aaf2d967a68110e721bc5b41bf17546a0ae886f429a7"
+    },
+    "crypto/build.info": {
+      "bytes": 5003,
+      "sha256": "94c3ef571f37cab763ff60da164de8543050fee3aa8f441a6df8a1b876ec1da2"
+    },
+    "external/perl/MODULES.txt": {
+      "bytes": 23,
+      "sha256": "252ffb41be0e0f03bcf489877e38115a2824de9e69ff17dd6c83897d19c1feb3"
+    },
+    "external/perl/Text-Template-1.56/lib/Text/Template.pm": {
+      "bytes": 67996,
+      "sha256": "f9242841b30440d28905c28ac28c93bcac950f52555c02ae4d1676dcde7578a3"
+    },
+    "include/openssl/configuration.h.in": {
+      "bytes": 2085,
+      "sha256": "794fb8057df3ad5ff5da7e60d7d23e7492d994a7a2a52d7d20c5302a2699916b"
+    },
+    "util/dofile.pl": {
+      "bytes": 3524,
+      "sha256": "6b7ca9d4cfe6e933984de99effeb55c8c036edadf5f253845c31701a235d644a"
+    },
+    "util/mkdef.pl": {
+      "bytes": 12600,
+      "sha256": "0e57578fbdf54b6093cd40fee8da2728710d2518fb329e8f1acfda1d98486eaa"
+    },
+    "util/mkbuildinf.pl": {
+      "bytes": 1645,
+      "sha256": "71449df12e0bb956cb8785bb370489a5d7fbce4b1b786980585244d6faef51a4"
+    },
+    "util/mkrc.pl": {
+      "bytes": 2123,
+      "sha256": "3314014524fcd4fbaca7a1efdfd0b2eb8e0c72e03478fa8997a144bc2ca7d1bd"
+    },
+    "util/perl/OpenSSL/Glob.pm": {
+      "bytes": 274,
+      "sha256": "4100606067f0b577d3e6d2d2aaca93d826fb66105639eb94ff76c70ae8c526c9"
+    },
+    "util/perl/OpenSSL/Template.pm": {
+      "bytes": 3508,
+      "sha256": "dd71337bf39f0583e276b70184d925297d37124517c71b88bdc573a030598d57"
+    },
+    "util/perl/OpenSSL/Util.pm": {
+      "bytes": 9341,
+      "sha256": "cfaec5708d262ad92c64db1b53178023d6cef70b92b7aceba90883d696b92ffd"
+    },
+    "util/perl/OpenSSL/config.pm": {
+      "bytes": 40819,
+      "sha256": "e1eae61c06f739fc371785f419fbe0d6fa6213a076be4dc752ba2b04272ce0fb"
+    },
+    "util/perl/OpenSSL/fallback.pm": {
+      "bytes": 3679,
+      "sha256": "9c457d583bd46e3d18c87a4a29a2fde7db1a16d007b1769429a53b865d22380a"
+    },
+    "util/perl/OpenSSL/paramnames.pm": {
+      "bytes": 38754,
+      "sha256": "ca9885182958c299beec5b4f556e585a987a52c0bdd982712f1ccb525feff238"
+    }
+  },
+  "source_version": "3.5.0",
+  "strip_prefix": "openssl-3.5.0"
+}

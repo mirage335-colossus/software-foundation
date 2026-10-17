@@ -1,0 +1,48 @@
+--- a/third_party/appended-engine/src/ProviderGuard.cpp
++++ b/third_party/appended-engine/src/ProviderGuard.cpp
+@@ -1,6 +1,12 @@
+ // SPDX-License-Identifier: CC0-1.0
+ // New private guard/helper only. No real engine binding or qualification exists.
+ #include "EnginePrivate.hpp"
++#if defined(BIB_ENGINE_PROVIDER_NATIVE) && BIB_ENGINE_PROVIDER_NATIVE
++#ifndef BIB_NATIVE_PROVIDER_BINDING_HEADER
++#error "Native provider Guard requires its reviewed private bootstrap declaration"
++#endif
++#include BIB_NATIVE_PROVIDER_BINDING_HEADER
++#endif
+ #include <algorithm>
+ #include <atomic>
+ #include <climits>
+@@ -237,6 +243,16 @@
+                 && value.owner != std::this_thread::get_id()) { status = BIB_ENGINE_WRONG_THREAD; return; }
+             locked = !value.busy.test_and_set(std::memory_order_acquire);
+             if (!locked) status = BIB_ENGINE_REENTRANT;
++            // START may have committed after the fast owner check and before
++            // this acquisition. Read owner only after published commitment,
++            // and recheck under the gate before any retained-state operation.
++            if (locked && require_owner
++                && value.phase.load(std::memory_order_acquire) != BIB_ENGINE_START_NOT_RETAINED
++                && value.owner != std::this_thread::get_id()) {
++                value.busy.clear(std::memory_order_release);
++                locked = false;
++                status = BIB_ENGINE_WRONG_THREAD;
++            }
+         }
+         ~Gate() { if (locked) runtime.busy.clear(std::memory_order_release); }
+         explicit operator bool() const { return locked; }
+@@ -734,6 +750,15 @@
+     uint32_t capacity, BibEngineProviderV1* output) {
+     using namespace bib::provider_candidate;
+     if (!output || major != BIB_ENGINE_ABI_MAJOR || capacity < sizeof(BibEngineProviderV1)) return BIB_ENGINE_INVALID;
++#if defined(BIB_ENGINE_PROVIDER_NATIVE) && BIB_ENGINE_PROVIDER_NATIVE
++    // This native composition is explicitly document ABI1.1; reject minor0
++    // without constructing or retaining a private registration.
++    if (minor < BIB_ENGINE_DOCUMENT_V2_ABI_MINOR) return BIB_ENGINE_UNSUPPORTED;
++    // The binder takes Runtime::Gate itself. Bootstrap must finish before this
++    // getter acquires that gate; it performs no Host/Page/VM/START work.
++    const auto binding_status = ensureNativeDocumentProviderBound();
++    if (binding_status != BIB_ENGINE_OK) return binding_status;
++#endif
+     auto* p = runtime(); if (!p) return BIB_ENGINE_LIMIT;
+     Runtime::Gate gate(*p, false); if (!gate) return gate.status;
+     if (!p->bound) return BIB_ENGINE_UNSUPPORTED;

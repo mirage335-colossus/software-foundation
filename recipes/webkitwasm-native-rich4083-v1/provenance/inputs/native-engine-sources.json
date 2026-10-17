@@ -1,0 +1,901 @@
+{
+  "scope": "source-only-rich4083-engine-leaf-integration-no-native-build",
+  "status": "exact43-postimages-and-reversible32-file-platform-patch",
+  "source_plan_sha256": "32fa54b5e59e366326eae239b9b246d34534eef1de70d635396a22828654e7c1",
+  "windows_join_plan_sha256": "e6c9e767d76852570e11322c13b64966a5b382fd98e3656aab8329b6b43b1312",
+  "files": [
+    {
+      "tracked_source": "source/engine/Source/JavaScriptCore/PlatformFoundation.cmake",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/JavaScriptCore/PlatformFoundation.cmake",
+      "sha256": "af0379ab6abd02ba51503745ee538ebbe617a59362d12d10eb84d78c1bd73696",
+      "platform_preimage_sha256": null,
+      "bytes": 308
+    },
+    {
+      "tracked_source": "source/engine/Source/ThirdParty/skia/CMakeLists.txt",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/ThirdParty/skia/CMakeLists.txt",
+      "sha256": "a501f7a251a176e8ff09679168aa4739b78001d6c68519b710a62754ce715896",
+      "platform_preimage_sha256": "7d12e1266411156d199a9ef330929f7e43985904b2b4f52020c2a951f5aa9eae",
+      "bytes": 40298
+    },
+    {
+      "tracked_source": "source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+      "origin": "released-Windows-engine-source-overlay",
+      "origin_path": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+      "sha256": "755c219fcc2e121022fec2260f06a0adcf2e0abfc79c619dc7fcd128a017a314",
+      "bytes": 5287,
+      "windows_join": {
+        "tracked_source": "source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+        "before_sha256": "fa286bdffb5393ff387c2a98c1289f88dd273fa2d9bc48d2d83b0c7390a04ccf",
+        "after_sha256": "755c219fcc2e121022fec2260f06a0adcf2e0abfc79c619dc7fcd128a017a314",
+        "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+        "logical_origin": {
+          "bytes": 4819,
+          "path": "source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+          "role": "finite-audit-supplier-source",
+          "sha256": "fa286bdffb5393ff387c2a98c1289f88dd273fa2d9bc48d2d83b0c7390a04ccf",
+          "source": ".agent-work/appended-implementation-20261016/webkit-engine-probe/wrapper/third_party/WebKit/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp"
+        },
+        "changed": true,
+        "bytes": 5287
+      },
+      "baseline": null
+    },
+    {
+      "tracked_source": "source/engine/Source/WTF/wtf/ExportMacros.h",
+      "origin": "released-Windows-engine-source-overlay",
+      "origin_path": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WTF/wtf/ExportMacros.h",
+      "sha256": "35267c903c4c07a53835d7a045a6d138a0b5a9687d61bf237f0a6b27ec8dcf99",
+      "bytes": 3132,
+      "windows_join": {
+        "tracked_source": "source/engine/Source/WTF/wtf/ExportMacros.h",
+        "before_sha256": "b281f4e76aa73c6f4c7aa9b25d0f462b699757b50bb1988bba5617edb1c02ad2",
+        "after_sha256": "35267c903c4c07a53835d7a045a6d138a0b5a9687d61bf237f0a6b27ec8dcf99",
+        "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WTF/wtf/ExportMacros.h",
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WTF/wtf/ExportMacros.h",
+        "logical_origin": {
+          "bytes": 2787,
+          "path": "source/engine/Source/WTF/wtf/ExportMacros.h",
+          "role": "finite-audit-supplier-source",
+          "sha256": "b281f4e76aa73c6f4c7aa9b25d0f462b699757b50bb1988bba5617edb1c02ad2",
+          "source": ".agent-work/appended-implementation-20261016/webkit-engine-probe/wrapper/third_party/WebKit/Source/WTF/wtf/ExportMacros.h"
+        },
+        "changed": true,
+        "bytes": 3132
+      },
+      "baseline": null
+    },
+    {
+      "tracked_source": "source/engine/Source/WTF/wtf/FileSystem.h",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WTF/wtf/FileSystem.h",
+      "sha256": "1dc6325b56723112cffcd9aa43711d3ac850e07084efa0766a4c246cbf02dd8d",
+      "platform_preimage_sha256": "e8788ef827d7f971b10459996dd9f57ecc179992830b524991367b018c2e83d1",
+      "bytes": 9621
+    },
+    {
+      "tracked_source": "source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+      "origin": "released-Windows-engine-source-overlay",
+      "origin_path": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+      "sha256": "aab6d2367bc3e17ae3266ede1a05393634aad4325e729e8f119a28df21b1d552",
+      "bytes": 569,
+      "windows_join": {
+        "tracked_source": "source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+        "before_sha256": "eb28eca8e5c33ca5d94c92c9caea0ae4260204d2c7f82cbbd0f0b4703fbc1a0e",
+        "after_sha256": "aab6d2367bc3e17ae3266ede1a05393634aad4325e729e8f119a28df21b1d552",
+        "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+        "logical_origin": {
+          "bytes": 534,
+          "path": "source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+          "role": "canonical-owner-readhold",
+          "sha256": "eb28eca8e5c33ca5d94c92c9caea0ae4260204d2c7f82cbbd0f0b4703fbc1a0e",
+          "source": "recipes/webkitwasm-native-v1/source/engine/Source/WTF/wtf/PlatformFoundation.cmake"
+        },
+        "changed": true,
+        "bytes": 569
+      },
+      "baseline": {
+        "tracked_source": "source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+        "origin": "frozen-native-pixel-platform-leaf",
+        "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+        "sha256": "eb28eca8e5c33ca5d94c92c9caea0ae4260204d2c7f82cbbd0f0b4703fbc1a0e",
+        "platform_preimage_sha256": null,
+        "bytes": 534
+      }
+    },
+    {
+      "tracked_source": "source/engine/Source/WTF/wtf/PlatformLegacy.h",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WTF/wtf/PlatformLegacy.h",
+      "sha256": "ece1a0ec605f32d6a413fc8e4ec3d458fa1d47e01a571281c2ba0e5df1b5db4b",
+      "platform_preimage_sha256": "50e4e901c002f0a3b9f8f45c645cfae7fc03385ea9f138b3734433423f4ad0e6",
+      "bytes": 3776
+    },
+    {
+      "tracked_source": "source/engine/Source/WTF/wtf/URL.cpp",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WTF/wtf/URL.cpp",
+      "sha256": "3c18a74cee6ed6ce03ddb6c7ef100561c8f4c48c32b7d6dbf70e0df00fd69f00",
+      "platform_preimage_sha256": "755ace726376e6661842298b2ee45f5fb2bf14aca3d8d6f90db76e30abb1ac9b",
+      "bytes": 40733
+    },
+    {
+      "tracked_source": "source/engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp",
+      "origin": "frozen-native-actions-capsule-engine-cpp",
+      "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/engine/Source/WTF/wtf/generic/RunLoopGeneric.cpp",
+      "sha256": "8ae65acf35a605f9ebe1b2ea0654683926732e6842ae5c806433618b35d94851",
+      "bytes": 12234
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/CMakeLists.txt",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/CMakeLists.txt",
+      "sha256": "dbfc8264a8d608b68df0e13138db54e7b0334787b83935a9b9a46cd3b8e9089a",
+      "platform_preimage_sha256": "ddcf29ed2a8689370b18fefc9f7ee5a796cfbe77a5333d997839b81543bcf9d3",
+      "bytes": 131281
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+      "origin": "released-Windows-engine-source-overlay",
+      "origin_path": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+      "sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+      "bytes": 375,
+      "windows_join": {
+        "tracked_source": "source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+        "before_sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+        "after_sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+        "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+        "logical_origin": {
+          "bytes": 375,
+          "path": "source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+          "role": "canonical-owner-readhold",
+          "sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+          "source": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake"
+        },
+        "changed": false,
+        "bytes": 375
+      },
+      "baseline": {
+        "tracked_source": "source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+        "origin": "frozen-native-pixel-platform-leaf",
+        "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+        "sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+        "platform_preimage_sha256": null,
+        "bytes": 375
+      }
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/PlatformFoundation.cmake",
+      "origin": "released-Windows-engine-source-overlay",
+      "origin_path": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WebCore/PlatformFoundation.cmake",
+      "sha256": "1fb90b0f1c1a070916c26f4466d4698987be786e403f3a7877b49ad2232bf827",
+      "bytes": 3042,
+      "windows_join": {
+        "tracked_source": "source/engine/Source/WebCore/PlatformFoundation.cmake",
+        "before_sha256": "2a3dc63db03ff84c4e963400400e7f5e939f6195540c9929e54c28e29e80198b",
+        "after_sha256": "1fb90b0f1c1a070916c26f4466d4698987be786e403f3a7877b49ad2232bf827",
+        "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WebCore/PlatformFoundation.cmake",
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WebCore/PlatformFoundation.cmake",
+        "logical_origin": {
+          "bytes": 2245,
+          "path": "source/engine/Source/WebCore/PlatformFoundation.cmake",
+          "role": "canonical-owner-readhold",
+          "sha256": "2a3dc63db03ff84c4e963400400e7f5e939f6195540c9929e54c28e29e80198b",
+          "source": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/PlatformFoundation.cmake"
+        },
+        "changed": true,
+        "bytes": 3042
+      },
+      "baseline": {
+        "tracked_source": "source/engine/Source/WebCore/PlatformFoundation.cmake",
+        "origin": "frozen-native-pixel-platform-leaf",
+        "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/PlatformFoundation.cmake",
+        "sha256": "2a3dc63db03ff84c4e963400400e7f5e939f6195540c9929e54c28e29e80198b",
+        "platform_preimage_sha256": null,
+        "bytes": 2245
+      }
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/accessibility/AXCoreObject.h",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/accessibility/AXCoreObject.h",
+      "sha256": "3cca85a18ccae5c53c646864fdca88c7adb11fde023da6d817e94515178c8fbf",
+      "platform_preimage_sha256": "1f0a5fb35c4e98b869e6bc5cd04fd1ad3aa46c2ad365ee9cc4c6b1a333e704cd",
+      "bytes": 74729
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/bindings/js/ScriptController.cpp",
+      "origin": "frozen-native-actions-capsule-engine-cpp",
+      "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/engine/Source/WebCore/bindings/js/ScriptController.cpp",
+      "sha256": "8f8e984f18a45631bb4a9e425a69656c6a35651e11fd038cab7d7f11bf625e79",
+      "bytes": 41875
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/dom/Document.cpp",
+      "origin": "frozen-native-actions-capsule-engine-cpp",
+      "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/engine/Source/WebCore/dom/Document.cpp",
+      "sha256": "b9137b64104a653e113912a5a64c09606aea434cfe0a76c1a4c5e0be86843c42",
+      "bytes": 447362
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/dom/Element.cpp",
+      "origin": "frozen-native-actions-capsule-engine-cpp",
+      "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/engine/Source/WebCore/dom/Element.cpp",
+      "sha256": "9e0159da1f3c28a1689206e6c83f69aa3e0ce727bce8e2c89c3e53bcb822ef91",
+      "bytes": 261368
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/dom/KeyboardEvent.cpp",
+      "origin": "frozen-native-actions-capsule-engine-cpp",
+      "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/engine/Source/WebCore/dom/KeyboardEvent.cpp",
+      "sha256": "b62a8ba61658f34b980f4ff6399a704c483322aa64e3c2762d355f514712de29",
+      "bytes": 9304
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/dom/UIEventWithKeyState.cpp",
+      "origin": "frozen-native-actions-capsule-engine-cpp",
+      "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/engine/Source/WebCore/dom/UIEventWithKeyState.cpp",
+      "sha256": "04d93531a6b25ea026ca1f9a1c4c744ac9ea288c63e1cc8a86e6af771ff6175c",
+      "bytes": 2973
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/loader/DocumentLoader.cpp",
+      "origin": "frozen-native-actions-capsule-engine-cpp",
+      "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/engine/Source/WebCore/loader/DocumentLoader.cpp",
+      "sha256": "f10bd277bc751179b8c0f7bbecda382d46d39e2919f11a0f87bbd4b37e5270bd",
+      "bytes": 113637
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/page/EventHandler.cpp",
+      "origin": "frozen-native-actions-capsule-engine-cpp",
+      "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/engine/Source/WebCore/page/EventHandler.cpp",
+      "sha256": "eb275ae135b7bf8948c079bac23b9622715d0951289b57680c9c67c7caf83439",
+      "bytes": 234986
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/MainThreadSharedTimer.cpp",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/MainThreadSharedTimer.cpp",
+      "sha256": "a6e576ff64416e65986646f960b3897ba949a4d8c2d0430c88a40ad9ccc7a00f",
+      "platform_preimage_sha256": "c6c3d5fc29ee8080bd9150b6080d9cb59984768b87853d16b614069e2b89e1b8",
+      "bytes": 2817
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/MainThreadSharedTimer.h",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/MainThreadSharedTimer.h",
+      "sha256": "4310cce122e2e911d806497ab5bd7fcbe391f2e9b763d25e47cb75e2644906ee",
+      "platform_preimage_sha256": "6c6445f60b70fe72f5f57de6f1a91895ac05e23ddc8de0f98fb4f3cde45e8c4c",
+      "bytes": 2745
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/Pasteboard.h",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/Pasteboard.h",
+      "sha256": "ae5906c0e092fe20715784f4ffbce386175c86b66b9ade60e50c723b08bd86e0",
+      "platform_preimage_sha256": "9778fc7620c752ed4649bbd63daa30721ec20c94fb47f7b59dd576788b9be895",
+      "bytes": 15480
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/ScrollAnimator.cpp",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/ScrollAnimator.cpp",
+      "sha256": "d755ff6799a6408b03f44f86c312cb87bc9b077ada6ead760eafeb169dd51edb",
+      "platform_preimage_sha256": "48a2972036458101ac8bccc2c0c4a540d2649608e3bd5a898535987f568f86df",
+      "bytes": 18309
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/ScrollAnimator.h",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/ScrollAnimator.h",
+      "sha256": "0066fcd06df3cf6a97648a14ef18516b812fc5b667e23b86ad48e453b2da35e2",
+      "platform_preimage_sha256": "274bd16b8ba655b903049f602e6cc5edb359aca481eebf17bd9a639435190acc",
+      "bytes": 7859
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/Skia.cmake",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/Skia.cmake",
+      "sha256": "07d4ca84546110400010580966d1b9998c29b8e0eceecf03fc85ea587c2ca531",
+      "platform_preimage_sha256": "24e8a85e3211a0e4732e392b6805bf6f6d06c0991161822857502efb11c8270f",
+      "bytes": 1582
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/SourcesSkia.txt",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/SourcesSkia.txt",
+      "sha256": "295c1f70ee44dd803c49159e5a61053385b926014642ea7d51421e139f9d7f97",
+      "platform_preimage_sha256": "32cb85b321c4e25a68ea20bad08706eb12cc535f9fd3bb75e374d98c6beba448",
+      "bytes": 3044
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/emscripten/PlatformKeyboardEventEmscripten.cpp",
+      "origin": "frozen-native-actions-capsule-engine-cpp",
+      "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/engine/Source/WebCore/platform/emscripten/PlatformKeyboardEventEmscripten.cpp",
+      "sha256": "69ab5db1c35c19a943a3b11a4275555b692a906b843c25cc08b3cb4d674a2cb1",
+      "bytes": 1193
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/FontCache.h",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/FontCache.h",
+      "sha256": "c66cc572ca4f5cd7c84335dd3ffed36a5eb83486b4c3cd0d29e6b52a6d543f82",
+      "platform_preimage_sha256": "0bade227ad6a637335a67c61a33ffb2b7db8901acc8ecb3ed608f7645b848f74",
+      "bytes": 11830
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/ImageBuffer.cpp",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/ImageBuffer.cpp",
+      "sha256": "b613e290301f66c502796838441e47c997c0f87e795af979161f29fbb25deae6",
+      "platform_preimage_sha256": "9c5ef7fef99ee8bc8e4fcead989901904dd8a99dbe34b1803ed349cd3abe03f5",
+      "bytes": 21655
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/NativeImage.h",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/NativeImage.h",
+      "sha256": "bdd95da5d96ab25f5c92345feaa1980959800a0ec2c3ca0360897847980093d9",
+      "platform_preimage_sha256": "21aa63c605209c77d72f5aa0492f69249e8ac5d080a1b28fdee3ef03f6f399b6",
+      "bytes": 4418
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp",
+      "sha256": "50b7027ecbed3d3d84f3e8f9f91f280e06eb521d29e0e43693399c9cf1080717",
+      "platform_preimage_sha256": "636df4f7e8d70fc63cb26c47bec62364361769f2940e8d30374313e8f51f50b7",
+      "bytes": 18280
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.cpp",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.cpp",
+      "sha256": "5be12ab0499725bf9ed18322dddf23e5ea3061d96c658b38654b06d352d40f24",
+      "platform_preimage_sha256": "35568c5e86da55391a5a0d8c49052378ebd7c4328aef470982aa3383b74ffe68",
+      "bytes": 50585
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.h",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.h",
+      "sha256": "4e774f3d1d3d82fb9074e2e8a48bcfe900d6fb4a100385d0dda19a30fd84d267",
+      "platform_preimage_sha256": "24aab08d7c295936d52b7d37883b3407314f4e054ea94995bd6ead9d58fbaca3",
+      "bytes": 8297
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/ImageBufferUtilitiesSkia.cpp",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/ImageBufferUtilitiesSkia.cpp",
+      "sha256": "68bac7ee355becb94b551057562e1fdf68a870143d0d275f4fca7755eda1ffed",
+      "platform_preimage_sha256": "f372b43d15fbc008f558c030f02fba3f0214594f2019bd06d8e117aa5ddf7062",
+      "bytes": 5236
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/NativeImageSkia.cpp",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/NativeImageSkia.cpp",
+      "sha256": "b1b884fad24eabbc7c66bd7401d7fa582bd2d7f2e0b7bc513f764dab45bee8db",
+      "platform_preimage_sha256": "c6941a1829b8500f67b9094f018ce5739b4c877f434e6cf0bed0d54865950ba9",
+      "bytes": 4851
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.cpp",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.cpp",
+      "sha256": "23139744d35351476cb003aeed9ad323bd42f33de9f8de50a85bd6dec083668b",
+      "platform_preimage_sha256": "dcdcd34b3310baa1a9517c7f47e497e283a145e0143b43e5a719743fcb07c117",
+      "bytes": 7487
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.h",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.h",
+      "sha256": "fe9dbc48e2aa294c14d3277f089e9c1d2677c6db4b155ec250f9b1047c1366b1",
+      "platform_preimage_sha256": "b215b5eb7d353e2b2a98327dee8999b17d778da455ac0917fe2df5215ef2e19e",
+      "bytes": 2121
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/workers/Worker.cpp",
+      "origin": "frozen-native-actions-capsule-engine-cpp",
+      "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/engine/Source/WebCore/workers/Worker.cpp",
+      "sha256": "fd5f885a5bd6032e1bde897802dc4b59713f32ab3e29ed48145132ec95648ea1",
+      "bytes": 14423
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/workers/shared/SharedWorker.cpp",
+      "origin": "frozen-native-actions-capsule-engine-cpp",
+      "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/engine/Source/WebCore/workers/shared/SharedWorker.cpp",
+      "sha256": "748d4fa6786a246500e5b1667721b0ad9ef980abbbc69b351c0da60e317b8c4f",
+      "bytes": 8877
+    },
+    {
+      "tracked_source": "source/engine/Source/cmake/FoundationWindowsInputs.cmake",
+      "origin": "released-Windows-engine-source-overlay",
+      "origin_path": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/cmake/FoundationWindowsInputs.cmake",
+      "sha256": "37c9c52bc6d8c69eb75e47d07b967e2bc4c2762f7dad642dcf77b214f8ab7dc0",
+      "bytes": 13874,
+      "windows_join": {
+        "tracked_source": "source/engine/Source/cmake/FoundationWindowsInputs.cmake",
+        "before_sha256": null,
+        "after_sha256": "37c9c52bc6d8c69eb75e47d07b967e2bc4c2762f7dad642dcf77b214f8ab7dc0",
+        "before_source": null,
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/cmake/FoundationWindowsInputs.cmake",
+        "logical_origin": {
+          "role": "new-project-maintained-source",
+          "source": null
+        },
+        "changed": true,
+        "bytes": 13874
+      },
+      "baseline": null
+    },
+    {
+      "tracked_source": "source/engine/Source/cmake/OptionsFoundation.cmake",
+      "origin": "released-Windows-engine-source-overlay",
+      "origin_path": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/cmake/OptionsFoundation.cmake",
+      "sha256": "e77730469c3d5d5f9baf4b8b5137941396425d309602d59630832b91b0d0ad3c",
+      "bytes": 9615,
+      "windows_join": {
+        "tracked_source": "source/engine/Source/cmake/OptionsFoundation.cmake",
+        "before_sha256": "4215dd73f0428704fe77ee0e499f8ab90237159500aab1003e1a7e34aa063d23",
+        "after_sha256": "e77730469c3d5d5f9baf4b8b5137941396425d309602d59630832b91b0d0ad3c",
+        "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/cmake/OptionsFoundation.cmake",
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/cmake/OptionsFoundation.cmake",
+        "logical_origin": {
+          "bytes": 7461,
+          "path": "source/engine/Source/cmake/OptionsFoundation.cmake",
+          "role": "canonical-owner-readhold",
+          "sha256": "4215dd73f0428704fe77ee0e499f8ab90237159500aab1003e1a7e34aa063d23",
+          "source": "recipes/webkitwasm-native-v1/source/engine/Source/cmake/OptionsFoundation.cmake"
+        },
+        "changed": true,
+        "bytes": 9615
+      },
+      "baseline": {
+        "tracked_source": "source/engine/Source/cmake/OptionsFoundation.cmake",
+        "origin": "frozen-native-pixel-platform-leaf",
+        "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/cmake/OptionsFoundation.cmake",
+        "sha256": "4215dd73f0428704fe77ee0e499f8ab90237159500aab1003e1a7e34aa063d23",
+        "platform_preimage_sha256": null,
+        "bytes": 7461
+      }
+    },
+    {
+      "tracked_source": "source/engine/Source/cmake/WebKitCommon.cmake",
+      "origin": "frozen-native-pixel-platform-leaf",
+      "origin_path": "recipes/webkitwasm-native-v1/source/engine/Source/cmake/WebKitCommon.cmake",
+      "sha256": "c7d60fffc5d7ec8e01821299ddd017a2fc72efafdfe12a6e2e3d25483f7a3c55",
+      "platform_preimage_sha256": "5a594cf7bcc07c425dea6d8d4ea2c73c25349932adc41a4f1034a9b805841436",
+      "bytes": 20633
+    }
+  ],
+  "platform_patch_files": [
+    {
+      "tracked_source": "source/engine/Source/JavaScriptCore/PlatformFoundation.cmake",
+      "before_source": null,
+      "before_sha256": null,
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "af0379ab6abd02ba51503745ee538ebbe617a59362d12d10eb84d78c1bd73696",
+      "after_bytes": 308
+    },
+    {
+      "tracked_source": "source/engine/Source/ThirdParty/skia/CMakeLists.txt",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cpu/before/Source/ThirdParty/skia/CMakeLists.txt",
+      "before_sha256": "7d12e1266411156d199a9ef330929f7e43985904b2b4f52020c2a951f5aa9eae",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "a501f7a251a176e8ff09679168aa4739b78001d6c68519b710a62754ce715896",
+      "after_bytes": 40298
+    },
+    {
+      "tracked_source": "source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+      "before_sha256": "fa286bdffb5393ff387c2a98c1289f88dd273fa2d9bc48d2d83b0c7390a04ccf",
+      "baseline_origin": {
+        "bytes": 4819,
+        "path": "source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+        "role": "finite-audit-supplier-source",
+        "sha256": "fa286bdffb5393ff387c2a98c1289f88dd273fa2d9bc48d2d83b0c7390a04ccf",
+        "source": ".agent-work/appended-implementation-20261016/webkit-engine-probe/wrapper/third_party/WebKit/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp"
+      },
+      "windows_join": {
+        "tracked_source": "source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+        "before_sha256": "fa286bdffb5393ff387c2a98c1289f88dd273fa2d9bc48d2d83b0c7390a04ccf",
+        "after_sha256": "755c219fcc2e121022fec2260f06a0adcf2e0abfc79c619dc7fcd128a017a314",
+        "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+        "logical_origin": {
+          "bytes": 4819,
+          "path": "source/engine/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp",
+          "role": "finite-audit-supplier-source",
+          "sha256": "fa286bdffb5393ff387c2a98c1289f88dd273fa2d9bc48d2d83b0c7390a04ccf",
+          "source": ".agent-work/appended-implementation-20261016/webkit-engine-probe/wrapper/third_party/WebKit/Source/ThirdParty/skia/src/utils/win/SkDWrite.cpp"
+        },
+        "changed": true,
+        "bytes": 5287
+      },
+      "after_sha256": "755c219fcc2e121022fec2260f06a0adcf2e0abfc79c619dc7fcd128a017a314",
+      "after_bytes": 5287
+    },
+    {
+      "tracked_source": "source/engine/Source/WTF/wtf/ExportMacros.h",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WTF/wtf/ExportMacros.h",
+      "before_sha256": "b281f4e76aa73c6f4c7aa9b25d0f462b699757b50bb1988bba5617edb1c02ad2",
+      "baseline_origin": {
+        "bytes": 2787,
+        "path": "source/engine/Source/WTF/wtf/ExportMacros.h",
+        "role": "finite-audit-supplier-source",
+        "sha256": "b281f4e76aa73c6f4c7aa9b25d0f462b699757b50bb1988bba5617edb1c02ad2",
+        "source": ".agent-work/appended-implementation-20261016/webkit-engine-probe/wrapper/third_party/WebKit/Source/WTF/wtf/ExportMacros.h"
+      },
+      "windows_join": {
+        "tracked_source": "source/engine/Source/WTF/wtf/ExportMacros.h",
+        "before_sha256": "b281f4e76aa73c6f4c7aa9b25d0f462b699757b50bb1988bba5617edb1c02ad2",
+        "after_sha256": "35267c903c4c07a53835d7a045a6d138a0b5a9687d61bf237f0a6b27ec8dcf99",
+        "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WTF/wtf/ExportMacros.h",
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WTF/wtf/ExportMacros.h",
+        "logical_origin": {
+          "bytes": 2787,
+          "path": "source/engine/Source/WTF/wtf/ExportMacros.h",
+          "role": "finite-audit-supplier-source",
+          "sha256": "b281f4e76aa73c6f4c7aa9b25d0f462b699757b50bb1988bba5617edb1c02ad2",
+          "source": ".agent-work/appended-implementation-20261016/webkit-engine-probe/wrapper/third_party/WebKit/Source/WTF/wtf/ExportMacros.h"
+        },
+        "changed": true,
+        "bytes": 3132
+      },
+      "after_sha256": "35267c903c4c07a53835d7a045a6d138a0b5a9687d61bf237f0a6b27ec8dcf99",
+      "after_bytes": 3132
+    },
+    {
+      "tracked_source": "source/engine/Source/WTF/wtf/FileSystem.h",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows/before/engine/Source/WTF/wtf/FileSystem.h",
+      "before_sha256": "e8788ef827d7f971b10459996dd9f57ecc179992830b524991367b018c2e83d1",
+      "baseline_origin": "frozen-windows-native-seam",
+      "after_sha256": "1dc6325b56723112cffcd9aa43711d3ac850e07084efa0766a4c246cbf02dd8d",
+      "after_bytes": 9621
+    },
+    {
+      "tracked_source": "source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+      "before_source": null,
+      "before_sha256": null,
+      "baseline_origin": "frozen-linux-native-candidate",
+      "windows_join": {
+        "tracked_source": "source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+        "before_sha256": "eb28eca8e5c33ca5d94c92c9caea0ae4260204d2c7f82cbbd0f0b4703fbc1a0e",
+        "after_sha256": "aab6d2367bc3e17ae3266ede1a05393634aad4325e729e8f119a28df21b1d552",
+        "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+        "logical_origin": {
+          "bytes": 534,
+          "path": "source/engine/Source/WTF/wtf/PlatformFoundation.cmake",
+          "role": "canonical-owner-readhold",
+          "sha256": "eb28eca8e5c33ca5d94c92c9caea0ae4260204d2c7f82cbbd0f0b4703fbc1a0e",
+          "source": "recipes/webkitwasm-native-v1/source/engine/Source/WTF/wtf/PlatformFoundation.cmake"
+        },
+        "changed": true,
+        "bytes": 569
+      },
+      "after_sha256": "aab6d2367bc3e17ae3266ede1a05393634aad4325e729e8f119a28df21b1d552",
+      "after_bytes": 569
+    },
+    {
+      "tracked_source": "source/engine/Source/WTF/wtf/PlatformLegacy.h",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows/before/engine/Source/WTF/wtf/PlatformLegacy.h",
+      "before_sha256": "50e4e901c002f0a3b9f8f45c645cfae7fc03385ea9f138b3734433423f4ad0e6",
+      "baseline_origin": "frozen-windows-native-seam",
+      "after_sha256": "ece1a0ec605f32d6a413fc8e4ec3d458fa1d47e01a571281c2ba0e5df1b5db4b",
+      "after_bytes": 3776
+    },
+    {
+      "tracked_source": "source/engine/Source/WTF/wtf/URL.cpp",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows/before/engine/Source/WTF/wtf/URL.cpp",
+      "before_sha256": "755ace726376e6661842298b2ee45f5fb2bf14aca3d8d6f90db76e30abb1ac9b",
+      "baseline_origin": "frozen-windows-native-seam",
+      "after_sha256": "3c18a74cee6ed6ce03ddb6c7ef100561c8f4c48c32b7d6dbf70e0df00fd69f00",
+      "after_bytes": 40733
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/CMakeLists.txt",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cpu/before/Source/WebCore/CMakeLists.txt",
+      "before_sha256": "ddcf29ed2a8689370b18fefc9f7ee5a796cfbe77a5333d997839b81543bcf9d3",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "dbfc8264a8d608b68df0e13138db54e7b0334787b83935a9b9a46cd3b8e9089a",
+      "after_bytes": 131281
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+      "before_source": null,
+      "before_sha256": null,
+      "baseline_origin": "frozen-linux-native-candidate",
+      "windows_join": {
+        "tracked_source": "source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+        "before_sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+        "after_sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+        "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+        "logical_origin": {
+          "bytes": 375,
+          "path": "source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake",
+          "role": "canonical-owner-readhold",
+          "sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+          "source": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/PAL/pal/PlatformFoundation.cmake"
+        },
+        "changed": false,
+        "bytes": 375
+      },
+      "after_sha256": "494e819a61495822fc3034e22ddb5de5dad42c2f339c23b2362cf2855e671c2e",
+      "after_bytes": 375
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/PlatformFoundation.cmake",
+      "before_source": null,
+      "before_sha256": null,
+      "baseline_origin": "frozen-linux-native-candidate",
+      "windows_join": {
+        "tracked_source": "source/engine/Source/WebCore/PlatformFoundation.cmake",
+        "before_sha256": "2a3dc63db03ff84c4e963400400e7f5e939f6195540c9929e54c28e29e80198b",
+        "after_sha256": "1fb90b0f1c1a070916c26f4466d4698987be786e403f3a7877b49ad2232bf827",
+        "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/WebCore/PlatformFoundation.cmake",
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/WebCore/PlatformFoundation.cmake",
+        "logical_origin": {
+          "bytes": 2245,
+          "path": "source/engine/Source/WebCore/PlatformFoundation.cmake",
+          "role": "canonical-owner-readhold",
+          "sha256": "2a3dc63db03ff84c4e963400400e7f5e939f6195540c9929e54c28e29e80198b",
+          "source": "recipes/webkitwasm-native-v1/source/engine/Source/WebCore/PlatformFoundation.cmake"
+        },
+        "changed": true,
+        "bytes": 3042
+      },
+      "after_sha256": "1fb90b0f1c1a070916c26f4466d4698987be786e403f3a7877b49ad2232bf827",
+      "after_bytes": 3042
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/accessibility/AXCoreObject.h",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cmake/before/Source/WebCore/accessibility/AXCoreObject.h",
+      "before_sha256": "1f0a5fb35c4e98b869e6bc5cd04fd1ad3aa46c2ad365ee9cc4c6b1a333e704cd",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "3cca85a18ccae5c53c646864fdca88c7adb11fde023da6d817e94515178c8fbf",
+      "after_bytes": 74729
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/MainThreadSharedTimer.cpp",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows/before/engine/Source/WebCore/platform/MainThreadSharedTimer.cpp",
+      "before_sha256": "c6c3d5fc29ee8080bd9150b6080d9cb59984768b87853d16b614069e2b89e1b8",
+      "baseline_origin": "frozen-windows-native-seam",
+      "after_sha256": "a6e576ff64416e65986646f960b3897ba949a4d8c2d0430c88a40ad9ccc7a00f",
+      "after_bytes": 2817
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/MainThreadSharedTimer.h",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows/before/engine/Source/WebCore/platform/MainThreadSharedTimer.h",
+      "before_sha256": "6c6445f60b70fe72f5f57de6f1a91895ac05e23ddc8de0f98fb4f3cde45e8c4c",
+      "baseline_origin": "frozen-windows-native-seam",
+      "after_sha256": "4310cce122e2e911d806497ab5bd7fcbe391f2e9b763d25e47cb75e2644906ee",
+      "after_bytes": 2745
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/Pasteboard.h",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cmake/before/Source/WebCore/platform/Pasteboard.h",
+      "before_sha256": "9778fc7620c752ed4649bbd63daa30721ec20c94fb47f7b59dd576788b9be895",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "ae5906c0e092fe20715784f4ffbce386175c86b66b9ade60e50c723b08bd86e0",
+      "after_bytes": 15480
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/ScrollAnimator.cpp",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cmake/before/Source/WebCore/platform/ScrollAnimator.cpp",
+      "before_sha256": "48a2972036458101ac8bccc2c0c4a540d2649608e3bd5a898535987f568f86df",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "d755ff6799a6408b03f44f86c312cb87bc9b077ada6ead760eafeb169dd51edb",
+      "after_bytes": 18309
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/ScrollAnimator.h",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cmake/before/Source/WebCore/platform/ScrollAnimator.h",
+      "before_sha256": "274bd16b8ba655b903049f602e6cc5edb359aca481eebf17bd9a639435190acc",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "0066fcd06df3cf6a97648a14ef18516b812fc5b667e23b86ad48e453b2da35e2",
+      "after_bytes": 7859
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/Skia.cmake",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cpu/before/Source/WebCore/platform/Skia.cmake",
+      "before_sha256": "24e8a85e3211a0e4732e392b6805bf6f6d06c0991161822857502efb11c8270f",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "07d4ca84546110400010580966d1b9998c29b8e0eceecf03fc85ea587c2ca531",
+      "after_bytes": 1582
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/SourcesSkia.txt",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cpu/before/Source/WebCore/platform/SourcesSkia.txt",
+      "before_sha256": "32cb85b321c4e25a68ea20bad08706eb12cc535f9fd3bb75e374d98c6beba448",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "295c1f70ee44dd803c49159e5a61053385b926014642ea7d51421e139f9d7f97",
+      "after_bytes": 3044
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/FontCache.h",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows/before/engine/Source/WebCore/platform/graphics/FontCache.h",
+      "before_sha256": "0bade227ad6a637335a67c61a33ffb2b7db8901acc8ecb3ed608f7645b848f74",
+      "baseline_origin": "frozen-windows-native-seam",
+      "after_sha256": "c66cc572ca4f5cd7c84335dd3ffed36a5eb83486b4c3cd0d29e6b52a6d543f82",
+      "after_bytes": 11830
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/ImageBuffer.cpp",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cpu/before/Source/WebCore/platform/graphics/ImageBuffer.cpp",
+      "before_sha256": "9c5ef7fef99ee8bc8e4fcead989901904dd8a99dbe34b1803ed349cd3abe03f5",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "b613e290301f66c502796838441e47c997c0f87e795af979161f29fbb25deae6",
+      "after_bytes": 21655
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/NativeImage.h",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cpu/before/Source/WebCore/platform/graphics/NativeImage.h",
+      "before_sha256": "21aa63c605209c77d72f5aa0492f69249e8ac5d080a1b28fdee3ef03f6f399b6",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "bdd95da5d96ab25f5c92345feaa1980959800a0ec2c3ca0360897847980093d9",
+      "after_bytes": 4418
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows/before/engine/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp",
+      "before_sha256": "636df4f7e8d70fc63cb26c47bec62364361769f2940e8d30374313e8f51f50b7",
+      "baseline_origin": "frozen-windows-native-seam",
+      "after_sha256": "50b7027ecbed3d3d84f3e8f9f91f280e06eb521d29e0e43693399c9cf1080717",
+      "after_bytes": 18280
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.cpp",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cpu/before/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.cpp",
+      "before_sha256": "35568c5e86da55391a5a0d8c49052378ebd7c4328aef470982aa3383b74ffe68",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "5be12ab0499725bf9ed18322dddf23e5ea3061d96c658b38654b06d352d40f24",
+      "after_bytes": 50585
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.h",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cpu/before/Source/WebCore/platform/graphics/skia/GraphicsContextSkia.h",
+      "before_sha256": "24aab08d7c295936d52b7d37883b3407314f4e054ea94995bd6ead9d58fbaca3",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "4e774f3d1d3d82fb9074e2e8a48bcfe900d6fb4a100385d0dda19a30fd84d267",
+      "after_bytes": 8297
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/ImageBufferUtilitiesSkia.cpp",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cpu/before/Source/WebCore/platform/graphics/skia/ImageBufferUtilitiesSkia.cpp",
+      "before_sha256": "f372b43d15fbc008f558c030f02fba3f0214594f2019bd06d8e117aa5ddf7062",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "68bac7ee355becb94b551057562e1fdf68a870143d0d275f4fca7755eda1ffed",
+      "after_bytes": 5236
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/NativeImageSkia.cpp",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cpu/before/Source/WebCore/platform/graphics/skia/NativeImageSkia.cpp",
+      "before_sha256": "c6941a1829b8500f67b9094f018ce5739b4c877f434e6cf0bed0d54865950ba9",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "b1b884fad24eabbc7c66bd7401d7fa582bd2d7f2e0b7bc513f764dab45bee8db",
+      "after_bytes": 4851
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.cpp",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows/before/engine/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.cpp",
+      "before_sha256": "dcdcd34b3310baa1a9517c7f47e497e283a145e0143b43e5a719743fcb07c117",
+      "baseline_origin": "frozen-windows-native-seam",
+      "after_sha256": "23139744d35351476cb003aeed9ad323bd42f33de9f8de50a85bd6dec083668b",
+      "after_bytes": 7487
+    },
+    {
+      "tracked_source": "source/engine/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.h",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows/before/engine/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.h",
+      "before_sha256": "b215b5eb7d353e2b2a98327dee8999b17d778da455ac0917fe2df5215ef2e19e",
+      "baseline_origin": "frozen-windows-native-seam",
+      "after_sha256": "fe9dbc48e2aa294c14d3277f089e9c1d2677c6db4b155ec250f9b1047c1366b1",
+      "after_bytes": 2121
+    },
+    {
+      "tracked_source": "source/engine/Source/cmake/FoundationWindowsInputs.cmake",
+      "before_source": null,
+      "before_sha256": null,
+      "baseline_origin": {
+        "role": "new-project-maintained-source",
+        "source": null
+      },
+      "windows_join": {
+        "tracked_source": "source/engine/Source/cmake/FoundationWindowsInputs.cmake",
+        "before_sha256": null,
+        "after_sha256": "37c9c52bc6d8c69eb75e47d07b967e2bc4c2762f7dad642dcf77b214f8ab7dc0",
+        "before_source": null,
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/cmake/FoundationWindowsInputs.cmake",
+        "logical_origin": {
+          "role": "new-project-maintained-source",
+          "source": null
+        },
+        "changed": true,
+        "bytes": 13874
+      },
+      "after_sha256": "37c9c52bc6d8c69eb75e47d07b967e2bc4c2762f7dad642dcf77b214f8ab7dc0",
+      "after_bytes": 13874
+    },
+    {
+      "tracked_source": "source/engine/Source/cmake/OptionsFoundation.cmake",
+      "before_source": null,
+      "before_sha256": null,
+      "baseline_origin": "frozen-linux-native-candidate",
+      "windows_join": {
+        "tracked_source": "source/engine/Source/cmake/OptionsFoundation.cmake",
+        "before_sha256": "4215dd73f0428704fe77ee0e499f8ab90237159500aab1003e1a7e34aa063d23",
+        "after_sha256": "e77730469c3d5d5f9baf4b8b5137941396425d309602d59630832b91b0d0ad3c",
+        "before_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/before/source/engine/Source/cmake/OptionsFoundation.cmake",
+        "after_source": ".agent-work/appended-implementation-20261016/native-engine-windows-source-implementation/after/source/engine/Source/cmake/OptionsFoundation.cmake",
+        "logical_origin": {
+          "bytes": 7461,
+          "path": "source/engine/Source/cmake/OptionsFoundation.cmake",
+          "role": "canonical-owner-readhold",
+          "sha256": "4215dd73f0428704fe77ee0e499f8ab90237159500aab1003e1a7e34aa063d23",
+          "source": "recipes/webkitwasm-native-v1/source/engine/Source/cmake/OptionsFoundation.cmake"
+        },
+        "changed": true,
+        "bytes": 9615
+      },
+      "after_sha256": "e77730469c3d5d5f9baf4b8b5137941396425d309602d59630832b91b0d0ad3c",
+      "after_bytes": 9615
+    },
+    {
+      "tracked_source": "source/engine/Source/cmake/WebKitCommon.cmake",
+      "before_source": ".agent-work/appended-implementation-20261016/native-engine-candidate/cmake/before/Source/cmake/WebKitCommon.cmake",
+      "before_sha256": "5a594cf7bcc07c425dea6d8d4ea2c73c25349932adc41a4f1034a9b805841436",
+      "baseline_origin": "frozen-linux-native-candidate",
+      "after_sha256": "c7d60fffc5d7ec8e01821299ddd017a2fc72efafdfe12a6e2e3d25483f7a3c55",
+      "after_bytes": 20633
+    }
+  ],
+  "postimage_count": 43,
+  "postimage_bytes": 1692101,
+  "actions_literal_postimage_count": 11,
+  "platform_patch_count": 32,
+  "patch_sha256": "6655cccdc17737440249663376918607a69c529f920546a730327daa1bde0c66",
+  "patch_bytes": 72171,
+  "patch_replay_commands": [
+    {
+      "argv": [
+        "patch",
+        "--batch",
+        "--fuzz=0",
+        "--forward",
+        "-p1",
+        "-i",
+        "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/recipes/webkitwasm-native-rich4083-v1/patches/native-platform-engine.patch"
+      ],
+      "cwd": ".agent-work/appended-implementation-20261016/native-engine-rich4083-implementation/engine-source/platform-patch-replay",
+      "returncode": 0
+    },
+    {
+      "argv": [
+        "patch",
+        "--batch",
+        "--fuzz=0",
+        "--reverse",
+        "-p1",
+        "-i",
+        "/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation/recipes/webkitwasm-native-rich4083-v1/patches/native-platform-engine.patch"
+      ],
+      "cwd": ".agent-work/appended-implementation-20261016/native-engine-rich4083-implementation/engine-source/platform-patch-replay",
+      "returncode": 0
+    }
+  ],
+  "old_pixel_writes": false,
+  "archive_extraction": false,
+  "full_source_copy": false,
+  "compiler_or_configure_performed": false,
+  "SDK_scan_or_acquisition": false,
+  "native_runtime_checks_passed": false,
+  "production_eligible": false
+}
