@@ -1,6 +1,468 @@
 # Appended application implementation plan
 
-Status: proposal and implementation handoff, 2026-10-16. No appended runtime,
+<a id="current-continuation-handoff"></a>
+
+## Current continuation handoff — 2026-10-18 UTC
+
+Read this section before the historical design below. It reconciles the user's
+requirements, the implementation at `30a6221e`, the later disk-full incident audit
+and the retained execution evidence. **The integrated rich HTML/JavaScript viewer
+is unfinished.** The most recent engine preparation failed before compilation;
+its successful source/metadata phases do not make that preparation eligible.
+This handoff did not launch a build, copy, browser, test matrix or release.
+
+### Reading order and authority
+
+1. Read the current `AGENTS.md`, the active user instructions and
+   `/home/user/.codex/delegation-kit/policy.md`, then [the index](README.md),
+   [building](building.md), [testing](testing.md) and
+   [pending-record rules](../.agent-pending/README.md).
+2. Read this current section, [implemented tools and limits](appended-applications.md)
+   and the current pointer in [pending qualification](../.agent-pending/appended-kernel-qualification.md).
+3. Read [validation](appended-validation.md), especially its final D03 runtime,
+   source repair and disk-full paragraphs. Use
+   [engine feasibility](appended-web-feasibility.md) for supplier/baseline rationale,
+   not as a command to repeat an old cold build.
+4. Open only the named current receipts below before the affected next operation.
+   The ignored `BASE/ROOT-CHECKPOINT.md` is a chronological research log, not a
+   launch authority. Its old final entry at 21:22 UTC predates the actual launch
+   and failure; a new handoff pointer is appended without rewriting that history.
+5. Consult the historical design below for requirements/rationale and the actual
+   schemas/source for implemented interfaces. Proposed names below are not API facts.
+
+Paths in this section are relative to the absolute checkout
+`/home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation` unless
+explicitly absolute. Set these aliases only for navigation; none is a launch:
+
+```sh
+cd /home/user/___quick/p/_cur/dataPump/_lessonsLearned/software-foundation
+repo=$(pwd -P)
+base="$repo/.agent-work/appended-implementation-20261016"
+repair="$base/runtime-D03-repair-v1"
+prep="$repair/provider/selective-continuation-v1/preparation"
+concrete="$repair/provider/selective-continuation-v1/concrete"
+donor="$base/editor-publisher-successful-donor-proposal-v1"
+old_candidate="$donor/concrete-v2"
+harness="$base/editor-repaired51-candidate-proposal-v1/runtime-readiness-v1/harness-route-audit"
+runtime="$harness/runtime-after-successful-donor-v1/runtime"
+foundation_prep="$base/rich-ui-foundation-integration-preparation-v1/implementation-v1/diagnostic/original_stream_v2/notes/foundation-construction-implementation-v1/both36-preparation-v1"
+```
+
+`BASE`, `P`, `C`, `N`, `C2`, `H`, `RUN` and `B36` in older records mean respectively
+`base`, `prep`, `concrete`, `donor`, `old_candidate`, `harness`, `runtime` and
+`foundation_prep` above. The old accepted preparation under `donor` is a different
+source identity from the failed D03 preparation under `prep`.
+
+### Preserved user intent and acceptance criteria
+
+- Support four independently forkable project modes: neither layer, web only,
+  portable binary only, or both. Preserve `fork.sh`'s independent application
+  snapshot/attribution behavior. The ordinary foundation project selects neither.
+- Web application sources live in `src-web-appended/`. Trusted bundled offline
+  HTML/CSS/JavaScript are application code with native service access, with no
+  security boundary from the internal renderer. One internal browser framework
+  must handle rich editing/contenteditable, selection, dynamic DOM, tabs,
+  spreadsheet-like editable areas, buttons and asynchronous application updates.
+  The user's later clarification supersedes the earlier plaintext-editing limit.
+- Edge, Chrome, Firefox and ChatGPT Desktop's external browser are lightweight
+  development/test hosts. They are not alternative internal application engines.
+  Do not claim arbitrary external browser-framework compatibility from this.
+- Keep layout, application behavior and device protocols on the insulated
+  application side. Pages call application C/C++/Rust services; they contain no
+  backend-specific GUI, USB, OS or browser/Wasm adapter code. The engine produces
+  generic document/bitmap capabilities for the application's GUI backends.
+  A USB UART calculator page may call native UART/processing services; it does
+  not create controls in a separate backend-specific application GUI.
+- TUI must run the same HTML/JavaScript document, with w3m-like readable text,
+  controls, focus and selection. Some unsupported presentation may degrade or be
+  ignored; rare explicit ignore hints are acceptable. Do not impose equal rich
+  graphical fidelity or require a second application UI. The proposed comment
+  markers in the conversation are examples, not an implemented parser contract.
+- Portable application sources live in `src-bin-appended/` and use only C, C++
+  and Rust. No JavaScript code, references, SDK dependency or developer workflow
+  belongs in that tree. Development scripts in other languages do not justify
+  adding runtime/SDK language dependencies. The binary layer needs no JS engine.
+- Native services are exposed through the stable registered value ABI. Trusted
+  access does not imply portable raw function pointers or C++/Rust object layouts.
+  All desired application functions can receive deliberate service wrappers;
+  code/capabilities absent from a retained kernel require explicit maintenance.
+- Replacing, adding or removing a web payload must compile nothing. Changing a
+  portable payload may compile only that small platform-independent module.
+  Both preserve the retained kernel prefix exactly, for Linux, Windows, browser
+  carriers and TUI. Missing or incompatible retained inputs fail with concrete
+  maintenance needs; cache-hit kernel builds are still forbidden in iteration.
+- CI must compose new payloads with authenticated previous binaries or supplied
+  base-binary archives, removing/replacing the old appended part without a full
+  rebuild. Preserve origin, profile, toolchain and qualification identities.
+  A source/tooling checkpoint is not a qualified runnable release.
+
+### Checkout, preservation and policy differences
+
+The local `main` HEAD is
+`30a6221ea6437e3aa9fcdf97c5af9c7641e44357`, subject
+`WIP - preserve appended application layers and rich engine integration`, parent
+`b7aa3234a52ab08250dc2e0901c8dd03dfc5f31f`. No push was performed by this task.
+The local `origin/main` tracking ref also points at this HEAD at handoff; this
+handoff did not fetch or establish current server state. The commit
+preserved 1,338 changed paths; all 2,051 complete tracked files were verified
+against raw working bytes and executable modes. Git's full object check exited
+zero with only pre-existing dangling-object notices. These are preservation
+checks, not build passes.
+
+Before this handoff, the only dirty files were user-owned `AGENTS.md` and
+`.codex/config.toml`: they raise configured concurrency from 24 to 36 and remove
+the old default Sol/Ultra paragraph/settings. Preserve them. The committed policy
+and older conversation excerpts describe 24/Sol/Ultra; they are historical
+snapshots, not a directive to restore those defaults. This chat also supplied a
+managed instruction to read the external delegation kit; the actual repository
+file does not contain that block. Do not silently reconcile these files. Load
+current active instructions in the new chat, preserve the selected primary
+model, and apply the kit's explicit role assignments rather than inventing a new
+global child-model default. Runtime capacity in this chat is 25 total agents,
+including the primary; 36 is not an available runtime guarantee. Missing external
+policy/roles on another machine is a transfer prerequisite, not permission to guess.
+
+This handoff additionally edits this plan, the documentation index and the pending
+record, and appends the ignored checkpoint. It does not commit, stage or push
+those edits. Keep them together when transferring to another checkout.
+
+`BKP=.agent-work/wip-commit-20261017T232413Z` retains `COMMIT-VERIFIED.json`,
+`PRE-COMMIT-CHECKS.json`, `SOURCE-BEFORE.json`, `STAGE-INPUTS.json`, the original
+index/status and `source-before.tar`. The tar is 119,582,720 bytes, SHA-256
+`b531f0bc6a4e8435223ed2c1eeb4dae1d6b25f8b9a98942705fefe5c7d949df6`;
+all 2,051 archived files were read back. This is a source backup, **not a backup
+of the retained SDKs/build products/evidence**. Preserve both the tar and ignored
+artifacts; do not use `git clean`, reset, prune, destructive checkout or blanket
+cleanup. The intentional pinned source archive `third_party/wasm3/upstream.tar.gz`
+is tracked; generated engine binaries are not.
+
+The full staged whitespace check at the WIP commit failed (exit 2): 1,154 trailing
+whitespace and 12 blank-EOF warnings across 61 files, mostly exact supplier
+sources/patches. Four non-recipe EOF warnings remain in `document_endpoint.hpp`
+and the Windows dependency helper files identified in `PRE-COMMIT-CHECKS.json`.
+Bytes were intentionally preserved. Do not call that check passed or rewrite
+supplier sources just to remove those warnings. No build/test was repeated for
+the commit.
+
+### Implemented work and remaining integration
+
+Implemented source includes project modes and fork integration; append containers,
+inspection/replacement and retained-prefix tooling; the wasm3 module loader and
+bounded value ABI; service discovery and module-owned providers; C/C++/Rust guest
+SDKs and generic views; retained-input/engine maintenance admission; CI selection
+and composition tooling; generic document, bitmap, forms, editing and TUI contracts;
+single-owner engine/Driver/GUI source composition; native Linux/Windows producer
+source and dependency policy. Use [the implemented guide](appended-applications.md)
+for exact supported commands and [ABI definitions](../abi/appended/v1/README.md)
+for wire semantics.
+
+These facts do **not** establish an integrated rich viewer. Actual retained-group
+admission, the Foundation kernel construction and combined web/module execution
+are still unrun for the current source. Native ports and actual same-document TUI
+execution remain unfinished/unverified. Component/mock checks cannot close those
+gaps. Deferred guest jobs and real UART device services are unfinished; there is
+no automatic retry of uncertain external effects. Initial rich source limitations
+include one web region, a fixed unscaled 800×600 engine pane, a view-only bare
+framebuffer path and no Windows ARM64 qualification.
+
+The latest production repair normalizes both focus-dependent editor bits 1 and
+16 during Begin only. On the old engine, a second Begin after Finish/ACK changed
+flags from 4 to 21; the old normalization produced expected 5 and rejected 21,
+yielding genuine native uncertainty without a lease. Current active publishers:
+
+| Source | SHA-256 / bytes |
+| --- | --- |
+| `recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp` | `0705d9421e853b7633cc2a3df2c0448b0b53da0daf48fd2e7158f98b341b0453` / 80,117 |
+| `recipes/webkitwasm-native-rich4083-v1/source/document-provider/native/NativeDocumentV2Publisher.cpp` | `204b4b97d131081e9ee77f3fff05ed7147ee496a89b4e08e24e7a0b9cc6e2c1b` / 110,553 |
+
+Composition/undo/redo/unknown bits, other capture fields, both full-state rereads,
+actual EditorClient context and selection guards remain strict. The test generator
+extracts the real production guard instead of duplicating its logic. The older
+`webkitwasm-native-v1` producer still has the old guard; do not modify that separate
+historical producer merely to make every filename agree. Follow the admitted map.
+Source, map/provenance and both native profiles were joined and independently
+reviewed; no engine artifact containing this repair has been produced.
+
+### Latest failed operation and incident chronology
+
+| UTC on 2026-10-17 | Observed event |
+| --- | --- |
+| 21:22 | Last old `ROOT-CHECKPOINT.md` entry; preparation not yet launched. |
+| 21:25:59 | Root armed the bounded preparation; saved launch intent. |
+| 21:26:11–21:26:19 | Source phase completed and closed successfully. |
+| 21:26:26 | Actual session 1866 handle saved; this is bookkeeping after launch. |
+| 21:26:48 | Metadata phase completed; copy phase started. |
+| 21:28:38.792399 | Copy failed with `ENOSPC` while exclusively creating `PlatformTextTrack.h`; target absent. |
+| 21:28:51.952572 | Overall failed result published; copy exited one, reaped, no outliving descendants. |
+| 21:28:56 | Original outer caller returned one. Later normal tool startup also hit disk-full before commands started. |
+| 22:58:18 | Subsequent machine boot; previous visible journal ends 21:42:34, not proof of exact shutdown time. |
+| 23:08 onward | Read-only incident audit; later local WIP preservation commit. |
+
+The failed target is under
+`P/reuse-v1/third_party/WebKit/Source/WebCore/platform/graphics/PlatformTextTrack.h`.
+The error occurred creating a new file, not truncating a maintained source.
+The later `bwrap` complaint about `.agents` was sandbox startup failure; `.agents`
+remained a directory. A separate initially empty Root handle record was repaired
+and validated before the incident after a Python string/bytes serialization
+mistake; it is not evidence of disk-induced truncation.
+
+Original current execution records (do not rewrite):
+
+| Record relative to `P` | SHA-256 |
+| --- | --- |
+| `root-arming-v1/ROOT-LAUNCH-INTENT.json` | `c7f937015d61dab7c57be40d52367f4b55a4af255a0bcdd0ce52679448cd4c17` |
+| `root-arming-v1/ROOT-ACTUAL-HANDLE.json` | `6e6b632fb0eee80c43d286ac5dd6dd1b24275ff3c0fac3da9462490df7f217f7` |
+| `actual-v1/RESULT.json` | `40e9702ef24b77d6db85e41a3f0d0e67d970e7523b6ccad195458e65063255b8` |
+| `actual-v1/copy.log` | `7757e054f7945fdb9398a71fb260b69cbaece4abb19f893c9c448dab2c5370e4` |
+| `actual-v1/copy-CLOSURE.json` | `cf35007e729d8c53f2ec5a4056058d7bf859275dc040c30a92dafa6b15ae87de` |
+
+**Observed integrity:** source output 368 files / 564,540,041 bytes and metadata
+12 files / 106,263,995 bytes matched saved manifests. The partial copy's 37,650
+files / 775,543,203 bytes matched hashes, lengths, modes, single-link and separate
+inode checks, and the exact ordered prefix. Its 34 empty files were expected.
+There are 5,129 absent file entries / 86,259,650 bytes, including the final proof
+seal; the complete expected copy is 42,779 files / 861,802,853 bytes. There is no
+`REUSE-COPY-RESULT.json`, `reuse-v1/reuse-proof.json` or
+`ROOT-CALLER-CLOSED-ACCEPTED.json` for this preparation. New actual/retained plan
+and candidate output directories under `C` were absent. No compiler/linker/SDK
+program or subsequent runtime ran.
+
+The audit also verified the maintained D03 source/test/metadata cohorts, 49
+GUI/module/application sources, the earlier 171 candidate artifacts, runtime
+capsule/inputs, all 19,426 paired Foundation SDK files / 2,871,026,200 bytes,
+guest tool/input records and Windows sealed cohorts. A 1,532,710-file timestamp
+census found no maintained Git-visible file changed in the incident window.
+This supports **no observed loss in the audited source WIP**; it cannot establish
+all unsaved editor buffers or historical bytes of unsealed files. Original
+copy hashes/counts are evidence, not a qualification pass.
+
+Storage was Btrfs `/dev/nvme0n1p3[/@rootfs]`: a prelaunch snapshot showed about
+25 GB available; after reboot/audit about 31 GB, and this handoff about 30 GB.
+Those observations do not explain the incident. Btrfs data/metadata allocation,
+external consumption and exact exhaustion/recovery remain unknown; privileged
+allocation/system-journal data were unavailable. `df -i` showing 0/0 is not proof
+of inode exhaustion on Btrfs. Verify current allocation/capacity and jobs before
+another copy. Do not infer space safety solely from the later free-byte number.
+
+### Evidence ledger: passes, failures, unrun and deferred
+
+All results below are **retained**, not rerun by this handoff. Source identity
+comes from each receipt, not from the commit date. Byte/hash equality is needed
+for reuse; where physical identity is part of admission, preserve/revalidate it.
+Copying a checkout or SDK changes identity and cannot be repaired by restamping
+old receipts. A changed source/test/config/dependency/environment invalidates only
+the affected scope; retain original results with their original identities.
+
+| Status / scope | Result and command authority | Evidence / reuse limit |
+| --- | --- | --- |
+| Passed: current D03 host checks | Session 80384, caller 0; 63 C++ checks (35 retained + 28 focus), 13 Python methods, zero skips. Exact supported command below. | `repair/provider/implementation/{FINAL-RELEASE.json,HOST-CHECK-v1.log,CALLER-CLOSED-v1.json}`; release `b90b0dd0b36792e664c0f5683f6a03f52516274b4a588b463d92db6165f48d2b`. GNU 14.2, Python 3.13.5, CMake 3.31.6/Ninja, Debug C++ provider; one host object/link, no engine. |
+| Passed: source metadata | Session 20932, 44 tests, 1.238 s, failures/skips zero. Exact argv was not retained in the compact release/log; do not invent it. | `repair/provider/metadata/{CLOSED-RELEASE.json,document-sources-normal.log}`; release `158a6b3b96bf277bae3d515c24ba92f8086811cf2fe79c6e528326aad312eaea`; test module `tests/test_appended_engine_document_sources.py`. Native join `repair/native-profile-join/CLOSED.json` `cc3af533417e736804b9799911cbb5a1eb5e4bb239e1c9512f3bdb3c0b8d7634`. No SDK/compiler. |
+| Passed: previous selective engine | Plan 45979 and build 6155: 49 object imports, two fresh units, five archive copies, zero repacks, one link; static inspection passed. Original commands are in `old_candidate` plan/build packets and command records. | `old_candidate/ROOT-CANDIDATE-CALLER-CLOSED-ACCEPTED.json` `4a72a630d52bd32181fbcbfdae78538daa94473e1a8d3209c3b3b996809df087`; original flat result `83613c5b5a4a784d41261184c798a40870fee3b7a69ae289cb0f9159f47d3b11`, 171 artifacts. This uses the old Publisher, not current `0705…`. |
+| Passed: donor/capsule metadata | Donor capture 35055; capsule copy 84036, 2.935 s, 16 files / 164,721,294 bytes. Launch commands are in original launch intents; no SDK program/engine/browser. | `donor/donor-selection-v3/SUCCESSFUL-DONOR.json` `4b1e4b4d34ac631d2a78792f786b08a5f7986ab3d51995cae3d35a8de1acd251`; `base/root-donor-reader64-review-v1/ROOT-CAPSULE-COPY-ACCEPTANCE.json` `728ce27cb45835be425449b7a0e6b13e6a614a843293e782283e9091bb711a2e`. Fourteen original copies + two derived files; donor/commands external, not a seventeenth copy. |
+| Failed: actual offline rich runtime | Session 41837, caller 1, 14.827 s: 31 original application assertions and D01's 51 controls passed; D03 failed second Begin after 10 query assertions. Two Node inert/refusal checks passed; zero browser batches completed. | `base/root-runtime-successful-donor-v1/{ROOT-LAUNCH-INTENT.json,ROOT-CALLER-CLOSED-FAILED.json}`; failed closure `9c06895ee4cc958a58cf6f5859a1e11acba5f422abdeba5bd033a7a612d783e1`; `runtime/actual-operation-v1/result.json` `f5998b69edf8489071720829ca10bbcc1d424b9b4b254d6866b40ae46c6f439b`. All 47 inputs unchanged, owners/streams/monitor closed; not a runtime pass. |
+| Passed phases / failed whole: current preparation | Session 1866, caller 1, 160.889 s. Source and metadata closed 0; copy ENOSPC. Original exact phase argv is in `P/actual-v1/RESULT.json`; outer argv below is historical only. | Incident records above. No current-source engine object/link/runtime produced; incomplete copy is ineligible. |
+| Passed: combined C guest production | Session 40480, caller 0, 1.279 s, four C compiles + one link. Exact commands/SDK joins in original module compile receipt and launch packet. | `foundation_prep/guest-compile-packet-v1/successor-v5/ROOT-CALLER-CLOSED-ACCEPTED.json` `8ea854422672eb1bbe1fc638de525b4c59f55577ef47d43cf237f11d6d7ccce9`; module `f608dce340e731a53f42da2ef3e436ee49c3f8dda3f16a82e5005643301b9588`, 13,660 bytes; receipt `1a97cf34ee5f01a4ca20e25872fa36e9c6095ae08c7579ff8add10b930510033`. Actual combined runtime unrun. |
+| Passed compile / unrun tests: current Rust guest | Session 62993, caller 0, four commands, current canonical-field decoder. | `base/root-rust-sdk-compile-check-v1/{INTENT.json,CLOSED.json,calculator-rust.compile.json}`; module `72e6b87b7d62d38c7ac3f081ebb2497d1d53e3be9e4e44e4495d857e7a58e52e`, 17,898 bytes; receipt `d3ee8cbf3d3f5c18b4a9133250dcd67754c05adbbf80a414852e0f2e45041b78`. Rust 1.84 / wasm32v1-none. Current unit tests have zero executed assertions: matching host std absent. Current decoder runtime unrun; earlier checked-add/overflow execution belongs to older identity. |
+| Passed: current four-mode package fixtures | Session 87214, 18 CLI calls: 17 success plus expected empty-neither refusal; web/binary/both pack/inspect/verify passed. Exact argv inventory retained. | `base/root-current-payload-pack-v1/successor-v2/{COMMANDS.json,RESULT.json,ROOT-INTAKE.json}`. Web 60,085 bytes, binary 14,597, both 74,103. Uses external `f608…` module; explicitly no source-to-module binding to copied examples. No carrier/engine/kernel runtime. |
+| Passed components / unrun construction | Four document CTests: 432 assertions, session 25220; GUI semantic 744, bitmap 4 and terminal 6 checks have their separate mock identities. Foundation preparation has 18 inert + 4 cache + 7 host-token + 73 recorder cases; partial BOTH has 52 harness + 31 membership cases. | Detailed original identities/logs in validation and `foundation_prep`; no actual 36-TU Foundation construction, combined BOTH execution, eligible native provider or same-document TUI runtime pass. Do not total unrelated identities as one suite. |
+| Passed source fixtures / unrun native | Windows final source tools: 139 canonical methods; retained-source inspection joins 197 inputs. Linux/native syntax scopes have separate outcomes. | Validation and Windows handoffs. No actual Windows provider/SDK or native application runtime. Native004 Combined syntax passed while Publisher failed; Native006 Publisher-only passed and does not rerun Combined. Copied syntax004 uncertainty remains quarantined, not repaired retroactively. |
+| Deferred extensive qualification | Complete platform/backend, sanitizer/portability, SDK consumer, installed package, browser policy, certification, CI and release scopes. | Pending record/procedures. Not authorized merely by implementation, commit or handoff; no queued test is a pass. |
+
+The exact passing D03 host command, **for reference, not a request to rerun**:
+
+```sh
+./build.sh test dev --core-provider cpp \
+  --build-dir "$repair/provider/implementation/host-build-v1" \
+  --build-jobs 1 --test-jobs 1 \
+  --test foundation.appended.document-label-association \
+  --test tools.document_label_association_fixture
+```
+
+The original failed preparation outer argv was
+`/usr/bin/python3.13 -BE "$prep/run_preparation.py"`. **Do not execute it again.**
+It takes no arguments, binds `PACKET_PIN` in source and refuses existing outputs.
+Adding `--packet-sha256` supplies no gate; surplus argv is ignored. Its current
+armed runner hash is `d47fa6375cf97aae1c7316d069d85c42165269720c656e3ec8c2505cfc40874c`;
+packet `87af60cd94185ce5ff0dfcc4328bc30f6bf560a3dd7d2ce4659321cf92d0c8b3`,
+catalog `3022e106323f409635db38c2fa08b520ecc1af8b454ca699c040427d45be9505`,
+materializer `68c893ecd426a8b9248757ec431b31a2cd20d18491f89be493ec3d3cfced50d5`.
+The final-disabled freeze is historical; Root's later arming intent is current.
+
+The original runtime launch's exact argv/pins are in Root's intent above. Its
+shape is `/usr/bin/python3.13 -BE ENTRY --packet PACKET --packet-sha256 SHA
+--execute --root-authorization AUTH --root-authorization-sha256 SHA`, using the
+natural relocated package. Do not add `-I`: that removes the required script
+import directory. Old packet/auth/output paths are single-attempt history, not
+reusable grants. Actual browser/Node IPC used an approved escalated loopback route
+because the ordinary tool sandbox returned EPERM. That route needs the current
+harness's actual permissions; do not silently substitute an unqualified launch.
+
+### Retained inputs, known traps and transfer needs
+
+- Keep all of `BASE`, its evidence/manifests and the existing SDK/tool roots named
+  inside receipts. A Git clone or source tar alone cannot resume the selective
+  path. The current SDK inventory was audited once; do not walk its 19,426 files
+  again solely because a chat changed. Revalidate relevant admission inputs when
+  state/environment changes or a new operation requires fresh physical facts.
+- Current assembled source records are `P/sources-v1/recipe.json`
+  `a2df92fd577865931f36d70f7262a95038e3ebb43bae3197e3e5154c241b29b3`,
+  `sources.json` `64aa9022eafe5e68f23c1fa2742a7fa30110ed4105c36faf5feafa6052f27599`
+  and `provenance/source-projection.json`
+  `6fef5ea2d9e65ec0dc646bc51b7f864bbc17454324aa15ea99b99fd1f868c369`.
+  Metadata is in `P/reuse-metadata-v1/{ASSEMBLY.json,metadata-root/}`. These remain
+  valid observed phase outputs, not an accepted complete preparation.
+- Old candidate Wasm is `d201800d2669be0d18e54c6d7182b1af6e03f03004c0b6a9c434e915103ef84f`
+  / 109,675,754 bytes; factory
+  `83fc7ea68abc2048bf899ad2dcf23a6139ba7d7d86c8ad198154d330a706ab7f`.
+  It is a retained donor/diagnostic, not current repaired output or a release.
+- Current metadata readers are the donor-64-MiB successor under
+  `foundation_prep/successful-donor-intake-successor-v1/donor-descriptor-64m-successor-v1/`.
+  Its capsule `contracts.py` is `856eb7e6bbf4ff7564841c502699e9c9a37ea2297c9550ebbaa055a10e449768`;
+  runtime contracts are `cfe22f4e4513aa494d5b6a03e31d89e10d5e752f086445b419b7bd9fbca7c886`.
+  Older 8-MiB donor readers reject the actual 19-MiB descriptor. Only donor
+  metadata gets 64 MiB; command/legacy limits stay 8 MiB. Do not enlarge unrelated
+  payload limits or recapture the successful donor merely to resume.
+- The preliminary `C` plan/build packets and `SOURCE-FREEZE.json` are disabled
+  templates awaiting actual accepted new prep/physical pins. They are not launched
+  jobs. Read their handoff before binding a successor; don't alias the old plan.
+- A metadata catalog race was explicitly reconciled before launch: original
+  `bace…` catalog path was replaced under an already-issued grant by `59b…`,
+  with old bytes retained as a read-only preimage. Root accepted exactly three
+  changed control rows, later mechanically armed to `3022…`. Do not claim the
+  old path/inode remained immutable, revert it or restamp historical evidence.
+- The runtime `actual-uncertainty-dispatch-return` event only observes native
+  uncertainty. The initial fault-injection hypothesis was retracted. Do not
+  disable the case, replay its uncertain native action or weaken Begin guards.
+- The earlier C guest wrapper failures (exit 137; then a short-lived PID RSS
+  sampling race) remain failed; the narrow known-owned-PID ENOENT repair has its
+  own passed successor. Preserve the original failures and qualified helpers.
+- Minor stale prose: `docs/ci.md` says “no setup barrier” although four jobs depend
+  on `retained-selection`. Treat workflow/source as authority; this editorial
+  inconsistency was not fixed during the WIP commit. An older whole-repo docs
+  check had nine unrelated generated-link failures; it is not a passing result.
+- A transfer to another checkout/machine requires the ignored retained roots,
+  external delegation policy/roles and matched tools, plus new checked identity
+  admission. Do not make moved files eligible by rewriting old physical records.
+  Missing retained inputs are a concrete recovery need, never a full-build trigger.
+
+### Ownership, authorization and resource ceilings
+
+All recorded old implementation writers released their scopes/read holds; their
+jobs/streams were closed before this handoff. No old tool session is resumable
+after the reboot. Old principal workstreams were `appended_browser_kernel`
+(engine/GUI/native sources), `document_source_refresh` (capsule/runtime/Foundation)
+and `windows_engine_path` (Windows/profile joins). They are historical owners,
+not grants to a new chat. The handoff used two bounded read-only reviewers; Root
+owns only the documentation/checkpoint edits. No implementation job was launched.
+Check current jobs/claims and acquire fresh ownership before writes. A restricted
+PID namespace is not a host-wide absence proof. Do not infer release from a stale
+timestamp. Use the existing coordination mode/records; independent writers or
+uncertain ownership require the checked shared protocol, never a second board.
+
+The user's implementation authorization and explicit **“Run the bounded engine
+probe”** permit the reviewed retained selective diagnostic and necessary focused
+repairs, within its established scope. No repeated permission is needed for that
+same concrete bounded work after safe prerequisites and source review. This is
+not authorization for a cold native/dependency/engine build, automatic fallback,
+broad regression matrix, publishing, Actions launch or a qualified release.
+Generic WIP commit/handoff requests add no extensive-qualification authority.
+Prepare a concrete scope/cost and request only genuinely additional expensive work.
+
+| Operation | Existing ceiling / invariant |
+| --- | --- |
+| Preparation | 600 s whole, 15 s cleanup; source 180 s, metadata 90 s, copy 120 s. Output source 1 GiB, metadata 256 MiB, copy 2 GiB, evidence 16 MiB, phase log 2 MiB. No compiler/linker/SDK program. |
+| Selective plan | 240 s work + 15 s cleanup; metadata-only, no compiler or linker. |
+| Selective build | 3,300 s work + 30 s cleanup, 2,700 s inner build, jobs 1, sampled RSS 4 GiB, 24 processes, growth 8 GiB; minimum free 4 GiB and launch free 16 GiB. Storage incident requires additional current Btrfs confidence, not a budget increase. |
+| Offline runtime | One attempt; 360 s whole / 330 activity / 15 cleanup / 15 postflight; 180 s aggregate Worker, 90 startup, 30 Node; sampled RSS 4 GiB, output 512 MiB. Exactly 65 cases / 12 batches; no retry of uncertain effects. |
+
+Record launch intent before each long command, actual yielded handle when known,
+then original caller exit and qualified closure at the next checkpoint. Finish
+children, streams, monitors and queued writes before release. Reuse reviewed
+helpers/contracts; do not grow another evidence framework to restart one copy.
+
+### Dependency-ordered safe resume
+
+The following passive commands inspect state; they do not rerun tests or builds:
+
+```sh
+git status --short --branch
+git log -1 --format=fuller
+git diff -- AGENTS.md .codex/config.toml
+df -h "$repo"
+findmnt -T "$repo" -o SOURCE,FSTYPE,OPTIONS
+sed -n '1,200p' "$prep/actual-v1/RESULT.json"
+sed -n '1,200p' "$prep/root-arming-v1/ROOT-LAUNCH-INTENT.json"
+sed -n '1,160p' "$concrete/HANDOFF.md"
+```
+
+Use actual host/process and Btrfs allocation information available to the current
+harness; do not run a new multi-million-file census. Preserve any unexpected
+changes/owners and resolve the affected scope before launching. Then:
+
+1. **Recover preparation only.** Establish storage capacity/allocation and fresh
+   exclusive output ownership. Preserve failed `P` and all old donor products.
+   Design the smallest checked fresh-namespace copy/preparation continuation from
+   the existing reviewed helpers. Valid source/metadata phase outputs may be
+   reused only with complete current admission/binding; the partial copy cannot.
+   Review a concrete packet/pins/absence guards before arming. Do not merely change
+   `ARMED`, rerun `P`, resume copying in place or add a cold-build fallback.
+   Completion: all expected copied inputs plus final proof, natural closures,
+   unchanged inputs and independent Root closed preparation acceptance equivalent
+   to old `07706204…`, for the current repair/source identity.
+2. **Bind and run the compile-free selective plan.** Refresh `C`'s disabled
+   templates to accepted current source/proof/output paths and actual physical
+   facts. Completion: closed accepted plan explicitly admits 49 old objects/five
+   archives and plans only two fresh units, zero archive repacks and one link.
+   Unexpected recompilation is a failed prerequisite, not permission to proceed.
+3. **Produce the repaired candidate.** Within existing caps, import those 49
+   objects, compile only Publisher + document shim, copy five archives and link
+   once. Completion: original flat caller result, strict inspection and Root's
+   exact 17-field/171-artifact readback; no aliases to old candidate receipts.
+   Candidate records must retain original closed/plan/maintenance/inspection/
+   commands/donor lineage and complete hashes/physical facts. Production eligible
+   stays false until downstream gates pass.
+4. **Bind metadata capsule and repeat the same actual offline protocol once.**
+   Use the released 64-MiB donor readers and qualified relocated supervisor;
+   update data bindings, not case expectations. Preserve 65 cases: 13 positive,
+   10 clipboard, 15 editor, editor/form uncertainty, navigation, 10 popup-A,
+   10 popup-B, cancel positive/unknown, raster-off and Worker failure. Obtain a
+   fresh Root packet/auth/output identity and approved actual loopback route.
+   Completion: every named case/batch executes and passes; input postflight,
+   natural closure, output/RSS limits and full cleanup pass. D03 must reach
+   typedRead/replacement successfully; a partial assertion count is insufficient.
+5. **Admit the real neutral group.** After actual runtime passes, execute the
+   retained 28 + 6 neutral controls and derive the four independent recipe,
+   manifest, proof and runtime pins. Completion: eligible retained group through
+   the existing strict consumer; never use `--developer-unqualified` to invent
+   missing runtime/profile facts.
+6. **Construct Foundation from the retained SDK.** Follow the settled Foundation
+   preparation under `B36`, using its source projection/SDK authority. Planned
+   work is 36 units (22 C++, 14 C), 18 archives and 73 recorder captures, with no
+   engine rebuild. Do not recopy all 883 isolated source files merely because
+   unrelated top-level docs/registration changed. Reconcile the known scoped
+   input projection; fail on relevant mismatches. Completion: actual supported
+   construction, compiled profile/DESCRIBE match and closed Foundation receipt.
+7. **Run the retained partial BOTH integration.** Reuse the accepted `f608…` C
+   guest and its original compile receipt, one EngineOwner/module binding and
+   one presenter/outer loop. The prepared scenario checks provider echo/ingress,
+   startup ownership and bitmap presentation. Completion is the actual declared
+   partial scenario, not full E01/all 32 features; keep that distinction recorded.
+8. **Finish native/TUI and application behavior.** Identify remaining actual
+   provider/SDK/Loader → Driver → semantic/bitmap gaps. Native cold production
+   needs separate authorization/cost if required. Demonstrate rich edits,
+   asynchronous application/native calls and same-document TUI behavior through
+   the insulated boundary. Add missing capabilities generically, without putting
+   feature layout in backend adapters or JS in the portable SDK.
+9. **Qualify/deliver only when requested.** Reuse valid focused evidence; perform
+   applicable complete platform/SDK/package/browser/release gates under an
+   explicit extensive-validation or release request. Prove web edits invoke zero
+   compilation, portable edits compile only the module, all four modes preserve
+   exact retained prefixes and CI composition uses eligible retained binaries.
+   Pending gates mean pending publication. No push or publication is implied here.
+
+## Historical design and original implementation plan
+
+Historical status, 2026-10-16: proposal and implementation handoff. No appended runtime,
 payload compiler, container format or composition release workflow is implemented
 by this document. Subsequent implementation is recorded in
 [current tools and limits](appended-applications.md); consult that page and the
@@ -15,7 +477,7 @@ been built, replacing either payload must preserve its exact bytes and must not
 compile or relink any kernel. Ordinary applications using neither layer remain
 supported without either layer's runtime or SDK dependencies.
 
-This handoff is intended to be sufficient for an implementing agent, including
+The original handoff was intended to be sufficient for an implementing agent, including
 GPT-6.1 Sol at Ultra effort, without access to the preceding conversation. User
 requirements and the repository's governing instructions remain authoritative.
 The original planning request authorized planning and documentation. A subsequent
@@ -24,7 +486,11 @@ are recorded in [appended applications](appended-applications.md). Extensive
 qualification, costly engine probes, CI dispatch and publication retain their
 separate authorization rules.
 
-## Reading and execution order
+## Historical reading and execution order
+
+This was the initial planning sequence. Resume from the
+[current continuation handoff](#current-continuation-handoff); do not restart
+settled dependency/ABI/container investigations or use old model defaults.
 
 1. Read [AGENTS](../AGENTS.md), the [documentation index](README.md),
    [architecture](architecture.md), [GUI boundary](gui-boundary.md),
@@ -1074,9 +1540,13 @@ Documentation-only validation for this proposal checks links, headings, examples
 internal consistency and the actual diff. No application build is needed to
 validate prose. The delivery message records the checks actually run.
 
-## Instructions for the implementing agent
+<a id="instructions-for-the-implementing-agent"></a>
 
-The following is a ready-to-use handoff for a later implementation request:
+## Historical instructions for the original implementing agent
+
+The following preserves the original implementation brief. It is not the current
+paste-ready resume prompt: its P0/P1 restarts and model-default references are
+superseded by the [current continuation handoff](#current-continuation-handoff).
 
 > Read `AGENTS.md`, `docs/README.md` and
 > `docs/appended-application-plan.md` completely. Treat the document as a proposal
@@ -1115,7 +1585,7 @@ The following is a ready-to-use handoff for a later implementation request:
 > update maintained contracts/procedures, and hand off exact passes, failures,
 > missing implementation and pending qualification separately.
 
-Before beginning code, produce a short current-state note identifying: selected
+The initial brief also asked, before beginning code, for a note identifying: selected
 starting commit; active four-mode defaults; proposed work owners; the first engine
 and module-runtime audit/probe; available retained SDKs; expected cost; and the
 first focused checks. This is ordinary implementation planning, not an extra

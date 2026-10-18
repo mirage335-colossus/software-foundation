@@ -1,6 +1,26 @@
 # Appended kernel qualification and implementation prerequisites
 
-Awaiting an explicit extensive-validation or qualified-release request. This
+Current resume state, 2026-10-18 UTC: use the
+[consolidated continuation handoff](../docs/appended-application-plan.md#current-continuation-handoff)
+before the historical observations below. Source WIP is preserved in local commit
+`30a6221ea6437e3aa9fcdf97c5af9c7641e44357`; later user policy edits and the
+handoff edits remain uncommitted. No push or new build/test occurred for this
+handoff. Current D03 source passed focused checks, old candidate 6155 predates
+that repair, and preparation 1866 failed with ENOSPC before new compilation.
+The audited source WIP and earlier retained artifacts were intact; its partial
+copy is ineligible. First establish storage/Btrfs prerequisites and fresh output
+ownership, then use a reviewed fresh-namespace preparation continuation. Do not
+rerun the armed one-shot preparation or delete its evidence.
+
+The already-authorized bounded retained implementation diagnostic may continue
+under its existing caps after those prerequisites; it is distinct from the
+extensive qualification deferred here. Accepted prep, compile-free selective
+plan, two-unit candidate, unchanged 65-case actual runtime, neutral admission,
+Foundation construction and partial BOTH execution remain dependency ordered.
+The handoff records exact retained receipts, source identities, launch constraints,
+failures and reuse limits. The integrated rich viewer remains unfinished.
+
+Extensive qualification awaits an explicit extensive-validation or qualified-release request. This
 record does not schedule execution. Development began at
 `b7aa3234a52ab08250dc2e0901c8dd03dfc5f31f`; the exact development snapshots and
 observations are in [appended validation](../docs/appended-validation.md).
