@@ -3231,3 +3231,784 @@ producing an audited 17,898-byte module
 Its Rust unit test remains unexecuted because the host standard libraries are
 absent. The target compilation is not a unit-test or runtime pass. No toolchain,
 kernel or engine was rebuilt or downloaded for this check.
+
+
+## Fresh D03 preparation recovery
+
+On 2026-10-18 UTC the continuation found clean HEAD `a3e31fd` (the documentation
+handoff successor to `30a6221e`), verified current Btrfs allocation and host-visible
+jobs, reviewed the complete coordination claims and acquired a fresh output.
+All 250 original frozen input hashes and physical identities were unchanged.
+Detailed Btrfs device ioctls were unavailable; the original ENOSPC cause remains
+unknown. No original output, ignored evidence or retained SDK was removed.
+
+The new `preparation-recovery-v1/execution-v1/` uses the reviewed original
+algorithms with fresh paths/pins, unchanged resource caps and exactly two replaced
+local frozen rows. Its source and metadata phases were reassembled, and the entire
+retained-input copy was independently created; the failed preparation 1866 and
+its partial copy were not consumed. A guarded artifact-edit refusal occurred
+before mutation; the disabled draft controls remain preserved and the execution
+controls were created exclusively as new files. Independent strong review passed
+the exact byte/AST/packet projection before launch.
+
+Actual preparation **1570** closed with caller zero (`828423`) in 118.457506299
+seconds. All three phase owners closed naturally with zero exits. Root's independent
+readback **53212** closed zero (`a19e8f`) in 49.536 seconds, checking complete
+namespaces, modes, full hashes and physical identities for 368 source files /
+564,540,041 bytes, 12 metadata files / 106,264,070 bytes, and 42,779 copy files /
+861,802,853 bytes. All 250 original inputs and five execution controls/packet
+files remained unchanged. Current source pins remain `a2df92fd…` / `64aa9022…` /
+`6fef5ea2…`; actual proof is
+`6039e0aaf2d0f268b25ff2ef32301de0095c17b215662144e863fb5709d92c32`,
+with inventory `74648ccc09afd04972a5dfe9ef7161900c6692bbe2990e17dd9d3c04818a9fc5`.
+
+Evidence under
+`.agent-work/appended-implementation-20261016/runtime-D03-repair-v1/provider/selective-continuation-v1/preparation-recovery-v1/`:
+`ROOT-LAUNCH-INTENT.json`, `ROOT-ACTUAL-HANDLE.json`, `ROOT-CALLER-RESULT.json`,
+`ROOT-READBACK-INTENT.json`, `ROOT-READBACK-HANDLE.json`, `ROOT-READBACK-CLOSED.json`;
+original `execution-v1/actual-v1/RESULT.json` is
+`39c5b2a380cf6f2468bc4e63ff83eee57708f253d0df16723c7c80deebf0fd4b`,
+closed `execution-v1/ROOT-CALLER-CLOSED-ACCEPTED.json` is
+`f4377906f8ec75414591bd68f25474ec0f9e809964fa8cc7dfe86acc482ec33a`.
+No configure, compiler, linker, SDK program or runtime ran. There are no completed
+engine imports and production eligibility remains false. Fresh selective planning,
+two-unit production, unchanged actual runtime cases, neutral admission, Foundation
+construction and partial BOTH execution remain dependency-ordered prerequisites.
+
+
+## Fresh D03 selective candidate and trace-limited runtime
+
+The 2026-10-18 recovery then completed the fresh selective plan and current-source
+candidate under the original retained 49-import / two-fresh-unit / five-archive /
+zero-repack / one-link contract. Plan 17883 and independent readback 76598 closed
+zero. Candidate 94609 closed zero (`57b809`); peak aggregate RSS was 2,428,121,088
+bytes under 4 GiB. Independent Root 32461 closed zero (`3ee810`) and rechecked all
+171 artifact hashes/physical identities, exact 17-field acceptance, 68,348 file /
+3,799 directory input identities, 28 source hashes and exact command/accounting
+lineage. No retained kernel was built and no release qualification was run.
+
+Under `runtime-D03-repair-v1/provider/selective-continuation-v1/concrete-recovery-v1/execution-v1/`,
+plan is `4f19b383f6f828160f1400b87923b960687e52a3787782127a146f500153d7a0`,
+actual candidate result `306c83168af9280bf1aa14c999d0901983f043dad0a636339d4aa3840b6111cd`,
+maintenance build `25036087459756741159848f868682d1eb0db981d84960474626ebf51d48c02c`,
+and Root candidate acceptance `4d0ccd2fde7921becb4d132a162c32c3dd7184364ff90eb791b376841a454663`.
+Factory is `4685254b…`; Wasm is `68193e59db6eb86af2a66dd615b73409677201348b9f67cb326eeb39e8f0cf36`
+(109,675,840 bytes). Current Publisher 0705d942 is included; production eligible is false.
+
+Fresh metadata-only capsule 3086 closed zero in 1.735 seconds, followed by an
+independent fullhash/physical/complete-namespace Root readback: 16 distinct copies /
+164,728,184 bytes, originals unchanged. The producer result is `c9715acd…` and
+Root copy acceptance `8f76d89f…`, under `runtime-D03-repair-v1/runtime-recovery-v1/`.
+The two lineage records remained external. This copy executed no SDK or engine.
+
+The fresh 47-input runtime packet passed shape admission. Actual approved
+Firefox/Node attempt 86329 closed one (`04b4a7`) after 20.161931327 seconds with
+`Bounded Worker trace`. Result is `runtime/actual-operation-v1/result.json`,
+`88696cb47a622f054a958d90020037c99bebd5ef81b0bbe7e905920ef6151299`;
+raw positive observation is `b2c543fabaa495f3ef1595aae63d7aa5b31d032a82eab52d4aab0f55ef92381a`,
+13,372,113 bytes. Both Node negative assertions passed, all 47 inputs remained
+unchanged, owners/logs/watchdog thread closed, and guard failure was null.
+Sampled RSS 3,695,534,080 bytes and output 220,598,251 bytes remained below caps.
+
+Zero browser batches passed. The failed positive observation records 13 mandatory,
+31 author and 442 case-assertion rows true: D01=51, D03=85, D04=87, I01=108 and
+I02=111. Only D01/D03/D04/I01 completed; I02 remained running. Eight later positive
+cases and all other eleven batches are absent. Trace has 12,815 rows. Partial
+observed counts were 50 ordinary, two metadata replays, 1,480 exports and 295
+dispatches; zero aggregate totals reflect zero accepted batches. These are
+observations of an incomplete failed batch, not an accepted rich runtime.
+
+External caller and independent coverage are saved in
+`ROOT-RUNTIME-CALLER-CLOSED-FAILURE.json` and `ROOT-RUNTIME-FAILURE-COVERAGE-READBACK.json`
+beside the runtime packet. The original 41837 failure remains intact. Next is a
+focused trace-producer repair preserving bounds, assertions and all 65 cases /
+12 batches, followed by a separately bound fresh runtime attempt. The accepted
+candidate/capsule may be reused with their original applicable identities. Neutral
+admission, Foundation construction, partial BOTH and integrated application behavior
+remain unrun; broad qualification remains deferred to explicit authorization.
+
+
+## Trace projection repair and I04 runtime failure
+
+A source-only Worker repair preserves native/peer behavior and all case expectations
+while omitting redundant outer non-SUBMIT request/reply trace copies. Required raw
+SUBMIT pairs, semantic/native rows and notifications remain. Canonical trace byte
+accounting preserves 8 MiB / 16,000 and conservatively budgets floating tokens.
+Source `a8d498f550735f1130d1e2649e6ba0755b1185b945166cc888a4282a59b1be25`
+and focused tests/patch are under `runtime-D03-repair-v1/runtime-trace-projection-v1/`.
+Pure tests passed 2,073 vectors plus byte/row boundaries, notification/actual-event
+preservation, exact reverse patch and syntax-only full Worker. They did not run
+an engine. Saved-prefix projection was 7,167 rows / 2,895,208 canonical bytes.
+
+Fresh source-bound runtime 97809 reused the accepted engine/capsule, with all other
+19 source roles, fixtures/tools, cases and bounds unchanged. Shape admission passed;
+the original actual caller closed one (`7a7579`) after 21.802950001 seconds with
+`I04/after-lifecycle-old-C8/actual-native-STALE-before-TURN`. Zero batches passed.
+Result `runtime-recovery-v1/runtime/actual-operation-v2/result.json` is
+`713b238a6cb3df86c67d6b841be2a1b1b9c339897872d6f209bbffe5cee01986`;
+positive observation `687fc00988990416aebb0bcddf605c3a6e3aa7cf172b806229f2d6a25357babc`
+is 7,525,122 bytes. Trace 10,160 rows / 3,980,076 canonical bytes stayed within
+unchanged limits. Node negative controls passed, all 47 inputs were unchanged,
+owners/logs/watchdog closed and guard failure was null. Sampled RSS 3,472,936,960
+and output 207,207,488 bytes stayed below caps.
+
+D01/D03/D04/I01/I02 completed in the failed first observation. I04 failed; seven
+later positive cases and eleven other batches are absent. Mandatory 13 and author
+31 assertions were true; 607 emitted case rows include one failure. Partial counts
+were 71 ordinary, two metadata replays, 2,082 exports and 415 dispatches. There is
+no accepted rich runtime. External caller and independent coverage/physical checks
+are in `ROOT-RUNTIME-TRACE-v2-CALLER-CLOSED-FAILURE.json`. Old failed outputs remain
+immutable. The next focused gate is I04's stale-before-TURN product/identity
+diagnosis, followed by only the affected supported production refresh. No broader
+regression, neutral admission, Foundation construction or release qualification ran.
+
+
+## I04 guard preflight repair and native host checks
+
+The three active Guards add C8-only inert admission against copied metadata before
+host TURN, preserving the in-TURN recheck, Gate/barrier precedence, exception
+poisoning and legacy revoke9 path. Canonical/native Guard hash is `3aebfcc5…`;
+editor-overlay hash is `6ec65468…`. Their current source has not been compiled into
+a Wasm candidate or run in the actual engine.
+
+The supported native `build.sh test dev --core-provider cpp` route now registers
+the local provider fixtures under profile-none. Only ten local C++ translation
+units, five local archives and the fake fixture executable compiled. Independent
+Ninja/cache readback confirms no kernel, VM, container or owner target, and `all`
+remains core plus CLI. The C11 test still requires a profile enabling C.
+
+Two original setup failures executed zero assertions. First executed run90088
+closed one with80/82 passes; run50694 closed one with81/82 passes. They exposed
+old admission/TURN count expectations. The historical fake retains native metadata
+after document navigation, so its C8 preflight succeeds before the original
+in-TURN document check rejects; this differs from I04's stale native capture.
+Exact assertions were corrected without removing effects/sequence/legacy checks.
+
+Final22409 closed zero at `d1b95a`,6.212878763s: **82/82 passed, zero skips**.
+This covers stale preflight without TURN/effects/sequence consumption, successful
+double admission, unchanged-identity invalidation on entry, both exception paths,
+owned payload/reentry and historical9. Evidence under
+`runtime-D03-repair-v1/runtime-recovery-v1/host-check-v3/`:
+`PLAN.json` SHA `f53a924202c00a517e4375dd26863011988db27201dac8f70848a2cc074b34bf`,
+`CALLER-CLOSED.json` SHA `b3144e7c3bd91cd4f8d56125133e3a2d7d3b248d9d6017c87467ba397abbbc2f`,
+`ROOT-DEPENDENCY-READBACK.json` SHA `2e2dff0f82748875eba2946d826760f03aa9808139269cef4e3621a849e6452b`.
+All source freezes matched and all Root test children/streams closed before
+workload release. The old failed1866 and closed runtime97809 remain immutable.
+An explicit48-import/three-fresh/170-artifact successor is required before a new
+engine runtime; the original49/two/171 receipts cannot cover changed Guard bytes.
+
+
+## I04 selective contracts and first fresh preparation refusal
+
+The source-only Guard metadata preserves the document historical compile map and
+profile byte-for-byte and the native original/adapted predecessors. Final maintained
+driver checks passed 45 document-source and eight successful-helper selection cases;
+four unchanged native-source cases remain applicable. The compiler-free CMake
+recorder passed ten cases after its complete fragment/install-path prerequisites
+and exact four-target pixel/actions inventory were repaired. Its original failures
+(7, then 6 setup failures, then one stale inventory assertion) remain preserved.
+No compiler was invoked by these CMake recorder cases.
+
+The explicit guard-repair donor/plan/build lane passed 58 donor and 49 maintenance
+cases, zero skips. It preserves the old 49/2 lane and admits only ordered48 imports,
+three fresh direct units, five archive copies, zero repacks and one link. New private
+readers passed40 tiny inert cases, preserving old49/2/171 while admitting48/3/170
+and rejecting crossed kinds, summary tags, helper roles and source pins. Reader v1's
+summary mismatch was reproduced and corrected in a fresh v2; all old files remain
+unchanged. Seven padded descriptor tests were not executed. Root independently
+reviewed source diffs and final pins; no new engine build/runtime is established.
+
+Current private reader is `0801ee71debb8e12018eeabfdb21faa0c963504052d5681f4619f77cd8288c04`
+(73,208 bytes); runtime contract is `450c46f2…` (50,321 bytes). Their source and40-case
+evidence are under `runtime-D03-repair-v1/i04-reader-contract-v2/`. Producer evidence
+is `i04-selective-contract-v1/HANDOFF.json` SHA `2693a59de7d5e79efb6b8d60dfd0e40a09201aeca3615debc78f4805db5fec93`.
+Final Root source/CMake check records are in `runtime-recovery-v1/final-focused-checks-v1/`.
+
+Fresh preparation6762 launched only after full hash/physical review of255 frozen
+inputs, current storage/ownership and exact control diffs. Packet5162e216 retained
+all250 predecessor paths:245 facts unchanged, five tracked inputs updated and five
+explicit bindings added. Original donor4b1e4b4d changed only kind and removal of the
+Guard import row (new descriptor3706a739). Source authority's16 mappings stayed exact.
+
+Original caller closed **one**,848537,31.279604267s. Source and metadata each closed
+naturally zero:368 source files/564,545,824 bytes;12 metadata files/106,263,977 bytes.
+Copy returned1 at its exact old packet-kind guard before creating any copy output.
+There was no ENOSPC, SDK program, compiler, linker, accepted preparation or Root pass.
+All255 frozen hashes/physical facts were independently unchanged; process/log
+writers closed. Preserve the failed scope and never rerun its armed entry.
+
+Result `preparation-guard-repair-v1/execution-v1/actual-v1/RESULT.json` is
+`3a1379f6f38bafe198e696c6d73d24c277af22c8138c0b38837f36801c1791c5`; its
+`ROOT-CALLER-CLOSED-FAILURE.json` records the cause and closure. R/S are8f3f9ac8/faaf4eb3,
+projection233b7879; metadata fragment proof eaa0e586 is not a complete reuse tree.
+A fresh v2 strict kind repair must pass the established three-phase operation and
+independent full readback; no failed receipt or partial output becomes eligible.
+
+
+## I04 fresh preparation accepted — 2026-10-18 UTC
+
+The separate v2 preparation corrects only the copy materializer's exact packet-kind
+comparison, with fresh control/output paths. Root reviewed all 255 input hashes and
+physical identities, the control projections and current storage (38,436,728,832
+bytes available); the original ENOSPC cause remains unknown. Failed 6762 and 1866
+remain immutable and neither partial output was consumed.
+
+Actual **85828** closed zero (`edcb3a`) in **92.657658530 seconds**. Source, metadata
+and copy all closed naturally with zero exit, one reaped child each and no outliving
+writers. Independent Root **88406** closed zero (`d3ac48`) in **10.472246394 seconds**:
+368 source files / 564,545,824 bytes, 12 metadata files / 106,263,977 bytes and all
+42,779 copied files / 861,802,853 bytes passed complete namespace, mode, hash and
+physical-identity readback. All 255 frozen inputs and six execution controls stayed
+unchanged. No SDK program, compiler, linker or runtime ran.
+
+Evidence is under `runtime-D03-repair-v1/preparation-guard-repair-v2/execution-v1/`:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `actual-v1/RESULT.json` | `0a0029c90e79a8f031c6bdbaa65e56e2e94a7a82e111ca0f4256d040a508e9a8` |
+| `ROOT-CALLER-CLOSED-ACCEPTED.json` | `81ff3d1cc900471792dcb49b737bb757e83332477236d0412f0ce24a0d30c1e0` |
+| `REUSE-COPY-RESULT.json` | `9dfcb3c50762b032bf94ed2448a676d57b0bfe467bc0075c7d31cd99aa0d06b8` |
+
+Recipe/source pins are `8f3f9ac8…` / `faaf4eb3…`, projection `233b7879…` and complete
+reuse proof `eaa0e586198949adf352e60f724fb35d168c78d5d9d2ec31b8067d89585a6864`.
+These matching source/metadata bytes have fresh accepted physical/output identities;
+the failed v1 receipts remain failed. Next is the compile-free 48-import / three-fresh
+plan, then the bounded candidate and unchanged 65-case / 12-batch runtime. The new
+Guard still has no current-source Wasm/runtime evidence.
+
+## I04 selective plan accepted; candidate build pending
+
+The compile-free Guard successor plan **19842** closed zero (`201719`), with
+48 imported objects, three fresh direct units, five archive copies, zero repacks
+and one planned link. All 51 selected objects, 35 direct objects, 16 inherited
+replacements and 2,060 opaque members remained fixed. The qualified child closed
+naturally (one reaped child, no termination or outliving descendants), input
+postflight passed and peak aggregate RSS was 460,173,312 bytes.
+
+Independent Root **56691** closed zero (`71838f`), rechecking 68,344 file and 3,797
+directory identities, the complete plan namespace and canonical source hashes.
+The original SDK admission97501 and SDK freeze70a212 retain their original identities;
+no second SDK census or SDK program ran. Evidence is in
+`runtime-D03-repair-v1/concrete-guard-repair-v1/execution-v1/`:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `retained-plan-v1/plan.json` (38,289,292 bytes) | `339986220c9d798710bffbebfc7c74b3b6cd1feef5eefd8306471f3b01a2c9c9` |
+| `actual-plan-v1/RESULT.json` | `bcbd3d543e500ba87cc8a15526a7ccc47b700492d407148c8093759bba3a6902` |
+| `ROOT-PLAN-CALLER-CLOSED-ACCEPTED.json` | `5a748e9ca2d152a5524a78eb7743e407bda591617397f9456f9bea3047f35a60` |
+
+Pure command derivation passed (`421354`), including exact three-unit vectors,
+48 imports, five archive copies and lossless expansion of all 2,076 archive members.
+Commands are `de9d86015b91b0714b0642c4ea8dec810493d99adc6c53f8d0c86892a06ce673`.
+The first projection attempt (`2b9561`) failed before any output because Root had
+omitted its empty metadata output directory; the preserved v2 changes only that
+evidence path and creates its new parent. It invokes no SDK program.
+
+Build binding **11725** closed zero (`bee087`); Root independently rechecked its
+68,352 files / 3,799 directories and unchanged source hashes. The exact eight
+file/two directory additions bind the accepted plan, closed log and command ledger.
+Current storage was 37,624,377,344 bytes available. Candidate **17972** was launched
+once with packet `952caf046dd45513534a2fa4c2bc35fd2f5d8884d027c21cb7c776053dd1c2ee`,
+one job, 2,700-second inner / 3,300-second outer work / 30-second cleanup limits,
+4-GiB RSS and 8-GiB output/growth caps. **It is not yet a passed build.** No new
+current-Guard runtime or neutral admission is established.
+
+Disabled capsule/runtime successor controls passed independent source review,
+including the corrected supervisor-relative helper paths. The neutral successor
+passed 21 tiny inert checks and independent review while preserving the exact
+28+6 evaluator, limits and true-runtime/zero-caller prerequisites. These source
+checks launch no capsule, browser, neutral stage, Foundation or partial BOTH job.
+
+## Current Guard candidate accepted; ordered-trace runtime refusal
+
+Selective candidate **17972** closed zero (`c200ff`) with 48 independent object
+imports, Publisher + shim + Guard compiled, five copied archives, zero repacks and
+one link. Static inspection and complete input postflight passed. Peak aggregate
+RSS was 2,451,759,104 bytes and the 170 recorded artifacts total 439,014,233 bytes.
+Independent Root **1567** closed zero (`984f8e`), full-hashing all 170 artifacts,
+checking independent output inodes, 68,352 file / 3,799 directory identities and
+canonical source hashes. All children, streams and monitors closed. This is an
+accepted current-Guard Wasm build; production eligibility remains false.
+
+Evidence is under `runtime-D03-repair-v1/concrete-guard-repair-v1/execution-v1/`:
+
+| Receipt / artifact | SHA-256 |
+| --- | --- |
+| `actual-candidate-v1/RESULT.json` | `3ddfc76d1eba3718b72a20afbe7d219fe5d8c40350c3a0dd5bacfd976086eeb0` |
+| `ROOT-CANDIDATE-CALLER-CLOSED-ACCEPTED.json` | `bc43878909677dc5fa942cc37b53ab0ca4f594074d3c77822d7cd6ace9601bca` |
+| `maintenance-build.json` | `abf7ee4a84531bb0be50495b2dbd0858dc641f37f2ea3858d5c651624331c45b` |
+| Wasm (109,676,080 bytes) | `70a7b495f44aa107cb5af54fbaf851590cc9ea075f12dc13d95a3efc227c22a9` |
+| Factory (210,415 bytes) | `a387affe89a4e9a253289f8a83a1bce1f4dcb6557935091df2ff3cdfa370c468` |
+
+Fresh capsule **83707** closed zero (`785b9e`) in 1.405978802 seconds. Independent
+Root readback closed zero (`76bdf4`): 16 copies / 164,443,788 bytes, exact complete
+namespace, independent inodes and full input/source/hash joins passed. Capsule
+producer is `c2b74d06c4fb9be644cd07e5eb68820ce904d160224ea16dc3194e071a17da9b`;
+Root acceptance is `192fb3c98eb08fbe1c3cb180f1b10ef4b2fc9764dd66798f3b4d7b3360769810`
+under `runtime-D03-repair-v1/runtime-guard-repair-v1/`. Donor and command lineage remain external.
+
+Fresh runtime **7008** closed one (`745c6a`) in **28.156387774 seconds**:
+`Actual request trace is not a bounded ordered history`. All 13 positive cases,
+including I04 stale-before-TURN, reported passed: 768 case assertions, 17 mandatory
+and 31 original author assertions were true. **Zero batches were accepted** and
+the remaining 11 batches were not executed. Node's two negative controls passed.
+All owners/streams/thread closed, all 47 input full hashes/physical facts stayed
+unchanged, guard failure was null, and RSS/output remained within bounds
+(3,563,900,928 / 207,230,311 bytes).
+
+The trace had 13,358 rows and 6,015,136 canonical encoded bytes, within 16,000 /
+8 MiB. Exactly 66 `actual-JSC-fixture-intent` rows replaced the outer trace serial
+with the fixture's own intent counter: event details are spread after the history
+serial. The first wrong row is position837 with serial1. Preserve that counter
+separately as `intent_serial`; retain strict history ordering, all native evidence,
+cases and caps. This is a source-only Worker repair; the accepted candidate and
+capsule are unchanged and need no rebuild or copy.
+
+Runtime result `runtime-D03-repair-v1/runtime-guard-repair-v1/runtime/actual-operation-v1/result.json`
+is `ced613226d55bbc439d9519eee5512760c4ca52f22575959cea66e137928a280`;
+positive observation is `119c1342fd017b3b40c119f16d19a2fe6f21c1ac9b4d5cf0d71649710eb38fcf`.
+`ROOT-RUNTIME-CALLER-CLOSED-FAILURE.json` (`a8f779b5…`) records independent postflight,
+partial request counts (96 ordinary, two replays, 2,702 exports / 539 dispatches)
+and closure. Do not resume this Worker or relabel the failed history. Next is a
+reviewed serial-field repair and one fresh same-protocol packet/grant/output.
+Neutral admission and Foundation/partial BOTH remain runtime dependent and unrun.
+
+<a id="trace-serial-repair-and-native-composition-cancellation-failure"></a>
+
+### Trace serial repair and native composition cancellation failure — 2026-10-18 UTC
+
+The fresh Worker changes only the fixture-intent detail key `serial` to
+`intent_serial` (+7 bytes). Its SHA-256 is
+`0b502ce16671c319eb25276aa4ed0f1729dc49efd1793c9970561cf5b4753d75` (45,526 bytes).
+The extracted actual-callsite regression reproduces queued counter1 versus outer
+history8, reconstructs all13,358 saved rows through the unchanged supervisor gate,
+and preserves all66 intent counters; the other13,292 rows are identical. Its original
+caller closed zero (`ac5645`), and all2,073 retained budget vectors/boundaries passed.
+The projected history is6,016,935 bytes, below the unchanged8MiB/16,000-row caps.
+Independent source review verified the exact one-line change and all14 frozen facts.
+This pure projection did not relabel the failed7008 observation.
+
+Root bound a fresh47-input packet (193,762,377 bytes), changing only the Worker fact,
+its role and the absent `runtime/actual-operation-v2` output. The other46 input facts,
+19 roles, accepted candidate/capsule,65 cases/12 batches and all limits were exact.
+No compiler, engine build or capsule copy ran. Packet is
+`ad91aa667492f3a7dc514a851fcb2086967be3a962275a1f42d8845bc4a38892`;
+Root grant is`8f59de71ba1d9d74862d3528def2803870eec3e68b1c08f3e700f3083e4aa6d8`.
+
+Actual runtime **35714** closed one (`5c7d8a`) in **32.829287534 seconds**.
+The positive batch was accepted: the strict ordered-history gate now passes.
+The editor batch passed E1a/E1b/E2a/E2b/E3a/E3b/E4a/E5a/E5b and failed
+`E6a/no-committed-preedit`. The native query after composition cancellation still
+contains `cancel:仮`; the composition-ended assertion passed. This is an observed
+failure, pending focused cause analysis. **One of12 batches is accepted; the full
+runtime remains failed.** The remaining ten batches were not reached. Node's two
+negative controls passed. All owners, streams and the supervisor thread closed;
+Root independently rehashed and checked physical facts for all47 inputs unchanged.
+Peak sampled RSS/output were3,297,701,888 /219,718,049 bytes, within existing caps.
+
+Evidence under `runtime-D03-repair-v1/runtime-guard-repair-v1/`:
+
+| Receipt / observation | SHA-256 |
+| --- | --- |
+| `runtime/actual-operation-v2/result.json` | `1bdccee7635a60ea4ea5497485353230b09b829a80b4154831912efb001cc22e` |
+| `runtime/actual-operation-v2/batch-positive.json` | `6d9a35f20a026259197358dceda3368c542cab3195512c41bc919ba19b43e4e0` |
+| `runtime/actual-operation-v2/batch-editor-native.json` | `8eb02f769070d2870b77e236528a968b455f163a35a1ab529a190378e302571a` |
+| `ROOT-RUNTIME-TRACE-SERIAL-CALLER-CLOSED-FAILURE-v1.json` | `9d829ac76f9ccc50c4bd6a90e9afc42c4ec7e22bced9942b37a046726b8608bd` |
+
+Preserve both failed runtime outputs. Next is focused native composition cancellation
+analysis/repair, then a reviewed fresh same-protocol attempt after relevant checks.
+Neutral admission, Foundation construction and partial BOTH remain runtime dependent
+and unexecuted. The integrated viewer is unfinished.
+
+The native cause is now established. Public `Editor.cancelComposition()` ends the
+composition while retaining marked text, as the earlier feasibility record already
+explained. The shared capture contract requires restoration of the original value,
+including text replaced by composition. Empty deletion and cloned rich fragments
+cannot meet that requirement. Root approved the source-only transaction-owned
+native inverse design (`composition-cancel-design-v1/DESIGN.md`, SHA-256
+`d6ed0c07b2859d0354a04769bae346440944d74ebad9cb7bd7e372e8eb5c68d3`;
+Root review `ca9f7b53a361cb14784d9ec0447493f8fcfb8fa7c9e86ad4a9e316be037f11df`).
+The native source implementation is frozen under
+`composition-native-rollback-v1/SOURCE-FREEZE-v3.json`, SHA-256
+`14ddceead900b12953c6fbffa68723a6ce7e1d3d35fe8a0b0345557ef5d6aef4`.
+Fresh supported host session45401 closed zero (`beb293`): all21 journal checks
+passed with zero exclusions, including the no-exceptions/no-RTTI fixture (1.78s
+CTest). These use FakeStep bookkeeping; they do not compile or execute WebCore.
+The editor main and three private headers now live under the editor overlay.
+Shared pixel/physical main and headers retain exact HEAD bytes. No repaired
+native engine candidate is established.
+
+The design retains one exact pending undo step and an independent root selection,
+checks authority around author callbacks, and restores through native inverse
+commands. Cancellation uses native `beforeinput/historyUndo`, composition-end and
+`input/historyUndo` events; this does not establish OS IME event equivalence.
+Unknown or partially verified effects are quarantined without replay. Owned9
+cleanup must preserve the original authority and must not steal focus.
+
+The reviewed dependency proposal adds Backend and main to the three existing
+fresh units: **46 imports / five fresh units / 168 artifacts**, with five copied
+archives, zero repacks and one link. Only main may depend on the changed private
+PageClients/UndoHistory headers; the new private composition bridge may occur only
+in Backend and main. Old two/three-unit lanes, historical profile/map pins, ABI,
+opaque engine inputs, VFS and all resource caps stay strict. Producer/readers,
+source metadata and fresh controls use separate explicit branches. The maintained
+producer passed132 pure tests, the RC3 readers66 inert checks and disabled
+controls78 checks; independent producer review found no consequential code defect.
+Fresh controls must freeze the five historical excluded-unit depfiles as well as
+the46 imported rows. Final source metadata and Windows catalogue dispatch are
+published and independently reviewed:159 editor inputs and198 native inputs
+(158 native source files). The three registered pure source suites passed65/65
+with no exclusions. Original document1316 retains39/46 plus seven checkout-ancestor
+TMPDIR refusals; document-only43479 passed46/46 after a checked external-scratch
+probe and no source/assertion changes. Native15 and bootstrap4 results were reused.
+Final metadata freeze is `composition-source-metadata-v1/FINAL-FREEZE-v1.json`,
+SHA-256 `a381ab12c3e31e19f8578ae150c77a5b26ce554ba9906e071fa1491fa7b2821d`.
+Actual
+API linkage, layout/focus behavior, inverse restoration and the five fresh depfiles
+remain acceptance gates. Fresh five-unit preparation has passed as recorded
+below; its plan, build and runtime remain unexecuted. Native inverse restoration is fenced around callbacks, but a synchronous
+input handler may legitimately change same-text markup afterward; no unconditional
+post-callback DOM-shape guarantee has been qualified. The original starting
+selection is restored after the low-level inverse before native publication;
+actual layout, focus and callback behavior still require the bounded runtime.
+Neutral/Foundation/partial BOTH remain unrun.
+
+The unarmed Foundation884 proposal also needs a fresh top-level CMake input pin:
+the new focused journal test registration changed that file. Its proposed
+900/1200/30/jobs2 limits remain proposals; no Foundation grant is implied.
+
+<a id="fresh-composition-preparation-recovery"></a>
+
+### Fresh composition preparation recovery — 2026-10-18 UTC
+
+Fresh scope `repair/composition-preparation-v1/preparation/execution-v1/` passed
+actual preparation **90712**, original caller zero (`99b782`), in **91.923987731 seconds**. All
+source, metadata and copy phases closed naturally with zero exit. Independent
+Root readback **65753** closed zero (`1401f8`) in **9.987983872 seconds**: complete namespaces and full hashes
+passed for 369 source files / 564,592,040 bytes, 12 metadata files / 106,264,010 bytes and
+42,779 copied files / 861,802,853 bytes. All 329 frozen inputs and eight execution controls
+remained unchanged. Old failed preparations and partial copies were not consumed.
+
+`ROOT-CALLER-CLOSED-ACCEPTED.json` is
+`b7698c509283db411c227d44ebb36fa5847f71f16536ee4924ebb7d8e5eff211`.
+Current R/S are `f9e9b3af789d2eda506ba27cc33485509b19c5d99ee47708fd7a107214267c73`
+and `37bc3ed5edc267d007a073efe4fbaaae08e19bf5c3418bc18903afd43ca2e0cb`;
+reuse proof is `f20ccc597e8972f2343a90e7aeaf84be81afc12386b341b4ec85d723d782df47`.
+All preparation/readback writers and streams are closed; these outputs are now
+immutable inputs. This accepts preparation only. The first current compile-free
+plan, session **77199**, closed one (`9ab719`) after the planning child rejected
+`Composition include namespace/physical-header/VFS context differs`. No plan was
+produced and compilation did not start. Result
+`8b95d1abd1fa12e92c8bf3474d679a627efa7fe86a0233e67b21eca1767970bc`
+records natural primary exit one, joined writers and passed frozen-input
+postflight. Its packet and outputs are retained and must not be rerun.
+
+The failure came from deriving search context from only the 46 imported
+objects. Making main fresh removed its two unique dependency-parent directories:
+`Skia/Headers/top/skia/effects` and `WTF/Headers/wtf/unix`. The composition-only
+correction retains the complete authenticated original51 dependency coordinates
+and all current object arguments. It reproduces the original 413 directories;
+all 4,171 normalized VFS mappings and the physical-header table remain unchanged.
+The exact context matcher and imported46 admission are unchanged.
+
+The corrected helper is `796994d6cee59ed86e6ab35a598285d8190847cc554bed2b2067b39a4d944998`.
+All 71 registered maintenance cases passed with zero exclusions (session58156,
+caller zero, chunk332760), including construction-level coverage for main-only
+leaf directories and original frozen/relocation/private-cache joins. Independent
+source review checked all 5,342 historical metadata joins. No six published
+source/native JSON files require refresh; the assembler separately captures the
+changed helper. The accepted preparation still embeds its original helper and
+cannot serve the corrected producer. Fresh disabled controls are being prepared
+in `repair/composition-context-preparation-v1/`. Its metadata-only builder passed
+and sealed 354 frozen inputs, but the first runner command closed one (`707b37`)
+at the initial intent check, before creating any source, metadata, copy or phase
+output. The runner expected a scope-local descriptor while the packet correctly
+selected the exact immutable predecessor descriptor. Failure448fa207 preserves
+the caller and zero-phase evidence. The old packet must not be rerun.
+
+A fresh `repair/composition-context-preparation-v2/` control scope corrects that
+single path predicate and adds a concrete packet-shaped intent test. The reviewed
+helper and six catalogues remain unchanged. Fresh recipe/manifest, metadata and
+preparation acceptance must precede another plan.
+
+The intended actions remain 51 selected objects, 46 imports, five fresh units,
+five archive copies, zero repacks, one link and readback of all 168 artifacts under
+the existing caps. Current-source compilation and runtime remain unverified;
+production eligibility remains false.
+
+<a id="fresh-composition-context-preparation-v2"></a>
+
+### Fresh composition-context preparation v2 — accepted P3 preparation — 2026-10-18 UTC
+
+Corrected current-helper preparation scope
+`repair/composition-context-preparation-v2/preparation/execution-v1/` passed:
+original caller **3007** closed naturally with exit zero, chunk `641a62`, in
+**97.618891616 seconds**, with all three phases naturally closed at zero. Independent
+Root readback **14272** closed zero, chunk `cc547c`, after full namespace, hash and
+physical-identity readback: 369 source files / 564,595,000 bytes, 12 metadata files /
+106,264,034 bytes and 42,779 copied files / 861,802,853 bytes. All 363 frozen inputs
+and eight controls remained unchanged. No failed packet or partial copy was consumed.
+
+Accepted Root receipt `preparation/execution-v1/ROOT-CALLER-CLOSED-ACCEPTED.json`
+has SHA-256 `c2c385194f7d1e9af6add5782b7415f3d42b8c462fb35dd8f6cc154ffd6e8f07`.
+The previous P1 acceptance `b7698c509283db411c227d44ebb36fa5847f71f16536ee4924ebb7d8e5eff211`
+continues to identify its original helper/source only. Current R/S are
+`4fac58dd33a4d7d7e875eb7912d7506082ec2906cc551e55547ae20a3a825fe9` /
+`bc4ea6776ee399094bd52db7c61e1b2ab449cff9a2568d1ced585b6f4e5bb994`; reuse proof
+is `f20ccc597e8972f2343a90e7aeaf84be81afc12386b341b4ec85d723d782df47`. Frozen
+helper `796994d6cee59ed86e6ab35a598285d8190847cc554bed2b2067b39a4d944998` and test
+`0611e4bc31ca518df7e0faea62a0e3ceb622c40a182427245a685075abb116c9` passed all 71
+registered maintenance cases with zero exclusions. The earlier `707b37` frontgate
+failure remains a zero-phase/output failure and its packet remains unusable.
+
+This accepts preparation only. Next is the compile-free 51-object plan; if accepted,
+the proposed candidate is 46 imports / five fresh units / five archive copies / zero
+repacks / one link, with all 168 artifacts read back under existing caps. Current
+source compilation, candidate/runtime, neutral and Foundation work remain
+unverified. The integrated rich viewer is unfinished; production eligibility is
+false.
+
+<a id="current-helper-plan-26403-failure"></a>
+
+### Current-helper compile-free plan failure — 2026-10-18 UTC
+
+The P3 preparation acceptance above remains valid for helper `796994d6…`.
+A fresh compile-free plan caller **26403** closed one (`db536c`) with
+`Invalid composition context dependency fields`. No plan was produced and no
+compiler ran. All owners and streams closed naturally; the supervisor reported
+primary exit one, no lingering descendants or termination, and the full frozen
+input/namespace postflight passed. The failed packet and outputs remain immutable.
+Result is `830226acf3f0def1ac7cd937fcd3a5025a6d055d804ad7c87dc699a535a3ca34`;
+the 53-byte child log is `3211b0998f064f09b33588385c1f961c58c221844aba483c127d8b9c93625717`.
+
+The original 51 depfiles contain 5,349 distinct dependency keys, while their
+retained sidecar contains 5,342 rows. Seven fresh-unit dependencies have no
+sidecar row: Publisher/shim sources and headers, three WebCore headers and the
+shim's generated metadata header. The prior context review covered the sidecar,
+missing these seven keys. Strict authentication of that separate partition and
+an actual-metadata regression probe must precede a new physical preparation and
+plan. Current-source compilation/runtime remain unverified; production eligibility
+is false and the integrated viewer is unfinished.
+
+<a id="seven-input-context-source-repair"></a>
+
+### Seven-input context source repair — 2026-10-18 UTC
+
+The strict repair is now frozen as helper
+`401e88d0bb9d559b8d00b78012f05fd7e693252041a7a513b796438aa51f51b8`
+and tests `e765b56031bef299124e2571025190ffc4fc2346d4f9c47ce8037b323d97ff2f`.
+The helper authenticates the six retained coordinates against exact original
+owners, frozen facts, old namespace pins and current inventory coordinates.
+It classifies the generated header using the admitted 112-product metadata,
+requires Shim-only ownership and excludes that coordinate without reading or
+importing its old body. Unknown, partial or extra missing-input sets fail.
+The old context matchers and other lanes remain unchanged.
+
+The supported focused suite **80499** closed zero (`01eb2a`): **73/73 cases,
+zero exclusions**, 0.46 seconds (the original 71 cases plus two new cases with
+15 negative variants). Independent strong source review found no blocker.
+A separate metadata-only construction probe **64357** closed zero (`9caa6b`) in
+9.199689536 seconds. It parsed the five original depfiles, reconstructed the actual
+5,349-key union, independently reconstructed the current physical-header/VFS view,
+and passed the unchanged context and direct-source delta gates: **413 directories,
+4,171 mappings**, physical digest
+`0f413062843fc4a36bbed92676d0a607f87dc09771becfb8715a49e007f1d6d0`.
+Fourteen actual-metadata negative cases and an upstream generated-record pin-tamper
+check passed. No SDK payload, unlisted payload or old generated-header body was read.
+Two original-header and four alias hashes reused accepted fullhash evidence;
+the probe does not provide a new physical SDK qualification or engine runtime.
+
+Current source freeze is
+`repair/runtime-recovery-v1/missing-seven-repair-v1/ROOT-SOURCE-FREEZE-v2.json`,
+SHA-256 `6859921696524dc9d67483a6a5c8cc0db309dfdddf50add1bb4d72b0c3f9fcca`.
+The probe result is `c1159393a071bdcb4fcf883aff0903b08ff025c1ff1ff2a44dad415629bdc2d2`.
+Fresh disabled controls are being prepared in
+`repair/composition-context-preparation-v3/` (P4). New physical preparation and
+independent acceptance must precede another compile-free plan. No current-401e
+plan, five-unit compilation or runtime is accepted. The viewer remains unfinished
+and production eligibility is false.
+
+<a id="fresh-current-401e-preparation-accepted"></a>
+
+### Fresh current-401e preparation accepted — 2026-10-18 UTC
+
+P4 scope `repair/composition-context-preparation-v3/preparation/execution-v1/`
+passed its single fresh preparation attempt. Original caller **76300** closed
+naturally with exit zero (`cf1c16`) in **90.239807475 seconds**; source, metadata
+and copy all closed naturally at zero. Independent Root readback **38868** closed
+zero (`f66e9a`), accepting all complete namespaces and full hashes: **369 source
+files / 564,597,526 bytes; 12 metadata files / 106,264,034 bytes; 42,779 copied
+files / 861,802,853 bytes**. All 363 frozen inputs and eight controls were unchanged.
+No SDK program, compiler, linker or runtime ran, and no failed partial copy was used.
+
+Accepted receipt `preparation/execution-v1/ROOT-CALLER-CLOSED-ACCEPTED.json` is
+`376623a2bc3eecb567989a21f0d522a72ffdd261690bbf1e28cfbc3127195196`.
+The original result is `9317c2c57ce2ff13c5f898699e2e43b9ea87ada3ac0133d60f4e3be92d24b513`.
+Current recipe/manifest are
+`a76949efb3f2395897adebd87b593429a8f31b3075a36005a9059641acff00fa` /
+`2219a5f1c29accacec15ff352a35ac71e59a848b1294f5eeb036ec5303a38b6c`;
+reuse proof remains `f20ccc597e8972f2343a90e7aeaf84be81afc12386b341b4ec85d723d782df47`.
+This acceptance binds helper `401e88d0…`; P3's `c2c38519…` acceptance continues
+to identify its original `796994d6…` source. Failed plan26403 and all prior failed
+packets remain immutable.
+
+The current compile-free plan is now accepted below. Five-unit compilation,
+168-artifact readback, actual VFS/depfile ownership, capsule, runtime, neutral and
+Foundation acceptance remain pending. The integrated viewer is unfinished and
+production eligibility remains false.
+
+<a id="fresh-current-401e-plan-accepted"></a>
+
+### Fresh current-401e plan accepted; build failed — 2026-10-18 UTC
+
+P4 compile-free plan **6003** closed naturally with exit zero (`10fe16`), and
+independent Root readback **5501** closed zero (`c6fba2`). Plan
+`selective/execution-v1/retained-plan-v1/plan.json` is
+`cf4ae7af8e46b99e9d13b8f62d6a8b0423bf3e11a6b4179ffed42ec70beaf0a3`;
+Root acceptance is
+`30dfe41e834465cec5511b01f025c99b4bfc6d7fb0f894073171d16934f134be`.
+The exact planned partition is **51 selected, 46 imports, five fresh units,
+five archive copies, zero repacks and one link**. All 68,442 frozen file and
+3,797 directory identities and 27 control-source hashes were rechecked. This
+accepts the current `401e88d0…` plan; it does not accept compiled output or runtime.
+
+The lossless command ledger is `9d719bd1368e440d0d0666e78bb2c032105812f94d9ed6c544f4510987079d78`.
+The first command derivation lacked its fresh output directory, and the first
+build-metadata invocation passed a relative path where an absolute path was
+required. Both failed before candidate output or compilation; their original
+logs remain immutable. Supervisor setup recovery used each same assignment,
+recorded blocked/ready states and changed no producer source or repair allowance.
+The corrected metadata invocations passed.
+
+Root and independent strong review accepted the fresh build packet
+`e2c41bb38b1b18d4539a25c59e3be953ea70a6ec258e8dfb784b281688191af9`,
+with 68,451 file / 3,799 directory identities, current source/header facts and
+unchanged resource caps. Its single actual build, original caller **67381**,
+closed naturally with exit one (`66caaf`); result is
+`e31bce280abd0b6912ed9691e08fc72d081654d9b22fc2f6201b59417cdebfa3`.
+Configuration passed. Ninja failed at step 22/59 compiling
+`BibNativeEditorBackend.cpp`: the new guard calls `FrameDestructionObserver::frame()`
+through `Document`, but its inline definition was not included. Frozen postflight
+passed and all writers joined; peak aggregate RSS was 1,695,993,856 bytes. No link,
+168-artifact acceptance, VFS/depfile acceptance, capsule or runtime pass exists.
+The complete failed output and controls remain immutable.
+
+Root's continuing Sol-owned source repair adds only
+`#include "FrameDestructionObserverInlines.h"` to both backend copies, now
+`d14dab28100d3689d9a04aa4a81290b50cf24cd3e00a34b2f8402d9eeca9da60` /
+61,375 bytes. Function bodies and flags are unchanged; exact retained declaration
+and definition explain the compiler failure. Independent review accepted this
+source-only fix. The refreshed metadata changes only 11 paths; seven other prior
+paths retain exact bytes and physical identities. Both historical reverse tables
+and all existing origins remain exact; reader functions and assertions are unchanged.
+
+<a id="inline-include-source-acceptance"></a>
+
+The supported complete source suites then passed: original caller **84029** closed
+zero (`92d476`), **46 document + 15 native-source + 4 bootstrap = 65 cases, zero
+exclusions**, in 1.60 CTest seconds. The owned external temporary directory avoided
+the known ancestor-alias prerequisite and was removed empty after all fixtures
+closed. All 18 metadata and 12 native-source facts remained unchanged. Source
+receipt is `952cf53e39daa0f4b607c2ba72cea7aaf0ae7a8f029ab524a7df22637e3be29a`;
+Root final source-only acceptance is
+`9e141ba835e0923996d416c17d84352025d0be8338231a94594f0965971cf477`.
+Fresh N4 source freeze is `d21be21d93c8878908292b0136a9f28981e8f79c8d6a828b84d4b469f07cdb00`;
+integrated metadata freeze is `aba8b420c6a8bb5fc911a4a46843dc7c3151b42899085b6779877cffdea0b7b6`.
+The N4 file is `repair/composition-native-rollback-v1/SOURCE-FREEZE-v4.json`;
+the metadata file is
+`repair/runtime-recovery-v1/INLINE-INCLUDE-INTEGRATED-METADATA-FREEZE-v1.json`.
+
+Fresh P5 controls in `repair/composition-inline-preparation-v1/` bind the Backend
+inline-header repair (`d14dab28…`, 61,375 bytes in both copies) and helper
+`401e88d0…`. Root and independent review accepted 125 unique / 128 ordered ASTs
+and 95 source-only checks. The original
+`luna-inline-controls-20261018-v1` generator failure happened before
+candidate writes; Root found path/input-binding omissions and required a Sol
+takeover of that same assignment. That failure, original patch and deadline remain
+preserved, with zero repairs used. Sol completed the controls at 08:02:34 UTC,
+before the unchanged 08:13:31.405922 UTC deadline. P4 evidence still belongs to
+its original `4f72` source.
+
+<a id="fresh-inline-preparation-accepted"></a>
+
+The fresh composition-inline preparation was accepted after actual session 67862
+and independent Root readback 6158. All three phases closed naturally with zero
+exit; 363 frozen inputs, eight controls, 369 source files, 12 metadata files and
+42,779 retained copies passed complete hash, mode, namespace and physical-identity
+readback. The accepted result is `a06cadf792ecea14d48d9092ba6095ead8edca419a78dc5cc173eb29b07b93af`;
+Root acceptance is `c7ca799818bafca63b33aa21b4a77aa7070f03819ebd7c1a336f37edcc990e13`.
+The original result and Root receipt are `preparation/execution-v1/actual-v1/RESULT.json`
+and `preparation/execution-v1/ROOT-CALLER-CLOSED-ACCEPTED.json` in the P5 scope.
+This was preparation only and ran no compiler or linker.
+
+<a id="fresh-inline-plan-accepted"></a>
+
+The fresh selective compile-free plan was accepted after session 70848 and Root
+review 77786. Its 51 selected entries comprise 46 imports and five fresh entries,
+with five archive copies, zero repacks and one planned link. The accepted plan is
+`40af90e69176f4a65003e820439d82cf8f4b9eaafb45bd7b1b30ac699679ddfd`; Root
+acceptance is `4fa9b124aab5715b80ca1d0694419d1e289825fa3a1ce30cc8648ae3e50919bf`.
+The plan and Root receipt are `selective/execution-v1/retained-plan-v1/plan.json`
+and `selective/execution-v1/ROOT-PLAN-CALLER-CLOSED-ACCEPTED.json`.
+<a id="fresh-inline-candidate-accepted"></a>
+
+The subsequent selected build **4865** closed zero (`59428c`). Exactly five units
+compiled, 46 objects were imported, five archives were copied, zero were repacked
+and one link completed. All 2,060 opaque archive members were unchanged. Independent
+Root **11922** closed zero (`c0fda6`), accepting the exact 17-field receipt and all
+168 artifact hashes/physical identities. The separate VFS/five-depfile gate
+**67340** closed zero (`b1b754`): all 4,171 mappings exclude the three protected
+headers at both endpoints, and all five actual fresh dependency owners passed.
+The original first gate-wrapper failure (`601aaf`, Path instead of strict string)
+remains preserved; only the wrapper argument was corrected, with no predicate or
+build rerun. The Luna predicate was independently reviewed before use.
+
+The original build result is
+`selective/execution-v1/actual-candidate-v1/RESULT.json`, SHA-256
+`f210dc0bc9ea624c5bf0c5c3bf467b0d1d4551472f0d601fd1c4117013227c89`.
+Root candidate acceptance is `b045468573caca84a9d4430d4acf284ca54f6bf015ea5be51a736f374364cc3a`;
+the separate VFS receipt is `f0e4344c2a17972c365209f1fdc59ac3d8363235ee8bf027acd8a9ca96f10471`.
+Both are under the P5 `selective/` scope. The combined static-gate receipt is
+`repair/runtime-recovery-v1/P5-CURRENT-CANDIDATE-ALL-GATES-ACCEPTED-v1.json`
+(`bc87b6a72f5bf0e6db35bb38b743fca25929e9e673807d7968c60b29b04ce5e5`).
+
+Fresh metadata-only capsule **38638** closed zero (`e9ce28`) in 1.583 seconds;
+independent Root readback closed zero (`ee0415`). All 16 independent copies /
+163,069,449 bytes, original inputs and two external lineage records passed complete
+hash, namespace and physical checks. The producer result is
+`8e01f23ee7b9815ac6410468efc1d967fd7afd124983bf0d585c5120827d292c`;
+Root capsule acceptance is `bac68c23462f17e676327fc074c5dcfe49bf46c9e3a231b5f2c13dce1aa1d0c2`.
+These are `repair/runtime-composition-repair-v1/capsule/operation-v1/RESULT.json`
+and `repair/runtime-composition-repair-v1/ROOT-CAPSULE-COPY-ACCEPTANCE.json`.
+No engine/compiler/SDK program ran during this copy.
+
+<a id="fresh-inline-runtime-failure"></a>
+
+The fresh 47-input / 65-case / 12-batch runtime **33101** closed **one** (`370bc5`)
+in **36.78813448 seconds**, failing `Actual provider dispatch count`. One batch
+was accepted: all 13 positive cases passed. The editor observation completed
+E1a through E8a (14 cases), including all **82 E6a assertions** and
+`E6a/no-committed-preedit`; E8b remained running with no emitted case assertions.
+All 743 emitted editor case assertions were true, but its batch was rejected.
+The other ten batches were not reached. Node's two negative controls passed.
+All owners, streams and the watchdog thread closed, and Root independently
+rehashed all 47 inputs and physical identities unchanged. Sampled RSS/output were
+3,366,293,504 / 219,757,021 bytes, below unchanged 4-GiB / 512-MiB limits.
+
+The original result is
+`repair/runtime-composition-repair-v1/runtime/actual-operation-v1/result.json`,
+SHA-256 `240b2de90af81b201d05079823f696c6bf2f88dc4203d157fdde105c9c8cde92`.
+Closed failure/coverage and all 47 postflight facts are retained in
+`repair/runtime-recovery-v1/ROOT-P5-RUNTIME-CALLER-CLOSED-FAILURE-v1.json`, SHA-256
+`0a6d4bba5d1dab80564be3aa454eac60f0ff959b1215a2132585e6fcb19d0603`.
+
+Strong diagnosis found a probe/transport mismatch: the native copied dispatcher
+rejects malformed editor bytes before opening a host turn, while the normal
+claimed endpoint requires a valid reply. Its predicted signed return is `-1`;
+that return was not recorded by this failed observation. A distinct negative
+copied-export diagnostic is being completed under the same bounded assignment.
+The incomplete Luna patch and two direct syntax checks outside its authorized
+runner are preserved, with no acceptance result; Sol took over without resetting
+the original deadline or repair allowance. Normal endpoint/bridge checks remain
+strict. Current runtime acceptance, neutral and Foundation gates remain pending.
+The integrated viewer is unfinished and production eligibility is false.

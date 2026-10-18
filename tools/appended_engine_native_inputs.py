@@ -3293,6 +3293,86 @@ class Inspection:
         return result
 
 
+# Explicit source-only successor; final native source facts stay unbound until release.
+COMPOSITION_SOURCE_KIND = 'foundation-native-engine-actions-composition-undo-source-inputs-v1'
+COMPOSITION_PROFILE_KIND = 'foundation-native-engine-prototype-composition-undo-profile-v1'
+COMPOSITION_BRIDGE = 'source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h'
+COMPOSITION_SOURCE_FACTS = {'source/document-provider/editor/BibNativeEditorBackend.cpp': {'sha256': 'd14dab28100d3689d9a04aa4a81290b50cf24cd3e00a34b2f8402d9eeca9da60', 'bytes': 61375, 'mode': 420}, 'source/wrapper/src/embedder/main.cpp': {'sha256': '3c2c7beb2b582ab91fb8174aa7d5f6022ce1a4b29ec66918674f9f13fadd88ac', 'bytes': 48346, 'mode': 420}, 'source/wrapper/src/embedder/BibPageClients.h': {'sha256': '6e77e9b1b47cc5e4e3d2a5dcd7600ea959c4b22eb95c763165c4ccc3c5d28a43', 'bytes': 29858, 'mode': 420}, 'source/wrapper/src/embedder/BibUndoHistory.h': {'sha256': 'f6ca9055367085abe855a19b0d047034279dff1beb7dc44c8c2ab78001d602bb', 'bytes': 9317, 'mode': 420}, 'source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h': {'sha256': '1572b86481c93b9568c781ababc9f6645f505a038704f91236192e31a4208118', 'bytes': 592, 'mode': 420}}
+COMPOSITION_NAMESPACE_SHA256 = '786fd3a2c417370bc0dae92bae552c5c7a80ba0adf6dfa67ef88ad5ffcf15812'
+COMPOSITION_RETAINED_SHA256 = '436136c1f85dfa38608f6852bce7192cb8d89e8e03d84e85e00d6a95322d8af8'
+COMPOSITION_PREDECESSORS = {'source/document-provider/editor/BibNativeEditorBackend.cpp': {'current_sha256': '5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815', 'record_sha256': '936d83294fe9561a8822c1d49c7ea35768125aa5b20dc4d069c662059327181d'}, 'source/wrapper/src/embedder/BibPageClients.h': {'current_sha256': 'cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2', 'record_sha256': '9b8de546a2822ac27dc540bb14eb7e931af06fde1048b1793a96611ce5c01ffe'}, 'source/wrapper/src/embedder/BibUndoHistory.h': {'current_sha256': 'eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2', 'record_sha256': '72ff0df8f1a13f52d18c06483492eb305f4884750eea14af7dd26c3428e4ee2d'}, 'source/wrapper/src/embedder/main.cpp': {'current_sha256': '4cb8131b86f6bf1ede303053b7aa1752fab16dd66fe8b0271f97d256e0cd137b', 'record_sha256': '590cea1e6c33f40e7e00d2e6d8a7a7727da0436130b2537fa6fa3484a104fd74'}}
+
+
+def composition_catalogue_counts(value):
+    """Admit only the exact released one-header successor, never a count range."""
+    if type(COMPOSITION_SOURCE_FACTS) is not dict:
+        raise ValueError('Composition source successor facts remain unbound')
+    fields = {'schema_version', 'kind', 'scope', 'profile', 'suppliers', 'provenance', 'requirements', 'limits', 'inputs'}
+    if (type(value) is not dict or set(value) != fields or type(value['schema_version']) is not int
+            or value['schema_version'] != 1 or value['kind'] != COMPOSITION_SOURCE_KIND
+            or value['scope'] != 'native-actions-source-candidate-only' or value['profile'] != 'actions'):
+        raise ValueError('Exact composition source successor version required')
+    entries = value['inputs']
+    known = set(COMPOSITION_PREDECESSORS) | {COMPOSITION_BRIDGE}
+    if type(entries) is not dict or len(entries) != 198 or set(COMPOSITION_SOURCE_FACTS) != known:
+        raise ValueError('Composition successor requires exact198 entries/five source pins')
+    canonical = lambda data: json.dumps(data, sort_keys=True, separators=(',', ':'), ensure_ascii=True, allow_nan=False).encode('ascii')
+    hashed = lambda data: hashlib.sha256(canonical(data)).hexdigest()
+    if hashed(sorted(entries)) != COMPOSITION_NAMESPACE_SHA256:
+        raise ValueError('Composition source successor namespace differs')
+    retained = {k: v for k, v in entries.items() if k.startswith('source/') and k not in known}
+    if len(retained) != 153 or hashed(retained) != COMPOSITION_RETAINED_SHA256:
+        raise ValueError('Unchanged153 native source rows differ')
+    for logical in known:
+        item = entries[logical]
+        expected = COMPOSITION_SOURCE_FACTS[logical]
+        if (type(expected) is not dict or set(expected) != {'sha256', 'bytes', 'mode'}
+                or type(expected['sha256']) is not str or not re.fullmatch('[0-9a-f]{64}', expected['sha256'])
+                or type(expected['bytes']) is not int or not 0 < expected['bytes'] <= 8388608
+                or type(expected['mode']) is not int or expected['mode'] != 420):
+            raise ValueError('Final composition source pins required')
+        if (type(item) is not dict or set(item) != {'tracked_path', 'sha256', 'bytes', 'mode', 'role', 'origin'}
+                or item['tracked_path'] != RECIPE + '/' + logical or item['role'] != 'source'
+                or any(type(item[k]) is not type(expected[k]) or item[k] != expected[k] for k in expected)):
+            raise ValueError('Released composition source fact differs')
+        origin = item['origin']
+        if type(origin) is not dict or set(origin) != {'kind', 'record'} or type(origin['record']) is not dict:
+            raise ValueError('Explicit native source successor record required')
+        record = origin['record']
+        if type(record.get('after_bytes')) is not int or type(record.get('bytes')) is not int:
+            raise ValueError('Native source record byte counts require strict integers')
+        if logical == COMPOSITION_BRIDGE:
+            wanted = {'action': 'new-private-source-header', 'selection': 'source-only-addition',
+                'origin': 'reviewed-source-only-composition-undo-private-bridge', 'origin_path': item['tracked_path'],
+                'source': logical, 'preimage_sha256': None, 'sha256': expected['sha256'], 'bytes': expected['bytes'],
+                'after_sha256': expected['sha256'], 'after_bytes': expected['bytes'], 'mode': expected['mode']}
+            if origin['kind'] != 'reviewed-source-only-composition-undo-private-bridge' or record != wanted:
+                raise ValueError('Bridge cannot claim historical compiled/capsule origin')
+        else:
+            if origin['kind'] != 'mapped-native-actions-runtime':
+                raise ValueError('Native adapted predecessor origin differs')
+            successor = record.get('successor')
+            if type(successor) is not dict or set(successor) != {'kind', 'correction', 'sha256', 'source_path', 'source_only', 'supersedes'}:
+                raise ValueError('Exact composition successor lineage required')
+            prior = successor['supersedes']
+            expected_prior = COMPOSITION_PREDECESSORS[logical]
+            if (type(prior) is not dict or set(prior) != {'origin', 'sha256', 'tracked_path'}
+                    or prior['sha256'] != expected_prior['current_sha256'] or prior['tracked_path'] != item['tracked_path']
+                    or hashed(prior['origin']) != expected_prior['record_sha256']):
+                raise ValueError('Native original/adapted predecessor was restamped')
+            old = prior['origin']
+            allowed = {'action', 'selection', 'after_sha256', 'after_bytes', 'successor'}
+            if (set(record) != set(old) | allowed
+                    or any(record.get(k) != v for k, v in old.items() if k not in allowed)
+                    or record['after_sha256'] != expected['sha256'] or record['after_bytes'] != expected['bytes']
+                    or successor['kind'] != 'reviewed-native-composition-cancel-inverse-repair'
+                    or successor['correction'] != 'transaction-owned-native-composition-inverse-and-original-selection'
+                    or successor['sha256'] != expected['sha256'] or successor['source_path'] != item['tracked_path']
+                    or successor['source_only'] is not True):
+                raise ValueError('Native current source must preserve its full historical origin')
+    return {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32}
+
+
 def _retain_current_source(retained, name, original, role, inputs):
     name = _name(name)
     item = inputs._records[str(original)]
@@ -3311,8 +3391,18 @@ def _capture_current_sources_core(profile, source_map, source_map_sha256, root, 
         raise ValueError('Native selection must use the exact current canonical197 source map')
     inputs.file(map_path, map_pin, 'canonical-native-source-map', maximum=MAX_DOCUMENT)
     source_entries = source_map.get('inputs') if type(source_map) is dict else None
-    if type(source_entries) is not dict or len(source_entries) != 197:
-        raise ValueError('Native source map must be the reviewed197-entry contract')
+    composition = type(source_map) is dict and source_map.get('kind') == COMPOSITION_SOURCE_KIND
+    expected_counts = (composition_catalogue_counts(source_map) if composition else
+        {'source_files': 157, 'engine_files': 48, 'direct_translation_units': 32})
+    expected_entries = 198 if composition else 197
+    if not composition and type(source_entries) is dict and COMPOSITION_BRIDGE in source_entries:
+        raise ValueError('Composition bridge requires its explicit successor version')
+    if type(source_entries) is not dict or len(source_entries) != expected_entries:
+        raise ValueError('Composition native source map requires exact198 entries' if composition else 'Native source map must be the reviewed197-entry contract')
+    expected_profile_kind = COMPOSITION_PROFILE_KIND if composition else 'foundation-native-engine-prototype-profile-v1'
+    if (composition and profile.get('kind') != expected_profile_kind
+            or not composition and profile.get('kind') == COMPOSITION_PROFILE_KIND):
+        raise ValueError('Native source/profile successor versions differ')
     inspector = source_entries.get('inspect_sources.py')
     if type(inspector) is not dict or inspector.get('tracked_path') != RECIPE + '/inspect_sources.py':
         raise ValueError('Native map lacks its exact passive source inspector')
@@ -3347,7 +3437,7 @@ def _capture_current_sources_core(profile, source_map, source_map_sha256, root, 
     translation_units = re.findall(r'"[^"\n]+"', source_block.group(1)) if source_block else []
     counts = {'source_files': len(overlays), 'engine_files': sum(name.startswith('source/engine/') for name in overlays),
               'direct_translation_units': len(translation_units)}
-    if counts != {'source_files': 157, 'engine_files': 48, 'direct_translation_units': 32} or any(
+    if counts != expected_counts or any(
             type(profile[name]) is not int or profile[name] != count or provenance['source_graph'][name] != count
             for name, count in counts.items()):
         raise ValueError('Actual native source/provider graph differs from157/48/32 profile')
@@ -3423,7 +3513,7 @@ def capture_current_sources(profile_sha256, source_map_sha256, *, repository_roo
     profile = strict_json(profile_raw, 'native producer profile')
     _schema(profile, ('schema_version', 'kind', 'target', 'profile', 'scope', 'recipe_directory',
         'source_map', 'provenance', 'graph', 'source_files', 'direct_translation_units', 'engine_files',
-        'producer_inputs', 'required_toolchain_kind'), 'foundation-native-engine-prototype-profile-v1')
+        'producer_inputs', 'required_toolchain_kind'), COMPOSITION_PROFILE_KIND if profile.get('kind') == COMPOSITION_PROFILE_KIND else 'foundation-native-engine-prototype-profile-v1')
     validate_target(profile['target'])
     if (profile['profile'] != actions.SELECTOR
             or profile['scope'] != 'first-native-engine-baseline-candidate'
@@ -3442,7 +3532,7 @@ def capture_current_sources(profile_sha256, source_map_sha256, *, repository_roo
     # so wrappers can retain/close their actual physical-input obligation.
     deadline = inputs.deadline
     facts = {'schema_version': 1, 'kind': 'foundation-native-current-source-capture-v1',
-        'scope': 'current197-final157-only', 'profile': {'path': str(root / PROFILE), 'sha256': profile_sha256},
+        'scope': 'current198-final158-composition-only' if value.get('kind') == COMPOSITION_SOURCE_KIND else 'current197-final157-only', 'profile': {'path': str(root / PROFILE), 'sha256': profile_sha256},
         'source_map': current['source_facts'], 'overlays': {
             name: dict(value['inputs'][name]) for name in sorted(current['overlays'])},
         'graph': dict(profile['graph']), 'provenance': dict(profile['provenance']),
@@ -3507,7 +3597,8 @@ def compose_native_sources(original, current, provenance_records, original_proof
         'scope': 'checked-original-plus-current-source-operations-only',
         'original_provenance': original_facts, 'current_sources': current_facts,
         'original_projection_files': len(baseline['_files']),
-        'operations': ['clean-original-projection', 'supplier-f259-once', 'final157-current-overlays'],
+        'operations': ['clean-original-projection', 'supplier-f259-once',
+            'final158-composition-current-overlays' if current_facts.get('scope') == 'current198-final158-composition-only' else 'final157-current-overlays'],
         'patches': _public(baseline['patches']), 'overlays': current_facts['overlays'],
         'source_tree_assembled': False, 'production_eligible': False,
         'compiler_or_sdk_used': False}
@@ -3561,7 +3652,7 @@ def inspect_selection(selection_path, selection_sha256, *, repository_root=ROOT)
     profile = strict_json(profile_raw, 'native producer profile')
     _schema(profile, ('schema_version', 'kind', 'target', 'profile', 'scope', 'recipe_directory',
         'source_map', 'provenance', 'graph', 'source_files', 'direct_translation_units', 'engine_files',
-        'producer_inputs', 'required_toolchain_kind'), 'foundation-native-engine-prototype-profile-v1')
+        'producer_inputs', 'required_toolchain_kind'), COMPOSITION_PROFILE_KIND if profile.get('kind') == COMPOSITION_PROFILE_KIND else 'foundation-native-engine-prototype-profile-v1')
     if (profile['target'] != target or profile['profile'] != actions.SELECTOR
             or profile['scope'] != 'first-native-engine-baseline-candidate' or profile['recipe_directory'] != RECIPE
             or profile['producer_inputs'] != list(PRODUCERS) or profile['required_toolchain_kind'] != PRIVATE_TOOLCHAIN_KIND):

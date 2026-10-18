@@ -482,5 +482,33 @@ class HandoffTests(unittest.TestCase):
                 self.prepare()
 
 
+
+
+class CompositionCatalogueSelection(unittest.TestCase):
+    def test_known_successor_does_not_replace_legacy_fixture_catalogue(self):
+        successor = copy.deepcopy(contract.CATALOGUE)
+        successor['source_map']['sha256'] = '1' * 64
+        with mock.patch.object(contract, 'COMPOSITION_CATALOGUE', successor):
+            self.assertEqual(contract.catalogue_for_recipe_inputs({}), contract.CATALOGUE)
+            self.assertEqual(contract.catalogue_for_recipe_inputs({'inert': {'sha256': '2' * 64}}), contract.CATALOGUE)
+            self.assertEqual(contract.catalogue_for_recipe_inputs({'inert': {'sha256': '1' * 64}}), successor)
+        with mock.patch.object(contract, 'COMPOSITION_CATALOGUE', None):
+            self.assertEqual(contract.catalogue_for_recipe_inputs({'inert': {'sha256': '1' * 64}}), contract.CATALOGUE)
+
+    def test_reference_requires_one_complete_known_catalogue(self):
+        successor = copy.deepcopy(contract.CATALOGUE)
+        successor['source_map']['sha256'] = '1' * 64
+        with mock.patch.object(contract, 'COMPOSITION_CATALOGUE', successor):
+            self.assertEqual(contract.catalogue_for_reference(successor), successor)
+            self.assertEqual(contract.catalogue_for_reference(contract.CATALOGUE), contract.CATALOGUE)
+            hybrid = copy.deepcopy(successor)
+            hybrid['provenance']['sha256'] = '2' * 64
+            with self.assertRaisesRegex(ValueError, 'Unsupported exact'):
+                contract.catalogue_for_reference(hybrid)
+        with mock.patch.object(contract, 'COMPOSITION_CATALOGUE', None):
+            with self.assertRaisesRegex(ValueError, 'Unsupported exact'):
+                contract.catalogue_for_reference(successor)
+
+
 if __name__ == '__main__':
     unittest.main()

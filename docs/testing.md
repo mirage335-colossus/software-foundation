@@ -360,6 +360,22 @@ and equality code into a small host C++ fixture. The tests cover ordinary hidden
 labels and refusal for affected or uncertain controls. This checks selected
 production logic with a fake DOM boundary; it does not qualify the actual engine.
 
+Native provider Guard fixtures are also selectable with the ordinary default
+appended profile (`none`), using only local value/codecs and fake owner callbacks:
+
+```sh
+./build.sh test dev --core-provider cpp \
+  --test appended.engine-editor-provider-admission-rejected \
+  --test appended.engine-editor-provider-admission-enter-invalidation \
+  --test appended.engine-editor-provider-admit-preflight-throw
+```
+
+Their targets are excluded from the default build. Selecting these fixtures does
+not configure a kernel, VM, retained SDK or supplier engine. This checks guard
+ordering and failure handling on the native host; actual retained-engine runtime
+remains a separate gate. The C11 provider-header fixture is available only when
+the selected profile enables C.
+
 The completed-donor continuation and portable Windows tool-version checks also
 have script-only selections:
 
@@ -467,3 +483,14 @@ can be inspected with the [same exact bundle recovery](github-delivery.md) as ot
 lifecycle evidence. No Actions artifact storage or prepared SDK build is required.
 These diagnostic receipts never satisfy source, package or release qualification;
 repeat the required complete gate after a diagnostic correction.
+
+
+## Composition undo journal fixture
+
+The Linux `tools.appended_engine_composition_undo_journal` suite exercises the
+pending-step lifecycle with fake native steps. Run it through the supported test
+entry point with `--core-provider cpp` and an owned build directory. It compiles
+only the small fixture; it does not build a retained engine or kernel. Its result
+proves journal bookkeeping and failure handling, not WebCore rollback, layout,
+focus or native event behavior. Those require the separately reviewed selective
+candidate and actual runtime observations.

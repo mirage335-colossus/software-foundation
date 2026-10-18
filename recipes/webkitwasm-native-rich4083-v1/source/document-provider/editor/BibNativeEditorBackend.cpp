@@ -2,6 +2,8 @@
 // Actual DOM/Editor calls; source-only. No engine header parse or runtime proof.
 #include "config.h"
 #include "BibNativeEditorBackend.hpp"
+#include "BibEngineProviderCompositionUndo.h"
+#include "CompositeEditCommand.h"
 #include "ui/BibEngineUiOwner.hpp"
 #include "native_editor_projection.hpp"
 #include "NativeRawKeyDispatch.hpp"
@@ -19,6 +21,7 @@
 #include "ElementInlines.h"
 #include "EventHandler.h"
 #include "FocusController.h"
+#include "FrameDestructionObserverInlines.h"
 #include "FrameSelection.h"
 #include "FrameTree.h"
 #include "HTMLInputElement.h"
@@ -125,6 +128,21 @@ struct NativeEditorBackend::Impl {
     const NativeEditorHooks hooks;
     std::optional<Mapping> live;
     std::uint64_t next_mapping=1,next_frame=1,next_revision=1,next_retire=1;
+    struct CompositionRoot {
+        Snapshot original;
+        WebCore::VisibleSelection selection;
+        E::Identity identity;
+        E::NativeRetireMaterial material;
+        gui_surface::ByteRange replacement;
+        std::uint64_t transaction{}, journal{};
+        RefPtr<WebCore::EditCommandComposition> step{};
+        RefPtr<WebCore::Element> cleanup_focus{};
+        WebCore::Frame* cleanup_frame{};
+        bool cleanup_page_focused{}, cleanup_page_active{}, cleanup_selection_focused{};
+        bool rollback{}, consumed{}, ending{}, committed{};
+        std::uint64_t end_tree{}, end_main_tree{}, end_style{}, end_layout{};
+    };
+    std::optional<CompositionRoot> composition_root;
     std::uint64_t transport_composition{};
     bool poisoned{},applying{},projecting{},invalidated{};
     struct Applying { Impl& owner; explicit Applying(Impl& value):owner(value){owner.applying=true;} ~Applying(){owner.applying=false;} };
@@ -349,6 +367,8 @@ struct NativeEditorBackend::Impl {
             value.request_sequence&&value.request_sequence!=UINT64_MAX;
     }
     bool retirement_absent(const Mapping& mapping)const {
+        // A cleared live marker cannot discharge an unrolled pending inverse.
+        if(composition_root&&!composition_root->ending&&!composition_root->committed&&!empty_composition_scope())return false;
         const auto& s=mapping.native;
         // These are actual retained native objects, never a replacement frame.
         // A replaced original document no longer owns this frame editor. A merely
@@ -429,6 +449,152 @@ struct NativeEditorBackend::Impl {
         return (state.contains(M::ShiftKey)?1u:0u)|(state.contains(M::ControlKey)?2u:0u)|
             (state.contains(M::AltKey)?4u:0u)|(state.contains(M::MetaKey)?8u:0u)|(state.contains(M::AltGraphKey)?16u:0u);
     }
+    using UndoAction=BIB::CompositionUndoAction;
+    bool empty_composition_scope()const {
+        return composition_root&&!composition_root->step&&!composition_root->rollback&&!composition_root->consumed&&
+            BIB::bibProviderCompositionUndo(*composition_root->original.document,UndoAction::matchEmpty,
+                composition_root->journal,nullptr);
+    }
+    bool journal(UndoAction action) {
+        return composition_root&&BIB::bibProviderCompositionUndo(*composition_root->original.document,action,
+            composition_root->journal,composition_root->step.get());
+    }
+    void quarantine_composition() {
+        if(composition_root)journal(UndoAction::quarantine);
+    }
+    bool original_composition_objects()const {
+        if(!composition_root)return false;
+        const auto& s=composition_root->original;
+        return ready()&&s.frame->document()==s.document.get()&&s.document->frame()==s.frame.get()&&
+            s.frame->page()==s.page.get()&&s.document->page()==s.page.get()&&BIB::bibProviderPage()==s.page.get()&&
+            s.main->document()==s.main_document.get()&&s.root->isConnected()&& &s.root->document()==s.document.get()&&
+            s.frame->view()==s.view.get()&&(!s.control||s.control->innerTextElement()==s.root.get());
+    }
+    bool bind_composition_step() {
+        if(!original_composition_objects())return false;
+        if(journal(UndoAction::matchPending))return true;
+        if(composition_root->step)return false;
+        // The native Editor proves the concrete type; never downcast UndoStep.
+        auto* command=composition_root->original.frame->editor().lastEditCommand();
+        auto step=command?command->protectedComposition():nullptr;
+        if(!step||!BIB::bibProviderCompositionUndo(*composition_root->original.document,UndoAction::matchPending,
+            composition_root->journal,step.get()))return false;
+        composition_root->step=std::move(step);return true;
+    }
+    bool begin_composition(Mapping& mapping,const E::Observation& observation,const E::CompositionData& data) {
+        if(composition_root||transport_composition||mapping.value.surrounding.size()>65536)return false;
+        auto& s=mapping.native;
+        const auto replacement=observation.authority==E::Authority::default_action?mapping.value.selection:data.replacement.value_or(mapping.value.selection);
+        CompositionRoot root{s,s.frame->selection().selection(),mapping.value.identity,*mapping.value.retire,replacement,observation.transaction};
+        s.frame->editor().closeTyping();
+        root.journal=BIB::bibProviderCompositionUndoBegin(*s.document);
+        if(!root.journal)return false;
+        composition_root=std::move(root);
+        return true;
+    }
+    bool cleanup_focus_unchanged()const {
+        const auto& r=*composition_root;const auto& s=r.original;
+        return s.document->focusedElement()==r.cleanup_focus.get()&&s.page->focusController().focusedFrame()==r.cleanup_frame&&
+            s.page->focusController().isFocused()==r.cleanup_page_focused&&s.page->focusController().isActive()==r.cleanup_page_active&&
+            s.frame->selection().isFocused()==r.cleanup_selection_focused;
+    }
+    bool cleanup_focus_safe()const {
+        const auto& s=composition_root->original;
+        return !s.frame->selection().isFocused()||s.document->focusedElement()==s.focused.get();
+    }
+    bool composition_restored()const {
+        if(!original_composition_objects()||!cleanup_focus_unchanged())return false;
+        const auto& r=*composition_root;const auto& s=r.original;
+        if(s.frame->editor().hasComposition()||s.frame->editor().compositionRange()||s.frame->selection().selection()!=r.selection)return false;
+        if(s.control)return units(s.control->value().get())==s.text.native()&&s.control->selectionStart()==s.selection.begin&&
+            s.control->selectionEnd()==s.selection.end&&(s.control->selectionDirection()=="backward"_s)==s.backward;
+        auto actual=bounded_text(WebCore::makeRangeSelectingNodeContents(*s.root));
+        return actual&&*actual==s.text.native();
+    }
+    bool composition_stable()const {
+        if(!original_composition_objects()||!cleanup_focus_unchanged())return false;
+        const auto& r=*composition_root;const auto& s=r.original;
+        if(s.document->domTreeVersion()!=r.end_tree||s.main_document->domTreeVersion()!=r.end_main_tree||
+            s.document->styleRecalcCount()!=r.end_style||s.view->layoutContext().layoutUpdateCount()!=r.end_layout||
+            s.document->needsStyleRecalc()||s.view->needsLayout()||s.view->layoutContext().isInLayout()||
+            s.frame->selection().selection()!=r.selection||s.frame->editor().hasComposition()||s.frame->editor().compositionRange())return false;
+        return !s.control||(units(s.control->value().get())==s.text.native()&&s.control->selectionStart()==s.selection.begin&&
+            s.control->selectionEnd()==s.selection.end&&(s.control->selectionDirection()=="backward"_s)==s.backward);
+    }
+    // Called exclusively inside the existing owner/Bridge/common-VM lock.
+    bool cancel_composition(Mapping& mapping,bool retiring) {
+        if(!composition_root||!original_composition_objects()||!bind_composition_step())return false;
+        auto& r=*composition_root;auto& s=r.original;auto& editor=s.frame->editor();
+        if(!same_surface_context(r.identity,mapping.value.identity)||!mapping.value.retire||
+            mapping.value.retire->token!=r.material.token||transport_composition!=r.transaction||
+            mapping.native.root!=s.root||mapping.native.frame!=s.frame||!cleanup_focus_safe())return false;
+        if(!retiring&&!fence(mapping.native))return false;
+        r.cleanup_focus=s.document->focusedElement();r.cleanup_frame=s.page->focusController().focusedFrame();
+        r.cleanup_page_focused=s.page->focusController().isFocused();r.cleanup_page_active=s.page->focusController().isActive();
+        r.cleanup_selection_focused=s.frame->selection().isFocused();
+        s.document->updateLayoutIgnorePendingStylesheets();
+        if(!original_composition_objects()||!cleanup_focus_unchanged()||!cleanup_focus_safe()||
+            !journal(UndoAction::matchPending)||s.document->needsStyleRecalc()||s.view->needsLayout()||s.view->layoutContext().isInLayout())return false;
+        const auto style=s.document->styleRecalcCount(),layout=s.view->layoutContext().layoutUpdateCount();
+        const auto tree=s.document->domTreeVersion(),main_tree=s.main_document->domTreeVersion();
+        const auto old_selection=s.frame->selection().selection();
+        const auto old_composition=editor.compositionRange();auto old_node=editor.protectedCompositionNode();
+        if(old_composition!=mapping.native.composition||old_node!=mapping.native.composition_node)return false;
+        auto unchanged=[&](bool ended){
+            if(!original_composition_objects()||!cleanup_focus_unchanged()||!journal(UndoAction::matchRollback)||
+                s.document->domTreeVersion()!=tree||s.main_document->domTreeVersion()!=main_tree||
+                s.document->styleRecalcCount()!=style||s.view->layoutContext().layoutUpdateCount()!=layout||
+                s.document->needsStyleRecalc()||s.view->needsLayout()||
+                s.frame->selection().selection()!=old_selection)return false;
+            if(ended)return !editor.hasComposition()&&!editor.compositionRange();
+            return editor.compositionRange()==old_composition&&editor.compositionNode()==old_node.get();
+        };
+        if(!journal(UndoAction::detach))return false;
+        r.rollback=true;
+        struct IgnoreSelection {
+            WebCore::Editor& editor;bool previous;
+            explicit IgnoreSelection(WebCore::Editor& value):editor(value),previous(value.ignoreSelectionChanges()){editor.setIgnoreSelectionChanges(true,WebCore::Editor::RevealSelection::No);}
+            ~IgnoreSelection(){editor.setIgnoreSelectionChanges(previous,WebCore::Editor::RevealSelection::No);}
+        } ignore(editor);
+        if(r.step&&(!editor.willUnapplyEditing(*r.step)||!unchanged(false)))return false;
+        if(editor.hasComposition())editor.cancelComposition(); // Real compositionend precedes the owned inverse.
+        if(!unchanged(true))return false;
+        // WebCore's inner SetCompositionScope resets its flag unconditionally.
+        // Reassert this outer scope only after the original authority recheck.
+        editor.setIgnoreSelectionChanges(true,WebCore::Editor::RevealSelection::No);
+        if(!journal(UndoAction::consume))return false;
+        r.consumed=true;
+        if(r.step)r.step->unapply(WebCore::EditCommandComposition::AddToUndoStack::No);
+        if(!original_composition_objects()||!cleanup_focus_unchanged()||!journal(UndoAction::matchRollback))return false;
+        // Flush only the retained original Document, before no-focus staging.
+        s.document->updateLayoutIgnorePendingStylesheets();
+        if(!original_composition_objects()||!cleanup_focus_unchanged()||!cleanup_focus_safe()||
+            !journal(UndoAction::matchRollback)||s.document->needsStyleRecalc()||s.view->needsLayout()||s.view->layoutContext().isInLayout())return false;
+        auto options=WebCore::FrameSelection::defaultSetSelectionOptions()|
+            WebCore::FrameSelection::SetSelectionOption::DoNotSetFocus|WebCore::FrameSelection::SetSelectionOption::DoNotNotifyEditorClients;
+        s.frame->selection().setSelection(r.selection,options);
+        // unappliedEditing updates layout first. A clean unchanged original layout
+        // and exact equal selection must precede that call; never repair focus later.
+        if(!original_composition_objects()||!cleanup_focus_unchanged()||!cleanup_focus_safe()||
+            s.document->needsStyleRecalc()||s.view->needsLayout()||s.view->layoutContext().isInLayout()||
+            s.frame->selection().selection()!=r.selection||!journal(UndoAction::matchRollback))return false;
+        if(r.step){r.step->setStartingSelection(r.selection);editor.unappliedEditing(*r.step);}
+        if(!composition_restored()||!journal(UndoAction::matchRollback))return false;
+        r.end_tree=s.document->domTreeVersion();r.end_main_tree=s.main_document->domTreeVersion();
+        r.end_style=s.document->styleRecalcCount();r.end_layout=s.view->layoutContext().layoutUpdateCount();
+        r.ending=true;transport_composition=0;return true;
+    }
+    bool finish_composition() {
+        if(!composition_root||!composition_root->ending)return true;
+        if(!composition_stable())return false;
+        {
+            BIB::FoundationServiceEngineCall bridge;if(!bridge)return false;
+            {JSC::JSLockHolder lock(WebCore::commonVM());if(!composition_stable()||!journal(UndoAction::finish))return false;}
+            bridge.finish();
+        }
+        if(!composition_stable())return false;
+        composition_root.reset();return true;
+    }
     E::NativeResult apply(const E::NativeRequest& request,std::uint64_t provider_sequence){
         if(!ready()||BIB::EngineUI::modal()||applying||projecting||invalidated||!provider_sequence||provider_sequence==UINT64_MAX||!live||request.resolved!=live->value)return unknown();
         // No native Char exists for empty insertion. Reject it with a checked
@@ -477,7 +643,7 @@ struct NativeEditorBackend::Impl {
                         auto selection=text_map?text_map->native_range(composition_data.selection):std::nullopt;
                         if(!text_map||!selection){poisoned=true;return unknown();}
                         if(composition_data.operation==gui_surface::CompositionOperation::begin){
-                            if(transport_composition||editor.hasComposition()){poisoned=true;return unknown();}
+                            if(transport_composition||editor.hasComposition()||!begin_composition(mapping,observation,composition_data)){quarantine_composition();poisoned=true;return unknown();}
                             const auto replacement=observation.authority==E::Authority::default_action?request.resolved.selection:composition_data.replacement.value_or(request.resolved.selection);
                             if(!set_selection(mapping,replacement,request.resolved.backward)){poisoned=true;return unknown();}
                             transport_composition=observation.transaction;
@@ -489,14 +655,20 @@ struct NativeEditorBackend::Impl {
                             if(composition_data.operation==gui_surface::CompositionOperation::update)
                                 editor.setComposition(native_text,{},{},{},selection->begin,selection->end);
                             else if(composition_data.operation==gui_surface::CompositionOperation::cancel){
-                                if(editor.hasComposition())editor.cancelComposition();
-                                transport_composition=0;
+                                if(!cancel_composition(mapping,false)){quarantine_composition();poisoned=true;return unknown();}
                             }else{
                                 // Native confirmComposition handles a genuinely
                                 // pending/no-native-composition commit directly.
                                 // Never seed author-visible composition then run
                                 // a second default after that seed was cancelled.
                                 editor.confirmComposition(native_text);transport_composition=0;
+                            }
+                        }
+                        if(composition_data.operation!=gui_surface::CompositionOperation::cancel){
+                            if(!bind_composition_step()){quarantine_composition();poisoned=true;return unknown();}
+                            if(composition_data.operation==gui_surface::CompositionOperation::commit){
+                                if(!journal(UndoAction::commit)){quarantine_composition();poisoned=true;return unknown();}
+                                composition_root->committed=true;
                             }
                         }
                     }
@@ -506,6 +678,13 @@ struct NativeEditorBackend::Impl {
             if(!ready()){poisoned=true;return unknown();}
             E::NativeAvailability null_state{};bool checked=false;
             auto after=capture(&null_state,&checked);
+            if(composition_root&&composition_root->ending){
+                if(!after||after->root!=composition_root->original.root||after->frame!=composition_root->original.frame||
+                    !finish_composition()){quarantine_composition();poisoned=true;return unknown();}
+            }else if(composition_root&&composition_root->committed){
+                if(!after||after->root!=composition_root->original.root||after->frame!=composition_root->original.frame||after->composition){poisoned=true;return unknown();}
+                composition_root.reset();
+            }
             if(!after){
                 if(!checked){poisoned=true;return unknown();}
                 E::NativeResult result;result.outcome=E::Outcome::cancelled;result.continuity=E::Continuity::replaced;
@@ -568,7 +747,7 @@ struct NativeEditorBackend::Impl {
             }
             hooks.queue_wake(hooks.context);
             return ready()?result:unknown();
-        }catch(...){poisoned=true;return unknown();}
+        }catch(...){quarantine_composition();poisoned=true;return unknown();}
     }
     E::NativeResult revoke_owned(const E::NativeRevocationRequest& request,std::uint64_t provider_sequence){
         if(!ready()||applying||projecting||!provider_sequence||provider_sequence==UINT64_MAX||!live||
@@ -588,11 +767,15 @@ struct NativeEditorBackend::Impl {
                     const bool original_is_current=bib_app_resources_current_identity(&current)==1&&same(BIB::bibProviderProjectDocument(current),s.expected);
                     if(original_is_current)hooks.invalidate_form_authority(hooks.context);
                     if(!ready()){poisoned=true;return unknown();}
-                    if(!retirement_absent(mapping)){
-                        if(!material.composition||s.frame->document()!=s.document.get()||
+                    if(empty_composition_scope()&&retirement_absent(mapping)&&
+                        (s.frame->document()!=s.document.get()||!s.root->isConnected())){
+                        if(!journal(UndoAction::closeEmpty)){quarantine_composition();poisoned=true;return unknown();}
+                        composition_root.reset();transport_composition=0;
+                    }
+                    if(composition_root||!retirement_absent(mapping)){
+                        if(!composition_root||s.frame->document()!=s.document.get()||
                             s.frame->editor().compositionRange()!=s.composition||
-                            s.frame->editor().compositionNode()!=s.composition_node.get()){poisoned=true;return unknown();}
-                        s.frame->editor().cancelComposition();
+                            s.frame->editor().compositionNode()!=s.composition_node.get()||!cancel_composition(mapping,true)){quarantine_composition();poisoned=true;return unknown();}
                         // compositionend may replace the Document synchronously. Never
                         // consult a replacement Editor through the old frame.
                         if(!retirement_absent(mapping)){poisoned=true;return unknown();}
@@ -604,7 +787,7 @@ struct NativeEditorBackend::Impl {
                 }
                 bridge.finish();
             }
-            if(!ready()||!retirement_absent(mapping)){poisoned=true;return unknown();}
+            if(!ready()||!retirement_absent(mapping)||!finish_composition()){quarantine_composition();poisoned=true;return unknown();}
             // Close only this exact original native authority. In particular a
             // historical9 must not capture, lay out, select or query the new DOM.
             // Even a still-editable original document receives no replacement
@@ -619,7 +802,7 @@ struct NativeEditorBackend::Impl {
             result.composition_readback_attested=true;
             if(material.composition)result.composition=E::CompositionFact{material.composition,E::CompositionState::ended};
             hooks.queue_wake(hooks.context);return ready()?result:unknown();
-        }catch(...){poisoned=true;return unknown();}
+        }catch(...){quarantine_composition();poisoned=true;return unknown();}
     }
     E::NativeResult revoke(const E::Revocation& request){
         if(!live||!live->value.retire)return unknown();

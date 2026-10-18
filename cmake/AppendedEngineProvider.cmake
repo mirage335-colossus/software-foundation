@@ -43,16 +43,18 @@ endif()
 # The current fake owner deliberately creates native threads. Its test inventory
 # is native only; direct-worker Wasm binding requires its own focused tests.
 if(BUILD_TESTING AND NOT EMSCRIPTEN)
-    add_executable(foundation_appended_engine_provider_header_test EXCLUDE_FROM_ALL
-        tests/appended_engine_provider_header_c11.c)
-    target_include_directories(foundation_appended_engine_provider_header_test PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include")
-    set_target_properties(foundation_appended_engine_provider_header_test PROPERTIES
-        C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
-    foundation_options(foundation_appended_engine_provider_header_test)
-    add_test(NAME appended.engine-provider-header COMMAND foundation_appended_engine_provider_header_test)
-    foundation_test_prerequisites(appended.engine-provider-header foundation_appended_engine_provider_header_test)
-    set_tests_properties(appended.engine-provider-header PROPERTIES LABELS "appended;focused" TIMEOUT 15)
+    if(CMAKE_C_COMPILER_LOADED)
+        add_executable(foundation_appended_engine_provider_header_test EXCLUDE_FROM_ALL
+            tests/appended_engine_provider_header_c11.c)
+        target_include_directories(foundation_appended_engine_provider_header_test PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        set_target_properties(foundation_appended_engine_provider_header_test PROPERTIES
+            C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+        foundation_options(foundation_appended_engine_provider_header_test)
+        add_test(NAME appended.engine-provider-header COMMAND foundation_appended_engine_provider_header_test)
+        foundation_test_prerequisites(appended.engine-provider-header foundation_appended_engine_provider_header_test)
+        set_tests_properties(appended.engine-provider-header PROPERTIES LABELS "appended;focused" TIMEOUT 15)
+    endif()
     foreach(_provider_part guard adapters)
         add_executable(foundation_appended_engine_provider_${_provider_part}_test EXCLUDE_FROM_ALL
             "tests/appended_engine_provider_${_provider_part}_test.cpp")
@@ -75,7 +77,7 @@ if(BUILD_TESTING AND NOT EMSCRIPTEN)
     foreach(_editor_provider_case bind-validation minor-optin project project-noneditable
             project-unavailable apply revoke revoke-observed full-width malformed-observation
             malformed-revocation malformed-query deep-request-rejection retire-authority
-            admission-rejected native-pending form-backpressure shared-sequence stale-no-replay
+            admission-rejected admission-enter-invalidation admit-preflight-throw native-pending form-backpressure shared-sequence stale-no-replay
             sequence-max owned-observation owned-revocation owned-query owned-bindings
             enter-rejection reentry query-reentry revoke-reentry wrong-thread error throw unknown
             malformed-header malformed-target malformed-body reply-rejected reply-throw leave-throw

@@ -58,16 +58,37 @@ class WindowsContractTests(unittest.TestCase):
 
     def test_checked_profile_names_exact_shared_source_and_no_execution(self):
         checked = contract.validate_profile(self.profile)
-        for role, reference_value in contract.CATALOGUE.items():
+        for role, reference_value in contract.catalogue_for_profile(checked).items():
             self.assertEqual(checked[role], reference_value)
             self.assertEqual(hashlib.sha256((ROOT / reference_value['path']).read_bytes()).hexdigest(),
                              reference_value['sha256'])
         for name in contract.FALSE_FACTS:
             self.assertIs(checked[name], False)
 
+    def test_composition_profile_is_separate_from_exact_legacy_catalogue(self):
+        legacy = copy.deepcopy(self.profile)
+        legacy.update(kind='foundation-native-engine-windows-producer-profile-v1', source_files=157, **contract.CATALOGUE)
+        self.assertEqual(contract.validate_profile(legacy), legacy)
+        successor = copy.deepcopy(legacy)
+        successor.update(kind=contract.COMPOSITION_PROFILE_KIND, source_files=158)
+        catalogue = copy.deepcopy(contract.CATALOGUE)
+        catalogue['source_map']['sha256'] = '1' * 64
+        catalogue['provenance']['sha256'] = '2' * 64
+        successor.update(catalogue)
+        with mock.patch.object(contract, 'COMPOSITION_CATALOGUE', None):
+            with self.assertRaisesRegex(ValueError, 'unbound'):
+                contract.validate_profile(successor)
+        with mock.patch.object(contract, 'COMPOSITION_CATALOGUE', catalogue):
+            self.assertEqual(contract.validate_profile(successor), successor)
+            self.assertEqual(contract.validate_profile(legacy), legacy)
+            for key in contract.FALSE_FACTS:
+                changed = copy.deepcopy(successor); changed[key] = True
+                with self.subTest(key=key), self.assertRaises(ValueError):
+                    contract.validate_profile(changed)
+
     def test_source_profile_cannot_promote_or_retarget_itself(self):
         for name, replacement in (('build', True), ('production_eligible', True),
-                ('source_files', 158), ('publication_policy', 'qualified')):
+                ('source_files', self.profile['source_files'] + 1), ('publication_policy', 'qualified')):
             value = copy.deepcopy(self.profile); value[name] = replacement
             with self.subTest(name=name), self.assertRaises(ValueError):
                 contract.validate_profile(value)

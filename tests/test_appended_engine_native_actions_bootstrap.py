@@ -25,8 +25,8 @@ FIXTURE = Path('tests/appended_engine_native_actions_bootstrap_test.cpp')
 SCHEDULER = Path('tests/fixtures/appended_native_bootstrap/FixtureScheduler.hpp')
 GUARDS = {
     'rich': (NATIVE / 'foundation/third_party/appended-engine/src/ProviderGuard.cpp',
-             'ae2a27c9f62ca92636ef7253501fdfcb0ebed788473af174c98c0c698b855651',
-             '65924df813b6f92ac34e422f490199dbf622ca9dfadb4357f775671488050d98'),
+             '3aebfcc5b4e838846f23a5c9c61a62acc51fecc73541fd58deaa9c157308b0ff',
+             'e19476baf039231cd4053b915f52f91fce0e25dd16c56083f5cd299fb9ac47a7'),
 }
 ONCE_SHA256 = '3848f57570997b6885642cf507094c99f7a1823f6932a77659b45cdf316a34ef'
 COMMON_SOURCES = (
@@ -431,6 +431,49 @@ class NativeActionsBootstrapSourceTests(unittest.TestCase):
             self.assertEqual(digest(raw), fixed)
             self.assertEqual(digest(instrument(raw).replace(HOOK, b'')), fixed)
             self.assertEqual(digest(instrument(raw, old=True).replace(HOOK, b'')), old)
+
+    def test_editor_guard_successor_keeps_native_predecessors_and_profile_joins(self):
+        logical = 'source/foundation/third_party/appended-engine/src/ProviderGuard.cpp'
+        tracked = 'recipes/webkitwasm-native-rich4083-v1/' + logical
+        expected = '3aebfcc5b4e838846f23a5c9c61a62acc51fecc73541fd58deaa9c157308b0ff'
+        previous = 'ae2a27c9f62ca92636ef7253501fdfcb0ebed788473af174c98c0c698b855651'
+        provenance_raw = (ROOT / RECIPE / 'provenance.json').read_bytes()
+        imports_raw = (ROOT / RECIPE / 'source-imports.json').read_bytes()
+        provenance = json.loads(provenance_raw)
+        imports = json.loads(imports_raw)
+        record = provenance['runtime_files'][logical]
+        self.assertEqual(record['after_sha256'], expected)
+        self.assertEqual(record['after_bytes'], 74981)
+        self.assertEqual(record['bytes'], 73277)
+        original = '909ceac8b7bf311993f680cdf104d2ae6111bede8b0507fcc0e094bcc573d5ae'
+        self.assertEqual(record['sha256'], original)
+        self.assertEqual(record['preimage_sha256'], original)
+        successor = record['successor']
+        self.assertEqual({key: successor[key] for key in ('kind', 'correction', 'sha256', 'source_path', 'source_only')}, {
+            'kind': 'reviewed-editor-C8-preflight-repair',
+            'correction': 'inert-C8-before-Host-TURN-with-in-turn-revalidation',
+            'sha256': expected, 'source_path': tracked, 'source_only': True})
+        prior = successor['supersedes']
+        self.assertEqual((prior['sha256'], prior['tracked_path']), (previous, tracked))
+        self.assertEqual(prior['origin'], {
+            'action': 'native-getter-hook-only-gate-fix-already-present',
+            'after_sha256': previous, 'bytes': 73277, 'mode': 420,
+            'origin': 'frozen-native-actions-capsule',
+            'origin_path': '.agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp',
+            'preimage_sha256': original, 'selection': 'native-adaptation',
+            'sha256': original, 'source': logical})
+        item = imports['inputs'][logical]
+        self.assertEqual((item['tracked_path'], item['sha256'], item['bytes']), (tracked, expected, 74981))
+        self.assertEqual(item['origin']['record'], record)
+        self.assertEqual(digest((ROOT / tracked).read_bytes()), expected)
+        self.assertEqual(imports['provenance']['sha256'], digest(provenance_raw))
+        self.assertEqual(imports['inputs']['provenance.json']['sha256'], digest(provenance_raw))
+        self.assertEqual(imports['inputs']['provenance.json']['bytes'], len(provenance_raw))
+        for name in ('native-prototype-profile.json', 'windows-producer-profile.json'):
+            profile = json.loads((ROOT / RECIPE / name).read_bytes())
+            self.assertEqual(profile['source_map']['sha256'], digest(imports_raw))
+            self.assertEqual(profile['provenance']['sha256'], digest(provenance_raw))
+            self.assertEqual((profile['source_files'], profile['engine_files'], profile['direct_translation_units']), (158 if profile['kind'] in ('foundation-native-engine-prototype-composition-undo-profile-v1', 'foundation-native-engine-windows-producer-composition-undo-profile-v1') else 157, 48, 32))
 
     def test_closure_is_only_rich_and_expected_once(self):
         self.assertEqual(set(GUARDS), {'rich'})

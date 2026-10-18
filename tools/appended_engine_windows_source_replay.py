@@ -41,7 +41,7 @@ SELECTION_KIND = 'foundation-native-engine-windows-source-replay-selection-v1'
 SCOPE = 'supplier-patch-overlay-replay-consistency-only'
 # Set only by the supervisor after the shared owner's explicit source release.
 # API presence, a caller flag or an ambient newer module never grants admission.
-SOURCE_SEAM_SHA256 = '973fdddefa5a4cccc0190fdc4c4f6f1ba6afd693b17d70d928e428c4060eb706'
+SOURCE_SEAM_SHA256 = '3746e0f8560460f972948f4e92ec1b42412792b5abd77ea3c4d75680bbc62d01'
 NATIVE_INPUT_READER_SHA256 = '02f675a2480bbb94eafed0cac101b8afca1d2c3fe4a17dddd4cfb9693998edc0'
 NATIVE_INPUT_TREE_SHA256 = '02f675a2480bbb94eafed0cac101b8afca1d2c3fe4a17dddd4cfb9693998edc0'
 _NATIVE_INPUT_READER_CACHE = None
@@ -1295,13 +1295,17 @@ def _parents(names):
 def catalogue_metadata(map_raw, provenance_raw, graph_raw):
     """Validate the current pinned catalogue and157/48/32,25-alias,16-interface joins."""
     raw = {'source_map': map_raw, 'provenance': provenance_raw, 'graph': graph_raw}
+    catalogue = contract.catalogue_for_map_digest(digest(map_raw))
     for role, body in raw.items():
-        if type(body) is not bytes or len(body) > MAX_DOCUMENT or digest(body) != contract.CATALOGUE[role]['sha256']:
+        if type(body) is not bytes or len(body) > MAX_DOCUMENT or digest(body) != catalogue[role]['sha256']:
             raise ValueError('Current Windows source catalogue pin differs: ' + role)
     source_map, provenance = (handoff._document(raw[role]) for role in ('source_map', 'provenance'))
     inputs = source_map.get('inputs') if type(source_map) is dict else None
-    if type(inputs) is not dict or len(inputs) != 197:
-        raise ValueError('Current source catalogue requires197 complete inputs')
+    composition = source_map.get('kind') == native_inputs.COMPOSITION_SOURCE_KIND
+    expected_counts = (native_inputs.composition_catalogue_counts(source_map) if composition else
+        {'source_files': 157, 'engine_files': 48, 'direct_translation_units': 32})
+    if type(inputs) is not dict or len(inputs) != (198 if composition else 197):
+        raise ValueError('Composition source catalogue requires198 complete inputs' if composition else 'Current source catalogue requires197 complete inputs')
     registry = PathInventory()
     for name, item in inputs.items():
         registry.add(_path(name), False)
@@ -1328,7 +1332,7 @@ def catalogue_metadata(map_raw, provenance_raw, graph_raw):
     counts = {'source_files': len(overlays),
               'engine_files': sum(name.startswith('source/engine/') for name in overlays),
               'direct_translation_units': len(units)}
-    if (counts != {'source_files': 157, 'engine_files': 48, 'direct_translation_units': 32}
+    if (counts != expected_counts
             or type(provenance) is not dict or any(
                 type(provenance.get('source_graph', {}).get(key)) is not int
                 or provenance['source_graph'][key] != count for key, count in counts.items())):
@@ -1992,7 +1996,7 @@ def _selection_metadata(value):
         'Windows source replay selection')
     if (type(value['schema_version']) is not int or value['schema_version'] != 1
             or value['kind'] != SELECTION_KIND or value['target'] != contract.TARGET
-            or value['source_catalogue'] != contract.CATALOGUE):
+            or value['source_catalogue'] != contract.catalogue_for_reference(value['source_catalogue'])):
         raise ValueError('Source replay target/current catalogue differs')
     retained = contract.fields(value['retained'], ('root', 'recipe_sha256', 'sources_sha256'), 'retained source selection')
     root = _posix(retained['root'])
@@ -2018,6 +2022,8 @@ def _join_retained_metadata(value, recipe_raw, sources_raw, projection_raw, inve
     manifest.source_contract(sources, recipe, digest(recipe_raw))
     if recipe['target'] != contract.TARGET:
         raise ValueError('Active source replay recipe must target exact Windows x64')
+    if value['source_catalogue'] != contract.catalogue_for_recipe_inputs(recipe['inputs']):
+        raise ValueError('Source replay catalogue differs from selected retained recipe version')
     projection = validate_projection_metadata(handoff._document(projection_raw))
     bindings = validate_bindings(value['bindings'])
     _binding_projection(projection, bindings)
@@ -2124,7 +2130,8 @@ def _run_selection_capture(value, owner, retained_inputs, assembled_inputs, reci
             raise ValueError('Retained recipe omits current catalogue body')
         name = names[0]
         return retained_inputs.read(name, {'sha256': pin, 'mode': recipe['inputs'][name]['mode']})
-    catalogue_raw = {role: body_by_pin(contract.CATALOGUE[role]['sha256'])
+    selected_catalogue = contract.catalogue_for_reference(value['source_catalogue'])
+    catalogue_raw = {role: body_by_pin(selected_catalogue[role]['sha256'])
                      for role in ('source_map', 'provenance', 'graph')}
     catalogue = catalogue_metadata(*(catalogue_raw[role] for role in ('source_map', 'provenance', 'graph')))
     overlays = {name: retained_inputs.read(name,
@@ -2153,7 +2160,7 @@ def _run_selection_capture(value, owner, retained_inputs, assembled_inputs, reci
     capture_inventory(assembled_inputs, expected)
     owner.check()
     return {**result, 'target': copy.deepcopy(contract.TARGET),
-        'source_catalogue': copy.deepcopy(contract.CATALOGUE),
+        'source_catalogue': copy.deepcopy(selected_catalogue),
         'retained_recipe_sha256': value['retained']['recipe_sha256'],
         'retained_sources_sha256': value['retained']['sources_sha256']}
 
@@ -2164,7 +2171,7 @@ def _handoff_metadata(raw):
         'files', 'directories', 'modes', *handoff.FALSE_FACTS), 'source replay handoff')
     if (type(value['schema_version']) is not int or value['schema_version'] != 1
             or value['kind'] != handoff.KIND or value['scope'] != handoff.SCOPE
-            or value['target'] != contract.TARGET or value['source_catalogue'] != contract.CATALOGUE
+            or value['target'] != contract.TARGET or value['source_catalogue'] != contract.catalogue_for_reference(value['source_catalogue'])
             or value['paths'] != handoff.PATHS or any(value[name] is not False for name in handoff.FALSE_FACTS)):
         raise ValueError('Source replay handoff exact metadata contract differs')
     handoff._inventory_contract({key: value[key] for key in ('files', 'directories', 'modes')})
@@ -2231,6 +2238,8 @@ def _inspect_source_inputs(owner, capsule, replay_inputs, replay_name, handoff_s
     replay_raw = _selected_source_metadata(replay_inputs, replay_name, replay_reference['sha256'],
         'source-replay-reference', replay_reference['path'])
     replay = _selection_metadata(handoff._document(replay_raw))
+    if value['source_catalogue'] != replay['source_catalogue']:
+        raise ValueError('Handoff and replay selected source catalogues differ')
     owner.set_source_limits(replay['limits'])
     for role, name, pin in (('recipe', 'retained/recipe.json', replay['retained']['recipe_sha256']),
             ('sources', 'retained/sources.json', replay['retained']['sources_sha256']),
@@ -2256,7 +2265,8 @@ def _inspect_source_inputs(owner, capsule, replay_inputs, replay_name, handoff_s
         name = names[0]
         item = recipe['inputs'][name]
         return capsule.read('retained/' + name, {'sha256': pin, 'mode': item['mode']})
-    catalogue_raw = {role: body_by_pin(contract.CATALOGUE[role]['sha256'])
+    selected_catalogue = contract.catalogue_for_reference(replay['source_catalogue'])
+    catalogue_raw = {role: body_by_pin(selected_catalogue[role]['sha256'])
                      for role in ('source_map', 'provenance', 'graph')}
     catalogue = catalogue_metadata(*(catalogue_raw[role] for role in ('source_map', 'provenance', 'graph')))
     overlays = {name: capsule.read('retained/' + name,
@@ -2285,7 +2295,7 @@ def _inspect_source_inputs(owner, capsule, replay_inputs, replay_name, handoff_s
             files[name]['bytes'] = expectation['bytes']
     capsule.capture_tree(files, value['directories'])
     facts = {**result, 'target': copy.deepcopy(contract.TARGET),
-        'source_catalogue': copy.deepcopy(contract.CATALOGUE),
+        'source_catalogue': copy.deepcopy(selected_catalogue),
         'retained_recipe_sha256': replay['retained']['recipe_sha256'],
         'retained_sources_sha256': replay['retained']['sources_sha256'],
         'handoff_sha256': handoff_sha256, 'source_replay_sha256': replay_reference['sha256']}

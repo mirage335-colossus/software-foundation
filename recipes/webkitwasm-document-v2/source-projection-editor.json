@@ -91,7 +91,7 @@
     },
     "source/document-provider/editor/BibNativeEditorBackend.cpp": {
       "preimage_sha256": null,
-      "sha256": "5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815"
+      "sha256": "d14dab28100d3689d9a04aa4a81290b50cf24cd3e00a34b2f8402d9eeca9da60"
     },
     "source/document-provider/editor/BibNativeEditorBackend.hpp": {
       "preimage_sha256": null,
@@ -531,7 +531,7 @@
     },
     "source/foundation/third_party/appended-engine/src/ProviderGuard.cpp": {
       "preimage_sha256": "4d7ee19b4f3d6d2bf75c559ca6d81ff00cfebbac65afacd1be74c847281bc5f8",
-      "sha256": "f18e9cc64c793ed1f9bfd2e51c0e68bf64c1256131c662a6573c211553e85b9e"
+      "sha256": "6ec6546880d6736311ab8def5563da79a870dd1f68b56fdcbe947835acf817a8"
     },
     "source/provider-binding/binding/BibEngineProviderPreflight.cpp": {
       "preimage_sha256": "dd8c25c5343498106be19b26d96e6b7292bb3e25f10c7b07b191461fdb81c3fb",
@@ -568,6 +568,10 @@
     "source/wrapper/src/embedder/BibAppResources.h": {
       "preimage_sha256": "60738d2b19acd8f04e6a52729c66c42b30965e454974e78202c886556161c463",
       "sha256": "60738d2b19acd8f04e6a52729c66c42b30965e454974e78202c886556161c463"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h": {
+      "preimage_sha256": null,
+      "sha256": "1572b86481c93b9568c781ababc9f6645f505a038704f91236192e31a4208118"
     },
     "source/wrapper/src/embedder/BibEngineProviderDocumentProjection.h": {
       "preimage_sha256": "f05ceedb6d7ac04e5e1cb7b5531f02d9e9453b7ff931cd0b5eefd78e2ae7357a",
@@ -619,7 +623,7 @@
     },
     "source/wrapper/src/embedder/BibPageClients.h": {
       "preimage_sha256": "33c024bccca3b22033496b6f92c8f1ab9f1ffa4c1cf6ed583966dff9c84fb76b",
-      "sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2"
+      "sha256": "6e77e9b1b47cc5e4e3d2a5dcd7600ea959c4b22eb95c763165c4ccc3c5d28a43"
     },
     "source/wrapper/src/embedder/BibPrototypeBridge.h": {
       "preimage_sha256": "494214d9f21d542398d37bab72994c1874936ca15538dbafd301e10ed377a5ad",
@@ -643,7 +647,7 @@
     },
     "source/wrapper/src/embedder/BibUndoHistory.h": {
       "preimage_sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2",
-      "sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2"
+      "sha256": "f6ca9055367085abe855a19b0d047034279dff1beb7dc44c8c2ab78001d602bb"
     },
     "source/wrapper/src/embedder/BibWebSocketChannel.h": {
       "preimage_sha256": "c8fd71955b4cb609ca44f6afa2e8dc36c027eb913be00c8686704b2d7d082c5d",
@@ -655,7 +659,7 @@
     },
     "source/wrapper/src/embedder/main.cpp": {
       "preimage_sha256": "485ea035f7886f153c5e3976d096413fe584cc65563e4b2a59c7d364d1a86373",
-      "sha256": "2a1ef9ff3574ca31d4f182457dc7b4a83a09cd7944a8a9b410d4109485db791d"
+      "sha256": "2c315a2d08f8f5025f0619db73621d4aaf79dcdc970c1f5e1b7b692a045beb9b"
     },
     "source/wrapper/src/embedder/resource_url.cpp": {
       "preimage_sha256": "05a1af43bd84e8ba4b4eb2b73070c7f331945806d4e33586f1a447cd0b216671",

@@ -31,6 +31,40 @@ CATALOGUE = {
     'graph': {'path': RECIPE + '/cmake/native-provider.cmake',
               'sha256': 'a19c8e7ddd7f1c4f15b143ca33a4826bec806ad0bd95137ac5a6059811d6dab1'},
 }
+COMPOSITION_PROFILE_KIND = 'foundation-native-engine-windows-producer-composition-undo-profile-v1'
+COMPOSITION_CATALOGUE = {'source_map': {'path': 'recipes/webkitwasm-native-rich4083-v1/source-imports.json', 'sha256': '03c4f8a0c21165961d84da521ac0afaf8bf0d97ff2d09b1c2819390c31544b8b'}, 'provenance': {'path': 'recipes/webkitwasm-native-rich4083-v1/provenance.json', 'sha256': 'f5e4a29c6e5bdd0d396c634e8f51a2cc64c43f75d8f25e251184f65c55eb86ee'}, 'graph': {'path': 'recipes/webkitwasm-native-rich4083-v1/cmake/native-provider.cmake', 'sha256': 'a19c8e7ddd7f1c4f15b143ca33a4826bec806ad0bd95137ac5a6059811d6dab1'}}  # Bound only after final metadata/helper freeze.
+
+
+def catalogue_for_profile(value):
+    if type(value) is dict and value.get('kind') == COMPOSITION_PROFILE_KIND:
+        if type(COMPOSITION_CATALOGUE) is not dict or set(COMPOSITION_CATALOGUE) != set(CATALOGUE):
+            raise ValueError('Composition source catalogue remains unbound')
+        return COMPOSITION_CATALOGUE
+    return CATALOGUE
+
+
+def catalogue_for_map_digest(value):
+    if type(COMPOSITION_CATALOGUE) is dict and value == COMPOSITION_CATALOGUE['source_map']['sha256']:
+        return COMPOSITION_CATALOGUE
+    return CATALOGUE
+
+
+def catalogue_for_recipe_inputs(inputs):
+    if (type(COMPOSITION_CATALOGUE) is dict and type(inputs) is dict and
+            any(type(v) is dict and v.get('sha256') == COMPOSITION_CATALOGUE['source_map']['sha256'] for v in inputs.values())):
+        return COMPOSITION_CATALOGUE
+    return CATALOGUE
+
+
+def catalogue_for_reference(value):
+    """Accept only one complete independently pinned catalogue version."""
+    if type(value) is dict and value == CATALOGUE:
+        return CATALOGUE
+    if type(COMPOSITION_CATALOGUE) is dict and type(value) is dict and value == COMPOSITION_CATALOGUE:
+        return COMPOSITION_CATALOGUE
+    raise ValueError('Unsupported exact native source catalogue reference')
+
+
 LIBRARIES = frozenset(('ICU::data', 'ICU::i18n', 'ICU::uc', 'HarfBuzz::HarfBuzz',
     'HarfBuzz::ICU', 'JPEG::JPEG', 'LibXml2::LibXml2', 'PNG::PNG', 'SQLite3::SQLite3',
     'WebP::libwebp', 'WebP::demux', 'WebP::sharpyuv', 'ZLIB::ZLIB', 'CURL::libcurl', 'OpenSSL::SSL',
@@ -129,11 +163,13 @@ def inside(path, root):
 
 
 def validate_profile(value):
+    composition = type(value) is dict and value.get('kind') == COMPOSITION_PROFILE_KIND
+    catalogue = catalogue_for_profile(value)
     expected = {
-        'schema_version': 1, 'kind': 'foundation-native-engine-windows-producer-profile-v1',
+        'schema_version': 1, 'kind': COMPOSITION_PROFILE_KIND if composition else 'foundation-native-engine-windows-producer-profile-v1',
         'scope': SCOPE, 'profile': 'document-actions-v1', 'target': TARGET,
-        'recipe_directory': RECIPE, **CATALOGUE,
-        'source_files': 157, 'engine_files': 48, 'direct_translation_units': 32,
+        'recipe_directory': RECIPE, **catalogue,
+        'source_files': 158 if composition else 157, 'engine_files': 48, 'direct_translation_units': 32,
         'toolchain_policy': 'native-windows-x64-clang-cl-cxx23-release-static-mt',
         'publication_policy': 'unimplemented-native-adapter-or-two-host-metadata-join',
         'dependency_policy': 'complete-pinned-static-native-inventory-and-provenance',
@@ -263,7 +299,7 @@ def assess(profile, value):
     value = validate_inputs(value)
     return {'schema_version': 1, 'kind': 'foundation-native-engine-windows-contract-check-v1',
             'scope': SCOPE, 'target': dict(TARGET), 'manifest_contract_valid': True,
-            'source_catalogue': copy.deepcopy(CATALOGUE),
+            'source_catalogue': copy.deepcopy(catalogue_for_profile(profile)),
             'missing_admission': required_admission(value),
             **{name: False for name in FALSE_FACTS}}
 

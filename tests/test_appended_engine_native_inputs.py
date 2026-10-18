@@ -5,6 +5,7 @@ successful low-level parser check establishes a format property only. It never
 establishes native provenance, PIC, a linkable SDK or runtime qualification.
 """
 
+import ast
 import copy
 from contextlib import ExitStack, contextmanager
 import hashlib
@@ -2072,7 +2073,7 @@ class NativeForwardPatchSource(unittest.TestCase):
                     'patches/native-provider-getter.patch': 1,
                     'patches/native-provider-runtime.patch': 2}
         overlays = {name for name, item in entries.items() if item['role'] == 'source'}
-        self.assertEqual(len(overlays), 157)
+        self.assertEqual(len(overlays), 158 if self.source_map.get('kind') == self.api.COMPOSITION_SOURCE_KIND else 157)
         for name, count in expected.items():
             item = entries[name]
             raw = (ROOT / item['tracked_path']).read_bytes()
@@ -3988,6 +3989,82 @@ class NativeCurrentSourceCapture(unittest.TestCase):
             self.assertIn(row['path'], legacy_records)
             self.assertEqual({name: row[name] for name in ('sha256', 'bytes', 'mode')}, {name: legacy_records[row['path']][name] for name in ('sha256', 'bytes', 'mode')})
         self.assertEqual(public.as_dict()['source_map']['files'], 197)
+
+
+
+
+def composition_catalogue_fixture(api):
+    """Inert metadata rows; no mapped source, SDK or compiler body is opened."""
+    value = json.loads((ROOT / api.RECIPE / 'source-imports.json').read_bytes())
+    value['kind'] = api.COMPOSITION_SOURCE_KIND
+    pins = {}
+    for index, logical in enumerate((*api.COMPOSITION_PREDECESSORS, api.COMPOSITION_BRIDGE)):
+        pins[logical] = {'sha256': format(index + 1, 'x') * 64, 'bytes': 1000 + index, 'mode': 420}
+        expected = pins[logical]
+        tracked = api.RECIPE + '/' + logical
+        if logical == api.COMPOSITION_BRIDGE:
+            record = {'action': 'new-private-source-header', 'selection': 'source-only-addition',
+                'origin': 'reviewed-source-only-composition-undo-private-bridge', 'origin_path': tracked,
+                'source': logical, 'preimage_sha256': None, 'sha256': expected['sha256'], 'bytes': expected['bytes'],
+                'after_sha256': expected['sha256'], 'after_bytes': expected['bytes'], 'mode': 420}
+            origin = {'kind': 'reviewed-source-only-composition-undo-private-bridge', 'record': record}
+        else:
+            previous = copy.deepcopy(value['inputs'][logical]['origin']['record'])
+            if previous.get('successor', {}).get('kind') == 'reviewed-native-composition-cancel-inverse-repair':
+                previous = previous['successor']['supersedes']['origin']
+            successor = {'kind': 'reviewed-native-composition-cancel-inverse-repair',
+                'correction': 'transaction-owned-native-composition-inverse-and-original-selection',
+                'sha256': expected['sha256'], 'source_path': tracked, 'source_only': True,
+                'supersedes': {'origin': previous, 'sha256': previous['after_sha256'], 'tracked_path': tracked}}
+            record = {**previous, 'action': successor['correction'], 'selection': 'reviewed-source-successor',
+                'after_sha256': expected['sha256'], 'after_bytes': expected['bytes'], 'successor': successor}
+            origin = {'kind': 'mapped-native-actions-runtime', 'record': record}
+        value['inputs'][logical] = {**expected, 'tracked_path': tracked, 'role': 'source', 'origin': origin}
+    return value, pins
+
+
+class NativeCompositionSourceCatalogue(unittest.TestCase):
+    def setUp(self):
+        self.api = load_helper()
+        self.value, self.pins = composition_catalogue_fixture(self.api)
+
+    def test_exact_successor_is_data_only_and_unbound_facts_fail_closed(self):
+        with mock.patch.object(self.api, 'COMPOSITION_SOURCE_FACTS', None), no_programs():
+            with self.assertRaisesRegex(ValueError, 'unbound'):
+                self.api.composition_catalogue_counts(self.value)
+        with mock.patch.object(self.api, 'COMPOSITION_SOURCE_FACTS', self.pins), no_programs():
+            self.assertEqual(self.api.composition_catalogue_counts(self.value),
+                {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
+
+    def test_only_one_known_addition_and_exact_native_lineage_are_admitted(self):
+        logical = next(iter(self.api.COMPOSITION_PREDECESSORS))
+        bridge = self.api.COMPOSITION_BRIDGE
+        guard = 'source/foundation/third_party/appended-engine/src/ProviderGuard.cpp'
+        edits = (
+            lambda v: v.update(kind='foundation-native-engine-actions-source-inputs'),
+            lambda v: v['inputs'].update(unknown=v['inputs'].pop(bridge)),
+            lambda v: v['inputs'][guard].update(sha256='d' * 64),
+            lambda v: v['inputs'][logical].update(sha256='e' * 64),
+            lambda v: v['inputs'][logical]['origin']['record'].update(preimage_sha256='d' * 64),
+            lambda v: v['inputs'][logical]['origin']['record']['successor']['supersedes']['origin'].update(after_sha256='d' * 64),
+            lambda v: v['inputs'][logical]['origin']['record']['successor'].update(source_only=1),
+            lambda v: v['inputs'][bridge]['origin']['record'].update(origin='frozen-native-actions-capsule'),
+            lambda v: v['inputs'][bridge].update(bytes=True),
+        )
+        with mock.patch.object(self.api, 'COMPOSITION_SOURCE_FACTS', self.pins), no_programs():
+            for index, change in enumerate(edits):
+                value = copy.deepcopy(self.value); change(value)
+                with self.subTest(index=index), self.assertRaises(ValueError):
+                    self.api.composition_catalogue_counts(value)
+
+    def test_passive_inspector_and_capture_use_identical_strict_guard(self):
+        paths = (HELPER, ROOT / self.api.RECIPE / 'inspect_sources.py')
+        bodies = []
+        for path in paths:
+            body = next(node for node in ast.parse(path.read_bytes()).body
+                if isinstance(node, ast.FunctionDef) and node.name == 'composition_catalogue_counts')
+            bodies.append(ast.dump(body, include_attributes=False))
+        self.assertEqual(*bodies)
 
 
 if __name__ == '__main__':

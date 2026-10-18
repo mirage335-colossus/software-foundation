@@ -397,13 +397,37 @@ The separate document-v2 producer uses the same supported entry point:
   --output /owned/new-document-candidate --jobs 2 --timeout-seconds 1800
 ```
 
-`document-plan` requires an explicit pixel/physical selection, its retained
+`document-plan` requires an explicit pixel/physical/editor selection, its retained
 profile, complete source/projection pins, paired SDK and reuse-proof pins.
 It launches no programs. `document-build` accepts only that independently pinned
 plan and selects its closed incremental graph; it has no supplier-build or
 ordinary application-build fallback. These aliases dispatch before native
 provider/toolchain selection. The source-only assembly and synthetic planner
 checks do not establish an actual document-engine build or runtime result.
+
+The editor successful-donor continuation has three explicit contracts. The original
+`--successful-donor` lane imports49 objects and compiles Publisher plus document
+shim. `--successful-donor-guard-repair` uses its distinct guard-repair descriptor,
+48imports/3fresh/170artifacts. The separately selected
+`--successful-donor-composition-repair` requires
+`foundation-document-v2-successful-donor-composition-repair-v1`, adds Backend and
+main to the fresh units and admits46 ordered imports/5fresh/168artifacts. All
+retain51 selected objects, five archive copies, zero repacks and one link, with
+strict distinct plan/build/Root kinds. Historical receipts retain their identities.
+
+The composition branch permits exactly the reviewed Backend/main body changes,
+two main-only private header changes and one new Backend/main bridge header.
+It preserves the pinned SDK, opaque dependencies, include search and VFS. Search
+context uses the complete authenticated original51 dependency coordinates,
+including directories used only by fresh units. Root readback must parse all five
+fresh depfiles and prove those header owners.
+Editor-specific source origins preserve pixel/physical profile bytes. These are
+retained selective maintenance routes with no supplier or kernel build fallback.
+Refresh source/helper/proof pins and complete the reviewed bounded launch before
+execution. The Guard candidate has accepted Wasm build evidence; its complete
+runtime failed composition cancellation. The source repair passes focused host
+journal checks, while the new five-unit candidate and runtime remain unverified;
+see the [current handoff](appended-application-plan.md#current-continuation-handoff).
 
 ## Initial rich browser producer
 

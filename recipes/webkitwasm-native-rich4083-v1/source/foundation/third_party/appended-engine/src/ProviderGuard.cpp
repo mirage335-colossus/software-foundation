@@ -806,6 +806,23 @@ public:
         if (action.present) return reject(BIB_ENGINE_LIMIT);
         try { scratch.resize(operation->required_reply_capacity); } catch (...) { return reject(BIB_ENGINE_LIMIT); }
         request.payload.data=payload.data();
+        // C8 carries inert command metadata: reject a request before asking the
+        // host to enter the editor turn. The Gate remains held, and the owned
+        // payload stays alive through both this preflight and the in-turn recheck.
+        if (request.operation==BIB_ENGINE_COMMAND_EDITOR_OBSERVATION_V1) {
+            std::int32_t preflight_status{};
+            try {
+                preflight_status=transport(editor_backend.admit_request(backend.context,editor_backend.worker_epoch,
+                    &request.expected,0,request.operation,request.request_sequence,&request.payload));
+            } catch (...) {
+                poisoned=true;
+                return reject(BIB_ENGINE_PROCESS_EXIT_REQUIRED);
+            }
+            if (preflight_status) {
+                if (preflight_status==BIB_ENGINE_PROCESS_EXIT_REQUIRED) poisoned=true;
+                return reject(preflight_status);
+            }
+        }
         BibEngineReplyBufferV1 scratch_buffer{sizeof(scratch_buffer),static_cast<std::uint32_t>(scratch.size()),scratch.data()};
         bool editor_entered=false;
         auto status=turn([&] {

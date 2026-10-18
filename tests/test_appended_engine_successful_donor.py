@@ -36,11 +36,13 @@ def load_shape():
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(SOURCE), "exec"), namespace)
     return namespace
 
-def fixture():
+def fixture(*, composition_repair=False):
     # The literal old nine-name whitelist and two excluded compilation identities
     # come from fixture_contract, independently of the implementation constants.
     direct = CONTRACT["legacy_direct_ids"] + CONTRACT["compiled_ids"] + [
-        "Direct%02d.cpp" % i for i in range(24)]
+        "ProviderGuard.cpp" if i == 0 else "Direct%02d.cpp" % i for i in range(24)]
+    if composition_repair:
+        direct = [{"Direct01.cpp": "BibNativeEditorBackend.cpp", "Direct02.cpp": "main.cpp"}.get(name, name) for name in direct]
     engine = ["Engine%02d.cpp" % i for i in range(16)]
     archives = [{"name": name, "members": ["m%04d.o" % i for i in range(count)]}
         for name, count in zip(CONTRACT["archive_order"], CONTRACT["archive_member_counts"])]
@@ -172,11 +174,11 @@ class Reader:
         return self.original
 
 class Donor:
-    def __init__(self, helper):
+    def __init__(self, helper, *, composition_repair=False):
         self.helper = helper
         self.api = Reader()
         self.bindings = {key: Path('/invented/' + key) for key in ('sources', 'sdk', 'reuse', 'build')}
-        self.inspection, old, _, self.selected = shape_fixture()
+        self.inspection, old, _, self.selected = shape_fixture(composition_repair=composition_repair)
         archives = []
         for name, count in zip(CONTRACT['archive_order'], CONTRACT['archive_member_counts']):
             archives.append({'name': name, 'members': [
@@ -450,7 +452,12 @@ def load_receipt_functions():
     nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in wanted]
     if {node.name for node in nodes} != wanted:
         raise AssertionError('actual receipt implementations missing')
-    namespace = {'RESUME_BUILD_KIND': 'foundation-document-v2-maintenance-resume-build-v1',
+    namespace = {'SUCCESSFUL_PLAN_KIND': 'foundation-document-v2-maintenance-successful-donor-plan-v1',
+                 'GUARD_REPAIR_PLAN_KIND': 'foundation-document-v2-maintenance-successful-donor-guard-repair-plan-v1',
+                 'GUARD_REPAIR_BUILD_KIND': 'foundation-document-v2-maintenance-successful-donor-guard-repair-build-v1',
+                 'COMPOSITION_REPAIR_PLAN_KIND': 'foundation-document-v2-maintenance-successful-donor-composition-repair-plan-v1',
+                 'COMPOSITION_REPAIR_BUILD_KIND': 'foundation-document-v2-maintenance-successful-donor-composition-repair-build-v1',
+                 'RESUME_BUILD_KIND': 'foundation-document-v2-maintenance-resume-build-v1',
                  'SUCCESSFUL_BUILD_KIND': 'foundation-document-v2-maintenance-successful-donor-build-v1',
                  '_successful_module': load_helper,
                  'checked_document': lambda p: json.loads(Path(p).read_bytes()),
@@ -460,13 +467,14 @@ def load_receipt_functions():
     return namespace
 
 class ReceiptFixture:
-    def __init__(self, root, namespace):
+    def __init__(self, root, namespace, *, guard_repair=False, composition_repair=False):
         self.root = root
         self.namespace = namespace
-        _, _, _, selected = shape_fixture()
+        _, _, _, selected = shape_fixture(composition_repair=composition_repair)
         self.selected = selected
-        imported = [name for name in selected if name not in CONTRACT['compiled_ids']]
-        self.commands = {'objects': {name: ['fake-compiler', name] for name in CONTRACT['compiled_ids']},
+        compiled = CONTRACT['compiled_ids'] + (['ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp'] if composition_repair else ['ProviderGuard.cpp'] if guard_repair else [])
+        imported = [name for name in selected if name not in compiled]
+        self.commands = {'objects': {name: ['fake-compiler', name] for name in compiled},
                          'imports': {name: ['fake-copy', name] for name in imported},
                          'archive_imports': {name: ['fake-copy', name] for name in CONTRACT['archive_order']}}
         rows = []
@@ -506,7 +514,9 @@ class ReceiptFixture:
                        'origin': 'imported', 'archive': original, 'original_report': report,
                        'destination': str(target), 'hardlinked': False, 'archive_program_invoked': False,
                        'production_eligible': False, 'sha256': digest, 'bytes': len(raw)})
-        self.plan = {'reuse': {'objects': [{'id': name} for name in selected],
+        self.plan = {'kind': ('foundation-document-v2-maintenance-successful-donor-composition-repair-plan-v1' if composition_repair else 'foundation-document-v2-maintenance-successful-donor-guard-repair-plan-v1' if guard_repair
+                              else 'foundation-document-v2-maintenance-successful-donor-plan-v1'),
+                     'reuse': {'objects': [{'id': name} for name in selected],
                                'archives': [{'name': name} for name in CONTRACT['archive_order']]},
                      'successful_donor': {'reference': {'path': '/invented/donor.json', 'sha256': 'b' * 64},
                                           'objects': rows, 'archives': archives}}
@@ -600,6 +610,7 @@ def load_maintenance():
     return module
 
 class CommonValidator(unittest.TestCase):
+    guard_repair = False
     @classmethod
     def setUpClass(cls):
         cls.m = load_maintenance()
@@ -612,7 +623,7 @@ class CommonValidator(unittest.TestCase):
         self.stack = ExitStack(); self.addCleanup(self.stack.close)
         self.config = {'name': 'webkitwasm-copied2035-ndv2-v1',
             'direct_objects': CONTRACT['legacy_direct_ids'] + CONTRACT['compiled_ids'] +
-                              ['Direct%02d.cpp' % i for i in range(24)],
+                              ['ProviderGuard.cpp' if i == 0 else 'Direct%02d.cpp' % i for i in range(24)],
             'engine_objects': ['Engine%02d.cpp' % i for i in range(16)],
             'archive_members': dict(zip(CONTRACT['archive_order'], CONTRACT['archive_member_counts'])),
             'python_entrypoints': ['upstream/emscripten/fake_entry.py']}
@@ -629,19 +640,24 @@ class CommonValidator(unittest.TestCase):
             self.f.value[name] = dict(self.f.value['candidate_result'])
         self.f.value['archives'] = []
         self.archive_calls = []
-        def archives(value, inspection, old, bindings, api):
+        def archives(value, inspection, old, bindings, api, **kwargs):
             self.archive_calls.append(value['objects'])
             return []
         selected = SimpleNamespace(DONOR_KIND='foundation-document-v2-successful-donor-v1',
             COMPILED_IDS=('NativeDocumentV2Publisher.cpp','BibEngineDocumentWasmShim.cpp'),
-            authority=lambda value, bindings, old, api: self.m._completed_authority(value, bindings, old),
+            GUARD_REPAIR_DONOR_KIND='foundation-document-v2-successful-donor-guard-repair-v1',
+            GUARD_REPAIR_COMPILED_IDS=('NativeDocumentV2Publisher.cpp','BibEngineDocumentWasmShim.cpp','ProviderGuard.cpp'),
+            authority=lambda value, bindings, old, api, **kwargs: self.m._completed_authority(value, bindings, old),
             archive_rows=archives)
         self.stack.enter_context(mock.patch.object(self.m, '_successful_module', return_value=selected))
         self.stack.enter_context(mock.patch.object(self.m, '_header_identity', side_effect=lambda inspection: self.f.view))
+        if self.guard_repair:
+            self.f.value['kind'] = selected.GUARD_REPAIR_DONOR_KIND
+            self.f.value['objects'] = [row for row in self.f.rows if row['id'] != 'ProviderGuard.cpp']
 
     def admit(self):
         reference = support.save(self.f.root / 'records/successful.json', self.f.value)
-        return self.m._completed_work(reference, self.f.inspection, _successful=True)
+        return self.m._completed_work(reference, self.f.inspection, _successful=True, _guard_repair=self.guard_repair)
 
     def change_current(self, path, raw):
         name = str(path.relative_to(self.f.current['sources']))
@@ -657,8 +673,9 @@ class CommonValidator(unittest.TestCase):
         generated = self.f.root / 'fresh-generated/BibCopiedDocumentMetadata.generated.h'
         generated.parent.mkdir(); generated.write_bytes(b'fresh construction metadata\n')
         admitted = self.admit()
-        expected = [row['id'] for row in self.f.proof['objects'] if row['id'] not in CONTRACT['compiled_ids']]
-        self.assertEqual(49, len(admitted['objects']))
+        compiled = CONTRACT['compiled_ids'] + (['ProviderGuard.cpp'] if self.guard_repair else [])
+        expected = [row['id'] for row in self.f.proof['objects'] if row['id'] not in compiled]
+        self.assertEqual(48 if self.guard_repair else 49, len(admitted['objects']))
         self.assertEqual(expected, [row['id'] for row in admitted['objects']])
         self.assertEqual(1, len(self.archive_calls))
 
@@ -724,6 +741,245 @@ class CommonValidator(unittest.TestCase):
         self.change_current(self.f.current['sources'] / 'units/Direct23.cpp', b'unrelated changed TU\n')
         with self.assertRaises(ValueError): self.admit()
         self.assertFalse(self.archive_calls)
+
+
+class GuardRepairDonor(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls): cls.helper = load_helper()
+
+    def fixture(self):
+        f = Donor(self.helper)
+        f.value['kind'] = 'foundation-document-v2-successful-donor-guard-repair-v1'
+        f.value['objects'] = [row for row in f.value['objects'] if row['id'] != 'ProviderGuard.cpp']
+        return f
+
+    def test_explicit_kinds_and_fresh_triple(self):
+        self.assertEqual('foundation-document-v2-successful-donor-guard-repair-v1', self.helper.GUARD_REPAIR_DONOR_KIND)
+        self.assertEqual('foundation-document-v2-maintenance-successful-donor-guard-repair-plan-v1', self.helper.GUARD_REPAIR_PLAN_KIND)
+        self.assertEqual('foundation-document-v2-maintenance-successful-donor-guard-repair-build-v1', self.helper.GUARD_REPAIR_BUILD_KIND)
+        self.assertEqual(('NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp', 'ProviderGuard.cpp'),
+                         self.helper.GUARD_REPAIR_COMPILED_IDS)
+        f = self.fixture()
+        self.assertIs(f.api.original, self.helper.authority(f.value, f.bindings, f.old, f.api, guard_repair=True))
+        self.assertEqual(48, len(f.value['objects']))
+        self.assertEqual(f.value['archives'], self.helper.archive_rows(f.value, f.inspection, f.old, f.bindings, f.api, guard_repair=True))
+        self.assertEqual(16, len(f.inspection.proof['replacements']))
+
+    def test_kind_optin_and_partition_finite_crosslane_grid(self):
+        for new_kind in (False, True):
+            for optin in (False, True):
+                for three_fresh in (False, True):
+                    with self.subTest(new_kind=new_kind, optin=optin, three_fresh=three_fresh):
+                        f = self.fixture() if three_fresh else Donor(self.helper)
+                        f.value['kind'] = self.helper.GUARD_REPAIR_DONOR_KIND if new_kind else self.helper.DONOR_KIND
+                        if new_kind == optin == three_fresh:
+                            self.helper.authority(f.value, f.bindings, f.old, f.api, guard_repair=optin)
+                        else:
+                            with self.assertRaises(ValueError):
+                                self.helper.authority(f.value, f.bindings, f.old, f.api, guard_repair=optin)
+
+    def test_exact48_rejects_missing_duplicate_reordered_and_extra(self):
+        original = self.fixture().value['objects']
+        for rows in (original[:-1], original[::-1], original + [original[0]], original + [{'id': 'ProviderGuard.cpp'}]):
+            f = self.fixture(); f.value['objects'] = deepcopy(rows)
+            with self.subTest(count=len(rows)), self.assertRaises(ValueError):
+                self.helper.authority(f.value, f.bindings, f.old, f.api, guard_repair=True)
+
+    def test_original_build_and_donor_pins_cannot_be_new_candidate_receipts(self):
+        f = self.fixture(); f.build['kind'] = self.helper.GUARD_REPAIR_BUILD_KIND
+        with self.assertRaises(ValueError):
+            self.helper.authority(f.value, f.bindings, f.old, f.api, guard_repair=True)
+        f = self.fixture(); f.value['maintenance_build']['sha256'] = 'a' * 64
+        with self.assertRaises(ValueError):
+            self.helper.authority(f.value, f.bindings, f.old, f.api, guard_repair=True)
+
+    def test_shape_exact48_and_direct_guard_without_archive_mapping(self):
+        namespace = load_shape(); namespace['_successful_module'] = lambda: self.helper
+        call = namespace['_completed_shape']; f = self.fixture()
+        self.assertEqual(f.selected, call(f.inspection, f.old, f.value['objects'], successful=True, guard_repair=True))
+        for successful, guard_repair in ((True, False), (False, True)):
+            with self.assertRaises(ValueError): call(f.inspection, f.old, f.value['objects'], successful=successful, guard_repair=guard_repair)
+        f.inspection.proof['replacements'][0]['object_id'] = 'ProviderGuard.cpp'
+        with self.assertRaises(ValueError): call(f.inspection, f.old, f.value['objects'], successful=True, guard_repair=True)
+
+
+class GuardRepairAccounting(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls): cls.namespace = load_receipt_functions()
+
+    def fixture(self, guard_repair=True):
+        temporary = tempfile.TemporaryDirectory(prefix='inert-guard-repair-accounting-')
+        self.addCleanup(temporary.cleanup)
+        return ReceiptFixture(Path(temporary.name), self.namespace, guard_repair=guard_repair)
+
+    def test_exact48_threefresh_fivecopies_and_distinct_build_kind(self):
+        f = self.fixture(); result = f.apply()
+        self.assertEqual('foundation-document-v2-maintenance-successful-donor-guard-repair-build-v1', result['kind'])
+        self.assertEqual((51, 48, 3, 5, 0), tuple(result['accounting'][key] for key in
+            ('selected', 'imported', 'compiled', 'archive_imported', 'archive_repacked')))
+        fresh = {'NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp', 'ProviderGuard.cpp'}
+        self.assertEqual([n for n in f.selected if n in fresh], result['accounting']['compiled_ids'])
+        self.assertEqual([n for n in f.selected if n not in fresh], result['accounting']['imported_ids'])
+        self.assertEqual(CONTRACT['archive_order'], [row['name'] for row in result['archive_imports']])
+
+    def test_old_new_plan_and_partition_cannot_cross_lanes(self):
+        for partition in (False, True):
+            f = self.fixture(partition)
+            f.plan['kind'] = ('foundation-document-v2-maintenance-successful-donor-plan-v1' if partition else
+                              'foundation-document-v2-maintenance-successful-donor-guard-repair-plan-v1')
+            with self.assertRaises(ValueError): f.apply()
+        f = self.fixture(); f.plan['kind'] = 'foundation-document-v2-maintenance-plan-v1'
+        with self.assertRaises(ValueError): f.apply()
+
+    def test_reordered_imports_or_extra_compiler_reject(self):
+        f = self.fixture(); f.plan['successful_donor']['objects'].reverse()
+        with self.assertRaises(ValueError): f.apply()
+        f = self.fixture(); f.commands['objects'][f.selected[0]] = ['unexpected compiler']
+        with self.assertRaises(ValueError): f.apply()
+
+
+class GuardRepairCommonValidator(CommonValidator):
+    guard_repair = True
+
+    def test_guard_and_publisher_source_delta_admitted_with_unchanged_shim(self):
+        for name in ('ProviderGuard.cpp', 'NativeDocumentV2Publisher.cpp'):
+            obj = next(row for row in self.f.proof['objects'] if row['id'] == name)
+            obj['source']['sha256'] = self.change_current(self.f.current['sources'] / obj['source']['path'],
+                                                         ('changed direct ' + name).encode())
+        admitted = self.admit()
+        self.assertEqual(48, len(admitted['objects']))
+        self.assertNotIn('ProviderGuard.cpp', [row['id'] for row in admitted['objects']])
+        self.assertEqual(16, len(self.f.proof['replacements']))
+
+    def test_shim_delta_is_forbidden_even_though_fresh(self):
+        obj = next(row for row in self.f.proof['objects'] if row['id'] == 'BibEngineDocumentWasmShim.cpp')
+        obj['source']['sha256'] = self.change_current(self.f.current['sources'] / obj['source']['path'], b'changed shim')
+        with self.assertRaisesRegex(ValueError, 'Shim'): self.admit()
+        self.assertFalse(self.archive_calls)
+
+    def test_guard_options_headers_unified_members_and_coordinates_reject(self):
+        obj = next(row for row in self.f.proof['objects'] if row['id'] == 'ProviderGuard.cpp')
+        before = deepcopy(obj)
+        for key, changed in (('arguments', obj['arguments'] + ['-DNEW=1']),
+                             ('exceptions', not obj['exceptions']),
+                             ('dependencies', []), ('unified_members', [obj['source']]),
+                             ('source', dict(obj['source'], path='units/elsewhere.cpp'))):
+            obj[key] = changed
+            with self.subTest(key=key), self.assertRaises(ValueError): self.admit()
+            obj.clear(); obj.update(deepcopy(before))
+        self.assertFalse(self.archive_calls)
+
+    def test_guard_as_imported_actual_dependency_cannot_change(self):
+        guard = next(row for row in self.f.proof['objects'] if row['id'] == 'ProviderGuard.cpp')
+        old_path = self.f.bindings['sources'] / guard['source']['path']
+        item = {'fact': support.fact(old_path), 'input': deepcopy(guard['source']), 'origin': 'retained'}
+        self.f.sidecar['dependencies'][str(old_path)] = item
+        row = self.f.value['objects'][0]
+        row['dependency_keys'] = sorted(row['dependency_keys'] + [str(old_path)])
+        row['depfile'] = support.write(Path(row['depfile']['path']),
+            (row['object']['path'] + ': ' + ' '.join(row['dependency_keys']) + '\n').encode())
+        self.f.value['dependency_sidecar'] = support.save(self.f.root / 'records/dependencies.json', self.f.sidecar)
+        guard['source']['sha256'] = self.change_current(self.f.current['sources'] / guard['source']['path'], b'changed guard')
+        with self.assertRaisesRegex(ValueError, 'Reference not bound'): self.admit()
+        self.assertFalse(self.archive_calls)
+
+
+
+
+class CompositionRepairDonor(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls): cls.helper = load_helper()
+
+    def fixture(self):
+        f = Donor(self.helper, composition_repair=True)
+        f.value['kind'] = 'foundation-document-v2-successful-donor-composition-repair-v1'
+        fresh = {'NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp', 'ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp'}
+        f.value['objects'] = [row for row in f.value['objects'] if row['id'] not in fresh]
+        return f
+
+    def test_exact_fivefresh_kinds_original112_and_archives(self):
+        h = self.helper
+        self.assertEqual(h.COMPOSITION_REPAIR_COMPILED_IDS,
+            ('NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp', 'ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp'))
+        self.assertEqual(h.COMPOSITION_REPAIR_DONOR_KIND, 'foundation-document-v2-successful-donor-composition-repair-v1')
+        self.assertEqual(h.COMPOSITION_REPAIR_PLAN_KIND, 'foundation-document-v2-maintenance-successful-donor-composition-repair-plan-v1')
+        self.assertEqual(h.COMPOSITION_REPAIR_BUILD_KIND, 'foundation-document-v2-maintenance-successful-donor-composition-repair-build-v1')
+        f = self.fixture()
+        self.assertIs(f.api.original, h.authority(f.value, f.bindings, f.old, f.api, composition_repair=True))
+        self.assertEqual(len(f.records),112)
+        self.assertEqual(len(f.value['objects']),46)
+        self.assertEqual(f.value['archives'], h.archive_rows(f.value, f.inspection, f.old, f.bindings, f.api, composition_repair=True))
+
+    def test_all_three_descriptor_lanes_reject_crossings(self):
+        for kind in (self.helper.DONOR_KIND,self.helper.GUARD_REPAIR_DONOR_KIND,self.helper.COMPOSITION_REPAIR_DONOR_KIND):
+            for flags in ({},{'guard_repair':True},{'composition_repair':True}):
+                f=self.fixture();f.value['kind']=kind
+                if kind==self.helper.COMPOSITION_REPAIR_DONOR_KIND and flags=={'composition_repair':True}:
+                    self.helper.authority(f.value,f.bindings,f.old,f.api,**flags)
+                else:
+                    with self.subTest(kind=kind,flags=flags),self.assertRaises(ValueError):
+                        self.helper.authority(f.value,f.bindings,f.old,f.api,**flags)
+        for flags in ({'composition_repair':1},{'composition_repair':True,'guard_repair':True}):
+            f=self.fixture()
+            with self.assertRaises(ValueError):self.helper.authority(f.value,f.bindings,f.old,f.api,**flags)
+
+    def test_exact46_import_order_missing_extra_and_historical_pins_reject(self):
+        for change in ('missing','reverse','duplicate','main','pin','ancestor-kind','boolschema'):
+            f=self.fixture()
+            if change=='missing':f.value['objects'].pop()
+            elif change=='reverse':f.value['objects'].reverse()
+            elif change=='duplicate':f.value['objects'].append(deepcopy(f.value['objects'][0]))
+            elif change=='main':f.value['objects'].append({'id':'main.cpp'})
+            elif change=='pin':f.value['original_plan']['sha256']='a'*64
+            elif change=='ancestor-kind':f.build['kind']=self.helper.COMPOSITION_REPAIR_BUILD_KIND
+            else:f.value['schema_version']=True
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                self.helper.authority(f.value,f.bindings,f.old,f.api,composition_repair=True)
+
+    def test_shape_requires_exact_direct_five_and_ordered46(self):
+        f=self.fixture();n=load_shape();n['_successful_module']=lambda:self.helper
+        self.assertEqual(f.selected,n['_completed_shape'](f.inspection,f.old,f.value['objects'],successful=True,composition_repair=True))
+        for flags in ({'successful':True},{'successful':True,'guard_repair':True},
+                      {'composition_repair':True},{'successful':True,'guard_repair':True,'composition_repair':True}):
+            with self.subTest(flags=flags),self.assertRaises(ValueError):n['_completed_shape'](f.inspection,f.old,f.value['objects'],**flags)
+        f.value['objects'].reverse()
+        with self.assertRaises(ValueError):n['_completed_shape'](f.inspection,f.old,f.value['objects'],successful=True,composition_repair=True)
+
+    def test_fresh_backend_or_main_cannot_be_archive_member(self):
+        for name in ('BibNativeEditorBackend.cpp','main.cpp'):
+            f=self.fixture();f.inspection.proof['replacements'][0]['object_id']=name
+            f.old['reuse']['replacements'][0]['object_id']=name
+            with self.subTest(name=name),self.assertRaises(ValueError):
+                self.helper.archive_rows(f.value,f.inspection,f.old,f.bindings,f.api,composition_repair=True)
+
+
+class CompositionRepairAccounting(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):cls.namespace=load_receipt_functions()
+
+    def fixture(self):
+        temporary=tempfile.TemporaryDirectory(prefix='inert-composition-accounting-');self.addCleanup(temporary.cleanup)
+        return ReceiptFixture(Path(temporary.name),self.namespace,composition_repair=True)
+
+    def test_new46_five_compiled_five_imported_archives(self):
+        f=self.fixture();result=f.apply()
+        self.assertEqual(result['kind'],'foundation-document-v2-maintenance-successful-donor-composition-repair-build-v1')
+        self.assertEqual(tuple(result['accounting'][k] for k in ('selected','imported','compiled','archive_imported','archive_repacked')),(51,46,5,5,0))
+        fresh=['NativeDocumentV2Publisher.cpp','BibEngineDocumentWasmShim.cpp','ProviderGuard.cpp','BibNativeEditorBackend.cpp','main.cpp']
+        self.assertEqual(result['accounting']['compiled_ids'],fresh)
+        self.assertEqual(result['accounting']['imported_ids'],[x for x in f.selected if x not in fresh])
+        self.assertEqual(51+5+2*46+3*5+5,168)
+
+    def test_old_plan_or_reordered_imports_extra_compile_and_archive_tamper_reject(self):
+        for change in ('old2','old3','order','compiler','archive'):
+            f=self.fixture()
+            if change=='old2':f.plan['kind']=self.namespace['SUCCESSFUL_PLAN_KIND']
+            elif change=='old3':f.plan['kind']=self.namespace['GUARD_REPAIR_PLAN_KIND']
+            elif change=='order':f.plan['successful_donor']['objects'].reverse()
+            elif change=='compiler':f.commands['objects']['Other.cpp']=[]
+            else:
+                name='evidence/import-archive-WebCore.json';value=f.record(name);value['archive_program_invoked']=True;f.save(name,value)
+            with self.subTest(change=change),self.assertRaises(ValueError):f.apply()
 
 
 if __name__ == "__main__":

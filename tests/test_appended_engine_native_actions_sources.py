@@ -1,4 +1,5 @@
 """Rich native source/input tests; no engine is compiled."""
+import copy
 import hashlib
 import importlib.util
 import json
@@ -95,15 +96,15 @@ class NativeSourceInputs(unittest.TestCase):
         self.assertFalse(result['native_runtime_checks_passed'])
         self.assertFalse(result['kernel_rebuild_performed'])
         self.assertEqual(result['requirements'], INSPECT.REQUIREMENTS)
-        self.assertEqual(result['files'], 197)
+        self.assertEqual(result['files'], 198)
         inputs = json.loads(raw)['inputs']
-        self.assertEqual(sum(path.startswith('source/') for path in inputs), 157)
+        self.assertEqual(sum(path.startswith('source/') for path in inputs), 158)
 
     def test_closed_engine_and_runtime_source_origins_are_exact(self):
         provenance = json.loads((RECIPE / 'provenance.json').read_text())
         self.assertEqual(len(provenance['native_engine_files']), 48)
-        self.assertEqual(len(provenance['runtime_files']), 109)
-        self.assertEqual(provenance['source_graph']['source_files'], 157)
+        self.assertEqual(len(provenance['runtime_files']), 110)
+        self.assertEqual(provenance['source_graph']['source_files'], 158)
         self.assertEqual(provenance['source_graph']['engine_files'], 48)
         self.assertEqual(provenance['source_graph']['direct_translation_units'], 32)
         self.assertEqual(provenance['source_graph']['source_local_exception_translation_units'], 23)
@@ -304,6 +305,32 @@ class NativeSourceInputs(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Duplicate JSON key'):
                 INSPECT.inspect(root, digest(raw))
 
+
+    def test_composition_catalogue_has_one_authored_bridge_and_preserves_original109(self):
+        manifest = json.loads((RECIPE / 'source-imports.json').read_bytes())
+        provenance = json.loads((RECIPE / 'provenance.json').read_bytes())
+        self.assertEqual(INSPECT.composition_catalogue_counts(manifest),
+            {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
+        bridge = INSPECT.COMPOSITION_BRIDGE
+        record = provenance['runtime_files'][bridge]
+        self.assertEqual(record['origin'], 'reviewed-source-only-composition-undo-private-bridge')
+        self.assertIsNone(record['preimage_sha256'])
+        self.assertEqual(record['source'], bridge)
+        self.assertEqual(record['sha256'], INSPECT.COMPOSITION_SOURCE_FACTS[bridge]['sha256'])
+        historical = {k: v for k, v in provenance['runtime_files'].items() if k != bridge}
+        self.assertEqual(len(historical), 109)
+        for name, expected in INSPECT.COMPOSITION_PREDECESSORS.items():
+            current = historical[name]
+            prior = current['successor']['supersedes']['origin']
+            canonical = json.dumps(prior, sort_keys=True, separators=(',', ':'), ensure_ascii=True, allow_nan=False).encode('ascii')
+            self.assertEqual(digest(canonical), expected['record_sha256'])
+            self.assertEqual(prior['after_sha256'], expected['current_sha256'])
+            for field in ('origin', 'origin_path', 'source', 'sha256', 'preimage_sha256', 'bytes', 'mode'):
+                self.assertEqual(current[field], prior[field])
+        changed = copy.deepcopy(manifest)
+        changed['kind'] = 'foundation-native-engine-actions-source-inputs'
+        with self.assertRaises(ValueError):
+            INSPECT.composition_catalogue_counts(changed)
 
 if __name__ == "__main__":
     unittest.main()

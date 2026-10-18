@@ -19,8 +19,10 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 NATIVE_TARGET = 'foundation-appended-engine-terminal'
 NATIVE_SELECTOR = 'FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_PROFILE'
-FRAGMENTS = ('Appended.cmake', 'AppendedCommon.cmake', 'AppendedGui.cmake',
-             'AppendedBinary.cmake', 'AppendedEngineProvider.cmake')
+FRAGMENTS = ('Appended.cmake', 'AppendedCommon.cmake', 'AppendedPortableCodecs.cmake',
+             'AppendedGui.cmake', 'AppendedBinary.cmake', 'AppendedEngineProvider.cmake',
+             'AppendedDemoServices.cmake', 'AppendedNativeGuiTests.cmake',
+             'AppendedCompositionTests.cmake')
 MAIN_CASES = {
     'help', 'cli-missing', 'cli-relative', 'cli-normalized', 'cli-flag', 'cli-extra',
     'graceful', 'start-waiting', 'runner-hooks', 'physical-profile', 'browser-profile',
@@ -31,6 +33,13 @@ MAIN_CASES = {
     'close-terminal', 'close-blocked', 'unfinished-close', 'tty-failure',
     'tty-nonstd', 'tty-return-failure',
 } | {'profile-' + str(number) for number in range(37)}
+ACTION_MAIN_CASES = {name for name in MAIN_CASES if not name.startswith('profile-')} - {
+    'cli-missing', 'physical-profile', 'browser-profile', 'invalid-profile'} | {
+    'default-runtime', 'default-runtime-failure', 'actions-cli-missing', 'actions-browser',
+    'actions-legacy-document', 'actions-legacy-editor', 'actions-legacy-document-dirty',
+    'actions-legacy-editor-dirty', 'actions-linux-arm64', 'actions-windows'} | {
+    'actions-plan-' + str(number) for number in range(97)} | {
+    'actions-facts-' + str(number) for number in range(91)}
 
 
 def quote(value):
@@ -294,6 +303,8 @@ class Fixture:
             'FOUNDATION_APPENDED_ENGINE_RUNTIME_SHA256': '4' * 64,
             'CMAKE_INSTALL_BINDIR': 'bin', 'CMAKE_INSTALL_INCLUDEDIR': 'include',
             'CMAKE_INSTALL_DATADIR': 'share', 'CMAKE_DL_LIBS': 'dl',
+            'CMAKE_INSTALL_FULL_BINDIR': str(self.root / 'install/bin'),
+            'CMAKE_INSTALL_FULL_DATADIR': str(self.root / 'install/share'),
             'FIXTURE_RESTORE_FAILURE': restore_failure,
             'FIXTURE_MANIFEST': '{"files":{"lib/provider.so":"ineligible","share/required.dat":"ineligible","notices/LICENSE":"ineligible"},"directories":["lib","share","notices"]}',
         }
@@ -347,7 +358,11 @@ class NativeTerminalCMakeTests(unittest.TestCase):
     def test_none_and_binary_do_not_select_native_engine_entry(self):
         none = self.success(profile='none', native='')
         self.assertNotIn(NATIVE_TARGET, none.targets)
-        self.assertFalse(any('appended' in target for target in none.targets))
+        # The shared pure demo-services leaf is declared for ordinary GUI builds.
+        # No appended runtime, VM or engine target is enabled by that declaration.
+        self.assertEqual({target for target in none.targets if 'appended' in target},
+                         {'foundation_gui_appended_demo_services'})
+        self.assertIn('EXCLUDE_FROM_ALL', none.values('TARGET', 'foundation_gui_appended_demo_services'))
         binary = self.success(profile='binary', native='')
         self.assertIn('foundation-appended-kernel', binary.targets)
         self.assertIn('foundation-appended-terminal', binary.targets)
@@ -521,7 +536,8 @@ class NativeTerminalCMakeTests(unittest.TestCase):
         graph = self.success(testing=True)
         targets = [name for name, values in graph.targets.items()
                    if any(value.endswith('tests/appended_engine_terminal_main_test.cpp') for value in values)]
-        self.assertEqual(2, len(targets))
+        self.assertEqual({'foundation_gui_native_terminal_' + variant + mode + '_test'
+                          for variant in ('main_', 'actions_main_') for mode in ('web', 'both')}, set(targets))
         modes = set()
         for target in targets:
             definitions = graph.values('DEFINITION', target)
@@ -538,8 +554,12 @@ class NativeTerminalCMakeTests(unittest.TestCase):
                            if value not in ('BEFORE', 'PRIVATE', 'PUBLIC', 'INTERFACE', 'SYSTEM')]
             self.assertTrue(directories[0].endswith('/tests/fixtures/appended_engine_terminal'))
             tests = graph.tests_for(target)
-            self.assertEqual(MAIN_CASES, {command[-1] for command in tests.values()})
-            self.assertEqual(70, len(tests))
+            actions = '_actions_main_' in target
+            self.assertEqual(ACTION_MAIN_CASES if actions else MAIN_CASES,
+                             {command[-1] for command in tests.values()})
+            self.assertEqual(227 if actions else 70, len(tests))
+            self.assertEqual('1' if '_both_' in target else '0', capability[0].split('=')[1])
+            self.assertEqual(actions, 'FOUNDATION_APPENDED_ENGINE_NATIVE_DOCUMENT_ACTIONS_PROFILE=1' in definitions)
             for name in tests:
                 self.assertIn([name, target], graph.rows('PREREQUISITES'))
                 properties = [row for row in graph.rows('TEST_PROPERTY') if row[0] == name]

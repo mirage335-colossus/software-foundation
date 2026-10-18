@@ -22,6 +22,7 @@ import stat
 import sys
 
 import appended_engine_manifest as manifest
+import appended_engine_native_inputs as native_inputs
 import appended_engine_native_actions_contract as actions
 import appended_engine_windows_contract as contract
 
@@ -443,7 +444,8 @@ def _joined(raw, retained_read):
         if digest(body) != pin:
             raise ValueError('Retained source catalogue bytes differ')
         return body
-    catalogue_raw = {role: pinned_body(item['sha256']) for role, item in contract.CATALOGUE.items()}
+    catalogue = contract.catalogue_for_recipe_inputs(recipe['inputs'])
+    catalogue_raw = {role: pinned_body(item['sha256']) for role, item in catalogue.items()}
     source_map, provenance = (_document(catalogue_raw[name]) for name in ('source_map', 'provenance'))
     inputs = source_map.get('inputs')
     if type(inputs) is not dict:
@@ -461,7 +463,10 @@ def _joined(raw, retained_read):
     counts = {'source_files': len(overlays),
         'engine_files': sum(name.startswith('source/engine/') for name in overlays),
         'direct_translation_units': len(units)}
-    if counts != {'source_files': 157, 'engine_files': 48, 'direct_translation_units': 32} or any(
+    expected_counts = (native_inputs.composition_catalogue_counts(source_map)
+        if source_map.get('kind') == native_inputs.COMPOSITION_SOURCE_KIND else
+        {'source_files': 157, 'engine_files': 48, 'direct_translation_units': 32})
+    if counts != expected_counts or any(
             provenance.get('source_graph', {}).get(key) != value for key, value in counts.items()):
         raise ValueError('Prepared common native157/engine48/32TU graph differs')
     for name, item in overlays.items():
@@ -530,7 +535,7 @@ def _joined(raw, retained_read):
             encoded(receipt) != encoded(wanted)):
         raise ValueError('Original native metadata generator receipt differs from current exact shape/joins')
     native = contract.validate_inputs(_document(raw['native_inputs']))
-    return {'target': copy.deepcopy(contract.TARGET), 'source_catalogue': copy.deepcopy(contract.CATALOGUE),
+    return {'target': copy.deepcopy(contract.TARGET), 'source_catalogue': copy.deepcopy(catalogue),
         'recipe_sha256': recipe_pin, 'sources_sha256': sources_pin, 'provider_build_sha256': build_pin,
         'metadata_header_sha256': digest(raw['metadata_header']),
         'toolchain_identity_sha256': recipe['toolchain']['identity_sha256'], 'native_inputs': native,
@@ -547,7 +552,7 @@ def _selection(path, pin):
     manifest.fields(value, ('schema_version', 'kind', 'target', 'source_catalogue',
         'retained_root', 'assembled_root', *REFS), 'Windows handoff selection')
     if (type(value['schema_version']) is not int or value['schema_version'] != 1 or value['kind'] != SELECTION_KIND or
-            value['target'] != contract.TARGET or value['source_catalogue'] != contract.CATALOGUE):
+            value['target'] != contract.TARGET or value['source_catalogue'] != contract.catalogue_for_reference(value['source_catalogue'])):
         raise ValueError('Windows handoff selection target/current catalogue differs')
     retained, assembled = (_absolute(value[name]) for name in ('retained_root', 'assembled_root'))
     if retained == assembled or retained in assembled.parents or assembled in retained.parents:
@@ -573,6 +578,8 @@ def _selection(path, pin):
         raise ValueError('Original metadata receipt header path differs from selected original generated header')
     facts, retained_inventory, assembled_inventory = _joined(raw,
         lambda name: _read(retained / manifest.path_name(name)))
+    if facts['source_catalogue'] != value['source_catalogue']:
+        raise ValueError('Prepared source catalogue differs from selected handoff version')
     for root, inventory in ((retained, retained_inventory), (assembled, assembled_inventory)):
         try:
             _scan(root, inventory)
@@ -597,7 +604,7 @@ def verify_handoff(root, expected_sha256):
     manifest.fields(value, ('schema_version', 'kind', 'scope', 'target', 'source_catalogue', 'paths',
         'files', 'directories', 'modes', 'build', 'production_eligible', 'engine_execution', 'kernel_rebuild'), 'Windows handoff manifest')
     if (type(value['schema_version']) is not int or value['schema_version'] != 1 or value['kind'] != KIND or
-            value['scope'] != SCOPE or value['target'] != contract.TARGET or value['source_catalogue'] != contract.CATALOGUE or
+            value['scope'] != SCOPE or value['target'] != contract.TARGET or value['source_catalogue'] != contract.catalogue_for_reference(value['source_catalogue']) or
             value['paths'] != PATHS or any(value[name] is not False for name in FALSE_FACTS)):
         raise ValueError('Windows handoff exact source-only contract differs')
     inventory = {name: value[name] for name in ('files', 'directories', 'modes')}
@@ -605,6 +612,8 @@ def verify_handoff(root, expected_sha256):
     recheck_manifest()
     raw = {role: _read(root / ('retained/' + role + '.json' if role in ('recipe', 'sources') else PATHS[role])) for role in REFS}
     facts, retained, assembled = _joined(raw, lambda name: _read(root / 'retained' / manifest.path_name(name)))
+    if facts['source_catalogue'] != value['source_catalogue']:
+        raise ValueError('Handoff manifest catalogue differs from actual prepared source version')
     def subinventory(prefix):
         return {'files': {name[len(prefix):]: pin for name, pin in inventory['files'].items() if name.startswith(prefix)},
             'directories': [name[len(prefix):] for name in inventory['directories'] if name.startswith(prefix)],
@@ -710,7 +719,7 @@ def create_handoff(selection_path, selection_sha256, output):
             finally:
                 metadata.close()
             value = {'schema_version': 1, 'kind': KIND, 'scope': SCOPE, 'target': contract.TARGET,
-                'source_catalogue': contract.CATALOGUE, 'paths': PATHS,
+                'source_catalogue': facts['source_catalogue'], 'paths': PATHS,
                 **_combined_inventory(retained, assembled, raw), **{name: False for name in FALSE_FACTS}}
             manifest_raw = encoded(value)
             _save(stage_anchor.fd, 'handoff.json', manifest_raw)

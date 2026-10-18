@@ -252,6 +252,19 @@ private:
     void requestCandidatesForSelection(const WebCore::VisibleSelection&) final { }
     void handleAcceptedCandidateWithSoftSpaces(WebCore::TextCheckingResult) final { }
 
+public:
+    // Private native owner supplies a checked concrete EditCommandComposition.
+    std::uint64_t compositionUndoBegin(const WebCore::Document& document) { return m_undoHistory.beginPending(&document); }
+    bool compositionUndoOwner(std::uint64_t token, const WebCore::Document& document) const { return m_undoHistory.matchesOwner(token, &document); }
+    bool compositionUndoMatch(std::uint64_t token, const void* step) const { return m_undoHistory.matchesPending(token, step); }
+    bool compositionUndoCommit(std::uint64_t token, const void* step) { return m_undoHistory.commitPending(token, step); }
+    bool compositionUndoDetach(std::uint64_t token, const void* step) { return m_undoHistory.detachForRollback(token, step); }
+    bool compositionUndoRollbackMatch(std::uint64_t token, const void* step) const { return m_undoHistory.rollbackMatches(token, step); }
+    bool compositionUndoConsume(std::uint64_t token, const void* step) { return m_undoHistory.consumeRollback(token, step); }
+    bool compositionUndoFinish(std::uint64_t token, const void* step) { return m_undoHistory.finishRollback(token, step); }
+    void compositionUndoQuarantine(std::uint64_t token) { m_undoHistory.quarantine(token); }
+
+private:
     void registerUndoStep(WebCore::UndoStep& step) final
     {
         // Borrowed callback: retain; never adopt the existing refcount.

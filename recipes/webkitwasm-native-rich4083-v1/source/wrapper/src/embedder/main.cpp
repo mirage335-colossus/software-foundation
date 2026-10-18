@@ -9,6 +9,7 @@
 #include "BibIDBServer.h"
 #include "BibMediaPlayer.h"
 #include "BibPageClients.h"
+#include "BibEngineProviderCompositionUndo.h"
 #include "BibSocketProvider.h"
 #include "BibStorage.h"
 #include "CommonAtomStrings.h"
@@ -609,6 +610,55 @@ WebCore::Page* bibProviderPage()
 }
 
 #if BIB_ENGINE_PROVIDER_DOCUMENT_V2
+// The edited Document can be an owned subframe. Never substitute the main
+// Document or reinterpret a foreign Page's editor client during old9 cleanup.
+static BibEditorClient* compositionUndoClient(WebCore::Document& document)
+{
+    if (!providerOnOwner() || providerUiFaulted() || !g_providerReady || !g_engine || !g_engine->page || !g_providerEditorClient)
+        return nullptr;
+    auto* frame = document.frame();
+    if (!frame || frame->document() != &document || frame->page() != g_engine->page.get()
+        || document.page() != g_engine->page.get() || &g_engine->page->editorClient() != g_providerEditorClient)
+        return nullptr;
+    return g_providerEditorClient;
+}
+std::uint64_t bibProviderCompositionUndoBegin(WebCore::Document& document)
+{
+    auto* client = compositionUndoClient(document);
+    return client ? client->compositionUndoBegin(document) : 0;
+}
+bool bibProviderCompositionUndo(WebCore::Document& document, CompositionUndoAction action, std::uint64_t token, const WebCore::UndoStep* step)
+{
+    // Exact empty historical scopes need no replacement Document/frame/editor
+    // access. The client's journal retains borrowed Document identity + token;
+    // the backend alone owns the strong original Document reference.
+    if (action == CompositionUndoAction::matchEmpty || action == CompositionUndoAction::closeEmpty
+        || action == CompositionUndoAction::quarantine) {
+        if (providerOnOwner() && !providerUiFaulted() && g_providerReady && g_engine && g_engine->page && g_providerEditorClient
+            && &g_engine->page->editorClient() == g_providerEditorClient
+            && g_providerEditorClient->compositionUndoOwner(token, document)
+            && g_providerEditorClient->compositionUndoMatch(token, nullptr)) {
+            if (action == CompositionUndoAction::matchEmpty) return true;
+            if (action == CompositionUndoAction::closeEmpty) return g_providerEditorClient->compositionUndoCommit(token, nullptr);
+            g_providerEditorClient->compositionUndoQuarantine(token); return true;
+        }
+        if (action != CompositionUndoAction::quarantine) return false;
+    }
+    auto* client = compositionUndoClient(document);
+    if (!client || !token || !client->compositionUndoOwner(token, document)) return false;
+    switch (action) {
+    case CompositionUndoAction::matchEmpty:
+    case CompositionUndoAction::closeEmpty: return false;
+    case CompositionUndoAction::matchPending: return client->compositionUndoMatch(token, step);
+    case CompositionUndoAction::commit: return client->compositionUndoCommit(token, step);
+    case CompositionUndoAction::detach: return client->compositionUndoDetach(token, step);
+    case CompositionUndoAction::matchRollback: return client->compositionUndoRollbackMatch(token, step);
+    case CompositionUndoAction::consume: return client->compositionUndoConsume(token, step);
+    case CompositionUndoAction::finish: return client->compositionUndoFinish(token, step);
+    case CompositionUndoAction::quarantine: client->compositionUndoQuarantine(token); return true;
+    }
+    return false;
+}
 WTF::RefPtr<WebCore::LocalFrame> bibProviderDocumentMainFrame()
 {
     if (!providerOnOwner() || providerUiFaulted() || !g_providerReady || !g_engine || !g_engine->mainFrame)

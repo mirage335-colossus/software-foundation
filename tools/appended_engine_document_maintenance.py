@@ -1382,6 +1382,10 @@ COMPLETED_KIND = 'foundation-document-v2-completed-work-v1'
 COMPLETED_DEPS_KIND = 'foundation-document-v2-completed-dependencies-v1'
 SUCCESSFUL_PLAN_KIND = 'foundation-document-v2-maintenance-successful-donor-plan-v1'
 SUCCESSFUL_BUILD_KIND = 'foundation-document-v2-maintenance-successful-donor-build-v1'
+GUARD_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-successful-donor-guard-repair-plan-v1'
+GUARD_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-successful-donor-guard-repair-build-v1'
+COMPOSITION_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-successful-donor-composition-repair-plan-v1'
+COMPOSITION_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-successful-donor-composition-repair-build-v1'
 SUCCESSFUL_HELPER = 'tools/appended_engine_successful_donor.py'
 
 
@@ -1487,6 +1491,255 @@ def _completed_header_context(inspection, dependency_refs, objects):
         'vfs': _completed_normalize_vfs(view['overlay'], inspection.roots)}
 
 
+COMPOSITION_REPAIR_HEADERS = ('source/wrapper/src/embedder/BibPageClients.h',
+    'source/wrapper/src/embedder/BibUndoHistory.h',
+    'source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h')
+
+
+def validate_composition_dependency_owners(depfiles, header_paths):
+    """Pure ownership gate over already parsed, independently bound paths."""
+    units = {'NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp',
+             'ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp'}
+    headers = ('source/wrapper/src/embedder/BibPageClients.h',
+        'source/wrapper/src/embedder/BibUndoHistory.h',
+        'source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h')
+    if type(depfiles) is not dict or set(depfiles) != units or type(header_paths) is not dict or set(header_paths) != set(headers):
+        raise ValueError('Composition dependency gate requires exact five units and three headers')
+    for paths in (*depfiles.values(), *header_paths.values()):
+        if type(paths) not in (set, frozenset) or not paths:
+            raise ValueError('Composition dependencies and aliases require nonempty path sets')
+        for value in paths:
+            if type(value) is not str or not value or any(ord(c) < 32 for c in value):
+                raise ValueError('Composition dependency path is not canonical absolute text')
+            path = Path(value)
+            if (not path.is_absolute() or str(path) != value or '..' in path.parts or '.' in path.parts
+                    or any(not part for part in value.replace(chr(92), '/').split('/')[1:])):
+                raise ValueError('Composition dependency path is not canonical absolute text')
+    aliases = list(header_paths.values())
+    if any(left & right for i, left in enumerate(aliases) for right in aliases[i + 1:]):
+        raise ValueError('Composition header aliases must be pairwise disjoint')
+    for header in headers:
+        owners = {name for name, paths in depfiles.items() if paths & header_paths[header]}
+        expected = {'BibNativeEditorBackend.cpp', 'main.cpp'} if header == headers[-1] else {'main.cpp'}
+        if owners != expected:
+            raise ValueError('Composition header dependency owners differ: ' + header)
+
+
+def _composition_context_matches(old, current):
+    """Separate five-unit lane; the predecessor header matcher stays exact."""
+    names = ('directories', 'namespace', 'physical_headers_sha256', 'vfs')
+    fields(old, names, 'composition original header context')
+    fields(current, names, 'composition successor header context')
+    if (old['directories'] != current['directories'] or old['physical_headers_sha256'] != current['physical_headers_sha256']
+            or old['vfs'] != current['vfs'] or type(old['namespace']) is not dict or type(current['namespace']) is not dict):
+        raise ValueError('Composition include namespace/physical-header/VFS context differs')
+    sha(old['physical_headers_sha256'], 'composition physical headers')
+    additions = {'{sources}/' + COMPOSITION_REPAIR_HEADERS[-1]}
+    if set(current['namespace']) != set(old['namespace']) | additions or additions & set(old['namespace']):
+        raise ValueError('Composition requires exactly one new private-header namespace key')
+    changed_headers = {'{sources}/' + path for path in COMPOSITION_REPAIR_HEADERS[:-1]}
+    units = {'.c', '.cc', '.cpp', '.cxx', '.m', '.mm', '.s'}
+    for table in (old['namespace'], current['namespace']):
+        for name, pin in table.items():
+            if type(name) is not str:
+                raise ValueError('Composition namespace key is not text')
+            sha(pin, 'composition namespace input')
+    for path in COMPOSITION_REPAIR_HEADERS:
+        if {name for name in current['namespace'] if Path(name).name == Path(path).name} != {'{sources}/' + path}:
+            raise ValueError('Composition header search namespace is not the exact source singleton: ' + path)
+    for name, pin in old['namespace'].items():
+        if Path(name).suffix.lower() not in units and name not in changed_headers and current['namespace'][name] != pin:
+            raise ValueError('Composition changed an undeclared header/config input')
+    if any(name not in old['namespace'] or current['namespace'][name] == old['namespace'][name] for name in changed_headers):
+        raise ValueError('Composition requires both exact main-only header hash deltas')
+
+
+def _composition_context_delta(inspection, old, previous, current):
+    prior = {row['id']: row for row in old['reuse']['objects']}
+    successor = {row['id']: row for row in inspection.proof['objects']}
+    compiled = _successful_module().COMPOSITION_REPAIR_COMPILED_IDS
+    shim = 'BibEngineDocumentWasmShim.cpp'
+    for key in ('source', 'arguments', 'dependencies', 'unified_members', 'exceptions'):
+        if prior[shim][key] != successor[shim][key]:
+            raise ValueError('Composition repair changed Shim source/compiler/header inputs')
+    headers = set(COMPOSITION_REPAIR_HEADERS[:-1])
+    # Recipe proof dependencies are deliberately abridged. Historical complete
+    # ownership is proved from donor depfiles by _composition_prior_headers;
+    # fresh complete ownership is a mandatory candidate-readback gate.
+    # Every current header is still joined to its full source inventory here.
+    for path in COMPOSITION_REPAIR_HEADERS:
+        ref_path({'root': 'sources', 'path': path,
+            'sha256': current['namespace']['{sources}/' + path]}, inspection.roots, inspection.inventories)
+    allowed = {'{sources}/' + path for path in COMPOSITION_REPAIR_HEADERS[:-1]}
+    for name in compiled:
+        if name == shim:
+            continue
+        before, after = prior[name], successor[name]
+        source, replacement = before['source'], after['source']
+        fields(source, REFERENCE_FIELDS, 'composition original direct source')
+        fields(replacement, REFERENCE_FIELDS, 'composition successor direct source')
+        if (source['root'] != 'sources' or replacement['root'] != source['root']
+                or replacement['path'] != source['path'] or replacement['sha256'] == source['sha256']):
+            raise ValueError('Composition requires exact changed direct source coordinates/hash: ' + name)
+        if (before['arguments'] != after['arguments'] or before['exceptions'] != after['exceptions']
+                or before['unified_members'] != after['unified_members']):
+            raise ValueError('Composition changed direct compiler options/unified inputs: ' + name)
+        expected = []
+        for ref in before['dependencies']:
+            if ref == source:
+                expected.append(replacement)
+            elif ref.get('root') == 'sources' and ref.get('path') in headers:
+                expected.append(dict(ref, sha256=current['namespace']['{sources}/' + ref['path']]))
+            else:
+                expected.append(ref)
+        if after['dependencies'] != expected:
+            raise ValueError('Composition changed undeclared direct dependency/order: ' + name)
+        for ref in (replacement, *after['dependencies'], *after['unified_members']):
+            ref_path(ref, inspection.roots, inspection.inventories)
+        operand = '{sources}/' + source['path']
+        if previous['namespace'].get(operand) != source['sha256'] or current['namespace'].get(operand) != replacement['sha256']:
+            raise ValueError('Composition direct source lacks exact namespace hash joins: ' + name)
+        allowed.add(operand)
+    changed = {name for name, pin in previous['namespace'].items() if current['namespace'].get(name) != pin}
+    if changed != allowed:
+        raise ValueError('Composition changed undeclared namespace bodies or omitted a declared delta')
+
+
+def _composition_prior_headers(value, bindings, old, sidecar, freeze, rows, commands):
+    """Join complete original five depfiles and the admitted46 to the same table.
+
+    The proof object's dependency list is an explicit recipe input list, not a
+    compiler header census. Only the pinned112 product index supplies excluded
+    original depfiles; neither directory discovery nor current SDK reads occur.
+    """
+    helper = _successful_module()
+    _, records = helper._metadata(value, bindings, old, sys.modules[__name__], composition_repair=True)
+    compiled = helper.COMPOSITION_REPAIR_COMPILED_IDS
+    facts = {name: records['objects/' + name + '.o.d'] for name in compiled}
+    prior_bytes = sum(fact['bytes'] for fact in facts.values())
+    admitted_bytes = sum(row['object']['bytes'] + row['depfile']['bytes']
+        + (row['command_script']['bytes'] if row.get('command_script') else 0) for row in rows)
+    if prior_bytes + admitted_bytes > 256 * 1024 * 1024:
+        raise ValueError('Composition original/imported dependency reads exceed the existing256MiB budget')
+    cwd = str(bindings['build'] / 'cmake/build')
+    normalize = lambda path: os.path.normpath(str(Path(path) if Path(path).is_absolute() else Path(cwd) / path))
+    dependencies = {row['id']: set(row['dependency_keys']) for row in rows}
+    objects = {obj['id']: obj for obj in old['reuse']['objects']}
+    for name in compiled:
+        target = str(bindings['build'] / ('objects/' + name + '.o'))
+        keys = set(normalize(path) for path in _depfile_inputs(_completed_fact(facts[name]), target=target))
+        argv = commands['objects'][name]
+        if (argv.count('-c') != 1 or argv.index('-c') + 1 >= len(argv)
+                or normalize(argv[argv.index('-c') + 1]) != str(bindings['sources'] / objects[name]['source']['path'])
+                or normalize(argv[argv.index('-c') + 1]) not in keys):
+            raise ValueError('Composition original depfile omits its exact original source: ' + name)
+        dependencies[name] = keys
+    if set(dependencies) != set(objects) or len(dependencies) != 51:
+        raise ValueError('Composition original complete dependency union is not exact51')
+    for path in COMPOSITION_REPAIR_HEADERS:
+        aliases = set()
+        original_pin = sidecar['header_context']['namespace'].get('{sources}/' + path)
+        for key, item in sidecar['dependencies'].items():
+            reference = item['input']
+            if reference.get('root') != 'sources' or reference.get('path') != path:
+                continue
+            fields(item, ('fact', 'input', 'origin'), 'composition original header dependency')
+            fields(reference, REFERENCE_FIELDS, 'composition original header input')
+            fact = item['fact']
+            if (path == COMPOSITION_REPAIR_HEADERS[-1] or item['origin'] != 'retained'
+                    or key != str(bindings['sources'] / path) or fact['path'] != key
+                    or reference['sha256'] != original_pin or fact['sha256'] != original_pin
+                    or freeze['files'].get(key) != fact):
+                raise ValueError('Composition original header lacks its exact frozen source join: ' + path)
+            _completed_fact(fact)
+            aliases.add(key)
+        if path == COMPOSITION_REPAIR_HEADERS[-1]:
+            if original_pin is not None or any(str(bindings['sources'] / path) in keys for keys in dependencies.values()):
+                raise ValueError('Composition private header was present in the original closure')
+        else:
+            if aliases != {str(bindings['sources'] / path)} or {name for name, keys in dependencies.items() if keys & aliases} != {'main.cpp'}:
+                raise ValueError('Composition original complete header owner differs: ' + path)
+
+
+    return dependencies, records
+
+
+def _composition_header_context(inspection, bindings, sidecar, freeze, dependencies, generated):
+    """Retain original51 search coordinates, including seven fresh-only inputs.
+
+    The original depfiles and112 product index are authenticated by the caller.
+    Six retained gaps join the original frozen namespace. The one old generated
+    header is classified by its indexed fact, never read or imported here.
+    """
+    objects = inspection.proof['objects']
+    if (len(objects) != 51 or len({obj['id'] for obj in objects}) != 51
+            or set(dependencies) != {obj['id'] for obj in objects}):
+        raise ValueError('Composition header context requires the exact original51 owner index')
+    roots = {key: str(path) for key, path in bindings.items() if key != 'build'}
+    cwd = str(bindings['build'] / 'cmake/build')
+    publisher, shim = 'NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp'
+    retained_gaps = {
+        ('sources', 'source/document-provider/native/NativeDocumentV2Publisher.cpp'): publisher,
+        ('sources', 'source/document-provider/runtime/BibEngineDocumentWasmShim.cpp'): shim,
+        ('sources', 'source/document-provider/runtime/BibEngineDocumentWasmShim.h'): shim,
+        **{('reuse', 'build/webcore/WebCore/PrivateHeaders/WebCore/' + name): publisher
+           for name in ('HTMLBodyElement.h', 'HTMLButtonElement.h', 'TextEvent.h')}}
+    gaps = {str(bindings[root] / path): (root, path, owner)
+            for (root, path), owner in retained_gaps.items()}
+    generated_key = str(bindings['build'] / 'document-generated/BibCopiedDocumentMetadata.generated.h')
+    keys = set().union(*dependencies.values())
+    missing = keys - set(sidecar['dependencies'])
+    if missing and missing != set(gaps) | {generated_key}:
+        raise ValueError('Composition context missing inputs are not the exact seven fresh-only coordinates')
+    refs = []
+    for key in sorted(keys):
+        owners = {name for name, inputs in dependencies.items() if key in inputs}
+        if key in missing:
+            context = sidecar['header_context']
+            if key == generated_key:
+                fields(generated, ('path', 'sha256', 'bytes', 'mode', 'identity'),
+                       'composition indexed generated header')
+                sha(generated['sha256'], 'composition indexed generated header')
+                if (generated['path'] != key or owners != {shim} or key in freeze['files']
+                        or any(name == '{generated}' or name.startswith('{generated}/')
+                               for name in (*context['directories'], *context['namespace']))):
+                    raise ValueError('Composition generated coordinate lacks its exact excluded Shim authority')
+                continue
+            root, path, owner = gaps[key]
+            fact = freeze['files'].get(key)
+            fields(fact, ('path', 'sha256', 'bytes', 'mode', 'identity'),
+                   'composition frozen fresh-only input')
+            if (owners != {owner} or fact['path'] != key
+                    or context['namespace'].get('{' + root + '}/' + path) != fact['sha256']):
+                raise ValueError('Composition fresh-only input lacks exact owner/frozen namespace authority')
+            item = dict(fact=fact, input=dict(root=root, path=path, sha256=fact['sha256']), origin='retained')
+        else:
+            item = sidecar['dependencies'][key]
+        fields(item, ('fact', 'input', 'origin'), 'composition context dependency')
+        reference, fact = item['input'], item['fact']
+        fields(reference, REFERENCE_FIELDS, 'composition context input')
+        fields(fact, ('path', 'sha256', 'bytes', 'mode', 'identity'), 'composition context original fact')
+        if (reference['root'] not in inspection.inventories or fact['path'] != key
+                or fact['sha256'] != sha(reference['sha256'], 'composition context input')
+                or manifest.path_name(reference['path']) not in inspection.inventories[reference['root']]):
+            raise ValueError('Composition context input lacks its original/current namespace join')
+        if item['origin'] == 'retained':
+            if (freeze['files'].get(key) != fact or
+                    _relocate_original(key, cwd, roots) != '{' + reference['root'] + '}/' + reference['path']):
+                raise ValueError('Composition context input lacks original frozen relocation authority')
+        elif item['origin'] == 'private-cache':
+            seed = inspection.proof['private_cache']
+            relative = Path(key).relative_to(bindings['build'] / 'private/cache').as_posix()
+            if (reference['root'] != 'sdk' or reference['path'] != seed['root'] + '/' + relative
+                    or reference['path'] not in seed['files']
+                    or freeze['files'].get(str(bindings['sdk'] / reference['path']), {}).get('sha256') != fact['sha256']):
+                raise ValueError('Composition context private cache lacks its exact frozen SDK seed')
+        else:
+            raise ValueError('Composition context contains a generated or unknown dependency origin')
+        refs.append(reference)
+    return _completed_header_context(inspection, refs, objects)
+
+
 def _completed_context_matches(old, current):
     fields(old, ('directories', 'namespace', 'physical_headers_sha256', 'vfs'), 'completed header context')
     if (old['directories'] != current['directories'] or set(old['namespace']) != set(current['namespace'])
@@ -1501,39 +1754,45 @@ def _completed_context_matches(old, current):
             raise ValueError('Completed header/config input bytes differ')
 
 
-def _successful_context_delta(inspection, old, previous, current):
-    """The successful successor admits only the declared Publisher TU delta.
+def _successful_context_delta(inspection, old, previous, current, *, guard_repair=False, composition_repair=False):
+    """Admit only each lane's declared direct-TU source deltas.
 
-    The caller has already applied the complete legacy namespace/header/VFS
-    guard. Every imported actual dependency remains independently byte exact;
-    generated dependencies are never admitted for import.
+    Namespace/header/VFS and imported actual-dependency guards are applied by
+    the caller; this gate grants no header, compiler or generated-input waiver.
     """
+    if composition_repair:
+        if guard_repair:
+            raise ValueError('Composition and Guard repair lanes are mutually exclusive')
+        return _composition_context_delta(inspection, old, previous, current)
     prior = {row['id']: row for row in old['reuse']['objects']}
     successor = {row['id']: row for row in inspection.proof['objects']}
     publisher, shim = _successful_module().COMPILED_IDS
-    before, after = prior[publisher], successor[publisher]
-    source, replacement = before['source'], after['source']
-    fields(source, REFERENCE_FIELDS, 'original Publisher source')
-    fields(replacement, REFERENCE_FIELDS, 'successor Publisher source')
-    if (source['root'] != 'sources' or replacement['root'] != source['root']
-            or replacement['path'] != source['path']):
-        raise ValueError('Successful donor changed Publisher logical source coordinates')
     for key in ('source', 'arguments', 'dependencies', 'unified_members', 'exceptions'):
         if prior[shim][key] != successor[shim][key]:
             raise ValueError('Successful donor changed Shim source/compiler/header inputs')
-    if before['arguments'] != after['arguments'] or before['exceptions'] != after['exceptions']:
-        raise ValueError('Successful donor changed Publisher compiler options')
-    for key in ('dependencies', 'unified_members'):
-        expected = [replacement if reference == source else reference for reference in before[key]]
-        if after[key] != expected:
-            raise ValueError('Successful donor changed Publisher included input context')
-    operand = '{sources}/' + source['path']
-    if (previous['namespace'].get(operand) != source['sha256']
-            or current['namespace'].get(operand) != replacement['sha256']):
-        raise ValueError('Successful donor Publisher lacks its exact namespace hash join')
+    allowed = set()
+    for name in (publisher, 'ProviderGuard.cpp') if guard_repair else (publisher,):
+        before, after = prior[name], successor[name]
+        source, replacement = before['source'], after['source']
+        fields(source, REFERENCE_FIELDS, 'original direct source')
+        fields(replacement, REFERENCE_FIELDS, 'successor direct source')
+        if (source['root'] != 'sources' or replacement['root'] != source['root']
+                or replacement['path'] != source['path']):
+            raise ValueError('Successful donor changed direct logical source coordinates: ' + name)
+        if before['arguments'] != after['arguments'] or before['exceptions'] != after['exceptions']:
+            raise ValueError('Successful donor changed direct compiler options: ' + name)
+        for key in ('dependencies', 'unified_members'):
+            expected = [replacement if reference == source else reference for reference in before[key]]
+            if after[key] != expected:
+                raise ValueError('Successful donor changed direct included input context: ' + name)
+        operand = '{sources}/' + source['path']
+        if (previous['namespace'].get(operand) != source['sha256']
+                or current['namespace'].get(operand) != replacement['sha256']):
+            raise ValueError('Successful donor direct source lacks its exact namespace hash join: ' + name)
+        allowed.add(operand)
     changed = {name for name, pin in previous['namespace'].items()
                if current['namespace'].get(name) != pin}
-    if changed - {operand}:
+    if changed - allowed:
         raise ValueError('Successful donor changed an undeclared namespace body')
 
 
@@ -1741,7 +2000,7 @@ def _completed_private_context(value, bindings, old, freeze):
     return _completed_normalize_vfs(document(_completed_fact(value['vfs'])), bindings)
 
 
-def _completed_shape(inspection, old, rows, *, successful=False):
+def _completed_shape(inspection, old, rows, *, successful=False, guard_repair=False, composition_repair=False):
     p, config = inspection.proof, inspection.profile
     selected = config['direct_objects'] + config['engine_objects']
     expected_archives = {'WebCore': 924, 'JavaScriptCore': 185, 'PAL': 24, 'WTF': 168, 'Skia': 775}
@@ -1755,13 +2014,22 @@ def _completed_shape(inspection, old, rows, *, successful=False):
             or old['reuse']['archives'] != p['archives'] or old['reuse']['replacements'] != p['replacements']
             or sum(len(row['members']) for row in p['archives']) - len(p['replacements']) != 2060):
         raise ValueError('Resume must preserve exact51/five archives/16 replacements/2060 opaque order')
+    if type(composition_repair) is not bool or composition_repair and (not successful or guard_repair):
+        raise ValueError('Composition repair requires its exclusive successful-donor lane')
+    if guard_repair and not successful:
+        raise ValueError('Guard repair requires the explicit successful-donor lane')
     if successful:
-        compiled = set(_successful_module().COMPILED_IDS)
+        compiled = set(_successful_module().COMPOSITION_REPAIR_COMPILED_IDS if composition_repair else
+                       _successful_module().GUARD_REPAIR_COMPILED_IDS if guard_repair else _successful_module().COMPILED_IDS)
         wanted = [name for name in selected if name not in compiled]
-        if (len(wanted) != 49 or len(compiled) != 2 or not compiled <= set(selected)
+        if (len(wanted) != (46 if composition_repair else 48 if guard_repair else 49)
+                or len(compiled) != (5 if composition_repair else 3 if guard_repair else 2) or not compiled <= set(selected)
+                or (guard_repair or composition_repair) and not compiled <= set(config['direct_objects'])
                 or type(rows) is not list or any(type(row) is not dict for row in rows)
                 or [row.get('id') for row in rows] != wanted):
-            raise ValueError('Successful donor must import exact ordered49 and compile Publisher plus Shim')
+            raise ValueError('Composition donor must import exact ordered46 and compile Publisher/Shim/Guard/Backend/main' if composition_repair
+                             else 'Successful donor must import exact ordered48 and compile Publisher/Shim/ProviderGuard'
+                             if guard_repair else 'Successful donor must import exact ordered49 and compile Publisher plus Shim')
         return selected
     allowed = COMPLETED_DIRECT | set(config['engine_objects'])
     if (type(rows) is not list or not 0 < len(rows) <= 25 or any(type(row) is not dict for row in rows)
@@ -1810,8 +2078,12 @@ def _completed_build_receipt(result, plan, output, commands):
             obj['import_receipt'] = {'path': str(receipt.relative_to(output)), 'sha256': digest(receipt)}
 
 
-def _completed_work(reference, inspection, *, _successful=False):
+def _completed_work(reference, inspection, *, _successful=False, _guard_repair=False, _composition_repair=False):
     """No cache discovery or fallback: admit every explicit record or reject all."""
+    if type(_composition_repair) is not bool or _composition_repair and (not _successful or _guard_repair):
+        raise ValueError('Composition repair requires its exclusive successful-donor lane')
+    if _guard_repair and not _successful:
+        raise ValueError('Guard repair requires the explicit successful-donor lane')
     selected_reference = dict(reference)
     value = _completed_reference(reference)
     extra = ('root_acceptance', 'passive_worker', 'passive_result', 'maintenance_build', 'archives') if _successful else ()
@@ -1820,7 +2092,9 @@ def _completed_work(reference, inspection, *, _successful=False):
         'original_input_freeze', 'original_build_packet', 'root_launch', 'root_handle',
         'original_private', 'ninja_log', 'dependency_sidecar', 'objects') + extra, 'completed-work selection')
     if (type(value['schema_version']) is not int or value['schema_version'] != 1
-            or value['kind'] != (_successful_module().DONOR_KIND if _successful else COMPLETED_KIND) or value['document_profile'] != 'editor'
+            or value['kind'] != (_successful_module().COMPOSITION_REPAIR_DONOR_KIND if _composition_repair else
+                                 _successful_module().GUARD_REPAIR_DONOR_KIND if _guard_repair
+                                 else _successful_module().DONOR_KIND if _successful else COMPLETED_KIND) or value['document_profile'] != 'editor'
             or inspection.selection['document_profile'] != 'editor'):
         raise ValueError('Completed-work resume initially requires explicit editor profile')
     bindings = _completed_binding(value['original_bindings'])
@@ -1833,7 +2107,9 @@ def _completed_work(reference, inspection, *, _successful=False):
         if str(bindings[key]) != old['selection'][selection]:
             raise ValueError('Completed original root does not join its plan')
     if _successful:
-        freeze, packet, handle, expected_commands = _successful_module().authority(value, bindings, old, sys.modules[__name__])
+        freeze, packet, handle, expected_commands = _successful_module().authority(value, bindings, old, sys.modules[__name__],
+            **({'guard_repair': True} if _guard_repair else {}),
+            **({'composition_repair': True} if _composition_repair else {}))
     else:
         freeze, packet, handle, expected_commands = _completed_authority(value, bindings, old)
         wrapper = _completed_reference(value['root_failure'])
@@ -1873,7 +2149,8 @@ def _completed_work(reference, inspection, *, _successful=False):
             or not 0 < len(sidecar['dependencies']) <= 16384):
         raise ValueError('Completed SDK/tool/config/cache/shared dependency context differs')
     rows = value['objects']
-    selected = _completed_shape(inspection, old, rows, successful=_successful)
+    selected = _completed_shape(inspection, old, rows, successful=_successful, guard_repair=_guard_repair,
+                                composition_repair=_composition_repair)
     if (any(type(row.get(key, {}).get('bytes')) is not int or row[key]['bytes'] < 1
             for row in rows for key in ('object', 'depfile'))
             or sum(row['object']['bytes'] + row['depfile']['bytes']
@@ -1961,10 +2238,17 @@ def _completed_work(reference, inspection, *, _successful=False):
                 raise ValueError('Completed source does not match its selected logical reference')
             refs.append(reference)
         admitted.append(dict(row, original_argv=argv, original_cwd=cwd))
-    current_context = _completed_header_context(inspection, refs, [current_objects[row['id']] for row in admitted])
-    _completed_context_matches(sidecar['header_context'], current_context)
+    if _composition_repair:
+        dependencies, original_products = _composition_prior_headers(value, bindings, old, sidecar, freeze, rows, commands)
+        current_context = _composition_header_context(inspection, bindings, sidecar, freeze, dependencies,
+            original_products['document-generated/BibCopiedDocumentMetadata.generated.h'])
+        _composition_context_matches(sidecar['header_context'], current_context)
+    else:
+        current_context = _completed_header_context(inspection, refs, [current_objects[row['id']] for row in admitted])
+        _completed_context_matches(sidecar['header_context'], current_context)
     if _successful:
-        _successful_context_delta(inspection, old, sidecar['header_context'], current_context)
+        _successful_context_delta(inspection, old, sidecar['header_context'], current_context, guard_repair=_guard_repair,
+                                  composition_repair=_composition_repair)
     metadata = [selected_reference, *(value[key] for key in ('original_plan', 'original_commands',
         'root_failure', 'candidate_result', 'original_input_freeze', 'original_build_packet',
         'root_launch', 'root_handle', 'ninja_log', 'dependency_sidecar'))]
@@ -1974,7 +2258,9 @@ def _completed_work(reference, inspection, *, _successful=False):
         'dependency_sidecar': value['dependency_sidecar'], 'original_bindings': value['original_bindings'],
         'metadata_directories': sorted({str(Path(ref['path']).parent) for ref in metadata})}
     if _successful:
-        result['archives'] = _successful_module().archive_rows(value, inspection, old, bindings, sys.modules[__name__])
+        result['archives'] = _successful_module().archive_rows(value, inspection, old, bindings, sys.modules[__name__],
+            **({'guard_repair': True} if _guard_repair else {}),
+            **({'composition_repair': True} if _composition_repair else {}))
     return result
 
 
@@ -1987,7 +2273,7 @@ def _completed_input_directories(completed):
 
 def _copy_completed_object(plan, object_id, output):
     """Copy admitted bytes independently; never call a compiler on any failure."""
-    if plan.get('kind') not in (RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND):
+    if plan.get('kind') not in (RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND):
         raise ValueError('Object import requires a distinct admitted continuation plan')
     for root in _completed_input_directories(_work(plan)):
         if output == root or root in output.parents or output in root.parents:
@@ -2045,7 +2331,7 @@ def _copy_completed_object(plan, object_id, output):
 
 def _copy_successful_archive(plan, name, output):
     """Import one admitted regular archive without invoking ar or a fallback."""
-    if plan.get('kind') != SUCCESSFUL_PLAN_KIND:
+    if plan.get('kind') not in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND):
         raise ValueError('Archive import requires an explicit successful-donor plan')
     work = plan['successful_donor']
     for root in _completed_input_directories(work):
@@ -2103,15 +2389,24 @@ def _copy_successful_archive(plan, name, output):
 def _successful_build_receipt(result, plan, output, commands):
     # Reuse the exact existing object/readback checks; keep its public legacy
     # receipt shape unchanged and relabel only this explicit successor result.
+    if plan.get('kind') not in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND):
+        raise ValueError('Successful donor receipt requires its explicit plan kind')
+    guard_repair = plan['kind'] == GUARD_REPAIR_PLAN_KIND
+    composition_repair = plan['kind'] == COMPOSITION_REPAIR_PLAN_KIND
     donor = plan['successful_donor']
     _completed_build_receipt(result, dict(plan, completed_work=donor), output, commands)
-    compiled = set(_successful_module().COMPILED_IDS)
+    compiled = set(_successful_module().COMPOSITION_REPAIR_COMPILED_IDS if composition_repair else
+                   _successful_module().GUARD_REPAIR_COMPILED_IDS if guard_repair else _successful_module().COMPILED_IDS)
     names = [row['name'] for row in plan['reuse']['archives']]
     if (set(result['accounting']['compiled_ids']) != compiled
-            or result['accounting']['compiled'] != 2 or result['accounting']['imported'] != 49
+            or result['accounting']['compiled'] != (5 if composition_repair else 3 if guard_repair else 2)
+            or result['accounting']['imported'] != (46 if composition_repair else 48 if guard_repair else 49)
+            or [row['id'] for row in donor['objects']] != result['accounting']['imported_ids']
             or len(names) != 5 or set(commands.get('archive_imports', {})) != set(names)
             or [row['name'] for row in donor['archives']] != names):
-        raise ValueError('Successful donor accounting differs from exact49/2/five archives')
+        raise ValueError('Composition donor accounting differs from exact46/5/five archives' if composition_repair
+                         else 'Successful donor accounting differs from exact48/3/five archives'
+                         if guard_repair else 'Successful donor accounting differs from exact49/2/five archives')
     imports = []
     for row in donor['archives']:
         path = output / ('evidence/import-archive-' + row['name'] + '.json')
@@ -2128,7 +2423,7 @@ def _successful_build_receipt(result, plan, output, commands):
                 or _identity7(target.stat())[:2] == row['archive']['identity'][:2]):
             raise ValueError('Successful donor archive receipt/readback differs')
         imports.append({'name': row['name'], 'receipt': str(path.relative_to(output)), 'sha256': digest(path)})
-    result['kind'] = SUCCESSFUL_BUILD_KIND
+    result['kind'] = COMPOSITION_REPAIR_BUILD_KIND if composition_repair else GUARD_REPAIR_BUILD_KIND if guard_repair else SUCCESSFUL_BUILD_KIND
     result.pop('completed_work')
     result['successful_donor'] = donor['reference']
     result['accounting'].update(archive_imported=5, archive_repacked=0,
@@ -2136,14 +2431,22 @@ def _successful_build_receipt(result, plan, output, commands):
     result['archive_imports'] = imports
 
 
-def make_plan(selection, output, *, completed_work=None, successful_donor=None):
+def make_plan(selection, output, *, completed_work=None, successful_donor=None,
+              successful_donor_guard_repair=False, successful_donor_composition_repair=False):
+    if (type(successful_donor_composition_repair) is not bool
+            or successful_donor_composition_repair and (successful_donor is None or successful_donor_guard_repair)):
+        raise ValueError('Composition repair requires an explicit donor and exclusive boolean opt-in')
+    if type(successful_donor_guard_repair) is not bool or successful_donor_guard_repair and successful_donor is None:
+        raise ValueError('Guard repair requires an explicit successful donor and boolean opt-in')
     if completed_work is not None and successful_donor is not None:
         raise ValueError('Failed partial work and successful donor are mutually exclusive')
     if (completed_work is not None or successful_donor is not None) and selection.get('document_profile') != 'editor':
         raise ValueError('Completed-work resume initially requires explicit editor profile')
     inspected = inspect_inputs(selection)
     completed = (_completed_work(completed_work, inspected) if completed_work is not None else
-                 _completed_work(successful_donor, inspected, _successful=True) if successful_donor is not None else None)
+                 _completed_work(successful_donor, inspected, _successful=True,
+                                 _guard_repair=successful_donor_guard_repair,
+                                 **({'_composition_repair': True} if successful_donor_composition_repair else {})) if successful_donor is not None else None)
     if successful_donor is not None:
         ref_path({'root': 'sources', 'path': SUCCESSFUL_HELPER, 'sha256': digest(ROOT / SUCCESSFUL_HELPER)}, inspected.roots, inspected.inventories)
     output = engine_sdk.new_destination(output, (*inspected.roots.values(),
@@ -2155,7 +2458,9 @@ def make_plan(selection, output, *, completed_work=None, successful_donor=None):
             'reuse': inspected.proof, 'projection': inspected.projection,
             'production_eligible': False}
     if completed is not None:
-        plan['kind'] = SUCCESSFUL_PLAN_KIND if successful_donor is not None else RESUME_PLAN_KIND
+        plan['kind'] = (COMPOSITION_REPAIR_PLAN_KIND if successful_donor_composition_repair else
+                        GUARD_REPAIR_PLAN_KIND if successful_donor_guard_repair else
+                        SUCCESSFUL_PLAN_KIND if successful_donor is not None else RESUME_PLAN_KIND)
         plan['successful_donor' if successful_donor is not None else 'completed_work'] = completed
     with engine_sdk._OwnedTree(output.parent, '.engine-plan-') as staged:
         (staged.path / 'plan.json').write_bytes(encoded(plan))
@@ -2167,12 +2472,14 @@ def make_plan(selection, output, *, completed_work=None, successful_donor=None):
 def verify_plan(path, expected_sha256):
     value = checked_document(path, expected_sha256)
     resume = value.get('kind') == RESUME_PLAN_KIND
-    successful = value.get('kind') == SUCCESSFUL_PLAN_KIND
+    guard_repair = value.get('kind') == GUARD_REPAIR_PLAN_KIND
+    composition_repair = value.get('kind') == COMPOSITION_REPAIR_PLAN_KIND
+    successful = value.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND)
     names = ('schema_version', 'kind', 'scope', 'selection', 'profile_sha256',
              'producer_inputs', 'reuse', 'projection', 'production_eligible')
     fields(value, names + (('completed_work',) if resume else ('successful_donor',) if successful else ()), 'maintenance plan')
     selected = value['selection']['document_profile']
-    if (type(value['schema_version']) is not int or value['schema_version'] != 1 or value['kind'] not in (PLAN_KIND, RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND) or value['scope'] != SCOPE
+    if (type(value['schema_version']) is not int or value['schema_version'] != 1 or value['kind'] not in (PLAN_KIND, RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND) or value['scope'] != SCOPE
             or value['production_eligible'] is not False
             or value['profile_sha256'] != digest(ROOT / profile_path(selected))
             or value['producer_inputs'] != {name: digest(ROOT / name) for name in required_helpers(selected) + ((SUCCESSFUL_HELPER,) if successful else ())}):
@@ -2182,7 +2489,9 @@ def verify_plan(path, expected_sha256):
         raise ValueError('Plan selected inputs changed')
     if resume and _completed_work(value['completed_work']['reference'], inspected) != value['completed_work']:
         raise ValueError('Plan completed-work input or admission changed')
-    if successful and _completed_work(value['successful_donor']['reference'], inspected, _successful=True) != value['successful_donor']:
+    if successful and _completed_work(value['successful_donor']['reference'], inspected, _successful=True,
+                                      _guard_repair=guard_repair,
+                                      **({'_composition_repair': True} if composition_repair else {})) != value['successful_donor']:
         raise ValueError('Plan successful donor input or admission changed')
     return value, inspected
 
@@ -2393,7 +2702,7 @@ def _graph(inspected, plan, plan_path, plan_hash, output):
             metadata_command.extend(('--' + key.replace('_', '-'), resolve(metadata[key])))
     put('ENGINE_METADATA_COMMAND', *metadata_command)
     put('ENGINE_METADATA_DEPENDS', *(resolve(ref) for ref in metadata.values()),
-        *(roots['sources'] / name for name in required_helpers(inspected.selection['document_profile']) + ((SUCCESSFUL_HELPER,) if plan['kind'] == SUCCESSFUL_PLAN_KIND else ())),
+        *(roots['sources'] / name for name in required_helpers(inspected.selection['document_profile']) + ((SUCCESSFUL_HELPER,) if plan.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND) else ())),
         roots['sources'] / 'recipe.json')
     object_outputs = {}
     imported = {row['id']: row for row in (_work(plan) or {}).get('objects', [])}
@@ -2475,10 +2784,10 @@ def _graph(inspected, plan, plan_path, plan_hash, output):
     commands = {'metadata': list(map(str, metadata_command)),
         'objects': {obj['id']: values['ENGINE_OBJECT_o' + str(i) + '_COMMAND']
                     for i, obj in enumerate(p['objects']) if obj['id'] not in imported}, 'link': link_command}
-    if plan.get('kind') in (RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND):
+    if plan.get('kind') in (RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND):
         commands['imports'] = {obj['id']: values['ENGINE_OBJECT_o' + str(i) + '_COMMAND']
                               for i, obj in enumerate(p['objects']) if obj['id'] in imported}
-    if plan.get('kind') == SUCCESSFUL_PLAN_KIND:
+    if plan.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND):
         commands['archive_imports'] = {name: values['ENGINE_ARCHIVE_' + name + '_COMMAND'] for name in imported_archives}
     return tools, fragment, commands
 
@@ -2563,7 +2872,7 @@ def build(plan_path, expected_sha256, output, *, jobs=2, timeout_seconds=1800):
             'next_gate': 'original dedicated-Worker runtime evidence and explicit retained group sealing'}
         if plan['kind'] == RESUME_PLAN_KIND:
             _completed_build_receipt(result, plan, output, commands)
-        elif plan['kind'] == SUCCESSFUL_PLAN_KIND:
+        elif plan['kind'] in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND):
             _successful_build_receipt(result, plan, output, commands)
         _save(output / 'maintenance-build.json', result)
         return result
@@ -2571,7 +2880,7 @@ def build(plan_path, expected_sha256, output, *, jobs=2, timeout_seconds=1800):
         # Preserve the owned failed/incomplete work. Never clean SDK pyc after
         # execution or publish a successful receipt from partial outputs.
         _save(output / 'maintenance-failure.json', {'schema_version': 1,
-            'kind': SUCCESSFUL_BUILD_KIND if plan['kind'] == SUCCESSFUL_PLAN_KIND else RESUME_BUILD_KIND if plan['kind'] == RESUME_PLAN_KIND else BUILD_KIND,
+            'kind': COMPOSITION_REPAIR_BUILD_KIND if plan['kind'] == COMPOSITION_REPAIR_PLAN_KIND else GUARD_REPAIR_BUILD_KIND if plan['kind'] == GUARD_REPAIR_PLAN_KIND else SUCCESSFUL_BUILD_KIND if plan['kind'] == SUCCESSFUL_PLAN_KIND else RESUME_BUILD_KIND if plan['kind'] == RESUME_PLAN_KIND else BUILD_KIND,
             'scope': SCOPE, 'status': 'incomplete', 'production_eligible': False,
             'error': str(error)[:4096], 'plan_sha256': expected_sha256})
         raise
@@ -2754,7 +3063,7 @@ def _step(args):
     # The CMake helper reads the pinned plan itself and immediate artifact inputs,
     # avoiding a complete 351MB+ source/SDK rescan for every archive node.
     plan = checked_document(args.plan, args.plan_sha256)
-    if plan.get('kind') not in (PLAN_KIND, RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND) or plan.get('production_eligible') is not False:
+    if plan.get('kind') not in (PLAN_KIND, RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND) or plan.get('production_eligible') is not False:
         raise ValueError('Invalid internal maintenance plan')
     output = ordinary(args.build_root, True)
     p = plan['reuse']
@@ -2771,6 +3080,8 @@ def _step(args):
         return _copy_completed_object(plan, args.object, output)
     if args.action == 'import-archive':
         return _copy_successful_archive(plan, args.archive, output)
+    if plan['kind'] in (GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND) and args.action in ('archive', 'repack'):
+        raise ValueError('Guard repair permits five archive imports and zero repacks')
     if args.action in ('archive', 'repack'):
         archive = next((a for a in p['archives'] if a['name'] == args.archive), None)
         if archive is None:
@@ -2862,6 +3173,8 @@ def main(argv=None):
     planning.add_argument('--completed-work-sha256')
     planning.add_argument('--successful-donor', type=Path)
     planning.add_argument('--successful-donor-sha256')
+    planning.add_argument('--successful-donor-guard-repair', action='store_true')
+    planning.add_argument('--successful-donor-composition-repair', action='store_true')
     building = sub.add_parser('build')
     building.add_argument('--plan', type=Path, required=True)
     building.add_argument('--plan-sha256', required=True)
@@ -2883,10 +3196,16 @@ def main(argv=None):
             parser.error('--successful-donor and --successful-donor-sha256 are required together')
         if args.completed_work is not None and args.successful_donor is not None:
             parser.error('--completed-work and --successful-donor are mutually exclusive')
+        if args.successful_donor_guard_repair and args.successful_donor is None:
+            parser.error('--successful-donor-guard-repair requires --successful-donor')
+        if args.successful_donor_composition_repair and (args.successful_donor is None or args.successful_donor_guard_repair):
+            parser.error('--successful-donor-composition-repair requires --successful-donor and excludes --successful-donor-guard-repair')
         selection = {name: getattr(args, name) for name in SELECTION_FIELDS}
         if args.successful_donor is not None:
             result = make_plan(selection, args.output, successful_donor={
-                'path': str(args.successful_donor), 'sha256': sha(args.successful_donor_sha256, 'successful-donor')})
+                'path': str(args.successful_donor), 'sha256': sha(args.successful_donor_sha256, 'successful-donor')},
+                **({'successful_donor_guard_repair': True} if args.successful_donor_guard_repair else {}),
+                **({'successful_donor_composition_repair': True} if args.successful_donor_composition_repair else {}))
         elif args.completed_work is None:
             result = make_plan(selection, args.output)
         else:

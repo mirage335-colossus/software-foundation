@@ -5,7 +5,7 @@
     "path": "recipes/webkitwasm-native-rich4083-v1/cmake/native-provider.cmake",
     "sha256": "a19c8e7ddd7f1c4f15b143ca33a4826bec806ad0bd95137ac5a6059811d6dab1"
   },
-  "kind": "foundation-native-engine-prototype-profile-v1",
+  "kind": "foundation-native-engine-prototype-composition-undo-profile-v1",
   "producer_inputs": [
     "recipes/webkitwasm-native-rich4083-v1/native-prototype-profile.json",
     "recipes/webkitwasm-native-rich4083-v1/producer/diagnostic-host-policy-v1.json",
@@ -31,16 +31,16 @@
   "profile": "document-actions-v1",
   "provenance": {
     "path": "recipes/webkitwasm-native-rich4083-v1/provenance.json",
-    "sha256": "265cc0a00333a22d0eeea57acbdc5a881d9fd584a663871da86ecaf5937caae9"
+    "sha256": "f5e4a29c6e5bdd0d396c634e8f51a2cc64c43f75d8f25e251184f65c55eb86ee"
   },
   "recipe_directory": "recipes/webkitwasm-native-rich4083-v1",
   "required_toolchain_kind": "foundation-native-engine-prototype-private-sdk-toolchain-v1",
   "schema_version": 1,
   "scope": "first-native-engine-baseline-candidate",
-  "source_files": 157,
+  "source_files": 158,
   "source_map": {
     "path": "recipes/webkitwasm-native-rich4083-v1/source-imports.json",
-    "sha256": "6bcb8189cfd29a428b18a9dade71161f3c0ba8d366dcf5743bea1abbbdba51fe"
+    "sha256": "03c4f8a0c21165961d84da521ac0afaf8bf0d97ff2d09b1c2819390c31544b8b"
   },
   "target": {
     "pointer_bits": 64,

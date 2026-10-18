@@ -2,20 +2,188 @@
 
 Current resume state, 2026-10-18 UTC: use the
 [consolidated continuation handoff](../docs/appended-application-plan.md#current-continuation-handoff)
-before the historical observations below. Source WIP is preserved in local commit
-`30a6221ea6437e3aa9fcdf97c5af9c7641e44357`; later user policy edits and the
-handoff edits remain uncommitted. No push or new build/test occurred for this
-handoff. Current D03 source passed focused checks, old candidate 6155 predates
-that repair, and preparation 1866 failed with ENOSPC before new compilation.
-The audited source WIP and earlier retained artifacts were intact; its partial
-copy is ineligible. First establish storage/Btrfs prerequisites and fresh output
-ownership, then use a reviewed fresh-namespace preparation continuation. Do not
-rerun the armed one-shot preparation or delete its evidence.
+before the historical observations below. Source WIP is preserved in commit
+`30a6221ea6437e3aa9fcdf97c5af9c7641e44357`; the later documentation/policy handoff
+is committed as `a3e31fdff294bf755bcded9b8b4df8577c3113e5`. This continuation found
+a clean checkout at that successor. No push or release is implied. Current D03
+source passed focused checks; old candidate 6155 predates the repair. Preparation
+1866 remains failed with ENOSPC before compilation, and its partial copy remains
+ineligible and untouched.
+
+The P3 preparation is accepted for its original source: caller 3007 and independent
+Root readback 14272 closed zero, with full readback of 369 source, 12 metadata and
+42,779 copied files; all 363 frozen inputs and eight controls remained unchanged.
+Acceptance is `c2c385194f7d1e9af6add5782b7415f3d42b8c462fb35dd8f6cc154ffd6e8f07`
+under `composition-context-preparation-v2/preparation/execution-v1/`. The accepted
+helper/test are `796994d6…` / `0611e4bc…`; 71 registered maintenance cases passed
+without exclusions. Earlier failed plan77199 and P2 frontgate707b37 remain historical
+failures, and the original P1 acceptance b7698c remains bound to its original source.
+The fresh current-helper plan26403 then closed one (`db536c`) at dependency
+metadata validation, producing no plan or compilation. Its original51 depfiles
+contain5,349 distinct keys against5,342 retained sidecar rows; seven fresh-only
+keys need strict separate authentication before new preparation/plan. All owners
+closed and frozen postflight passed. Result is830226ac…; current-source compilation,
+five-unit candidate/runtime, neutral and Foundation work remain unverified. The integrated rich
+viewer is unfinished and production eligibility remains false.
+
+The seven-input source repair is now implemented and independently reviewed:
+helper `401e88d0…`, tests `e765b560…`; 73/73 focused cases passed with zero exclusions.
+Actual metadata-only construction passed the full5,349-key union, 413 directories,
+4,171 mappings and original physical digest, plus14 negative cases and upstream
+112-record tamper rejection. It read no SDK payload or old generated-header body;
+two original-header and four alias hashes reused accepted evidence. Source freeze
+is68599216…; fresh disabled P4 controls are being prepared. Fresh physical preparation,
+plan and five-unit build/runtime acceptance remain required.
+
+Fresh P4 preparation76300 and Root38868 now passed for helper401e, with complete
+369-source /12-metadata /42,779-copy fullhash/namespace readback, all363 frozen inputs
+and eight controls unchanged. Acceptance is376623a2…; result9317c2c5… . P4 accepted
+source bytes are564,597,526; metadata106,264,034; copy861,802,853. Current-401e
+compile-free plan6003 and Root5501 now closed zero, acceptance30dfe41e…; exact51selected,
+46imports/5fresh/5archives/0repacks/1link. Reviewed build67381 then naturally closed1
+(66caaf), result e31bce28…: configuration0, Backend compilation failed because
+FrameDestructionObserver::frame() lacked its inline-header definition. Frozen
+postflight passed; owners joined, peakRSS1,695,993,856B. FailedP4outputs remain
+immutable and unaccepted. Root added only FrameDestructionObserverInlines.h to both
+Backends (d14dab28…/61,375B). Independent review and11-path metadata reconciliation
+passed; old reverse projections/origins and reader logic remain exact. Supported
+caller84029 closed0/92d476:46+15+4=65sourcecases,0excluded,1.60CTestseconds;
+all18metadata+12nativefacts unchanged, external scratch removedempty. Source
+receipt952cf53e… and finalsource-onlyaccept9e141ba8… are retained. Fresh P5 controls in
+`repair/composition-inline-preparation-v1/` bind the Backend inline-header repair
+(`d14dab28…`) and helper `401e88d0…`; Root and independent review accepted
+125 unique / 128 ordered ASTs and 95 source-only checks. The original Luna generator failed before candidate writes, Root found
+path/input-binding omissions, and Sol took over `luna-inline-controls-20261018-v1`.
+Sol completed the controls at 08:02:34 UTC before the original 08:13:31.405922 UTC
+deadline. The original failure, patch and deadline remain preserved; repair
+allowance remains unused.
+P4 evidence retains its original `4f72` source identity.
+
+Fresh preparation passed actual session 67862 and independent readback 6158.
+All three phases closed zero; 363 frozen inputs and eight controls remained
+unchanged, and 369 source files, 12 metadata files and 42,779 copies passed full
+hash, mode, namespace and physical-identity readback. Accepted result:
+`a06cadf792ecea14d48d9092ba6095ead8edca419a78dc5cc173eb29b07b93af`; Root
+acceptance: `c7ca799818bafca63b33aa21b4a77aa7070f03819ebd7c1a336f37edcc990e13`.
+The compile-free plan passed session 70848 and Root review 77786; its 51 selected
+entries include 46 imports and five fresh entries. Root accepted plan
+`40af90e69176f4a65003e820439d82cf8f4b9eaafb45bd7b1b30ac699679ddfd` with
+receipt `4fa9b124aab5715b80ca1d0694419d1e289825fa3a1ce30cc8648ae3e50919bf`.
+The subsequent build 4865 closed zero (`59428c`): five compilations, 46 imports,
+five archive copies, zero repacks and one link passed. Independent Root 11922
+accepted all 168 artifacts (`b0454685…`), and separate gate 67340 accepted all
+4,171 VFS mappings and five actual fresh dependency owners (`f0e4344c…`). Capsule
+38638 and independent full 16-file / 163,069,449-byte readback passed (`bac68c23…`).
+These accept the current native candidate and capsule only.
+
+Actual runtime 33101 closed one (`370bc5`) after 36.78813448 seconds:
+`Actual provider dispatch count`. All 13 positive cases and 14 editor cases
+through E8a passed, including all 82 E6a cancellation assertions. E8b was running;
+ten later batches were unreached. Node's two negative controls passed, all owners
+closed and Root independently rehashed all 47 inputs/physical facts unchanged.
+Result `240b2de9…` and closed failure `0a6d4bba…` remain immutable. Strong diagnosis
+identified the malformed-input probe/transport mismatch; its predicted native
+return -1 was not observed. The incomplete Luna diagnostic patch and unauthorized
+direct syntax checks are preserved without acceptance, and the same assignment
+is now Sol-owned with its original deadline and repair allowance.
+Current runtime acceptance, neutral and Foundation remain pending. The viewer is
+unfinished and production eligibility is false. See the [current native and runtime evidence](../docs/appended-application-plan.md#fresh-inline-candidate-accepted).
+Original setup failures and same-assignment blocked/ready recoveries are retained.
+
+
+The fresh recovery preparation **1570** subsequently passed in 118.457506299
+seconds after current storage/Btrfs and ownership checks. Independent Root
+readback **53212** passed all 368 source, 12 metadata and 42,779 copied files,
+plus 250 unchanged original inputs. Closed acceptance is
+`f4377906f8ec75414591bd68f25474ec0f9e809964fa8cc7dfe86acc482ec33a` under
+`preparation-recovery-v1/execution-v1/`; the original fresh result is
+`39c5b2a380cf6f2468bc4e63ff83eee57708f253d0df16723c7c80deebf0fd4b`.
+See [exact recovery evidence](../docs/appended-validation.md#fresh-d03-preparation-recovery).
+The fresh selective plan 17883 and candidate 94609 then passed: 49 object imports,
+two fresh units, five archive copies, zero repacks and one link. Independent Root
+32461 accepted all 171 artifacts and unchanged frozen input identities; acceptance
+is `4d0ccd2fde7921becb4d132a162c32c3dd7184364ff90eb791b376841a454663` under
+`concrete-recovery-v1/execution-v1/`. Metadata-only capsule 3086 and independent
+16-file / 164,728,184-byte readback also passed (`runtime-recovery-v1/`, acceptance
+`8f76d89f…`). Publisher-repaired compilation/static readback is verified for that original
+source identity; the later Guard change is not covered.
+
+The fresh unchanged 65-case / 12-batch runtime 86329 closed one after 20.162 seconds:
+`Bounded Worker trace`, zero accepted batches. D01/D03/D04/I01 completed in the
+failed first observation; I02 and all later coverage remain incomplete. Node's two
+negative checks passed, inputs stayed unchanged and all process/log/thread writers
+closed. Exact result is `88696cb47a622f054a958d90020037c99bebd5ef81b0bbe7e905920ef6151299`.
+See [runtime evidence and limits](../docs/appended-validation.md#fresh-d03-selective-candidate-and-trace-limited-runtime).
+A bounded trace projection/accounting repair then passed 2,073 pure vectors;
+the fresh source-bound runtime 97809 reused the accepted candidate/capsule and
+reached I04. It closed one after 21.803 seconds with
+`I04/after-lifecycle-old-C8/actual-native-STALE-before-TURN`; zero batches passed.
+Trace stayed below 8 MiB / 16,000, all inputs and owners/logs/thread closed
+unchanged, and Node controls passed. Result is
+`713b238a6cb3df86c67d6b841be2a1b1b9c339897872d6f209bbffe5cee01986`.
+See [current I04 evidence](../docs/appended-validation.md#trace-projection-repair-and-i04-runtime-failure).
+The C8 inert admission repair now passes all82 focused native editor Guard cases
+with zero skips (original caller22409,d1b95a). Both original zero-assertion setup
+failures and later count-assertion failures are preserved. The host-only default
+profile compiled no kernel, VM or retained SDK. See
+[host repair evidence](../docs/appended-validation.md#i04-guard-preflight-repair-and-native-host-checks).
+Current-source metadata, the explicit48-import/three-fresh/170-artifact producer
+and separate readers pass focused checks (45+4 source,58+49 producer,40 tiny reader
+cases; zero skips). Fresh preparation6762 then closed one after source/metadata
+passed: copy rejected a missed old packet-kind comparison before writing output.
+Result is3a1379f6…; all255 input facts stayed unchanged, no ENOSPC or compilation.
+Fresh v2 preparation85828 closed zero (`edcb3a`,92.657658530 s); Root88406
+closed zero (`d3ac48`) after full368-source/12-metadata/42,779-copy readback, all255
+inputs and six controls unchanged. Acceptance is81ff3d1c…; no SDK program or compiler
+ran. Compile-free plan19842 then closed zero (`201719`); Root56691 closed zero
+(`71838f`), accepting5a748e9c… after68,344-file/3,797-directory/source readback.
+The exact48/3/5 partition passed. Candidate17972 closed zero (`c200ff`); Root1567
+closed zero (`984f8e`), acceptingbc438789… after full170-artifact/68,352-file/3,799-dir
+readback. Capsule83707 and independent Root copy readback also passed (192fb3c9…).
+Runtime7008 then closed one (`745c6a`,28.156387774s) at ordered request-history
+validation. All13 positive cases inclI04 and768case/17mandatory/31author assertions
+reportedpassed; zero batches accepted,11batches unrun. All47inputs stayed unchanged,
+owners/streams/thread closed. Exactly66 fixture-intent serial fields overwrite the
+outer trace sequence; rows/bytes are within caps. Next is the source-only Worker
+field repair and fresh same-protocol runtime, reusing acceptedcandidate/capsule.
+That repair now passes: runtime35714 closed one (`5c7d8a`,32.829287534s), accepting
+the positive batch before editor E6a failed `no-committed-preedit`. Nine editor
+cases passed; after cancellation the native query still contains `cancel:仮`.
+One of12 batches is accepted; ten later batches were not reached. All47 inputs
+remained unchanged and all owners/streams/thread closed within caps. Result is
+1bdccee7635a60ea4ea5497485353230b09b829a80b4154831912efb001cc22e.
+Composition-cancellation source repair now passes21 pure journal checks in fresh
+supported host45401 (zero exclusions); the retained engine and actual native
+rollback remain unverified. Main/private headers are isolated to the editor
+overlay, preserving pixel/physical input bytes. The explicit five-unit contracts
+(46imports/5fresh/168artifacts) pass source checks. Final metadata and Windows
+reader corrections are published; the registered source suites passed65/65 with
+zero exclusions (the original39/46 temporary-directory failure remains recorded).
+Fresh preparation **90712** closed zero in **91.923987731 seconds**; Root readback **65753** closed zero after
+complete hash and namespace readback of 369 source, 12 metadata and 42,779 copied files. Acceptance
+is b7698c509283db411c227d44ebb36fa5847f71f16536ee4924ebb7d8e5eff211;
+all 329 frozen inputs and eight controls are unchanged. First compile-free plan
+**77199** closed one (`9ab719`), rejecting the composition header context before
+producing a plan or compiling. Result8b95d1ab records natural closure and passed
+frozen-input postflight. Preserve that failed packet. The composition-only
+context correction passes71/71 maintenance cases and independent5,342-reference
+metadata review, preserving exact search/VFS checks. The old preparation embeds
+the predecessor helper. First corrected-control preparation707b37 stopped at its
+initial descriptor-path intent check, with zero actual phases or outputs;
+preserve its354-input packet. A freshv2 control scope aligns that exact retained
+descriptor coordinate and adds a packet-shaped frontgate test. Fresh preparation
+and an accepted plan must precede the current five-unit build and runtime.
+Neutral/Foundation remain runtime dependent and unrun. See [latest runtime evidence](../docs/appended-validation.md#trace-serial-repair-and-native-composition-cancellation-failure).
+Preserve6762 and1866 without
+rerunning their armed entries. See [current contract/preparation evidence](../docs/appended-validation.md#i04-selective-contracts-and-first-fresh-preparation-refusal).
+The Guard-only repair has accepted Wasm evidence; the composition candidate is unbuilt and its complete runtime
+remains unverified and the integrated viewer is unfinished. Do not rerun old armed operations, consume
+1866's partial copy or delete retained evidence.
 
 The already-authorized bounded retained implementation diagnostic may continue
 under its existing caps after those prerequisites; it is distinct from the
 extensive qualification deferred here. Accepted prep, compile-free selective
-plan, two-unit candidate, unchanged 65-case actual runtime, neutral admission,
+plan, current five-unit candidate, unchanged 65-case actual runtime, neutral admission,
 Foundation construction and partial BOTH execution remain dependency ordered.
 The handoff records exact retained receipts, source identities, launch constraints,
 failures and reuse limits. The integrated rich viewer remains unfinished.

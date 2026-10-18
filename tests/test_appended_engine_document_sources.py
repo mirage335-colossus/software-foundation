@@ -46,6 +46,287 @@ def write(root, name, raw, mode=0o644):
     return path
 
 
+# Exact reverse projections derived from the closed composition source patch.
+# Hash-bound offsets recover each complete prior body, without Git or ignored evidence.
+COMPOSITION_REVERSE = {'2c315a2d08f8f5025f0619db73621d4aaf79dcdc970c1f5e1b7b692a045beb9b': {'postimage_bytes': 164651,
+                                                                      'preimage_sha256': '2a1ef9ff3574ca31d4f182457dc7b4a83a09cd7944a8a9b410d4109485db791d',
+                                                                      'reverse_edits': [[545, 591, ''],
+                                                                                        [26064, 29167, '']]},
+ '3c2c7beb2b582ab91fb8174aa7d5f6022ce1a4b29ec66918674f9f13fadd88ac': {'postimage_bytes': 48346,
+                                                                      'preimage_sha256': '4cb8131b86f6bf1ede303053b7aa1752fab16dd66fe8b0271f97d256e0cd137b',
+                                                                      'reverse_edits': [[479, 525, ''],
+                                                                                        [26278, 29381, '']]},
+ '4f72d4ad3d20ba76071c474564752bfa2f5e32dff203794b962da1e3de5ff598': {'postimage_bytes': 61330,
+                                                                      'preimage_sha256': '5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815',
+                                                                      'reverse_edits': [[176, 256, ''],
+                                                                                        [5241, 5940, ''],
+                                                                                        [24561, 24767, ''],
+                                                                                        [31076, 41974, ''],
+                                                                                        [46428,
+                                                                                         46623,
+                                                                                         '                            '
+                                                                                         'if(transport_composition||editor.hasComposition()){poisoned=true;return '
+                                                                                         'unknown();}\n'],
+                                                                                        [47812,
+                                                                                         47941,
+                                                                                         '                                '
+                                                                                         'if(editor.hasComposition())editor.cancelComposition();\n'
+                                                                                         '                                '
+                                                                                         'transport_composition=0;\n'],
+                                                                                        [48400, 48962, ''],
+                                                                                        [49329, 49911, ''],
+                                                                                        [55253,
+                                                                                         55331,
+                                                                                         '        '
+                                                                                         '}catch(...){poisoned=true;return '
+                                                                                         'unknown();}\n'],
+                                                                                        [56703,
+                                                                                         57244,
+                                                                                         '                    '
+                                                                                         'if(!retirement_absent(mapping)){\n'
+                                                                                         '                        '
+                                                                                         'if(!material.composition||s.frame->document()!=s.document.get()||\n'],
+                                                                                        [57326,
+                                                                                         57510,
+                                                                                         '                            '
+                                                                                         's.frame->editor().compositionNode()!=s.composition_node.get()){poisoned=true;return '
+                                                                                         'unknown();}\n'
+                                                                                         '                        '
+                                                                                         's.frame->editor().cancelComposition();\n'],
+                                                                                        [58139,
+                                                                                         58274,
+                                                                                         '            '
+                                                                                         'if(!ready()||!retirement_absent(mapping)){poisoned=true;return '
+                                                                                         'unknown();}\n'],
+                                                                                        [59470,
+                                                                                         59548,
+                                                                                         '        '
+                                                                                         '}catch(...){poisoned=true;return '
+                                                                                         'unknown();}\n']]},
+ '6e77e9b1b47cc5e4e3d2a5dcd7600ea959c4b22eb95c763165c4ccc3c5d28a43': {'postimage_bytes': 29858,
+                                                                      'preimage_sha256': 'cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2',
+                                                                      'reverse_edits': [[12269, 13500, '']]},
+ 'f6ca9055367085abe855a19b0d047034279dff1beb7dc44c8c2ab78001d602bb': {'postimage_bytes': 9317,
+                                                                      'preimage_sha256': 'eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2',
+                                                                      'reverse_edits': [[36,
+                                                                                         119,
+                                                                                         '// Prototype-only '
+                                                                                         'ownership policy. '
+                                                                                         'The WebCore '
+                                                                                         'adapter supplies '
+                                                                                         'Ref<UndoStep>.\n'],
+                                                                                        [133, 154, ''],
+                                                                                        [173, 192, ''],
+                                                                                        [209, 247, ''],
+                                                                                        [340,
+                                                                                         532,
+                                                                                         '    explicit '
+                                                                                         'UndoHistory(std::size_t '
+                                                                                         'limit = 128) : '
+                                                                                         'm_limit(limit) { '
+                                                                                         '}\n'],
+                                                                                        [533, 4304, ''],
+                                                                                        [4461,
+                                                                                         4878,
+                                                                                         '        auto '
+                                                                                         'generation = '
+                                                                                         'm_generation;\n'
+                                                                                         '        auto '
+                                                                                         'discarded = '
+                                                                                         'std::exchange(m_redo, '
+                                                                                         '{ });\n'
+                                                                                         '        '
+                                                                                         'notifyRemoved(discarded);\n'
+                                                                                         '        if '
+                                                                                         '(generation != '
+                                                                                         'm_generation) {\n'
+                                                                                         '            '
+                                                                                         'step->didRemoveFromUndoManager();\n'
+                                                                                         '            '
+                                                                                         'return; // A '
+                                                                                         'removal callback '
+                                                                                         'invalidated this '
+                                                                                         'registration.\n'],
+                                                                                        [4888,
+                                                                                         4929,
+                                                                                         '        '
+                                                                                         'm_undo.push_back(std::move(step));\n'
+                                                                                         '        '
+                                                                                         'trim(m_undo);\n'],
+                                                                                        [4935,
+                                                                                         5193,
+                                                                                         '\n'
+                                                                                         '    bool canUndo() '
+                                                                                         'const { return '
+                                                                                         'm_replay == '
+                                                                                         'Replay::None && '
+                                                                                         '!m_undo.empty(); '
+                                                                                         '}\n'
+                                                                                         '    bool canRedo() '
+                                                                                         'const { return '
+                                                                                         'm_replay == '
+                                                                                         'Replay::None && '
+                                                                                         '!m_redo.empty(); '
+                                                                                         '}\n'
+                                                                                         '\n'],
+                                                                                        [5323, 5323, '\n'],
+                                                                                        [5466,
+                                                                                         6333,
+                                                                                         '        // Both '
+                                                                                         'stacks are '
+                                                                                         'detached before '
+                                                                                         'script-capable '
+                                                                                         'removal '
+                                                                                         'callbacks.\n'
+                                                                                         '        '
+                                                                                         'notifyRemoved(undo);\n'
+                                                                                         '        '
+                                                                                         'notifyRemoved(redo);\n'],
+                                                                                        [6393, 6489, ''],
+                                                                                        [6530,
+                                                                                         7146,
+                                                                                         '\n'
+                                                                                         '    static void '
+                                                                                         'notifyRemoved(Stack& '
+                                                                                         'steps)\n'],
+                                                                                        [7152,
+                                                                                         7291,
+                                                                                         '        for (auto& '
+                                                                                         'step : steps)\n'
+                                                                                         '            '
+                                                                                         'step->didRemoveFromUndoManager();\n'],
+                                                                                        [7297, 7381, '\n'],
+                                                                                        [7456,
+                                                                                         7561,
+                                                                                         '            auto '
+                                                                                         'removed = '
+                                                                                         'std::move(steps.front());\n'
+                                                                                         '            '
+                                                                                         'steps.pop_front();\n'
+                                                                                         '            '
+                                                                                         'removed->didRemoveFromUndoManager();\n'],
+                                                                                        [7577, 8170, '\n'],
+                                                                                        [8241,
+                                                                                         8482,
+                                                                                         '        if '
+                                                                                         '(m_replay != '
+                                                                                         'Replay::None || '
+                                                                                         'source.empty())\n'
+                                                                                         '            return '
+                                                                                         'false;\n'
+                                                                                         '        auto '
+                                                                                         'active = '
+                                                                                         'std::move(source.back());\n'
+                                                                                         '        '
+                                                                                         'source.pop_back();\n'],
+                                                                                        [8597,
+                                                                                         8774,
+                                                                                         '        struct '
+                                                                                         'Reset {\n'
+                                                                                         '            '
+                                                                                         'Replay& value;\n'
+                                                                                         '            '
+                                                                                         '~Reset() { value = '
+                                                                                         'Replay::None; }\n'
+                                                                                         '        } reset { '
+                                                                                         'm_replay };\n'
+                                                                                         '        if '
+                                                                                         '(operation == '
+                                                                                         'Replay::Undo)\n'
+                                                                                         '            '
+                                                                                         'active->unapply();\n'
+                                                                                         '        else\n'
+                                                                                         '            '
+                                                                                         'active->reapply();\n'],
+                                                                                        [8801,
+                                                                                         8978,
+                                                                                         '\n'
+                                                                                         '    Stack m_undo;\n'
+                                                                                         '    Stack '
+                                                                                         'm_redo;\n'],
+                                                                                        [9003,
+                                                                                         9124,
+                                                                                         '    std::size_t '
+                                                                                         'm_generation { 0 '
+                                                                                         '};\n'],
+                                                                                        [9162, 9295, '']]},
+ 'd14dab28100d3689d9a04aa4a81290b50cf24cd3e00a34b2f8402d9eeca9da60': {'postimage_bytes': 61375,
+ 'preimage_sha256': '5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815',
+ 'reverse_edits': [[176, 256, ''],
+                   [783, 828, ''],
+                   [5286, 5985, ''],
+                   [24606, 24812, ''],
+                   [31121, 42019, ''],
+                   [46473,
+                    46668,
+                    '                            '
+                    'if(transport_composition||editor.hasComposition()){poisoned=true;return '
+                    'unknown();}\n'],
+                   [47857,
+                    47986,
+                    '                                '
+                    'if(editor.hasComposition())editor.cancelComposition();\n'
+                    '                                transport_composition=0;\n'],
+                   [48445, 49007, ''],
+                   [49374, 49956, ''],
+                   [55298, 55376, '        }catch(...){poisoned=true;return unknown();}\n'],
+                   [56748,
+                    57289,
+                    '                    if(!retirement_absent(mapping)){\n'
+                    '                        '
+                    'if(!material.composition||s.frame->document()!=s.document.get()||\n'],
+                   [57371,
+                    57555,
+                    '                            '
+                    's.frame->editor().compositionNode()!=s.composition_node.get()){poisoned=true;return '
+                    'unknown();}\n'
+                    '                        s.frame->editor().cancelComposition();\n'],
+                   [58184,
+                    58319,
+                    '            if(!ready()||!retirement_absent(mapping)){poisoned=true;return '
+                    'unknown();}\n'],
+                   [59515, 59593, '        }catch(...){poisoned=true;return unknown();}\n']]}}
+COMPOSITION_PRIOR_BYTES = {'5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815': 47742, '2a1ef9ff3574ca31d4f182457dc7b4a83a09cd7944a8a9b410d4109485db791d': 161502, 'cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2': 28627, 'eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2': 2662, '4cb8131b86f6bf1ede303053b7aa1752fab16dd66fe8b0271f97d256e0cd137b': 45197}
+
+def composition_predecessor_bytes(raw):
+    patch = COMPOSITION_REVERSE.get(sha(raw))
+    if patch is None:
+        return raw
+    if len(raw) != patch['postimage_bytes']:
+        raise AssertionError('Composition postimage size differs')
+    for begin, end, previous in reversed(patch['reverse_edits']):
+        raw = raw[:begin] + previous.encode('utf-8') + raw[end:]
+    if sha(raw) != patch['preimage_sha256']:
+        raise AssertionError('Exact composition reverse projection differs')
+    return raw
+
+
+def composition_history(imports, projection=None):
+    """Check the current successor then expose its exact prior metadata to history checks."""
+    imports = copy.deepcopy(imports)
+    projection = copy.deepcopy(projection)
+    for name, item in imports['files'].items():
+        origin = item['origin']
+        if origin.get('kind') != 'reviewed-native-composition-cancel-inverse-repair':
+            continue
+        if (set(origin) != {'kind', 'correction', 'sha256', 'source_path', 'source_only', 'supersedes'}
+                or origin['correction'] != 'transaction-owned-native-composition-inverse-and-original-selection'
+                or origin['sha256'] != item['sha256'] or origin['source_path'] != item['tracked_path']
+                or origin['source_only'] is not True or item['sha256'] not in COMPOSITION_REVERSE):
+            raise AssertionError('Exact source-only composition successor required')
+        prior = origin['supersedes']
+        if set(prior) != {'origin', 'sha256', 'tracked_path'} or prior['sha256'] != COMPOSITION_REVERSE[item['sha256']]['preimage_sha256']:
+            raise AssertionError('Composition predecessor was restamped')
+        if projection is not None:
+            if projection['files'][name]['sha256'] != item['sha256']:
+                raise AssertionError('Composition current projection differs')
+            projection['files'][name]['sha256'] = prior['sha256']
+        imports['files'][name] = {**item, 'origin': copy.deepcopy(prior['origin']),
+            'sha256': prior['sha256'], 'bytes': COMPOSITION_PRIOR_BYTES[prior['sha256']],
+            'tracked_path': prior['tracked_path']}
+    return (imports, projection) if projection is not None else imports
+
+
 class SourceAssemblyTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='document-source-tiny-')
@@ -489,7 +770,7 @@ class SourceAssemblyTests(unittest.TestCase):
         self.maintained_smoke('physical', 132)
 
     def test_actual_maintained_editor_selection_and_helper_identity_smoke(self):
-        self.maintained_smoke('editor', 158)
+        self.maintained_smoke('editor', 159)
 
     def test_editor_metadata_roles_survive_actual_imports_and_assembly(self):
         maintained, _, _ = assembly._maintained(ROOT, 'editor')
@@ -516,6 +797,7 @@ class SourceAssemblyTests(unittest.TestCase):
         here = ROOT / assembly.RECIPE_ROOT
         imports = json.loads((here / 'source-imports-editor.json').read_bytes())
         projection = json.loads((here / 'source-projection-editor.json').read_bytes())
+        imports, projection = composition_history(imports, projection)
         profile = json.loads((here / 'maintenance-profile-editor.json').read_bytes())
         capsule_sources = [item for item in imports['files'].values()
                            if item['origin'].get('capsule') == '0005-cpp-only-outcome']
@@ -525,6 +807,15 @@ class SourceAssemblyTests(unittest.TestCase):
         self.assertEqual(input_profile['origin']['kind'], 'reviewed-actual-header-profile-repair')
         self.assertEqual(input_profile['origin']['supersedes']['origin']['capsule'], '0005-cpp-only-outcome')
         capsule_sources.append(input_profile)
+        # The C8 guard repair likewise preserves this exact historical capsule
+        # under a source-only successor; it is not new compiled evidence.
+        editor_guard = imports['files']['source/foundation/third_party/appended-engine/src/ProviderGuard.cpp']
+        self.assertEqual(editor_guard['origin']['kind'], 'reviewed-editor-C8-preflight-repair')
+        self.assertIs(editor_guard['origin']['source_only'], True)
+        self.assertEqual(editor_guard['origin']['supersedes']['origin']['capsule'], '0005-cpp-only-outcome')
+        self.assertEqual(editor_guard['origin']['supersedes']['sha256'],
+                         'f18e9cc64c793ed1f9bfd2e51c0e68bf64c1256131c662a6573c211553e85b9e')
+        capsule_sources.append(editor_guard)
         # Metadata, Publisher and seven shared-UI callsites retain their old
         # capsule origins under explicit successor history instead.
         self.assertEqual(len(capsule_sources), 109)
@@ -542,6 +833,49 @@ class SourceAssemblyTests(unittest.TestCase):
         self.assertFalse(any('original-headers/' in item['tracked_path'] for item in imports['files'].values()))
         self.assertFalse(any(Path(path).suffix != '.cpp' for paths in profile['owner_postimages'].values() for path in paths))
         self.assertNotIn('native_editor_controller.cpp', profile['direct_objects'])
+
+    def test_editor_guard_successor_preserves_historical_compiled_source_map(self):
+        here = ROOT / assembly.RECIPE_ROOT
+        logical = 'source/foundation/third_party/appended-engine/src/ProviderGuard.cpp'
+        tracked = assembly.RECIPE_ROOT + '/overlays/editor/foundation/third_party/appended-engine/src/ProviderGuard.cpp'
+        previous = 'f18e9cc64c793ed1f9bfd2e51c0e68bf64c1256131c662a6573c211553e85b9e'
+        expected = '6ec6546880d6736311ab8def5563da79a870dd1f68b56fdcbe947835acf817a8'
+        imports = json.loads((here / 'source-imports-editor.json').read_bytes())
+        projection = json.loads((here / 'source-projection-editor.json').read_bytes())
+        profile = json.loads((here / 'maintenance-profile-editor.json').read_bytes())
+        map_raw = (here / 'provenance/editor-source-map.json').read_bytes()
+        self.assertEqual(sha(map_raw), 'a97017168b817334d1a094300e904f09110c234d734712b4d48870e2aa7b4ddb')
+        self.assertEqual(imports['capsule_source_map_sha256'], sha(map_raw))
+        self.assertEqual(profile['source_map_sha256'], sha(map_raw))
+        self.assertEqual(projection['source_map']['sha256'], sha(map_raw))
+        compiled = [row for row in json.loads(map_raw)['direct_translation_units']
+                    if row['logical_target'] == 'foundation/third_party/appended-engine/src/ProviderGuard.cpp']
+        self.assertEqual(compiled, [{'bytes': 67487,
+            'logical_target': 'foundation/third_party/appended-engine/src/ProviderGuard.cpp',
+            'path': str(ROOT / '.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0005-cpp-only-outcome/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp'),
+            'sha256': previous}])
+        item = imports['files'][logical]
+        self.assertEqual((item['tracked_path'], item['sha256'], item['bytes']), (tracked, expected, 68423))
+        self.assertEqual(sha((ROOT / tracked).read_bytes()), expected)
+        self.assertEqual(item['origin'], {
+            'kind': 'reviewed-editor-C8-preflight-repair',
+            'correction': 'inert-C8-before-Host-TURN-with-in-turn-revalidation',
+            'sha256': expected, 'source_path': tracked, 'source_only': True,
+            'supersedes': {'origin': {
+                'capsule': '0005-cpp-only-outcome',
+                'logical_path': 'foundation/third_party/appended-engine/src/ProviderGuard.cpp',
+                'sha256': previous, 'supersedes': {'origin': {
+                    'capsule': '0003-document-physical',
+                    'logical_path': 'foundation/third_party/appended-engine/src/ProviderGuard.cpp',
+                    'sha256': 'dcac577c612cce0faf8692afde0481f6a0723e297aa5eba4a2c6c5e707d7333d'},
+                    'sha256': 'dcac577c612cce0faf8692afde0481f6a0723e297aa5eba4a2c6c5e707d7333d'}},
+                'sha256': previous, 'tracked_path': tracked}})
+        self.assertEqual(projection['files'][logical], {
+            'preimage_sha256': '4d7ee19b4f3d6d2bf75c559ca6d81ff00cfebbac65afacd1be74c847281bc5f8',
+            'sha256': expected})
+        for selected in ('pixel', 'physical'):
+            other = json.loads((here / ('source-imports-' + selected + '.json')).read_bytes())
+            self.assertNotEqual(other['files'][logical]['sha256'], expected)
 
     def test_shared_publisher_successor_keeps_exact_historical_origin(self):
         here = ROOT / assembly.RECIPE_ROOT
@@ -680,6 +1014,7 @@ class SourceAssemblyTests(unittest.TestCase):
             self.assertEqual(sha((here / tracked).read_bytes()), pin)
         for selected in ('physical', 'editor'):
             imports = json.loads((here / ('source-imports-' + selected + '.json')).read_bytes())
+            imports = composition_history(imports)
             for name, pin in (('main.cpp', '2a1ef9ff3574ca31d4f182457dc7b4a83a09cd7944a8a9b410d4109485db791d'),
                               ('BibFoundationServiceBridge.cpp', 'c9833fe476ef13afdde9c13e4c5cd288145ed6cb017e8c095a81d2339a89cb92')):
                 item = imports['files']['source/wrapper/src/embedder/' + name]
@@ -796,6 +1131,7 @@ class SourceAssemblyTests(unittest.TestCase):
     def test_shared_ui_editor_callsites_keep_exact_nested_capsule_history(self):
         here = ROOT / assembly.RECIPE_ROOT
         imports = json.loads((here / 'source-imports-editor.json').read_bytes())
+        imports = composition_history(imports)
         history = {
             'editor/BibNativeEditorBackend.cpp': (
                 '98f95b8e1c4d352a60a412fb8e97730332bb15b1b8a6995d65036bab19762839', None),
@@ -970,6 +1306,7 @@ class SourceAssemblyTests(unittest.TestCase):
             with self.subTest(profile=selected):
                 imports = json.loads((here / ('source-imports-' + selected + '.json')).read_bytes())
                 projection = json.loads((here / ('source-projection-' + selected + '.json')).read_bytes())
+                imports, projection = composition_history(imports, projection)
                 item = imports['files'][logical]
                 self.assertEqual(item['tracked_path'], tracked)
                 self.assertEqual(item['sha256'], expected)
@@ -1007,7 +1344,7 @@ class SourceAssemblyTests(unittest.TestCase):
              '4cb8131b86f6bf1ede303053b7aa1752fab16dd66fe8b0271f97d256e0cd137b'))
         for path, pin in paths:
             with self.subTest(main=path):
-                raw = path.read_bytes()
+                raw = composition_predecessor_bytes(path.read_bytes())
                 self.assertEqual(sha(raw), pin)
                 text = raw.decode('utf-8')
                 self.assertEqual(text.count('const auto identifier = page->identifier();'), 1)
@@ -1097,7 +1434,7 @@ class SourceAssemblyTests(unittest.TestCase):
         )
         for tracked in cases:
             with self.subTest(editor_backend=tracked):
-                raw = (ROOT / tracked).read_bytes()
+                raw = composition_predecessor_bytes((ROOT / tracked).read_bytes())
                 self.assertEqual(sha(raw), new)
                 self.assertEqual(len(raw), 47742)
                 self.assertEqual(raw.count(b'#include "TextControlInnerElements.h"\n'), 1)
@@ -1108,6 +1445,7 @@ class SourceAssemblyTests(unittest.TestCase):
         here = ROOT / assembly.RECIPE_ROOT
         imports = json.loads((here / 'source-imports-editor.json').read_bytes())
         projection = json.loads((here / 'source-projection-editor.json').read_bytes())
+        imports, projection = composition_history(imports, projection)
         item = imports['files'][logical]
         self.assertEqual(item['sha256'], new)
         self.assertEqual(item['bytes'], 47742)
@@ -1118,11 +1456,11 @@ class SourceAssemblyTests(unittest.TestCase):
         mapped = json.loads((native / 'source-imports.json').read_bytes())
         provenance_raw = (native / 'provenance.json').read_bytes()
         provenance = json.loads(provenance_raw)
-        record = provenance['runtime_files'][logical]
+        record = provenance['runtime_files'][logical]['successor']['supersedes']['origin']
         self.assertEqual(record['after_sha256'], new)
         self.assertEqual(record['successor']['supersedes']['origin']['after_sha256'], '9c315b84feb67ca805be986ca71b3ea388c586f5639efa91b5afaea80b1a8e6e')
-        self.assertEqual(mapped['inputs'][logical]['origin']['record'], record)
-        self.assertEqual(mapped['inputs'][logical]['sha256'], new)
+        self.assertEqual(mapped['inputs'][logical]['origin']['record']['successor']['supersedes']['origin'], record)
+        self.assertEqual(mapped['inputs'][logical]['origin']['record']['successor']['supersedes']['sha256'], new)
         self.assertEqual(mapped['inputs']['provenance.json']['sha256'], sha(provenance_raw))
         self.assertEqual(mapped['inputs']['provenance.json']['bytes'], len(provenance_raw))
         self.assertEqual(mapped['provenance']['sha256'], sha(provenance_raw))
@@ -1136,7 +1474,7 @@ class SourceAssemblyTests(unittest.TestCase):
         )
         for tracked in cases:
             with self.subTest(composition_scope=tracked):
-                raw = (ROOT / tracked).read_bytes()
+                raw = composition_predecessor_bytes((ROOT / tracked).read_bytes())
                 self.assertEqual(sha(raw), '5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815')
                 raw = raw.replace(b'#include \"DocumentPage.h\"\n', b'').replace(b'#include \"DocumentView.h\"\n', b'').replace(b'#include \"ElementInlines.h\"\n', b'')
                 self.assertEqual(sha(raw), expected)
@@ -1160,7 +1498,7 @@ class SourceAssemblyTests(unittest.TestCase):
         )
         for tracked in cases:
             with self.subTest(editor_inlines=tracked):
-                raw = (ROOT / tracked).read_bytes()
+                raw = composition_predecessor_bytes((ROOT / tracked).read_bytes())
                 self.assertEqual(sha(raw), expected)
                 self.assertEqual(len(raw), 47742)
                 prior = raw
@@ -1235,6 +1573,48 @@ class SourceAssemblyTests(unittest.TestCase):
              self.assertRaisesRegex(ValueError, 'origin differs'):
             assembly._maintained(ROOT, 'pixel')
 
+
+    def test_composition_inverse_source_successor_preserves_shared_ui_and_exact_preimages(self):
+        here = ROOT / assembly.RECIPE_ROOT
+        actual = json.loads((here / 'source-imports-editor.json').read_bytes())
+        projection = json.loads((here / 'source-projection-editor.json').read_bytes())
+        historical, old_projection = composition_history(actual, projection)
+        names = (
+            'source/document-provider/editor/BibNativeEditorBackend.cpp',
+            'source/wrapper/src/embedder/main.cpp',
+            'source/wrapper/src/embedder/BibPageClients.h',
+            'source/wrapper/src/embedder/BibUndoHistory.h')
+        self.assertEqual(len(actual['files']), 159)
+        for name in names:
+            item, prior = actual['files'][name], historical['files'][name]
+            raw = (ROOT / item['tracked_path']).read_bytes()
+            self.assertEqual(sha(raw), item['sha256'])
+            self.assertEqual(len(raw), item['bytes'])
+            self.assertEqual(sha(composition_predecessor_bytes(raw)), prior['sha256'])
+            self.assertEqual(projection['files'][name]['preimage_sha256'], old_projection['files'][name]['preimage_sha256'])
+            self.assertEqual(item['origin']['supersedes']['origin'], prior['origin'])
+        main = actual['files']['source/wrapper/src/embedder/main.cpp']
+        self.assertEqual(main['tracked_path'], assembly.RECIPE_ROOT + '/overlays/editor/wrapper/src/embedder/main.cpp')
+        self.assertEqual(main['origin']['supersedes']['tracked_path'], assembly.RECIPE_ROOT + '/overlays/ui/wrapper/src/embedder/main.cpp')
+        physical = json.loads((here / 'source-imports-physical.json').read_bytes())
+        shared = physical['files']['source/wrapper/src/embedder/main.cpp']
+        self.assertEqual(sha((ROOT / shared['tracked_path']).read_bytes()), '2a1ef9ff3574ca31d4f182457dc7b4a83a09cd7944a8a9b410d4109485db791d')
+        bridge = 'source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h'
+        item = actual['files'][bridge]
+        self.assertEqual((item['sha256'], item['bytes'], item['mode'], item['role']),
+            ('1572b86481c93b9568c781ababc9f6645f505a038704f91236192e31a4208118', 592, 420, 'source'))
+        self.assertEqual(projection['files'][bridge], {'preimage_sha256': None, 'sha256': item['sha256']})
+        self.assertEqual(item['origin']['kind'], 'reviewed-native-composition-undo-private-bridge')
+        self.assertIs(item['origin']['source_only'], True)
+        self.assertNotIn('supersedes', item['origin'])
+        self.assertNotIn(bridge, physical['files'])
+        native = ROOT / 'recipes/webkitwasm-native-rich4083-v1'
+        for name in names:
+            raw = (native / name).read_bytes()
+            self.assertIn(sha(raw), COMPOSITION_REVERSE)
+            self.assertNotEqual(raw, composition_predecessor_bytes(raw))
+        self.assertEqual(sha((here / 'provenance/editor-source-map.json').read_bytes()),
+            'a97017168b817334d1a094300e904f09110c234d734712b4d48870e2aa7b4ddb')
 
 if __name__ == '__main__':
     unittest.main()

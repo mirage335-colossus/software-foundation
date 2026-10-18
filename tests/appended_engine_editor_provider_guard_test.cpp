@@ -182,7 +182,9 @@ struct Fake {
     int admit_status{}, effect_status{}, reply_status{};
     std::uint64_t query_revision{93};
     wire::ProjectionReply::State query_state{wire::ProjectionReply::State::available};
-    bool in_turn{}, pending_native{}, throw_effect{}, throw_admit{}, throw_reply{}, throw_leave{}, navigate_query{}, unknown{};
+    bool in_turn{}, pending_native{}, throw_effect{}, throw_admit{}, throw_admit_second{}, throw_reply{}, throw_leave{}, navigate_query{}, unknown{};
+    bool invalidate_on_enter{};
+    int admit_preflights{}, admit_in_turn{};
     bool wrong_document{}, wrong_sequence{}, wrong_revision{}, malformed_header{}, malformed_target{}, malformed_body{}, bad_size{}, overflow_reply{}, bad_handled{};
     bool reenter{};
     std::uint8_t* mutate{};
@@ -198,6 +200,7 @@ struct Fake {
         auto& f = *static_cast<Fake*>(context); ++f.counts.enters;
         CHECK(!f.in_turn);
         if (f.mutate) *f.mutate = 91;
+        if (f.invalidate_on_enter) f.admit_status = BIB_ENGINE_STALE;
         if (f.reenter) f.nested_enter = nested();
         if (!f.enter_status) f.in_turn = true;
         return f.enter_status;
@@ -272,10 +275,13 @@ struct Fake {
     }
     static std::int32_t admit(void* context,std::uint64_t worker,const BibEngineDocumentV1* expected,std::uint32_t domain,
                              std::uint32_t operation,std::uint64_t sequence,const BibEngineBytesV1* payload) {
-        auto& f = *static_cast<Fake*>(context); CHECK(f.in_turn && worker == worker_epoch && expected && payload && !payload->reserved);
-        ++f.counts.admits; f.observed_first = payload->data[0];
+        auto& f = *static_cast<Fake*>(context); CHECK(worker == worker_epoch && expected && payload && !payload->reserved);
+        ++f.counts.admits;
+        if (f.in_turn) ++f.admit_in_turn;
+        else { ++f.admit_preflights; CHECK(domain == 0 && operation == 8); }
+        f.observed_first = payload->data[0];
         if (f.reenter) f.nested_admit = nested();
-        if (f.throw_admit) throw std::runtime_error("uncertain inert admission");
+        if (f.throw_admit || (f.throw_admit_second && f.counts.admits==2)) throw std::runtime_error("uncertain inert admission");
         if (f.admit_status) return f.admit_status;
         const std::span<const std::uint8_t> bytes(payload->data,payload->length);
         if (domain == 1) {
@@ -638,6 +644,7 @@ void run(const std::string& name) {
         if (name == "revoke-observed") command.payload = revocation(f.fake.document,1,true);
         const auto before = f.fake.counts; CHECK(command.run() == 0); command.completed();
         auto expected = before; ++expected.enters; ++expected.leaves; ++expected.currents; ++expected.admits; ++expected.reply_validations;
+        if (!revoke) ++expected.admits;
         if (revoke) ++expected.revocations; else ++expected.applies;
         CHECK(f.fake.counts == expected); return;
     }
@@ -646,7 +653,8 @@ void run(const std::string& name) {
     if (name == "deep-request-rejection") {
         Command command(f.fake.document); command.payload.push_back(0); overwrite(command.payload,12,command.payload.size(),4);
         CHECK(command.run() == BIB_ENGINE_INVALID); command.rejected();
-        CHECK(f.fake.counts.admits == 1 && f.fake.counts.applies == 0 && f.fake.counts.enters == 2 && f.fake.counts.leaves == 2);
+        CHECK(f.fake.counts.admits == 1 && f.fake.admit_preflights == 1 && f.fake.admit_in_turn == 0
+            && f.fake.counts.applies == 0 && f.fake.counts.enters == 1 && f.fake.counts.leaves == 1);
         command.payload = observation(f.fake.document,1); CHECK(command.run() == 0); command.completed(); return;
     }
     if (name == "retire-authority") {
@@ -657,9 +665,32 @@ void run(const std::string& name) {
         revoke.payload = revocation(f.fake.document,1); CHECK(revoke.run() == 0); revoke.completed(); return;
     }
     if (name == "admission-rejected") {
-        f.fake.admit_status = BIB_ENGINE_STALE; Command command(f.fake.document); CHECK(command.run() == BIB_ENGINE_STALE); command.rejected();
-        CHECK(f.fake.counts.applies == 0 && f.fake.counts.reply_validations == 0);
-        f.fake.admit_status = 0; CHECK(command.run() == 0); command.completed(); return;
+        f.fake.admit_status = BIB_ENGINE_STALE; Command command(f.fake.document); const auto before = f.fake.counts;
+        CHECK(command.run() == BIB_ENGINE_STALE); command.rejected();
+        CHECK(f.fake.counts.enters == before.enters && f.fake.counts.leaves == before.leaves
+            && f.fake.counts.currents == before.currents && f.fake.admit_preflights == 1 && f.fake.admit_in_turn == 0
+            && f.fake.counts.applies == 0 && f.fake.counts.reply_validations == 0);
+        f.fake.admit_status = 0; CHECK(command.run() == 0); command.completed();
+        CHECK(f.fake.admit_preflights == 2 && f.fake.admit_in_turn == 1); return;
+    }
+    if (name == "admission-enter-invalidation") {
+        Command command(f.fake.document); const auto original = f.fake.document; const auto before = f.fake.counts;
+        f.fake.invalidate_on_enter = true; CHECK(command.run() == BIB_ENGINE_STALE); command.rejected();
+        CHECK(f.fake.counts.enters == before.enters+1 && f.fake.counts.leaves == before.leaves+1
+            && f.fake.counts.currents == before.currents+1 && f.fake.admit_preflights == 1 && f.fake.admit_in_turn == 1
+            && f.fake.counts.applies == 0 && f.fake.counts.revocations == 0);
+        CHECK(same(f.fake.document, original));
+        f.fake.invalidate_on_enter = false; f.fake.admit_status = 0;
+        CHECK(command.run() == 0); command.completed();
+        CHECK(f.fake.admit_preflights == 2 && f.fake.admit_in_turn == 2 && f.fake.counts.applies == 1); return;
+    }
+    if (name == "admit-preflight-throw") {
+        f.fake.throw_admit = true; const auto before = f.fake.counts; Command command(f.fake.document);
+        CHECK(command.run() == BIB_ENGINE_PROCESS_EXIT_REQUIRED); command.rejected();
+        CHECK(f.fake.counts.admits == before.admits+1 && f.fake.admit_preflights == 1 && f.fake.admit_in_turn == 0
+            && f.fake.counts.enters == before.enters && f.fake.counts.leaves == before.leaves
+            && f.fake.counts.applies == 0);
+        terminal_no_exports(f); return;
     }
     if (name == "native-pending") {
         f.fake.pending_native = true; Query query(f.fake.document); CHECK(query.run() == BIB_ENGINE_LIMIT); query.rejected();
@@ -731,7 +762,8 @@ void run(const std::string& name) {
     }
     if (name == "enter-rejection") {
         f.fake.enter_status = 2; Command command(f.fake.document); CHECK(command.run() == BIB_ENGINE_REENTRANT); command.rejected();
-        CHECK(f.fake.counts.admits == 0 && f.fake.counts.applies == 0 && f.fake.counts.leaves == 1);
+        CHECK(f.fake.counts.admits == 1 && f.fake.admit_preflights == 1 && f.fake.admit_in_turn == 0
+            && f.fake.counts.applies == 0 && f.fake.counts.leaves == 1);
         f.fake.enter_status = 0; CHECK(command.run() == 0); command.completed(); return;
     }
     if (name == "reentry" || name == "query-reentry" || name == "revoke-reentry") {
@@ -770,7 +802,10 @@ void run(const std::string& name) {
     else if (fault == "wrong-revision") f.fake.wrong_revision = true;
     else if (fault == "wrong-document") f.fake.wrong_document = true;
     else if (fault == "navigation") f.fake.navigate_query = true;
-    else if (fault == "admit-throw") f.fake.throw_admit = true;
+    else if (fault == "admit-throw") {
+        if (!query_fault && !revoke_fault) f.fake.throw_admit_second = true;
+        else f.fake.throw_admit = true;
+    }
     else known = false;
     CHECK(known);
     if (query_fault) { Query query(f.fake.document); CHECK(query.run() == BIB_ENGINE_PROCESS_EXIT_REQUIRED); query.rejected(); }
@@ -780,8 +815,8 @@ void run(const std::string& name) {
 }
 
 // Historical tests decorate only the new callbacks. All predecessor test and
-// callback bodies above stay byte-identical; no current-lane behavior is faked
-// to compensate for the narrow operation9 admission rule.
+// callback bodies use the same current-lane admission and TURN rules; no
+// current-lane behavior is faked for the narrow operation9 admission rule.
 struct HistoricalCallbacks {
     static std::int32_t project(void* context,std::uint64_t worker,const BibEngineQueryV1* request,
                                 BibEngineReplyBufferV1* buffer,BibEngineQueryResultV1* result) {
@@ -915,8 +950,12 @@ bool run_historical(const std::string& name) {
     if (name == "historical-current-lanes") {
         const auto before = f.fake.counts;
         Command old_edit(original,2); CHECK(old_edit.run() == BIB_ENGINE_STALE); old_edit.rejected();
+        // The fake retains the same native metadata after document navigation.
+        // Preflight passes, then the in-TURN document check rejects this C8.
+        auto expected = before; ++expected.admits; ++expected.enters; ++expected.leaves; ++expected.currents;
+        CHECK(f.fake.counts == expected && f.fake.historical_lease->active);
         Query old_projection(original,2); CHECK(old_projection.run() == BIB_ENGINE_STALE); old_projection.rejected();
-        auto expected = before; expected.enters += 2; expected.leaves += 2; expected.currents += 2;
+        ++expected.enters; ++expected.leaves; ++expected.currents;
         CHECK(f.fake.counts == expected && f.fake.historical_lease->active);
         Command revoke(original,2,9); completed(revoke); return true;
     }

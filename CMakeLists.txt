@@ -575,6 +575,7 @@ if(BUILD_TESTING)
       appended_engine_document_sources appended_engine_document_reuse completed_work_resume
       appended_engine_successful_donor appended_engine_document_source_successful_donor
       appended_engine_editor_contract appended_engine_editor_consumer appended_engine_editor_profile browser_editor_bundle
+      appended_engine_composition_undo_journal
       appended_editor_cmake
       appended_engine_native_binary appended_engine_native_consumer appended_engine_native_profile
       appended_engine_native_sources appended_engine_native_metadata appended_engine_native_bootstrap
@@ -595,6 +596,7 @@ if(BUILD_TESTING)
         appended_engine_document_sources appended_engine_document_reuse completed_work_resume
         appended_engine_successful_donor appended_engine_document_source_successful_donor
         appended_engine_editor_contract appended_engine_editor_consumer appended_engine_editor_profile browser_editor_bundle
+      appended_engine_composition_undo_journal
         appended_editor_cmake
         appended_engine_native_binary appended_engine_native_consumer appended_engine_native_profile
         appended_engine_native_sources appended_engine_native_metadata appended_engine_native_bootstrap
@@ -663,6 +665,11 @@ elseif(FOUNDATION_APPENDED_PROFILE MATCHES "^(web|both)$" AND EMSCRIPTEN)
   include(cmake/AppendedEngine.cmake)
 elseif(FOUNDATION_APPENDED_PROFILE MATCHES "^(web|both)$")
   include(cmake/Appended.cmake)
+elseif(BUILD_TESTING AND NOT EMSCRIPTEN AND FOUNDATION_APPENDED_PROFILE STREQUAL "none")
+  # Inert native guard fixtures use only local value/codecs. Selecting a test
+  # builds its prerequisites without enabling appended kernel maintenance.
+  include(cmake/AppendedPortableCodecs.cmake)
+  include(cmake/AppendedEngineProvider.cmake)
 endif()
 
 if(FOUNDATION_BUILD_GUI)

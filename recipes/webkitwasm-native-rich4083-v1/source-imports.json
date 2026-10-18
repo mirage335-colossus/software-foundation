@@ -149,13 +149,13 @@
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/helpers/tools/dependency_archive.py"
     },
     "inspect_sources.py": {
-      "bytes": 9097,
+      "bytes": 17288,
       "mode": 420,
       "origin": {
         "kind": "native-actions-source-recipe-input"
       },
       "role": "helper",
-      "sha256": "2f52f839e987fa1863d5f947793e49c3ca43b366ee4b29ad4934aacabd81cf38",
+      "sha256": "63bce7a9bff9522cc75f32c1a8471cdbdf9fec08b7a959f8e17c2c97f92cdd83",
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/inspect_sources.py"
     },
     "notices/foundation/LICENSE": {
@@ -433,13 +433,13 @@
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/proof/original-headers/engine/Source/WebCore/page/EventHandler.h"
     },
     "provenance.json": {
-      "bytes": 174282,
+      "bytes": 183217,
       "mode": 420,
       "origin": {
         "kind": "native-actions-source-recipe-input"
       },
       "role": "provenance",
-      "sha256": "265cc0a00333a22d0eeea57acbdc5a881d9fd584a663871da86ecaf5937caae9",
+      "sha256": "f5e4a29c6e5bdd0d396c634e8f51a2cc64c43f75d8f25e251184f65c55eb86ee",
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/provenance.json"
     },
     "provenance/inputs/actions-final-freeze.json": {
@@ -632,14 +632,14 @@
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/document-provider/clipboard/BibInternalClipboard.hpp"
     },
     "source/document-provider/editor/BibNativeEditorBackend.cpp": {
-      "bytes": 47742,
+      "bytes": 61375,
       "mode": 420,
       "origin": {
         "kind": "mapped-native-actions-runtime",
         "record": {
-          "action": "document-page-view-element-inline-definitions",
-          "after_bytes": 47742,
-          "after_sha256": "5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815",
+          "action": "transaction-owned-native-composition-inverse-and-original-selection",
+          "after_bytes": 61375,
+          "after_sha256": "d14dab28100d3689d9a04aa4a81290b50cf24cd3e00a34b2f8402d9eeca9da60",
           "bytes": 46851,
           "mode": 420,
           "origin": "frozen-native-actions-capsule",
@@ -649,16 +649,16 @@
           "sha256": "98f95b8e1c4d352a60a412fb8e97730332bb15b1b8a6995d65036bab19762839",
           "source": "source/editor/BibNativeEditorBackend.cpp",
           "successor": {
-            "correction": "document-page-view-element-inline-definitions",
-            "kind": "reviewed-actual-header-editor-inlines-repair",
-            "sha256": "5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815",
+            "correction": "transaction-owned-native-composition-inverse-and-original-selection",
+            "kind": "reviewed-native-composition-cancel-inverse-repair",
+            "sha256": "d14dab28100d3689d9a04aa4a81290b50cf24cd3e00a34b2f8402d9eeca9da60",
             "source_only": true,
             "source_path": "recipes/webkitwasm-native-rich4083-v1/source/document-provider/editor/BibNativeEditorBackend.cpp",
             "supersedes": {
               "origin": {
-                "action": "if-initializer-composition-local",
-                "after_bytes": 47662,
-                "after_sha256": "9c315b84feb67ca805be986ca71b3ea388c586f5639efa91b5afaea80b1a8e6e",
+                "action": "document-page-view-element-inline-definitions",
+                "after_bytes": 47742,
+                "after_sha256": "5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815",
                 "bytes": 46851,
                 "mode": 420,
                 "origin": "frozen-native-actions-capsule",
@@ -668,16 +668,16 @@
                 "sha256": "98f95b8e1c4d352a60a412fb8e97730332bb15b1b8a6995d65036bab19762839",
                 "source": "source/editor/BibNativeEditorBackend.cpp",
                 "successor": {
-                  "correction": "if-initializer-composition-local",
-                  "kind": "reviewed-actual-header-editor-composition-repair",
-                  "sha256": "9c315b84feb67ca805be986ca71b3ea388c586f5639efa91b5afaea80b1a8e6e",
+                  "correction": "document-page-view-element-inline-definitions",
+                  "kind": "reviewed-actual-header-editor-inlines-repair",
+                  "sha256": "5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815",
                   "source_only": true,
                   "source_path": "recipes/webkitwasm-native-rich4083-v1/source/document-provider/editor/BibNativeEditorBackend.cpp",
                   "supersedes": {
                     "origin": {
-                      "action": "text-control-inner-elements-defining-header",
-                      "after_bytes": 47566,
-                      "after_sha256": "1cc5c5140b7d8855cf37df214ba396ef051f474d7783ab5d9469365784496aaa",
+                      "action": "if-initializer-composition-local",
+                      "after_bytes": 47662,
+                      "after_sha256": "9c315b84feb67ca805be986ca71b3ea388c586f5639efa91b5afaea80b1a8e6e",
                       "bytes": 46851,
                       "mode": 420,
                       "origin": "frozen-native-actions-capsule",
@@ -687,16 +687,16 @@
                       "sha256": "98f95b8e1c4d352a60a412fb8e97730332bb15b1b8a6995d65036bab19762839",
                       "source": "source/editor/BibNativeEditorBackend.cpp",
                       "successor": {
-                        "correction": "text-control-inner-elements-defining-header",
-                        "kind": "reviewed-actual-header-editor-backend-repair",
-                        "sha256": "1cc5c5140b7d8855cf37df214ba396ef051f474d7783ab5d9469365784496aaa",
+                        "correction": "if-initializer-composition-local",
+                        "kind": "reviewed-actual-header-editor-composition-repair",
+                        "sha256": "9c315b84feb67ca805be986ca71b3ea388c586f5639efa91b5afaea80b1a8e6e",
                         "source_only": true,
                         "source_path": "recipes/webkitwasm-native-rich4083-v1/source/document-provider/editor/BibNativeEditorBackend.cpp",
                         "supersedes": {
                           "origin": {
-                            "action": "shared-ui-popup-and-internal-rich-clipboard",
-                            "after_bytes": 47569,
-                            "after_sha256": "3994608abd7f8ac449f411f22b673edf3021ae9ce9d1591b229d5d6a8bd2faf2",
+                            "action": "text-control-inner-elements-defining-header",
+                            "after_bytes": 47566,
+                            "after_sha256": "1cc5c5140b7d8855cf37df214ba396ef051f474d7783ab5d9469365784496aaa",
                             "bytes": 46851,
                             "mode": 420,
                             "origin": "frozen-native-actions-capsule",
@@ -706,35 +706,59 @@
                             "sha256": "98f95b8e1c4d352a60a412fb8e97730332bb15b1b8a6995d65036bab19762839",
                             "source": "source/editor/BibNativeEditorBackend.cpp",
                             "successor": {
-                              "kind": "reviewed-shared-rich-ui-successor",
-                              "reviewed_packets": {
-                                "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
-                                "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
-                              },
-                              "selection": "shared-ui-popup-and-internal-rich-clipboard",
-                              "sha256": "3994608abd7f8ac449f411f22b673edf3021ae9ce9d1591b229d5d6a8bd2faf2",
+                              "correction": "text-control-inner-elements-defining-header",
+                              "kind": "reviewed-actual-header-editor-backend-repair",
+                              "sha256": "1cc5c5140b7d8855cf37df214ba396ef051f474d7783ab5d9469365784496aaa",
                               "source_only": true,
-                              "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/call-sites/proposed/recipes/webkitwasm-native-rich4083-v1/source/document-provider/editor/BibNativeEditorBackend.cpp"
+                              "source_path": "recipes/webkitwasm-native-rich4083-v1/source/document-provider/editor/BibNativeEditorBackend.cpp",
+                              "supersedes": {
+                                "origin": {
+                                  "action": "shared-ui-popup-and-internal-rich-clipboard",
+                                  "after_bytes": 47569,
+                                  "after_sha256": "3994608abd7f8ac449f411f22b673edf3021ae9ce9d1591b229d5d6a8bd2faf2",
+                                  "bytes": 46851,
+                                  "mode": 420,
+                                  "origin": "frozen-native-actions-capsule",
+                                  "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/editor/BibNativeEditorBackend.cpp",
+                                  "preimage_sha256": "98f95b8e1c4d352a60a412fb8e97730332bb15b1b8a6995d65036bab19762839",
+                                  "selection": "reviewed-source-successor",
+                                  "sha256": "98f95b8e1c4d352a60a412fb8e97730332bb15b1b8a6995d65036bab19762839",
+                                  "source": "source/editor/BibNativeEditorBackend.cpp",
+                                  "successor": {
+                                    "kind": "reviewed-shared-rich-ui-successor",
+                                    "reviewed_packets": {
+                                      "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+                                      "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+                                    },
+                                    "selection": "shared-ui-popup-and-internal-rich-clipboard",
+                                    "sha256": "3994608abd7f8ac449f411f22b673edf3021ae9ce9d1591b229d5d6a8bd2faf2",
+                                    "source_only": true,
+                                    "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/call-sites/proposed/recipes/webkitwasm-native-rich4083-v1/source/document-provider/editor/BibNativeEditorBackend.cpp"
+                                  }
+                                },
+                                "sha256": "3994608abd7f8ac449f411f22b673edf3021ae9ce9d1591b229d5d6a8bd2faf2",
+                                "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/document-provider/editor/BibNativeEditorBackend.cpp"
+                              }
                             }
                           },
-                          "sha256": "3994608abd7f8ac449f411f22b673edf3021ae9ce9d1591b229d5d6a8bd2faf2",
+                          "sha256": "1cc5c5140b7d8855cf37df214ba396ef051f474d7783ab5d9469365784496aaa",
                           "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/document-provider/editor/BibNativeEditorBackend.cpp"
                         }
                       }
                     },
-                    "sha256": "1cc5c5140b7d8855cf37df214ba396ef051f474d7783ab5d9469365784496aaa",
+                    "sha256": "9c315b84feb67ca805be986ca71b3ea388c586f5639efa91b5afaea80b1a8e6e",
                     "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/document-provider/editor/BibNativeEditorBackend.cpp"
                   }
                 }
               },
-              "sha256": "9c315b84feb67ca805be986ca71b3ea388c586f5639efa91b5afaea80b1a8e6e",
+              "sha256": "5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815",
               "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/document-provider/editor/BibNativeEditorBackend.cpp"
             }
           }
         }
       },
       "role": "source",
-      "sha256": "5fe5f78c031cb50b83b40aed998a02a765045fdd111dba1ea7f76950f8ab1815",
+      "sha256": "d14dab28100d3689d9a04aa4a81290b50cf24cd3e00a34b2f8402d9eeca9da60",
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/document-provider/editor/BibNativeEditorBackend.cpp"
     },
     "source/document-provider/editor/BibNativeEditorBackend.hpp": {
@@ -3616,25 +3640,49 @@
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/foundation/third_party/appended-engine/src/LegacyHostAdapters.cpp"
     },
     "source/foundation/third_party/appended-engine/src/ProviderGuard.cpp": {
-      "bytes": 74045,
+      "bytes": 74981,
       "mode": 420,
       "origin": {
         "kind": "mapped-native-actions-runtime",
         "record": {
           "action": "native-getter-hook-only-gate-fix-already-present",
-          "after_sha256": "ae2a27c9f62ca92636ef7253501fdfcb0ebed788473af174c98c0c698b855651",
+          "after_bytes": 74981,
+          "after_sha256": "3aebfcc5b4e838846f23a5c9c61a62acc51fecc73541fd58deaa9c157308b0ff",
           "bytes": 73277,
           "mode": 420,
           "origin": "frozen-native-actions-capsule",
           "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp",
           "preimage_sha256": "909ceac8b7bf311993f680cdf104d2ae6111bede8b0507fcc0e094bcc573d5ae",
-          "selection": "native-adaptation",
+          "selection": "reviewed-source-successor",
           "sha256": "909ceac8b7bf311993f680cdf104d2ae6111bede8b0507fcc0e094bcc573d5ae",
-          "source": "source/foundation/third_party/appended-engine/src/ProviderGuard.cpp"
+          "source": "source/foundation/third_party/appended-engine/src/ProviderGuard.cpp",
+          "successor": {
+            "correction": "inert-C8-before-Host-TURN-with-in-turn-revalidation",
+            "kind": "reviewed-editor-C8-preflight-repair",
+            "sha256": "3aebfcc5b4e838846f23a5c9c61a62acc51fecc73541fd58deaa9c157308b0ff",
+            "source_only": true,
+            "source_path": "recipes/webkitwasm-native-rich4083-v1/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp",
+            "supersedes": {
+              "origin": {
+                "action": "native-getter-hook-only-gate-fix-already-present",
+                "after_sha256": "ae2a27c9f62ca92636ef7253501fdfcb0ebed788473af174c98c0c698b855651",
+                "bytes": 73277,
+                "mode": 420,
+                "origin": "frozen-native-actions-capsule",
+                "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp",
+                "preimage_sha256": "909ceac8b7bf311993f680cdf104d2ae6111bede8b0507fcc0e094bcc573d5ae",
+                "selection": "native-adaptation",
+                "sha256": "909ceac8b7bf311993f680cdf104d2ae6111bede8b0507fcc0e094bcc573d5ae",
+                "source": "source/foundation/third_party/appended-engine/src/ProviderGuard.cpp"
+              },
+              "sha256": "ae2a27c9f62ca92636ef7253501fdfcb0ebed788473af174c98c0c698b855651",
+              "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp"
+            }
+          }
         }
       },
       "role": "source",
-      "sha256": "ae2a27c9f62ca92636ef7253501fdfcb0ebed788473af174c98c0c698b855651",
+      "sha256": "3aebfcc5b4e838846f23a5c9c61a62acc51fecc73541fd58deaa9c157308b0ff",
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp"
     },
     "source/native/BibNativeProviderBootstrap.hpp": {
@@ -3876,6 +3924,29 @@
       "role": "source",
       "sha256": "60738d2b19acd8f04e6a52729c66c42b30965e454974e78202c886556161c463",
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/BibAppResources.h"
+    },
+    "source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h": {
+      "bytes": 592,
+      "mode": 420,
+      "origin": {
+        "kind": "reviewed-source-only-composition-undo-private-bridge",
+        "record": {
+          "action": "new-private-source-header",
+          "after_bytes": 592,
+          "after_sha256": "1572b86481c93b9568c781ababc9f6645f505a038704f91236192e31a4208118",
+          "bytes": 592,
+          "mode": 420,
+          "origin": "reviewed-source-only-composition-undo-private-bridge",
+          "origin_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h",
+          "preimage_sha256": null,
+          "selection": "source-only-addition",
+          "sha256": "1572b86481c93b9568c781ababc9f6645f505a038704f91236192e31a4208118",
+          "source": "source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h"
+        }
+      },
+      "role": "source",
+      "sha256": "1572b86481c93b9568c781ababc9f6645f505a038704f91236192e31a4208118",
+      "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h"
     },
     "source/wrapper/src/embedder/BibEngineProviderDocumentProjection.h": {
       "bytes": 1478,
@@ -4153,25 +4224,49 @@
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/BibNativeMediaDisabled.cpp"
     },
     "source/wrapper/src/embedder/BibPageClients.h": {
-      "bytes": 28627,
+      "bytes": 29858,
       "mode": 420,
       "origin": {
         "kind": "mapped-native-actions-runtime",
         "record": {
-          "action": "unchanged-copy",
-          "after_sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2",
+          "action": "transaction-owned-native-composition-inverse-and-original-selection",
+          "after_bytes": 29858,
+          "after_sha256": "6e77e9b1b47cc5e4e3d2a5dcd7600ea959c4b22eb95c763165c4ccc3c5d28a43",
           "bytes": 28627,
           "mode": 420,
           "origin": "frozen-native-actions-capsule",
           "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/wrapper/src/embedder/BibPageClients.h",
           "preimage_sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2",
-          "selection": "unchanged-copy",
+          "selection": "reviewed-source-successor",
           "sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2",
-          "source": "source/wrapper/src/embedder/BibPageClients.h"
+          "source": "source/wrapper/src/embedder/BibPageClients.h",
+          "successor": {
+            "correction": "transaction-owned-native-composition-inverse-and-original-selection",
+            "kind": "reviewed-native-composition-cancel-inverse-repair",
+            "sha256": "6e77e9b1b47cc5e4e3d2a5dcd7600ea959c4b22eb95c763165c4ccc3c5d28a43",
+            "source_only": true,
+            "source_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/BibPageClients.h",
+            "supersedes": {
+              "origin": {
+                "action": "unchanged-copy",
+                "after_sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2",
+                "bytes": 28627,
+                "mode": 420,
+                "origin": "frozen-native-actions-capsule",
+                "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/wrapper/src/embedder/BibPageClients.h",
+                "preimage_sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2",
+                "selection": "unchanged-copy",
+                "sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2",
+                "source": "source/wrapper/src/embedder/BibPageClients.h"
+              },
+              "sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2",
+              "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/BibPageClients.h"
+            }
+          }
         }
       },
       "role": "source",
-      "sha256": "cd5775db97976fc01d8f457474d41cbafd3ae2895efbd0a3dff49bbfe2e8f3d2",
+      "sha256": "6e77e9b1b47cc5e4e3d2a5dcd7600ea959c4b22eb95c763165c4ccc3c5d28a43",
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/BibPageClients.h"
     },
     "source/wrapper/src/embedder/BibPrototypeState.h": {
@@ -4241,25 +4336,49 @@
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/BibStorage.h"
     },
     "source/wrapper/src/embedder/BibUndoHistory.h": {
-      "bytes": 2662,
+      "bytes": 9317,
       "mode": 420,
       "origin": {
         "kind": "mapped-native-actions-runtime",
         "record": {
-          "action": "unchanged-copy",
-          "after_sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2",
+          "action": "transaction-owned-native-composition-inverse-and-original-selection",
+          "after_bytes": 9317,
+          "after_sha256": "f6ca9055367085abe855a19b0d047034279dff1beb7dc44c8c2ab78001d602bb",
           "bytes": 2662,
           "mode": 420,
           "origin": "frozen-native-actions-capsule",
           "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/wrapper/src/embedder/BibUndoHistory.h",
           "preimage_sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2",
-          "selection": "unchanged-copy",
+          "selection": "reviewed-source-successor",
           "sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2",
-          "source": "source/wrapper/src/embedder/BibUndoHistory.h"
+          "source": "source/wrapper/src/embedder/BibUndoHistory.h",
+          "successor": {
+            "correction": "transaction-owned-native-composition-inverse-and-original-selection",
+            "kind": "reviewed-native-composition-cancel-inverse-repair",
+            "sha256": "f6ca9055367085abe855a19b0d047034279dff1beb7dc44c8c2ab78001d602bb",
+            "source_only": true,
+            "source_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/BibUndoHistory.h",
+            "supersedes": {
+              "origin": {
+                "action": "unchanged-copy",
+                "after_sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2",
+                "bytes": 2662,
+                "mode": 420,
+                "origin": "frozen-native-actions-capsule",
+                "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/wrapper/src/embedder/BibUndoHistory.h",
+                "preimage_sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2",
+                "selection": "unchanged-copy",
+                "sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2",
+                "source": "source/wrapper/src/embedder/BibUndoHistory.h"
+              },
+              "sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2",
+              "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/BibUndoHistory.h"
+            }
+          }
         }
       },
       "role": "source",
-      "sha256": "eda850a3b35353dc47be20f85fe16bff55058aaf83610ee0c96a7ffda5c369f2",
+      "sha256": "f6ca9055367085abe855a19b0d047034279dff1beb7dc44c8c2ab78001d602bb",
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/BibUndoHistory.h"
     },
     "source/wrapper/src/embedder/BibWebSocketChannel.h": {
@@ -4307,14 +4426,14 @@
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/EmbedderStrategies.cpp"
     },
     "source/wrapper/src/embedder/main.cpp": {
-      "bytes": 45197,
+      "bytes": 48346,
       "mode": 420,
       "origin": {
         "kind": "mapped-native-actions-runtime",
         "record": {
-          "action": "optional-page-identifier",
-          "after_bytes": 45197,
-          "after_sha256": "4cb8131b86f6bf1ede303053b7aa1752fab16dd66fe8b0271f97d256e0cd137b",
+          "action": "transaction-owned-native-composition-inverse-and-original-selection",
+          "after_bytes": 48346,
+          "after_sha256": "3c2c7beb2b582ab91fb8174aa7d5f6022ce1a4b29ec66918674f9f13fadd88ac",
           "bytes": 155877,
           "mode": 420,
           "origin": "frozen-native-actions-capsule",
@@ -4324,16 +4443,16 @@
           "sha256": "8c2f98835df730b17c0fb0f5bb5807c2ddaf9559797a59598173d95d02a70449",
           "source": "source/wrapper/src/embedder/main.cpp",
           "successor": {
-            "correction": "optional-page-identifier",
-            "kind": "reviewed-actual-header-main-repair",
-            "sha256": "4cb8131b86f6bf1ede303053b7aa1752fab16dd66fe8b0271f97d256e0cd137b",
+            "correction": "transaction-owned-native-composition-inverse-and-original-selection",
+            "kind": "reviewed-native-composition-cancel-inverse-repair",
+            "sha256": "3c2c7beb2b582ab91fb8174aa7d5f6022ce1a4b29ec66918674f9f13fadd88ac",
             "source_only": true,
             "source_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/main.cpp",
             "supersedes": {
               "origin": {
-                "action": "shared-ui-popup-and-internal-rich-clipboard",
-                "after_bytes": 45113,
-                "after_sha256": "82984dd44d1646f3738c7499d78f6b649bd32b62b1ebad9b8ef81272442ff5af",
+                "action": "optional-page-identifier",
+                "after_bytes": 45197,
+                "after_sha256": "4cb8131b86f6bf1ede303053b7aa1752fab16dd66fe8b0271f97d256e0cd137b",
                 "bytes": 155877,
                 "mode": 420,
                 "origin": "frozen-native-actions-capsule",
@@ -4343,25 +4462,49 @@
                 "sha256": "8c2f98835df730b17c0fb0f5bb5807c2ddaf9559797a59598173d95d02a70449",
                 "source": "source/wrapper/src/embedder/main.cpp",
                 "successor": {
-                  "kind": "reviewed-shared-rich-ui-successor",
-                  "reviewed_packets": {
-                    "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
-                    "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
-                  },
-                  "selection": "shared-ui-popup-and-internal-rich-clipboard",
-                  "sha256": "82984dd44d1646f3738c7499d78f6b649bd32b62b1ebad9b8ef81272442ff5af",
+                  "correction": "optional-page-identifier",
+                  "kind": "reviewed-actual-header-main-repair",
+                  "sha256": "4cb8131b86f6bf1ede303053b7aa1752fab16dd66fe8b0271f97d256e0cd137b",
                   "source_only": true,
-                  "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/call-sites/proposed/recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/main.cpp"
+                  "source_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/main.cpp",
+                  "supersedes": {
+                    "origin": {
+                      "action": "shared-ui-popup-and-internal-rich-clipboard",
+                      "after_bytes": 45113,
+                      "after_sha256": "82984dd44d1646f3738c7499d78f6b649bd32b62b1ebad9b8ef81272442ff5af",
+                      "bytes": 155877,
+                      "mode": 420,
+                      "origin": "frozen-native-actions-capsule",
+                      "origin_path": ".agent-work/appended-implementation-20261016/tui-native-actions/versions/0001-document-actions-v1/source/wrapper/src/embedder/main.cpp",
+                      "preimage_sha256": "8c2f98835df730b17c0fb0f5bb5807c2ddaf9559797a59598173d95d02a70449",
+                      "selection": "reviewed-source-successor",
+                      "sha256": "8c2f98835df730b17c0fb0f5bb5807c2ddaf9559797a59598173d95d02a70449",
+                      "source": "source/wrapper/src/embedder/main.cpp",
+                      "successor": {
+                        "kind": "reviewed-shared-rich-ui-successor",
+                        "reviewed_packets": {
+                          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+                          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+                        },
+                        "selection": "shared-ui-popup-and-internal-rich-clipboard",
+                        "sha256": "82984dd44d1646f3738c7499d78f6b649bd32b62b1ebad9b8ef81272442ff5af",
+                        "source_only": true,
+                        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/call-sites/proposed/recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/main.cpp"
+                      }
+                    },
+                    "sha256": "82984dd44d1646f3738c7499d78f6b649bd32b62b1ebad9b8ef81272442ff5af",
+                    "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/main.cpp"
+                  }
                 }
               },
-              "sha256": "82984dd44d1646f3738c7499d78f6b649bd32b62b1ebad9b8ef81272442ff5af",
+              "sha256": "4cb8131b86f6bf1ede303053b7aa1752fab16dd66fe8b0271f97d256e0cd137b",
               "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/main.cpp"
             }
           }
         }
       },
       "role": "source",
-      "sha256": "4cb8131b86f6bf1ede303053b7aa1752fab16dd66fe8b0271f97d256e0cd137b",
+      "sha256": "3c2c7beb2b582ab91fb8174aa7d5f6022ce1a4b29ec66918674f9f13fadd88ac",
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/main.cpp"
     },
     "source/wrapper/src/embedder/resource_url.cpp": {
@@ -4409,7 +4552,7 @@
       "tracked_path": "recipes/webkitwasm-native-rich4083-v1/source/wrapper/src/embedder/resource_url.hpp"
     }
   },
-  "kind": "foundation-native-engine-actions-source-inputs",
+  "kind": "foundation-native-engine-actions-composition-undo-source-inputs-v1",
   "limits": {
     "maximum_entries": 256,
     "maximum_file_bytes": 8388608,
@@ -4425,7 +4568,7 @@
     "pixel_recipe_unchanged": true,
     "record": "provenance.json",
     "runtime_patch": "patches/native-provider-runtime.patch",
-    "sha256": "265cc0a00333a22d0eeea57acbdc5a881d9fd584a663871da86ecaf5937caae9"
+    "sha256": "f5e4a29c6e5bdd0d396c634e8f51a2cc64c43f75d8f25e251184f65c55eb86ee"
   },
   "requirements": [
     "closed-retained-native-actions-source-recipe-and-provider-build",

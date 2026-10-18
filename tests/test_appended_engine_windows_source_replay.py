@@ -493,6 +493,56 @@ class MetadataFixture:
             return replay.catalogue_metadata(*(self.raw[key] for key in ('source_map', 'provenance', 'graph')))
 
 
+class CompositionCatalogueVersionTests(unittest.TestCase):
+    def test_successor_tag_cannot_use_legacy_count_or_unbound_body_pins(self):
+        fixture = MetadataFixture()
+        fixture.source_map['kind'] = replay.native_inputs.COMPOSITION_SOURCE_KIND
+        fixture.seal()
+        with mock.patch.object(replay.contract, 'COMPOSITION_CATALOGUE', fixture.catalogue), \
+                mock.patch.object(replay.native_inputs, 'COMPOSITION_SOURCE_FACTS', None):
+            with self.assertRaisesRegex(ValueError, 'unbound'):
+                replay.catalogue_metadata(*(fixture.raw[key] for key in ('source_map', 'provenance', 'graph')))
+        fixture.source_map.pop('kind')
+        fixture.seal()
+        with mock.patch.object(replay.contract, 'COMPOSITION_CATALOGUE', None):
+            checked = fixture.check()
+        self.assertEqual(len(checked['overlays']), 157)
+
+    def test_capture_reads_and_reports_the_same_selected_catalogue(self):
+        legacy = copy.deepcopy(replay.contract.CATALOGUE)
+        successor = {role: {**item, 'sha256': str(index + 1) * 64}
+                     for index, (role, item) in enumerate(legacy.items())}
+        entries, bodies = {}, {}
+        for version, catalogue in (('old', legacy), ('new', successor)):
+            for role, item in catalogue.items():
+                name = version + '/' + role + '.json'
+                entries[name] = {'sha256': item['sha256'], 'mode': 420}
+                bodies[name] = (version + ':' + role).encode()
+        reads = []
+        retained = SimpleNamespace(expectations={})
+        retained.read = lambda name, expected: (reads.append(name), bodies[name])[1]
+        retained.capture_tree = mock.Mock()
+        assembled = SimpleNamespace(expectations={}, capture_tree=mock.Mock())
+        owner = SimpleNamespace(limits={'maximum_member_bytes': 1024},
+            source_limits=lambda: {}, work_deadline=123, check=mock.Mock())
+        inventory = {'files': {}, 'directories': [], 'modes': {}}
+        selection = {'source_catalogue': successor, 'bindings': {},
+            'retained': {'recipe_sha256': 'a' * 64, 'sources_sha256': 'b' * 64}}
+        with mock.patch.object(replay.contract, 'COMPOSITION_CATALOGUE', successor), \
+                mock.patch.object(replay, '_capture_source_records', return_value=({'patches': []}, {}, {})), \
+                mock.patch.object(replay, 'catalogue_metadata', return_value={'overlays': {}}) as catalogue_check, \
+                mock.patch.object(replay, '_replay_checked_records', return_value=(object(), inventory)), \
+                mock.patch.object(replay.handoff, '_retained_inventory', return_value=inventory):
+            result = replay._run_selection_capture(selection, owner, retained, assembled,
+                {'inputs': entries}, {}, {}, inventory)
+        self.assertEqual(reads, ['new/source_map.json', 'new/provenance.json', 'new/graph.json'])
+        catalogue_check.assert_called_once_with(b'new:source_map', b'new:provenance', b'new:graph')
+        self.assertEqual(result['source_catalogue'], successor)
+        owner.check.assert_called_once_with()
+        retained.capture_tree.assert_called_once_with({}, [])
+        assembled.capture_tree.assert_called_once_with({}, [])
+
+
 class CatalogueTests(unittest.TestCase):
     @staticmethod
     def current_candidate():

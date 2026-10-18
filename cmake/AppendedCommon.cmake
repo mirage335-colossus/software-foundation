@@ -1,16 +1,7 @@
 # Value/container and queued transport targets shared by optional appended
 # profiles. This fragment has no guest VM or engine implementation dependency.
 include_guard(GLOBAL)
-get_filename_component(_foundation_appended_source_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-
-function(foundation_appended_options target)
-  target_compile_features(${target} PUBLIC cxx_std_20)
-  target_include_directories(${target} PUBLIC
-    "$<BUILD_INTERFACE:${_foundation_appended_source_root}/include>"
-    "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
-  set_target_properties(${target} PROPERTIES CXX_EXTENSIONS OFF)
-  foundation_options(${target})
-endfunction()
+include("${CMAKE_CURRENT_LIST_DIR}/AppendedPortableCodecs.cmake")
 
 function(foundation_appended_test name target timeout)
   foundation_options(${target})
@@ -25,7 +16,6 @@ function(foundation_appended_test name target timeout)
   set_tests_properties(${name} PROPERTIES LABELS "appended;focused" TIMEOUT ${timeout})
 endfunction()
 
-add_library(foundation_appended_abi STATIC src/appended/abi.cpp src/appended/registry.cpp)
 add_library(foundation_appended_container STATIC src/appended/container.cpp)
 # Native carrier discovery is independent of the portable-module runtime. Keep
 # its single boundary stamp in one optional object for every loader-enabled
@@ -40,17 +30,8 @@ if(NOT EMSCRIPTEN)
   find_package(Threads REQUIRED)
   target_link_libraries(foundation_appended_web_services PUBLIC Threads::Threads)
 endif()
-add_library(foundation_appended_document_forms STATIC EXCLUDE_FROM_ALL src/appended/document_forms.cpp)
-target_link_libraries(foundation_appended_document_forms PUBLIC foundation_appended_abi)
 # Generic input policy, independent of supplier GUI and HTML implementations.
 add_library(foundation_gui_surface STATIC EXCLUDE_FROM_ALL src/gui/surface.cpp)
-# The copied editor wire and owner controller contain no HTML engine or VM.
-# The pure C protocol leaf is private to this source graph; it is not an
-# installed SDK include directory. Owner headers need it transitively in-tree.
-add_library(foundation_appended_editor_codec STATIC EXCLUDE_FROM_ALL
-  gui/shared/native_editor_codec.cpp)
-target_include_directories(foundation_appended_editor_codec PUBLIC
-  "$<BUILD_INTERFACE:${_foundation_appended_source_root}/abi/appended>")
 add_library(foundation_appended_editor_controller STATIC EXCLUDE_FROM_ALL
   gui/shared/native_editor_controller.cpp gui/shared/native_editor_context_adapter.cpp)
 target_link_libraries(foundation_appended_editor_controller PUBLIC foundation_gui_surface)
@@ -63,9 +44,9 @@ add_library(foundation_appended_engine_owner STATIC EXCLUDE_FROM_ALL
 target_link_libraries(foundation_appended_engine_owner PUBLIC
   foundation_appended_container foundation_appended_resource_url foundation_appended_web_services
   foundation_appended_editor_codec)
-foreach(_appended_target foundation_appended_abi foundation_appended_container foundation_appended_startup
+foreach(_appended_target foundation_appended_container foundation_appended_startup
     foundation_appended_resource_url foundation_appended_web_services
-    foundation_appended_document_forms foundation_gui_surface foundation_appended_editor_codec
+    foundation_gui_surface
     foundation_appended_editor_controller foundation_appended_engine_owner)
   foundation_appended_options(${_appended_target})
 endforeach()

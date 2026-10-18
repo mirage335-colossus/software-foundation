@@ -852,5 +852,690 @@ class EditorMaintenanceTests(unittest.TestCase):
             maintenance.validate_provider_build(dict(value, eligible=True), selection, recipe)
 
 
+class GuardRepairEntryPoints(unittest.TestCase):
+    def cli(self):
+        values = {name: ('editor' if name == 'document_profile' else PIN if name.endswith('sha256') else '/inert/' + name)
+                  for name in maintenance.SELECTION_FIELDS}
+        argv = ['plan']
+        for name, value in values.items(): argv.extend(('--' + name.replace('_', '-'), value))
+        return argv + ['--output', '/inert/output']
+
+    def test_cli_explicit_guard_optin_and_unchanged_old_donor_call(self):
+        for optin in (False, True):
+            argv = self.cli() + ['--successful-donor', '/inert/donor.json', '--successful-donor-sha256', PIN]
+            if optin: argv.append('--successful-donor-guard-repair')
+            with mock.patch.object(maintenance, 'make_plan', return_value={'inert': True}) as planner, \
+                 mock.patch('sys.stdout', new_callable=io.StringIO):
+                self.assertEqual(0, maintenance.main(argv))
+            self.assertEqual({'path': '/inert/donor.json', 'sha256': PIN}, planner.call_args.kwargs['successful_donor'])
+            self.assertEqual({'successful_donor', 'successful_donor_guard_repair'} if optin else {'successful_donor'},
+                             set(planner.call_args.kwargs))
+            if optin: self.assertIs(True, planner.call_args.kwargs['successful_donor_guard_repair'])
+
+    def test_cli_guard_optin_rejects_missing_donor_partial_lane_and_unpaired_pin(self):
+        for extra in ([], ['--completed-work', '/inert/partial.json', '--completed-work-sha256', PIN],
+                      ['--successful-donor', '/inert/donor.json']):
+            with self.subTest(extra=extra), mock.patch.object(maintenance, 'make_plan') as planner, \
+                 mock.patch('sys.stderr', new_callable=io.StringIO):
+                with self.assertRaises(SystemExit): maintenance.main(self.cli() + extra + ['--successful-donor-guard-repair'])
+            planner.assert_not_called()
+
+    def test_api_guard_optin_requires_explicit_donor_boolean_and_editor_before_inspection(self):
+        for kwargs, profile in (({'successful_donor_guard_repair': True}, 'editor'),
+                                ({'successful_donor_guard_repair': 1, 'successful_donor': {}}, 'editor'),
+                                ({'successful_donor_guard_repair': True, 'successful_donor': {}}, 'physical'),
+                                ({'successful_donor_guard_repair': True, 'successful_donor': {}, 'completed_work': {}}, 'editor')):
+            with self.subTest(kwargs=kwargs, profile=profile), mock.patch.object(maintenance, 'inspect_inputs') as inspect:
+                with self.assertRaises(ValueError):
+                    maintenance.make_plan({'document_profile': profile}, Path('/inert/output'), **kwargs)
+            inspect.assert_not_called()
+
+    def test_plan_creation_and_readback_keep_schema_and_infer_exact_lane(self):
+        # All input walks/admission are mocked. Only tiny prospective JSON is
+        # written inside this fixture's TemporaryDirectory; no SDK/program runs.
+        with tempfile.TemporaryDirectory(prefix='inert-guard-repair-plan-') as temporary:
+            root = Path(temporary).resolve()
+            selected = {'document_profile': 'editor'}
+            inspected = SimpleNamespace(selection=selected, proof={'inert': True}, projection={}, roots={}, inventories={})
+            for optin in (False, True):
+                admitted = {'reference': {'path': '/inert/donor.json', 'sha256': PIN}, 'objects': []}
+                output = root / ('guard-plan' if optin else 'old-plan')
+                with mock.patch.object(maintenance, 'inspect_inputs', return_value=inspected), \
+                     mock.patch.object(maintenance, '_completed_work', return_value=admitted) as admission, \
+                     mock.patch.object(maintenance, '_completed_input_directories', return_value=()), \
+                     mock.patch.object(maintenance, 'ref_path'), mock.patch.object(maintenance, 'digest', return_value=PIN):
+                    result = maintenance.make_plan(selected, output, successful_donor=admitted['reference'],
+                        successful_donor_guard_repair=optin)
+                    self.assertEqual({'_successful': True, '_guard_repair': optin}, admission.call_args.kwargs)
+                    plan, _ = maintenance.verify_plan(Path(result['plan']),
+                        hashlib.sha256(Path(result['plan']).read_bytes()).hexdigest())
+                    self.assertEqual({'_successful': True, '_guard_repair': optin}, admission.call_args.kwargs)
+                self.assertEqual(maintenance.GUARD_REPAIR_PLAN_KIND if optin else maintenance.SUCCESSFUL_PLAN_KIND, plan['kind'])
+                self.assertEqual({'schema_version', 'kind', 'scope', 'selection', 'profile_sha256', 'producer_inputs',
+                                  'reuse', 'projection', 'production_eligible', 'successful_donor'}, set(plan))
+                self.assertIn(maintenance.SUCCESSFUL_HELPER, plan['producer_inputs'])
+                self.assertIs(False, plan['production_eligible'])
+
+    def test_plan_reader_rejects_crosslane_restamp_and_changed_helpers(self):
+        admitted = {'reference': {'path': '/inert/new-descriptor.json', 'sha256': PIN}, 'objects': []}
+        selected = {'document_profile': 'editor'}
+        inspected = SimpleNamespace(proof={}, projection={})
+        plan = {'schema_version': 1, 'kind': maintenance.GUARD_REPAIR_PLAN_KIND, 'scope': maintenance.SCOPE,
+            'selection': selected, 'profile_sha256': PIN, 'producer_inputs': {name: PIN for name in
+                maintenance.required_helpers('editor') + (maintenance.SUCCESSFUL_HELPER,)}, 'reuse': {},
+            'projection': {}, 'production_eligible': False, 'successful_donor': admitted}
+        def admit(reference, inspection, *, _successful=False, _guard_repair=False):
+            if not _successful or not _guard_repair: raise ValueError('explicit descriptor lane differs')
+            return admitted
+        with mock.patch.object(maintenance, 'checked_document', side_effect=lambda *args: plan), \
+             mock.patch.object(maintenance, 'digest', return_value=PIN), \
+             mock.patch.object(maintenance, 'inspect_inputs', return_value=inspected), \
+             mock.patch.object(maintenance, '_completed_work', side_effect=admit):
+            maintenance.verify_plan(Path('/inert/plan.json'), PIN)
+            plan['kind'] = maintenance.SUCCESSFUL_PLAN_KIND
+            with self.assertRaisesRegex(ValueError, 'lane differs'): maintenance.verify_plan(Path('/inert/plan.json'), PIN)
+            plan['kind'] = maintenance.GUARD_REPAIR_PLAN_KIND
+            plan['producer_inputs'].pop(maintenance.SUCCESSFUL_HELPER)
+            with self.assertRaisesRegex(ValueError, 'producer/profile'): maintenance.verify_plan(Path('/inert/plan.json'), PIN)
+
+    def test_graph_exact51_partition_threefresh_fiveimports_no_repack_one_link(self):
+        import appended_engine_successful_donor as donor
+        fresh = ('NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp', 'ProviderGuard.cpp')
+        direct = list(fresh) + ['Direct%02d.cpp' % i for i in range(32)]
+        engine = ['Engine%02d.cpp' % i for i in range(16)]
+        selected = direct + engine
+        names = list(donor.ARCHIVE_COUNTS)
+        with tempfile.TemporaryDirectory(prefix='inert-guard-repair-graph-') as temporary:
+            root = Path(temporary).resolve(); (root / 'cmake').mkdir()
+            metadata = {name: reference(name) for name in ('generator', 'template', 'prelink_plan',
+                *maintenance.metadata_interface_paths('editor'))}
+            proof = {'host_tools': {'python': {'path': '/inert/python'}},
+                'sdk_tools': {name: {'path': name} for name in ('emxx', 'emranlib')}, 'metadata': metadata,
+                'objects': [{'id': name, 'arguments': [], 'source': reference(name), 'dependencies': [], 'unified_members': []}
+                            for name in selected], 'replacements': [],
+                'archives': [{'name': name, 'members': []} for name in names],
+                'link': {'dependencies': [], 'archives': names, 'flags': [], 'data': [],
+                         'pre_js': reference('pre.js'), 'host_library': reference('host.js')}}
+            imported = [name for name in selected if name not in fresh]
+            work = {'objects': [{'id': name, 'object': {'path': '/inert/' + name + '.o'},
+                                'depfile': {'path': '/inert/' + name + '.o.d'}} for name in imported],
+                    'archives': [{'name': name, 'archive': {'path': '/inert/lib' + name + '.a'},
+                                  'report': {'path': '/inert/archive-' + name + '.json'}} for name in names]}
+            plan = {'kind': maintenance.GUARD_REPAIR_PLAN_KIND, 'successful_donor': work}
+            inspected = SimpleNamespace(proof=proof, roots={'sources': root / 'sources', 'sdk': root / 'sdk'},
+                inventories={}, selection={'document_profile': 'editor'}, profile={'direct_objects': direct})
+            with mock.patch.object(maintenance, '_tool', return_value=Path('/inert/python')), \
+                 mock.patch.object(maintenance, 'ref_path', side_effect=lambda ref, roots, inv: root / ref['path']), \
+                 mock.patch.object(maintenance, '_arguments', return_value=[]), \
+                 mock.patch.object(maintenance, '_header_identity', return_value=None):
+                _, fragment, commands = maintenance._graph(inspected, plan, root / 'plan.json', PIN, root)
+            self.assertEqual(list(fresh), list(commands['objects']))
+            self.assertEqual(imported, list(commands['imports']))
+            self.assertEqual((51, 48, 3, 5), (len(selected), len(commands['imports']), len(commands['objects']), len(commands['archive_imports'])))
+            self.assertTrue(all(cmd[-1] == name and cmd[-3] == 'import' for name, cmd in commands['imports'].items()))
+            self.assertTrue(all(cmd[-1] == name and cmd[-3] == 'import-archive' for name, cmd in commands['archive_imports'].items()))
+            self.assertEqual(1, sum(token.endswith('foundation-retained-engine.mjs') for token in commands['link']))
+            self.assertEqual(5, len([token for token in commands['link'] if '/archives/lib' in token]))
+            graph = fragment.read_text()
+            self.assertIn(maintenance.SUCCESSFUL_HELPER, graph)
+            self.assertTrue(all('repack' not in cmd for cmd in commands['archive_imports'].values()))
+
+    def test_internal_guard_plan_routes_imports_but_refuses_repack_before_tool(self):
+        output = Path('/inert/fresh-output')
+        plan = {'kind': maintenance.GUARD_REPAIR_PLAN_KIND, 'production_eligible': False, 'reuse': {},
+                'selection': {'sources': '/inert/sources', 'sdk': '/inert/sdk', 'reuse_root': '/inert/reuse'}}
+        owner = {'schema_version': 1, 'plan_sha256': PIN, 'output': str(output), 'producer_sha256': PIN}
+        args = SimpleNamespace(plan=Path('/inert/plans/plan.json'), plan_sha256=PIN, build_root=output,
+                               action='import', object='Imported.cpp', archive='WebCore')
+        with mock.patch.object(maintenance, 'checked_document', side_effect=lambda p, *pins: plan if p == args.plan else owner), \
+             mock.patch.object(maintenance, 'ordinary', side_effect=lambda p, *a, **kw: Path(p)), \
+             mock.patch.object(maintenance, 'digest', return_value=PIN), \
+             mock.patch.object(maintenance, '_copy_completed_object', return_value='object') as obj, \
+             mock.patch.object(maintenance, '_copy_successful_archive', return_value='archive') as archive, \
+             mock.patch.object(maintenance.os, 'execv') as execute:
+            self.assertEqual('object', maintenance._step(args)); obj.assert_called_once_with(plan, 'Imported.cpp', output)
+            args.action = 'import-archive'
+            self.assertEqual('archive', maintenance._step(args)); archive.assert_called_once_with(plan, 'WebCore', output)
+            for action in ('archive', 'repack'):
+                args.action = action
+                with self.subTest(action=action), self.assertRaisesRegex(ValueError, 'zero repacks'): maintenance._step(args)
+            execute.assert_not_called()
+
+
+
+
+class CompositionRepairEntryPoints(unittest.TestCase):
+    cli = GuardRepairEntryPoints.cli
+
+    def test_explicit_composition_flag_and_preinspection_rejections(self):
+        args=self.cli()+['--successful-donor','/inert/donor.json','--successful-donor-sha256',PIN,'--successful-donor-composition-repair']
+        with mock.patch.object(maintenance,'make_plan',return_value={}) as planner,mock.patch('sys.stdout',new_callable=io.StringIO):
+            self.assertEqual(maintenance.main(args),0)
+        self.assertEqual(planner.call_args.kwargs,dict(successful_donor={'path':'/inert/donor.json','sha256':PIN},successful_donor_composition_repair=True))
+        for extra in (['--successful-donor-composition-repair'],
+                      ['--successful-donor-composition-repair','--completed-work','/inert/failed','--completed-work-sha256',PIN],
+                      ['--successful-donor-composition-repair','--successful-donor','/inert/donor'],
+                      ['--successful-donor-composition-repair','--successful-donor','/inert/donor','--successful-donor-sha256',PIN,'--successful-donor-guard-repair']):
+            with mock.patch.object(maintenance,'make_plan') as planner,mock.patch('sys.stderr',new_callable=io.StringIO):
+                with self.assertRaises(SystemExit):maintenance.main(self.cli()+extra)
+            planner.assert_not_called()
+        for value in (1,False,True):
+            kwargs=dict(successful_donor_composition_repair=value)
+            if value is False:kwargs.update(successful_donor_composition_repair=True,successful_donor_guard_repair=True,successful_donor={})
+            with mock.patch.object(maintenance,'inspect_inputs') as inspect:
+                with self.assertRaises(ValueError):maintenance.make_plan({'document_profile':'editor'},Path('/inert/output'),**kwargs)
+            inspect.assert_not_called()
+        with mock.patch.object(maintenance,'inspect_inputs') as inspect:
+            with self.assertRaises(ValueError):maintenance.make_plan({'document_profile':'physical'},Path('/inert/output'),successful_donor={},successful_donor_composition_repair=True)
+        inspect.assert_not_called()
+
+    def test_new_plan_creation_readback_schema_and_crosslane(self):
+        selected={'document_profile':'editor'};admitted={'reference':{'path':'/inert/composition.json','sha256':PIN},'objects':[]}
+        inspected=SimpleNamespace(selection=selected,proof={},projection={},roots={},inventories={})
+        with tempfile.TemporaryDirectory(prefix='inert-composition-plan-') as temporary:
+            with mock.patch.object(maintenance,'inspect_inputs',return_value=inspected),mock.patch.object(maintenance,'_completed_input_directories',return_value=()),mock.patch.object(maintenance,'ref_path'),mock.patch.object(maintenance,'digest',return_value=PIN),mock.patch.object(maintenance,'_completed_work',return_value=admitted) as admission:
+                result=maintenance.make_plan(selected,Path(temporary)/'plan',successful_donor=admitted['reference'],successful_donor_composition_repair=True)
+                self.assertEqual(admission.call_args.kwargs,{'_successful':True,'_guard_repair':False,'_composition_repair':True})
+                plan,_=maintenance.verify_plan(Path(result['plan']),hashlib.sha256(Path(result['plan']).read_bytes()).hexdigest())
+                self.assertEqual(admission.call_args.kwargs,{'_successful':True,'_guard_repair':False,'_composition_repair':True})
+            self.assertEqual(plan['kind'],'foundation-document-v2-maintenance-successful-donor-composition-repair-plan-v1')
+            self.assertEqual(set(plan),{'schema_version','kind','scope','selection','profile_sha256','producer_inputs','reuse','projection','production_eligible','successful_donor'})
+            def admit(ref,inspection,**flags):
+                if flags!={'_successful':True,'_guard_repair':False,'_composition_repair':True}:raise ValueError('crossed composition lane')
+                return admitted
+            with mock.patch.object(maintenance,'checked_document',return_value=plan),mock.patch.object(maintenance,'digest',return_value=PIN),mock.patch.object(maintenance,'inspect_inputs',return_value=inspected),mock.patch.object(maintenance,'_completed_work',side_effect=admit):
+                maintenance.verify_plan(Path('/inert/plan'),PIN)
+                for kind in (maintenance.SUCCESSFUL_PLAN_KIND,maintenance.GUARD_REPAIR_PLAN_KIND):
+                    plan['kind']=kind
+                    with self.assertRaises(ValueError):maintenance.verify_plan(Path('/inert/plan'),PIN)
+
+
+    def test_graph_exact51_partition_fivefresh_fiveimports_no_repack_one_link(self):
+            import appended_engine_successful_donor as donor
+            fresh = ('NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp', 'ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp')
+            direct = list(fresh) + ['Direct%02d.cpp' % i for i in range(30)]
+            engine = ['Engine%02d.cpp' % i for i in range(16)]
+            selected = direct + engine
+            names = list(donor.ARCHIVE_COUNTS)
+            with tempfile.TemporaryDirectory(prefix='inert-guard-repair-graph-') as temporary:
+                root = Path(temporary).resolve(); (root / 'cmake').mkdir()
+                metadata = {name: reference(name) for name in ('generator', 'template', 'prelink_plan',
+                    *maintenance.metadata_interface_paths('editor'))}
+                proof = {'host_tools': {'python': {'path': '/inert/python'}},
+                    'sdk_tools': {name: {'path': name} for name in ('emxx', 'emranlib')}, 'metadata': metadata,
+                    'objects': [{'id': name, 'arguments': [], 'source': reference(name), 'dependencies': [], 'unified_members': []}
+                                for name in selected], 'replacements': [],
+                    'archives': [{'name': name, 'members': []} for name in names],
+                    'link': {'dependencies': [], 'archives': names, 'flags': [], 'data': [],
+                             'pre_js': reference('pre.js'), 'host_library': reference('host.js')}}
+                imported = [name for name in selected if name not in fresh]
+                work = {'objects': [{'id': name, 'object': {'path': '/inert/' + name + '.o'},
+                                    'depfile': {'path': '/inert/' + name + '.o.d'}} for name in imported],
+                        'archives': [{'name': name, 'archive': {'path': '/inert/lib' + name + '.a'},
+                                      'report': {'path': '/inert/archive-' + name + '.json'}} for name in names]}
+                plan = {'kind': maintenance.COMPOSITION_REPAIR_PLAN_KIND, 'successful_donor': work}
+                inspected = SimpleNamespace(proof=proof, roots={'sources': root / 'sources', 'sdk': root / 'sdk'},
+                    inventories={}, selection={'document_profile': 'editor'}, profile={'direct_objects': direct})
+                with mock.patch.object(maintenance, '_tool', return_value=Path('/inert/python')), \
+                     mock.patch.object(maintenance, 'ref_path', side_effect=lambda ref, roots, inv: root / ref['path']), \
+                     mock.patch.object(maintenance, '_arguments', return_value=[]), \
+                     mock.patch.object(maintenance, '_header_identity', return_value=None):
+                    _, fragment, commands = maintenance._graph(inspected, plan, root / 'plan.json', PIN, root)
+                self.assertEqual(list(fresh), list(commands['objects']))
+                self.assertEqual(imported, list(commands['imports']))
+                self.assertEqual((51, 46, 5, 5), (len(selected), len(commands['imports']), len(commands['objects']), len(commands['archive_imports'])))
+                self.assertTrue(all(cmd[-1] == name and cmd[-3] == 'import' for name, cmd in commands['imports'].items()))
+                self.assertTrue(all(cmd[-1] == name and cmd[-3] == 'import-archive' for name, cmd in commands['archive_imports'].items()))
+                self.assertEqual(1, sum(token.endswith('foundation-retained-engine.mjs') for token in commands['link']))
+                self.assertEqual(5, len([token for token in commands['link'] if '/archives/lib' in token]))
+                graph = fragment.read_text()
+                self.assertIn(maintenance.SUCCESSFUL_HELPER, graph)
+                self.assertTrue(all('repack' not in cmd for cmd in commands['archive_imports'].values()))
+
+    def test_internal_composition_plan_routes_imports_but_refuses_repack_before_tool(self):
+            output = Path('/inert/fresh-output')
+            plan = {'kind': maintenance.COMPOSITION_REPAIR_PLAN_KIND, 'production_eligible': False, 'reuse': {},
+                    'selection': {'sources': '/inert/sources', 'sdk': '/inert/sdk', 'reuse_root': '/inert/reuse'}}
+            owner = {'schema_version': 1, 'plan_sha256': PIN, 'output': str(output), 'producer_sha256': PIN}
+            args = SimpleNamespace(plan=Path('/inert/plans/plan.json'), plan_sha256=PIN, build_root=output,
+                                   action='import', object='Imported.cpp', archive='WebCore')
+            with mock.patch.object(maintenance, 'checked_document', side_effect=lambda p, *pins: plan if p == args.plan else owner), \
+                 mock.patch.object(maintenance, 'ordinary', side_effect=lambda p, *a, **kw: Path(p)), \
+                 mock.patch.object(maintenance, 'digest', return_value=PIN), \
+                 mock.patch.object(maintenance, '_copy_completed_object', return_value='object') as obj, \
+                 mock.patch.object(maintenance, '_copy_successful_archive', return_value='archive') as archive, \
+                 mock.patch.object(maintenance.os, 'execv') as execute:
+                self.assertEqual('object', maintenance._step(args)); obj.assert_called_once_with(plan, 'Imported.cpp', output)
+                args.action = 'import-archive'
+                self.assertEqual('archive', maintenance._step(args)); archive.assert_called_once_with(plan, 'WebCore', output)
+                for action in ('archive', 'repack'):
+                    args.action = action
+                    with self.subTest(action=action), self.assertRaisesRegex(ValueError, 'zero repacks'): maintenance._step(args)
+                execute.assert_not_called()
+
+class CompositionContextTests(unittest.TestCase):
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='inert-composition-context-');self.addCleanup(temporary.cleanup)
+        self.root=Path(temporary.name).resolve();self.roots={k:self.root/k for k in ('sources','sdk','reuse')}
+        self.inventories={k:{} for k in self.roots}
+        for p in self.roots.values():p.mkdir()
+        self.fresh=('NativeDocumentV2Publisher.cpp','BibEngineDocumentWasmShim.cpp','ProviderGuard.cpp','BibNativeEditorBackend.cpp','main.cpp')
+        self.headers=('source/wrapper/src/embedder/BibPageClients.h','source/wrapper/src/embedder/BibUndoHistory.h','source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h')
+        oldns={};newns={};before=[];after=[]
+        def write(root,path,raw):
+            target=self.roots[root]/path;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(raw)
+            pin=hashlib.sha256(raw).hexdigest();self.inventories[root][path]=pin;return {'root':root,'path':path,'sha256':pin}
+        sdk=write('sdk','include/base.h',b'unchanged SDK header')
+        oldns['{sdk}/include/base.h']=newns['{sdk}/include/base.h']=sdk['sha256']
+        refs={}
+        for path in self.headers:
+            ref=write('sources',path,('newheader:'+path).encode());refs[path]=ref;newns['{sources}/'+path]=ref['sha256']
+            if path!=self.headers[-1]:oldns['{sources}/'+path]=hashlib.sha256(('oldheader:'+path).encode()).hexdigest()
+        selected=list(self.fresh)+['Imported%02d.cpp'%i for i in range(46)]
+        for name in selected:
+            path='units/'+name;oldraw=('oldbody:'+name).encode();newraw=('newbody:'+name).encode() if name in self.fresh and name!='BibEngineDocumentWasmShim.cpp' else oldraw
+            current=write('sources',path,newraw);prior=dict(current,sha256=hashlib.sha256(oldraw).hexdigest());oldns['{sources}/'+path]=prior['sha256'];newns['{sources}/'+path]=current['sha256']
+            deps=[prior,dict(sdk)];newdeps=[current,dict(sdk)]
+            if name=='main.cpp':
+                for header in self.headers[:-1]:deps.append(dict(refs[header],sha256=oldns['{sources}/'+header]));newdeps.append(dict(refs[header]))
+            common=dict(id=name,arguments=['-I{sources}/units','-fno-rtti'],exceptions=True,unified_members=[])
+            before.append(dict(common,source=prior,dependencies=deps));after.append(dict(common,source=current,dependencies=newdeps))
+        self.old={'reuse':{'objects':before}};self.inspected=SimpleNamespace(proof={'objects':after},roots=self.roots,inventories=self.inventories)
+        shared=dict(directories=['{sources}/units','{sources}/source/wrapper/src/embedder','{sdk}/include'],physical_headers_sha256=hashlib.sha256(b'fixed physical headers').hexdigest(),vfs={'version':0,'roots':[]})
+        self.previous=dict(shared,namespace=oldns);self.current=dict(shared,namespace=newns)
+
+    def admit(self):
+        maintenance._composition_context_matches(self.previous,self.current)
+        maintenance._successful_context_delta(self.inspected,self.old,self.previous,self.current,composition_repair=True)
+
+    def test_exact_body_header_namespace_and_all51_owner_join_positive(self):
+        self.admit()
+        self.assertEqual(len(self.inspected.proof['objects']),51)
+        self.assertEqual(set(self.current['namespace'])-set(self.previous['namespace']),{'{sources}/'+self.headers[-1]})
+        with self.assertRaises(ValueError):maintenance._completed_context_matches(self.previous,self.current)
+        with self.assertRaises(ValueError):maintenance._successful_context_delta(self.inspected,self.old,self.previous,self.current)
+        with self.assertRaises(ValueError):maintenance._successful_context_delta(self.inspected,self.old,self.previous,self.current,guard_repair=True)
+
+    def test_namespace_add_remove_sdk_physical_vfs_and_undeclared_body_drift_reject(self):
+        original=copy.deepcopy(self.current)
+        for change in ('extra','remove','sdk','physical','vfs','directory','imported-body','unchanged-header'):
+            self.current=copy.deepcopy(original)
+            if change=='extra':self.current['namespace']['{sources}/new-extra.h']='a'*64
+            elif change=='remove':self.current['namespace'].pop('{sources}/units/Imported00.cpp')
+            elif change=='sdk':self.current['namespace']['{sdk}/include/base.h']='a'*64
+            elif change=='physical':self.current['physical_headers_sha256']='a'*64
+            elif change=='vfs':self.current['vfs']={'version':1}
+            elif change=='directory':self.current['directories']=[]
+            elif change=='imported-body':self.current['namespace']['{sources}/units/Imported00.cpp']='a'*64
+            else:self.current['namespace']['{sources}/'+self.headers[0]]=self.previous['namespace']['{sources}/'+self.headers[0]]
+            with self.subTest(change=change),self.assertRaises(ValueError):self.admit()
+
+    def test_abridged_recipe_dependencies_are_not_a_header_census(self):
+        for table in (self.old['reuse']['objects'], self.inspected.proof['objects']):
+            for obj in table:
+                obj['dependencies'] = [obj['dependencies'][1]]
+        self.admit()
+        self.assertTrue(all(len(obj['dependencies']) == 1 for obj in self.old['reuse']['objects']))
+
+    def test_invented_private_or_other_header_proof_references_reject(self):
+        original = copy.deepcopy(self.inspected.proof['objects'])
+        for owner, path in ((name, self.headers[-1]) for name in self.fresh):
+            self.inspected.proof['objects'] = copy.deepcopy(original)
+            obj = next(obj for obj in self.inspected.proof['objects'] if obj['id'] == owner)
+            obj['dependencies'].append(reference(path, pin=self.current['namespace']['{sources}/' + path]))
+            with self.subTest(owner=owner), self.assertRaises(ValueError):
+                self.admit()
+        self.inspected.proof['objects'] = copy.deepcopy(original)
+        obj = next(obj for obj in self.inspected.proof['objects'] if obj['id'] == 'BibNativeEditorBackend.cpp')
+        obj['dependencies'].append(reference(self.headers[0], pin=self.current['namespace']['{sources}/' + self.headers[0]]))
+        with self.assertRaises(ValueError):
+            self.admit()
+
+    def test_fresh_options_unified_source_coordinates_shim_and_dependency_order_remain_strict(self):
+        original=copy.deepcopy(self.inspected.proof['objects'])
+        for change in ('flags','unified','coordinate','shim','order','extra-sdk','missing-body-delta'):
+            self.inspected.proof['objects']=copy.deepcopy(original);objects={x['id']:x for x in self.inspected.proof['objects']};backend=objects['BibNativeEditorBackend.cpp']
+            if change=='flags':backend['arguments'].append('-DUNDECLARED=1')
+            elif change=='unified':backend['unified_members']=[backend['source']]
+            elif change=='coordinate':backend['source']=dict(backend['source'],path='units/elsewhere.cpp')
+            elif change=='shim':objects['BibEngineDocumentWasmShim.cpp']['source']=dict(objects['BibEngineDocumentWasmShim.cpp']['source'],sha256='a'*64)
+            elif change=='order':backend['dependencies'][0:2]=backend['dependencies'][0:2][::-1]
+            elif change=='extra-sdk':backend['dependencies'].append(dict(backend['dependencies'][1]))
+            else:backend['source']=copy.deepcopy(self.old['reuse']['objects'][3]['source'])
+            with self.subTest(change=change),self.assertRaises(ValueError):self.admit()
+
+    def test_current_header_hash_must_join_namespace_and_actual_inventory(self):
+        main=next(x for x in self.inspected.proof['objects'] if x['id']=='main.cpp')
+        header=main['dependencies'][-1];before=header['sha256'];header['sha256']='a'*64
+        with self.assertRaises(ValueError):self.admit()
+        header['sha256']=before
+        self.inventories['sources'][self.headers[-1]]='a'*64
+        with self.assertRaisesRegex(ValueError,'Reference not bound'):self.admit()
+
+
+
+class CompositionPriorHeaderTests(unittest.TestCase):
+    """Real recipe lists are abridged; only parsed original depfiles own headers."""
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='inert-prior-header-')
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.bindings = {key: self.root / key for key in ('sources', 'sdk', 'reuse', 'build')}
+        for path in self.bindings.values():
+            path.mkdir()
+        self.fresh = maintenance._successful_module().COMPOSITION_REPAIR_COMPILED_IDS
+        self.headers = maintenance.COMPOSITION_REPAIR_HEADERS
+        self.records, self.commands, self.rows = {}, {'objects': {}}, []
+        self.sidecar = {'dependencies': {}, 'header_context': {'namespace': {}}}
+        self.freeze = {'files': {}}
+        self.old = {'reuse': {'objects': []}}
+        self.header_keys = []
+        for header in self.headers[:-1]:
+            path = self.bindings['sources'] / header
+            self.write(path, ('old:' + header).encode())
+            fact = self.fact(path)
+            self.header_keys.append(str(path))
+            self.sidecar['dependencies'][str(path)] = {'input': reference(header, pin=fact['sha256']),
+                'fact': fact, 'origin': 'retained'}
+            self.sidecar['header_context']['namespace']['{sources}/' + header] = fact['sha256']
+            self.freeze['files'][str(path)] = copy.deepcopy(fact)
+        for name in (*self.fresh, *('Imported%02d.cpp' % i for i in range(46))):
+            relative = 'units/' + name
+            source = self.bindings['sources'] / relative
+            self.old['reuse']['objects'].append({'id': name, 'source': reference(relative),
+                'dependencies': [reference('build/cmakeconfig.h', root='reuse')]})
+            if name in self.fresh:
+                self.commands['objects'][name] = ['-c', str(source)]
+                keys = [str(source)] + (self.header_keys if name == 'main.cpp' else [])
+                self.depfile(name, keys)
+            else:
+                self.rows.append({'id': name, 'object': {'bytes': 1}, 'depfile': {'bytes': 1},
+                    'command_script': None, 'dependency_keys': [str(source)]})
+
+    def write(self, path, raw):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+
+    def fact(self, path):
+        state = path.stat()
+        return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+            'bytes': state.st_size, 'mode': state.st_mode & 0o777, 'identity': maintenance._identity7(state)}
+
+    def depfile(self, name, keys, *, target=None):
+        target = target or str(self.bindings['build'] / ('objects/' + name + '.o'))
+        path = self.bindings['build'] / ('objects/' + name + '.o.d')
+        self.write(path, (target + ': ' + ' '.join(keys) + '\n').encode())
+        self.records['objects/' + name + '.o.d'] = self.fact(path)
+
+    def admit(self):
+        with mock.patch.object(maintenance._successful_module(), '_metadata', return_value=({}, self.records)) as metadata:
+            maintenance._composition_prior_headers({}, self.bindings, self.old, self.sidecar,
+                self.freeze, self.rows, self.commands)
+            metadata.assert_called_once_with({}, self.bindings, self.old, maintenance, composition_repair=True)
+
+    def test_51_complete_owner_union_from_exact_five_original_depfiles(self):
+        with mock.patch.object(maintenance, '_completed_fact', wraps=maintenance._completed_fact) as read:
+            self.admit()
+        self.assertEqual(7, read.call_count)  # Five indexed depfiles and two exact old headers.
+        self.assertTrue(all(len(obj['dependencies']) == 1 for obj in self.old['reuse']['objects']))
+
+    def test_main_only_old_headers_and_private_absence_across_all51(self):
+        records = copy.deepcopy(self.records)
+        rows = copy.deepcopy(self.rows)
+        for change in ('backend-old', 'main-missing', 'imported-old', 'private-before'):
+            self.records = copy.deepcopy(records)
+            self.rows = copy.deepcopy(rows)
+            self.depfile('main.cpp', [str(self.bindings['sources'] / 'units/main.cpp'), *self.header_keys])
+            self.depfile('BibNativeEditorBackend.cpp', [str(self.bindings['sources'] / 'units/BibNativeEditorBackend.cpp')])
+            if change == 'backend-old':
+                self.depfile('BibNativeEditorBackend.cpp', [str(self.bindings['sources'] / 'units/BibNativeEditorBackend.cpp'), self.header_keys[0]])
+            elif change == 'main-missing':
+                self.depfile('main.cpp', [str(self.bindings['sources'] / 'units/main.cpp'), self.header_keys[0]])
+            elif change == 'imported-old':
+                self.rows[0]['dependency_keys'].append(self.header_keys[0])
+            else:
+                self.rows[0]['dependency_keys'].append(str(self.bindings['sources'] / self.headers[-1]))
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.admit()
+
+    def test_depfile_source_target_bytes_and_total_read_budget_reject(self):
+        records = copy.deepcopy(self.records)
+        name = self.fresh[0]
+        source = str(self.bindings['sources'] / ('units/' + name))
+        for change in ('target', 'source', 'hash', 'budget'):
+            self.records = copy.deepcopy(records)
+            self.depfile(name, [source])
+            if change == 'target':
+                self.depfile(name, [source], target='/elsewhere/other.o')
+            elif change == 'source':
+                self.depfile(name, ['/elsewhere/other.cpp'])
+            elif change == 'hash':
+                self.records['objects/' + name + '.o.d']['sha256'] = PIN
+            else:
+                self.records['objects/' + name + '.o.d']['bytes'] = 256 * 1024 * 1024
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.admit()
+
+    def test_header_sidecar_namespace_freeze_and_physical_facts_reject(self):
+        original = copy.deepcopy(self.sidecar)
+        for change in ('hash', 'namespace', 'path', 'freeze', 'origin', 'missing'):
+            self.sidecar = copy.deepcopy(original)
+            key = self.header_keys[0]
+            item = self.sidecar['dependencies'][key]
+            if change == 'hash': item['input']['sha256'] = PIN
+            elif change == 'namespace': self.sidecar['header_context']['namespace']['{sources}/' + self.headers[0]] = PIN
+            elif change == 'path': item['fact']['path'] = '/elsewhere/BibPageClients.h'
+            elif change == 'freeze': item['fact']['identity'][1] += 1
+            elif change == 'origin': item['origin'] = 'private-cache'
+            else: del self.sidecar['dependencies'][key]
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.admit()
+
+    def test_relative_original_depfile_paths_use_exact_original_cwd(self):
+        import os
+        cwd = self.bindings['build'] / 'cmake/build'
+        for name in self.fresh:
+            keys = [str(self.bindings['sources'] / ('units/' + name))]
+            if name == 'main.cpp': keys.extend(self.header_keys)
+            self.depfile(name, [os.path.relpath(key, cwd) for key in keys])
+        self.admit()
+
+
+class CompositionContextConstructionTests(unittest.TestCase):
+    """Fresh owners must retain their original dependency search coordinates."""
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='inert-composition-context-')
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.bindings = {key: self.root / key for key in ('sources', 'sdk', 'reuse', 'build')}
+        self.inventories = {key: {} for key in ('sources', 'sdk', 'reuse')}
+        for path in self.bindings.values(): path.mkdir()
+        self.sidecar, self.freeze, self.dependencies = {'dependencies': {}}, {'files': {}}, {}
+        self.objects = [{'id': name, 'arguments': []} for name in
+            (*maintenance._successful_module().COMPOSITION_REPAIR_COMPILED_IDS,
+             *('Imported%02d.cpp' % i for i in range(46))) ]
+        for obj in self.objects:
+            self.dependencies[obj['id']] = {self.add('sources', 'units/' + obj['id'])}
+        self.leaves = ('build/skia/effects', 'build/wtf/unix')
+        for leaf in self.leaves:
+            self.dependencies['main.cpp'].add(self.add('reuse', leaf + '/MainOnly.h'))
+        for relative in ('upstream/lib/clang/24/include', 'cache/sysroot/include'):
+            (self.bindings['sdk'] / relative).mkdir(parents=True)
+        self.inspection = SimpleNamespace(roots={key: self.bindings[key] for key in self.inventories},
+            inventories=self.inventories, proof={'objects': self.objects,
+                'private_cache': {'root': 'cache', 'files': []}})
+        self.view = {'original_files': {}, 'overlay': {'version': 0, 'case-sensitive': True,
+            'use-external-names': False, 'overlay-relative': False, 'fallthrough': True, 'roots': []}}
+
+    def add(self, root, relative):
+        path = self.bindings[root] / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(relative.encode())
+        pin = hashlib.sha256(path.read_bytes()).hexdigest()
+        state = path.stat()
+        fact = {'path': str(path), 'sha256': pin, 'bytes': state.st_size,
+            'mode': state.st_mode & 0o777, 'identity': maintenance._identity7(state)}
+        self.inventories[root][relative] = pin
+        self.freeze['files'][str(path)] = copy.deepcopy(fact)
+        self.sidecar['dependencies'][str(path)] = {'fact': fact,
+            'input': reference(relative, root=root, pin=pin), 'origin': 'retained'}
+        return str(path)
+
+    def construct(self):
+        with mock.patch.object(maintenance, '_header_identity', return_value=self.view), \
+                mock.patch.object(maintenance, '_completed_fact', side_effect=AssertionError('extra body read')):
+            return maintenance._composition_header_context(self.inspection, self.bindings,
+                self.sidecar, self.freeze, self.dependencies, getattr(self, 'generated', None))
+
+    def test_fresh_main_only_leaf_directories_survive_import46_pruning(self):
+        result = self.construct()
+        expected = {'{sources}/units', '{sdk}/upstream/lib/clang/24/include',
+            '{sdk}/cache/sysroot/include', *('{reuse}/' + leaf for leaf in self.leaves)}
+        self.assertEqual(sorted(expected), result['directories'])
+        for leaf in self.leaves:
+            self.assertIn('{reuse}/' + leaf + '/MainOnly.h', result['namespace'])
+        imported = [obj for obj in self.objects if obj['id'].startswith('Imported')]
+        refs = [self.sidecar['dependencies'][key]['input'] for obj in imported
+            for key in self.dependencies[obj['id']]]
+        with mock.patch.object(maintenance, '_header_identity', return_value=self.view):
+            pruned = maintenance._completed_header_context(self.inspection, refs, imported)
+        self.assertEqual(expected - {'{reuse}/' + leaf for leaf in self.leaves}, set(pruned['directories']))
+        self.assertEqual(46, len(imported))
+
+    def test_original_coordinates_allow_current_fresh_source_hash(self):
+        self.inventories['sources']['units/main.cpp'] = OTHER
+        self.assertEqual(OTHER, self.construct()['namespace']['{sources}/units/main.cpp'])
+
+    def test_full_owner_original_fact_relocation_and_current_namespace_required(self):
+        key = next(iter(self.dependencies['main.cpp']))
+        original = copy.deepcopy((self.dependencies, self.sidecar, self.freeze, self.inventories))
+        for change in ('owner', 'missing', 'origin', 'fact-path', 'pin', 'freeze', 'relocation', 'namespace'):
+            self.dependencies, self.sidecar, self.freeze, inventories = copy.deepcopy(original)
+            self.inventories.clear(); self.inventories.update(inventories)
+            item = self.sidecar['dependencies'][key]
+            if change == 'owner': del self.dependencies['main.cpp']
+            elif change == 'missing': del self.sidecar['dependencies'][key]
+            elif change == 'origin': item['origin'] = 'generated'
+            elif change == 'fact-path': item['fact']['path'] = '/other/path'
+            elif change == 'pin': item['input']['sha256'] = OTHER
+            elif change == 'freeze': self.freeze['files'][key]['identity'][1] += 1
+            elif change == 'relocation': item['input']['root'] = 'sdk'
+            else: del self.inventories[item['input']['root']][item['input']['path']]
+            with self.subTest(change=change), self.assertRaises(ValueError): self.construct()
+
+    def test_private_cache_metadata_requires_the_exact_frozen_sdk_seed(self):
+        relative = 'cache/sysroot/include/Private.h'
+        sdk_key = self.add('sdk', relative)
+        item = copy.deepcopy(self.sidecar['dependencies'].pop(sdk_key))
+        original_key = str(self.bindings['build'] / 'private/cache/sysroot/include/Private.h')
+        item['fact']['path'] = original_key; item['origin'] = 'private-cache'
+        self.sidecar['dependencies'][original_key] = item
+        self.dependencies['main.cpp'].add(original_key)
+        seed = self.inspection.proof['private_cache']['files']
+        seed.append(relative)
+        self.assertIn('{sdk}/' + relative, self.construct()['namespace'])
+        original = copy.deepcopy((self.sidecar, self.freeze, seed))
+        for change in ('missing-seed', 'seed-hash', 'relocation', 'root'):
+            self.sidecar, self.freeze, files = copy.deepcopy(original)
+            seed.clear(); seed.extend(files)
+            if change == 'missing-seed': seed.remove(relative)
+            elif change == 'seed-hash': self.freeze['files'][sdk_key]['sha256'] = OTHER
+            elif change == 'relocation': self.sidecar['dependencies'][original_key]['input']['path'] = 'cache/other.h'
+            else: self.sidecar['dependencies'][original_key]['input']['root'] = 'reuse'
+            with self.subTest(change=change), self.assertRaises(ValueError): self.construct()
+
+    def add_fresh_only_partition(self):
+        publisher, shim = 'NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp'
+        rows = [('sources', 'source/document-provider/native/NativeDocumentV2Publisher.cpp', publisher),
+            ('sources', 'source/document-provider/runtime/BibEngineDocumentWasmShim.cpp', shim),
+            ('sources', 'source/document-provider/runtime/BibEngineDocumentWasmShim.h', shim)]
+        rows += [('reuse', 'build/webcore/WebCore/PrivateHeaders/WebCore/' + name, publisher)
+                 for name in ('HTMLBodyElement.h', 'HTMLButtonElement.h', 'TextEvent.h')]
+        self.sidecar['header_context'] = dict(directories=[], namespace={})
+        for root, relative, owner in rows:
+            key = self.add(root, relative)
+            item = self.sidecar['dependencies'].pop(key)
+            self.sidecar['header_context']['namespace']['{' + root + '}/' + relative] = item['fact']['sha256']
+            self.dependencies[owner].add(key)
+        path = self.bindings['build'] / 'document-generated/BibCopiedDocumentMetadata.generated.h'
+        path.parent.mkdir(parents=True); path.write_bytes(b'original generated metadata')
+        state = path.stat()
+        self.generated = dict(path=str(path), sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+            bytes=state.st_size, mode=state.st_mode & 0o777, identity=maintenance._identity7(state))
+        self.dependencies[shim].add(str(path))
+        return rows
+
+    def test_seven_fresh_only_inputs_join_frozen_namespace_without_body_reads(self):
+        rows = self.add_fresh_only_partition()
+        main = 'source/document-provider/native/NativeDocumentV2Publisher.cpp'
+        self.inventories['sources'][main] = OTHER
+        result = self.construct()
+        self.assertEqual(OTHER, result['namespace']['{sources}/' + main])
+        for root, relative, _ in rows:
+            self.assertIn('{' + root + '}/' + relative, result['namespace'])
+        self.assertFalse(any('BibCopiedDocumentMetadata.generated.h' in name for name in result['namespace']))
+        self.assertFalse(any('{generated}' in name for name in result['directories']))
+
+    def test_missing_partition_coordinate_owner_and_frozen_authorities_remain_strict(self):
+        self.add_fresh_only_partition()
+        original = copy.deepcopy((self.sidecar, self.freeze, self.dependencies, self.generated, self.inventories))
+        key = str(self.bindings['sources'] / 'source/document-provider/native/NativeDocumentV2Publisher.cpp')
+        generated_key = self.generated['path']
+        for change in ('unknown', 'partial', 'sidecar-injection', 'imported-owner', 'wrong-owner',
+                       'missing-freeze', 'wrong-fact-path', 'namespace-pin', 'current-namespace',
+                       'generated-path', 'generated-pin', 'generated-owner', 'generated-frozen',
+                       'generated-search', 'generated-namespace'):
+            self.sidecar, self.freeze, self.dependencies, self.generated, inventory = copy.deepcopy(original)
+            self.inventories.clear(); self.inventories.update(inventory)
+            if change == 'unknown': self.dependencies['main.cpp'].add(str(self.bindings['sources'] / 'unknown.h'))
+            elif change == 'partial': self.dependencies['BibEngineDocumentWasmShim.cpp'].remove(generated_key)
+            elif change == 'sidecar-injection': self.sidecar['dependencies'][key] = {}
+            elif change == 'imported-owner': self.dependencies['Imported00.cpp'].add(key)
+            elif change == 'wrong-owner': self.dependencies['main.cpp'].add(key)
+            elif change == 'missing-freeze': del self.freeze['files'][key]
+            elif change == 'wrong-fact-path': self.freeze['files'][key]['path'] = '/other/source.cpp'
+            elif change == 'namespace-pin': self.sidecar['header_context']['namespace']['{sources}/source/document-provider/native/NativeDocumentV2Publisher.cpp'] = OTHER
+            elif change == 'current-namespace': del self.inventories['sources']['source/document-provider/native/NativeDocumentV2Publisher.cpp']
+            elif change == 'generated-path': self.generated['path'] = '/other/generated.h'
+            elif change == 'generated-pin': self.generated['sha256'] = 'not-a-pin'
+            elif change == 'generated-owner': self.dependencies['main.cpp'].add(generated_key)
+            elif change == 'generated-frozen': self.freeze['files'][generated_key] = copy.deepcopy(self.generated)
+            elif change == 'generated-search': self.sidecar['header_context']['directories'].append('{generated}')
+            else: self.sidecar['header_context']['namespace']['{generated}/unexpected.h'] = PIN
+            with self.subTest(change=change), self.assertRaises(ValueError): self.construct()
+
+class CompositionDependencyOwnersTests(unittest.TestCase):
+    def fixture(self):
+        units=('NativeDocumentV2Publisher.cpp','BibEngineDocumentWasmShim.cpp','ProviderGuard.cpp','BibNativeEditorBackend.cpp','main.cpp')
+        keys=('source/wrapper/src/embedder/BibPageClients.h','source/wrapper/src/embedder/BibUndoHistory.h','source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h')
+        aliases={key:{'/bound/source/'+key,'/bound/vfs/'+Path(key).name} for key in keys}
+        deps={name:{'/bound/source/'+name} for name in units}
+        deps['main.cpp'].update('/bound/source/'+key for key in keys)
+        deps['BibNativeEditorBackend.cpp'].add('/bound/vfs/BibEngineProviderCompositionUndo.h')
+        return deps,aliases
+
+    def test_exact_alias_owner_sets_pure_positive(self):
+        deps,aliases=self.fixture()
+        with mock.patch.object(Path,'open',side_effect=AssertionError('ownership validator opened path')):
+            self.assertIsNone(maintenance.validate_composition_dependency_owners(deps,aliases))
+            maintenance.validate_composition_dependency_owners({k:frozenset(v) for k,v in deps.items()},aliases)
+
+    def test_wrong_owner_missing_keys_and_alias_overlap_reject(self):
+        for change in ('extra-owner','missing-backend','extra-mainheader','unit','header','overlap'):
+            deps,aliases=self.fixture();private='source/wrapper/src/embedder/BibEngineProviderCompositionUndo.h'
+            if change=='extra-owner':deps['ProviderGuard.cpp'].add(next(iter(aliases[private])))
+            elif change=='missing-backend':deps['BibNativeEditorBackend.cpp']={'/bound/source/backend.cpp'}
+            elif change=='extra-mainheader':deps['BibNativeEditorBackend.cpp'].add('/bound/source/source/wrapper/src/embedder/BibUndoHistory.h')
+            elif change=='unit':deps['Other.cpp']={'/bound/source/Other.cpp'}
+            elif change=='header':aliases['extra.h']={'/bound/source/extra.h'}
+            else:aliases[private].update(aliases['source/wrapper/src/embedder/BibUndoHistory.h'])
+            with self.subTest(change=change),self.assertRaises(ValueError):maintenance.validate_composition_dependency_owners(deps,aliases)
+
+    def test_strict_set_types_and_canonical_paths_reject(self):
+        for invalid in ('/bound/path',[],(),set(),{'relative/path'},{'/bound/../path'},{'/bound//path'},{'/bound/./path'},{'/bound/path\x00bad'},{True}):
+            deps,aliases=self.fixture();deps['ProviderGuard.cpp']=invalid
+            with self.subTest(invalid=invalid),self.assertRaises(ValueError):maintenance.validate_composition_dependency_owners(deps,aliases)
+
+
 if __name__ == '__main__':
     unittest.main()

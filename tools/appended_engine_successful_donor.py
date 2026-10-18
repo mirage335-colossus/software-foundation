@@ -14,6 +14,14 @@ DONOR_KIND = 'foundation-document-v2-successful-donor-v1'
 PLAN_KIND = 'foundation-document-v2-maintenance-successful-donor-plan-v1'
 BUILD_KIND = 'foundation-document-v2-maintenance-successful-donor-build-v1'
 COMPILED_IDS = ('NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp')
+GUARD_REPAIR_DONOR_KIND = 'foundation-document-v2-successful-donor-guard-repair-v1'
+GUARD_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-successful-donor-guard-repair-plan-v1'
+GUARD_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-successful-donor-guard-repair-build-v1'
+GUARD_REPAIR_COMPILED_IDS = COMPILED_IDS + ('ProviderGuard.cpp',)
+COMPOSITION_REPAIR_DONOR_KIND = 'foundation-document-v2-successful-donor-composition-repair-v1'
+COMPOSITION_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-successful-donor-composition-repair-plan-v1'
+COMPOSITION_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-successful-donor-composition-repair-build-v1'
+COMPOSITION_REPAIR_COMPILED_IDS = GUARD_REPAIR_COMPILED_IDS + ('BibNativeEditorBackend.cpp', 'main.cpp')
 
 ROOT_ACCEPTANCE_SHA256 = 'fda45ea612c3b1ed86ed3b0edc98fb631fc64caeb8d27562c2a44fab849a9bb1'
 ROOT_FAILURE_SHA256 = '6fe22d439e8fbaa6076edb3fbf89de45e46ea1df6f1b9a65bad4bb1bc48f2b00'
@@ -86,9 +94,15 @@ def _fact_shape(fact, path, api):
         and fact['sha256'] != '0' * 64, 'product hash differs')
 
 
-def _metadata(value, bindings, old, api):
+def _metadata(value, bindings, old, api, *, guard_repair=False, composition_repair=False):
+    if type(composition_repair) is not bool or composition_repair and guard_repair:
+        raise ValueError('Composition repair requires an exclusive boolean opt-in')
     api.fields(value, DESCRIPTOR_FIELDS, 'successful donor selection')
-    _require(_integer(value['schema_version'], 1) and value['kind'] == DONOR_KIND
+    kind = (COMPOSITION_REPAIR_DONOR_KIND if composition_repair else
+            GUARD_REPAIR_DONOR_KIND if guard_repair else DONOR_KIND)
+    compiled = (COMPOSITION_REPAIR_COMPILED_IDS if composition_repair else
+                GUARD_REPAIR_COMPILED_IDS if guard_repair else COMPILED_IDS)
+    _require(_integer(value['schema_version'], 1) and value['kind'] == kind
         and value['document_profile'] == 'editor', 'descriptor identity/profile differs')
     _require(value['original_plan'].get('sha256') == ORIGINAL_PLAN_SHA256,
              'original default plan pin differs')
@@ -169,11 +183,13 @@ def _metadata(value, bindings, old, api):
 
     selected = [row['id'] for row in old['reuse']['objects']]
     _require(len(selected) == 51 and len(set(selected)) == 51
-        and all(name in selected for name in COMPILED_IDS), 'original selected51 differs')
-    imported = [name for name in selected if name not in COMPILED_IDS]
+        and all(name in selected for name in compiled), 'original selected51 differs')
+    imported = [name for name in selected if name not in compiled]
     _require(type(value['objects']) is list and all(type(row) is dict for row in value['objects'])
         and [row.get('id') for row in value['objects']] == imported,
-             'must import exact49 and compile only Publisher/Shim')
+             'must import exact46 and compile only Publisher/Shim/ProviderGuard/Backend/main' if composition_repair
+             else 'must import exact48 and compile only Publisher/Shim/ProviderGuard' if guard_repair
+             else 'must import exact49 and compile only Publisher/Shim')
     objects = build.get('objects')
     _require(_integer(build.get('schema_version'), 1) and build.get('kind') == 'foundation-document-v2-maintenance-build-v1'
         and build.get('status') == 'passed' and build.get('production_eligible') is False
@@ -216,21 +232,23 @@ def _metadata(value, bindings, old, api):
     return build, records
 
 
-def authority(value, bindings, old, api):
+def authority(value, bindings, old, api, *, guard_repair=False, composition_repair=False):
     """Return the original four authorities after the composite success joins."""
     result = api._completed_authority(value, bindings, old)
-    _metadata(value, bindings, old, api)
+    _metadata(value, bindings, old, api, guard_repair=guard_repair, composition_repair=composition_repair)
     return result
 
 
-def archive_rows(value, inspection, old, bindings, api):
+def archive_rows(value, inspection, old, bindings, api, *, guard_repair=False, composition_repair=False):
     """Admit ordered, exact donor archives without executing an archive tool.
 
     Physical fact reads happen only when this function is explicitly called by
     admission.  A pinned passive readback binds each archive hash to its full
     ordered member table, independently reproduced from the unchanged plan.
     """
-    build, records = _metadata(value, bindings, old, api)
+    build, records = _metadata(value, bindings, old, api, guard_repair=guard_repair, composition_repair=composition_repair)
+    compiled = (COMPOSITION_REPAIR_COMPILED_IDS if composition_repair else
+                GUARD_REPAIR_COMPILED_IDS if guard_repair else COMPILED_IDS)
     proof = inspection.proof
     _require(proof['archives'] == old['reuse']['archives']
         and proof['replacements'] == old['reuse']['replacements'],
@@ -268,7 +286,7 @@ def archive_rows(value, inspection, old, bindings, api):
                 expected.append({'name': Path(member['input']['path']).name,
                     'sha256': member['input']['sha256'], 'bytes': member['bytes']})
             else:
-                _require(owner in objects and owner not in COMPILED_IDS,
+                _require(owner in objects and owner not in compiled,
                          'archive contains a changed direct object')
                 product = objects[owner]
                 expected.append({'name': owner + '.o', 'sha256': product['sha256'], 'bytes': product['bytes']})
