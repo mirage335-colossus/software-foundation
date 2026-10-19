@@ -4,6 +4,17 @@
 #include "BibDocumentPhysicalProvider.hpp"
 #include "PhysicalState.hpp"
 #include "NativeRawKeyDispatch.hpp"
+#include "BibNativeKeyEventOutcome.hpp"
+#include "HTMLSelectElement.h"
+#include "KeyboardEvent.h"
+#include "Node.h"
+#include "PlatformKeyboardEvent.h"
+#include "Quirks.h"
+#include "RenderMenuList.h"
+#include "Settings.h"
+#include "UserGestureIndicator.h"
+#include "UserTypingGestureIndicator.h"
+#include "WindowsKeyboardCodes.h"
 #include "BibEngineProviderRuntime.h"
 #include "BibEngineProviderDocumentProjection.h"
 #include "BibFoundationServiceBridge.h"
@@ -32,6 +43,8 @@
 #include <cmath>
 #include <new>
 #include <stdexcept>
+#include <span>
+#include <wtf/Assertions.h>
 #include <wtf/MonotonicTime.h>
 
 namespace bib::provider_candidate {
@@ -136,6 +149,102 @@ struct ModernDocumentPhysicalProvider::Impl {
             s.state.input.active_context!=context || &frame!=&fence.target ||
             frame.document()!=&fence.target_document || frame.page()!=fence.main.page()) return false;
         return s.current(expected,fence.main,fence.main_document,fence.resource_epoch);
+    }
+    static bool selectPopupKey(const I::Key& key) noexcept {
+        // A control activation, never an editor committed-text observation.
+        return key.phase==0 && !key.repeat && key.key==" " && key.code=="Space"
+            && key.location==0 && !(key.modifiers&30u);
+    }
+    static bool selectPopupRawReturned(const WebCore::KeyEventDispatchOutcome& outcome,bool handled) noexcept {
+        using O=WebCore::KeyEventDispatchOutcome;
+        return !handled && outcome.complete && !outcome.normalHandled
+            && outcome.exit==O::Exit::RawKeyDownReturned
+            && outcome.keydown.route==O::Route::DOMDispatch
+            && outcome.keydown.defaultPrevented==O::Flag::No
+            && outcome.keydown.defaultHandled==O::Flag::No
+            && outcome.keydown.frame==O::Frame::SameFrameAndDocument
+            && outcome.keydown.target==O::Target::OriginalTarget
+            && outcome.keydown.focus==O::Focus::Unchanged;
+    }
+    bool selectPopupKeyCurrent(KeyFence& fence,WebCore::HTMLSelectElement& select,
+        const BIB::EngineUI::Snapshot& snapshot,std::uint64_t physical_version,
+        const I::Key& key,std::uint64_t sequence) const noexcept {
+        return selectPopupKey(key) && state.version==physical_version
+            && keyAuthority(&fence,fence.target,fence.expected,key.input_context,sequence)
+            && BIB::EngineUI::matches(snapshot) && snapshot.owner==BIB::EngineUI::identity()
+            && snapshot.owner.worker==worker && snapshot.owner.application==instance
+            && snapshot.chrome==BIB::EngineUI::registeredChrome()
+            && snapshot.page==fence.main.page() && snapshot.main_frame==&fence.main
+            && snapshot.document==&fence.main_document
+            && snapshot.document_sequence==fence.expected.document_sequence
+            && snapshot.service_generation==fence.expected.service_generation
+            && snapshot.resource_epoch==fence.resource_epoch && snapshot.input_context==key.input_context
+            && snapshot.raster && !snapshot.modal && !BIB::EnginePopup::token()
+            && fence.target.page()==snapshot.page && fence.target.document()==&fence.target_document
+            && fence.target_document.frame()==&fence.target
+            && fence.target_document.windowProxy()==&fence.target.windowProxy()
+            && snapshot.page->focusController().focusedOrMainFrame()==&fence.target
+            && &select.document()==&fence.target_document && select.isConnected()
+            && fence.target_document.focusedElement()==&select && select.focused()
+            && !select.multiple() && select.usesMenuList()
+            && !fence.target_document.settings().spatialNavigationEnabled()
+            && select.renderer() && is<WebCore::RenderMenuList>(select.renderer())
+            // The select's disabled path delegates before checking defaultHandled.
+            // Keep this final: no callback may intervene before virtual entry.
+            && !select.isDisabledFormControl();
+    }
+    bool selectPopupPublished(KeyFence& fence,WebCore::HTMLSelectElement& select,
+        std::uint64_t physical_version,const I::Key& key,std::uint64_t sequence,
+        BIB::EnginePopup::Policy::PopupToken before) const noexcept {
+        const auto opened=BIB::EnginePopup::token();
+        BIB::EngineUI::Snapshot now;
+        return opened && opened!=before && state.version==physical_version
+            && keyAuthority(&fence,fence.target,fence.expected,key.input_context,sequence)
+            && BIB::EngineUI::borrowCurrent(now) && now.owner==BIB::EngineUI::identity()
+            && now.owner.worker==worker && now.owner.application==instance
+            && now.chrome==BIB::EngineUI::registeredChrome()
+            && now.page==fence.main.page() && now.main_frame==&fence.main
+            && now.document==&fence.main_document && now.document_sequence==fence.expected.document_sequence
+            && now.service_generation==fence.expected.service_generation
+            && now.resource_epoch==fence.resource_epoch && now.input_context==key.input_context
+            && now.raster && now.modal && now.modal_epoch==opened.epoch
+            && &select.document()==&fence.target_document && select.isConnected() && select.popupIsVisible();
+    }
+    bool dispatchSelectPopupKeypress(KeyFence& fence,WebCore::HTMLSelectElement& select,
+        const BIB::EngineUI::Snapshot& snapshot,std::uint64_t physical_version,
+        const I::Key& key,std::uint64_t sequence,BIB::EnginePopup::Policy::PopupToken before) {
+        if (!selectPopupKeyCurrent(fence,select,snapshot,physical_version,key,sequence)) return false;
+        const auto text=WTF::String::fromUTF8(std::span<const char>(key.key.data(),key.key.size()));
+        const auto code=WTF::String::fromUTF8(std::span<const char>(key.code.data(),key.code.size()));
+        RELEASE_ASSERT(!text.isNull() && !code.isNull());
+        WebCore::PlatformKeyboardEvent platform(WebCore::PlatformEvent::Type::Char,text,text,text,code,
+            WTF::String(),VK_SPACE,false,false,false,modifiers(key.modifiers),WTF::MonotonicTime::now());
+        auto event=WebCore::KeyboardEvent::create(platform,&fence.target.windowProxy());
+        // Match EventHandler's native Char scopes without another activation or
+        // any editor TextData ticket. The original raw call already returned.
+        const auto paste=fence.target_document.quirks().needsDisableDOMPasteAccessQuirk()
+            ? WebCore::CanRequestDOMPaste::No : WebCore::CanRequestDOMPaste::Yes;
+        WebCore::UserGestureIndicator gesture(WebCore::IsProcessingUserGesture::Yes,&fence.target_document,
+            WebCore::UserGestureType::Other,WebCore::UserGestureIndicator::ProcessInteractionStyle::Delayed,
+            platform.authorizationToken(),paste);
+        WebCore::UserTypingGestureIndicator typing(fence.target);
+        if (event->isComposing()
+            || !selectPopupKeyCurrent(fence,select,snapshot,physical_version,key,sequence)) return false;
+        event->setIsDefaultEventHandlerIgnored();
+        // Preserve Element::dispatchKeyEvent's native accessibility propagation
+        // policy while retaining this exact event with automatic defaults off.
+        if (fence.target.eventHandler().accessibilityPreventsEventPropagation(event)) event->stopPropagation();
+        if (!selectPopupKeyCurrent(fence,select,snapshot,physical_version,key,sequence)) return false;
+        select.dispatchEvent(event);
+        if (event->defaultPrevented()) return true; // Actual author cancellation.
+        if (event->target()!=&select
+            || !selectPopupKeyCurrent(fence,select,snapshot,physical_version,key,sequence)) return false;
+        // resetBeforeDispatch erased any earlier handled marker. Seal only now;
+        // this is a fallback barrier, NEVER a physical handled/success receipt.
+        event->setDefaultHandled();
+        static_cast<WebCore::Node&>(select).defaultEventHandler(event);
+        // showPopup may run script. Borrow fresh ownership; never trust the seal.
+        return selectPopupPublished(fence,select,physical_version,key,sequence,before);
     }
     void cancel(WebCore::Page& page,WebCore::LocalFrame& main,WebCore::Document& current_document,
         const BibEngineDocumentV1& expected,std::uint64_t resource_epoch,const I::State& previous) {
@@ -272,7 +381,22 @@ struct ModernDocumentPhysicalProvider::Impl {
                         RefPtr target_document=frame->document();
                         if (!target_document || frame->page()!=page) return BIB_ENGINE_PROCESS_EXIT_REQUIRED;
                         KeyFence fence{s,*main,*document,*frame,*target_document,request->expected,id.resource_epoch};
-                        handled=K::dispatchKey(*frame,*key,request->expected,request->request_sequence,keyAuthority,&fence);
+                        RefPtr<WebCore::HTMLSelectElement> select;
+                        BIB::EngineUI::Snapshot key_snapshot;
+                        bool select_key=false;
+                        if (selectPopupKey(*key) && !before) {
+                            select=dynamicDowncast<WebCore::HTMLSelectElement>(target_document->focusedElement());
+                            select_key=select && BIB::EngineUI::borrowCurrent(key_snapshot)
+                                && s.selectPopupKeyCurrent(fence,*select,key_snapshot,physical_version,*key,request->request_sequence);
+                        }
+                        if (select_key) {
+                            WebCore::KeyEventDispatchOutcome outcome;
+                            handled=K::dispatchKeyWithOutcome(*frame,*key,request->expected,request->request_sequence,keyAuthority,&fence,outcome);
+                            if (selectPopupRawReturned(outcome,handled))
+                                handled=s.dispatchSelectPopupKeypress(fence,*select,key_snapshot,physical_version,*key,
+                                    request->request_sequence,before) || handled;
+                        } else
+                            handled=K::dispatchKey(*frame,*key,request->expected,request->request_sequence,keyAuthority,&fence);
                         s.afterPageInput(before,key,nullptr,*page,*main,*document,request->expected,id.resource_epoch,
                             physical_version,request->request_sequence);
                     }

@@ -1537,5 +1537,331 @@ class CompositionDependencyOwnersTests(unittest.TestCase):
             with self.subTest(invalid=invalid),self.assertRaises(ValueError):maintenance.validate_composition_dependency_owners(deps,aliases)
 
 
+
+class NativeCapabilityRepairEntryPoints(unittest.TestCase):
+    cli = GuardRepairEntryPoints.cli
+
+    def test_explicit_native_capability_flag_uses_only_new_api_keyword(self):
+        argv = self.cli() + ['--successful-donor', '/inert/p5-donor.json',
+            '--successful-donor-sha256', PIN, '--successful-donor-native-capability-repair']
+        with mock.patch.object(maintenance, 'make_plan', return_value={}) as planner, \
+             mock.patch('sys.stdout', new_callable=io.StringIO):
+            self.assertEqual(0, maintenance.main(argv))
+        self.assertEqual(dict(successful_donor={'path': '/inert/p5-donor.json', 'sha256': PIN},
+            successful_donor_native_capability_repair=True), planner.call_args.kwargs)
+
+    def test_missing_unpaired_partial_and_conflicting_lanes_reject_before_planner(self):
+        donor = ['--successful-donor', '/inert/p5.json', '--successful-donor-sha256', PIN]
+        for extra in ([], donor[:-2], ['--completed-work', '/inert/failed', '--completed-work-sha256', PIN],
+                      donor + ['--successful-donor-guard-repair'],
+                      donor + ['--successful-donor-composition-repair']):
+            with self.subTest(extra=extra), mock.patch.object(maintenance, 'make_plan') as planner, \
+                 mock.patch('sys.stderr', new_callable=io.StringIO):
+                with self.assertRaises(SystemExit):
+                    maintenance.main(self.cli() + extra + ['--successful-donor-native-capability-repair'])
+                planner.assert_not_called()
+
+    def test_api_strict_boolean_and_exclusive_editor_donor_reject_before_inspection(self):
+        variants = [dict(successful_donor_native_capability_repair=value, successful_donor={})
+                    for value in (None, 0, 1, [], 'true')]
+        variants += [dict(successful_donor_native_capability_repair=True),
+                     dict(successful_donor_native_capability_repair=True, successful_donor={}, completed_work={}),
+                     dict(successful_donor_native_capability_repair=True, successful_donor={}, successful_donor_guard_repair=True),
+                     dict(successful_donor_native_capability_repair=True, successful_donor={}, successful_donor_composition_repair=True)]
+        for kwargs in variants:
+            with self.subTest(kwargs=kwargs), mock.patch.object(maintenance, 'inspect_inputs') as inspect:
+                with self.assertRaises(ValueError): maintenance.make_plan({'document_profile': 'editor'}, Path('/inert/output'), **kwargs)
+                inspect.assert_not_called()
+        with mock.patch.object(maintenance, 'inspect_inputs') as inspect:
+            with self.assertRaises(ValueError):
+                maintenance.make_plan({'document_profile': 'physical'}, Path('/inert/output'),
+                    successful_donor={}, successful_donor_native_capability_repair=True)
+            inspect.assert_not_called()
+
+    def test_new_plan_roundtrip_calls_only_native_admission_and_pins_helper(self):
+        import appended_engine_successful_donor as donor
+        with tempfile.TemporaryDirectory(prefix='inert-native-capability-plan-') as temporary:
+            output = Path(temporary) / 'new-plan'
+            selected = {'document_profile': 'editor'}
+            inspected = SimpleNamespace(selection=selected, proof={}, projection={}, roots={}, inventories={})
+            admitted = {'reference': {'path': '/inert/p5-descriptor.json', 'sha256': PIN}, 'objects': []}
+            with mock.patch.object(maintenance, 'inspect_inputs', return_value=inspected), \
+                 mock.patch.object(donor, 'native_capability_admission', return_value=admitted) as admission, \
+                 mock.patch.object(maintenance, '_completed_work', side_effect=AssertionError('No historical restamp')), \
+                 mock.patch.object(maintenance, '_completed_input_directories', return_value=()), \
+                 mock.patch.object(maintenance, 'ref_path'), mock.patch.object(maintenance, 'digest', return_value=PIN):
+                result = maintenance.make_plan(selected, output, successful_donor=admitted['reference'],
+                    successful_donor_native_capability_repair=True)
+                plan, _ = maintenance.verify_plan(Path(result['plan']), hashlib.sha256(Path(result['plan']).read_bytes()).hexdigest())
+                self.assertEqual(2, admission.call_count)
+                self.assertEqual((admitted['reference'], inspected, maintenance), admission.call_args.args)
+                self.assertEqual(maintenance.NATIVE_CAPABILITY_REPAIR_PLAN_KIND, plan['kind'])
+                self.assertIn(maintenance.SUCCESSFUL_HELPER, plan['producer_inputs'])
+                self.assertIs(False, plan['production_eligible'])
+                changed = dict(admitted, objects=[{'id': 'forged'}])
+                admission.return_value = changed
+                with self.assertRaisesRegex(ValueError, 'native capability'):
+                    maintenance.verify_plan(Path(result['plan']), hashlib.sha256(Path(result['plan']).read_bytes()).hexdigest())
+
+    def test_missing_current_helper_pin_is_rejected_before_native_admission(self):
+        import appended_engine_successful_donor as donor
+        selected = {'document_profile': 'editor'}
+        plan = dict(schema_version=1, kind=maintenance.NATIVE_CAPABILITY_REPAIR_PLAN_KIND,
+            scope=maintenance.SCOPE, selection=selected, profile_sha256=PIN, producer_inputs={},
+            reuse={}, projection={}, production_eligible=False, successful_donor={})
+        with mock.patch.object(maintenance, 'checked_document', return_value=plan), \
+             mock.patch.object(maintenance, 'digest', return_value=PIN), \
+             mock.patch.object(donor, 'native_capability_admission') as admission:
+            with self.assertRaisesRegex(ValueError, 'producer/profile'):
+                maintenance.verify_plan(Path('/inert/plan'), PIN)
+            admission.assert_not_called()
+
+    def test_graph_exact51_partition_fivefresh_fiveimports_no_repack_one_link(self):
+            import appended_engine_successful_donor as donor
+            fresh = ('NativeDocumentV2Publisher.cpp', 'NativeFormsV2Combined.cpp', 'NativeDocumentV2Types.cpp', 'BibEngineDocumentWasmShim.cpp', 'BibNativePopupOwner.cpp')
+            direct = list(fresh) + ['Direct%02d.cpp' % i for i in range(30)]
+            engine = ['Engine%02d.cpp' % i for i in range(16)]
+            selected = direct + engine
+            names = list(donor.ARCHIVE_COUNTS)
+            with tempfile.TemporaryDirectory(prefix='inert-guard-repair-graph-') as temporary:
+                root = Path(temporary).resolve(); (root / 'cmake').mkdir()
+                metadata = {name: reference(name) for name in ('generator', 'template', 'prelink_plan',
+                    *maintenance.metadata_interface_paths('editor'))}
+                proof = {'host_tools': {'python': {'path': '/inert/python'}},
+                    'sdk_tools': {name: {'path': name} for name in ('emxx', 'emranlib')}, 'metadata': metadata,
+                    'objects': [{'id': name, 'arguments': [], 'source': reference(name), 'dependencies': [], 'unified_members': []}
+                                for name in selected], 'replacements': [],
+                    'archives': [{'name': name, 'members': []} for name in names],
+                    'link': {'dependencies': [], 'archives': names, 'flags': [], 'data': [],
+                             'pre_js': reference('pre.js'), 'host_library': reference('host.js')}}
+                imported = [name for name in selected if name not in fresh]
+                work = {'objects': [{'id': name, 'object': {'path': '/inert/' + name + '.o'},
+                                    'depfile': {'path': '/inert/' + name + '.o.d'}} for name in imported],
+                        'archives': [{'name': name, 'archive': {'path': '/inert/lib' + name + '.a'},
+                                      'report': {'path': '/inert/archive-' + name + '.json'}} for name in names]}
+                plan = {'kind': maintenance.NATIVE_CAPABILITY_REPAIR_PLAN_KIND, 'successful_donor': work}
+                inspected = SimpleNamespace(proof=proof, roots={'sources': root / 'sources', 'sdk': root / 'sdk'},
+                    inventories={}, selection={'document_profile': 'editor'}, profile={'direct_objects': direct})
+                with mock.patch.object(maintenance, '_tool', return_value=Path('/inert/python')), \
+                     mock.patch.object(maintenance, 'ref_path', side_effect=lambda ref, roots, inv: root / ref['path']), \
+                     mock.patch.object(maintenance, '_arguments', return_value=[]), \
+                     mock.patch.object(maintenance, '_header_identity', return_value=None):
+                    _, fragment, commands = maintenance._graph(inspected, plan, root / 'plan.json', PIN, root)
+                self.assertEqual(list(fresh), list(commands['objects']))
+                self.assertEqual(imported, list(commands['imports']))
+                self.assertEqual((51, 46, 5, 5), (len(selected), len(commands['imports']), len(commands['objects']), len(commands['archive_imports'])))
+                self.assertTrue(all(cmd[-1] == name and cmd[-3] == 'import' for name, cmd in commands['imports'].items()))
+                self.assertTrue(all(cmd[-1] == name and cmd[-3] == 'import-archive' for name, cmd in commands['archive_imports'].items()))
+                self.assertEqual(1, sum(token.endswith('foundation-retained-engine.mjs') for token in commands['link']))
+                self.assertEqual(5, len([token for token in commands['link'] if '/archives/lib' in token]))
+                graph = fragment.read_text()
+                self.assertIn(maintenance.SUCCESSFUL_HELPER, graph)
+                self.assertTrue(all('repack' not in cmd for cmd in commands['archive_imports'].values()))
+
+
+    def test_internal_native_capability_plan_routes_imports_but_refuses_repack_before_tool(self):
+            output = Path('/inert/fresh-output')
+            plan = {'kind': maintenance.NATIVE_CAPABILITY_REPAIR_PLAN_KIND, 'production_eligible': False, 'reuse': {},
+                    'selection': {'sources': '/inert/sources', 'sdk': '/inert/sdk', 'reuse_root': '/inert/reuse'}}
+            owner = {'schema_version': 1, 'plan_sha256': PIN, 'output': str(output), 'producer_sha256': PIN}
+            args = SimpleNamespace(plan=Path('/inert/plans/plan.json'), plan_sha256=PIN, build_root=output,
+                                   action='import', object='Imported.cpp', archive='WebCore')
+            with mock.patch.object(maintenance, 'checked_document', side_effect=lambda p, *pins: plan if p == args.plan else owner), \
+                 mock.patch.object(maintenance, 'ordinary', side_effect=lambda p, *a, **kw: Path(p)), \
+                 mock.patch.object(maintenance, 'digest', return_value=PIN), \
+                 mock.patch.object(maintenance, '_copy_completed_object', return_value='object') as obj, \
+                 mock.patch.object(maintenance, '_copy_successful_archive', return_value='archive') as archive, \
+                 mock.patch.object(maintenance.os, 'execv') as execute:
+                self.assertEqual('object', maintenance._step(args)); obj.assert_called_once_with(plan, 'Imported.cpp', output)
+                args.action = 'import-archive'
+                self.assertEqual('archive', maintenance._step(args)); archive.assert_called_once_with(plan, 'WebCore', output)
+                for action in ('archive', 'repack'):
+                    args.action = action
+                    with self.subTest(action=action), self.assertRaisesRegex(ValueError, 'zero repacks'): maintenance._step(args)
+                execute.assert_not_called()
+
+
+class NativeControlKeypressRepairEntryPoints(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.maintenance = maintenance
+
+    cli = GuardRepairEntryPoints.cli
+
+    def test_explicit_f6_flag_uses_only_its_new_api_keyword(self):
+        argv = self.cli() + ['--successful-donor', '/inert/p5-donor.json',
+            '--successful-donor-sha256', PIN, '--successful-donor-native-control-keypress-repair']
+        with mock.patch.object(maintenance, 'make_plan', return_value={}) as planner, \
+             mock.patch('sys.stdout', new_callable=io.StringIO):
+            self.assertEqual(0, maintenance.main(argv))
+        self.assertEqual(dict(successful_donor={'path': '/inert/p5-donor.json', 'sha256': PIN},
+            successful_donor_native_control_keypress_repair=True), planner.call_args.kwargs)
+
+    def test_flag_and_api_refuse_absent_donor_failed_resume_and_other_lanes(self):
+        donor = ['--successful-donor', '/inert/p5.json', '--successful-donor-sha256', PIN]
+        conflicts = ([], donor[:-2], ['--completed-work', '/inert/failed', '--completed-work-sha256', PIN],
+                     donor + ['--successful-donor-guard-repair'],
+                     donor + ['--successful-donor-composition-repair'],
+                     donor + ['--successful-donor-native-capability-repair'])
+        for extra in conflicts:
+            with self.subTest(extra=extra), mock.patch.object(maintenance, 'make_plan') as planner, \
+                 mock.patch('sys.stderr', new_callable=io.StringIO):
+                with self.assertRaises(SystemExit):
+                    maintenance.main(self.cli() + extra + ['--successful-donor-native-control-keypress-repair'])
+                planner.assert_not_called()
+        invalid = [dict(successful_donor_native_control_keypress_repair=value, successful_donor={})
+                   for value in (None, 0, 1, [], 'true')]
+        invalid += [dict(successful_donor_native_control_keypress_repair=True),
+            dict(successful_donor_native_control_keypress_repair=True, successful_donor={}, completed_work={}),
+            dict(successful_donor_native_control_keypress_repair=True, successful_donor={}, successful_donor_guard_repair=True),
+            dict(successful_donor_native_control_keypress_repair=True, successful_donor={}, successful_donor_composition_repair=True),
+            dict(successful_donor_native_control_keypress_repair=True, successful_donor={}, successful_donor_native_capability_repair=True)]
+        for kwargs in invalid:
+            with self.subTest(kwargs=kwargs), mock.patch.object(maintenance, 'inspect_inputs') as inspect:
+                with self.assertRaises(ValueError): maintenance.make_plan({'document_profile': 'editor'}, Path('/inert/out'), **kwargs)
+                inspect.assert_not_called()
+
+    def test_f6_plan_roundtrip_uses_only_new_admission_and_pins_helper(self):
+        import appended_engine_successful_donor as donor
+        with tempfile.TemporaryDirectory(prefix='inert-native-control-keypress-plan-') as temporary:
+            output = Path(temporary) / 'plan'
+            selection = {'document_profile': 'editor'}
+            inspected = SimpleNamespace(selection=selection, proof={}, projection={}, roots={}, inventories={})
+            admitted = {'reference': {'path': '/inert/f6-donor.json', 'sha256': PIN}, 'objects': []}
+            with mock.patch.object(maintenance, 'inspect_inputs', return_value=inspected), \
+                 mock.patch.object(donor, 'native_control_keypress_admission', return_value=admitted) as admission, \
+                 mock.patch.object(donor, 'native_capability_admission', side_effect=AssertionError('old lane used')), \
+                 mock.patch.object(maintenance, '_completed_work', side_effect=AssertionError('historical restamp')), \
+                 mock.patch.object(maintenance, '_completed_input_directories', return_value=()), \
+                 mock.patch.object(maintenance, 'ref_path'), mock.patch.object(maintenance, 'digest', return_value=PIN):
+                result = maintenance.make_plan(selection, output, successful_donor=admitted['reference'],
+                    successful_donor_native_control_keypress_repair=True)
+                plan, _ = maintenance.verify_plan(Path(result['plan']), hashlib.sha256(Path(result['plan']).read_bytes()).hexdigest())
+                self.assertEqual(2, admission.call_count)
+                self.assertEqual(maintenance.NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND, plan['kind'])
+                self.assertIn(maintenance.SUCCESSFUL_HELPER, plan['producer_inputs'])
+                self.assertIs(False, plan['production_eligible'])
+                admission.return_value = dict(admitted, objects=[{'id': 'forged'}])
+                with self.assertRaisesRegex(ValueError, 'control keypress'):
+                    maintenance.verify_plan(Path(result['plan']), hashlib.sha256(Path(result['plan']).read_bytes()).hexdigest())
+
+    def test_graph_routes_exact_six_compiles_45_imports_and_no_repack(self):
+        import appended_engine_successful_donor as donor
+        fresh = donor.NATIVE_CONTROL_KEYPRESS_REPAIR_COMPILED_IDS
+        direct = list(fresh) + ['Direct%02d.cpp' % i for i in range(29)]
+        engine = ['Engine%02d.cpp' % i for i in range(16)]
+        selected = direct + engine
+        archives = list(donor.ARCHIVE_COUNTS)
+        with tempfile.TemporaryDirectory(prefix='inert-native-control-keypress-graph-') as temporary:
+            root = Path(temporary).resolve(); (root / 'cmake').mkdir()
+            metadata = {name: reference(name) for name in ('generator', 'template', 'prelink_plan', *maintenance.metadata_interface_paths('editor'))}
+            proof = {'host_tools': {'python': {'path': '/inert/python'}},
+                'sdk_tools': {name: {'path': name} for name in ('emxx', 'emranlib')}, 'metadata': metadata,
+                'objects': [{'id': name, 'arguments': [], 'source': reference(name), 'dependencies': [], 'unified_members': []} for name in selected],
+                'replacements': [], 'archives': [{'name': name, 'members': []} for name in archives],
+                'link': {'dependencies': [], 'archives': archives, 'flags': [], 'data': [], 'pre_js': reference('pre.js'), 'host_library': reference('host.js')}}
+            imported = [name for name in selected if name not in fresh]
+            work = {'objects': [{'id': name, 'object': {'path': '/inert/' + name + '.o'}, 'depfile': {'path': '/inert/' + name + '.o.d'}} for name in imported],
+                    'archives': [{'name': name, 'archive': {'path': '/inert/lib' + name + '.a'}, 'report': {'path': '/inert/archive-' + name + '.json'}} for name in archives]}
+            plan = {'kind': maintenance.NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND, 'successful_donor': work}
+            inspected = SimpleNamespace(proof=proof, roots={'sources': root / 'sources', 'sdk': root / 'sdk'}, inventories={},
+                selection={'document_profile': 'editor'}, profile={'direct_objects': direct})
+            with mock.patch.object(maintenance, '_tool', return_value=Path('/inert/python')), \
+                 mock.patch.object(maintenance, 'ref_path', side_effect=lambda ref, roots, inv: root / ref['path']), \
+                 mock.patch.object(maintenance, '_arguments', return_value=[]), \
+                 mock.patch.object(maintenance, '_header_identity', return_value=None):
+                _, fragment, commands = maintenance._graph(inspected, plan, root / 'plan.json', PIN, root)
+            self.assertEqual(list(fresh), list(commands['objects']))
+            self.assertEqual(imported, list(commands['imports']))
+            self.assertEqual((51, 45, 6, 5), (len(selected), len(commands['imports']), len(commands['objects']), len(commands['archive_imports'])))
+            self.assertTrue(all(cmd[-3] == 'import' for cmd in commands['imports'].values()))
+            self.assertIn(maintenance.SUCCESSFUL_HELPER, fragment.read_text())
+            self.assertEqual(1, sum(token.endswith('foundation-retained-engine.mjs') for token in commands['link']))
+
+    def test_internal_f6_plan_imports_and_refuses_archive_programs(self):
+        output = Path('/inert/fresh-output')
+        plan = {'kind': maintenance.NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND, 'production_eligible': False, 'reuse': {},
+            'selection': {'sources': '/inert/sources', 'sdk': '/inert/sdk', 'reuse_root': '/inert/reuse'}}
+        owner = {'schema_version': 1, 'plan_sha256': PIN, 'output': str(output), 'producer_sha256': PIN}
+        args = SimpleNamespace(plan=Path('/inert/plans/plan.json'), plan_sha256=PIN, build_root=output,
+            action='import', object='Imported.cpp', archive='WebCore')
+        with mock.patch.object(maintenance, 'checked_document', side_effect=lambda p, *pins: plan if p == args.plan else owner), \
+             mock.patch.object(maintenance, 'ordinary', side_effect=lambda p, *a, **kw: Path(p)), \
+             mock.patch.object(maintenance, 'digest', return_value=PIN), \
+             mock.patch.object(maintenance, '_copy_completed_object', return_value='object') as obj, \
+             mock.patch.object(maintenance, '_copy_successful_archive', return_value='archive') as archive, \
+             mock.patch.object(maintenance.os, 'execv') as execute:
+            self.assertEqual('object', maintenance._step(args)); obj.assert_called_once_with(plan, 'Imported.cpp', output)
+            args.action = 'import-archive'
+            self.assertEqual('archive', maintenance._step(args)); archive.assert_called_once_with(plan, 'WebCore', output)
+            for action in ('archive', 'repack'):
+                args.action = action
+                with self.subTest(action=action), self.assertRaisesRegex(ValueError, 'zero repacks'): maintenance._step(args)
+            execute.assert_not_called()
+
+
+class DirectoryExpansionCacheTests(unittest.TestCase):
+    def fixture(self, directory):
+        roots, inventories = {}, {}
+        for root in ('sources', 'sdk', 'reuse'):
+            base = directory / root
+            (base / 'inc/nested').mkdir(parents=True)
+            (base / 'inc2').mkdir()
+            (base / 'empty').mkdir()
+            files = {}
+            for name in ('inc/z.h', 'inc/nested/a.h', 'inc/a.h', 'inc2/excluded.h'):
+                raw = name.encode()
+                (base / name).write_bytes(raw)
+                files[name] = hashlib.sha256(raw).hexdigest()
+            roots[root], inventories[root] = base, files
+        return SimpleNamespace(roots=roots, inventories=inventories,
+                               profile=maintenance.profile('editor'))
+
+    def test_cached_arguments_preserve_complete_outputs_and_fresh_lists(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            inspected = self.fixture(Path(temporary))
+            arguments = ['-I{sources}/inc', '-isystem', '{sdk}/inc', '-I{reuse}/inc', '-I{generated}']
+            expected = maintenance._arguments(arguments, inspection=inspected)
+            cache = {}
+            first = maintenance._arguments(arguments, inspection=inspected, _directory_inputs=cache)
+            self.assertEqual(expected, first)
+            self.assertIn(str(inspected.roots['sources'] / 'inc/nested/a.h'), first)
+            self.assertNotIn(str(inspected.roots['sources'] / 'inc2/excluded.h'), first)
+            first.append('caller mutation')
+            self.assertEqual(expected, maintenance._arguments(arguments, inspection=inspected,
+                                                               _directory_inputs=cache))
+
+    def test_cache_hit_still_checks_directory_identity_and_type(self):
+        for change in ('symlink', 'deleted', 'file'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
+                inspected = self.fixture(Path(temporary))
+                cache = {}
+                maintenance._argument_directory('{sources}/empty', inspected, _directory_inputs=cache)
+                directory = inspected.roots['sources'] / 'empty'
+                directory.rmdir()
+                if change == 'symlink':
+                    directory.symlink_to(inspected.roots['sources'] / 'inc', target_is_directory=True)
+                elif change == 'file':
+                    directory.write_bytes(b'not a directory')
+                with self.assertRaises((ValueError, OSError)):
+                    maintenance._argument_directory('{sources}/empty', inspected, _directory_inputs=cache)
+
+    def test_new_pass_expands_new_inputs_and_file_hashes_are_not_cached(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            inspected = self.fixture(Path(temporary))
+            before = maintenance._argument_directory('{sources}/inc', inspected, _directory_inputs={})
+            new = inspected.roots['sources'] / 'inc/new.h'
+            new.write_bytes(b'new input')
+            pin = hashlib.sha256(new.read_bytes()).hexdigest()
+            inspected.inventories['sources']['inc/new.h'] = pin
+            after = maintenance._argument_directory('{sources}/inc', inspected, _directory_inputs={})
+            self.assertEqual(sorted([*before, str(new)]), sorted(after))
+            reference = {'root': 'sources', 'path': 'inc/new.h', 'sha256': pin}
+            self.assertEqual(new, maintenance.ref_path(reference, inspected.roots, inspected.inventories))
+            new.write_bytes(b'changed input')
+            with self.assertRaises(ValueError):
+                maintenance.ref_path(reference, inspected.roots, inspected.inventories)
+
+
 if __name__ == '__main__':
     unittest.main()

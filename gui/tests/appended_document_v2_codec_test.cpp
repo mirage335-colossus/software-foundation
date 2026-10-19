@@ -525,10 +525,41 @@ void truncated_forms_are_observations_only() {
     check(node(result,11).value=="safe","Truncation discarded safe readonly observed value");
 }
 
+// Independent wire writer exercises the ACTUAL GUI consumer, including the
+// former blanket omitted-option authority refusal.
+Bytes opaque_popup_reply(unsigned caps=20,bool multiple=false,bool menu=true,
+                         std::string hidden_label={},bool complete=true,bool truncated=false) {
+    Wire w;w.header(4);w.prefix(identity,12,13);w.id(identity);w.ver(version);
+    w.put(truncated,1);w.put(1,8);w.put(0,8);w.put(0,4);w.put(0,4);
+    w.put(1,4);w.put(0,4);w.put(1,4);w.put(0,1);
+    w.put(1,8);w.put(0,8);w.put(1,1);w.put(0,1);w.put(3,4);
+    for(const auto& text:{std::string("select"),std::string(),std::string("Visible menu"),std::string(),std::string()})w.str(text);
+    w.put(1,8);w.put(multiple?5:4,1);w.put(4|(complete?32:0),1);w.put(caps,4);w.put(3,1);w.put(0,1);
+    w.str(multiple?"select-multiple":"select-one");w.str("Visible menu");w.put((multiple?1:0)|(menu?2:0),1);w.put(3,4);
+    w.put(2,8);w.put(1,1);w.str("Alpha");w.put(3,8);w.put(4,1);w.str(hidden_label);w.put(4,8);w.put(0,1);w.str("Omega");
+    return std::move(w.bytes);
+}
+void opaque_single_popup_is_complete_but_redacted_and_never_a_multiselect_edit() {
+    for(unsigned caps:{0u,4u,16u,20u}){
+        const auto result=decode_appended_document_v2(opaque_popup_reply(caps),query());
+        const auto& c=control(result,1);const auto& options=std::get<F::FormSelectState>(c.state).options;
+        check(c.complete&&c.capabilities==caps&&options[1].omitted&&options[1].label.empty()&&options[0].selected,
+            "GUI native codec lost complete redacted popup or manufactured option text");
+    }
+    for(auto wire:{opaque_popup_reply(20,false,true,"leak"),opaque_popup_reply(8),
+        opaque_popup_reply(8,true,false),opaque_popup_reply(0,true,true),
+        opaque_popup_reply(20,false,false),opaque_popup_reply(20,false,true,{},false),
+        opaque_popup_reply(20,false,true,{},true,true)})
+        rejects([&]{decode_appended_document_v2(wire,query());},"GUI accepted redacted non-popup authority or leaked option text");
+    const auto old=decode_appended_document_v2(opaque_popup_reply(0,false,true,{},false),query());
+    check(!control(old,1).complete&&!control(old,1).capabilities,"Original cap-free incomplete observation rejected");
+}
+
 } // namespace
 
 int main() {
-    const std::array<std::pair<std::string_view,void(*)()>,11> tests{{
+    const std::array<std::pair<std::string_view,void(*)()>,12> tests{{
+        {"opaque_single_popup_is_complete_but_redacted_and_never_a_multiselect_edit",opaque_single_popup_is_complete_but_redacted_and_never_a_multiselect_edit},
         {"golden_queries_and_actions",golden_queries_and_actions},
         {"minimal_empty_and_forests",minimal_empty_and_forests},
         {"rich_joined_values",rich_joined_values},

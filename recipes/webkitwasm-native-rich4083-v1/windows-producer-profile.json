@@ -11,7 +11,7 @@
   },
   "implementation_status": "passive-input-contract-only",
   "kernel_rebuild": false,
-  "kind": "foundation-native-engine-windows-producer-composition-undo-profile-v1",
+  "kind": "foundation-native-engine-windows-producer-native-control-keypress-profile-v1",
   "production_eligible": false,
   "profile": "document-actions-v1",
   "provenance": {
@@ -25,7 +25,7 @@
   "source_files": 158,
   "source_map": {
     "path": "recipes/webkitwasm-native-rich4083-v1/source-imports.json",
-    "sha256": "03c4f8a0c21165961d84da521ac0afaf8bf0d97ff2d09b1c2819390c31544b8b"
+    "sha256": "11208c13bce5e005526199a1922deed8b17259d93d0d892e35fdc6a8969bd9d0"
   },
   "target": {
     "pointer_bits": 64,

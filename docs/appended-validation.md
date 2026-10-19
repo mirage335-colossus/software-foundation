@@ -4005,10 +4005,602 @@ Closed failure/coverage and all 47 postflight facts are retained in
 Strong diagnosis found a probe/transport mismatch: the native copied dispatcher
 rejects malformed editor bytes before opening a host turn, while the normal
 claimed endpoint requires a valid reply. Its predicted signed return is `-1`;
-that return was not recorded by this failed observation. A distinct negative
-copied-export diagnostic is being completed under the same bounded assignment.
-The incomplete Luna patch and two direct syntax checks outside its authorized
-runner are preserved, with no acceptance result; Sol took over without resetting
-the original deadline or repair allowance. Normal endpoint/bridge checks remain
-strict. Current runtime acceptance, neutral and Foundation gates remain pending.
-The integrated viewer is unfinished and production eligibility is false.
+that return was not recorded by this failed observation. The distinct negative
+copied-export diagnostic is now source-complete after the same-assignment Sol
+takeover. Final authorized runner1329 closed0/`32e90c`,139purevectors; Root independently
+accepted exact source and physical facts (`df355cae…`) before the original deadline.
+The original incomplete Luna patch, unauthorized direct syntax checks and both
+earlier check versions remain preserved. Normal endpoint/bridge checks remain
+strict. No repaired runtime packet/grant/output has been created; actual runtime,
+neutral and Foundation acceptance remain pending. The integrated viewer is
+unfinished and production eligibility is false. See
+[the source-only acceptance](appended-validation.md#e8b-transport-source-accepted).
+
+
+<a id="e8b-transport-source-accepted"></a>
+
+### E8b direct copied-transport diagnostic — source accepted, runtime unrun
+
+This is the historical source-only checkpoint. The diagnostic later passed in
+runtime53325; use [the latest runtime and packet status](#trace-allocation-runtime-92393)
+for the failed runtime92393 and reviewed successor awaiting execution approval.
+
+Current checkout verification found `main` at
+`8cc8863f283f8b6972be6bbe383051419c7c6153`, parent `a3e31fd…`. The prior 40 dirty
+files and eight added files are committed; the earlier five untracked entries
+included a directory. This agent did not stage or create that commit. Before
+handoff edits, index/worktree were clean. Passive reconciliation rechecked all
+12 native/18 metadata facts, the three diagnostic sources and all 47 previous
+runtime input hashes/physical facts unchanged. `HANDOFF-STATE-20261018-v1.json`
+under `repair/runtime-recovery-v1/` has SHA-256
+`b4132c92500d5a041996bb296f39941afd3cdbd3a12d5cc7ca121d01d7c10e9a` and exact
+historical argv. No build or expensive validation ran for this handoff.
+
+Runtime33101 remains failed with its original integer caller1/`370bc5` and
+`240b2de9…` result. E6a's82 assertions passed; E8b's malformed-body dispatch did
+not record its signed return. Native source predicts -1 before host turn entry.
+A separate negative copied-export diagnostic now preserves the normal endpoint,
+bridge and supervisor, both original mutations and post-query native-state
+comparisons. It uses the complete1,048,680B reserve, validates current target and
+owned spans after growth, records the actual signed return, verifies canary,
+callbacks/authority/inventory and complete audit prefix/exact two boundary rows,
+and stops further exports after uncertainty. No native code or SDK changed.
+
+Stable assignment `luna-editor-transport-probe-20261018-v1` retained deadline
+2026-10-18T09:59:44.106394Z and repairs_used0. Its incomplete Luna patch and two
+unauthorized direct syntax-check reports were stopped and preserved under
+`repair/runtime-recovery-v1/E8B-LUNA-ORIGINAL-v1/`; neither zero is acceptance.
+Sol took over that same assignment through source/test completion. The completed
+three files under `repair/runtime-editor-transport-probe-v1/` are:
+
+| File | SHA-256 / bytes |
+| --- | --- |
+| `worker_native_malformed_probe_v1.mjs` | `5768019f3db47288204c89958adcb32f34c40bffa8d25c2d7720ea5bc2ba8dca` /57,203 |
+| `editor_cases_native_malformed_v1.mjs` | `860c86bd5877f15edca621913dfbc41f66b8236d5d1c3ab0df09818218de9bce` /33,474 |
+| `test_native_malformed_probe.py` | `bdb8148603a106a8778944b91f838e2b1af7791c0d19aa50ffa1daa1046a7050` /24,316 |
+
+Exact authorized source command, cwd the absolute checkout:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3.13 -B \
+  .agent-work/appended-implementation-20261016/runtime-D03-repair-v1/runtime-recovery-v1/run_editor_transport_source_checks_v1.py
+```
+
+Original run51199 closed1/`f06677`: fake bump allocator exhausted its heap on the
+second probe; the production helper refused the invalid allocation. Failed source
+and log remain in `failed-check-v1/`. Run11159 closed0/`b0cf07`,139vectors, then
+strong review found fake terminal=false concealed actual terminal=null. That
+version remains in `reviewed-check-v2/`. Final run1329 closed0/`32e90c`,139vectors,
+with actual peer shape joined to source and original observations. Pure tests
+extract the production context callsite, makeContext, hook, witness, dispatch,
+helper and E8b body into fake-module checks; they execute no whole Worker, engine,
+SDK or browser. They cover capacity-before-malformed ordering, allocation growth,
+shared/foreign/overlapping memory, callback/audit/authority drift, unexpected
+returns and cleanup traps. The unchanged supervisor counter gate passes against
+the original two histories without relabeling their failed runtime.
+
+Final source freeze is `fedc90ef78614bb9a44787db7ac83d30875bbca590856ac5b022b58d3961db5c`;
+checks `37e99c59fb7a917e95c5776c529f7590c6236821b11a4066e932e0d6b1f83410`;
+patch `76f1dcd8ad9e7124b69a21d813b6713d513ee9444999a9c57b542a0c84b3877c`;
+handoff `18a091c1781ae93ab3c3479c5fc127eb992fa28c4c195b98e8a77a667380ffaf`.
+Root independently reviewed actual behavior, wiring, memory/uncertainty handling,
+full audit accounting and test scope. Removing only the diagnostic additions
+reconstructs the complete original Worker byte-for-byte; fixture bytes outside
+E8b and both mutation closures remain exact. Root acceptance at09:49:48UTC is
+`repair/runtime-recovery-v1/E8B-ROOT-INDEPENDENT-SOURCE-ACCEPTANCE-v1.json`, SHA-256
+`df355cae85560995de1fd8c543c272511e902992cb1e3e05c9ae3a096e93d4d7`.
+This proves source acceptance, not actual negative return or runtime acceptance.
+
+All source writers/processes/streams are closed; the managed Sol record explicitly
+released scope with terminal `20081289…`. Final Root handoff releases its claims
+separately. No fresh repaired packet, grant or runtime output was created. Next:
+new-session acquisition and reviewed two-role/47-input binding, one unchanged-cap
+actual runtime, complete independent readback, then neutral28+6 and separate
+export. Foundation construction and partial BOTH/native/TUI/Rust-runtime work
+remain unrun; extensive qualification remains deferred under its authorization
+rules. Use the [latest continuation checkpoint](appended-application-plan.md#new-main-chat-checkpoint)
+for complete limits, ownership and dependency order.
+
+
+<a id="e8b-runtime-passed-c02-clipboard-expectation"></a>
+
+### Actual runtime continuation — E8b passed, rich clipboard expectation repaired — 2026-10-18 UTC
+
+This historical entry records runtime53325. The later
+[trace allocation entry](#trace-allocation-runtime-92393) supersedes its pending
+next-action statements; the C02 and C08 successors already ran and failed.
+Fresh packet `47684624…` replaced only the accepted Worker/editor roles; all other
+45 facts and 18 roles, the candidate/capsule, 65 cases, 12 batches and limits
+remained exact. Root and independent strong review accepted all 47 physical/hash
+facts; shape admission passed. Fresh grant `3f8fe934…` and launch intent
+`3be80259…` bound the separate `runtime/actual-operation-v2` output.
+
+Actual runtime **53325** closed **1** (`c8f614`) after **41.849226811 seconds**:
+`C02-rich-native-text`. All 13 positive and 15 editor cases passed, including all
+38 E8b assertions and actual signed `-1` for both malformed bodies. E6a remains
+passed. Clipboard was the third, failed batch; nine later batches were unreached.
+Node's two negatives passed. Independent Root readback **77909** closed zero
+(`b2552e`), revalidated both accepted batches with the original predicates, all
+47 input facts and packet/grant hashes, and two owner/two stream/watchdog closures.
+Peak sampled RSS/output were 3,510,722,560 / 227,909,981 bytes, within the original
+caps. Result `58141554e2c8b522395bdba118a75c0eaec74c963b5e3b57d03d4897a7ab2c84`
+and `current_runtime/e8b-continuation-v1/ROOT-CLOSED-FAILURE-READBACK-v1.json`
+retain the original failed attempt; it is not overall runtime acceptance.
+
+Strong diagnosis found a fixture expectation mismatch with the existing native
+clipboard contract. WebCore rich interchange converts the fixture's standalone
+U+0020 text node to an Apple-converted-space U+00A0; paste removes the wrapper
+while preserving its text. The observed rich value was `Bold🙂\u00a0italicé`;
+the plain MIME value remained `Bold🙂 italicé`. The original serialized HTML
+was not retained, so the intermediate wrapper is a source-derived explanation.
+The frozen serializer/insertion source and original clipboard design require
+preserving WebCore strings without normalization. No engine defect is established.
+
+Root prepared `current_runtime/e8b-continuation-v1/clipboard_cases_native_interchange_v1.mjs`
+(`de8791aa…`, 18,708 bytes): only C02's exact rich expectation and two explanatory
+comments changed. Full reverse projection recovers all 18,552 original bytes;
+the four ordinary-space plain/Shift-paste/DataTransfer expectations, every other
+assertion, event/format check and case order remain exact. Source-chain pins and
+syntax passed; this is source evidence. Fresh single-role packet `1a8acdf1…`
+passed shape admission; its other 46 facts/19 roles and all caps remain exact.
+Independent review, a separate exact grant/intent and actual runtime are still
+required for that successor. No native compilation, capsule recopy, kernel/SDK
+operation, neutral stage/export or Foundation operation ran. Do not replay either
+old armed packet/output. Neutral28+6 and separate export still require a complete
+runtime pass; Foundation limits remain unissued proposals. Production eligibility
+is false and the integrated viewer remains unfinished.
+
+The exact runtime command is retained in
+`repair/runtime-composition-repair-v1/ROOT-RUNTIME-LAUNCH-INTENT-E8B-v1.json`;
+its packet is `RUNTIME-PACKET-E8B-v1.json` and grant
+`ROOT-AUTHORIZATION-E8B-v1.json`. All new binding, original caller, failure
+readback, Unicode observations and C02 source checks are under that runtime
+scope's `e8b-continuation-v1/`. They preserve runtime33101 and every earlier failure.
+The separate C02 source check used `/usr/bin/node --check` on the new fixture
+only; it launched no Worker, native engine or browser. The source-chain and exact
+reverse checks ran through Root's owned Python stdin diagnostic (47586e); fresh
+packet shape admission closed zero (522b1a). No complete-runtime or neutral pass
+is claimed from these checks.
+
+<a id="trace-allocation-runtime-92393"></a>
+
+### Runtime92393 trace failure and reviewed allocation successor
+
+This supersedes pending next-action statements in the runtime53325/C02 entry.
+C02 successor39290 exited 1 / `5e3008` after 86.257982148s, result `5f869c16…`:
+C02 passed, then C08's small native cut target expectation failed. Source-derived
+selection targeting explains the carrier event; the new fixture gives it a unique
+ID and retains all root-input, source deletion/preservation and clipboard checks.
+
+C08 successor92393 exited 1 / `9fb246` after 101.806910276s, result
+`76118d2c9478da29dc257c9abbc7b9c08fdaebd99a14e82bd48d24712794d6ed`.
+Two batches/28 cases passed their original full predicates. Clipboard nine cases
+through C08 completed, including rejected-write source preservation, but C10 was
+running when the unchanged 16,000-row trace cap failed. Its 208 emitted assertions
+contained no false result; that does not accept the incomplete batch. Nine later
+batches were unreached. Node2 passed; all owners/streams/thread closed and 47 inputs
+and control hashes remained exact. Independent Root readback32667 / `73c9630`
+confirmed closed failure. Peak sampled RSS/output: 3,258,871,808 / 239,638,064 bytes.
+Original caller failure and all original bytes remain immutable.
+
+Independent trace analysis found zero empty posted owner pairs; active owner
+boundaries must remain. C04 accounts for approximately 2,989 rows and begins with
+its own reset/real-copy seed. The accepted source repair selects exactly full10,
+C04-only or remaining9, moves C04 after editor's original15, and enforces physical/
+document allocations 16+144=160. Counted worst cases14/79 fit those allocations.
+Every case body/assertion and longtext byte reverse exactly to the original.
+Final Worker `c6a2c26d…` / clipboard `bf4baa3a…` passed syntax and independent
+strong review. Actual extracted-function checks f378f3 passed3 admitted groups,
+28 invalid groups and3 budget boundaries. Earlier test-generation failure17ade1
+and rejected sparse-array selectorv1 are preserved; they are not passes.
+
+Compact supervisor `4acd14b6…` changes only the future batch save call to compact
+ASCII JSON with finite numbers and LF through the existing guarded raw save.
+Full reverse preserves canonical size checks, trace limits, validators, schemas
+and control serialization. Source checker0 / `bb2feb` passed16 value/type vectors,
+3 nonfinite refusals and3 closed-report lossless round trips. Closed reports total
+27,005,257 compact bytes; this is not complete32MiB neutral evidence. Worker
+handoff failures and repair1 are retained in `runtime-report-compact-v1/`; Root
+completed strong takeover metadata at17:23:56.953414UTC, before the unchanged
+17:28:58.428927 deadline. No checker rerun or runtime occurred for that assignment.
+
+Fresh packet `04aa4c7e…`, closure `211cf99e…`, binds47 inputs/191,366,289B/20roles.
+Eight facts change from C08 (two JS roles and six driver copies);39 facts/12roles,
+all six fixtures, native candidate/capsule, subject and limits remain exact.
+All65 unique cases occur once across12 batches. Only C04 allocation/family changes;
+all other batch fields and expected-negative/original31 predicates remain exact.
+Fresh driver-v2 has the qualified HERE/vendor layout and original helper bytes.
+Shape0 / `f6bacb` and independent complete47 physical/hash review accepted.
+The first binding setup685d7e failed before packet save; subsequent discriminating
+read80e1e1 verified guarded facts/hashes and a fresh driver copy was used. Initial
+unused copies remain unconsumed by execution.
+
+Evidence: `current_runtime/e8b-continuation-v1/trace-allocation-v1/` contains
+`SOURCE-CHECKS-v1.json`, `PURE-CHECKS-v2.json`, `SPARSE-REPAIR-CHECKS-v1.json`,
+`BINDING-SHAPE-v1.json`, `INDEPENDENT-REVIEW-v1.json` and
+`NEXT-RUNTIME-REQUEST-v2.json`. Fresh v5 is absent and no execution grant/intent
+exists. Another actual attempt requires explicit authorization: the original
+maximum-one limit was exhausted and source repairs did not extend it. The request
+preserves all existing360/330/180/90/30/15s,4GiB/512MiB bounds and allows one attempt,
+with no retry. Complete originalcaller0/65/12/Node/closure/unchanged-input and
+independent readback predicates remain unrun. Neutral/export/Foundation are gated;
+production eligibility remains false.
+
+<a id="runtime-a01-native-popup-capability"></a>
+
+### A01 under the five-attempt allowance: closed popup failure
+
+The current [continuation checkpoint](appended-application-plan.md#native-popup-capability-current)
+supersedes earlier pending-runtime authority statements. Fresh grant
+`ROOT-AUTHORIZATION-A01-v1.json` (`a51f3ed9…`) and reviewed intent authorized exact
+packet `04aa4c7e…`. Original caller9828 closed1 / `ca4650`; driver92.037884498s,
+external caller92.217s, charged92.218s. Full result
+`6c9ed6bd9f54b701f1b4dd4189532bfea26c277d96598297bd880225cd7f1730`
+accepts positive13/editor16/clipboard9 and fails popup.P00's unique native label.
+Guard failure is null. Node2 passed; owners/streams/thread closed and all47 inputs
+stayed unchanged. Independent readback0 / `2161ed` revalidated original predicates
+and closure. Eight later batches were unreached. Four attempts/1,707.782s remain.
+
+Pure decoder `ff431f` read the original3234-byte native publication: truncationfalse,
+degradation28; primary31 and successor50 were unnamed, incomplete and cap-free;
+primary option43/44 were omitted with empty labels. No engine was launched by that
+decoder. Frozen Publisher0705d942 rejects an earlier secure input before private
+ID comparison; Forms2bc9f9ce intentionally revokes whole-select authority for any
+omitted option. Types63a435cd, GUI codec and peer share the old prohibition. The
+user selected central native repair preserving ordinary web compatibility and
+the full gate. No application layout workaround or refusal qualification is armed.
+
+The vanilla comparison68829 closed0 / `c5f96a`, 2.604s, with one joined owner,
+closed log and watchdog. Label association and computed styles were observed;
+all plain-control key positives were inert. It is partial comparison evidence,
+not keyboard behavior or appended runtime acceptance. The original evidence is
+`current_runtime/runtime-allowance-20261018-v1/ordinary-select-firefox-v1/RESULT.json`.
+
+Lossless codec source05e2a71b and isolated wiringv2 passed independent strong
+review. Contracts0c8c9f1b preserve the original prefix; supervisor98fb6d28 only
+wraps compact batch serialization; adapter884bfacf validates2..128 reports and
+raw hashes/32MiB aggregate before reconstruction; gates8bd60c96 keeps original
+predicates and raw evidence references. Focused source check3550 closed0 / `be626f`
+in2.674s; source9b74ee94/receiptb3385d4a passed ten discriminating boundaries,
+four exact original-report roundtrips and38 original case predicates. Encoded
+sizes578851/364726/669835/47458 preserve every original byte. Popup remains failed.
+Complete12-batch fit is unverified. Initial47 input verification plus final
+preparation/result reread is not a new full47-input postflight. Original standalone
+8/9 test failure, repaired9/92/0, repair1 and distinct setup recoveries are preserved.
+Source pins remain unbound; no new runtime, stage/export or Foundation operation ran.
+
+Native v3 source map `969ca78d…` and the distinct P5-derived producer map
+`bdfa2465…` passed independent source review and were integrated. Four producer
+suites, six native host fixtures, 13 pure admission tests and 13 peer codec checks
+passed. The actual GUI codec and forms tests also passed: 12 cases / 3,651 checks
+and 59 cases / 6,019 assertions. Native completions in the forms tests are owned
+mocks. The GUI fixtures now run in an ordinary native development tree using the
+same production code, without selecting an appended profile or maintaining a
+kernel. Original setup failures and source-review findings remain preserved.
+
+The selective successor is **five fresh units / 46 imports / 168 artifacts**:
+Publisher, NativeForms, portable Types, the generated-metadata shim and PopupOwner.
+Imports retain 43 legacy compilation origins plus the three actual P5 Guard,
+Backend and main origins. Both the historical composition lane and this native
+lane have 5/46 counts; their memberships and kinds remain distinct. All 51
+objects, five archive copies, zero repacks and one link remain required.
+
+Active editor, physical and pixel source catalogs now describe their affected
+native bodies with explicit successor records preserving complete predecessors;
+historical capsule source maps, profiles and compile provenance stay unchanged.
+Pure maintained-source admission passed for all three selections, with program
+launch and tool discovery explicitly forbidden. Rich/native catalogs passed
+source review and eight registered suites were reconciled: seven passed initially;
+Windows source replay passed all 92 cases after an exact module-pin and fixture
+wiring repair. The original 7/8 aggregate failure remains evidence.
+
+The original S4 source cohort failed independent review on four concrete
+issues; its closure and deadline remain intact. Root's successor corrected
+bounded reads, per-compiler cache ownership, descriptor binding and all-five
+P5 cache closure. The accepted routed tree changed only 19 old-S4 path literals
+across eight of 23 copied control files. Its final unarmed 27-file physical map
+is `ROUTED-FROZEN-CONTROL-SOURCES-v4.json` (`b2e6b4ec…`); the v3 controller's
+preparation marker now matches the actual retained owner. Inexpensive source and
+real-interface groups passed: inherited 18, strong controls nine, routed seven,
+budget 21 and controller 15. The two initial route-test fixture errors are
+preserved. No actual maintenance process or repaired engine runtime ran.
+
+The unissued `DISABLED-NATIVE-SCOPE-COST-v7.json` covers one preparation
+(600+15s), one plan (240+15s), one five-unit selective build (3,300+30s),
+independent readbacks (450s total) and one shared metadata/control allowance
+(150s) within **4,800s / 80 minutes**. Jobs1, 4GiB sampled RSS, 24 processes,
+8GiB build output/disk growth, 16GiB available at plan/build launch and 4GiB
+minimum free during execution are bounded. The source-only routed manifest
+`ROUTED-EXECUTION-MANIFEST-v2.json` names 15 fresh outputs and exact owner
+markers. Actual product-output caps remain with inner controls; the outer cycle
+checks same-filesystem disk growth, RSS and process count. No candidate, capsule,
+runtime or maintenance build has run; retained SDK `217e8ee7…` is unchanged.
+Four runtime attempts / 1,707.782 seconds remain.
+
+Current focused evidence is in `current_runtime/runtime-allowance-20261018-v1/`:
+`NATIVE-MAIN-INTEGRATION-v2.json`, `FOCUSED-ORIGINAL-CALLERS-v2.json`,
+`GUI-VALUE-FIXTURE-INTEGRATION-v2.json`, `gui-fixtures-v2/original-caller.log`,
+`MAINTAINED-CATALOG-PURE-ADMISSION-v1.json` and
+`codec-wiring-v4/ORIGINAL-ARTIFACT-CHECKS-v1.json`. The v4 adapter `99342306…`
+passed independent review and two positive / 18 negative pure vectors. Original
+report paths, bytes and hashes now join the physical closure before any read or
+inflation; actual neutral stage/export remains unrun. This does not replace the
+original full runtime gate or its failed result.
+
+## Approved native preparation and closed metadata failure — 2026-10-18
+
+The user approved the cost-v7 selective cycle. Fresh descriptor and packet
+creation passed, then preparation caller **51585 closed 0 / `e09093`** in
+98.824456s. Source assembly contains 367 inputs / 369 files / 564,645,818 bytes;
+the complete independent reuse copy contains 42,779 files / 861,802,853 bytes.
+All three phase owners closed naturally, with no SDK program or compiler.
+Independent Root readback **43633 closed 0 / `2fe7d4`** accepted the complete
+source/metadata/copy namespaces and original caller, with unchanged inputs.
+
+The next metadata binder **27035 closed 1 / `2fadb0`** before writing a plan
+candidate: it copied a physical file fact where `validators.native_contracts`
+requires the exact path/hash reference. Closure and input postflight passed;
+no plan, compiler, link or engine runtime launched. The terminal failed ledger
+is preserved. A preceding cheap interface check also found a legitimate empty
+SDK cache header; its admission now requires the exact empty-content hash.
+The reference projection repair `72e9999b…` passed independent source review.
+Current-route fixtures passed eight executable interface checks and one source
+assertion in three parallel groups. Original fixture failures and NC-R01's
+original deadline / repair1 / Root takeover remain recorded.
+
+The user subsequently authorized autonomous repeated focused diagnostics,
+selective builds and acceptance runs within the agreed scope, without cumulative
+time or attempt limits. All existing per-job timeouts, resource/performance
+limits and correctness gates remain; failed results require a concrete cause,
+discriminating probe or justified repair before repetition. SDK/kernel maintenance,
+full engine rebuilds and Git publication remain restricted. The reviewed recovery
+reuses accepted preparation. Its stricter **4,119.518s** inclusive job ceiling and
+**132.312s** metadata ceiling remain for this job, after deducting the failed
+cycle's 680.482s / 17.688s; these are no longer cumulative human allowances.
+The current recovery permits one plan and one selective build;
+local caps total 3,945s. Existing 240+15s plan, 3,300+30s build / 2,700s inner,
+450s original total readback allowances (preparation already completed), jobs1,
+4GiB RSS, 24 processes, 8GiB build output/disk growth, 16GiB launch headroom and
+4GiB running free floor are preserved. The unarmed recovery controller binds
+the original closed failure and accepted preparation; 34 parallel interface
+checks and seven independent stage-shape checks passed. The original failed
+ledger remains terminal; the fresh grant is `ab458502…`, sourced from
+`authorized-execution-v1/HUMAN-AUTHORITY-v2.json`. Retained SDK `217e8ee7…`
+remains read-only. No repaired candidate, capsule or runtime has run yet. The
+previous four-attempt / 1,707.782s balance is historical; cumulative restrictions
+are superseded, while all per-attempt limits remain unchanged.
+
+Exact evidence is in
+`current_runtime/runtime-allowance-20261018-v1/native-cycle-supervisor-v1/`:
+`authorized-execution-v1/FAILED-CYCLE-CLOSURE-v1.json`,
+`route-v2/controls/preparation/execution-v1/ROOT-CALLER-CLOSED-ACCEPTED.json`,
+`authorized-execution-v1/metadata-interface-fixtures-v1/result-v3.json` and
+`authorized-execution-v1/recovery-proposal-v1/DISABLED-RECOVERY-SCOPE-COST-v2.json`
+(`6600fb0f…`). The complete candidate/dependency/capsule and 65-case/12-batch
+runtime acceptance gates are unchanged.
+
+### Native plan P5 product-index admission repair — 2026-10-18
+
+The reviewed consumed-input projection retained all46 original depfiles and8,298
+dependency paths without increasing the64MiB document limit. Binder31846 closed0 /
+`daaef0`; its57,699,371-byte freeze contains72,021 files /5,946 directories, all
+independently checked. Compile-free plan70628 closed1 /`b4af66` naturally after
+206.928s: `Successful donor P5 product index differs`. Both supervisors closed
+naturally and input postflight passed; no compiler, link or engine launched.
+
+The original pinned Root receipt hashes compact ASCII JSON plus one newline;
+the producer omitted that newline. The accepted168-row table is84,862 encoded
+bytes with SHA-256 `babc9694ba2fad7f1160ceaa9630b8247f5762f3c8b3e7059c0f20f9cec639f8`.
+Helper correction`87dbd55e…` and regression`cfc05431…` passed independent review.
+Concurrent donor87 /maintenance80 tests passed. Actual `_p5_metadata` admission
+passed in0.830s, caller48681 closed0 /`523a5d`, using real pinned metadata with
+subprocess launches forbidden. No artifact-body readback or engine ran in that
+probe. Fresh route-v4 controls passed four real-interface fixture methods in
+three concurrent isolated groups. The original fixture setup errors and corrected
+scout escaping calculation remain preserved; neither changes product evidence.
+
+Fresh source preparation must carry the corrected helper. The old accepted
+preparation, failed plan and failed metadata cycles remain immutable. Exact
+receipts are under the native supervisor's `authorized-execution-v1/`:
+`inventory-execution-v3/PLAN-CALLER-CLOSED-FAILURE-v1.json` and
+`ACTUAL-P5-METADATA-INTERFACE-v1.json`. These checks do not qualify a repaired
+candidate, capsule or complete65-case/12-batch runtime. Standing user authority
+removes cumulative time and attempt caps while retaining all per-job limits,
+performance criteria, closure/readback gates and SDK/kernel/full-build restrictions.
+
+### Route-v4 plan timeout and explicit physical recovery — 2026-10-18
+
+Preparation26271 closed0 /`29327a` in101.855450539s. Independent readback78654
+closed0 /`2c91bb` and accepted369 source files, the complete42,779-file reuse
+copy, all385 frozen inputs and natural closure. Receipt`a638a9f3…` and binder45987
+closed0 /`bfad94` are reusable for those exact inputs. The57,704,007-byte freeze
+contains72,027 files /5,946 directories, including all46 original depfiles and
+8,298 dependency paths. No compiler, linker or engine ran.
+
+Plan49830 exceeded its unchanged240+15s limit. The inner controller terminated
+and joined its producer, returning a closed failed result with deadline and
+postflight timeout errors. The outer nested guard retained its controller/log
+even after its private supervisor exited naturally with primary1, reaped1, no
+surviving descendants and no error. No passing plan was produced.
+
+An independently reviewed explicit recovery pinned the original boot, namespace,
+process start/argv/UID identities and process handles. It durably captured the
+original private report, stopped only the parked controller and verified namespace
+exit. Original caller49830 then closed137 /`ca251b`; final read-only inventory
+confirmed no remaining namespace members. Immutable ledger state012
+(`f55fa3bd…`) records terminal failure with closed=false, preserving the missing
+original qualified controller closure separately from proven physical recovery.
+Recovery13 real pipe/pidfd fixtures passed; original fixture failures and an
+unrelated-host-service preflight permission failure remain retained. The reviewed
+namespace-depth correction passed own-namespace and host read-only fixtures.
+
+Evidence: native supervisor`authorized-execution-v1/index-recovery-v2/host-recovery-v1/`,
+especially`ORIGINAL-CALLER-CLOSED-FAILURE.json`,`FINAL-HOST-NAMESPACE-EMPTY.json`
+and`fixtures/result_v3.json`. A partial cost diagnostic and bounded watchdog
+lifecycle repair are pending. All complete candidate, capsule, runtime and
+production eligibility gates remain open.
+
+
+### Closed phase baseline and maintenance watchdog clarification — 2026-10-19
+
+The latest original plan83182 closed1 under its historical240s limit. Producer
+exit0 and native plan verification succeeded; the postflight guard detected the
+deadline. All owners, writer threads and logs closed correctly. Its terminal
+failed ledger and outputs remain preserved. Preparation70505 and independent
+readback52105 accepted receipt`52a20231…`; no replacement preparation is needed.
+
+A source-reviewed, isolated480+15s diagnostic used that exact preparation and all
+original inputs/predicates. Original caller32467 closed0 /`b46b06` in262.95s;
+inner and outer owners closed naturally with zero exit. Root independently
+checked the closed logs, original plan digest`fd3c9c0c…` and phase records. This
+is **diagnostic evidence only**, never an accepted plan or build input.
+
+| Boundary | Measured elapsed seconds |
+| --- | ---: |
+| Outer initial admission | 0.035 |
+| Inner initial admission | 4.934 |
+| Preflight, including full guard | 52.736 |
+| Producer through qualified settlement | 159.078 |
+| Plan verification | 1.328 |
+| Postflight, including full guard | 42.444 |
+| Inner final publication | 0.003 |
+| Outer final publication | 0.004 |
+
+The full guards took47.654s and42.274s and each freshly hashed all72,036 files /
+6,333,024,204 bytes. Their combined CPU time was82.620s; producer child CPU was
+153.627s. Postflight started at218.269s, leaving21.731s under the historical240s
+limit. This supports CPU work before and during postflight as the cause; it
+excludes a producer stall, metadata admission alone or expensive plan verification
+as sufficient explanations for this run. Producer subroutine attribution remains
+source-derived. The balanced full guard comparison was prepared and its real
+interface fixtures passed, but **was not launched** after the human priority
+clarification; no full-inventory optimization saving is claimed.
+
+That clarification authorizes revising maintenance and aggregate qualification
+ceilings. Chosen operational watchdogs are plan900+30s, selective build7200+60s
+(inner6000s/jobs1), whole cycle14400s and metadata600s. Bind enclosing and inner
+controllers consistently. Preserve RSS/process/disk/output protections, all exact
+input and correctness checks, closure/readback and individual behavior timing
+assertions. Measure the everyday packaging-only web and small portable-module
+edit loops after reaching the working retained base. Retained SDKs remain
+read-only; no full engine/kernel fallback or Git publication is authorized.
+
+Evidence under the native supervisor: `phase-baseline-diagnostic-v1/`
+`ROOT-CALLER-CLOSED-DIAGNOSTIC.json` (`f636ffc6…`), `experiment/child-phases.jsonl`,
+`plan-differential-diagnosis-v1/MAINTENANCE-WATCHDOG-AUTHORITY-v1.json`, and
+`guard-full-comparison-v1/launcher-review-v1/ROOT-fixtures-v1/RESULT.json`.
+
+
+### Unfrozen-ancestor optimization regression and settled restoration — 2026-10-19
+
+Plan75861 closed1 /`8a7b2c` in234.740s with natural inner and outer closure.
+Producer exit0 and verification succeeded; postflight failed with `Ancestor
+physical identity changed during freeze guard`. Immutable failed state004 is
+`0378e333…`; no readback/build was authorized from that plan. Root checked all
+72,036 file and5,946 frozen-directory identity7 records and found no changes.
+The only ancestor version in the observed postproducer failure window was the
+unfrozen `.agent-work` board root, matching the checked registry mutex timestamp.
+Root did not rehash every input byte in that diagnostic.
+
+The independent owner reproduced this with the real `agent_session.registry_mutex`
+and small frozen fixtures: old and restored guards pass unrelated sibling-lock
+creation/removal, while the optimized guard fails. All variants reject actual
+frozen-file, namespace and mode changes. Root independently reran all21 cases
+(`73a95d`,0.221s). `runner_controls_restored.py` (`021d1bfa…`) is exact settled
+`2619961f…` except operational budget constants. The extra unfrozen-ancestor
+version check was not an original acceptance predicate.
+
+Evidence: `freeze-guard-repair-v1/failure-diagnosis-v1/{HANDOFF.json,ROOT-RESULT-v1.json}`
+and `authorized-execution-v1/freeze-guard-cycle-v1/PLAN-CALLER-CLOSED-FAILURE.json`.
+Fresh route-v8 source-map`cacd2814…`, independent source acceptance`fadfcd24…`,
+and packet/physical acceptance`d0350f` preceded plan97781. It closed0 /
+`943ea1` in248.033s with natural inner/outer closure, joined writers and
+unchanged-input postflight. Independent Root reader64744 closed0 / `f96632`,
+accepting `08fdb8ec…` after72,036 file and5,946 directory identity checks.
+Pure projection `2c803f` retained all51 actions/2,076 archive members; metadata
+assembly `b69946` and build binder33042 / `93315e` passed. Root independent
+build-packet review28949 / `415220` passed in11.455s:72,045 files,5,948
+directories,6,371,110,337 logical bytes and29 source hashes. The first
+review-only caller59698 / `88c0de` failed before publication when the diagnostic
+loaded both full freezes into one256MiB reader; a separate bounded predecessor
+comparison corrected that setup without changing final gates. Failure evidence:
+`retained-base-cycle-v1/ROOT-BUILD-REVIEW-SETUP-FAILURE-v1.json`.
+
+Actual selective build1411 closed1 / `e9af8f` in1326.807s on packet
+`f3b65179…`, grant `4ae59674…`, step `d55f7d11…`. Producer0 and
+configure/build children0 had natural closure; all writers and logs closed;
+unchanged-input postflight passed. Peak outer sampled RSS:2,463,899,648 bytes.
+Candidate readback failed on an explicit recipe configuration reference absent
+from Shim's depfile. Failure manifest `BUILD-CALLER-CLOSED-FAILURE-v1.json`
+(`bf2a2bf8…`) and terminal state012 preserve this failure. Independent NC-R47
+parsed every51 depfile:21 missing references, all exact
+`reuse/build/webcore/cmakeconfig.h` / `59b4e3b7…`; no source or unified-member
+omission. The older accepted Shim depfile has the same omission.
+`prepare_reuse.py:629` binds this configuration to every unit; the maintained
+producer at `_composition_prior_headers` explicitly describes recipe inputs as
+distinct from the compiler header census.
+
+Root's source correction `840ac7f3…` /105,507 bytes changes only
+`native_capability_dependency_owners`: this exact configuration may lack a
+depfile token, but frozen presence/hash remain mandatory; source, unified and
+other dependency membership plus complete51 ownership/cache/VFS gates remain.
+The diagnostic original22421 closed0 / `122062` in41.459993s after reading
+168 artifacts /455,949,577 bytes,51 depfiles /20,269,748 bytes and2,734
+cache files /16,476,241 bytes. All51 passed. This is **diagnostic only**, not
+candidate acceptance. `native-config-binding-repair-v1/ROOT-CLOSED-51-RESULT-v1.json`
+records it. Independent source review NC-R51 accepted the exact840 source.
+Root's strong fixture takeover original23631 closed0 / `5ca173` in117.023954s:
+the complete51 baseline and all nine mutation negatives passed. Original setup
+and repair1 failures remain preserved. The result emitter's source pin is null;
+Root independently binds840 in `ROOT-ACCEPTANCE-v1.json` (`83c929a7…`).
+The fresh route-v9/C2 source review NC-R52 passed all five groups, with its
+condition closed by this acceptance. Binder84261 closed0 / `e01e9d`; independent
+physical review75955 closed0 / `5845be` in11.077s checked72,036 files /5,946
+directories and28 source hashes. Packet `d61163f6…` and grant `dda0f6a1…`
+are published. Full plan original1827 closed0 / `769e7f` in275.933s,
+with natural closure and unchanged inputs. Independent Root23831 closed0 /
+`f27848`, acceptance `e63958da…`; the37,387,345-byte plan SHA`fd3c9c0c…`
+is identical to the historical accepted plan. The following pure projection
+closed1 / `c6731a` in0.583s at its first save because the required output
+parent was absent. No projection output or SDK operation occurred; C2 state008
+remains terminal failed. The parent is now ordinary and empty; a fresh four-step
+continuation reuses the accepted plan/readback. NC-R55 independently accepted
+the exact four-step order and actual transition/refusal fixtures. Fresh grant
+`e37f13b3…` was issued and initialized0 / `65b4f2`. Projection closed0 /
+`77ff40` in0.512s; metadata assembly closed0 / `73af5f` in0.0119s;
+build binder92244 closed0 / `0d6060`. Root physical review73849 closed0 /
+`4de6ee` in11.267s, checking72,045 files /5,948 directories and every prior
+freeze fact. Fresh build packet`15fe7e4d…` / grant`5b375f58…` is published.
+Selective build original83868 closed0 / `9e3256` in1,372.544s under the original machine protections. Peak sampled RSS was2,442,215,424 bytes. Independent Root28478 closed0 / `323e7e`, accepting all168 artifacts /51 depfiles and full input/VFS/natural-closure predicates (`79f94be9…`). Preparation and full plan were not repeated. A missing parent stopped
+ledger initialization before ledger creation; that setup failure is preserved,
+the owned parent was created, and initialization closed0 / `4280aa`.
+The fresh four-step C3 ledger is complete; no old failed result or ledger is resumed. It reuses
+preparation70505 and the newly accepted plan, with five fresh units /46 imported
+objects /five imported archives /one link /168 expected artifacts. Neither a
+failed plan nor diagnostic plan is consumed. Runtime cohort source/layout review
+NC-R38 passed. Capsule owner71796 closed0 / `6a9416`; independent readback`a0d299bf…` accepted16 distinct copies /163,589,359 bytes. Runtimepacket`4685c592…` passed independent47-input/20-role review`e8b3f105…` and actual metadata admission/configuration in1.7755s. Original56261 closed1 / `244e2a` after1.1025s: the loader required local private helper copies but packet paths retained their prior exact-byte locations. Node/browser/engine were not launched; zero cases ran; postflight was unexecuted, not passed. The original result and caller remain immutable. A fresh exact-copy placement recovery is exercising the real helper loader before another reviewed runtime launch. No complete runtime acceptance is claimed.
+The subsequent exact-byte helper placement passed the real loader and all47
+physical checks (Root `ec82167b…`). Original48330 then closed1 before
+Firefox because the execution sandbox denied socket creation; Node2 and all47
+unchanged inputs/closure passed. A discriminating socket probe reproduced that
+restriction, and the tool-reviewed local-browser route admitted loopback sockets.
+Fresh output-only packet`62390cc9…` ran as original95094, closing1 /
+`00a07d` in93.482s. Positive13, editor16 and clipboard9 passed all
+38 original predicates, including author31; Node2 passed. Dropdown P00 now passes
+its own popup/selection/overlay checks, but P01 fails at
+`popup.P01.default.native-key-popup-open`. Eight later batches were
+unreached. Independent closed-failure readback`8ca559d5…` revalidated
+all38, full47 physical inputs, reports and natural owner/stream/thread closure.
+The case sends raw Space keydown only; WebCore's select menu opens Space in its
+keypress branch, while the public raw-key path deliberately supplies no committed
+text. A central control-default repair is under diagnosis; assertions and all65
+cases/12 batches remain required. No new full retry is justified yet. Neutral28+6
+and separate export remain blocked on complete runtime acceptance. All three new
+failed outputs are immutable; the accepted native candidate/capsule are reused.
+
+
+Separately, runtime aggregate watchdog sources900/840/540s passed five Guard
+checks with startup90s, Node30s, protocol15s, cleanup15s and postflight15s
+preserved. Root retained the fixed native helper`8b0d27b3…`; unnecessary modified
+helper snapshots are excluded. These source checks are not runtime acceptance
+and do not establish application startup/interaction performance.

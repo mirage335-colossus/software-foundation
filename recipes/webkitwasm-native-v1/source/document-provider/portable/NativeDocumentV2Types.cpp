@@ -253,8 +253,17 @@ void validatePublication(const OwnedPublication& p) {
         if (c.focused&&p.editor.active_node!=c.node) invalid("focused control/editor mismatch");
         std::optional<std::size_t> lastOption;
         if (const auto* s=std::get_if<F::FormSelectState>(&c.state)) for (const auto& o:s->options) {
-            if (o.omitted&&(!o.label.empty()||c.complete||c.capabilities||c.lease))
-                invalid("omitted option leaks text or grants incomplete control authority");
+            if (o.omitted) {
+                // Complete means complete for the advertised operations, not
+                // disclosure of CSS-hidden option text. Only a single native
+                // menu may retain open/finish authority with redacted rows.
+                const auto popupOnly = F::form_capability(F::FormCapability::open_popup)
+                    | F::form_capability(F::FormCapability::finish);
+                const bool opaquePopup = c.kind == F::FormKind::select_one && !s->multiple
+                    && s->menu_list && !(c.capabilities & ~popupOnly);
+                if (!o.label.empty() || ((c.complete || c.capabilities || c.lease) && !opaquePopup))
+                    invalid("omitted option leaks text or grants non-popup authority");
+            }
             const auto on=nodes.find(o.node);
             if (on!=nodes.end()&&(on->second->kind!=NodeKind::element||on->second->tag!="option")) invalid("option native node kind mismatch");
             if (on!=nodes.end()) {

@@ -248,7 +248,14 @@ void validate_publication(DocumentV2Publication& result, DocumentV2Identity expe
             std::optional<std::size_t> last_option;
             for (const auto& o:select->options) {
                 node_id(o.node);
-                if (o.omitted) require(o.label.empty() && !c.complete && !c.capabilities && !c.lease,"Omitted option retains authority/label");
+                if (o.omitted) {
+                    const auto popupOnly=F::form_capability(F::FormCapability::open_popup)
+                        | F::form_capability(F::FormCapability::finish);
+                    const bool opaquePopup=c.kind==F::FormKind::select_one && !select->multiple
+                        && select->menu_list && !(c.capabilities&~popupOnly);
+                    require(o.label.empty() && ((!c.complete && !c.capabilities && !c.lease) || opaquePopup),
+                        "Omitted option retains non-popup authority/label");
+                }
                 const auto option=positions.find(o.node); if (option==positions.end()) continue;
                 const auto& on=snapshot.nodes[option->second];
                 require(on.kind==DocumentNodeKind::element && on.tag=="option" && !on.masked && on.omitted==o.omitted && on.disabled==o.disabled,

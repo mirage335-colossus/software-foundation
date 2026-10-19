@@ -1,0 +1,115 @@
+// SDK-free dependency-boundary fixture. Selected policy functions/loop below
+// are extracted verbatim from the production Publisher and NativeForms.
+#include <algorithm>
+#include <cstdint>
+#include <iostream>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <vector>
+static void require(bool v,const char* m){if(!v)throw std::invalid_argument(m);}
+template<class T> struct RefPtr {T*p{};RefPtr()=default;RefPtr(T*q):p(q){}
+ template<class U> requires std::is_convertible_v<U*,T*> RefPtr(const RefPtr<U>&q):p(q.p){}
+ T*get()const{return p;}T*operator->()const{return p;}T&operator*()const{return*p;}explicit operator bool()const{return p;}bool operator==(const RefPtr&)const=default;};
+struct AtomString {std::u16string value;bool null{true};AtomString()=default;AtomString(const char16_t*s):value(s),null(false){}
+ bool isEmpty()const{return value.empty();}bool isNull()const{return null;}size_t length()const{return value.size();}
+ bool operator==(const AtomString&)const=default;};
+static const AtomString&nullAtom(){static const AtomString n;return n;}
+struct Node {virtual~Node()=default;Node*parent{},*child{},*next{};
+ Node*firstChild()const{return child;}Node*nextSibling()const{return next;}Node*parentNode()const{return parent;}};
+struct ElementData {std::vector<int>storage{1,2};const auto&attributes()const{return storage;}};
+struct Element:Node {AtomString id;ElementData data;bool inScope{true},authorOmit{};unsigned idReads{},secretReads{};
+ bool hasID()const{return !id.isEmpty();}ElementData*elementData(){return &data;}
+ const AtomString&getIdAttribute(){if(hasID())++idReads;return id;}bool isInTreeScope()const{return inScope;}
+ const char*value(){++secretReads;throw std::runtime_error("secure value getter");}};
+struct HTMLElement:Element {bool labelable{};bool isLabelable()const{return labelable;}};
+struct HTMLFormControlElement:HTMLElement {};
+struct HTMLSelectElement:HTMLFormControlElement {};
+struct HTMLInputElement:HTMLFormControlElement {bool secure{true};HTMLInputElement(){labelable=true;}bool isSecureField()const{return secure;}};
+struct Settings {bool reference{};bool shadowRootReferenceTargetEnabled()const{return reference;}};
+struct TreeScope {Node root;std::vector<Element*>order;
+ Node&rootNode(){return root;}bool hasElementWithId(const AtomString&id)const{for(auto*e:order)if(e->inScope&&e->id==id)return true;return false;}};
+struct Document {Settings configuration;Settings&settings(){return configuration;}};
+struct Map {bool overrideFor{};bool contains(int)const{return overrideFor;}};
+struct HTMLLabelElement:HTMLElement {Document doc;TreeScope*scope{};AtomString forID;Map map;bool mismatch{},throwGetter{};unsigned calls{};
+ Document&document(){return doc;}TreeScope&treeScope(){return *scope;}Map*explicitlySetAttrElementsMapIfExists(){return &map;}
+ RefPtr<HTMLElement>control(){++calls;if(throwGetter)throw std::invalid_argument("getter failure");
+  if(mismatch)return nullptr;
+  if(forID.isNull()){for(Node*n=child;n;){if(auto*h=dynamic_cast<HTMLElement*>(n);h&&h->isLabelable())return h;
+   if(n->child){n=n->child;continue;}while(n!=this&&!n->next)n=n->parent;if(n==this)break;n=n->next;}return nullptr;}
+  for(auto*e:scope->order){if(!e->inScope)continue;if(e->getIdAttribute()==forID){auto*h=dynamic_cast<HTMLElement*>(e);return h&&h->isLabelable()?h:nullptr;}}return nullptr;}};
+template<class T>T*dynamicDowncast(Node&n){return dynamic_cast<T*>(&n);}
+template<class T>bool is(Node&n){return dynamic_cast<T*>(&n)!=nullptr;}
+namespace HTMLNames {constexpr int forAttr=1;}
+namespace N {struct ReadBudget {size_t traversal{256},evidenceLeft{256},privateLeft{65536};
+ void visitRaw(size_t depth){require(depth<=32&&traversal,"raw bound");--traversal;}
+ void chargeTraversal(size_t n){require(n<=traversal,"native repeat bound");traversal-=n;}
+ void evidence(size_t n=1){require(n<=evidenceLeft,"evidence bound");evidenceLeft-=n;}
+ void chargePrivate(size_t n){require(n<=privateLeft,"ID private bound");privateLeft-=n;}};}
+namespace NativeAttributeRead {
+ bool authorOmittedForAssociation(Element&e,N::ReadBudget&b){require(!dynamicDowncast<HTMLInputElement>(e),"secure generic attrs");b.evidence();return e.authorOmit;}
+ void prechargeNativeForScans(HTMLLabelElement&,N::ReadBudget&b,bool explicitFor){b.evidence(explicitFor?2:1);}
+}
+@ASSOCIATION_ID@
+@ASSOCIATED_CONTROL@
+namespace F {struct FormSelectState {bool multiple{},menu_list{true};};}
+struct Presentation {bool omitted{},terminalOmit{},styleKnown{true};unsigned display{},visibility{};bool inert{};};
+enum class DisplayType:unsigned {Block,None};enum class Visibility:unsigned {Visible,Hidden};
+struct StyleElement:Element {Presentation style;};
+struct RawEvidence {bool complete{},styleComplete{true};};
+struct Owner {unsigned wholeReads{},hiddenFieldReads{};
+ Presentation presentation(Element&e,N::ReadBudget&,bool inherited){auto p=static_cast<StyleElement&>(e).style;p.terminalOmit=p.terminalOmit||inherited;return p;}
+ template<class Read>void rawSubtree(Read&r,HTMLFormControlElement&,std::vector<RawEvidence>&rows,bool){++wholeReads;if(r.graphical)++hiddenFieldReads;rows.push_back({false,true});}
+ bool subtreeStyleComplete(const std::vector<RawEvidence>&rows){return std::all_of(rows.begin(),rows.end(),[](const auto&r){return r.styleComplete;});}
+ bool subtreeComplete(const std::vector<RawEvidence>&rows){return std::all_of(rows.begin(),rows.end(),[](const auto&r){return r.complete;});}
+};
+struct CapturePrelude {Owner&owner;bool graphical{};
+ bool run(HTMLFormControlElement&control){struct {bool styleComplete{true};std::vector<RawEvidence>lightSubtree;}result;
+@CAPTURE_PRELUDE@
+@CAPTURE_COMPLETE_INIT@
+ return complete;}
+};
+@OPAQUE_OPTION@
+Presentation capturedAncestry(std::vector<RefPtr<Element>> ancestors,bool graphical=false){
+ Owner owner;N::ReadBudget bounds;struct {Presentation presentation;}exactOption;struct{bool styleComplete{true};}result;
+@OPTION_ANCESTRY@
+ return exactOption.presentation;
+}
+static unsigned checks{};static void check(bool v,const char*m){++checks;if(!v)throw std::runtime_error(m);}
+template<class F>void rejects(F f,const char*m){bool refused=false;try{f();}catch(const std::invalid_argument&){refused=true;}check(refused,m);}
+struct Fixture {TreeScope scope;HTMLInputElement password;HTMLElement target;HTMLLabelElement label;N::ReadBudget budget;
+ Fixture(){password.id=AtomString(u"password");target.id=AtomString(u"target");target.labelable=true;label.forID=target.id;label.scope=&scope;
+  scope.root.child=&password;password.parent=&scope.root;password.next=&target;target.parent=&scope.root;scope.order={&password,&target};}
+ RefPtr<HTMLElement>run(){return associatedControl(label,label.forID,true,budget);}};
+int main(){try{
+ {Fixture f;check(f.run().get()==&f.target,"password-before-label ordinary native target");check(f.password.idReads==2&&f.password.secretReads==0,"ID-only preflight/native repeat without secure value read");}
+ {Fixture f;f.password.id=AtomString();check(f.run().get()==&f.target&&f.password.idReads==0,"secure no-ID fast path");}
+ {Fixture f;f.label.forID=AtomString();f.label.child=&f.password;f.password.parent=&f.label;f.target.parent=&f.label;
+  check(associatedControl(f.label,f.label.forID,false,f.budget).get()==&f.password&&f.password.idReads==0&&f.password.secretReads==0,"implicit first secure labelable identity is never inspected");}
+ {Fixture f;f.password.id=f.target.id;check(f.run().get()==&f.password&&f.target.idReads==0,"first duplicate secure ID retains native association");}
+ {Fixture f;f.target.labelable=false;check(!f.run(),"first non-labelable matching ID must not scan for another match");}
+ {Fixture f;Node child;f.password.child=&child;rejects([&]{f.run();},"nonempty secure subtree refuses before getter");check(f.label.calls==0&&f.password.secretReads==0,"secure subtree remains unread");}
+ {Fixture f;f.target.authorOmit=true;rejects([&]{f.run();},"author omission stays closed");check(f.label.calls==0,"no native getter across author omission");}
+ {Fixture f;f.label.forID=AtomString(u"absent");check(!f.run()&&f.label.calls==1,"absent native ID map keeps exact null association");}
+ {Fixture f;f.label.mismatch=true;rejects([&]{f.run();},"native pointer mismatch rejected");}
+ {Fixture f;f.budget.evidenceLeft=1;rejects([&]{f.run();},"reserve repeated ID scan before getter");check(f.password.idReads==0&&f.label.calls==0,"evidence exhaustion precedes ID read");}
+ {Fixture f;f.budget.privateLeft=0;rejects([&]{f.run();},"private ID budget fails before native association");check(f.label.calls==0,"private exhaustion never enters label getter");}
+ {Fixture f;f.label.doc.configuration.reference=true;rejects([&]{f.run();},"unsupported reference target remains closed");}
+ {Fixture f;f.label.map.overrideFor=true;rejects([&]{f.run();},"explicit for-element override remains closed");}
+ {Owner owner;HTMLSelectElement select;CapturePrelude terminal{owner,false};check(terminal.run(select)&&owner.wholeReads==0&&owner.hiddenFieldReads==0,"terminal select completeness is not poisoned by generic lightSubtree prelude");}
+ {Owner owner;HTMLSelectElement select;CapturePrelude graphical{owner,true};check(graphical.run(select)&&owner.wholeReads==0&&owner.hiddenFieldReads==0,"graphical select prelude cannot eagerly read hidden fields");}
+ {Owner owner;HTMLFormControlElement ordinary;CapturePrelude read{owner,false};check(!read.run(ordinary)&&owner.wholeReads==1,"other controls retain incomplete whole-subtree refusal");}
+ F::FormSelectState single;
+ {StyleElement option;option.style.display=1;auto p=capturedAncestry({&option});check(opaquePopupOption(single,p),"display:none option remains native-popup safe");}
+ {StyleElement option;option.style.visibility=1;check(opaquePopupOption(single,capturedAncestry({&option})),"visibility:hidden option remains redacted popup safe");}
+ {StyleElement group,option;group.style.display=1;auto p=capturedAncestry({&option,&group});check(p.omitted&&!p.terminalOmit&&opaquePopupOption(single,p),"CSS-only hidden optgroup is not author privacy");}
+ {StyleElement group,option;group.style.visibility=1;option.style.visibility=1;check(opaquePopupOption(single,capturedAncestry({&option,&group})),"inherited computed hidden visibility stays opaque");}
+ {StyleElement group,option;group.style.visibility=1;option.style.visibility=0;auto p=capturedAncestry({&option,&group});check(!p.omitted&&!opaquePopupOption(single,p),"visible child overrides hidden ancestor visibility and follows full capture");}
+ {StyleElement group,option;group.style.terminalOmit=true;auto p=capturedAncestry({&option,&group});check(!opaquePopupOption(single,p),"inherited terminal omission remains closed");}
+ {StyleElement group,option;group.style.display=1;group.style.styleKnown=false;check(!opaquePopupOption(single,capturedAncestry({&option,&group})),"unknown ancestor style stays closed");}
+ {StyleElement group,option;group.style.display=1;group.style.inert=true;check(!opaquePopupOption(single,capturedAncestry({&option,&group})),"inert ancestor stays closed");}
+ {StyleElement option;option.style.display=1;check(!opaquePopupOption({true,false},capturedAncestry({&option})),"multiple-select mutation never gains opaque authority");check(!opaquePopupOption({false,false},capturedAncestry({&option})),"non-menu single select remains closed");}
+ {StyleElement option;check(!opaquePopupOption(single,capturedAncestry({&option})),"visible option must follow full private capture");}
+ std::cout<<"passed "<<checks<<" production-extracted checks\n";return 0;
+}catch(const std::exception&e){std::cerr<<e.what()<<'\n';return 1;}}

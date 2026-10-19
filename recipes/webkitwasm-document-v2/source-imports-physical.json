@@ -249,59 +249,72 @@
       "tracked_path": "recipes/webkitwasm-document-v2/source/native/CombinedFormsIdentity.hpp"
     },
     "source/document-provider/native/NativeDocumentV2Publisher.cpp": {
-      "bytes": 80117,
+      "bytes": 80727,
       "mode": 420,
       "origin": {
-        "correction": "stable-focus-dependent-canEdit-and-inputMethodEnabled",
-        "kind": "reviewed-BEGIN-focus-editor-state-repair",
-        "sha256": "0705d9421e853b7633cc2a3df2c0448b0b53da0daf48fd2e7158f98b341b0453",
+        "correction": "bounded-private-label-association-and-css-opaque-single-menu-popup",
+        "kind": "reviewed-native-popup-capability-successor",
+        "reviewed_source_map_sha256": "969ca78d0594ba0aeb0191a676319c0f030aa47ae09a613e2f154439011b13e4",
+        "sha256": "074ac417f89760a9cf2c59212454e33133c60eaae68c08f7a5ca86d5224cb603",
         "source_only": true,
         "source_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp",
         "supersedes": {
+          "bytes": 80117,
           "origin": {
-            "correction": "bounded-private-excluded-label-association",
-            "kind": "reviewed-hidden-label-association-repair",
-            "sha256": "533984f89134872a87d2eb661a0b563f6b865805ab31ae955b2b74c2ab75c867",
+            "correction": "stable-focus-dependent-canEdit-and-inputMethodEnabled",
+            "kind": "reviewed-BEGIN-focus-editor-state-repair",
+            "sha256": "0705d9421e853b7633cc2a3df2c0448b0b53da0daf48fd2e7158f98b341b0453",
             "source_only": true,
             "source_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp",
             "supersedes": {
               "origin": {
-                "correction": "complete-text-control-inner-text-element-definition",
-                "kind": "reviewed-actual-header-publisher-repair",
-                "sha256": "78e59ed007bde4cd909044bb6a25a61518e6d85d0407c0287dceb6edea96c004",
+                "correction": "bounded-private-excluded-label-association",
+                "kind": "reviewed-hidden-label-association-repair",
+                "sha256": "533984f89134872a87d2eb661a0b563f6b865805ab31ae955b2b74c2ab75c867",
                 "source_only": true,
                 "source_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp",
                 "supersedes": {
                   "origin": {
-                    "abi_or_bounds_changed": false,
-                    "kind": "reviewed-publisher-successor",
-                    "reviewed_packets": {
-                      "begin": "a84c9e77795fa90dd2636233a33e0e1e544170b3aa21d502c0dc37e0c49ced22",
-                      "public_text": "17decc9cfba23a8afb5f297ed7e982ea75fc54970464cd6ef934af2b17930db2"
-                    },
-                    "selection": "bounded-public-text-and-stable-BEGIN-selection",
-                    "sha256": "7d0b0ac92fc0929081d6f5807aeec3508fead2fabe942c325b67a8a3e5f60f95",
+                    "correction": "complete-text-control-inner-text-element-definition",
+                    "kind": "reviewed-actual-header-publisher-repair",
+                    "sha256": "78e59ed007bde4cd909044bb6a25a61518e6d85d0407c0287dceb6edea96c004",
                     "source_only": true,
+                    "source_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp",
                     "supersedes": {
-                      "capsule": "0003-document-physical",
-                      "logical_path": "native/NativeDocumentV2Publisher.cpp",
-                      "sha256": "bbc219cc50258478cf84fbaf7be0c70f6b9ab9c0ac90dd6a164a70bc587db5e5"
+                      "origin": {
+                        "abi_or_bounds_changed": false,
+                        "kind": "reviewed-publisher-successor",
+                        "reviewed_packets": {
+                          "begin": "a84c9e77795fa90dd2636233a33e0e1e544170b3aa21d502c0dc37e0c49ced22",
+                          "public_text": "17decc9cfba23a8afb5f297ed7e982ea75fc54970464cd6ef934af2b17930db2"
+                        },
+                        "selection": "bounded-public-text-and-stable-BEGIN-selection",
+                        "sha256": "7d0b0ac92fc0929081d6f5807aeec3508fead2fabe942c325b67a8a3e5f60f95",
+                        "source_only": true,
+                        "supersedes": {
+                          "capsule": "0003-document-physical",
+                          "logical_path": "native/NativeDocumentV2Publisher.cpp",
+                          "sha256": "bbc219cc50258478cf84fbaf7be0c70f6b9ab9c0ac90dd6a164a70bc587db5e5"
+                        }
+                      },
+                      "sha256": "7d0b0ac92fc0929081d6f5807aeec3508fead2fabe942c325b67a8a3e5f60f95",
+                      "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp"
                     }
                   },
-                  "sha256": "7d0b0ac92fc0929081d6f5807aeec3508fead2fabe942c325b67a8a3e5f60f95",
+                  "sha256": "78e59ed007bde4cd909044bb6a25a61518e6d85d0407c0287dceb6edea96c004",
                   "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp"
                 }
               },
-              "sha256": "78e59ed007bde4cd909044bb6a25a61518e6d85d0407c0287dceb6edea96c004",
+              "sha256": "533984f89134872a87d2eb661a0b563f6b865805ab31ae955b2b74c2ab75c867",
               "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp"
             }
           },
-          "sha256": "533984f89134872a87d2eb661a0b563f6b865805ab31ae955b2b74c2ab75c867",
+          "sha256": "0705d9421e853b7633cc2a3df2c0448b0b53da0daf48fd2e7158f98b341b0453",
           "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp"
         }
       },
       "role": "source",
-      "sha256": "0705d9421e853b7633cc2a3df2c0448b0b53da0daf48fd2e7158f98b341b0453",
+      "sha256": "074ac417f89760a9cf2c59212454e33133c60eaae68c08f7a5ca86d5224cb603",
       "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp"
     },
     "source/document-provider/native/NativeDocumentV2Publisher.hpp": {
@@ -317,15 +330,28 @@
       "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.hpp"
     },
     "source/document-provider/native/NativeFormsV2Combined.cpp": {
-      "bytes": 39829,
+      "bytes": 41947,
       "mode": 420,
       "origin": {
-        "capsule": "0003-document-physical",
-        "logical_path": "native/NativeFormsV2Combined.cpp",
-        "sha256": "2bc9f9ceca00c644920e2911438dadcf0642257bf43b530863f618deb36dd7ff"
+        "correction": "bounded-private-label-association-and-css-opaque-single-menu-popup",
+        "kind": "reviewed-native-popup-capability-successor",
+        "reviewed_source_map_sha256": "969ca78d0594ba0aeb0191a676319c0f030aa47ae09a613e2f154439011b13e4",
+        "sha256": "c1cae92f150d65944c723c14755cf9bc87a58c64c6c8fe0a7c3fcf06542506aa",
+        "source_only": true,
+        "source_path": "recipes/webkitwasm-document-v2/source/native/NativeFormsV2Combined.cpp",
+        "supersedes": {
+          "bytes": 39829,
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "native/NativeFormsV2Combined.cpp",
+            "sha256": "2bc9f9ceca00c644920e2911438dadcf0642257bf43b530863f618deb36dd7ff"
+          },
+          "sha256": "2bc9f9ceca00c644920e2911438dadcf0642257bf43b530863f618deb36dd7ff",
+          "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeFormsV2Combined.cpp"
+        }
       },
       "role": "source",
-      "sha256": "2bc9f9ceca00c644920e2911438dadcf0642257bf43b530863f618deb36dd7ff",
+      "sha256": "c1cae92f150d65944c723c14755cf9bc87a58c64c6c8fe0a7c3fcf06542506aa",
       "tracked_path": "recipes/webkitwasm-document-v2/source/native/NativeFormsV2Combined.cpp"
     },
     "source/document-provider/native/NativeFormsV2Combined.hpp": {
@@ -444,32 +470,45 @@
       "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/BibNativePopupHooks.hpp"
     },
     "source/document-provider/popup/BibNativePopupOwner.cpp": {
-      "bytes": 29528,
+      "bytes": 32014,
       "mode": 420,
       "origin": {
-        "correction": "node-element-frame-page-view-inline-definitions",
-        "kind": "reviewed-actual-header-popup-inlines-repair",
-        "sha256": "d8822f18b214cedf9490a758c52c06a3ca3fc70d9b5b48e9dcbe8de55e4594d9",
+        "correction": "bounded-private-label-association-and-css-opaque-single-menu-popup",
+        "kind": "reviewed-native-popup-capability-successor",
+        "reviewed_source_map_sha256": "969ca78d0594ba0aeb0191a676319c0f030aa47ae09a613e2f154439011b13e4",
+        "sha256": "5d9657543b68ac4be23d14c5476f53e49fe8986a61d9a2c0c708b81bed9541f5",
         "source_only": true,
         "source_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/BibNativePopupOwner.cpp",
         "supersedes": {
+          "bytes": 29528,
           "origin": {
-            "kind": "reviewed-shared-rich-ui-successor",
-            "reviewed_packets": {
-              "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
-              "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
-            },
-            "selection": "shared-ui-popup-and-internal-rich-clipboard",
-            "sha256": "fbb9efa62ff6823a9ceefe179c900ddd26f559c002f6465c6a9821ee28036435",
+            "correction": "node-element-frame-page-view-inline-definitions",
+            "kind": "reviewed-actual-header-popup-inlines-repair",
+            "sha256": "d8822f18b214cedf9490a758c52c06a3ca3fc70d9b5b48e9dcbe8de55e4594d9",
             "source_only": true,
-            "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/source/popup/BibNativePopupOwner.cpp"
+            "source_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/BibNativePopupOwner.cpp",
+            "supersedes": {
+              "origin": {
+                "kind": "reviewed-shared-rich-ui-successor",
+                "reviewed_packets": {
+                  "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+                  "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+                },
+                "selection": "shared-ui-popup-and-internal-rich-clipboard",
+                "sha256": "fbb9efa62ff6823a9ceefe179c900ddd26f559c002f6465c6a9821ee28036435",
+                "source_only": true,
+                "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/source/popup/BibNativePopupOwner.cpp"
+              },
+              "sha256": "fbb9efa62ff6823a9ceefe179c900ddd26f559c002f6465c6a9821ee28036435",
+              "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/BibNativePopupOwner.cpp"
+            }
           },
-          "sha256": "fbb9efa62ff6823a9ceefe179c900ddd26f559c002f6465c6a9821ee28036435",
+          "sha256": "d8822f18b214cedf9490a758c52c06a3ca3fc70d9b5b48e9dcbe8de55e4594d9",
           "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/BibNativePopupOwner.cpp"
         }
       },
       "role": "source",
-      "sha256": "d8822f18b214cedf9490a758c52c06a3ca3fc70d9b5b48e9dcbe8de55e4594d9",
+      "sha256": "5d9657543b68ac4be23d14c5476f53e49fe8986a61d9a2c0c708b81bed9541f5",
       "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/popup/BibNativePopupOwner.cpp"
     },
     "source/document-provider/popup/BibNativePopupOwner.hpp": {
@@ -611,15 +650,28 @@
       "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Codec.hpp"
     },
     "source/document-provider/portable/NativeDocumentV2Types.cpp": {
-      "bytes": 17620,
+      "bytes": 18228,
       "mode": 420,
       "origin": {
-        "capsule": "0003-document-physical",
-        "logical_path": "portable/NativeDocumentV2Types.cpp",
-        "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44"
+        "correction": "bounded-private-label-association-and-css-opaque-single-menu-popup",
+        "kind": "reviewed-native-popup-capability-successor",
+        "reviewed_source_map_sha256": "969ca78d0594ba0aeb0191a676319c0f030aa47ae09a613e2f154439011b13e4",
+        "sha256": "c515fab6e801e2b0139130cdc7a5828b31156645f526914fb1edae74f8aab34f",
+        "source_only": true,
+        "source_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Types.cpp",
+        "supersedes": {
+          "bytes": 17620,
+          "origin": {
+            "capsule": "0003-document-physical",
+            "logical_path": "portable/NativeDocumentV2Types.cpp",
+            "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44"
+          },
+          "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44",
+          "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Types.cpp"
+        }
       },
       "role": "source",
-      "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44",
+      "sha256": "c515fab6e801e2b0139130cdc7a5828b31156645f526914fb1edae74f8aab34f",
       "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Types.cpp"
     },
     "source/document-provider/portable/NativeDocumentV2Types.hpp": {

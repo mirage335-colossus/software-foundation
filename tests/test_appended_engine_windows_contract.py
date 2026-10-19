@@ -65,6 +65,37 @@ class WindowsContractTests(unittest.TestCase):
         for name in contract.FALSE_FACTS:
             self.assertIs(checked[name], False)
 
+    def test_native_control_keypress_profile_uses_distinct_exact_catalogue(self):
+        checked = contract.validate_profile(self.profile)
+        catalogue = contract.NATIVE_CONTROL_KEYPRESS_CATALOGUE
+        self.assertEqual(checked['kind'], contract.NATIVE_CONTROL_KEYPRESS_PROFILE_KIND)
+        self.assertEqual(contract.catalogue_for_profile(checked), catalogue)
+        self.assertEqual(contract.catalogue_for_map_digest(checked['source_map']['sha256']), catalogue)
+        self.assertEqual(contract.catalogue_for_reference(catalogue), catalogue)
+        self.assertEqual(contract.catalogue_for_recipe_inputs({'map': checked['source_map']}), catalogue)
+        for mutation in ('old-kind', 'old-map', 'runtime-claim'):
+            value = copy.deepcopy(checked)
+            if mutation == 'old-kind': value['kind'] = contract.NATIVE_POPUP_PROFILE_KIND
+            elif mutation == 'old-map': value['source_map'] = contract.NATIVE_POPUP_CATALOGUE['source_map']
+            else: value['build'] = True
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                contract.validate_profile(value)
+
+    def test_native_popup_profile_uses_distinct_exact_catalogue(self):
+        historical=copy.deepcopy(self.profile)
+        historical.update(kind=contract.NATIVE_POPUP_PROFILE_KIND, **contract.NATIVE_POPUP_CATALOGUE)
+        checked=contract.validate_profile(historical)
+        self.assertEqual(checked['kind'],contract.NATIVE_POPUP_PROFILE_KIND)
+        self.assertEqual(contract.catalogue_for_profile(checked),contract.NATIVE_POPUP_CATALOGUE)
+        self.assertEqual(contract.catalogue_for_map_digest(checked['source_map']['sha256']),contract.NATIVE_POPUP_CATALOGUE)
+        self.assertEqual(contract.catalogue_for_reference(contract.NATIVE_POPUP_CATALOGUE),contract.NATIVE_POPUP_CATALOGUE)
+        for mutation in ('old-kind','old-map','runtime-claim'):
+            value=copy.deepcopy(checked)
+            if mutation=='old-kind':value['kind']=contract.COMPOSITION_PROFILE_KIND
+            elif mutation=='old-map':value['source_map']=contract.COMPOSITION_CATALOGUE['source_map']
+            else:value['build']=True
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):contract.validate_profile(value)
+
     def test_composition_profile_is_separate_from_exact_legacy_catalogue(self):
         legacy = copy.deepcopy(self.profile)
         legacy.update(kind='foundation-native-engine-windows-producer-profile-v1', source_files=157, **contract.CATALOGUE)

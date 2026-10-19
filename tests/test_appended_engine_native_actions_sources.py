@@ -13,6 +13,11 @@ import unittest
 sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[1]
+HISTORY_SPEC = importlib.util.spec_from_file_location('native_popup_source_history', ROOT / 'tests/native_popup_source_history.py')
+HISTORY = importlib.util.module_from_spec(HISTORY_SPEC)
+HISTORY_SPEC.loader.exec_module(HISTORY)
+native_popup_predecessor_bytes = HISTORY.native_popup_predecessor_bytes
+native_popup_history = HISTORY.native_popup_history
 RECIPE = ROOT / 'recipes/webkitwasm-native-rich4083-v1'
 SPEC = importlib.util.spec_from_file_location('native_actions_source_inspection', RECIPE / 'inspect_sources.py')
 INSPECT = importlib.util.module_from_spec(SPEC)
@@ -111,7 +116,7 @@ class NativeSourceInputs(unittest.TestCase):
         for record in provenance['native_engine_files']:
             self.assertEqual(digest((RECIPE / record['tracked_source']).read_bytes()), record['sha256'])
         for path, record in provenance['runtime_files'].items():
-            self.assertEqual(digest((RECIPE / path).read_bytes()), record['after_sha256'])
+            self.assertEqual(digest(native_popup_predecessor_bytes((RECIPE / path).read_bytes())), record['after_sha256'])
         self.assertEqual(provenance['selected_notice_count'], 11)
         self.assertFalse((RECIPE / 'source/engine/Source/WebCore/dom/Element.h').exists())
         self.assertFalse((RECIPE / 'source/engine/Source/WebCore/page/EventHandler.h').exists())
@@ -142,7 +147,7 @@ class NativeSourceInputs(unittest.TestCase):
             self.assertEqual(record['preimage_sha256'], preimage)
             self.assertEqual(record['origin_path'], capsule + origin)
             self.assertNotEqual(record['after_sha256'], preimage)
-            self.assertEqual(record['after_bytes'], (RECIPE / path).stat().st_size)
+            self.assertEqual(record['after_bytes'], len(native_popup_predecessor_bytes((RECIPE / path).read_bytes())))
         for name in ('html/HTMLSelectElement.h', 'loader/EmptyClients.h',
                      'editing/Editor.h', 'dom/DataTransfer.h'):
             self.assertNotIn('source/engine/Source/WebCore/' + name, manifest['inputs'])
@@ -158,7 +163,7 @@ class NativeSourceInputs(unittest.TestCase):
 
     def test_pixel_recipe_and_metadata_are_frozen(self):
         pixel = ROOT / 'recipes/webkitwasm-native-v1'
-        self.assertEqual(digest((pixel / 'source-imports.json').read_bytes()),
+        self.assertEqual(digest((RECIPE / 'provenance/inputs/pixel-native-source-imports.json').read_bytes()),
             '9ffcf873dfe27b13ce8091221bfd2b5c1353d3ebbcfeaaef94b250b23c8533aa')
         pins = {'runtime/generate_native_metadata.py': '0ce275f55e82ec57ad755037ab17c23d6bebf69da29284295bf27e5998aec894',
                 'runtime/native-provider-metadata.h.in': '170b25660de8f4eb7bd6ceee1093ec7a6e77cd4b374efc5309d917ed6186dbaa',
@@ -309,6 +314,10 @@ class NativeSourceInputs(unittest.TestCase):
     def test_composition_catalogue_has_one_authored_bridge_and_preserves_original109(self):
         manifest = json.loads((RECIPE / 'source-imports.json').read_bytes())
         provenance = json.loads((RECIPE / 'provenance.json').read_bytes())
+        manifest = INSPECT.native_control_keypress_catalogue_predecessor(manifest)
+        self.assertEqual(INSPECT.native_popup_catalogue_counts(manifest),
+            {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
+        manifest = INSPECT.native_popup_catalogue_predecessor(manifest)
         self.assertEqual(INSPECT.composition_catalogue_counts(manifest),
             {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
         bridge = INSPECT.COMPOSITION_BRIDGE

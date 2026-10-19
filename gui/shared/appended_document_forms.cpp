@@ -24,9 +24,10 @@ bool editable(const F::FormControl& c) {
 }
 bool single_select(const F::FormControl& c) {
     const auto* state=std::get_if<F::FormSelectState>(&c.state);
+    // Native membership is complete even when CSS-only hidden rows are
+    // redacted. Each offered/committed target still must be visible/enabled.
     return c.kind==F::FormKind::select_one && c.complete && !c.disabled && !c.read_only &&
-        c.focusable && !c.omitted && state && !state->multiple &&
-        std::none_of(state->options.begin(),state->options.end(),[](const auto& option){return option.omitted;});
+        c.focusable && !c.omitted && state && !state->multiple;
 }
 bool input_button(const F::FormControl& c) {
     return c.kind==F::FormKind::unsupported && c.complete && !c.disabled && !c.read_only &&

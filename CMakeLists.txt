@@ -526,6 +526,38 @@ if(BUILD_TESTING)
   foundation_test_prerequisites(core.text_status foundation_text_status_test)
   if(NOT EMSCRIPTEN)
     foundation_test_prerequisites(docs.links)
+    set(_native_popup_fixture "${CMAKE_CURRENT_BINARY_DIR}/generated/native_popup_capability_fixture.cpp")
+    add_custom_command(OUTPUT "${_native_popup_fixture}"
+      COMMAND "${Python3_EXECUTABLE}" -B
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_native_popup_capability_fixture.py"
+        --publisher "${CMAKE_CURRENT_SOURCE_DIR}/recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp"
+        --forms "${CMAKE_CURRENT_SOURCE_DIR}/recipes/webkitwasm-document-v2/source/native/NativeFormsV2Combined.cpp"
+        --template "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/native_popup_capability/branch_fixture.cpp.in"
+        --output "${_native_popup_fixture}"
+      DEPENDS tools/generate_native_popup_capability_fixture.py tools/generate_document_label_association_fixture.py
+        tests/fixtures/native_popup_capability/branch_fixture.cpp.in
+        recipes/webkitwasm-document-v2/source/native/NativeDocumentV2Publisher.cpp
+        recipes/webkitwasm-document-v2/source/native/NativeFormsV2Combined.cpp
+      VERBATIM)
+    add_executable(appended_native_popup_capability_test EXCLUDE_FROM_ALL "${_native_popup_fixture}")
+    target_compile_features(appended_native_popup_capability_test PRIVATE cxx_std_20)
+    add_test(NAME foundation.appended.native-popup-capability COMMAND appended_native_popup_capability_test)
+    foundation_test_prerequisites(foundation.appended.native-popup-capability appended_native_popup_capability_test)
+    set_tests_properties(foundation.appended.native-popup-capability PROPERTIES LABELS "fast;tools;integration" TIMEOUT 20)
+    set(_native_popup_owner_fixture "${CMAKE_CURRENT_BINARY_DIR}/generated/native_popup_owner_preflight_fixture.cpp")
+    add_custom_command(OUTPUT "${_native_popup_owner_fixture}"
+      COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_native_popup_owner_preflight_fixture.py"
+        --source "${CMAKE_CURRENT_SOURCE_DIR}/recipes/webkitwasm-native-rich4083-v1/source/document-provider/popup/BibNativePopupOwner.cpp"
+        --template "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/native_popup_capability/owner_preflight.cpp.in"
+        --output "${_native_popup_owner_fixture}"
+      DEPENDS tools/generate_native_popup_owner_preflight_fixture.py tools/generate_document_label_association_fixture.py
+        tests/fixtures/native_popup_capability/owner_preflight.cpp.in
+        recipes/webkitwasm-native-rich4083-v1/source/document-provider/popup/BibNativePopupOwner.cpp VERBATIM)
+    add_executable(appended_native_popup_owner_preflight_test EXCLUDE_FROM_ALL "${_native_popup_owner_fixture}")
+    target_compile_features(appended_native_popup_owner_preflight_test PRIVATE cxx_std_20)
+    add_test(NAME foundation.appended.native-popup-owner-preflight COMMAND appended_native_popup_owner_preflight_test)
+    foundation_test_prerequisites(foundation.appended.native-popup-owner-preflight appended_native_popup_owner_preflight_test)
+    set_tests_properties(foundation.appended.native-popup-owner-preflight PROPERTIES LABELS "fast;tools;integration" TIMEOUT 20)
     set(_document_label_fixture "${CMAKE_CURRENT_BINARY_DIR}/generated/document_label_association_fixture.cpp")
     add_custom_command(OUTPUT "${_document_label_fixture}"
       COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
@@ -556,7 +588,7 @@ if(BUILD_TESTING)
   list(APPEND _tool_suites appended_guest_check appended_install_check appended_browser_check)
   list(APPEND _tool_suites process_tree_observation appended_engine_windows_dependency_support
     appended_engine_windows_tool_versions)
-  list(APPEND _tool_suites document_label_association_fixture)
+  list(APPEND _tool_suites document_label_association_fixture native_popup_capability_fixture)
   list(APPEND _tool_suites engine_document_contract appended_rich_entry appended_document_entry appended_engine_kernel_sdk
     appended_native_terminal_cmake appended_native_gui_graph)
   set(_platform_exclusions "{}")
@@ -674,6 +706,50 @@ endif()
 
 if(FOUNDATION_BUILD_GUI)
   add_subdirectory(gui)
+endif()
+
+# Focused document value fixtures use the same production GUI code in an ordinary
+# native development tree. Their fake provider is owned by the existing tests;
+# these prerequisites contain no kernel, VM or retained engine implementation.
+if(BUILD_TESTING AND FOUNDATION_BUILD_GUI AND NOT EMSCRIPTEN AND
+    FOUNDATION_APPENDED_PROFILE STREQUAL "none")
+  add_library(foundation_native_popup_gui_fixture_support STATIC EXCLUDE_FROM_ALL
+    gui/shared/appended_document.cpp
+    gui/shared/appended_document_codec.cpp
+    gui/shared/appended_document_controller.cpp
+    gui/shared/appended_document_forms.cpp
+    gui/shared/appended_document_v2_codec.cpp
+    gui/shared/engine_document_broker.cpp
+    gui/shared/appended_engine_owner.cpp
+    gui/shared/appended_engine_input_codec.cpp
+    gui/shared/engine_document_mailbox.cpp
+    src/appended/container.cpp
+    src/appended/resource_url.cpp
+    src/appended/web_services.cpp)
+  target_include_directories(foundation_native_popup_gui_fixture_support PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/gui" "${CMAKE_CURRENT_SOURCE_DIR}/include")
+  target_link_libraries(foundation_native_popup_gui_fixture_support PUBLIC
+    foundation_gui_boundary foundation_appended_document_forms
+    foundation_appended_editor_codec Threads::Threads)
+  target_compile_features(foundation_native_popup_gui_fixture_support PUBLIC cxx_std_20)
+  set_target_properties(foundation_native_popup_gui_fixture_support PROPERTIES CXX_EXTENSIONS OFF)
+  add_dependencies(foundation_native_popup_gui_fixture_support foundation_gui_contract)
+  foundation_options(foundation_native_popup_gui_fixture_support)
+  foreach(_popup_gui_fixture forms v2_codec)
+    add_executable(foundation_native_popup_gui_${_popup_gui_fixture}_test EXCLUDE_FROM_ALL
+      "gui/tests/appended_document_${_popup_gui_fixture}_test.cpp")
+    target_link_libraries(foundation_native_popup_gui_${_popup_gui_fixture}_test PRIVATE
+      foundation_native_popup_gui_fixture_support)
+    foundation_options(foundation_native_popup_gui_${_popup_gui_fixture}_test)
+    set_target_properties(foundation_native_popup_gui_${_popup_gui_fixture}_test PROPERTIES CXX_EXTENSIONS OFF)
+    string(REPLACE "_" "-" _popup_gui_test_name "${_popup_gui_fixture}")
+    add_test(NAME foundation.gui.appended-document-${_popup_gui_test_name}
+      COMMAND foundation_native_popup_gui_${_popup_gui_fixture}_test)
+    foundation_test_prerequisites(foundation.gui.appended-document-${_popup_gui_test_name}
+      foundation_native_popup_gui_${_popup_gui_fixture}_test)
+    set_tests_properties(foundation.gui.appended-document-${_popup_gui_test_name} PROPERTIES
+      LABELS "gui;appended;focused" TIMEOUT 30)
+  endforeach()
 endif()
 if(BUILD_TESTING)
   if(TEST integration.install)

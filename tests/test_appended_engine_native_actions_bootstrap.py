@@ -473,7 +473,7 @@ class NativeActionsBootstrapSourceTests(unittest.TestCase):
             profile = json.loads((ROOT / RECIPE / name).read_bytes())
             self.assertEqual(profile['source_map']['sha256'], digest(imports_raw))
             self.assertEqual(profile['provenance']['sha256'], digest(provenance_raw))
-            self.assertEqual((profile['source_files'], profile['engine_files'], profile['direct_translation_units']), (158 if profile['kind'] in ('foundation-native-engine-prototype-composition-undo-profile-v1', 'foundation-native-engine-windows-producer-composition-undo-profile-v1') else 157, 48, 32))
+            self.assertEqual((profile['source_files'], profile['engine_files'], profile['direct_translation_units']), (158 if profile['kind'] in ('foundation-native-engine-prototype-composition-undo-profile-v1', 'foundation-native-engine-windows-producer-composition-undo-profile-v1', 'foundation-native-engine-prototype-native-popup-capability-profile-v1', 'foundation-native-engine-windows-producer-native-popup-capability-profile-v1') else 157, 48, 32))
 
     def test_closure_is_only_rich_and_expected_once(self):
         self.assertEqual(set(GUARDS), {'rich'})

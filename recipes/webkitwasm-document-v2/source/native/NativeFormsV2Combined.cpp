@@ -412,6 +412,15 @@ bool Session::subtreeStyleComplete(const std::vector<RawNode>& rows)
 {
     return std::all_of(rows.begin(), rows.end(), [](const auto& row) { return row.styleComplete; });
 }
+// Publicly redacted CSS-only menu rows do not make opening the native popup
+// unsafe. Presentation here combines the WHOLE option ancestry; the native
+// popup owner separately snapshots/revalidates every selectable visible row.
+// Omitted text/value remains unread. Direct multi-select mutation stays closed.
+static bool opaquePopupOption(const F::FormSelectState& state, const Presentation& presentation)
+{
+    return !state.multiple && state.menu_list && presentation.omitted
+        && presentation.styleKnown && !presentation.terminalOmit && !presentation.inert;
+}
 Session::Capture Session::PreparedRead::capture(HTMLFormControlElement& control, const Presentation& decision)
 {
     auto& owner = session;
@@ -457,8 +466,14 @@ Session::Capture Session::PreparedRead::capture(HTMLFormControlElement& control,
     bounds.chargePrivate(nativeID.length());
     require(scalarText(nativeID), "non-scalar native control ID");
     result.nativeID = nativeID;
-    owner.rawSubtree(*this, control, result.lightSubtree, false);
-    result.styleComplete = result.styleComplete && owner.subtreeStyleComplete(result.lightSubtree);
+    // Select evidence belongs exclusively to the bounded collection/option
+    // capture below. The generic subtree pass would either poison completeness
+    // on CSS-hidden rows (terminal) or eagerly read their fields (graphical).
+    // Other controls still require their full exact light-DOM baseline.
+    if (!is<HTMLSelectElement>(control)) {
+        owner.rawSubtree(*this, control, result.lightSubtree, false);
+        result.styleComplete = result.styleComplete && owner.subtreeStyleComplete(result.lightSubtree);
+    }
     // Bounded native aria-label fallback. Associated native labels are attached
     // later from the SAME whole-document prepared read, without recapturing.
     static const AtomString labelName("aria-label"_s);
@@ -519,15 +534,29 @@ Session::Capture Session::PreparedRead::capture(HTMLFormControlElement& control,
                     bounds.evidence();
                     ancestors.push_back(ancestor);
                 }
-                bool inherited = false;
+                bool inherited = false, terminalInherited = false;
+                bool knownAncestors = true, inertAncestor = false, displayExcluded = false;
                 for (auto it = ancestors.rbegin(); it != ancestors.rend(); ++it) {
-                    auto sampled = owner.presentation(**it, bounds, inherited);
-                    if (graphical) sampled.omitted = inherited || !sampled.styleKnown || sampled.inert
-                        || sampled.display == static_cast<unsigned>(DisplayType::None)
+                    // CSS exclusion and author privacy are independent. Passing
+                    // CSS hiding as terminal omission would disable an ordinary
+                    // select merely because an optgroup is not displayed.
+                    auto sampled = owner.presentation(**it, bounds, graphical ? false : terminalInherited);
+                    terminalInherited = !graphical && sampled.terminalOmit;
+                    knownAncestors = knownAncestors && sampled.styleKnown;
+                    inertAncestor = inertAncestor || sampled.inert;
+                    displayExcluded = displayExcluded || sampled.display == static_cast<unsigned>(DisplayType::None);
+                    // Computed visibility already inherits, and a descendant
+                    // may override visibility:hidden. display:none/inert and
+                    // unknown ancestry cannot be overridden by a visible child.
+                    inherited = terminalInherited || !knownAncestors || inertAncestor || displayExcluded
                         || sampled.visibility != static_cast<unsigned>(Visibility::Visible);
-                    inherited = sampled.omitted;
+                    sampled.omitted = inherited;
+                    sampled.terminalOmit = terminalInherited;
+                    sampled.styleKnown = knownAncestors;
+                    sampled.inert = inertAncestor;
                     if (it + 1 == ancestors.rend()) exactOption.presentation = sampled;
                 }
+                result.styleComplete = result.styleComplete && exactOption.presentation.styleKnown;
                 F::FormOption row;
                 auto optionID = idFor(*option);
                 require(optionID.has_value(), "native option ID limit");
@@ -536,10 +565,10 @@ Session::Capture Session::PreparedRead::capture(HTMLFormControlElement& control,
                 row.disabled = option->isDisabledFormControl();
                 row.omitted = exactOption.presentation.omitted;
                 if (row.omitted) {
-                    // Excluded option: no attributes, text, label or submitted value
-                    // are captured. This intentional baseline gap disables the WHOLE
-                    // select descriptor, never a partially actionable live menu.
-                    complete = false;
+                    // No attributes, text, label or submitted value are read.
+                    // Known CSS-only exclusions permit native single-menu open;
+                    // all other partial evidence remains capability-free.
+                    if (!opaquePopupOption(state, exactOption.presentation)) complete = false;
                     result.options.push_back(std::move(exactOption));
                     state.options.push_back(std::move(row));
                     continue;

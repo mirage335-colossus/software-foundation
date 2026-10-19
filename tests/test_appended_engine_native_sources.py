@@ -1,4 +1,5 @@
 """Native source/input and inert CMake policy tests; no engine is compiled."""
+import copy
 import hashlib
 import importlib.util
 import json
@@ -9,6 +10,11 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+HISTORY_SPEC = importlib.util.spec_from_file_location('native_popup_source_history', ROOT / 'tests/native_popup_source_history.py')
+HISTORY = importlib.util.module_from_spec(HISTORY_SPEC)
+HISTORY_SPEC.loader.exec_module(HISTORY)
+native_popup_predecessor_bytes = HISTORY.native_popup_predecessor_bytes
+native_popup_history = HISTORY.native_popup_history
 RECIPE = ROOT / 'recipes/webkitwasm-native-v1'
 SPEC = importlib.util.spec_from_file_location('native_source_inspection', RECIPE / 'inspect_sources.py')
 INSPECT = importlib.util.module_from_spec(SPEC)
@@ -53,6 +59,25 @@ class NativeSourceInputs(unittest.TestCase):
         self.assertFalse(result['kernel_rebuild_performed'])
         self.assertEqual(result['requirements'], INSPECT.REQUIREMENTS)
 
+    def test_native_popup_types_successor_preserves_exact_pixel_catalogue_history(self):
+        value=json.loads((RECIPE/'source-imports.json').read_bytes())
+        historical=json.loads((ROOT/'recipes/webkitwasm-native-rich4083-v1/provenance/inputs/pixel-native-source-imports.json').read_bytes())
+        self.assertEqual(value['kind'],INSPECT.NATIVE_POPUP_SOURCE_KIND)
+        self.assertEqual(len(INSPECT.NATIVE_POPUP_SOURCE_FACTS),1)
+        self.assertEqual(INSPECT.native_popup_catalogue_counts(value),{'files':len(historical['inputs'])})
+        previous=INSPECT.native_popup_catalogue_predecessor(value)
+        self.assertEqual({name:row for name,row in previous['inputs'].items() if name!='inspect_sources.py'},
+            {name:row for name,row in historical['inputs'].items() if name!='inspect_sources.py'})
+        leaf=next(iter(INSPECT.NATIVE_POPUP_SOURCE_FACTS))
+        for mutation in ('source','prior','unrelated','narrow-budget','wide-budget'):
+            changed=copy.deepcopy(value)
+            if mutation=='source':changed['inputs'][leaf]['sha256']='f'*64
+            elif mutation=='prior':changed['inputs'][leaf]['origin']['supersedes']['origin']['kind']='restamped'
+            elif mutation=='unrelated':changed['inputs']['README.md']['sha256']='e'*64
+            elif mutation=='narrow-budget':changed['limits']['maximum_entries']-=1
+            else:changed['limits']['maximum_entries']+=1
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):INSPECT.native_popup_catalogue_counts(changed)
+
     def test_prior_platform_and_shared_pixel_identities_are_preserved(self):
         provenance = json.loads((RECIPE / 'provenance.json').read_text())
         self.assertEqual(len(provenance['native_platform_files']), 29)
@@ -63,7 +88,7 @@ class NativeSourceInputs(unittest.TestCase):
                              record['after_sha256'])
         for logical, record in provenance['shared_pixel_files'].items():
             body = (ROOT / record['tracked_path']).read_bytes()
-            self.assertEqual(digest(body), record['sha256'])
+            self.assertEqual(digest(native_popup_predecessor_bytes(body)), record['sha256'])
             if record['origin'].get('selection') == 'unchanged':
                 self.assertEqual(record['sha256'], record['origin']['sha256'])
         self.assertEqual(provenance['selected_notice_count'], 11)

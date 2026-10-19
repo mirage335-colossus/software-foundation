@@ -99,7 +99,7 @@
     },
     "source/document-provider/native/NativeDocumentV2Publisher.cpp": {
       "preimage_sha256": null,
-      "sha256": "0705d9421e853b7633cc2a3df2c0448b0b53da0daf48fd2e7158f98b341b0453"
+      "sha256": "074ac417f89760a9cf2c59212454e33133c60eaae68c08f7a5ca86d5224cb603"
     },
     "source/document-provider/native/NativeDocumentV2Publisher.hpp": {
       "preimage_sha256": null,
@@ -107,7 +107,7 @@
     },
     "source/document-provider/native/NativeFormsV2Combined.cpp": {
       "preimage_sha256": null,
-      "sha256": "2bc9f9ceca00c644920e2911438dadcf0642257bf43b530863f618deb36dd7ff"
+      "sha256": "c1cae92f150d65944c723c14755cf9bc87a58c64c6c8fe0a7c3fcf06542506aa"
     },
     "source/document-provider/native/NativeFormsV2Combined.hpp": {
       "preimage_sha256": null,
@@ -135,7 +135,7 @@
     },
     "source/document-provider/popup/BibNativePopupOwner.cpp": {
       "preimage_sha256": null,
-      "sha256": "d8822f18b214cedf9490a758c52c06a3ca3fc70d9b5b48e9dcbe8de55e4594d9"
+      "sha256": "5d9657543b68ac4be23d14c5476f53e49fe8986a61d9a2c0c708b81bed9541f5"
     },
     "source/document-provider/popup/BibNativePopupOwner.hpp": {
       "preimage_sha256": null,
@@ -179,7 +179,7 @@
     },
     "source/document-provider/portable/NativeDocumentV2Types.cpp": {
       "preimage_sha256": null,
-      "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44"
+      "sha256": "c515fab6e801e2b0139130cdc7a5828b31156645f526914fb1edae74f8aab34f"
     },
     "source/document-provider/portable/NativeDocumentV2Types.hpp": {
       "preimage_sha256": null,

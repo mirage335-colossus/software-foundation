@@ -131,3 +131,16 @@ if(BUILD_TESTING AND NOT EMSCRIPTEN)
             LABELS "appended;focused" TIMEOUT 15)
     endforeach()
 endif()
+
+if(BUILD_TESTING AND NOT EMSCRIPTEN)
+    add_executable(foundation_appended_native_popup_values_test EXCLUDE_FROM_ALL
+        tests/appended_native_popup_values_test.cpp)
+    target_include_directories(foundation_appended_native_popup_values_test PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/appended-engine/portable")
+    target_link_libraries(foundation_appended_native_popup_values_test PRIVATE
+        foundation_appended_engine_actions_codec foundation_appended_document_forms)
+    target_compile_features(foundation_appended_native_popup_values_test PRIVATE cxx_std_20)
+    add_test(NAME foundation.appended.native-popup-values COMMAND foundation_appended_native_popup_values_test)
+    foundation_test_prerequisites(foundation.appended.native-popup-values foundation_appended_native_popup_values_test)
+    set_tests_properties(foundation.appended.native-popup-values PROPERTIES LABELS "fast;appended;focused" TIMEOUT 20)
+endif()

@@ -2190,6 +2190,24 @@ void single_option_chooser_is_local_until_apply_and_cancel_restores_without_nati
         "Canceled local option was mistaken for actual native selected state");
 }
 
+void redacted_sibling_does_not_disable_visible_single_choice_targets() {
+    auto fields=single_controls();auto& options=std::get<FormSelectState>(fields.front().state).options;
+    options.push_back({404,"",false,false,true});
+    Fixture fixture(true,fields);auto& forms=fixture.forms;fixture.activate_row();
+    check(forms.modal_open()&&single_options(forms.view()).state.selected=="101"&&!forms.next_request(),
+        "A redacted sibling disabled a complete usable visible single select");
+    const auto key=single_options(forms.view()).spec.key;
+    const auto& represented=single_options(forms.view()).state.options;
+    const auto hidden=std::find_if(represented.begin(),represented.end(),[](const auto& o){return o.id=="404";});
+    check(hidden!=represented.end()&&!hidden->enabled&&hidden->label.empty(),"Redacted row became an enabled/text-bearing host option");
+    forms.handle(gui::WidgetEvent{key,gui::ChooseOption{"404"}});
+    check(single_options(forms.view()).state.selected=="101"&&!forms.next_request(),"Forged hidden target changed local choice");
+    forms.handle(gui::WidgetEvent{key,gui::ChooseOption{"202"}});fixture.click("Apply");const auto request=fixture.take();
+    const auto* choose=std::get_if<ChooseSingleDocumentOption>(&request.action);
+    check(choose&&choose->node==10&&choose->option==202&&choose->expected==DocumentVersion{7,11,13},
+        "Visible target beside a redacted sibling lost exact native identity/version");
+}
+
 void single_option_apply_retains_exact_ids_and_uses_actual_readback_after_fresh_query() {
     bool busy=false; unsigned allocations=0;
     Fixture fixture([&]() -> std::optional<std::uint64_t> {
@@ -2548,6 +2566,7 @@ int main() {
         {"local_presentation_hints_preserve_the_modal_draft_receipt_and_native_lease",local_presentation_hints_preserve_the_modal_draft_receipt_and_native_lease},
         {"observation_hint_retries_a_rejected_mandatory_query_with_a_fresh_token",observation_hint_retries_a_rejected_mandatory_query_with_a_fresh_token},
         {"single_option_chooser_is_local_until_apply_and_cancel_restores_without_native_work",single_option_chooser_is_local_until_apply_and_cancel_restores_without_native_work},
+        {"redacted_sibling_does_not_disable_visible_single_choice_targets",redacted_sibling_does_not_disable_visible_single_choice_targets},
         {"single_option_apply_retains_exact_ids_and_uses_actual_readback_after_fresh_query",single_option_apply_retains_exact_ids_and_uses_actual_readback_after_fresh_query},
         {"every_body_outcome_requires_a_fresh_published_query_and_never_replays_queued_input",every_body_outcome_requires_a_fresh_published_query_and_never_replays_queued_input},
         {"body_action_readback_cannot_borrow_query_or_nested_tokens",body_action_readback_cannot_borrow_query_or_nested_tokens},

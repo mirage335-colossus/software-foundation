@@ -81,6 +81,72 @@ def _read(root, relative, maximum):
     return raw, stat.S_IMODE(before.st_mode)
 
 
+
+NATIVE_POPUP_SOURCE_KIND = 'foundation-native-engine-pixel-native-popup-capability-source-inputs-v1'
+NATIVE_POPUP_PROFILE_KIND = None
+NATIVE_POPUP_REVIEWED_SOURCE_MAP = '969ca78d0594ba0aeb0191a676319c0f030aa47ae09a613e2f154439011b13e4'
+NATIVE_POPUP_SOURCE_FACTS = {'source/document-provider/portable/NativeDocumentV2Types.cpp': {'sha256': 'c515fab6e801e2b0139130cdc7a5828b31156645f526914fb1edae74f8aab34f', 'bytes': 18228, 'mode': 420}}
+NATIVE_POPUP_PREDECESSOR_ROWS = {'source/document-provider/portable/NativeDocumentV2Types.cpp': '0355201e5f1839e79a0d01c9ef6d2fcc57eee15b4a8baf67295ce5239b902b8e'}
+NATIVE_POPUP_NAMESPACE_SHA256 = '939498556079908eb56712742afc477fac8c4107e44a940ae3c5f158daaab84e'
+NATIVE_POPUP_RETAINED_SHA256 = '45698a978827c337a9d1a1c32f4cb97410eacc8ea7e7cc862ea27f79cfdd7e04'
+NATIVE_POPUP_HEADER_SHA256 = '9d08b885f4ab9c2f2c991e12401f32e91d87d56f9f42c99b7e7fe6738abe6cd6'
+NATIVE_POPUP_ENTRY_COUNT = 120
+NATIVE_POPUP_PREDECESSOR_KIND = 'foundation-native-engine-source-inputs'
+
+def native_popup_catalogue_predecessor(value):
+    """Validate the exact source-only successor, preserving complete prior rows."""
+    canonical = lambda data: json.dumps(data, sort_keys=True, separators=(',', ':'), ensure_ascii=True, allow_nan=False).encode('ascii')
+    hashed = lambda data: hashlib.sha256(canonical(data)).hexdigest()
+    fields = {'schema_version', 'kind', 'scope', 'profile', 'suppliers', 'provenance', 'requirements', 'limits', 'inputs'}
+    if (type(value) is not dict or set(value) != fields or value['kind'] != NATIVE_POPUP_SOURCE_KIND
+            or hashed({key: item for key, item in value.items() if key not in ('kind', 'inputs')}) != NATIVE_POPUP_HEADER_SHA256):
+        raise ValueError('Exact native popup source successor version/header/bounds required')
+    entries = value['inputs']
+    if (type(NATIVE_POPUP_SOURCE_FACTS) is not dict or type(entries) is not dict
+            or len(entries) != NATIVE_POPUP_ENTRY_COUNT
+            or set(NATIVE_POPUP_SOURCE_FACTS) != set(NATIVE_POPUP_PREDECESSOR_ROWS)
+            or hashed(sorted(entries)) != NATIVE_POPUP_NAMESPACE_SHA256):
+        raise ValueError('Exact native popup source namespace and bound source pins required')
+    retained = {name: row for name, row in entries.items() if name not in (*NATIVE_POPUP_SOURCE_FACTS, 'inspect_sources.py')}
+    if hashed(retained) != NATIVE_POPUP_RETAINED_SHA256:
+        raise ValueError('Unrelated native source/catalogue row changed')
+    previous = dict(value, kind=NATIVE_POPUP_PREDECESSOR_KIND, inputs=dict(entries))
+    for logical, expected in NATIVE_POPUP_SOURCE_FACTS.items():
+        item = entries[logical]
+        if (type(expected) is not dict or set(expected) != {'sha256', 'bytes', 'mode'}
+                or type(expected['sha256']) is not str or not re.fullmatch('[0-9a-f]{64}', expected['sha256'])
+                or type(expected['bytes']) is not int or not 0 < expected['bytes'] <= 8388608
+                or type(expected['mode']) is not int or expected['mode'] != 420
+                or type(item) is not dict or set(item) != {'tracked_path', 'sha256', 'bytes', 'mode', 'role', 'origin'}
+                or item['tracked_path'] != RECIPE + '/' + logical or item['role'] != 'source'
+                or any(type(item[key]) is not type(expected[key]) or item[key] != expected[key] for key in expected)):
+            raise ValueError('Exact released native popup source fact differs')
+        origin = item['origin']
+        wanted = {'kind': 'reviewed-native-popup-capability-successor',
+            'correction': 'bounded-private-label-association-and-css-opaque-single-menu-popup',
+            'source_only': True, 'source_path': item['tracked_path'], 'sha256': item['sha256'],
+            'reviewed_source_map_sha256': NATIVE_POPUP_REVIEWED_SOURCE_MAP}
+        if (type(origin) is not dict or set(origin) != set(wanted) | {'supersedes'}
+                or any(type(origin[key]) is not type(expected_value) or origin[key] != expected_value
+                       for key, expected_value in wanted.items())):
+            raise ValueError('Native popup source-only lineage was restamped')
+        prior = origin['supersedes']
+        if (type(prior) is not dict or set(prior) != {'origin', 'sha256', 'bytes', 'tracked_path'}
+                or type(prior['bytes']) is not int or prior['tracked_path'] != item['tracked_path']):
+            raise ValueError('Native popup complete historical predecessor required')
+        old = dict(item, **prior)
+        if hashed(old) != NATIVE_POPUP_PREDECESSOR_ROWS[logical]:
+            raise ValueError('Native popup prior source/origin/bytes/path was restamped')
+        previous['inputs'][logical] = old
+    return previous
+
+
+def native_popup_catalogue_counts(value):
+    """New source membership is finite; historical admission remains separate."""
+    previous = native_popup_catalogue_predecessor(value)
+    return {'files': NATIVE_POPUP_ENTRY_COUNT}
+
+
 def inspect(repository_root, source_map_sha256):
     if os.name != 'posix':
         raise ValueError('Native source inspection currently requires POSIX file-mode/identity semantics')
@@ -96,7 +162,7 @@ def inspect(repository_root, source_map_sha256):
     if type(value) is not dict or set(value) != FIELDS:
         raise ValueError('Invalid native source map fields')
     if type(value['schema_version']) is not int or value['schema_version'] != 1 \
-            or value['kind'] != 'foundation-native-engine-source-inputs' \
+            or value['kind'] not in ('foundation-native-engine-source-inputs', NATIVE_POPUP_SOURCE_KIND) \
             or value['scope'] != 'native-source-candidate-only' or value['profile'] != 'pixel':
         raise ValueError('Unsupported native source map contract')
     if value['limits'] != LIMITS or value['requirements'] != REQUIREMENTS:
@@ -107,6 +173,11 @@ def inspect(repository_root, source_map_sha256):
                 'engine': 'aec9d2ad958e716ab4bca4bf03007e6edac7323f'}
     if value['suppliers'] != expected or type(value['provenance']) is not dict:
         raise ValueError('Native source supplier/provenance contract changed')
+    if value['kind'] == NATIVE_POPUP_SOURCE_KIND:
+        native_popup_catalogue_counts(value)
+    elif type(value['inputs']) is dict and any(type(row) is dict and type(row.get('origin')) is dict
+            and row['origin'].get('kind') == 'reviewed-native-popup-capability-successor' for row in value['inputs'].values()):
+        raise ValueError('Native popup lineage requires its explicit successor kind')
     entries = value['inputs']
     if type(entries) is not dict or not 1 <= len(entries) <= LIMITS['maximum_entries']:
         raise ValueError('Invalid native source input inventory')

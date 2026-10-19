@@ -424,7 +424,7 @@ def inspect_inputs(selection):
     return result
 
 
-def _argument_directory(operand, inspection):
+def _argument_directory(operand, inspection, *, _directory_inputs=None):
     """Bind an observed include-search operand to its complete admitted closure.
 
     Only the reviewed joined -I and separate -isystem forms are supported. Other
@@ -440,12 +440,21 @@ def _argument_directory(operand, inspection):
     suffix = manifest.path_name(suffix) if suffix is not None else ''
     directory = inspection.roots[root] / suffix
     ordinary(directory, directory=True, sdk=root == 'sdk')
+    inventory = inspection.inventories[root]
+    # This cache belongs to one synchronous proof validation with fixed inventories.
+    # Physical directory validation above deliberately runs even on a cache hit.
+    cache_key = (id(inspection), root, directory, id(inventory))
+    if _directory_inputs is not None and cache_key in _directory_inputs:
+        return list(_directory_inputs[cache_key])
     prefix = suffix + '/' if suffix else ''
-    names = [name for name in inspection.inventories[root] if name.startswith(prefix)]
+    names = [name for name in inventory if name.startswith(prefix)]
     # Complete manifests were verified before this function. Retain directory
     # identity as well as every inventoried descendant as actual graph inputs,
     # including an explicitly inventoried empty include-search directory.
-    return [str(directory), *(str(inspection.roots[root] / name) for name in sorted(names))]
+    expanded = (str(directory), *(str(inspection.roots[root] / name) for name in sorted(names)))
+    if _directory_inputs is not None:
+        _directory_inputs[cache_key] = expanded
+    return list(expanded)
 
 
 def _setting(value, selected_profile):
@@ -462,7 +471,7 @@ def _setting(value, selected_profile):
     return name, setting
 
 
-def _arguments(arguments, *, link=False, inspection=None):
+def _arguments(arguments, *, link=False, inspection=None, _directory_inputs=None):
     """Parse the closed document grammar and return explicit directory inputs.
 
     Compiler/linker positional inputs, outputs, response/config files, plugins,
@@ -488,12 +497,12 @@ def _arguments(arguments, *, link=False, inspection=None):
         if arg in literals:
             pass
         elif not link and arg.startswith('-I') and len(arg) > 2:
-            dependencies.extend(_argument_directory(arg[2:], inspection))
+            dependencies.extend(_argument_directory(arg[2:], inspection, _directory_inputs=_directory_inputs))
         elif not link and arg == '-isystem':
             index += 1
             if index >= len(arguments):
                 raise ValueError('Missing explicit system include directory')
-            dependencies.extend(_argument_directory(arguments[index], inspection))
+            dependencies.extend(_argument_directory(arguments[index], inspection, _directory_inputs=_directory_inputs))
         elif link and arg.startswith('-s'):
             if arg == '-s':
                 index += 1
@@ -837,7 +846,7 @@ def _context_record(value, command, inspection, resolve, header_view, closures, 
         raise ValueError('Original depfile does not establish the complete retained input closure')
 
 
-def _reusable_context(value, command, inspection, postimages=None):
+def _reusable_context(value, command, inspection, postimages=None, *, _directory_inputs=None):
     """Equal source alone never authorizes an untouched archive member."""
     for item in [value['source'], *value['headers'], *value['generated_metadata'], *value['unified_members']]:
         relocated = _relocate_original(item['original_path'], command['cwd'],
@@ -850,7 +859,7 @@ def _reusable_context(value, command, inspection, postimages=None):
         current = selected['sha256'] if selected else inspection.inventories[root].get(path)
         if current != item['input']['sha256']:
             raise ValueError('Untouched member source/header/generated-metadata context changed; rebuild its owner')
-    _arguments(value['arguments'], inspection=inspection)
+    _arguments(value['arguments'], inspection=inspection, _directory_inputs=_directory_inputs)
 
 
 def _object_provenance(obj, commands, inspection):
@@ -1150,6 +1159,8 @@ def _compile_contexts(value, commands, inspection, resolve, header_view):
 
 
 def _validate_proof(inspection):
+    # Cache only pure complete directory-name expansions; never physical evidence.
+    directory_inputs = {}
     p, config = inspection.proof, inspection.profile
     roots, inventories = inspection.roots, inspection.inventories
     resolve = lambda ref: ref_path(ref, roots, inventories)
@@ -1216,7 +1227,7 @@ def _validate_proof(inspection):
             raise ValueError('Unselected or mismatched object source')
         _object_provenance(obj, commands['commands'], inspection)
         _current_context(obj, inspection)
-        _arguments(obj['arguments'], inspection=inspection)
+        _arguments(obj['arguments'], inspection=inspection, _directory_inputs=directory_inputs)
         if type(obj['exceptions']) is not bool or _exception_policy(obj['arguments']) != obj['exceptions']:
             raise ValueError('Object exception policy differs from exact argv')
         if obj['id'] in config['engine_objects'] and (obj['exceptions'] or '-fno-exceptions' not in obj['arguments']):
@@ -1303,10 +1314,10 @@ def _validate_proof(inspection):
             if not selected_contexts and (archive['name'], member['ordinal']) not in replaced:
                 identity = member['compile_command_sha256']
                 _reusable_context(contexts['contexts'][identity], commands['commands'][identity], inspection,
-                    header_view['postimages'] if header_view else {})
+                    header_view['postimages'] if header_view else {}, _directory_inputs=directory_inputs)
     link = p['link']
     fields(link, ('flags', 'archives', 'dependencies', 'pre_js', 'host_library', 'data'), 'final link')
-    _arguments(link['flags'], link=True, inspection=inspection)
+    _arguments(link['flags'], link=True, inspection=inspection, _directory_inputs=directory_inputs)
     if _exception_policy(link['flags']) is not True:
         raise ValueError('Final link must retain effective exceptions after inherited baseline flags')
     if link['archives'] != config['link_archive_names']:
@@ -1386,6 +1397,10 @@ GUARD_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-successful-donor-gu
 GUARD_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-successful-donor-guard-repair-build-v1'
 COMPOSITION_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-successful-donor-composition-repair-plan-v1'
 COMPOSITION_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-successful-donor-composition-repair-build-v1'
+NATIVE_CAPABILITY_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-successful-donor-native-capability-repair-plan-v1'
+NATIVE_CAPABILITY_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-successful-donor-native-capability-repair-build-v1'
+NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-successful-donor-native-control-keypress-repair-plan-v1'
+NATIVE_CONTROL_KEYPRESS_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-successful-donor-native-control-keypress-repair-build-v1'
 SUCCESSFUL_HELPER = 'tools/appended_engine_successful_donor.py'
 
 
@@ -2268,12 +2283,13 @@ def _completed_input_directories(completed):
     if completed is None:
         return ()
     return (*_completed_binding(completed['original_bindings']).values(),
-            *(ordinary(path, directory=True) for path in completed['metadata_directories']))
+            *(ordinary(path, directory=True) for path in completed['metadata_directories']),
+            *(ordinary(path, directory=True) for path in completed.get('additional_input_directories', ())))
 
 
 def _copy_completed_object(plan, object_id, output):
     """Copy admitted bytes independently; never call a compiler on any failure."""
-    if plan.get('kind') not in (RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND):
+    if plan.get('kind') not in (RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND):
         raise ValueError('Object import requires a distinct admitted continuation plan')
     for root in _completed_input_directories(_work(plan)):
         if output == root or root in output.parents or output in root.parents:
@@ -2321,6 +2337,8 @@ def _copy_completed_object(plan, object_id, output):
         'depfile_sha256': hashlib.sha256(depfile).hexdigest(),
         'retained_depfile': str(provenance), 'hardlinked': False,
         'compiler_invoked': False, 'production_eligible': False}
+    if plan['kind'] in (NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND):
+        record['donor_provenance'] = row['donor_provenance']
     if report.exists() or report.is_symlink():
         if checked_document(report) != record:
             raise ValueError('Existing import receipt differs')
@@ -2331,7 +2349,7 @@ def _copy_completed_object(plan, object_id, output):
 
 def _copy_successful_archive(plan, name, output):
     """Import one admitted regular archive without invoking ar or a fallback."""
-    if plan.get('kind') not in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND):
+    if plan.get('kind') not in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND):
         raise ValueError('Archive import requires an explicit successful-donor plan')
     work = plan['successful_donor']
     for root in _completed_input_directories(work):
@@ -2431,8 +2449,116 @@ def _successful_build_receipt(result, plan, output, commands):
     result['archive_imports'] = imports
 
 
+def _native_capability_build_receipt(result, plan, output, commands):
+    # Separate exact5/46 native lane; historical receipt validators remain unchanged.
+    if plan.get('kind') != NATIVE_CAPABILITY_REPAIR_PLAN_KIND:
+        raise ValueError('Successful donor receipt requires its explicit plan kind')
+    donor = plan['successful_donor']
+    _completed_build_receipt(result, dict(plan, completed_work=donor), output, commands)
+    compiled = set(_successful_module().NATIVE_CAPABILITY_REPAIR_COMPILED_IDS)
+    names = [row['name'] for row in plan['reuse']['archives']]
+    if (set(result['accounting']['compiled_ids']) != compiled
+            or result['accounting']['compiled'] != 5
+            or result['accounting']['imported'] != 46
+            or [row['id'] for row in donor['objects']] != result['accounting']['imported_ids']
+            or len(names) != 5 or set(commands.get('archive_imports', {})) != set(names)
+            or [row['name'] for row in donor['archives']] != names):
+        raise ValueError('Native capability donor accounting differs from exact46/5/native five archives')
+    imports = []
+    for row in donor['archives']:
+        path = output / ('evidence/import-archive-' + row['name'] + '.json')
+        record = checked_document(path)
+        target = ordinary(output / ('archives/lib' + row['name'] + '.a'))
+        if (record.get('kind') != 'foundation-document-v2-archive-import-v1'
+                or record.get('name') != row['name'] or record.get('origin') != 'imported'
+                or record.get('archive') != row['archive'] or record.get('original_report') != row['report']
+                or record.get('destination') != str(target) or record.get('hardlinked') is not False
+                or record.get('archive_program_invoked') is not False or record.get('production_eligible') is not False
+                or record.get('sha256') != digest(target) or record['sha256'] != row['archive']['sha256']
+                or type(record.get('bytes')) is not int or record['bytes'] != target.stat().st_size
+                or record['bytes'] != row['archive']['bytes'] or target.stat().st_nlink != 1
+                or _identity7(target.stat())[:2] == row['archive']['identity'][:2]):
+            raise ValueError('Successful donor archive receipt/readback differs')
+        imports.append({'name': row['name'], 'receipt': str(path.relative_to(output)), 'sha256': digest(path)})
+    for row in donor['objects']:
+        receipt = checked_document(output / ('evidence/import-' + row['id'] + '.json'))
+        if receipt.get('donor_provenance') != row['donor_provenance']:
+            raise ValueError('Native capability import lost its actual compilation provenance')
+    expected = _successful_module().native_capability_artifact_names(
+        [row['id'] for row in plan['reuse']['objects']], names)
+    for name in expected:
+        ordinary(output / name)
+    result['expected_artifact_records'] = len(expected)
+    result['kind'] = NATIVE_CAPABILITY_REPAIR_BUILD_KIND
+    result.pop('completed_work')
+    result['successful_donor'] = donor['reference']
+    result['accounting'].update(archive_imported=5, archive_repacked=0,
+                                imported_archive_names=names)
+    result['archive_imports'] = imports
+
+
+def _native_control_keypress_build_receipt(result, plan, output, commands):
+    if plan.get('kind') != NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND:
+        raise ValueError('Native control keypress receipt requires its explicit plan kind')
+    donor = plan['successful_donor']
+    _completed_build_receipt(result, dict(plan, completed_work=donor), output, commands)
+    compiled = set(_successful_module().NATIVE_CONTROL_KEYPRESS_REPAIR_COMPILED_IDS)
+    names = [row['name'] for row in plan['reuse']['archives']]
+    if (set(result['accounting']['compiled_ids']) != compiled
+            or result['accounting']['compiled'] != 6
+            or result['accounting']['imported'] != 45
+            or [row['id'] for row in donor['objects']] != result['accounting']['imported_ids']
+            or len(names) != 5 or set(commands.get('archive_imports', {})) != set(names)
+            or [row['name'] for row in donor['archives']] != names):
+        raise ValueError('Native control keypress donor accounting differs from exact45 imports/six fresh objects/five copied archives')
+    imports = []
+    for row in donor['archives']:
+        path = output / ('evidence/import-archive-' + row['name'] + '.json')
+        record = checked_document(path)
+        target = ordinary(output / ('archives/lib' + row['name'] + '.a'))
+        if (record.get('kind') != 'foundation-document-v2-archive-import-v1'
+                or record.get('name') != row['name'] or record.get('origin') != 'imported'
+                or record.get('archive') != row['archive'] or record.get('original_report') != row['report']
+                or record.get('destination') != str(target) or record.get('hardlinked') is not False
+                or record.get('archive_program_invoked') is not False or record.get('production_eligible') is not False
+                or record.get('sha256') != digest(target) or record['sha256'] != row['archive']['sha256']
+                or type(record.get('bytes')) is not int or record['bytes'] != target.stat().st_size
+                or record['bytes'] != row['archive']['bytes'] or target.stat().st_nlink != 1
+                or _identity7(target.stat())[:2] == row['archive']['identity'][:2]):
+            raise ValueError('Native control keypress archive receipt/readback differs')
+        imports.append({'name': row['name'], 'receipt': str(path.relative_to(output)), 'sha256': digest(path)})
+    for row in donor['objects']:
+        receipt = checked_document(output / ('evidence/import-' + row['id'] + '.json'))
+        if receipt.get('donor_provenance') != row['donor_provenance'] or receipt['donor_provenance'].get('kind') != 'foundation-document-v2-native-control-keypress-object-provenance-v1':
+            raise ValueError('Native control keypress import lost its actual compilation provenance')
+    expected = _successful_module().native_control_keypress_artifact_names(
+        [row['id'] for row in plan['reuse']['objects']], names)
+    for name in expected:
+        ordinary(output / name)
+    result['expected_artifact_records'] = len(expected)
+    result['kind'] = NATIVE_CONTROL_KEYPRESS_REPAIR_BUILD_KIND
+    result.pop('completed_work')
+    result['successful_donor'] = donor['reference']
+    result['accounting'].update(archive_imported=5, archive_repacked=0,
+                                imported_archive_names=names)
+    result['archive_imports'] = imports
+
+
+
 def make_plan(selection, output, *, completed_work=None, successful_donor=None,
-              successful_donor_guard_repair=False, successful_donor_composition_repair=False):
+              successful_donor_guard_repair=False, successful_donor_composition_repair=False,
+              successful_donor_native_capability_repair=False,
+              successful_donor_native_control_keypress_repair=False):
+    if (type(successful_donor_native_control_keypress_repair) is not bool
+            or successful_donor_native_control_keypress_repair and (successful_donor is None
+                or successful_donor_guard_repair or successful_donor_composition_repair
+                or successful_donor_native_capability_repair)):
+        raise ValueError('Native control keypress repair requires an explicit donor and exclusive boolean opt-in')
+    if (type(successful_donor_native_capability_repair) is not bool
+            or successful_donor_native_capability_repair and (successful_donor is None
+                or successful_donor_guard_repair or successful_donor_composition_repair
+                or successful_donor_native_control_keypress_repair)):
+        raise ValueError('Native capability repair requires an explicit donor and exclusive boolean opt-in')
     if (type(successful_donor_composition_repair) is not bool
             or successful_donor_composition_repair and (successful_donor is None or successful_donor_guard_repair)):
         raise ValueError('Composition repair requires an explicit donor and exclusive boolean opt-in')
@@ -2444,6 +2570,10 @@ def make_plan(selection, output, *, completed_work=None, successful_donor=None,
         raise ValueError('Completed-work resume initially requires explicit editor profile')
     inspected = inspect_inputs(selection)
     completed = (_completed_work(completed_work, inspected) if completed_work is not None else
+                 _successful_module().native_control_keypress_admission(successful_donor, inspected, sys.modules[__name__])
+                 if successful_donor_native_control_keypress_repair else
+                 _successful_module().native_capability_admission(successful_donor, inspected, sys.modules[__name__])
+                 if successful_donor_native_capability_repair else
                  _completed_work(successful_donor, inspected, _successful=True,
                                  _guard_repair=successful_donor_guard_repair,
                                  **({'_composition_repair': True} if successful_donor_composition_repair else {})) if successful_donor is not None else None)
@@ -2458,7 +2588,9 @@ def make_plan(selection, output, *, completed_work=None, successful_donor=None,
             'reuse': inspected.proof, 'projection': inspected.projection,
             'production_eligible': False}
     if completed is not None:
-        plan['kind'] = (COMPOSITION_REPAIR_PLAN_KIND if successful_donor_composition_repair else
+        plan['kind'] = (NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND if successful_donor_native_control_keypress_repair else
+                        NATIVE_CAPABILITY_REPAIR_PLAN_KIND if successful_donor_native_capability_repair else
+                        COMPOSITION_REPAIR_PLAN_KIND if successful_donor_composition_repair else
                         GUARD_REPAIR_PLAN_KIND if successful_donor_guard_repair else
                         SUCCESSFUL_PLAN_KIND if successful_donor is not None else RESUME_PLAN_KIND)
         plan['successful_donor' if successful_donor is not None else 'completed_work'] = completed
@@ -2474,12 +2606,14 @@ def verify_plan(path, expected_sha256):
     resume = value.get('kind') == RESUME_PLAN_KIND
     guard_repair = value.get('kind') == GUARD_REPAIR_PLAN_KIND
     composition_repair = value.get('kind') == COMPOSITION_REPAIR_PLAN_KIND
-    successful = value.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND)
+    native_capability = value.get('kind') == NATIVE_CAPABILITY_REPAIR_PLAN_KIND
+    native_control_keypress = value.get('kind') == NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND
+    successful = value.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND)
     names = ('schema_version', 'kind', 'scope', 'selection', 'profile_sha256',
              'producer_inputs', 'reuse', 'projection', 'production_eligible')
     fields(value, names + (('completed_work',) if resume else ('successful_donor',) if successful else ()), 'maintenance plan')
     selected = value['selection']['document_profile']
-    if (type(value['schema_version']) is not int or value['schema_version'] != 1 or value['kind'] not in (PLAN_KIND, RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND) or value['scope'] != SCOPE
+    if (type(value['schema_version']) is not int or value['schema_version'] != 1 or value['kind'] not in (PLAN_KIND, RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND) or value['scope'] != SCOPE
             or value['production_eligible'] is not False
             or value['profile_sha256'] != digest(ROOT / profile_path(selected))
             or value['producer_inputs'] != {name: digest(ROOT / name) for name in required_helpers(selected) + ((SUCCESSFUL_HELPER,) if successful else ())}):
@@ -2489,7 +2623,13 @@ def verify_plan(path, expected_sha256):
         raise ValueError('Plan selected inputs changed')
     if resume and _completed_work(value['completed_work']['reference'], inspected) != value['completed_work']:
         raise ValueError('Plan completed-work input or admission changed')
-    if successful and _completed_work(value['successful_donor']['reference'], inspected, _successful=True,
+    if native_capability and _successful_module().native_capability_admission(
+            value['successful_donor']['reference'], inspected, sys.modules[__name__]) != value['successful_donor']:
+        raise ValueError('Plan native capability donor input or admission changed')
+    if native_control_keypress and _successful_module().native_control_keypress_admission(
+            value['successful_donor']['reference'], inspected, sys.modules[__name__]) != value['successful_donor']:
+        raise ValueError('Plan native control keypress donor input or admission changed')
+    if successful and not native_capability and not native_control_keypress and _completed_work(value['successful_donor']['reference'], inspected, _successful=True,
                                       _guard_repair=guard_repair,
                                       **({'_composition_repair': True} if composition_repair else {})) != value['successful_donor']:
         raise ValueError('Plan successful donor input or admission changed')
@@ -2702,7 +2842,7 @@ def _graph(inspected, plan, plan_path, plan_hash, output):
             metadata_command.extend(('--' + key.replace('_', '-'), resolve(metadata[key])))
     put('ENGINE_METADATA_COMMAND', *metadata_command)
     put('ENGINE_METADATA_DEPENDS', *(resolve(ref) for ref in metadata.values()),
-        *(roots['sources'] / name for name in required_helpers(inspected.selection['document_profile']) + ((SUCCESSFUL_HELPER,) if plan.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND) else ())),
+        *(roots['sources'] / name for name in required_helpers(inspected.selection['document_profile']) + ((SUCCESSFUL_HELPER,) if plan.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND) else ())),
         roots['sources'] / 'recipe.json')
     object_outputs = {}
     imported = {row['id']: row for row in (_work(plan) or {}).get('objects', [])}
@@ -2784,10 +2924,10 @@ def _graph(inspected, plan, plan_path, plan_hash, output):
     commands = {'metadata': list(map(str, metadata_command)),
         'objects': {obj['id']: values['ENGINE_OBJECT_o' + str(i) + '_COMMAND']
                     for i, obj in enumerate(p['objects']) if obj['id'] not in imported}, 'link': link_command}
-    if plan.get('kind') in (RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND):
+    if plan.get('kind') in (RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND):
         commands['imports'] = {obj['id']: values['ENGINE_OBJECT_o' + str(i) + '_COMMAND']
                               for i, obj in enumerate(p['objects']) if obj['id'] in imported}
-    if plan.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND):
+    if plan.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND):
         commands['archive_imports'] = {name: values['ENGINE_ARCHIVE_' + name + '_COMMAND'] for name in imported_archives}
     return tools, fragment, commands
 
@@ -2872,6 +3012,10 @@ def build(plan_path, expected_sha256, output, *, jobs=2, timeout_seconds=1800):
             'next_gate': 'original dedicated-Worker runtime evidence and explicit retained group sealing'}
         if plan['kind'] == RESUME_PLAN_KIND:
             _completed_build_receipt(result, plan, output, commands)
+        elif plan['kind'] == NATIVE_CAPABILITY_REPAIR_PLAN_KIND:
+            _native_capability_build_receipt(result, plan, output, commands)
+        elif plan['kind'] == NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND:
+            _native_control_keypress_build_receipt(result, plan, output, commands)
         elif plan['kind'] in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND):
             _successful_build_receipt(result, plan, output, commands)
         _save(output / 'maintenance-build.json', result)
@@ -2880,7 +3024,7 @@ def build(plan_path, expected_sha256, output, *, jobs=2, timeout_seconds=1800):
         # Preserve the owned failed/incomplete work. Never clean SDK pyc after
         # execution or publish a successful receipt from partial outputs.
         _save(output / 'maintenance-failure.json', {'schema_version': 1,
-            'kind': COMPOSITION_REPAIR_BUILD_KIND if plan['kind'] == COMPOSITION_REPAIR_PLAN_KIND else GUARD_REPAIR_BUILD_KIND if plan['kind'] == GUARD_REPAIR_PLAN_KIND else SUCCESSFUL_BUILD_KIND if plan['kind'] == SUCCESSFUL_PLAN_KIND else RESUME_BUILD_KIND if plan['kind'] == RESUME_PLAN_KIND else BUILD_KIND,
+            'kind': NATIVE_CONTROL_KEYPRESS_REPAIR_BUILD_KIND if plan['kind'] == NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND else NATIVE_CAPABILITY_REPAIR_BUILD_KIND if plan['kind'] == NATIVE_CAPABILITY_REPAIR_PLAN_KIND else COMPOSITION_REPAIR_BUILD_KIND if plan['kind'] == COMPOSITION_REPAIR_PLAN_KIND else GUARD_REPAIR_BUILD_KIND if plan['kind'] == GUARD_REPAIR_PLAN_KIND else SUCCESSFUL_BUILD_KIND if plan['kind'] == SUCCESSFUL_PLAN_KIND else RESUME_BUILD_KIND if plan['kind'] == RESUME_PLAN_KIND else BUILD_KIND,
             'scope': SCOPE, 'status': 'incomplete', 'production_eligible': False,
             'error': str(error)[:4096], 'plan_sha256': expected_sha256})
         raise
@@ -3063,7 +3207,7 @@ def _step(args):
     # The CMake helper reads the pinned plan itself and immediate artifact inputs,
     # avoiding a complete 351MB+ source/SDK rescan for every archive node.
     plan = checked_document(args.plan, args.plan_sha256)
-    if plan.get('kind') not in (PLAN_KIND, RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND) or plan.get('production_eligible') is not False:
+    if plan.get('kind') not in (PLAN_KIND, RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND) or plan.get('production_eligible') is not False:
         raise ValueError('Invalid internal maintenance plan')
     output = ordinary(args.build_root, True)
     p = plan['reuse']
@@ -3080,7 +3224,7 @@ def _step(args):
         return _copy_completed_object(plan, args.object, output)
     if args.action == 'import-archive':
         return _copy_successful_archive(plan, args.archive, output)
-    if plan['kind'] in (GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND) and args.action in ('archive', 'repack'):
+    if plan['kind'] in (GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND) and args.action in ('archive', 'repack'):
         raise ValueError('Guard repair permits five archive imports and zero repacks')
     if args.action in ('archive', 'repack'):
         archive = next((a for a in p['archives'] if a['name'] == args.archive), None)
@@ -3175,6 +3319,8 @@ def main(argv=None):
     planning.add_argument('--successful-donor-sha256')
     planning.add_argument('--successful-donor-guard-repair', action='store_true')
     planning.add_argument('--successful-donor-composition-repair', action='store_true')
+    planning.add_argument('--successful-donor-native-capability-repair', action='store_true')
+    planning.add_argument('--successful-donor-native-control-keypress-repair', action='store_true')
     building = sub.add_parser('build')
     building.add_argument('--plan', type=Path, required=True)
     building.add_argument('--plan-sha256', required=True)
@@ -3200,12 +3346,21 @@ def main(argv=None):
             parser.error('--successful-donor-guard-repair requires --successful-donor')
         if args.successful_donor_composition_repair and (args.successful_donor is None or args.successful_donor_guard_repair):
             parser.error('--successful-donor-composition-repair requires --successful-donor and excludes --successful-donor-guard-repair')
+        if args.successful_donor_native_capability_repair and (args.successful_donor is None
+                or args.successful_donor_guard_repair or args.successful_donor_composition_repair):
+            parser.error('--successful-donor-native-capability-repair requires an explicit donor and excludes other repair lanes')
+        if args.successful_donor_native_control_keypress_repair and (args.successful_donor is None
+                or args.successful_donor_guard_repair or args.successful_donor_composition_repair
+                or args.successful_donor_native_capability_repair):
+            parser.error('--successful-donor-native-control-keypress-repair requires an explicit donor and excludes all other repair lanes')
         selection = {name: getattr(args, name) for name in SELECTION_FIELDS}
         if args.successful_donor is not None:
             result = make_plan(selection, args.output, successful_donor={
                 'path': str(args.successful_donor), 'sha256': sha(args.successful_donor_sha256, 'successful-donor')},
                 **({'successful_donor_guard_repair': True} if args.successful_donor_guard_repair else {}),
-                **({'successful_donor_composition_repair': True} if args.successful_donor_composition_repair else {}))
+                **({'successful_donor_composition_repair': True} if args.successful_donor_composition_repair else {}),
+                **({'successful_donor_native_capability_repair': True} if args.successful_donor_native_capability_repair else {}),
+                **({'successful_donor_native_control_keypress_repair': True} if args.successful_donor_native_control_keypress_repair else {}))
         elif args.completed_work is None:
             result = make_plan(selection, args.output)
         else:

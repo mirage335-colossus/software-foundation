@@ -2073,7 +2073,7 @@ class NativeForwardPatchSource(unittest.TestCase):
                     'patches/native-provider-getter.patch': 1,
                     'patches/native-provider-runtime.patch': 2}
         overlays = {name for name, item in entries.items() if item['role'] == 'source'}
-        self.assertEqual(len(overlays), 158 if self.source_map.get('kind') == self.api.COMPOSITION_SOURCE_KIND else 157)
+        self.assertEqual(len(overlays), 158 if self.source_map.get('kind') in (self.api.COMPOSITION_SOURCE_KIND,self.api.NATIVE_POPUP_SOURCE_KIND,self.api.NATIVE_CONTROL_KEYPRESS_SOURCE_KIND) else 157)
         for name, count in expected.items():
             item = entries[name]
             raw = (ROOT / item['tracked_path']).read_bytes()
@@ -3996,6 +3996,10 @@ class NativeCurrentSourceCapture(unittest.TestCase):
 def composition_catalogue_fixture(api):
     """Inert metadata rows; no mapped source, SDK or compiler body is opened."""
     value = json.loads((ROOT / api.RECIPE / 'source-imports.json').read_bytes())
+    if value.get('kind') == api.NATIVE_CONTROL_KEYPRESS_SOURCE_KIND:
+        value = api.native_control_keypress_catalogue_predecessor(value)
+    if value.get('kind') == api.NATIVE_POPUP_SOURCE_KIND:
+        value = api.native_popup_catalogue_predecessor(value)
     value['kind'] = api.COMPOSITION_SOURCE_KIND
     pins = {}
     for index, logical in enumerate((*api.COMPOSITION_PREDECESSORS, api.COMPOSITION_BRIDGE)):
@@ -4065,6 +4069,159 @@ class NativeCompositionSourceCatalogue(unittest.TestCase):
                 if isinstance(node, ast.FunctionDef) and node.name == 'composition_catalogue_counts')
             bodies.append(ast.dump(body, include_attributes=False))
         self.assertEqual(*bodies)
+
+
+
+class NativePopupSourceCatalogue(unittest.TestCase):
+    def setUp(self):
+        self.api=load_helper()
+        self.value=json.loads((ROOT/self.api.RECIPE/'source-imports.json').read_bytes())
+        self.value=self.api.native_control_keypress_catalogue_predecessor(self.value)
+
+    def test_exact_native_source_successor_retains_composition_history(self):
+        with no_programs():
+            self.assertEqual(self.api.native_popup_catalogue_counts(self.value),{'source_files':158,'engine_files':48,'direct_translation_units':32})
+            previous=self.api.native_popup_catalogue_predecessor(self.value)
+            self.assertEqual(self.api.composition_catalogue_counts(previous),{'source_files':158,'engine_files':48,'direct_translation_units':32})
+        self.assertEqual(len(self.api.NATIVE_POPUP_SOURCE_FACTS),4)
+
+    def test_actual_current_capture_is_source_only_and_uses_native_scope(self):
+        profile_raw=(ROOT/self.api.PROFILE).read_bytes()
+        map_raw=(ROOT/self.api.RECIPE/'source-imports.json').read_bytes()
+        inputs=self.api.InputSet()
+        with no_programs():
+            current=self.api.capture_current_sources(digest(profile_raw),digest(map_raw),repository_root=ROOT,inputs=inputs)
+            facts=current.as_dict()
+        self.assertEqual(facts['scope'],'current198-final158-native-control-keypress-only')
+        self.assertEqual((facts['source_files'],facts['engine_files'],facts['direct_translation_units']),(158,48,32))
+        self.assertIs(facts['complete_original_source_admission'],False)
+        self.assertIs(facts['source_tree_assembled'],False)
+        self.assertIs(facts['production_eligible'],False)
+
+    def test_changed_source_predecessor_unrelated_row_and_bounds_reject(self):
+        leaf=next(iter(self.api.NATIVE_POPUP_SOURCE_FACTS))
+        unrelated='source/foundation/third_party/appended-engine/src/ProviderGuard.cpp'
+        edits=(lambda v:v.update(kind=self.api.COMPOSITION_SOURCE_KIND),
+            lambda v:v['inputs'][leaf].update(sha256='f'*64),
+            lambda v:v['inputs'][leaf]['origin']['supersedes']['origin'].update(kind='restamped'),
+            lambda v:v['inputs'][leaf]['origin']['supersedes'].update(bytes=True),
+            lambda v:v['inputs'][leaf]['origin'].update(source_only=1),
+            lambda v:v['inputs'][unrelated].update(sha256='e'*64),
+            lambda v:v['limits'].update(maximum_entries=257),
+            lambda v:v['limits'].update(maximum_entries=197),
+            lambda v:v['inputs'].update(unreviewed=v['inputs'].pop(unrelated)))
+        for index,change in enumerate(edits):
+            value=copy.deepcopy(self.value);change(value)
+            with self.subTest(index=index),no_programs(),self.assertRaises(ValueError):self.api.native_popup_catalogue_counts(value)
+
+    def test_passive_inspector_and_capture_have_identical_native_guards(self):
+        for name in ('native_popup_catalogue_predecessor','native_popup_catalogue_counts'):
+            bodies=[]
+            for path in (HELPER,ROOT/self.api.RECIPE/'inspect_sources.py'):
+                node=next(node for node in ast.parse(path.read_bytes()).body if isinstance(node,ast.FunctionDef) and node.name==name)
+                bodies.append(ast.dump(node,include_attributes=False))
+            self.assertEqual(*bodies)
+
+class NativeControlKeypressSourceCatalogue(unittest.TestCase):
+    """The input boundary is source-only metadata, never an executable plan."""
+    def setUp(self):
+        self.api = load_helper()
+        self.map_raw = (ROOT / self.api.RECIPE / 'source-imports.json').read_bytes()
+        self.value = json.loads(self.map_raw)
+        self.profile_raw = (ROOT / self.api.PROFILE).read_bytes()
+        self.leaf = 'source/document-provider/physical/BibDocumentPhysicalProvider.cpp'
+
+    def test_exact_successor_reconstructs_full_frozen_predecessor(self):
+        with no_programs():
+            previous = self.api.native_control_keypress_catalogue_predecessor(self.value)
+            self.assertEqual(self.api.native_control_keypress_catalogue_counts(self.value),
+                {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
+            self.assertEqual(self.api.native_popup_catalogue_counts(previous),
+                {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
+        raw = (json.dumps(previous, indent=2, sort_keys=True, ensure_ascii=True, allow_nan=False) + '\n').encode('ascii')
+        self.assertEqual(digest(raw), '677fba2311553bafcbfb10317ad1a871b59bbe10223935cd6681a80af8d9e663')
+        self.assertEqual(len(self.value['inputs']), 198)
+        self.assertEqual(len(self.api.NATIVE_POPUP_SOURCE_FACTS), 4)
+        self.assertEqual(len(self.api.NATIVE_CONTROL_KEYPRESS_SOURCE_FACTS), 1)
+        for name in self.value['inputs']:
+            if name not in (self.leaf, 'inspect_sources.py'):
+                self.assertEqual(self.value['inputs'][name], previous['inputs'][name])
+        for name in ('native_popup_catalogue_predecessor', 'native_popup_catalogue_counts',
+                     'composition_catalogue_counts', 'native_control_keypress_catalogue_predecessor',
+                     'native_control_keypress_catalogue_counts'):
+            bodies = []
+            for path in (HELPER, ROOT / self.api.RECIPE / 'inspect_sources.py'):
+                node = next(node for node in ast.parse(path.read_bytes()).body if isinstance(node, ast.FunctionDef) and node.name == name)
+                bodies.append(ast.dump(node, include_attributes=False))
+            self.assertEqual(*bodies)
+
+    def test_malformed_reverted_unrelated_and_restamped_sources_fail_closed(self):
+        prior = self.api.native_control_keypress_catalogue_predecessor(self.value)['inputs'][self.leaf]
+        other = 'source/foundation/third_party/appended-engine/src/ProviderGuard.cpp'
+        edits = (
+            lambda v: v.update(kind=self.api.NATIVE_POPUP_SOURCE_KIND),
+            lambda v: v.update(schema_version=True),
+            lambda v: v.update(unreviewed=True),
+            lambda v: v['inputs'].update(unreviewed=copy.deepcopy(v['inputs'][self.leaf])),
+            lambda v: v['inputs'][self.leaf].update(sha256='f' * 64),
+            lambda v: v['inputs'][self.leaf].update(bytes=True),
+            lambda v: v['inputs'][self.leaf].update(mode=0o755),
+            lambda v: v['inputs'].__setitem__(self.leaf, copy.deepcopy(prior)),
+            lambda v: v['inputs'][self.leaf]['origin'].update(source_only=1),
+            lambda v: v['inputs'][self.leaf]['origin'].update(reviewed_source_map_sha256='e' * 64),
+            lambda v: v['inputs'][self.leaf]['origin']['supersedes'].update(bytes=True),
+            lambda v: v['inputs'][self.leaf]['origin']['supersedes']['origin']['record'].update(origin='restamped'),
+            lambda v: v['inputs'][other].update(sha256='e' * 64),
+            lambda v: v['inputs']['inspect_sources.py'].update(role='source'),
+            lambda v: v['limits'].update(maximum_entries=257),
+            lambda v: v['limits'].update(maximum_entries=197),
+        )
+        for index, change in enumerate(edits):
+            changed = copy.deepcopy(self.value); change(changed)
+            with self.subTest(index=index), no_programs(), self.assertRaises(ValueError):
+                self.api.native_control_keypress_catalogue_counts(changed)
+        with mock.patch.object(self.api, 'NATIVE_CONTROL_KEYPRESS_SOURCE_FACTS', None), no_programs(), self.assertRaises(ValueError):
+            self.api.native_control_keypress_catalogue_counts(self.value)
+
+    def test_actual_capture_checks_independent_pins_scope_and_postflight(self):
+        with no_programs():
+            for profile_pin, map_pin in (('f' * 64, digest(self.map_raw)), (digest(self.profile_raw), 'f' * 64)):
+                with self.subTest(profile_pin=profile_pin, map_pin=map_pin), self.assertRaises(ValueError):
+                    self.api.capture_current_sources(profile_pin, map_pin, repository_root=ROOT, inputs=self.api.InputSet())
+            inputs = self.api.InputSet()
+            current = self.api.capture_current_sources(digest(self.profile_raw), digest(self.map_raw), repository_root=ROOT, inputs=inputs)
+            self.assertIs(current._owner, inputs)
+            facts = current.as_dict()
+            self.assertEqual(facts['scope'], 'current198-final158-native-control-keypress-only')
+            self.assertEqual((facts['source_files'], facts['engine_files'], facts['direct_translation_units']), (158, 48, 32))
+            self.assertEqual(facts['overlays'][self.leaf]['sha256'], 'ee79f3bc8488cfd92c9b62abc2e84a9c110221cf2eba805fac4803980bae612a')
+            self.assertFalse(facts['complete_original_source_admission'])
+            self.assertFalse(facts['source_tree_assembled'])
+            self.assertFalse(facts['production_eligible'])
+            inputs.recheck()
+            with self.assertRaises(ValueError):
+                self.api.capture_current_sources(digest(self.profile_raw), digest(self.map_raw), repository_root=ROOT, inputs=inputs)
+
+    def test_actual_capture_rejects_reverted_provider_in_an_isolated_source_copy(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).absolute()
+            paths = {row['tracked_path'] for row in self.value['inputs'].values()} | set(self.api.PRODUCERS) | {self.api.RECIPE + '/source-imports.json'}
+            for name in paths:
+                destination = root / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / name, destination)
+            inputs = self.api.InputSet()
+            with no_programs():
+                current = self.api.capture_current_sources(digest(self.profile_raw), digest(self.map_raw), repository_root=root, inputs=inputs)
+                inputs.recheck()
+            provider = root / self.value['inputs'][self.leaf]['tracked_path']
+            from native_control_keypress_source_history import native_control_keypress_predecessor_bytes
+            provider.write_bytes(native_control_keypress_predecessor_bytes(provider.read_bytes()))
+            with no_programs(), self.assertRaises(ValueError):
+                inputs.recheck()
+            with no_programs(), self.assertRaisesRegex(ValueError, 'Native source input differs.*physical/BibDocumentPhysicalProvider.cpp'):
+                self.api.capture_current_sources(digest(self.profile_raw), digest(self.map_raw), repository_root=root, inputs=self.api.InputSet())
 
 
 if __name__ == '__main__':

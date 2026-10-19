@@ -11,6 +11,9 @@
 #include "DocumentPage.h"
 #include "DocumentView.h"
 #include "Element.h"
+#include "Attribute.h"
+#include "ElementData.h"
+#include "HTMLInputElement.h"
 #include "ElementInlines.h"
 #include "FrameDestructionObserverInlines.h"
 #include "GraphicsContext.h"
@@ -172,6 +175,49 @@ void drainHide() noexcept {
         for(auto& slot:o->pending){auto popup=WTF::move(slot);if(popup)popup->notifyHide();}
     } catch (...) { UI::fault(); }
 }
+// This private native-popup snapshot owns unadvertised group/header/style
+// fields. Bound raw getter searches and strings before listItems/itemText/style.
+// No public FormOption projection reads these opaque fields.
+bool popupSourceBound(WebCore::HTMLSelectElement& select) {
+    std::size_t work=0,total=0;
+    auto elementBound=[&](WebCore::Element& element){
+        if(!is<WebCore::HTMLElement>(element))return false;
+        if(auto* input=dynamicDowncast<WebCore::HTMLInputElement>(element);input&&input->isSecureField())return false;
+        auto* data=element.elementData();
+        const auto count=data?data->attributes().size():0;
+        // Two fixed-name scans (label/lang), plus metadata inspection itself.
+        if(count>(maxNodes-work)/3)return false;
+        work+=3*count;
+        if(data)for(const auto& attr:data->attributes()){
+            if(attr.name()!=WebCore::HTMLNames::labelAttr&&attr.name()!=WebCore::HTMLNames::langAttr)continue;
+            const auto length=attr.value().length();
+            if(length>maxLabel||length>maxText-total)return false;
+            total+=length;
+        }
+        return true;
+    };
+    // Styles/language may consult the owner's ancestry. Bound that chain too.
+    std::size_t ancestry=0;
+    for(WebCore::Node* node=&select;node;node=node->parentOrShadowHostNode()){
+        if(++work>maxNodes||++ancestry>maxDepth)return false;
+        if(auto* element=dynamicDowncast<WebCore::Element>(*node);element&&!elementBound(*element))return false;
+    }
+    WebCore::Node* cursor=&select;std::size_t depth=0;
+    while(cursor){
+        if(++work>maxNodes||depth>maxDepth)return false;
+        if(auto* element=dynamicDowncast<WebCore::Element>(*cursor);element&&!elementBound(*element))return false;
+        if(auto* text=dynamicDowncast<WebCore::Text>(*cursor)){
+            const auto length=text->length(); // O(1), before any copying getter.
+            if(length>maxLabel||length>maxText-total)return false;
+            total+=length;
+        }
+        if(auto* child=cursor->firstChild()){cursor=child;++depth;continue;}
+        while(cursor!=&select&&!cursor->nextSibling()){cursor=cursor->parentNode();if(!cursor||!depth)return false;--depth;}
+        if(cursor==&select)break;
+        cursor=cursor->nextSibling();
+    }
+    return true;
+}
 bool rawTextBound(WebCore::HTMLElement& element,std::size_t& nodes,std::size_t& total) {
     const auto& literal=element.attributeWithoutSynchronization(WebCore::HTMLNames::labelAttr);
     if(literal.length()>maxLabel||literal.length()>maxText-total)return false;
@@ -228,6 +274,7 @@ bool NativePopupMenu::refresh(bool initial,int selected){
     if(now.viewport_width<24||now.viewport_height<24
         ||now.viewport_width>static_cast<unsigned>(std::numeric_limits<int>::max())
         ||now.viewport_height>static_cast<unsigned>(std::numeric_limits<int>::max()))return false;
+    if(!popupSourceBound(*select))return false;
     const auto& list=select->listItems();if(list.isEmpty()||list.size()>maxRows)return false;
     Reservation reservation(*o,list.size()*sizeof(RowData)+4*maxText);
     if(!reservation.held)return false;
@@ -341,6 +388,7 @@ bool NativePopupMenu::commit(const P::Choice& choice){
     WTF::RefPtr<WebCore::HTMLOptionElement> option=dynamicDowncast<WebCore::HTMLOptionElement>(witness->element.get());
     if(!select||!option||select->multiple()||select->isDisabledFormControl()||!select->usesMenuList()
         ||!dynamicDowncast<WebCore::RenderMenuList>(select->renderer()))return false;
+    if(!popupSourceBound(*select))return false;
     const auto& list=select->listItems();
     if(!option->isConnected()||option->ownerSelectElement()!=select.get()||choice.list_index>=list.size()
         ||list[choice.list_index].get()!=option.get()||!select->itemIsEnabled(choice.list_index)

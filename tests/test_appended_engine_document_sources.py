@@ -17,6 +17,11 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
+HISTORY_SPEC = importlib.util.spec_from_file_location('native_popup_source_history', ROOT / 'tests/native_popup_source_history.py')
+HISTORY = importlib.util.module_from_spec(HISTORY_SPEC)
+HISTORY_SPEC.loader.exec_module(HISTORY)
+native_popup_predecessor_bytes = HISTORY.native_popup_predecessor_bytes
+native_popup_history = HISTORY.native_popup_history
 ASSEMBLER = ROOT / 'recipes/webkitwasm-document-v2/assemble_sources.py'
 SPEC = importlib.util.spec_from_file_location('document_source_assembler_under_test', ASSEMBLER)
 assembly = importlib.util.module_from_spec(SPEC)
@@ -303,6 +308,10 @@ def composition_predecessor_bytes(raw):
 
 def composition_history(imports, projection=None):
     """Check the current successor then expose its exact prior metadata to history checks."""
+    if projection is None:
+        imports = native_popup_history(imports)
+    else:
+        imports, projection = native_popup_history(imports, projection)
     imports = copy.deepcopy(imports)
     projection = copy.deepcopy(projection)
     for name, item in imports['files'].items():
@@ -852,7 +861,7 @@ class SourceAssemblyTests(unittest.TestCase):
                     if row['logical_target'] == 'foundation/third_party/appended-engine/src/ProviderGuard.cpp']
         self.assertEqual(compiled, [{'bytes': 67487,
             'logical_target': 'foundation/third_party/appended-engine/src/ProviderGuard.cpp',
-            'path': str(ROOT / '.agent-work/appended-implementation-20261016/ndv2-provider-binding-design/implementation/versions/0005-cpp-only-outcome/source/foundation/third_party/appended-engine/src/ProviderGuard.cpp'),
+            'path': str(Path(json.loads(map_raw)['source_root']) / 'foundation/third_party/appended-engine/src/ProviderGuard.cpp'),
             'sha256': previous}])
         item = imports['files'][logical]
         self.assertEqual((item['tracked_path'], item['sha256'], item['bytes']), (tracked, expected, 68423))
@@ -891,9 +900,10 @@ class SourceAssemblyTests(unittest.TestCase):
             with self.subTest(profile=profile):
                 imports = json.loads((here / ('source-imports-' + profile + '.json')).read_bytes())
                 projection = json.loads((here / ('source-projection-' + profile + '.json')).read_bytes())
+                imports, projection = native_popup_history(imports, projection)
                 item = imports['files'][name]
                 self.assertEqual(item['sha256'], expected)
-                self.assertEqual(sha((ROOT / item['tracked_path']).read_bytes()), expected)
+                self.assertEqual(sha(native_popup_predecessor_bytes((ROOT / item['tracked_path']).read_bytes())), expected)
                 origin = item['origin']
                 self.assertEqual(origin['kind'], 'reviewed-BEGIN-focus-editor-state-repair')
                 self.assertEqual(origin['correction'], 'stable-focus-dependent-canEdit-and-inputMethodEnabled')
@@ -1057,6 +1067,7 @@ class SourceAssemblyTests(unittest.TestCase):
         for selected in ('physical', 'editor'):
             imports = json.loads((here / ('source-imports-' + selected + '.json')).read_bytes())
             projection = json.loads((here / ('source-projection-' + selected + '.json')).read_bytes())
+            imports, projection = native_popup_history(imports, projection)
             expected = {}
             for suffix in private:
                 producer = 'native-html-clipboard-implementation-v1' if suffix.startswith('clipboard/') else 'native-html-popup-implementation-v1'
@@ -1517,7 +1528,7 @@ class SourceAssemblyTests(unittest.TestCase):
         native = 'recipes/webkitwasm-native-rich4083-v1/'
         for path in (tracked, native + logical):
             with self.subTest(popup_inlines=path):
-                raw = (ROOT / path).read_bytes()
+                raw = native_popup_predecessor_bytes((ROOT / path).read_bytes())
                 self.assertEqual(sha(raw), expected)
                 self.assertEqual(len(raw), 29528)
                 prior = raw
@@ -1531,6 +1542,7 @@ class SourceAssemblyTests(unittest.TestCase):
         for profile in ('physical', 'editor'):
             imports = json.loads((ROOT / assembly.RECIPE_ROOT / ('source-imports-' + profile + '.json')).read_bytes())
             projection = json.loads((ROOT / assembly.RECIPE_ROOT / ('source-projection-' + profile + '.json')).read_bytes())
+            imports, projection = native_popup_history(imports, projection)
             item = imports['files'][logical]
             self.assertEqual((item['sha256'], item['bytes'], item['tracked_path']), (expected, 29528, tracked))
             self.assertEqual(item['origin']['supersedes']['sha256'], previous)
@@ -1539,6 +1551,9 @@ class SourceAssemblyTests(unittest.TestCase):
         provenance_raw = (ROOT / native / 'provenance.json').read_bytes()
         provenance = json.loads(provenance_raw)
         imports = json.loads((ROOT / native / 'source-imports.json').read_bytes())
+        native_item = imports['inputs'][logical]
+        self.assertEqual(native_item['origin']['kind'], 'reviewed-native-popup-capability-successor')
+        imports['inputs'][logical] = dict(native_item, **native_item['origin']['supersedes'])
         record = provenance['runtime_files'][logical]
         self.assertEqual((record['after_sha256'], record['after_bytes']), (expected, 29528))
         self.assertEqual((record['sha256'], record['bytes'], record['preimage_sha256']), (previous, 29377, None))
@@ -1615,6 +1630,66 @@ class SourceAssemblyTests(unittest.TestCase):
             self.assertNotEqual(raw, composition_predecessor_bytes(raw))
         self.assertEqual(sha((here / 'provenance/editor-source-map.json').read_bytes()),
             'a97017168b817334d1a094300e904f09110c234d734712b4d48870e2aa7b4ddb')
+
+
+    def test_native_popup_capability_current_sources_and_complete_historical_rows(self):
+        here=ROOT/assembly.RECIPE_ROOT
+        for profile in ('pixel','physical','editor'):
+            imports=json.loads((here/('source-imports-'+profile+'.json')).read_bytes())
+            projection=json.loads((here/('source-projection-'+profile+'.json')).read_bytes())
+            previous,old_projection=native_popup_history(imports,projection)
+            known=set(HISTORY.NATIVE_POPUP_PRIOR_ROWS[profile])
+            self.assertEqual({name for name,item in imports['files'].items() if item['origin'].get('kind')=='reviewed-native-popup-capability-successor'},known)
+            for name in known:
+                item=imports['files'][name];raw=(ROOT/item['tracked_path']).read_bytes()
+                self.assertEqual((sha(raw),len(raw)),(item['sha256'],item['bytes']))
+                self.assertEqual(sha(native_popup_predecessor_bytes(raw)),previous['files'][name]['sha256'])
+                self.assertEqual(projection['files'][name]['preimage_sha256'],old_projection['files'][name]['preimage_sha256'])
+            for mutation in ('prior-origin','prior-bytes','new-source','compiled-claim'):
+                changed=copy.deepcopy(imports);item=changed['files'][next(iter(known))]
+                if mutation=='prior-origin':item['origin']['supersedes']['origin']['kind']='restamped'
+                elif mutation=='prior-bytes':item['origin']['supersedes']['bytes']=True
+                elif mutation=='new-source':item['sha256']='f'*64
+                else:item['origin']['source_only']=False
+                with self.subTest(profile=profile,mutation=mutation),self.assertRaises(AssertionError):native_popup_history(changed)
+
+    def test_native_control_keypress_editor_leaf_has_exact_source_only_history(self):
+        here = ROOT / assembly.RECIPE_ROOT
+        name = 'source/document-provider/physical/BibDocumentPhysicalProvider.cpp'
+        imports = json.loads((here / 'source-imports-editor.json').read_bytes())
+        projection = json.loads((here / 'source-projection-editor.json').read_bytes())
+        item = imports['files'][name]
+        raw = (ROOT / item['tracked_path']).read_bytes()
+        self.assertEqual((sha(raw), len(raw), item['sha256'], item['bytes'], item['mode']),
+            ('ee79f3bc8488cfd92c9b62abc2e84a9c110221cf2eba805fac4803980bae612a', 30151,
+             'ee79f3bc8488cfd92c9b62abc2e84a9c110221cf2eba805fac4803980bae612a', 30151, 420))
+        previous, old_projection = HISTORY.native_control_keypress_document_history(imports, projection)
+        prior = previous['files'][name]
+        self.assertEqual((prior['sha256'], prior['bytes']),
+            ('94ac6af05af059faaff51e7c4e1f59d90f78430898c4fe6ef9d1255e7c4f9c81', 21489))
+        self.assertEqual(projection['files'][name], {'preimage_sha256': None, 'sha256': item['sha256']})
+        self.assertEqual(old_projection['files'][name], {'preimage_sha256': None, 'sha256': prior['sha256']})
+        self.assertEqual(sha(native_popup_predecessor_bytes(raw)), prior['sha256'])
+        self.assertEqual(item['origin']['supersedes'], {key: prior[key] for key in ('origin', 'sha256', 'bytes', 'tracked_path')})
+        self.assertEqual(prior['origin']['kind'], 'reviewed-actual-header-inline-repair')
+        self.assertTrue(item['origin']['source_only'])
+        physical = json.loads((here / 'source-imports-physical.json').read_bytes())
+        self.assertNotEqual(physical['files'][name]['sha256'], item['sha256'])
+        self.assertNotEqual(physical['files'][name]['origin'].get('kind'), item['origin']['kind'])
+        for mutation in ('source', 'prior', 'unknown', 'compiled-claim', 'bytes'):
+            changed = copy.deepcopy(imports)
+            row = changed['files'][name]
+            if mutation == 'source': row['sha256'] = 'f' * 64
+            elif mutation == 'prior': row['origin']['supersedes']['origin']['kind'] = 'restamped'
+            elif mutation == 'unknown': row['origin']['extra'] = True
+            elif mutation == 'compiled-claim': row['origin']['source_only'] = False
+            else: row['bytes'] = True
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                HISTORY.native_control_keypress_document_history(changed, projection)
+        changed = copy.deepcopy(projection)
+        changed['files'][name]['sha256'] = prior['sha256']
+        with self.assertRaises(AssertionError):
+            HISTORY.native_control_keypress_document_history(imports, changed)
 
 if __name__ == '__main__':
     unittest.main()

@@ -31,13 +31,13 @@
       "tracked_path": "recipes/webkitwasm-native-v1/cmake/native-provider.exports"
     },
     "inspect_sources.py": {
-      "bytes": 9052,
+      "bytes": 14438,
       "mode": 420,
       "origin": {
         "kind": "native-source-recipe-input"
       },
       "role": "helper",
-      "sha256": "a3ab5c3cadefafef01cf8ec1d9bb4b8c30da5c892f897ae7aea2c6b100899fb1",
+      "sha256": "d1d42aee2346248526f562fe7b3d201d796e5f0af7ff96e6f66affb45ea3a0cc",
       "tracked_path": "recipes/webkitwasm-native-v1/inspect_sources.py"
     },
     "notices/foundation/LICENSE": {
@@ -351,18 +351,31 @@
       "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/portable/NativeDocumentV2Codec.hpp"
     },
     "source/document-provider/portable/NativeDocumentV2Types.cpp": {
-      "bytes": 17620,
+      "bytes": 18228,
       "mode": 420,
       "origin": {
-        "bytes": 17620,
-        "kind": "released-document-pixel-import",
-        "logical_path": "source/document-provider/portable/NativeDocumentV2Types.cpp",
-        "selection": "unchanged",
-        "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44",
-        "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Types.cpp"
+        "correction": "bounded-private-label-association-and-css-opaque-single-menu-popup",
+        "kind": "reviewed-native-popup-capability-successor",
+        "reviewed_source_map_sha256": "969ca78d0594ba0aeb0191a676319c0f030aa47ae09a613e2f154439011b13e4",
+        "sha256": "c515fab6e801e2b0139130cdc7a5828b31156645f526914fb1edae74f8aab34f",
+        "source_only": true,
+        "source_path": "recipes/webkitwasm-native-v1/source/document-provider/portable/NativeDocumentV2Types.cpp",
+        "supersedes": {
+          "bytes": 17620,
+          "origin": {
+            "bytes": 17620,
+            "kind": "released-document-pixel-import",
+            "logical_path": "source/document-provider/portable/NativeDocumentV2Types.cpp",
+            "selection": "unchanged",
+            "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44",
+            "tracked_path": "recipes/webkitwasm-document-v2/source/portable/NativeDocumentV2Types.cpp"
+          },
+          "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44",
+          "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/portable/NativeDocumentV2Types.cpp"
+        }
       },
       "role": "source",
-      "sha256": "63a435cd6409a96a0f9bcc23c3f06431c2d4664159a65ae2ce1b8761c06ffd44",
+      "sha256": "c515fab6e801e2b0139130cdc7a5828b31156645f526914fb1edae74f8aab34f",
       "tracked_path": "recipes/webkitwasm-native-v1/source/document-provider/portable/NativeDocumentV2Types.cpp"
     },
     "source/document-provider/portable/NativeDocumentV2Types.hpp": {
@@ -1638,7 +1651,7 @@
       "tracked_path": "recipes/webkitwasm-native-v1/source/wrapper/src/embedder/resource_url.hpp"
     }
   },
-  "kind": "foundation-native-engine-source-inputs",
+  "kind": "foundation-native-engine-pixel-native-popup-capability-source-inputs-v1",
   "limits": {
     "maximum_entries": 256,
     "maximum_file_bytes": 8388608,

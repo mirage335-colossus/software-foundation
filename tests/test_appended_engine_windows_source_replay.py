@@ -493,6 +493,47 @@ class MetadataFixture:
             return replay.catalogue_metadata(*(self.raw[key] for key in ('source_map', 'provenance', 'graph')))
 
 
+class NativeControlKeypressCatalogueVersionTests(unittest.TestCase):
+    def test_current_catalogue_has_exact_keypress_guard_and_joins(self):
+        catalogue = replay.contract.NATIVE_CONTROL_KEYPRESS_CATALOGUE
+        raw = {role: (ROOT / item['path']).read_bytes() for role, item in catalogue.items()}
+        self.assertEqual(digest(raw['source_map']), catalogue['source_map']['sha256'])
+        checked = replay.catalogue_metadata(*(raw[key] for key in ('source_map', 'provenance', 'graph')))
+        self.assertEqual(len(checked['overlays']), 158)
+        self.assertNotEqual(catalogue, replay.contract.NATIVE_POPUP_CATALOGUE)
+        self.assertEqual(catalogue['provenance'], replay.contract.NATIVE_POPUP_CATALOGUE['provenance'])
+        fixture = MetadataFixture()
+        fixture.source_map['kind'] = replay.native_inputs.NATIVE_CONTROL_KEYPRESS_SOURCE_KIND
+        fixture.seal()
+        with mock.patch.object(replay.contract, 'NATIVE_CONTROL_KEYPRESS_CATALOGUE', fixture.catalogue), mock.patch.object(
+                replay.native_inputs, 'native_control_keypress_catalogue_counts', side_effect=ValueError('KEYPRESS-EXACT-SOURCE-GATE')) as gate:
+            with self.assertRaisesRegex(ValueError, 'KEYPRESS-EXACT-SOURCE-GATE'):
+                replay.catalogue_metadata(*(fixture.raw[key] for key in ('source_map', 'provenance', 'graph')))
+        gate.assert_called_once()
+
+
+class NativePopupCatalogueVersionTests(unittest.TestCase):
+    def test_current_native_source_catalogue_uses_exact_new_reader_lane(self):
+        catalogue=replay.contract.NATIVE_POPUP_CATALOGUE
+        raw={role:(ROOT/item['path']).read_bytes() for role,item in catalogue.items()}
+        current=replay.handoff._document(raw['source_map'])
+        previous=replay.native_inputs.native_control_keypress_catalogue_predecessor(current)
+        raw['source_map']=replay.contract.encoded(previous)
+        self.assertEqual(digest(raw['source_map']),catalogue['source_map']['sha256'])
+        checked=replay.catalogue_metadata(*(raw[key] for key in ('source_map','provenance','graph')))
+        self.assertEqual(len(checked['overlays']),158)
+        self.assertNotEqual(catalogue,replay.contract.COMPOSITION_CATALOGUE)
+        self.assertEqual(catalogue['provenance'],replay.contract.COMPOSITION_CATALOGUE['provenance'])
+
+    def test_native_kind_cannot_bypass_its_exact_source_guard(self):
+        fixture=MetadataFixture();fixture.source_map['kind']=replay.native_inputs.NATIVE_POPUP_SOURCE_KIND;fixture.seal()
+        with mock.patch.object(replay.contract,'NATIVE_POPUP_CATALOGUE',fixture.catalogue),mock.patch.object(
+                replay.native_inputs,'native_popup_catalogue_counts',side_effect=ValueError('NATIVE-EXACT-SOURCE-GATE')) as gate:
+            with self.assertRaisesRegex(ValueError,'NATIVE-EXACT-SOURCE-GATE'):
+                replay.catalogue_metadata(*(fixture.raw[key] for key in ('source_map','provenance','graph')))
+            gate.assert_called_once_with(fixture.source_map)
+
+
 class CompositionCatalogueVersionTests(unittest.TestCase):
     def test_successor_tag_cannot_use_legacy_count_or_unbound_body_pins(self):
         fixture = MetadataFixture()
@@ -1556,6 +1597,7 @@ class SourceTreeWiringOnlyTests(unittest.TestCase):
         recipe = {'inputs': {'catalogue/' + role + '.json':
                   {'sha256': catalogue_pins[role]['sha256'], 'mode': 0o644} for role in roles}}
         value = {'limits': Fixture().limits,
+            'source_catalogue': copy.deepcopy(catalogue_pins),
             'retained': {'recipe_sha256': digest(b'inert active recipe'),
                          'sources_sha256': digest(b'inert active sources')},
             'assembled': {'inventory': ref('/inert/assembled-inventory.json', b'inert inventory')},

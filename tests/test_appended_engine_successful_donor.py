@@ -448,11 +448,15 @@ class SuccessfulDonor(unittest.TestCase):
 
 def load_receipt_functions():
     tree = ast.parse(SOURCE.read_text())
-    wanted = {'_identity7', '_completed_build_receipt', '_successful_build_receipt'}
+    wanted = {'_identity7', '_completed_build_receipt', '_successful_build_receipt', '_native_capability_build_receipt', '_native_control_keypress_build_receipt'}
     nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in wanted]
     if {node.name for node in nodes} != wanted:
         raise AssertionError('actual receipt implementations missing')
-    namespace = {'SUCCESSFUL_PLAN_KIND': 'foundation-document-v2-maintenance-successful-donor-plan-v1',
+    namespace = {'NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND': 'foundation-document-v2-maintenance-successful-donor-native-control-keypress-repair-plan-v1',
+                 'NATIVE_CONTROL_KEYPRESS_REPAIR_BUILD_KIND': 'foundation-document-v2-maintenance-successful-donor-native-control-keypress-repair-build-v1',
+                 'NATIVE_CAPABILITY_REPAIR_PLAN_KIND': 'foundation-document-v2-maintenance-successful-donor-native-capability-repair-plan-v1',
+                 'NATIVE_CAPABILITY_REPAIR_BUILD_KIND': 'foundation-document-v2-maintenance-successful-donor-native-capability-repair-build-v1',
+                 'SUCCESSFUL_PLAN_KIND': 'foundation-document-v2-maintenance-successful-donor-plan-v1',
                  'GUARD_REPAIR_PLAN_KIND': 'foundation-document-v2-maintenance-successful-donor-guard-repair-plan-v1',
                  'GUARD_REPAIR_BUILD_KIND': 'foundation-document-v2-maintenance-successful-donor-guard-repair-build-v1',
                  'COMPOSITION_REPAIR_PLAN_KIND': 'foundation-document-v2-maintenance-successful-donor-composition-repair-plan-v1',
@@ -467,12 +471,22 @@ def load_receipt_functions():
     return namespace
 
 class ReceiptFixture:
-    def __init__(self, root, namespace, *, guard_repair=False, composition_repair=False):
+    def __init__(self, root, namespace, *, guard_repair=False, composition_repair=False, native_capability_repair=False, control_keypress_repair=False):
         self.root = root
         self.namespace = namespace
+        self.native_capability_repair = native_capability_repair
+        self.control_keypress_repair = control_keypress_repair
         _, _, _, selected = shape_fixture(composition_repair=composition_repair)
+        if native_capability_repair or control_keypress_repair:
+            selected = [{'Direct03.cpp': 'NativeFormsV2Combined.cpp', 'Direct04.cpp': 'NativeDocumentV2Types.cpp', 'Direct05.cpp': 'BibNativePopupOwner.cpp'}.get(name, name) for name in selected]
+        if control_keypress_repair:
+            selected = ["BibDocumentPhysicalProvider.cpp" if name == "Direct06.cpp" else name for name in selected]
         self.selected = selected
         compiled = CONTRACT['compiled_ids'] + (['ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp'] if composition_repair else ['ProviderGuard.cpp'] if guard_repair else [])
+        if native_capability_repair or control_keypress_repair:
+            compiled = ['NativeDocumentV2Publisher.cpp', 'NativeFormsV2Combined.cpp', 'NativeDocumentV2Types.cpp', 'BibEngineDocumentWasmShim.cpp', 'BibNativePopupOwner.cpp']
+        if control_keypress_repair:
+            compiled.append("BibDocumentPhysicalProvider.cpp")
         imported = [name for name in selected if name not in compiled]
         self.commands = {'objects': {name: ['fake-compiler', name] for name in compiled},
                          'imports': {name: ['fake-copy', name] for name in imported},
@@ -489,6 +503,9 @@ class ReceiptFixture:
                         'command_sha256': str(index + 1).zfill(64), 'original_argv': ['old-compiler', name],
                         'original_cwd': '/invented/donor', 'ninja_record': ['0', '1', '2', name, 'abc'],
                         'ninja_command': 'invented source-bound command', 'command_script': None}
+            if native_capability_repair or control_keypress_repair:
+                original['donor_provenance'] = dict(**({'kind': 'foundation-document-v2-native-control-keypress-object-provenance-v1'} if control_keypress_repair else {}), compile_origin='p5-compiled' if name in ('ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp') else 'legacy-imported',
+                    compile_bindings={'build': '/invented/p5' if name in ('ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp') else '/invented/legacy'})
             rows.append(original)
             record = {'kind': 'foundation-document-v2-object-import-v1', 'production_eligible': False,
                       'id': name, 'origin': 'imported', 'compiler_invoked': False, 'hardlinked': False,
@@ -497,6 +514,8 @@ class ReceiptFixture:
                       'original_argv': original['original_argv'], 'original_cwd': original['original_cwd'],
                       'ninja_record': original['ninja_record'], 'ninja_command': original['ninja_command'],
                       'command_script': None}
+            if native_capability_repair or control_keypress_repair:
+                record['donor_provenance'] = deepcopy(original['donor_provenance'])
             self.save('evidence/import-' + name + '.json', record)
         archives = []
         for name in CONTRACT['archive_order']:
@@ -514,12 +533,19 @@ class ReceiptFixture:
                        'origin': 'imported', 'archive': original, 'original_report': report,
                        'destination': str(target), 'hardlinked': False, 'archive_program_invoked': False,
                        'production_eligible': False, 'sha256': digest, 'bytes': len(raw)})
-        self.plan = {'kind': ('foundation-document-v2-maintenance-successful-donor-composition-repair-plan-v1' if composition_repair else 'foundation-document-v2-maintenance-successful-donor-guard-repair-plan-v1' if guard_repair
+        self.plan = {'kind': ('foundation-document-v2-maintenance-successful-donor-native-control-keypress-repair-plan-v1' if control_keypress_repair else 'foundation-document-v2-maintenance-successful-donor-native-capability-repair-plan-v1' if native_capability_repair else 'foundation-document-v2-maintenance-successful-donor-composition-repair-plan-v1' if composition_repair else 'foundation-document-v2-maintenance-successful-donor-guard-repair-plan-v1' if guard_repair
                               else 'foundation-document-v2-maintenance-successful-donor-plan-v1'),
                      'reuse': {'objects': [{'id': name} for name in selected],
                                'archives': [{'name': name} for name in CONTRACT['archive_order']]},
                      'successful_donor': {'reference': {'path': '/invented/donor.json', 'sha256': 'b' * 64},
                                           'objects': rows, 'archives': archives}}
+        if native_capability_repair or control_keypress_repair:
+            for name in (load_helper().native_control_keypress_artifact_names if control_keypress_repair else load_helper().native_capability_artifact_names)(selected, CONTRACT['archive_order']):
+                path = self.root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if not path.exists():
+                    raw = ('owned fake object ' + name[8:-2]).encode() if name.startswith('objects/') and name.endswith('.o') else b'inert candidate evidence, no executable artifact'
+                    path.write_bytes(raw)
 
     def save(self, name, value):
         p = self.root / name; p.parent.mkdir(exist_ok=True, parents=True); p.write_bytes(encoded(value))
@@ -527,8 +553,43 @@ class ReceiptFixture:
     def record(self, name): return json.loads((self.root / name).read_bytes())
 
     def apply(self):
-        self.namespace['_successful_build_receipt'](self.result, self.plan, self.root, self.commands)
+        name = '_native_control_keypress_build_receipt' if self.control_keypress_repair else '_native_capability_build_receipt' if self.native_capability_repair else '_successful_build_receipt'
+        self.namespace[name](self.result, self.plan, self.root, self.commands)
         return self.result
+
+
+class NativeControlKeypressAccounting(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls): cls.namespace = load_receipt_functions()
+
+    def fixture(self):
+        temp = tempfile.TemporaryDirectory(prefix='inert-control-keypress-accounting-')
+        self.addCleanup(temp.cleanup)
+        return ReceiptFixture(Path(temp.name), self.namespace, control_keypress_repair=True)
+
+    def test_real_receipt_counts_kind_provenance_and_complete_namespace(self):
+        f = self.fixture(); result = f.apply()
+        self.assertEqual(result['kind'], self.namespace['NATIVE_CONTROL_KEYPRESS_REPAIR_BUILD_KIND'])
+        self.assertEqual((51, 45, 6, 5, 0), tuple(result['accounting'][k] for k in
+            ('selected', 'imported', 'compiled', 'archive_imported', 'archive_repacked')))
+        self.assertEqual(167, result['expected_artifact_records'])
+        self.assertEqual([name for name in f.selected if name in load_helper().NATIVE_CONTROL_KEYPRESS_REPAIR_COMPILED_IDS], result['accounting']['compiled_ids'])
+        self.assertNotIn('completed_work', result)
+
+    def test_real_receipt_refuses_partition_provenance_and_archive_mutations(self):
+        for change in ('extra-compile', 'missing-import', 'old-kind', 'origin', 'archive-program', 'archive-order'):
+            f = self.fixture()
+            if change == 'extra-compile': f.commands['objects']['Extra.cpp'] = []
+            elif change == 'missing-import': f.commands['imports'].pop(next(iter(f.commands['imports'])))
+            elif change == 'old-kind': f.plan['kind'] = self.namespace['NATIVE_CAPABILITY_REPAIR_PLAN_KIND']
+            elif change == 'origin':
+                n = f.plan['successful_donor']['objects'][0]['id']; p = 'evidence/import-' + n + '.json'
+                record = f.record(p); record['donor_provenance']['kind'] = 'foundation-document-v2-native-capability-object-provenance-v1'; f.save(p, record)
+            elif change == 'archive-program':
+                p = 'evidence/import-archive-WebCore.json'; record = f.record(p); record['archive_program_invoked'] = True; f.save(p, record)
+            else: f.plan['successful_donor']['archives'].reverse()
+            with self.subTest(change=change), self.assertRaises(ValueError): f.apply()
+
 
 class Accounting(unittest.TestCase):
     @classmethod
@@ -981,6 +1042,717 @@ class CompositionRepairAccounting(unittest.TestCase):
                 name='evidence/import-archive-WebCore.json';value=f.record(name);value['archive_program_invoked']=True;f.save(name,value)
             with self.subTest(change=change),self.assertRaises(ValueError):f.apply()
 
+
+
+class NativeCapabilityShapeContextTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.h = load_helper()
+        cls.m = load_maintenance()
+
+    def fixture(self):
+        inspection, old, _, selected = shape_fixture(composition_repair=True)
+        rename = {'Direct03.cpp': 'NativeFormsV2Combined.cpp', 'Direct04.cpp': 'NativeDocumentV2Types.cpp', 'Direct05.cpp': 'BibNativePopupOwner.cpp'}
+        selected = [rename.get(name, name) for name in selected]
+        inspection.profile['direct_objects'] = [rename.get(name, name) for name in inspection.profile['direct_objects']]
+        objects = []
+        for name in selected:
+            source = dict(root='sources', path='units/' + name, sha256='1' * 64)
+            objects.append(dict(id=name, source=source, arguments=['-fno-rtti'], exceptions=False,
+                unified_members=[], dependencies=[source, dict(root='reuse', path='config.h', sha256='2' * 64)]))
+        old['reuse']['objects'] = deepcopy(objects)
+        inspection.proof['objects'] = deepcopy(objects)
+        for key in ('host_tools', 'sdk_tools', 'python_launch', 'emscripten_config', 'private_cache', 'metadata', 'link'):
+            old['reuse'][key] = inspection.proof[key] = {key: 'unchanged'}
+        # The independent original fixture uses literal archive sizes and engine IDs.
+        old['reuse']['archives'] = deepcopy(inspection.proof['archives'])
+        rows = [dict(id=name, origin='p5-compiled' if name in ('ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp')
+                     else 'legacy-imported') for name in selected if name not in
+                ('NativeDocumentV2Publisher.cpp', 'NativeFormsV2Combined.cpp', 'NativeDocumentV2Types.cpp', 'BibEngineDocumentWasmShim.cpp', 'BibNativePopupOwner.cpp')]
+        namespace = {'{sources}/units/' + name: '1' * 64 for name in selected}
+        namespace['{reuse}/config.h'] = '2' * 64
+        shared = dict(directories=['{sources}/units', '{reuse}'], physical_headers_sha256='3' * 64, vfs={})
+        previous, current = dict(shared, namespace=deepcopy(namespace)), dict(shared, namespace=deepcopy(namespace))
+        for row in inspection.proof['objects']:
+            if row['id'] in ('NativeDocumentV2Publisher.cpp', 'NativeFormsV2Combined.cpp', 'NativeDocumentV2Types.cpp', 'BibNativePopupOwner.cpp'):
+                prior = row['source']; row['source'] = dict(prior, sha256='4' * 64)
+                row['dependencies'][0] = row['source']
+                current['namespace']['{sources}/' + prior['path']] = '4' * 64
+        return inspection, old, rows, selected, previous, current
+
+    def test_exact_five_fresh_fortysix_imports_and_168_namespace(self):
+        i, old, rows, selected, previous, current = self.fixture()
+        self.assertEqual(selected, self.h.native_capability_shape(i, old, rows, self.m))
+        self.h.native_capability_context_delta(i, old, previous, current, self.m)
+        self.assertEqual((43, 3), tuple(sum(row['origin'] == origin for row in rows) for origin in ('legacy-imported', 'p5-compiled')))
+        names = self.h.native_capability_artifact_names(selected, list(CONTRACT['archive_order']))
+        self.assertEqual(168, len(names))
+        self.assertIn('objects/BibEngineDocumentWasmShim.cpp.o.d', names)
+        self.assertNotIn('evidence/import-BibEngineDocumentWasmShim.cpp.json', names)
+        self.assertIn('objects/BibNativePopupOwner.cpp.o.d', names)
+        self.assertNotIn('evidence/import-BibNativePopupOwner.cpp.json', names)
+        self.assertIn('evidence/import-main.cpp.original.d', names)
+
+    def test_partition_origin_missing_duplicate_reorder_and_extra_fields_reject(self):
+        for change in ('missing', 'duplicate', 'reverse', 'extra', 'origin', 'shim-import', 'unknown'):
+            i, old, rows, _, _, _ = self.fixture()
+            if change == 'missing': rows.pop()
+            elif change == 'duplicate': rows[1] = deepcopy(rows[0])
+            elif change == 'reverse': rows.reverse()
+            elif change == 'extra': rows[0]['trusted'] = True
+            elif change == 'origin': next(r for r in rows if r['id'] == 'main.cpp')['origin'] = 'legacy-imported'
+            else: rows[0]['id'] = 'BibEngineDocumentWasmShim.cpp' if change == 'shim-import' else 'Unknown.cpp'
+            with self.subTest(change=change), self.assertRaises(ValueError): self.h.native_capability_shape(i, old, rows, self.m)
+
+    def test_archive_engine_membership_and_fresh_direct_boundary_cannot_change(self):
+        for change in ('member-count', 'replacement', 'direct', 'order'):
+            i, old, rows, _, _, _ = self.fixture()
+            if change == 'member-count': i.proof['archives'][0]['members'].pop()
+            elif change == 'replacement': i.proof['replacements'][0]['object_id'] = 'main.cpp'
+            elif change == 'direct': i.profile['direct_objects'].remove('NativeFormsV2Combined.cpp')
+            else: i.proof['objects'].reverse()
+            with self.subTest(change=change), self.assertRaises(ValueError): self.h.native_capability_shape(i, old, rows, self.m)
+
+    def test_no_header_namespace_physical_vfs_or_undeclared_source_waiver(self):
+        for change in ('header', 'added', 'removed', 'physical', 'vfs', 'shim', 'imported', 'missing-native'):
+            i, old, _, _, previous, current = self.fixture()
+            if change == 'header': current['namespace']['{reuse}/config.h'] = '5' * 64
+            elif change == 'added': current['namespace']['{sources}/new.h'] = '5' * 64
+            elif change == 'removed': current['namespace'].pop(next(iter(current['namespace'])))
+            elif change == 'physical': current['physical_headers_sha256'] = '5' * 64
+            elif change == 'vfs': current['vfs'] = {'changed': True}
+            elif change in ('shim', 'imported'):
+                name = 'BibEngineDocumentWasmShim.cpp' if change == 'shim' else 'main.cpp'
+                row = next(r for r in i.proof['objects'] if r['id'] == name); row['source']['sha256'] = '5' * 64
+            else:
+                row = next(r for r in i.proof['objects'] if r['id'] == 'NativeDocumentV2Types.cpp')
+                row['source']['sha256'] = '1' * 64
+            with self.subTest(change=change), self.assertRaises(ValueError): self.h.native_capability_context_delta(i, old, previous, current, self.m)
+
+
+    def test_arguments_unified_dependency_and_tool_metadata_changes_reject(self):
+        for change in ('arguments', 'unified_members', 'exceptions', 'dependencies', 'source-path',
+                       'host_tools', 'sdk_tools', 'private_cache', 'metadata', 'link'):
+            i, old, _, _, previous, current = self.fixture()
+            row = i.proof['objects'][0]
+            if change in ('arguments', 'unified_members', 'dependencies'): row[change] = ['forged']
+            elif change == 'exceptions': row[change] = True
+            elif change == 'source-path': row['source'] = dict(row['source'], path='different.cpp')
+            else: i.proof[change] = {'changed': True}
+            with self.subTest(change=change), self.assertRaises(ValueError): self.h.native_capability_context_delta(i, old, previous, current, self.m)
+
+
+class NativeControlKeypressShapeContextTests(unittest.TestCase):
+    """F6 is a separate six-fresh lane over the same exact P5 baseline."""
+    @classmethod
+    def setUpClass(cls):
+        cls.h = load_helper()
+        cls.m = load_maintenance()
+
+    def fixture(self):
+        i, old, _, selected, previous, current = NativeCapabilityShapeContextTests.fixture(self)
+        old_name, new_name = 'Direct06.cpp', 'BibDocumentPhysicalProvider.cpp'
+        self.assertIn(old_name, selected)
+        selected = [new_name if name == old_name else name for name in selected]
+        i.profile['direct_objects'] = [new_name if name == old_name else name for name in i.profile['direct_objects']]
+        for object_set in (old['reuse']['objects'], i.proof['objects']):
+            row = next(row for row in object_set if row['id'] == old_name)
+            row['id'] = new_name
+            row['source'] = dict(row['source'], path='units/' + new_name)
+            row['dependencies'][0] = row['source']
+        new_source = next(row for row in i.proof['objects'] if row['id'] == new_name)
+        prior_source = next(row for row in old['reuse']['objects'] if row['id'] == new_name)['source']
+        new_source['source'] = dict(new_source['source'], sha256='5' * 64)
+        new_source['dependencies'][0] = new_source['source']
+        previous['namespace'].pop('{sources}/units/' + old_name)
+        current['namespace'].pop('{sources}/units/' + old_name)
+        previous['namespace']['{sources}/units/' + new_name] = prior_source['sha256']
+        current['namespace']['{sources}/units/' + new_name] = '5' * 64
+        fresh = set(self.h.NATIVE_CONTROL_KEYPRESS_REPAIR_COMPILED_IDS)
+        rows = [dict(id=name, origin='p5-compiled' if name in ('ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp')
+                     else 'legacy-imported') for name in selected if name not in fresh]
+        return i, old, rows, selected, previous, current
+
+    def test_exact_six_fresh_45_imports_and_167_artifacts(self):
+        i, old, rows, selected, previous, current = self.fixture()
+        self.assertEqual(selected, self.h.native_control_keypress_shape(i, old, rows, self.m))
+        self.h.native_control_keypress_context_delta(i, old, previous, current, self.m)
+        self.assertEqual((42, 3), tuple(sum(row['origin'] == origin for row in rows)
+            for origin in ('legacy-imported', 'p5-compiled')))
+        names = self.h.native_control_keypress_artifact_names(selected, list(CONTRACT['archive_order']))
+        self.assertEqual(167, len(names))
+        self.assertIn('objects/BibDocumentPhysicalProvider.cpp.o.d', names)
+        self.assertNotIn('evidence/import-BibDocumentPhysicalProvider.cpp.json', names)
+        self.assertIn('evidence/import-BibNativeEditorBackend.cpp.original.d', names)
+
+    def test_each_historical_five_lane_refuses_f6_partition_and_f6_refuses_old_five(self):
+        i, old, rows, _, _, _ = self.fixture()
+        with self.assertRaises(ValueError): self.h.native_capability_shape(i, old, rows, self.m)
+        old_fixture = NativeCapabilityShapeContextTests.fixture(self)
+        oi, oo, old_rows, selected, _, _ = old_fixture
+        with self.assertRaises(ValueError): self.h.native_control_keypress_shape(oi, oo, old_rows, self.m)
+
+    def test_order_origin_and_exact_unit_set_are_closed(self):
+        for change in ('order', 'origin', 'missing-provider', 'wrong-provider', 'extra-provider', 'shim',
+                       'member-count', 'replacement-owner', 'direct-boundary', 'selected-order'):
+            i, old, rows, _, _, _ = self.fixture()
+            if change == 'order': rows.reverse()
+            elif change == 'origin': next(row for row in rows if row['id'] == 'main.cpp')['origin'] = 'legacy-imported'
+            elif change == 'missing-provider': i.profile['direct_objects'].remove('BibDocumentPhysicalProvider.cpp')
+            elif change == 'wrong-provider': rows.append(dict(id='BibDocumentPhysicalProvider.cpp', origin='legacy-imported'))
+            elif change == 'extra-provider': rows.append(dict(id='Bogus.cpp', origin='legacy-imported'))
+            elif change == 'shim': rows.append(dict(id='BibEngineDocumentWasmShim.cpp', origin='p5-compiled'))
+            elif change == 'member-count': i.proof['archives'][0]['members'].pop()
+            elif change == 'replacement-owner': i.proof['replacements'][0]['object_id'] = 'main.cpp'
+            elif change == 'direct-boundary': i.profile['direct_objects'].remove('BibDocumentPhysicalProvider.cpp')
+            else: i.proof['objects'].reverse()
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.h.native_control_keypress_shape(i, old, rows, self.m)
+
+    def test_source_delta_allows_five_named_bodies_and_rejects_unmodified_or_unselected(self):
+        i, old, _, _, previous, current = self.fixture()
+        changed = {name for name, pin in previous['namespace'].items() if current['namespace'].get(name) != pin}
+        self.assertEqual(5, len(changed))
+        self.h.native_control_keypress_context_delta(i, old, previous, current, self.m)
+        # An allowed source must differ from its exact predecessor; changing it
+        # to an arbitrary third hash is admitted here and pinned by donor capture.
+        i, old, _, _, previous, current = self.fixture()
+        name = 'BibDocumentPhysicalProvider.cpp'
+        row = next(row for row in i.proof['objects'] if row['id'] == name)
+        before = next(prior for prior in old['reuse']['objects'] if prior['id'] == name)['source']
+        row['source'] = dict(row['source'], sha256=before['sha256'])
+        row['dependencies'][0] = row['source']
+        current['namespace']['{sources}/' + row['source']['path']] = before['sha256']
+        with self.assertRaises(ValueError): self.h.native_control_keypress_context_delta(i, old, previous, current, self.m)
+        for name in ('BibEngineDocumentWasmShim.cpp', 'main.cpp'):
+            ii, oo, _, _, pp, cc = self.fixture()
+            row = next(row for row in ii.proof['objects'] if row['id'] == name)
+            row['source'] = dict(row['source'], sha256='6' * 64)
+            row['dependencies'][0] = row['source']
+            cc['namespace']['{sources}/' + row['source']['path']] = '6' * 64
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.h.native_control_keypress_context_delta(ii, oo, pp, cc, self.m)
+
+    def test_f6_source_context_rejects_header_namespace_vfs_physical_and_policy_changes(self):
+        for change in ('header', 'added', 'removed', 'physical', 'vfs', 'arguments', 'unified_members',
+                       'exceptions', 'dependencies', 'source-path', 'host_tools', 'sdk_tools',
+                       'private_cache', 'metadata', 'link'):
+            i, old, _, _, previous, current = self.fixture()
+            if change == 'header': current['namespace']['{reuse}/config.h'] = '5' * 64
+            elif change == 'added': current['namespace']['{sources}/new.h'] = '5' * 64
+            elif change == 'removed': current['namespace'].pop(next(iter(current['namespace'])))
+            elif change == 'physical': current['physical_headers_sha256'] = '5' * 64
+            elif change == 'vfs': current['vfs'] = {'changed': True}
+            elif change in ('arguments', 'unified_members', 'dependencies'):
+                i.proof['objects'][0][change] = ['forged']
+            elif change == 'exceptions': i.proof['objects'][0][change] = True
+            elif change == 'source-path': i.proof['objects'][0]['source'] = dict(i.proof['objects'][0]['source'], path='units/elsewhere.cpp')
+            else: i.proof[change] = {'changed': True}
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.h.native_control_keypress_context_delta(i, old, previous, current, self.m)
+
+    def test_f6_metadata_kind_is_separate_and_keeps_p5_pins(self):
+        fixture = NativeCapabilityP5MetadataFixture(self.h, self.m)
+        fixture.value['kind'] = self.h.NATIVE_CONTROL_KEYPRESS_REPAIR_DONOR_KIND
+        self.h._p5_metadata(fixture.value, fixture.inspection, fixture.api, control_keypress=True)
+        with self.assertRaises(ValueError): self.h._p5_metadata(fixture.value, fixture.inspection, fixture.api)
+        fixture.value['p5_plan']['sha256'] = '0' * 64
+        with self.assertRaises(ValueError): self.h._p5_metadata(fixture.value, fixture.inspection, fixture.api, control_keypress=True)
+
+
+
+class NativeCapabilityP5MetadataFixture:
+    """Fabricated trusted-reader documents; never reads a retained product/SDK."""
+    def __init__(self, h, m):
+        self.h, self.m = h, m
+        self.api = Reader()
+        self.api.SCOPE, self.api.ROOT = m.SCOPE, Path('/invented/repository')
+        self.api.profile_path = lambda selected: 'profile-' + selected + '.json'
+        self.api.digest = lambda path: '9' * 64
+        self.api._completed_binding = m._completed_binding
+        self.bindings = {key: Path('/invented/p5-' + key) for key in ('sources', 'sdk', 'reuse', 'build')}
+        i, old, rows, selected, _, _ = NativeCapabilityShapeContextTests.fixture(SimpleNamespace(h=h, m=m))
+        self.inspection = i; self.selected = selected
+        i.selection = dict(document_profile='editor', sdk_manifest_sha256='8' * 64)
+        i.roots = {'sdk': self.bindings['sdk']}
+        self.docs = {}
+        self.value = dict(schema_version=1, kind=h.NATIVE_CAPABILITY_REPAIR_DONOR_KIND,
+            document_profile='editor', p5_bindings={k: str(v) for k, v in self.bindings.items()},
+            legacy_donor={'path': '/invented/legacy/descriptor.json', 'sha256': '747858f13c1878d7829aab79f933e75100f706a76b5f69f4eb0d2a670510b54e'},
+            objects=rows, archives=[], p5_private={}, p5_ninja_log={}, p5_compiled=[])
+        paths = {name: '/invented/authority/' + name + '.json' for name in h.P5_PINS}
+        paths['p5_plan'] = '/invented/p5-plan/plan.json'
+        paths['p5_maintenance_build'] = str(self.bindings['build'] / 'maintenance-build.json')
+        paths['p5_commands'] = str(self.bindings['build'] / 'evidence/commands.json')
+        for name, pin in h.P5_PINS.items(): self.value[name] = {'path': paths[name], 'sha256': pin}
+        self.api.documents[(self.value['legacy_donor']['path'], self.value['legacy_donor']['sha256'])] = {}
+        self.records = {}
+        fresh = {'NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp', 'ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp'}
+        names = list(CONTRACT['archive_order'])
+        product_names = {'artifacts/foundation-retained-engine.mjs', 'artifacts/foundation-retained-engine.wasm',
+            'document-generated/BibCopiedDocumentMetadata.generated.h', 'document-generated/provider-build.json', 'evidence/engine-link.map'}
+        for name in selected:
+            product_names.add('objects/' + name + '.o')
+            if name in fresh: product_names.add('objects/' + name + '.o.d')
+            else: product_names.update(('evidence/import-' + name + '.json', 'evidence/import-' + name + '.original.d'))
+        for name in names: product_names.update(('archives/lib' + name + '.a', 'evidence/archive-' + name + '.json', 'evidence/import-archive-' + name + '.json'))
+        for index, name in enumerate(sorted(product_names)):
+            self.records[name] = self.fact(str(self.bindings['build'] / name), index + 1)
+        natural = dict(schema_version=1, primary_returncode=0, descendants_outlived=False, terminated=False, reaped=1, error=None)
+        accounting = dict(selected=51, compiled=5, imported=46, archive_imported=5, archive_repacked=0,
+            compiled_ids=[n for n in selected if n in fresh], imported_ids=[n for n in selected if n not in fresh], imported_archive_names=names)
+        selection = dict(document_profile='editor', sources=str(self.bindings['sources']), sdk=str(self.bindings['sdk']),
+            reuse_root=str(self.bindings['reuse']), sdk_manifest_sha256='8' * 64, recipe_sha256='6' * 64, sources_sha256='7' * 64)
+        old.update(schema_version=1, kind=h.COMPOSITION_REPAIR_PLAN_KIND, production_eligible=False, scope=m.SCOPE,
+            selection=selection, profile_sha256='9' * 64, producer_inputs={'tools/frozen.py': 'a' * 64}, successful_donor={'reference': self.value['legacy_donor']})
+        build = dict(schema_version=1, kind=h.COMPOSITION_REPAIR_BUILD_KIND, status='passed', production_eligible=False,
+            accounting=deepcopy(accounting), plan_sha256=h.P5_PINS['p5_plan'], source_recipe_sha256='6' * 64,
+            sources_sha256='7' * 64, paired_sdk_sha256='8' * 64,
+            commands={'path': 'evidence/commands.json', 'sha256': h.P5_PINS['p5_commands']},
+            objects=[dict(id=n, sha256=self.records['objects/' + n + '.o']['sha256'], bytes=self.records['objects/' + n + '.o']['bytes']) for n in selected],
+            inspection={'inert': 'inspection'})
+        result = dict(status='passed', returncode=0, closed=True, verified=True, writers_joined=True, runtime_not_run=True,
+            production_eligible=False, static_byte_readback='passed', input_identity_namespace_postflight='passed',
+            supervisor_report=deepcopy(natural), actual_objects=51, actual_archive_reports=5, opaque_unchanged_members=2060,
+            artifact_records=self.records, successful_donor={'accounting': deepcopy(accounting)},
+            maintenance_build_sha256=h.P5_PINS['p5_maintenance_build'], inspection_sha256=digest(encoded(build['inspection'])))
+        build['successful_donor'] = self.value['legacy_donor']
+        result['successful_donor'].update(successful_donor=self.value['legacy_donor'], independent_copies=True, original_dependencies_retained=True)
+        root = dict(schema_version=1, kind='root-closed-successful-donor-composition-repair-candidate-accepted-v1', status='passed',
+            actual_session=4865, caller_observed_exit=0, closed=True, writers_joined=True, inputs_unchanged=True,
+            runtime_not_run=True, production_eligible=False, input_identity_namespace_postflight='passed',
+            all_artifact_physical_identities_root_rechecked=True, verified_artifact_records=168, qualified_report=deepcopy(natural), records={})
+        ref_fields = {'closed': 'p5_closed_result', 'commands': 'p5_commands', 'maintenance_build': 'p5_maintenance_build', 'plan': 'p5_plan', 'donor_descriptor': 'legacy_donor'}
+        for index, (name, key) in enumerate(ref_fields.items()):
+            fact = self.fact(self.value[key]['path'], 200 + index, self.value[key]['sha256'])
+            root['records'][name] = self.flat(fact)
+        root['records']['inspection'] = self.flat(self.fact('/invented/inspection.json', 209, result['inspection_sha256']))
+        root['artifact_records_sha256'] = digest((json.dumps(self.records, sort_keys=True, separators=(',', ':'), ensure_ascii=True, allow_nan=False) + '\n').encode('ascii'))
+        packet = dict(kind='editor-rich-ui-successful-donor-composition-repair-build-launch-v1', selection=selection,
+            producer_inputs=old['producer_inputs'], plan=self.value['p5_plan']['path'], plan_sha256=h.P5_PINS['p5_plan'],
+            freeze=self.value['p5_input_freeze']['path'], freeze_sha256=h.P5_PINS['p5_input_freeze'],
+            preparation_acceptance=self.value['p5_preparation_acceptance'], output=str(self.bindings['build']),
+            policy=dict(cold_fallback=False, header_odr_waiver=False, production_eligible=False, runtime=False, timestamp_seeding=False))
+        packet['argv'] = ['./build.sh', 'engine-maintenance', 'document-build', '--plan', packet['plan'], '--plan-sha256', packet['plan_sha256'], '--output', packet['output'], '--jobs', '1', '--timeout-seconds', '2700']
+        freeze = dict(schema_version=1, kind='editor-rich-ui-input-freeze-v1', actual_plan_or_build=False,
+            roots={k: str(v) for k, v in self.bindings.items() if k != 'build'}, files={}, directories={})
+        for path, pin in [(self.bindings['sources'] / 'recipe.json', '6' * 64),
+                          (self.bindings['sources'] / 'sources.json', '7' * 64),
+                          (self.bindings['sources'] / 'tools/frozen.py', 'a' * 64), (self.bindings['sdk'] / 'sdk.json', '8' * 64)]:
+            freeze['files'][str(path)] = dict(sha256=pin)
+        preparation = dict(status='passed', closed=True, writers_joined=True, caller_observed_exit=0,
+            input_identity_namespace_postflight='passed', production_eligible=False)
+        vfs = self.fact(str(self.bindings['build'] / 'private/header-identity-vfs.json'), 220)
+        self.value['p5_private'] = dict(vfs=vfs, configuration={}, launcher={})
+        gate = dict(kind='root-P5-actual-VFS-five-depfile-gate-v1', status='passed', actual_session=4865,
+            five_depfile_ownership='passed', result_sha256=h.P5_PINS['p5_closed_result'], packet_sha256=h.P5_PINS['p5_build_packet'],
+            production_eligible=False, actual_VFS=vfs, depfile_records={'objects/' + n + '.o.d': self.records['objects/' + n + '.o.d'] for n in fresh})
+        commands = dict(objects={n: [] for n in fresh}, imports={n: [] for n in selected if n not in fresh},
+            archive_imports={n: [] for n in names}, metadata=[], link=[])
+        self.docs.update(zip(h.P5_PINS, (root, result, old, build, commands, packet, freeze, preparation, gate)))
+        for name, document in self.docs.items():
+            ref = self.value[name]; self.api.documents[(ref['path'], ref['sha256'])] = document
+
+    def fact(self, path, index, pin=None):
+        value = dict(path=path, sha256=pin or digest(path), bytes=index + 10, mode=0o644,
+            identity=[31, index + 100, 0o100644, 1, index + 10, 1000, 1001])
+        self.api.facts[path] = deepcopy(value)
+        return value
+
+    @staticmethod
+    def flat(fact):
+        i = fact['identity']
+        return dict(path=fact['path'], sha256=fact['sha256'], bytes=fact['bytes'], dev=i[0], ino=i[1],
+            mode=fact['mode'], nlink=i[3], mtime_ns=i[5], ctime_ns=i[6])
+
+    def check(self): return self.h._p5_metadata(self.value, self.inspection, self.api)
+
+
+class NativeCapabilityP5MetadataTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls): cls.h, cls.m = load_helper(), load_maintenance()
+
+    def fixture(self): return NativeCapabilityP5MetadataFixture(self.h, self.m)
+
+    def test_complete_pinned_p5_chain_preserves_168_original_products(self):
+        f = self.fixture(); docs, bindings, records = f.check()
+        self.assertEqual(168, len(records))
+        self.assertEqual(f.bindings, bindings)
+        self.assertIs(f.docs['p5_plan'], docs['p5_plan'])
+        self.assertEqual('passed', f.docs['p5_closed_result']['status'])
+
+    def test_p5_root_index_requires_the_original_newline(self):
+        f = self.fixture()
+        # This is the original Root receipt writer's format, including its final
+        # newline; the producer must admit that authority rather than restamp it.
+        compact = json.dumps(f.records, sort_keys=True, separators=(',', ':'),
+                             ensure_ascii=True, allow_nan=False).encode('ascii')
+        root = f.docs['p5_root_acceptance']
+        self.assertEqual(digest(compact + b'\n'), root['artifact_records_sha256'])
+        f.check()
+        root['artifact_records_sha256'] = digest(compact)
+        with self.assertRaisesRegex(ValueError, 'P5 product index differs'):
+            f.check()
+
+    def test_wrong_descriptor_kind_profile_fields_and_pins_reject(self):
+        for change in ('schema', 'kind', 'profile', 'extra', *self.h.P5_PINS):
+            f = self.fixture()
+            if change == 'schema': f.value['schema_version'] = True
+            elif change == 'kind': f.value['kind'] = self.h.COMPOSITION_REPAIR_DONOR_KIND
+            elif change == 'profile': f.value['document_profile'] = 'physical'
+            elif change == 'extra': f.value['eligible'] = True
+            else: f.value[change]['sha256'] = 'f' * 64
+            with self.subTest(change=change), self.assertRaises(ValueError): f.check()
+
+    def test_root_caller_status_natural_and_physical_reference_negatives(self):
+        for change in ('closed', 'session', 'caller', 'runtime', 'natural', 'physical', 'artifact-hash', 'artifact-extra', 'hardlink'):
+            f = self.fixture(); root = f.docs['p5_root_acceptance']
+            if change == 'closed': root['closed'] = False
+            elif change == 'session': root['actual_session'] = True
+            elif change == 'caller': f.docs['p5_closed_result']['returncode'] = False
+            elif change == 'runtime': root['runtime_not_run'] = False
+            elif change == 'natural': root['qualified_report']['terminated'] = True
+            elif change == 'physical': root['records']['plan']['ino'] += 1
+            elif change == 'artifact-hash': root['artifact_records_sha256'] = 'f' * 64
+            elif change == 'artifact-extra': f.records['unrelated'] = deepcopy(next(iter(f.records.values())))
+            else:
+                fact = next(iter(f.records.values())); fact['identity'][3] = 2
+                root['artifact_records_sha256'] = digest((json.dumps(f.records, sort_keys=True, separators=(',', ':'), ensure_ascii=True, allow_nan=False) + '\n').encode('ascii'))
+            with self.subTest(change=change), self.assertRaises(ValueError): f.check()
+
+    def test_source_sdk_freeze_packet_build_command_and_gate_joins_reject(self):
+        for change in ('SDK', 'freeze', 'launch', 'policy', 'recipe', 'commands', 'count-bool', 'VFS', 'depfile', 'legacy'):
+            f = self.fixture()
+            if change == 'SDK': f.inspection.selection['sdk_manifest_sha256'] = 'f' * 64
+            elif change == 'freeze': f.docs['p5_input_freeze']['files'].clear()
+            elif change == 'launch': f.docs['p5_build_packet']['argv'][-1] = '9999'
+            elif change == 'policy': f.docs['p5_build_packet']['policy']['cold_fallback'] = True
+            elif change == 'recipe': f.docs['p5_maintenance_build']['source_recipe_sha256'] = 'f' * 64
+            elif change == 'commands': f.docs['p5_commands']['objects']['extra.cpp'] = []
+            elif change == 'count-bool': f.docs['p5_maintenance_build']['accounting']['archive_repacked'] = False
+            elif change == 'VFS': f.value['p5_private']['vfs'] = {}
+            elif change == 'depfile': f.docs['p5_vfs_dependency_gate']['depfile_records'].clear()
+            else: f.value['legacy_donor'] = dict(f.value['legacy_donor'], sha256='f' * 64)
+            with self.subTest(change=change), self.assertRaises(ValueError): f.check()
+
+
+class NativeCapabilityP5CompiledFixture(NativeCapabilityP5MetadataFixture):
+    def __init__(self, h, m):
+        super().__init__(h, m)
+        old = self.docs['p5_plan']; proof = old['reuse']; freeze = self.docs['p5_input_freeze']
+        self.old_inspection = SimpleNamespace(proof=proof, roots={k: v for k, v in self.bindings.items() if k != 'build'},
+            inventories={'sources': {}, 'sdk': {}, 'reuse': {}})
+        self.api._completed_arguments = m._completed_arguments
+        self.api._depfile_inputs = m._depfile_inputs
+        self.api._completed_ninja_command = m._completed_ninja_command
+        original_fact_reader = self.api._completed_fact
+        self.api._completed_fact = lambda fact, **kwargs: original_fact_reader(fact)
+        self.api.ordinary = lambda path, *args, **kwargs: Path(path)
+        self.api.checked_read = lambda path, pin: self.api.raw[str(path)]
+        def reference(ref, roots, inventories):
+            if inventories[ref['root']].get(ref['path']) != ref['sha256']: raise ValueError('fixture inventory mismatch')
+            return roots[ref['root']] / ref['path']
+        self.api.ref_path = reference
+        proof['host_tools'] = {'cmake': {'path': '/invented/cmake', 'version': 'cmake version 3.31.6'},
+                               'ninja': {'path': '/invented/ninja', 'version': '1.12.1'}}
+        proof['private_cache'] = dict(root='cache', files=['cache/sysroot/include/cache.h'])
+        for index, obj in enumerate(proof['objects']):
+            obj['arguments'] = ['-fno-rtti']
+            source = obj['source']; path = self.bindings['sources'] / source['path']
+            fact = self.fact(str(path), 300 + index, source['sha256'])
+            freeze['files'][str(path)] = fact
+            self.old_inspection.inventories['sources'][source['path']] = source['sha256']
+        common = self.bindings['sources'] / 'units/common.h'
+        common_fact = self.fact(str(common), 360)
+        freeze['files'][str(common)] = common_fact
+        self.old_inspection.inventories['sources']['units/common.h'] = common_fact['sha256']
+        sdk_path = self.bindings['sdk'] / 'cache/sysroot/include/cache.h'
+        sdk_fact = self.fact(str(sdk_path), 361)
+        freeze['files'][str(sdk_path)] = sdk_fact
+        self.old_inspection.inventories['sdk']['cache/sysroot/include/cache.h'] = sdk_fact['sha256']
+        cache_path = self.bindings['build'] / 'private/cache/sysroot/include/cache.h'
+        self.api.raw[str(cache_path)] = b'inert cache seed'
+        cwd = str(self.bindings['build'] / 'cmake/build')
+        graph_source = str(self.bindings['sources'] / Path(m.GRAPH_PATH).parent)
+        log = ['# ninja log v6']
+        commands = self.docs['p5_commands']['objects']
+        self.dependencies = {}
+        for name in [r['id'] for r in proof['objects'] if r['id'] in h.COMPOSITION_REPAIR_COMPILED_IDS]:
+            obj = next(r for r in proof['objects'] if r['id'] == name)
+            target = str(self.bindings['build'] / ('objects/' + name + '.o')); depfile = target + '.d'
+            argv = [str(self.bindings['sdk'] / 'upstream/emscripten/em++'), '-ivfsoverlay',
+                str(self.bindings['build'] / 'private/header-identity-vfs.json'), '-fno-rtti',
+                '-MD', '-MT', target, '-MF', depfile, '-o', target,
+                '-c', str(self.bindings['sources'] / obj['source']['path'])]
+            commands[name] = argv
+            transformed = str(self.bindings['build'] / ('cmake/build/CMakeFiles/d/' + hashlib.sha256(depfile.encode()).hexdigest() + '.d'))
+            transform = ['/invented/cmake', '-E', 'cmake_transform_depfile', 'Ninja', 'gccdepfile',
+                graph_source, graph_source, cwd, cwd, depfile, transformed]
+            command = ' '.join(['cd', cwd, '&&', *argv, '&&', *transform])
+            record = ['0', '1', str(self.records['objects/' + name + '.o']['identity'][5]), target, m._completed_ninja_hash(command)]
+            self.value['p5_compiled'].append(dict(id=name, ninja_record=record, ninja_command=command, command_script=None))
+            log.append('\t'.join(record))
+            keys = [str(self.bindings['sources'] / obj['source']['path']), str(common), str(cache_path)]
+            if name == 'BibEngineDocumentWasmShim.cpp': keys.append(str(self.bindings['build'] / 'document-generated/BibCopiedDocumentMetadata.generated.h'))
+            self.dependencies[name] = keys
+            self.set_dependencies(name, keys)
+        log_fact = self.fact(str(self.bindings['build'] / 'cmake/build/.ninja_log'), 370)
+        self.value['p5_ninja_log'] = log_fact
+        self.api.raw[log_fact['path']] = ('\n'.join(log) + '\n').encode()
+
+    def set_dependencies(self, name, keys):
+        target = str(self.bindings['build'] / ('objects/' + name + '.o'))
+        self.api.raw[target + '.d'] = (target + ': ' + ' '.join(keys) + '\n').encode()
+
+    def compiled(self):
+        return self.h._p5_compiled_rows(self.value, self.old_inspection, self.bindings,
+            self.docs['p5_input_freeze'], self.records, self.docs['p5_commands'], self.api)
+
+
+class NativeCapabilityP5CompiledTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls): cls.h, cls.m = load_helper(), load_maintenance()
+
+    def fixture(self): return NativeCapabilityP5CompiledFixture(self.h, self.m)
+
+    def test_three_imports_retain_actual_p5_compiler_depfile_and_ninja(self):
+        f = self.fixture(); admitted, refs = f.compiled()
+        self.assertEqual({'ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp'}, {r['id'] for r in admitted})
+        self.assertTrue(all(r['original_cwd'] == str(f.bindings['build'] / 'cmake/build') for r in admitted))
+        self.assertTrue(all(r['object'] == f.records['objects/' + r['id'] + '.o'] for r in admitted))
+        self.assertTrue(any(ref['path'] == 'cache/sysroot/include/cache.h' for ref in refs))
+        self.assertFalse(any('generated' in ref['path'] for ref in refs))
+        self.assertEqual(5, sum(path.endswith('.o.d') for path in f.api.fact_reads))
+
+    def test_missing_or_extra_compiler_evidence_and_wrong_ninja_coordinates_reject(self):
+        for change in ('missing', 'reverse', 'extra', 'mtime', 'hash', 'argv-source', 'overlay', 'output'):
+            f = self.fixture(); rows = f.value['p5_compiled']
+            if change == 'missing': rows.pop()
+            elif change == 'reverse': rows.reverse()
+            elif change == 'extra': rows[0]['eligible'] = True
+            elif change == 'mtime': rows[0]['ninja_record'][2] = '999'
+            elif change == 'hash': rows[0]['ninja_record'][4] = 'bad'
+            else:
+                argv = f.docs['p5_commands']['objects'][rows[0]['id']]
+                flag = {'argv-source': '-c', 'overlay': '-ivfsoverlay', 'output': '-o'}[change]
+                argv[argv.index(flag) + 1] = '/invented/wrong'
+            with self.subTest(change=change), self.assertRaises(ValueError): f.compiled()
+
+    def test_generated_unknown_source_missing_and_cache_unseeded_dependencies_reject(self):
+        name = 'main.cpp'
+        for change in ('generated', 'outside', 'source-missing', 'cache', 'variable', 'shim-missing'):
+            f = self.fixture(); owner = 'BibEngineDocumentWasmShim.cpp' if change == 'shim-missing' else name
+            keys = list(f.dependencies[owner])
+            if change == 'generated': keys.append(str(f.bindings['build'] / 'document-generated/BibCopiedDocumentMetadata.generated.h'))
+            elif change == 'outside': keys.append('/invented/unowned/header.h')
+            elif change == 'source-missing': keys.pop(0)
+            elif change == 'cache': keys.append(str(f.bindings['build'] / 'private/cache/unseeded.h'))
+            elif change == 'shim-missing': keys.pop()
+            else: keys.append('$(EXPAND)')
+            f.set_dependencies(owner, keys)
+            with self.subTest(change=change), self.assertRaises(ValueError): f.compiled()
+
+    def test_frozen_dependency_identity_and_inventory_hash_are_required(self):
+        for change in ('missing-fact', 'fact-inode', 'inventory'):
+            f = self.fixture(); path = str(f.bindings['sources'] / 'units/common.h')
+            if change == 'missing-fact': del f.docs['p5_input_freeze']['files'][path]
+            elif change == 'fact-inode': f.docs['p5_input_freeze']['files'][path]['identity'][1] += 1
+            else: f.old_inspection.inventories['sources']['units/common.h'] = 'f' * 64
+            with self.subTest(change=change), self.assertRaises(ValueError): f.compiled()
+
+
+class NativeCapabilityReceiptTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.namespace = load_receipt_functions()
+        cls.namespace['ordinary'] = load_maintenance().ordinary
+
+    def fixture(self):
+        temporary = tempfile.TemporaryDirectory(prefix='inert-native-capability-receipt-')
+        self.addCleanup(temporary.cleanup)
+        return ReceiptFixture(Path(temporary.name), self.namespace, composition_repair=True, native_capability_repair=True)
+
+    def test_exact_five_fresh_fortysix_imports_168_evidence_and_real_origins(self):
+        f = self.fixture(); result = f.apply()
+        self.assertEqual('foundation-document-v2-maintenance-successful-donor-native-capability-repair-build-v1', result['kind'])
+        self.assertEqual((51, 46, 5, 5, 0), tuple(result['accounting'][key] for key in
+            ('selected', 'imported', 'compiled', 'archive_imported', 'archive_repacked')))
+        self.assertEqual(168, result['expected_artifact_records'])
+        self.assertEqual((43, 3), tuple(sum(row['donor_provenance']['compile_origin'] == origin for row in f.plan['successful_donor']['objects']) for origin in ('legacy-imported', 'p5-compiled')))
+        self.assertEqual(['NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp', 'NativeFormsV2Combined.cpp', 'NativeDocumentV2Types.cpp', 'BibNativePopupOwner.cpp'], result['accounting']['compiled_ids'])
+
+    def test_crosslane_kind_and_old_compilation_partition_reject(self):
+        for change in ('legacy', 'composition', 'three', 'five', 'missing-import', 'extra-compiler'):
+            f = self.fixture()
+            if change == 'legacy': f.plan['kind'] = self.namespace['SUCCESSFUL_PLAN_KIND']
+            elif change == 'composition': f.plan['kind'] = self.namespace['COMPOSITION_REPAIR_PLAN_KIND']
+            elif change == 'three': del f.commands['objects']['NativeDocumentV2Types.cpp']
+            elif change == 'five': f.commands['objects']['main.cpp'] = ['compiler', 'main.cpp']
+            elif change == 'missing-import': f.plan['successful_donor']['objects'].pop()
+            else: f.commands['objects']['Unrelated.cpp'] = ['compiler', 'Unrelated.cpp']
+            with self.subTest(change=change), self.assertRaises(ValueError): f.apply()
+
+    def test_lost_or_rebound_compilation_provenance_rejects(self):
+        for change in ('missing', 'origin', 'binding'):
+            f = self.fixture(); name = 'evidence/import-main.cpp.json'; record = f.record(name)
+            if change == 'missing': record.pop('donor_provenance')
+            elif change == 'origin': record['donor_provenance']['compile_origin'] = 'legacy-imported'
+            else: record['donor_provenance']['compile_bindings']['build'] = '/invented/forged'
+            f.save(name, record)
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'provenance'): f.apply()
+
+    def test_missing_artifact_archive_tool_or_hardlink_never_passes(self):
+        for change in ('missing', 'archive-tool', 'hardlink'):
+            f = self.fixture()
+            if change == 'missing': (f.root / 'objects/BibEngineDocumentWasmShim.cpp.o.d').unlink()
+            else:
+                name = 'evidence/import-archive-WebCore.json'; record = f.record(name)
+                record['archive_program_invoked' if change == 'archive-tool' else 'hardlinked'] = True
+                f.save(name, record)
+            with self.subTest(change=change), self.assertRaises((ValueError, OSError)): f.apply()
+
+
+class NativeCapabilityAdmissionFixture(NativeCapabilityP5CompiledFixture):
+    """The real new admission, with a fabricated already-qualified legacy reader.
+
+    The existing exact legacy reader is exercised by its unchanged suites. This
+    fixture supplies its boundary result and complete independent virtual paths;
+    no real source, donor, SDK, compiler or retained file is opened.
+    """
+    def __init__(self, h, m):
+        super().__init__(h, m)
+        old = self.docs['p5_plan']; proof = old['reuse']; freeze = self.docs['p5_input_freeze']
+        self.api.Inspection = m.Inspection
+        self.api.REFERENCE_FIELDS = m.REFERENCE_FIELDS
+        self.api._completed_context_matches = m._completed_context_matches
+        self.api._completed_normalize_vfs = m._completed_normalize_vfs
+        projection = {'path': '/invented/p5-projection.json', 'sha256': 'b' * 64}
+        old['selection'].update(projection=projection['path'], projection_sha256=projection['sha256'])
+        self.api.documents[(projection['path'], projection['sha256'])] = {}
+        proof['inventory'] = {'files': {'config.h': '2' * 64}}
+        for name, payload, pin in (('sources.json', {'files': self.old_inspection.inventories['sources']}, '7' * 64),
+                                   ('recipe.json', {'inert': 'frozen P5 recipe'}, '6' * 64)):
+            fact = self.fact(str(self.bindings['sources'] / name), 390 + len(name), pin)
+            freeze['files'][fact['path']] = fact; self.api.raw[fact['path']] = encoded(payload)
+        vfs = dict(version=0, **{'case-sensitive': True, 'use-external-names': False,
+            'overlay-relative': False, 'fallthrough': True, 'roots': []})
+        normalized = m._completed_normalize_vfs(vfs, self.bindings)
+        self.api._completed_private_context = mock.Mock(return_value=normalized)
+        self.api._header_identity = mock.Mock(return_value={'overlay': vfs})
+        self.value['p5_private']['configuration'] = {'sha256': 'c' * 64}
+        self.value['p5_private']['launcher'] = {'sha256': 'd' * 64}
+        self.docs['p5_maintenance_build']['private_configuration'] = dict(config_sha256='c' * 64, launcher_sha256='d' * 64)
+        i, _, _, _, previous, current = NativeCapabilityShapeContextTests.fixture(SimpleNamespace(h=h, m=m))
+        self.inspection.proof = i.proof
+        for key in ('host_tools', 'sdk_tools', 'python_launch', 'emscripten_config', 'private_cache', 'metadata', 'link'):
+            self.inspection.proof[key] = deepcopy(proof[key])
+        self.inspection.roots = dict(sources=Path('/invented/new-sources'), sdk=self.bindings['sdk'], reuse=Path('/invented/new-reuse'))
+        self.inspection.inventories = deepcopy(self.old_inspection.inventories)
+        self.inspection.inventories['reuse']['config.h'] = '2' * 64
+        for obj in self.inspection.proof['objects']:
+            self.inspection.inventories['sources'][obj['source']['path']] = obj['source']['sha256']
+        self.api._completed_header_context = mock.Mock(side_effect=lambda context, refs, objects:
+            current if context is self.inspection else previous)
+        legacy_bindings = {key: '/invented/legacy-' + key for key in ('sources', 'sdk', 'reuse', 'build')}
+        rows, sidecar = [], {'dependencies': {}}
+        fresh = {'NativeDocumentV2Publisher.cpp', 'BibEngineDocumentWasmShim.cpp', 'ProviderGuard.cpp', 'BibNativeEditorBackend.cpp', 'main.cpp'}
+        for index, name in enumerate(self.selected):
+            if name in fresh: continue
+            product = self.records['objects/' + name + '.o']
+            original = self.fact('/invented/legacy-build/objects/' + name + '.o', 500 + index, product['sha256'])
+            original['bytes'] = original['identity'][4] = product['bytes']; self.api.facts[original['path']] = deepcopy(original)
+            depfile = self.fact('/invented/legacy-build/objects/' + name + '.o.d', 600 + index)
+            key = '/invented/legacy-sources/units/' + name
+            source = next(row['source'] for row in proof['objects'] if row['id'] == name)
+            sidecar['dependencies'][key] = {'input': source}
+            row = dict(id=name, object=original, depfile=depfile, command_script=None,
+                command_sha256=digest(name), original_argv=['legacy-compiler', name], original_cwd='/invented/legacy-build/cmake/build',
+                ninja_record=['0', '1', '1000', original['path'], 'abc'], ninja_command='retained original command', dependency_keys=[key])
+            rows.append(row)
+            receipt = dict(kind='foundation-document-v2-object-import-v1', object=original, original_depfile=depfile,
+                original_argv=row['original_argv'], original_cwd=row['original_cwd'], original_command_sha256=row['command_sha256'],
+                ninja_record=row['ninja_record'], ninja_command=row['ninja_command'], command_script=None, compiler_invoked=False,
+                hardlinked=False, origin='imported', id=name, production_eligible=False, destination=product['path'],
+                sha256=product['sha256'], bytes=product['bytes'], depfile_sha256=depfile['sha256'],
+                retained_depfile=self.records['evidence/import-' + name + '.original.d']['path'])
+            self.api.raw[self.records['evidence/import-' + name + '.json']['path']] = encoded(receipt)
+            raw = ('inert true original depfile ' + name).encode()
+            self.api.raw[depfile['path']] = raw
+            self.api.raw[self.records['evidence/import-' + name + '.original.d']['path']] = raw
+        self.sidecar_ref = {'path': '/invented/legacy/dependencies.json', 'sha256': 'e' * 64}
+        self.api.documents[(self.sidecar_ref['path'], self.sidecar_ref['sha256'])] = sidecar
+        self.legacy = dict(objects=rows, original_bindings=legacy_bindings, dependency_sidecar=self.sidecar_ref,
+            metadata_directories=['/invented/legacy'], archives=[])
+        self.api.documents[(self.value['legacy_donor']['path'], self.value['legacy_donor']['sha256'])] = {'objects': rows}
+        for index, name in enumerate(CONTRACT['archive_order']):
+            product = self.records['archives/lib' + name + '.a']; report = self.records['evidence/archive-' + name + '.json']
+            original = self.fact('/invented/legacy-build/archives/lib' + name + '.a', 700 + index, product['sha256'])
+            original['bytes'] = original['identity'][4] = product['bytes']; self.api.facts[original['path']] = deepcopy(original)
+            old_report = self.fact('/invented/legacy-build/evidence/archive-' + name + '.json', 710 + index)
+            raw = encoded({'name': name, 'members': [], 'sha256': product['sha256']})
+            self.api.raw[old_report['path']] = self.api.raw[report['path']] = raw
+            self.value['archives'].append(dict(name=name, archive=product, report=report))
+            self.legacy['archives'].append(dict(name=name, archive=original, report=old_report))
+        self.api._completed_work = mock.Mock(return_value=self.legacy)
+        self.reference = {'path': '/invented/new-donor.json', 'sha256': 'f' * 64}
+        self.api.documents[(self.reference['path'], self.reference['sha256'])] = self.value
+        # This fixture extends source/build metadata after the initial fake Root
+        # was made. Refresh its independent trusted-reader inspection hash only.
+        pin = digest(encoded(self.docs['p5_maintenance_build']['inspection']))
+        self.docs['p5_closed_result']['inspection_sha256'] = pin
+
+    def admit(self): return self.h.native_capability_admission(self.reference, self.inspection, self.api)
+
+
+class NativeCapabilityAdmissionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls): cls.h, cls.m = load_helper(), load_maintenance()
+
+    def fixture(self): return NativeCapabilityAdmissionFixture(self.h, self.m)
+
+    def test_real_new_admission_keeps43_original_histories_and_three_p5_histories(self):
+        f = self.fixture(); admitted = f.admit()
+        self.assertEqual(46, len(admitted['objects']))
+        self.assertEqual(5, len(admitted['archives']))
+        self.assertEqual(f.reference, admitted['reference'])
+        self.assertEqual((43, 3), tuple(sum(row['donor_provenance']['compile_origin'] == origin for row in admitted['objects']) for origin in ('legacy-imported', 'p5-compiled')))
+        f.api._completed_work.assert_called_once()
+        self.assertEqual({'_successful': True, '_composition_repair': True}, f.api._completed_work.call_args.kwargs)
+        frozen = f.api._completed_work.call_args.args[1]
+        self.assertEqual(str(f.bindings['sources']), frozen.selection['sources'])
+        self.assertNotEqual(f.inspection.roots['sources'], frozen.roots['sources'])
+        for row in admitted['objects']:
+            provenance = row['donor_provenance']
+            if provenance['compile_origin'] == 'p5-compiled':
+                self.assertIsNone(provenance['p5_import_receipt'])
+                self.assertEqual(str(f.bindings['build'] / 'cmake/build'), row['original_cwd'])
+            else:
+                self.assertIsNotNone(provenance['p5_import_receipt'])
+                self.assertEqual('/invented/legacy-build/cmake/build', row['original_cwd'])
+        self.assertEqual(set(map(str, f.bindings.values())), set(admitted['additional_input_directories']))
+
+    def test_changed_current_import_dependency_rejects_even_if_old_histories_match(self):
+        f = self.fixture(); f.inspection.inventories['sources']['units/main.cpp'] = 'f' * 64
+        with self.assertRaisesRegex(ValueError, 'inventory'): f.admit()
+
+    def test_p5_import_receipt_cannot_restamp_compilation_or_rebind_original_context(self):
+        for key, bad in (('compiler_invoked', True), ('hardlinked', True), ('original_cwd', '/invented/wrong'),
+                         ('origin', 'compiled'), ('ninja_command', 'new compiler command'),
+                         ('retained_depfile', '/invented/forged.d'), ('depfile_sha256', '0' * 64), ('kind', 'compiled')):
+            f = self.fixture(); name = next(r['id'] for r in f.value['objects'] if r['origin'] == 'legacy-imported')
+            path = f.records['evidence/import-' + name + '.json']['path']; record = json.loads(f.api.raw[path]); record[key] = bad
+            f.api.raw[path] = encoded(record)
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'provenance'): f.admit()
+
+    def test_original_depfile_archive_report_and_private_identity_must_match(self):
+        for change in ('depfile', 'archive', 'private'):
+            f = self.fixture()
+            if change == 'depfile':
+                name = next(r['id'] for r in f.value['objects'] if r['origin'] == 'legacy-imported')
+                f.api.raw[f.records['evidence/import-' + name + '.original.d']['path']] = b'forged original dependency bytes'
+            elif change == 'archive': f.api.raw[f.value['archives'][0]['report']['path']] = b'forged archive report'
+            else: f.value['p5_private']['configuration']['sha256'] = 'f' * 64
+            with self.subTest(change=change), self.assertRaises(ValueError): f.admit()
 
 if __name__ == "__main__":
     unittest.main()

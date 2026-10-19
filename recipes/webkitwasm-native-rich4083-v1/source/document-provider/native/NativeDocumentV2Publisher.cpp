@@ -5,6 +5,8 @@
 #include "SharedNativeControlGuard.hpp"
 #include "CommonVM.h"
 #include <JavaScriptCore/VM.h>
+#include <WebCore/Attribute.h>
+#include <WebCore/ElementData.h>
 #include <WebCore/Editor.h>
 #include <WebCore/ElementInlines.h>
 #include <WebCore/FocusOptions.h>
@@ -203,6 +205,21 @@ ScopeBound boundLabelScope(Element& root, N::ReadBudget& budget, std::vector<Ref
     }
     return result;
 }
+// ID is association metadata, including on secure inputs. This private probe
+// never reads value/name/label/selection, copies an ID into public state, or
+// enters secure children. Reserve BOTH this exact QName scan and the native
+// TreeScope fallback scan before calling either getter.
+static const AtomString& associationID(Element& element, N::ReadBudget& budget)
+{
+    if (!element.hasID()) return nullAtom();
+    auto* data = element.elementData();
+    const auto count = data ? data->attributes().size() : 0;
+    budget.evidence(count);
+    budget.evidence(count);
+    const auto& id = element.getIdAttribute();
+    budget.chargePrivate(id.length());
+    return id;
+}
 // The native association getter can read IDs during a lazy ordered-map scan.
 // Prebind its EXACT safe search prefix, not merely label literal-text input.
 // Unknown references never call control() and never grant affected authority.
@@ -236,19 +253,17 @@ RefPtr<HTMLElement> associatedControl(HTMLLabelElement& label, const AtomString&
         auto* input = element ? dynamicDowncast<HTMLInputElement>(*element) : nullptr;
         bool secure = input && input->isSecureField(); // BEFORE candidate attrs/ID.
         if (explicitFor) {
-            require(!secure, "native for-label lookup would read secure ID");
             // Stop at an explicit/inherited author omit BEFORE any ID probe or
             // descent. Automatic public foreign-unavailable markers are distinct
             // from this narrowly preflighted native author hint. Preorder cannot
             // reach a descendant of an omitted root because that root rejects.
-            if (element) require(!NativeAttributeRead::authorOmittedForAssociation(*element, budget),
+            if (element && !secure) require(!NativeAttributeRead::authorOmittedForAssociation(*element, budget),
                 "native for-label lookup would cross author omission");
             if (element && element->isInTreeScope()) {
                 // Native false hasID does not scan attrs. Positive hasID uses
                 // exact null-namespace QName semantics; both this scan and the
                 // eventual native fallback scan are precharged before probing.
-                const auto& candidateID = NativeAttributeRead::nativeID(*element, budget, true);
-                budget.chargePrivate(candidateID.length());
+                const auto& candidateID = associationID(*element, budget);
                 if (candidateID == forID) {
                     auto* html = dynamicDowncast<HTMLElement>(*element);
                     if (html && html->isLabelable()) expected = html;
@@ -263,7 +278,7 @@ RefPtr<HTMLElement> associatedControl(HTMLLabelElement& label, const AtomString&
             resolved = true;
             break;
         }
-        require(!secure, "native implicit-label scan would enter secure children");
+        require(!secure || !cursor->firstChild(), "native label lookup would enter secure children");
         if (cursor->firstChild()) { cursor = cursor->firstChild(); ++depth; continue; }
         while (cursor && cursor.get() != root.get() && !cursor->nextSibling()) { cursor = cursor->parentNode(); --depth; }
         if (!cursor || cursor.get() == root.get()) break;
@@ -1533,9 +1548,9 @@ A::Completion Publisher::executeBodyNativeAction(const A::Request& request)
                     const auto& row = state->options[i];
                     if (!actual || actual != live->options[i].node.get() || actual->ownerSelectElement() != select
                         || !actual->isConnected() || &actual->document() != context->document.get()
-                        || session.knownID(*actual) != std::optional<uint64_t>(row.node) || row.omitted) return false;
+                        || session.knownID(*actual) != std::optional<uint64_t>(row.node)) return false;
                     if (row.node != operation.option) continue;
-                    if (row.disabled || actual->isDisabledFormControl()) return false;
+                    if (row.omitted || row.disabled || actual->isDisabledFormControl()) return false;
                     option = actual; optionIndex = i; found = true;
                 }
                 return found && option && option->ownerSelectElement() == select;

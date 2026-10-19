@@ -1,0 +1,38 @@
+// Exact production popupSourceBound extracted by registered generator.
+#include <cstddef>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <vector>
+namespace WebCore {
+struct Value {std::size_t units{};std::size_t length()const{return units;}};
+struct Attr {int key{};Value v;int name()const{return key;}const Value&value()const{return v;}};
+struct Data {std::vector<Attr> a;const auto&attributes()const{return a;}};
+struct Node {virtual~Node()=default;Node*parent{},*child{},*next{};Node*parentNode(){return parent;}Node*parentOrShadowHostNode(){return parent;}Node*firstChild(){return child;}Node*nextSibling(){return next;}};
+struct Element:Node {Data data;Data*elementData(){return &data;}};
+struct HTMLElement:Element {};
+struct HTMLSelectElement:HTMLElement {};
+struct HTMLInputElement:HTMLElement {bool secure{true};bool isSecureField(){return secure;}};
+struct Text:Node {std::size_t units{};std::size_t length(){return units;}};
+namespace HTMLNames {constexpr int labelAttr=1,langAttr=2;}
+}
+template<class T>T*dynamicDowncast(WebCore::Node&n){return dynamic_cast<T*>(&n);}
+template<class T>bool is(WebCore::Node&n){return dynamic_cast<T*>(&n)!=nullptr;}
+constexpr std::size_t maxLabel=2048,maxText=65536,maxNodes=8192,maxDepth=64;
+@POPUP_SOURCE_BOUND@
+void check(bool v,const char*m){if(!v)throw std::runtime_error(m);}
+int main(){try{
+ WebCore::HTMLSelectElement s;WebCore::HTMLElement group,separator,other;WebCore::Text text;
+ s.child=&group;group.parent=&s;group.next=&separator;separator.parent=&s;separator.next=&other;other.parent=&s;group.child=&text;text.parent=&group;
+ group.data.a={{1,{8}},{2,{2}}};text.units=7;check(popupSourceBound(s),"ordinary group/separator/non-option snapshot");
+ group.data.a[0].v.units=2049;check(!popupSourceBound(s),"group label rejected before itemText");group.data.a[0].v.units=8;
+ separator.data.a={{2,{2049}}};check(!popupSourceBound(s),"separator lang rejected before itemStyle");separator.data.a.clear();
+ other.data.a.resize(3000);check(!popupSourceBound(s),"non-option attribute scan bounded");other.data.a.clear();
+ text.units=2049;check(!popupSourceBound(s),"raw text rejected before copying getter");text.units=7;
+ WebCore::HTMLElement ancestor;ancestor.child=&s;s.parent=&ancestor;ancestor.data.a={{2,{2049}}};check(!popupSourceBound(s),"ancestor language bounded");ancestor.data.a.clear();check(popupSourceBound(s),"fresh repaired source accepted");
+ WebCore::HTMLInputElement secret;other.child=&secret;secret.parent=&other;check(!popupSourceBound(s),"secure descendant remains unread/refused");other.child=nullptr;
+ WebCore::Element foreign;other.child=&foreign;foreign.parent=&other;check(!popupSourceBound(s),"foreign descendant refused before fields");other.child=nullptr;
+ // Same production function runs again at commit; hostile mutation invalidates.
+ check(popupSourceBound(s),"open preflight");group.data.a[1].v.units=2049;check(!popupSourceBound(s),"fresh commit preflight rejects post-open language mutation");
+ std::cout<<"passed 10 production popup-owner preflight checks\n";return 0;
+}catch(const std::exception&e){std::cerr<<e.what()<<'\n';return 1;}}

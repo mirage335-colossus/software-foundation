@@ -41,7 +41,9 @@ SELECTION_KIND = 'foundation-native-engine-windows-source-replay-selection-v1'
 SCOPE = 'supplier-patch-overlay-replay-consistency-only'
 # Set only by the supervisor after the shared owner's explicit source release.
 # API presence, a caller flag or an ambient newer module never grants admission.
-SOURCE_SEAM_SHA256 = '3746e0f8560460f972948f4e92ec1b42412792b5abd77ea3c4d75680bbc62d01'
+# Source-only native catalog successor: 102 original proof definitions remain AST-identical.
+# Historical source seam: 3746e0f8560460f972948f4e92ec1b42412792b5abd77ea3c4d75680bbc62d01.
+SOURCE_SEAM_SHA256 = '490d086c9c17bd42e89012ac68eec27a5b8333854f156eaa0b441dd693eebdd3'
 NATIVE_INPUT_READER_SHA256 = '02f675a2480bbb94eafed0cac101b8afca1d2c3fe4a17dddd4cfb9693998edc0'
 NATIVE_INPUT_TREE_SHA256 = '02f675a2480bbb94eafed0cac101b8afca1d2c3fe4a17dddd4cfb9693998edc0'
 _NATIVE_INPUT_READER_CACHE = None
@@ -1301,10 +1303,12 @@ def catalogue_metadata(map_raw, provenance_raw, graph_raw):
             raise ValueError('Current Windows source catalogue pin differs: ' + role)
     source_map, provenance = (handoff._document(raw[role]) for role in ('source_map', 'provenance'))
     inputs = source_map.get('inputs') if type(source_map) is dict else None
+    native_control_keypress = source_map.get('kind') == native_inputs.NATIVE_CONTROL_KEYPRESS_SOURCE_KIND
+    native_popup = source_map.get('kind') == native_inputs.NATIVE_POPUP_SOURCE_KIND
     composition = source_map.get('kind') == native_inputs.COMPOSITION_SOURCE_KIND
-    expected_counts = (native_inputs.composition_catalogue_counts(source_map) if composition else
+    expected_counts = (native_inputs.native_control_keypress_catalogue_counts(source_map) if native_control_keypress else native_inputs.native_popup_catalogue_counts(source_map) if native_popup else native_inputs.composition_catalogue_counts(source_map) if composition else
         {'source_files': 157, 'engine_files': 48, 'direct_translation_units': 32})
-    if type(inputs) is not dict or len(inputs) != (198 if composition else 197):
+    if type(inputs) is not dict or len(inputs) != (198 if native_control_keypress or native_popup or composition else 197):
         raise ValueError('Composition source catalogue requires198 complete inputs' if composition else 'Current source catalogue requires197 complete inputs')
     registry = PathInventory()
     for name, item in inputs.items():

@@ -463,7 +463,8 @@ def _joined(raw, retained_read):
     counts = {'source_files': len(overlays),
         'engine_files': sum(name.startswith('source/engine/') for name in overlays),
         'direct_translation_units': len(units)}
-    expected_counts = (native_inputs.composition_catalogue_counts(source_map)
+    expected_counts = (native_inputs.native_popup_catalogue_counts(source_map)
+        if source_map.get('kind') == native_inputs.NATIVE_POPUP_SOURCE_KIND else native_inputs.composition_catalogue_counts(source_map)
         if source_map.get('kind') == native_inputs.COMPOSITION_SOURCE_KIND else
         {'source_files': 157, 'engine_files': 48, 'direct_translation_units': 32})
     if counts != expected_counts or any(
