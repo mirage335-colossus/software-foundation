@@ -13,11 +13,22 @@ import unittest
 sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
+import appended_engine_guard_transition as GUARD_TRANSITION
 HISTORY_SPEC = importlib.util.spec_from_file_location('native_popup_source_history', ROOT / 'tests/native_popup_source_history.py')
 HISTORY = importlib.util.module_from_spec(HISTORY_SPEC)
 HISTORY_SPEC.loader.exec_module(HISTORY)
 native_popup_predecessor_bytes = HISTORY.native_popup_predecessor_bytes
 native_popup_history = HISTORY.native_popup_history
+SHOWPICKER_SPEC = importlib.util.spec_from_file_location('native_select_showpicker_source_history', ROOT / 'tests/native_select_showpicker_source_history.py')
+SHOWPICKER = importlib.util.module_from_spec(SHOWPICKER_SPEC)
+SHOWPICKER_SPEC.loader.exec_module(SHOWPICKER)
+SELECT_EVENTS_SPEC = importlib.util.spec_from_file_location('native_select_events_source_history', ROOT / 'tests/native_select_events_source_history.py')
+SELECT_EVENTS = importlib.util.module_from_spec(SELECT_EVENTS_SPEC)
+SELECT_EVENTS_SPEC.loader.exec_module(SELECT_EVENTS)
+INPUT_METHOD_SPEC = importlib.util.spec_from_file_location('native_input_method_source_history', ROOT / 'tests/native_input_method_source_history.py')
+INPUT_METHOD = importlib.util.module_from_spec(INPUT_METHOD_SPEC)
+INPUT_METHOD_SPEC.loader.exec_module(INPUT_METHOD)
 RECIPE = ROOT / 'recipes/webkitwasm-native-rich4083-v1'
 SPEC = importlib.util.spec_from_file_location('native_actions_source_inspection', RECIPE / 'inspect_sources.py')
 INSPECT = importlib.util.module_from_spec(SPEC)
@@ -116,7 +127,8 @@ class NativeSourceInputs(unittest.TestCase):
         for record in provenance['native_engine_files']:
             self.assertEqual(digest((RECIPE / record['tracked_source']).read_bytes()), record['sha256'])
         for path, record in provenance['runtime_files'].items():
-            self.assertEqual(digest(native_popup_predecessor_bytes((RECIPE / path).read_bytes())), record['after_sha256'])
+            raw = SHOWPICKER.native_select_showpicker_main_predecessor_bytes(INPUT_METHOD.native_input_method_predecessor_bytes((RECIPE / path).read_bytes()), native=True)
+            self.assertEqual(digest(native_popup_predecessor_bytes(raw)), record['after_sha256'])
         self.assertEqual(provenance['selected_notice_count'], 11)
         self.assertFalse((RECIPE / 'source/engine/Source/WebCore/dom/Element.h').exists())
         self.assertFalse((RECIPE / 'source/engine/Source/WebCore/page/EventHandler.h').exists())
@@ -147,7 +159,8 @@ class NativeSourceInputs(unittest.TestCase):
             self.assertEqual(record['preimage_sha256'], preimage)
             self.assertEqual(record['origin_path'], capsule + origin)
             self.assertNotEqual(record['after_sha256'], preimage)
-            self.assertEqual(record['after_bytes'], len(native_popup_predecessor_bytes((RECIPE / path).read_bytes())))
+            raw = SHOWPICKER.native_select_showpicker_main_predecessor_bytes(INPUT_METHOD.native_input_method_predecessor_bytes((RECIPE / path).read_bytes()), native=True)
+            self.assertEqual(record['after_bytes'], len(native_popup_predecessor_bytes(raw)))
         for name in ('html/HTMLSelectElement.h', 'loader/EmptyClients.h',
                      'editing/Editor.h', 'dom/DataTransfer.h'):
             self.assertNotIn('source/engine/Source/WebCore/' + name, manifest['inputs'])
@@ -314,6 +327,9 @@ class NativeSourceInputs(unittest.TestCase):
     def test_composition_catalogue_has_one_authored_bridge_and_preserves_original109(self):
         manifest = json.loads((RECIPE / 'source-imports.json').read_bytes())
         provenance = json.loads((RECIPE / 'provenance.json').read_bytes())
+        manifest = INSPECT.native_select_events_catalogue_predecessor(INSPECT.native_input_method_catalogue_predecessor(GUARD_TRANSITION.catalogue_predecessor(manifest)))
+        manifest = INSPECT.native_showpicker_catalogue_predecessor(manifest)
+        manifest = INSPECT.native_control_includes_catalogue_predecessor(manifest)
         manifest = INSPECT.native_control_keypress_catalogue_predecessor(manifest)
         self.assertEqual(INSPECT.native_popup_catalogue_counts(manifest),
             {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
@@ -336,10 +352,61 @@ class NativeSourceInputs(unittest.TestCase):
             self.assertEqual(prior['after_sha256'], expected['current_sha256'])
             for field in ('origin', 'origin_path', 'source', 'sha256', 'preimage_sha256', 'bytes', 'mode'):
                 self.assertEqual(current[field], prior[field])
+
+    def test_native_select_events_leaf_and_provenance_keep_exact_predecessor(self):
+        logical = 'source/engine/Source/WebCore/html/HTMLSelectElement.cpp'
+        manifest = json.loads((RECIPE / 'source-imports.json').read_bytes())
+        manifest = INSPECT.native_input_method_catalogue_predecessor(GUARD_TRANSITION.catalogue_predecessor(manifest))
+        previous = INSPECT.native_select_events_catalogue_predecessor(manifest)
+        item = manifest['inputs'][logical]
+        prior = previous['inputs'][logical]
+        self.assertEqual((item['sha256'], item['bytes']), (SELECT_EVENTS.CURRENT_SHA256, SELECT_EVENTS.CURRENT_BYTES))
+        self.assertEqual((prior['sha256'], prior['bytes']), (SELECT_EVENTS.PREVIOUS_SHA256, SELECT_EVENTS.PREVIOUS_BYTES))
+        self.assertEqual(previous['provenance']['sha256'], 'f5e4a29c6e5bdd0d396c634e8f51a2cc64c43f75d8f25e251184f65c55eb86ee')
+        self.assertEqual(previous['inputs']['provenance.json']['sha256'], previous['provenance']['sha256'])
+        self.assertEqual(json.loads((RECIPE / 'source-imports.json').read_bytes())['kind'], INSPECT.NATIVE_FORM_PREFLIGHT_SOURCE_KIND)
+        source = (ROOT / item['tracked_path']).read_bytes()
+        self.assertEqual(SELECT_EVENTS.native_select_events_predecessor_bytes(source),
+                         (ROOT / 'recipes/webkitwasm-document-v2/overlays/ui/engine/Source/WebCore/html/HTMLSelectElement.cpp').read_bytes().replace(SELECT_EVENTS.INSERTION, b'', 1))
+        provenance = json.loads((RECIPE / 'provenance.json').read_bytes())
+        matches = [row for row in provenance['native_engine_files'] if row['tracked_source'] == logical]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0], item['origin']['record'])
+        self.assertEqual(matches[0]['successor']['supersedes'], prior['origin']['record'])
+        self.assertEqual(prior['origin']['record']['reviewed_packets'], {
+            'clipboard': '13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1',
+            'popup': 'b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228'})
+        for mutation in ('predecessor', 'source', 'acceptance', 'kind', 'provenance'):
+            changed = copy.deepcopy(manifest)
+            row = changed['inputs'][logical]
+            if mutation == 'predecessor': row['origin']['record']['successor']['supersedes']['sha256'] = '1' * 64
+            elif mutation == 'source': row['sha256'] = '1' * 64
+            elif mutation == 'acceptance': row['origin']['record']['successor']['reviewed_source_acceptance_sha256'] = '1' * 64
+            elif mutation == 'kind': changed['kind'] = INSPECT.NATIVE_SHOWPICKER_SOURCE_KIND
+            else: changed['inputs']['provenance.json']['sha256'] = '1' * 64
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                INSPECT.native_select_events_catalogue_counts(changed)
         changed = copy.deepcopy(manifest)
         changed['kind'] = 'foundation-native-engine-actions-source-inputs'
         with self.assertRaises(ValueError):
             INSPECT.composition_catalogue_counts(changed)
 
-if __name__ == "__main__":
+    def test_retired_form_guard_provenance_is_exact_canonical_successor(self):
+        logical = GUARD_TRANSITION.GUARD
+        source = (RECIPE / logical).read_bytes()
+        self.assertEqual(source, (ROOT / 'third_party/appended-engine/src/ProviderGuard.cpp').read_bytes())
+        manifest = json.loads((RECIPE / 'source-imports.json').read_bytes())
+        provenance = json.loads((RECIPE / 'provenance.json').read_bytes())
+        previous = INSPECT.native_form_preflight_catalogue_predecessor(manifest)
+        prior_provenance = GUARD_TRANSITION.provenance_predecessor(provenance)
+        record = manifest['inputs'][logical]['origin']['record']
+        self.assertEqual(provenance['runtime_files'][logical], record)
+        self.assertEqual(record['successor']['supersedes'], prior_provenance['runtime_files'][logical])
+        self.assertEqual(previous['inputs'][logical]['origin']['record'], prior_provenance['runtime_files'][logical])
+        self.assertEqual((record['sha256'], record['bytes']),
+                         ('909ceac8b7bf311993f680cdf104d2ae6111bede8b0507fcc0e094bcc573d5ae', 73277))
+        self.assertEqual(record['after_sha256'], digest(source))
+        self.assertEqual(record['after_bytes'], len(source))
+
+if __name__ == '__main__':
     unittest.main()

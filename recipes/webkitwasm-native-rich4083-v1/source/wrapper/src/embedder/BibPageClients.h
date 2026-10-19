@@ -215,6 +215,16 @@ public:
     }
 #endif
 
+    void retireInputMethodStateForMainDocument(bool isMainFrame)
+    {
+#if BIB_ENGINE_PROVIDER_DOCUMENT_V2
+        if (isMainFrame)
+            setInputMethodState(nullptr);
+#else
+        (void)isMainFrame;
+#endif
+    }
+
 private:
     // Editing gates: EmptyEditorClient returns false from all of these,
     // which disables editing wholesale. We allow everything.
@@ -467,6 +477,12 @@ public:
 private:
     void dispatchDidChangeMainDocument() final
     {
+#if BIB_ENGINE_PROVIDER_DOCUMENT_V2
+        if (m_serviceMainFrame) {
+            if (auto* page = m_frameLoader->frame().page())
+                static_cast<BibEditorClient&>(page->editorClient()).retireInputMethodStateForMainDocument(true);
+        }
+#endif
         if (appResourcesStrict()) appResourcesWillChangeMainDocument(m_frameLoader->frame());
         foundationServicesWillChangeMainDocument(m_frameLoader->frame());
     }

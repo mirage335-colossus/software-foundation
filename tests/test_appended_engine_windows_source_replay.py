@@ -19,6 +19,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 import appended_engine_windows_source_replay as replay
+import appended_engine_guard_transition as GUARD_TRANSITION
 
 
 def digest(raw):
@@ -493,10 +494,110 @@ class MetadataFixture:
             return replay.catalogue_metadata(*(self.raw[key] for key in ('source_map', 'provenance', 'graph')))
 
 
+def catalogue_bodies(kind):
+    """Read current metadata once and reconstruct exact retained catalogue versions."""
+    root = ROOT / replay.native_inputs.RECIPE
+    value = replay.handoff._document((root / 'source-imports.json').read_bytes())
+    provenance = replay.handoff._document((root / 'provenance.json').read_bytes())
+    api = replay.native_inputs
+    while value.get('kind') != kind:
+        current = value.get('kind')
+        if current == api.NATIVE_FORM_PREFLIGHT_SOURCE_KIND:
+            provenance = GUARD_TRANSITION.provenance_predecessor(provenance)
+            value = api.native_form_preflight_catalogue_predecessor(value)
+        elif current == api.NATIVE_INPUT_METHOD_SOURCE_KIND:
+            provenance.pop('native_input_method_lifecycle_successor')
+            value = api.native_input_method_catalogue_predecessor(value)
+        elif current == api.NATIVE_SELECT_EVENTS_SOURCE_KIND:
+            value = api.native_select_events_catalogue_predecessor(value)
+            logical = 'source/engine/Source/WebCore/html/HTMLSelectElement.cpp'
+            matches = [index for index, row in enumerate(provenance['native_engine_files']) if row['tracked_source'] == logical]
+            if len(matches) != 1:
+                raise AssertionError('Exact one historical native engine row required')
+            provenance['native_engine_files'][matches[0]] = value['inputs'][logical]['origin']['record']
+        else:
+            raise AssertionError('Unsupported older fixture catalogue transition')
+    raw = {'source_map': replay.contract.encoded(value), 'provenance': replay.contract.encoded(provenance),
+           'graph': (root / 'cmake/native-provider.cmake').read_bytes()}
+    catalogue = replay.contract.catalogue_for_map_digest(digest(raw['source_map']))
+    for role, body in raw.items():
+        if digest(body) != catalogue[role]['sha256']:
+            raise AssertionError('Exact historical catalogue body differs: ' + role)
+    return raw
+
+
+def before_showpicker(raw):
+    value = replay.handoff._document(raw)
+    if value.get('kind') == replay.native_inputs.NATIVE_SHOWPICKER_SOURCE_KIND:
+        return replay.encoded(replay.native_inputs.native_showpicker_catalogue_predecessor(value))
+    return raw
+
+
+class NewSourceCatalogueVersionTests(unittest.TestCase):
+    def test_form_input_method_and_select_events_use_exact_real_data_guards(self):
+        versions = (
+            (replay.native_inputs.NATIVE_FORM_PREFLIGHT_SOURCE_KIND, 'NATIVE_FORM_PREFLIGHT_CATALOGUE', 'native_form_preflight_catalogue_counts'),
+            (replay.native_inputs.NATIVE_INPUT_METHOD_SOURCE_KIND, 'NATIVE_INPUT_METHOD_CATALOGUE', 'native_input_method_catalogue_counts'),
+            (replay.native_inputs.NATIVE_SELECT_EVENTS_SOURCE_KIND, 'NATIVE_SELECT_EVENTS_CATALOGUE', 'native_select_events_catalogue_counts'),
+        )
+        for kind, catalogue_name, gate_name in versions:
+            with self.subTest(kind=kind), no_programs():
+                raw = catalogue_bodies(kind)
+                checked = replay.catalogue_metadata(*(raw[key] for key in ('source_map', 'provenance', 'graph')))
+                self.assertEqual(checked['counts'], {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
+                self.assertEqual(len(checked['source_map']['inputs']), 198)
+                fixture = MetadataFixture()
+                fixture.source_map['kind'] = kind
+                fixture.seal()
+                with mock.patch.object(replay.contract, catalogue_name, fixture.catalogue), mock.patch.object(
+                        replay.native_inputs, gate_name, side_effect=ValueError('EXACT-SOURCE-GATE')) as gate:
+                    with self.assertRaisesRegex(ValueError, 'EXACT-SOURCE-GATE'):
+                        replay.catalogue_metadata(*(fixture.raw[key] for key in ('source_map', 'provenance', 'graph')))
+                gate.assert_called_once_with(fixture.source_map)
+
+
+class NativeShowpickerCatalogueVersionTests(unittest.TestCase):
+    def test_current_showpicker_catalogue_uses_its_exact_source_guard(self):
+        catalogue = replay.contract.NATIVE_SHOWPICKER_CATALOGUE
+        raw = catalogue_bodies(replay.native_inputs.NATIVE_SHOWPICKER_SOURCE_KIND)
+        checked = replay.catalogue_metadata(*(raw[key] for key in ('source_map', 'provenance', 'graph')))
+        self.assertEqual(len(checked['overlays']), 158)
+        self.assertEqual(digest(before_showpicker(raw['source_map'])),
+                         replay.contract.NATIVE_CONTROL_INCLUDES_CATALOGUE['source_map']['sha256'])
+        fixture = MetadataFixture()
+        fixture.source_map['kind'] = replay.native_inputs.NATIVE_SHOWPICKER_SOURCE_KIND
+        fixture.seal()
+        with mock.patch.object(replay.contract, 'NATIVE_SHOWPICKER_CATALOGUE', fixture.catalogue), mock.patch.object(
+                replay.native_inputs, 'native_showpicker_catalogue_counts', side_effect=ValueError('SHOWPICKER-EXACT-SOURCE-GATE')) as gate:
+            with self.assertRaisesRegex(ValueError, 'SHOWPICKER-EXACT-SOURCE-GATE'):
+                replay.catalogue_metadata(*(fixture.raw[key] for key in ('source_map', 'provenance', 'graph')))
+        gate.assert_called_once_with(fixture.source_map)
+
+
+class NativeControlIncludesCatalogueVersionTests(unittest.TestCase):
+    def test_current_include_catalogue_and_exact_guard_are_selected(self):
+        catalogue = replay.contract.NATIVE_CONTROL_INCLUDES_CATALOGUE
+        raw = catalogue_bodies(replay.native_inputs.NATIVE_SHOWPICKER_SOURCE_KIND)
+        raw['source_map'] = before_showpicker(raw['source_map'])
+        checked = replay.catalogue_metadata(*(raw[key] for key in ('source_map', 'provenance', 'graph')))
+        self.assertEqual(len(checked['overlays']), 158)
+        self.assertNotEqual(catalogue, replay.contract.NATIVE_CONTROL_KEYPRESS_CATALOGUE)
+        self.assertEqual(catalogue['provenance'], replay.contract.NATIVE_CONTROL_KEYPRESS_CATALOGUE['provenance'])
+        fixture = MetadataFixture()
+        fixture.source_map['kind'] = replay.native_inputs.NATIVE_CONTROL_INCLUDES_SOURCE_KIND
+        fixture.seal()
+        with mock.patch.object(replay.contract, 'NATIVE_CONTROL_INCLUDES_CATALOGUE', fixture.catalogue), mock.patch.object(
+                replay.native_inputs, 'native_control_includes_catalogue_counts', side_effect=ValueError('INCLUDES-EXACT-SOURCE-GATE')) as gate:
+            with self.assertRaisesRegex(ValueError, 'INCLUDES-EXACT-SOURCE-GATE'):
+                replay.catalogue_metadata(*(fixture.raw[key] for key in ('source_map', 'provenance', 'graph')))
+        gate.assert_called_once()
+
+
 class NativeControlKeypressCatalogueVersionTests(unittest.TestCase):
     def test_current_catalogue_has_exact_keypress_guard_and_joins(self):
         catalogue = replay.contract.NATIVE_CONTROL_KEYPRESS_CATALOGUE
-        raw = {role: (ROOT / item['path']).read_bytes() for role, item in catalogue.items()}
+        raw = catalogue_bodies(replay.native_inputs.NATIVE_SHOWPICKER_SOURCE_KIND)
+        raw['source_map'] = replay.encoded(replay.native_inputs.native_control_includes_catalogue_predecessor(replay.handoff._document(before_showpicker(raw['source_map']))))
         self.assertEqual(digest(raw['source_map']), catalogue['source_map']['sha256'])
         checked = replay.catalogue_metadata(*(raw[key] for key in ('source_map', 'provenance', 'graph')))
         self.assertEqual(len(checked['overlays']), 158)
@@ -515,8 +616,9 @@ class NativeControlKeypressCatalogueVersionTests(unittest.TestCase):
 class NativePopupCatalogueVersionTests(unittest.TestCase):
     def test_current_native_source_catalogue_uses_exact_new_reader_lane(self):
         catalogue=replay.contract.NATIVE_POPUP_CATALOGUE
-        raw={role:(ROOT/item['path']).read_bytes() for role,item in catalogue.items()}
-        current=replay.handoff._document(raw['source_map'])
+        raw=catalogue_bodies(replay.native_inputs.NATIVE_SHOWPICKER_SOURCE_KIND)
+        current=replay.handoff._document(before_showpicker(raw['source_map']))
+        current=replay.native_inputs.native_control_includes_catalogue_predecessor(current)
         previous=replay.native_inputs.native_control_keypress_catalogue_predecessor(current)
         raw['source_map']=replay.contract.encoded(previous)
         self.assertEqual(digest(raw['source_map']),catalogue['source_map']['sha256'])

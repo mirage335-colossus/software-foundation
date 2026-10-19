@@ -163,6 +163,7 @@ Bytes document_publication(BibEngineDocumentV1 document, std::uint64_t sequence,
 
 struct Counts {
     int enters{}, leaves{}, currents{}, old_commands{}, old_queries{}, document_admits{}, document_replies{}, retirements{};
+    int form_preflights{}, form_in_turn{};
     int admits{}, reply_validations{}, projects{}, applies{}, revocations{}, advances{}, services{}, collections{}, disposals{};
     bool operator==(const Counts&) const = default;
 };
@@ -242,7 +243,11 @@ struct Fake {
     }
     static std::int32_t document_admit(void* context,std::uint64_t worker,const BibEngineDocumentV1*,std::uint32_t domain,
                                      std::uint32_t operation,std::uint64_t,const BibEngineBytesV1*) {
-        auto& f = *static_cast<Fake*>(context); CHECK(f.in_turn && worker == worker_epoch);
+        auto& f = *static_cast<Fake*>(context); CHECK(worker == worker_epoch);
+        if (domain == 0 && operation == BIB_ENGINE_COMMAND_FORM_ACTION_V2) {
+            if (f.in_turn) ++f.counts.form_in_turn;
+            else ++f.counts.form_preflights;
+        } else CHECK(f.in_turn);
         ++f.counts.document_admits;
         CHECK((domain == 0 && (operation == 1 || operation == 3 || operation == 5 || operation == 6))
             || (domain == 1 && operation == 3)); return 0;
@@ -261,6 +266,7 @@ struct Fake {
                                     BibEngineCommandResultV1* result) {
         auto& f = *static_cast<Fake*>(context); CHECK(f.in_turn); ++f.counts.old_commands;
         if (request->operation != 6) { CHECK(request->operation == 1 || request->operation == 3 || request->operation == 5); return 0; }
+        CHECK(f.counts.form_preflights == 1 && f.counts.form_in_turn == 1);
         f.retained_form.assign(request->payload.data,request->payload.data+request->payload.length);
         const auto bytes = form_result(request->expected,request->request_sequence);
         CHECK(bytes.size() <= buffer->capacity); std::copy(bytes.begin(),bytes.end(),buffer->bytes);

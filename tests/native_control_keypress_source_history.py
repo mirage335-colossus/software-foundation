@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+from native_control_includes_source_history import native_control_includes_predecessor_bytes, native_control_includes_document_history
 
 CURRENT_SHA256 = 'ee79f3bc8488cfd92c9b62abc2e84a9c110221cf2eba805fac4803980bae612a'
 PREVIOUS_SHA256 = '94ac6af05af059faaff51e7c4e1f59d90f78430898c4fe6ef9d1255e7c4f9c81'
@@ -9,6 +10,7 @@ REVERSE_EDITS = [[241, 570, ''], [1393, 1437, ''], [7359, 14470, ''], [23484, 24
 EDITOR_PREVIOUS_ROW_SHA256 = 'e6142b11e2dad53874f413f4e406d9bea8e3ed40d4eafd8900aff9485853ce7b'
 
 def native_control_keypress_predecessor_bytes(raw):
+    raw = native_control_includes_predecessor_bytes(raw)
     if hashlib.sha256(raw).hexdigest() != CURRENT_SHA256:
         return raw
     text = raw.decode('utf-8')
@@ -21,6 +23,10 @@ def native_control_keypress_predecessor_bytes(raw):
 
 
 def native_control_keypress_document_history(imports, projection=None):
+    if projection is None:
+        imports = native_control_includes_document_history(imports)
+    else:
+        imports, projection = native_control_includes_document_history(imports, projection)
     imports = copy.deepcopy(imports)
     projection = copy.deepcopy(projection)
     name = 'source/document-provider/physical/BibDocumentPhysicalProvider.cpp'

@@ -16,9 +16,11 @@
 #include <vector>
 
 using namespace bib::provider_candidate;
-#define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string("failed: ") + #x + " line " + std::to_string(__LINE__)); } while (false)
-
 namespace {
+// Preserve fixture assertion failures across the Guard's expected exception
+// boundary, so a terminal return cannot disguise a failed callback assertion.
+std::string first_assertion_failure;
+#define CHECK(x) do { if (!(x) && first_assertion_failure.empty()) first_assertion_failure = std::string("failed: ") + #x + " line " + std::to_string(__LINE__); if (!first_assertion_failure.empty()) throw std::runtime_error(first_assertion_failure); } while (false)
 using Bytes = std::vector<std::uint8_t>;
 using Digest = std::array<std::uint8_t, 32>;
 constexpr std::uint64_t worker_epoch = 55;
@@ -114,13 +116,23 @@ struct Counts {
     int enters{}, leaves{}, currents{}, effects{}, queries{}, request_validations{}, reply_validations{}, retirements{};
     bool operator==(const Counts&) const = default;
 };
+void check_counts(const Counts& actual, const Counts& expected) {
+    if (actual == expected) return;
+    auto show = [](const Counts& counts) {
+        return "enters=" + std::to_string(counts.enters) + " leaves=" + std::to_string(counts.leaves)
+            + " currents=" + std::to_string(counts.currents) + " effects=" + std::to_string(counts.effects)
+            + " queries=" + std::to_string(counts.queries) + " request_validations=" + std::to_string(counts.request_validations)
+            + " reply_validations=" + std::to_string(counts.reply_validations) + " retirements=" + std::to_string(counts.retirements);
+    };
+    throw std::runtime_error("counter mismatch: actual {" + show(actual) + "}; expected {" + show(expected) + "}");
+}
 struct Fake {
     Counts counts;
     std::array<int,3> physical_requests{}, physical_replies{}, physical_effects{};
     int starts{}, installs{};
     int request_status{}, reply_status{}, command_status{}, query_status{}, retire_status{};
     std::uint32_t enter_status{}, physical_reply_bytes{};
-    bool throw_command{}, throw_retire{}, throw_leave{}, reenter{}, malformed_reply{}, navigate_query{}, inner_unknown{}, permit_nonzero_physical_reply{};
+    bool throw_command{}, throw_retire{}, throw_leave{}, throw_request{}, reject_retired_identity{}, navigate_enter{}, reject_request_on_enter{}, reenter{}, malformed_reply{}, navigate_query{}, inner_unknown{}, permit_nonzero_physical_reply{};
     std::uint64_t query_revision{9};
     int nested_enter{99}, nested_request{99}, nested_command{99}, nested_leave{99}, nested_retire{99}, threaded{99};
     BibEngineDocumentV1 document{44,11,7};
@@ -136,6 +148,8 @@ struct Fake {
     static void BIB_ENGINE_CALL persistence(void*, const BibEngineBytesV1*) {}
     static std::uint32_t BIB_ENGINE_CALL enter(void* context) {
         auto& f = *static_cast<Fake*>(context); ++f.counts.enters;
+        if (f.navigate_enter) ++f.document.document_sequence;
+        if (f.reject_request_on_enter) f.request_status = BIB_ENGINE_STALE;
         if (f.mutate) *f.mutate = 91;
         if (f.reenter) f.nested_enter = nested();
         return f.enter_status;
@@ -176,6 +190,8 @@ struct Fake {
         CHECK(get(payload->data + 8, 8) == expected->application_instance);
         CHECK(get(payload->data + 16, 8) == expected->service_generation);
         CHECK(get(payload->data + 24, 8) == expected->document_sequence);
+        if (f.throw_request) throw std::runtime_error("uncertain fake request admission");
+        if (f.reject_retired_identity && !same(*expected,f.document)) return BIB_ENGINE_STALE;
         if (f.reenter) f.nested_request = nested();
         return f.request_status;
     }
@@ -748,15 +764,64 @@ void run(const std::string& name) {
         Command action(f.fake.document,1); f.fake.request_status = BIB_ENGINE_STALE;
         CHECK(action.run() == BIB_ENGINE_STALE); action.rejected();
         CHECK(f.fake.counts.effects == 0 && f.fake.counts.request_validations == 1);
-        f.fake.request_status = 0; CHECK(action.run() == 0 && f.fake.counts.effects == 1); return;
+        f.fake.request_status = 0; CHECK(action.run() == 0 && f.fake.counts.effects == 1);
+        CHECK(f.fake.counts.request_validations == 3); return;
+    }
+    if (name == "request-preflight") {
+        const auto baseline = f.fake.counts;
+        Command retired(f.fake.document,1);
+        ++f.fake.document.document_sequence; ++f.fake.document.service_generation;
+        f.fake.reject_retired_identity = true;
+        CHECK(retired.run() == BIB_ENGINE_STALE); retired.rejected();
+        CHECK(retired.result.request_sequence == 1 && std::all_of(retired.output.begin(),retired.output.end(),[](auto byte) { return byte == 0xa5; }));
+        auto expected = baseline; ++expected.request_validations;
+        check_counts(f.fake.counts,expected);
+        Command current(f.fake.document,1);
+        CHECK(current.run() == BIB_ENGINE_OK); current.consumed();
+        expected = baseline; expected.request_validations += 3; ++expected.currents;
+        ++expected.enters; ++expected.leaves; ++expected.effects; ++expected.reply_validations;
+        check_counts(f.fake.counts,expected);
+        return;
+    }
+    if (name == "request-preflight-throw" || name == "request-preflight-terminal") {
+        const auto baseline = f.fake.counts;
+        Command action(f.fake.document,1);
+        f.fake.throw_request = name == "request-preflight-throw";
+        f.fake.request_status = f.fake.throw_request ? 0 : BIB_ENGINE_PROCESS_EXIT_REQUIRED;
+        CHECK(action.run() == BIB_ENGINE_PROCESS_EXIT_REQUIRED); action.rejected();
+        CHECK(std::all_of(action.output.begin(),action.output.end(),[](auto byte) { return byte == 0xa5; }));
+        auto expected = baseline; ++expected.request_validations;
+        check_counts(f.fake.counts,expected);
+        const auto counts = f.fake.counts;
+        CHECK(action.run() == BIB_ENGINE_PROCESS_EXIT_REQUIRED && f.fake.counts == counts);
+        return;
+    }
+    if (name == "request-enter-invalidation" || name == "request-enter-revalidation") {
+        const auto baseline = f.fake.counts;
+        Command action(f.fake.document,1);
+        f.fake.navigate_enter = name == "request-enter-invalidation";
+        f.fake.reject_request_on_enter = name == "request-enter-revalidation";
+        CHECK(action.run() == BIB_ENGINE_STALE); action.rejected();
+        CHECK(action.result.request_sequence == 1 && std::all_of(action.output.begin(),action.output.end(),[](auto byte) { return byte == 0xa5; }));
+        auto expected = baseline; ++expected.enters; ++expected.leaves; ++expected.currents;
+        expected.request_validations += f.fake.navigate_enter ? 1 : 2;
+        check_counts(f.fake.counts,expected);
+        f.fake.navigate_enter = false; f.fake.reject_request_on_enter = false; f.fake.request_status = 0;
+        Command current(f.fake.document,1);
+        CHECK(current.run() == BIB_ENGINE_OK); current.consumed();
+        ++expected.enters; ++expected.leaves; ++expected.currents; ++expected.effects;
+        expected.request_validations += 2; ++expected.reply_validations;
+        check_counts(f.fake.counts,expected); return;
     }
     if (name == "enter-rejection") {
         Command action(f.fake.document,1); const auto counts = f.fake.counts;
         f.fake.enter_status = 2; CHECK(action.run() == BIB_ENGINE_REENTRANT); action.rejected();
-        auto expected = counts; ++expected.enters; CHECK(f.fake.counts == expected);
+        auto expected = counts; ++expected.enters; ++expected.request_validations; check_counts(f.fake.counts,expected);
         f.fake.enter_status = 14; CHECK(action.run() == BIB_ENGINE_REENTRANT); action.rejected();
-        ++expected.enters; CHECK(f.fake.counts == expected);
-        f.fake.enter_status = 0; CHECK(action.run() == 0); action.consumed(); CHECK(f.fake.counts.effects == 1); return;
+        ++expected.enters; ++expected.request_validations; check_counts(f.fake.counts,expected);
+        f.fake.enter_status = 0; CHECK(action.run() == 0); action.consumed();
+        ++expected.enters; ++expected.leaves; expected.request_validations += 2; ++expected.currents; ++expected.effects; ++expected.reply_validations;
+        check_counts(f.fake.counts,expected); return;
     }
     if (name == "reply-validation") {
         Command action(f.fake.document,1); f.fake.reply_status = BIB_ENGINE_INVALID;
@@ -836,6 +901,6 @@ void run(const std::string& name) {
 } // namespace
 
 int main(int argc, char** argv) {
-    try { CHECK(argc == 2); run(argv[1]); std::cout << "PASS " << argv[1] << '\n'; return 0; }
+    try { CHECK(argc == 2); run(argv[1]); CHECK(first_assertion_failure.empty()); std::cout << "PASS " << argv[1] << '\n'; return 0; }
     catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

@@ -742,12 +742,14 @@ def native_control_keypress_context_delta(inspection, old, previous, current, ap
         _require(old['reuse'][key] == inspection.proof[key], 'native control keypress tool/metadata/link context differs: ' + key)
 
 
-def _native_repair_admission(reference, inspection, api, *, control_keypress):
+def _native_repair_admission(reference, inspection, api, *, control_keypress, retain_dependencies=False):
     """Authenticate P5, preserve original compilation histories, then compare inputs.
 
     No discovery or program execution occurs. The historical composition reader
     receives an authenticated frozen P5 view, never the moving successor view.
     """
+    if type(retain_dependencies) is not bool:
+        raise ValueError('Dependency retention requires an explicit boolean')
     value = _reference(reference, api)
     docs, bindings, records = _p5_metadata(value, inspection, api, control_keypress=control_keypress)
     old, freeze = docs['p5_plan'], docs['p5_input_freeze']
@@ -794,6 +796,7 @@ def _native_repair_admission(reference, inspection, api, *, control_keypress):
     legacy_rows = {row['id']: row for row in legacy['objects']}
     compiled_rows = {row['id']: row for row in compiled}
     admitted = []
+    object_dependencies = {}
     for declaration in value['objects']:
         name = declaration['id']; p5_object = records['objects/' + name + '.o']
         api._completed_fact(p5_object)
@@ -825,6 +828,8 @@ def _native_repair_admission(reference, inspection, api, *, control_keypress):
             receipt_fact = None; compile_bindings = value['p5_bindings']
         for ref in dependencies:
             api.ref_path(ref, inspection.roots, inspection.inventories)
+        if retain_dependencies:
+            object_dependencies[name] = [dict(ref) for ref in dependencies]
         row['donor_provenance'] = dict(kind=('foundation-document-v2-native-control-keypress-object-provenance-v1'
             if control_keypress else 'foundation-document-v2-native-capability-object-provenance-v1'),
             p5_root_acceptance=value['p5_root_acceptance'], p5_object=p5_object,
@@ -851,10 +856,13 @@ def _native_repair_admission(reference, inspection, api, *, control_keypress):
     directories = set(legacy['metadata_directories'])
     directories.update(str(Path(value[name]['path']).parent) for name in P5_PINS)
     directories.add(str(Path(reference['path']).parent))
-    return dict(reference=dict(reference), objects=admitted, archives=archives,
+    result = dict(reference=dict(reference), objects=admitted, archives=archives,
         original_bindings=legacy['original_bindings'], dependency_sidecar=legacy['dependency_sidecar'],
         additional_input_directories=[str(path) for path in bindings.values()],
         metadata_directories=sorted(directories))
+    if retain_dependencies:
+        result['object_dependencies'] = object_dependencies
+    return result
 
 
 def native_capability_admission(reference, inspection, api):
@@ -863,3 +871,15 @@ def native_capability_admission(reference, inspection, api):
 
 def native_control_keypress_admission(reference, inspection, api):
     return _native_repair_admission(reference, inspection, api, control_keypress=True)
+
+
+def native_control_keypress_dependency_admission(reference, inspection, api):
+    """Theme-only view of already authenticated per-origin dependency refs."""
+    return _native_repair_admission(reference, inspection, api, control_keypress=True,
+                                    retain_dependencies=True)
+
+
+def native_theme_admission(reference, inspection, api):
+    """Distinct Theme successor; historical native-five/F6 contracts stay closed."""
+    import appended_engine_theme_successor
+    return appended_engine_theme_successor.admit_donor(reference, inspection, api)

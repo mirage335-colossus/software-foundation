@@ -155,7 +155,7 @@
     },
     "source/document-provider/physical/BibDocumentPhysicalProvider.cpp": {
       "preimage_sha256": null,
-      "sha256": "ee79f3bc8488cfd92c9b62abc2e84a9c110221cf2eba805fac4803980bae612a"
+      "sha256": "9d5d434c1af6109c7a007e67fcceccb48b5549339663ada3621736bcbeefde47"
     },
     "source/document-provider/physical/BibDocumentPhysicalProvider.hpp": {
       "preimage_sha256": null,
@@ -355,7 +355,7 @@
     },
     "source/engine/Source/WebCore/html/HTMLSelectElement.cpp": {
       "preimage_sha256": null,
-      "sha256": "0b4b077b36193fd5ebea0e29017c54ae2df430b6e6ef78d7a3a06f6c19cfe4b1"
+      "sha256": "ccabb6855aa4befe7db1f9a2225ae1ef1b942a7508cc3fdeea62783e01f73509"
     },
     "source/engine/Source/WebCore/loader/DocumentLoader.cpp": {
       "preimage_sha256": "f10bd277bc751179b8c0f7bbecda382d46d39e2919f11a0f87bbd4b37e5270bd",
@@ -531,7 +531,7 @@
     },
     "source/foundation/third_party/appended-engine/src/ProviderGuard.cpp": {
       "preimage_sha256": "4d7ee19b4f3d6d2bf75c559ca6d81ff00cfebbac65afacd1be74c847281bc5f8",
-      "sha256": "6ec6546880d6736311ab8def5563da79a870dd1f68b56fdcbe947835acf817a8"
+      "sha256": "b77001d050dfc2451b46cc116ea8e7c3c5271d4b4f08a7dcfdba59c58ffed6c5"
     },
     "source/provider-binding/binding/BibEngineProviderPreflight.cpp": {
       "preimage_sha256": "dd8c25c5343498106be19b26d96e6b7292bb3e25f10c7b07b191461fdb81c3fb",
@@ -623,7 +623,7 @@
     },
     "source/wrapper/src/embedder/BibPageClients.h": {
       "preimage_sha256": "33c024bccca3b22033496b6f92c8f1ab9f1ffa4c1cf6ed583966dff9c84fb76b",
-      "sha256": "6e77e9b1b47cc5e4e3d2a5dcd7600ea959c4b22eb95c763165c4ccc3c5d28a43"
+      "sha256": "283876d4a85cd07b800f0c54ee96695ab5345146481f41e1a615a44fc9e5c7aa"
     },
     "source/wrapper/src/embedder/BibPrototypeBridge.h": {
       "preimage_sha256": "494214d9f21d542398d37bab72994c1874936ca15538dbafd301e10ed377a5ad",
@@ -659,7 +659,7 @@
     },
     "source/wrapper/src/embedder/main.cpp": {
       "preimage_sha256": "485ea035f7886f153c5e3976d096413fe584cc65563e4b2a59c7d364d1a86373",
-      "sha256": "2c315a2d08f8f5025f0619db73621d4aaf79dcdc970c1f5e1b7b692a045beb9b"
+      "sha256": "d86c1384504cb3780e627a935f96d34fa5900702b363e90cdf9646c26f411030"
     },
     "source/wrapper/src/embedder/resource_url.cpp": {
       "preimage_sha256": "05a1af43bd84e8ba4b4eb2b73070c7f331945806d4e33586f1a447cd0b216671",

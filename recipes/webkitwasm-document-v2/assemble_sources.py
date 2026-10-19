@@ -24,6 +24,11 @@ MAX_INPUTS = 4096
 MAX_DIRECTORIES = MAX_INPUTS * 8
 MAX_SOURCE_BYTES = 8 * 1024 * 1024 * 1024
 MAX_SMALL_BYTES = 32 * 1024 * 1024
+THEME_SOURCE = 'source/engine/Source/WebCore/rendering/emscripten/RenderThemeEmscripten.cpp'
+THEME_SOURCE_PATH = ('recipes/webkitwasm-document-v2/overlays/editor/engine/'
+    'Source/WebCore/rendering/emscripten/RenderThemeEmscripten.cpp')
+THEME_SOURCE_SHA256 = 'b6720505415c23279a3dca6f1e11717260797bc45f64d3a4f29c2233f335cd81'
+THEME_SOURCE_BYTES = 625
 
 
 def digest(raw):
@@ -149,7 +154,10 @@ class HelperBundle:
     NAMES = frozenset(('dependency_archive', 'appended_engine_manifest',
         'appended_engine_document_contract', 'appended_engine_editor_contract',
         'appended_engine_sdk', 'process_tree',
-        'sdk_environment', 'sdk_manifest', 'appended_engine_document_maintenance'))
+        'sdk_environment', 'sdk_manifest', 'appended_engine_document_maintenance',
+        'appended_engine_theme_successor', 'appended_engine_showpicker_successor',
+        'appended_engine_select_event_successor', 'appended_engine_input_method_successor',
+        'appended_engine_retained_successor'))
 
     def __init__(self, repository):
         self.repository, self.modules = repository, {}
@@ -210,11 +218,43 @@ def _validate_projection(driver, value, config, files):
         raise ValueError('Physical and declared source aliases overlap')
 
 
-def _maintained(repository, selected, *, include_successful_donor_helper=False):
+def _maintained(repository, selected, *, include_successful_donor_helper=False,
+                include_theme_successor_helper=False,
+                include_showpicker_successor_helper=False, include_select_event_successor_helper=False,
+                include_input_method_successor_helper=False, include_retained_successor_helper=False):
     """Read only the maintained selection; no consumer observation is inferred."""
+    if type(include_retained_successor_helper) is not bool or include_retained_successor_helper and selected != 'editor':
+        raise ValueError('The retained successor helper requires an explicit editor selection')
+    if include_retained_successor_helper:
+        if any(type(value) is not bool for value in (include_successful_donor_helper,
+                include_theme_successor_helper, include_showpicker_successor_helper,
+                include_select_event_successor_helper, include_input_method_successor_helper)):
+            raise ValueError('Retained successor predecessor helper selectors must be strict booleans')
+        include_successful_donor_helper = include_theme_successor_helper = True
+        include_showpicker_successor_helper = include_select_event_successor_helper = True
+        include_input_method_successor_helper = True
     if (type(include_successful_donor_helper) is not bool
             or include_successful_donor_helper and selected != 'editor'):
         raise ValueError('The successful-donor helper requires an explicit editor selection')
+    if (type(include_theme_successor_helper) is not bool
+            or include_theme_successor_helper and (selected != 'editor'
+                or not include_successful_donor_helper)):
+        raise ValueError('The Theme successor helper requires explicit editor and successful-donor selection')
+    if (type(include_showpicker_successor_helper) is not bool
+            or include_showpicker_successor_helper and (selected != 'editor'
+                or not include_successful_donor_helper
+                or not include_theme_successor_helper)):
+        raise ValueError('The showPicker successor helper requires explicit editor, successful-donor, and Theme-helper selection')
+    if (type(include_select_event_successor_helper) is not bool
+            or include_select_event_successor_helper and (selected != 'editor'
+                or not include_successful_donor_helper or not include_theme_successor_helper
+                or not include_showpicker_successor_helper)):
+        raise ValueError('The select event successor helper requires explicit editor, successful-donor, Theme, and showPicker selections')
+    if (type(include_input_method_successor_helper) is not bool
+            or include_input_method_successor_helper and (selected != 'editor'
+                or not include_successful_donor_helper or not include_theme_successor_helper
+                or not include_showpicker_successor_helper or not include_select_event_successor_helper)):
+        raise ValueError('The input method successor helper requires explicit editor and every predecessor helper selection')
     # Each selection owns its executed helper closure. An earlier editor query
     # must not add an unused editor module to a later pixel/physical recipe.
     bundle = HelperBundle(repository)
@@ -268,6 +308,26 @@ def _maintained(repository, selected, *, include_successful_donor_helper=False):
         if getattr(driver, 'SUCCESSFUL_HELPER', None) != 'tools/appended_engine_successful_donor.py':
             raise ValueError('Maintained successful-donor helper path differs')
         helpers += (driver.SUCCESSFUL_HELPER,)
+    if include_theme_successor_helper:
+        if getattr(driver, 'THEME_SUCCESSOR_HELPER', None) != 'tools/appended_engine_theme_successor.py':
+            raise ValueError('Maintained Theme successor helper path differs')
+        helpers += (driver.THEME_SUCCESSOR_HELPER,)
+    if include_showpicker_successor_helper:
+        if getattr(driver, 'SHOWPICKER_SUCCESSOR_HELPER', None) != 'tools/appended_engine_showpicker_successor.py':
+            raise ValueError('Maintained showPicker successor helper path differs')
+        helpers += (driver.SHOWPICKER_SUCCESSOR_HELPER,)
+    if include_select_event_successor_helper:
+        if getattr(driver, 'SELECT_EVENT_SUCCESSOR_HELPER', None) != 'tools/appended_engine_select_event_successor.py':
+            raise ValueError('Maintained select event successor helper path differs')
+        helpers += (driver.SELECT_EVENT_SUCCESSOR_HELPER,)
+    if include_input_method_successor_helper:
+        if getattr(driver, 'INPUT_METHOD_SUCCESSOR_HELPER', None) != 'tools/appended_engine_input_method_successor.py':
+            raise ValueError('Maintained input method successor helper path differs')
+        helpers += (driver.INPUT_METHOD_SUCCESSOR_HELPER,)
+    if include_retained_successor_helper:
+        if getattr(driver, 'RETAINED_SUCCESSOR_HELPER', None) != 'tools/appended_engine_retained_successor.py':
+            raise ValueError('Maintained retained successor helper path differs')
+        helpers += (driver.RETAINED_SUCCESSOR_HELPER,)
     for name in helpers + (RECIPE_ROOT + '/assemble_sources.py',):
         manifest.path_name(name)
         path = ordinary(repository / name)
@@ -276,6 +336,16 @@ def _maintained(repository, selected, *, include_successful_donor_helper=False):
         if executed is not None and saved != executed:
             raise ValueError('Executed helper differs from retained source bytes')
         result[name] = (saved, 'helper')
+        snapshots.append(saved)
+    if include_theme_successor_helper:
+        manifest.path_name(THEME_SOURCE)
+        if THEME_SOURCE in result:
+            raise ValueError('Theme source already exists in maintained imports')
+        saved = snapshot(repository / THEME_SOURCE_PATH, THEME_SOURCE_SHA256,
+            maximum=THEME_SOURCE_BYTES)
+        if saved.size != THEME_SOURCE_BYTES:
+            raise ValueError('Maintained Theme source byte count differs')
+        result[THEME_SOURCE] = (saved, 'source')
         snapshots.append(saved)
     for basename in ('source-imports-' + selected + '.json', 'source-projection-' + selected + '.json'):
         path = here / basename
@@ -342,11 +412,42 @@ def _preflight_tree(root, expected):
 
 
 def prepare(baseline, recipe_sha256, sources_sha256, *, document_profile, repository=ROOT,
-            include_successful_donor_helper=False):
+            include_successful_donor_helper=False, include_theme_successor_helper=False,
+            include_showpicker_successor_helper=False, include_select_event_successor_helper=False,
+                include_input_method_successor_helper=False, include_retained_successor_helper=False):
     """Fully inspect inputs and return an owned plan; launch no programs."""
+    if type(include_retained_successor_helper) is not bool or include_retained_successor_helper and document_profile != 'editor':
+        raise ValueError('The retained successor helper requires an explicit editor selection')
+    if include_retained_successor_helper:
+        if any(type(value) is not bool for value in (include_successful_donor_helper,
+                include_theme_successor_helper, include_showpicker_successor_helper,
+                include_select_event_successor_helper, include_input_method_successor_helper)):
+            raise ValueError('Retained successor predecessor helper selectors must be strict booleans')
+        include_successful_donor_helper = include_theme_successor_helper = True
+        include_showpicker_successor_helper = include_select_event_successor_helper = True
+        include_input_method_successor_helper = True
     if (type(include_successful_donor_helper) is not bool
             or include_successful_donor_helper and document_profile != 'editor'):
         raise ValueError('The successful-donor helper requires an explicit editor selection')
+    if (type(include_theme_successor_helper) is not bool
+            or include_theme_successor_helper and (document_profile != 'editor'
+                or not include_successful_donor_helper)):
+        raise ValueError('The Theme successor helper requires explicit editor and successful-donor selection')
+    if (type(include_showpicker_successor_helper) is not bool
+            or include_showpicker_successor_helper and (document_profile != 'editor'
+                or not include_successful_donor_helper
+                or not include_theme_successor_helper)):
+        raise ValueError('The showPicker successor helper requires explicit editor, successful-donor, and Theme-helper selection')
+    if (type(include_select_event_successor_helper) is not bool
+            or include_select_event_successor_helper and (document_profile != 'editor'
+                or not include_successful_donor_helper or not include_theme_successor_helper
+                or not include_showpicker_successor_helper)):
+        raise ValueError('The select event successor helper requires explicit editor, successful-donor, Theme, and showPicker selections')
+    if (type(include_input_method_successor_helper) is not bool
+            or include_input_method_successor_helper and (document_profile != 'editor'
+                or not include_successful_donor_helper or not include_theme_successor_helper
+                or not include_showpicker_successor_helper or not include_select_event_successor_helper)):
+        raise ValueError('The input method successor helper requires explicit editor and every predecessor helper selection')
     _recheck({'snapshots': BUNDLE.snapshots()})
     driver = BUNDLE.load('appended_engine_document_maintenance')
     selected = driver.profile_selector(document_profile)
@@ -380,7 +481,26 @@ def prepare(baseline, recipe_sha256, sources_sha256, *, document_profile, reposi
             raise ValueError('Original retained source input budget exceeded')
         entries[name] = (saved, item['role'])
         snapshots.append(saved)
-    if include_successful_donor_helper:
+    if include_retained_successor_helper:
+        maintained, checked, raw_projection = _maintained(repository, selected,
+            include_retained_successor_helper=True)
+    elif include_input_method_successor_helper:
+        maintained, checked, raw_projection = _maintained(repository, selected,
+            include_successful_donor_helper=True, include_theme_successor_helper=True,
+            include_showpicker_successor_helper=True, include_select_event_successor_helper=True,
+            include_input_method_successor_helper=True)
+    elif include_select_event_successor_helper:
+        maintained, checked, raw_projection = _maintained(repository, selected,
+            include_successful_donor_helper=True, include_theme_successor_helper=True,
+            include_showpicker_successor_helper=True, include_select_event_successor_helper=True)
+    elif include_showpicker_successor_helper:
+        maintained, checked, raw_projection = _maintained(repository, selected,
+            include_successful_donor_helper=True, include_theme_successor_helper=True,
+            include_showpicker_successor_helper=True)
+    elif include_theme_successor_helper:
+        maintained, checked, raw_projection = _maintained(repository, selected,
+            include_successful_donor_helper=True, include_theme_successor_helper=True)
+    elif include_successful_donor_helper:
         maintained, checked, raw_projection = _maintained(repository, selected,
             include_successful_donor_helper=True)
     else:
@@ -554,6 +674,16 @@ def main(argv=None):
     parser.add_argument('--document-profile', choices=('pixel', 'physical', 'editor'), required=True)
     parser.add_argument('--include-successful-donor-helper', action='store_true',
         help='Retain the exact maintained successful-donor helper for an editor continuation')
+    parser.add_argument('--include-theme-successor-helper', action='store_true',
+        help='Retain the explicit Theme successor helper with the editor successful-donor selection')
+    parser.add_argument('--include-showpicker-successor-helper', action='store_true',
+        help='Retain the native showPicker successor helper with editor, successful-donor, and Theme-helper selections')
+    parser.add_argument('--include-select-event-successor-helper', action='store_true',
+        help='Retain the distinct select event producer with all accepted predecessor helper selections')
+    parser.add_argument('--include-input-method-successor-helper', action='store_true',
+        help='Retain the input method lifecycle producer with every accepted predecessor helper selection')
+    parser.add_argument('--include-retained-successor-helper', action='store_true',
+        help='Retain the closed editor direct-TU successor and its complete predecessor helper closure')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args(argv)
     try:
@@ -561,7 +691,12 @@ def main(argv=None):
             raise ValueError('Only assemble requires an explicit NEW --output')
         plan = prepare(args.baseline_sources, args.baseline_recipe_sha256,
             args.baseline_sources_sha256, document_profile=args.document_profile,
-            include_successful_donor_helper=args.include_successful_donor_helper)
+            include_successful_donor_helper=args.include_successful_donor_helper,
+            **({'include_theme_successor_helper': True} if args.include_theme_successor_helper else {}),
+            **({'include_showpicker_successor_helper': True} if args.include_showpicker_successor_helper else {}),
+            **({'include_select_event_successor_helper': True} if args.include_select_event_successor_helper else {}),
+            **({'include_input_method_successor_helper': True} if args.include_input_method_successor_helper else {}),
+            **({'include_retained_successor_helper': True} if args.include_retained_successor_helper else {}))
         result = (assemble(plan, args.output) if args.action == 'assemble' else
             {'schema_version': 1, 'kind': KIND, 'document_profile': plan['document_profile'],
              'source_files': plan['source_files'], 'source_bytes': plan['source_bytes'],

@@ -604,6 +604,23 @@ public:
         std::vector<std::uint8_t> scratch;
         try { scratch.resize(operation->required_reply_capacity); }
         catch (...) { return reject(BIB_ENGINE_LIMIT); }
+        // Form request identity is inert metadata. Let the publisher reject a
+        // retired cached identity before entering the host turn, while keeping
+        // the in-turn validation below to cover navigation during host entry.
+        if (form) {
+            std::int32_t checked{};
+            try {
+                checked=transport(document_backend.validate_request(backend.context,document_backend.worker_epoch,
+                    &request.expected,0,request.operation,request.request_sequence,&request.payload));
+            } catch (...) {
+                poisoned=true;
+                return reject(BIB_ENGINE_PROCESS_EXIT_REQUIRED);
+            }
+            if (checked) {
+                if (checked==BIB_ENGINE_PROCESS_EXIT_REQUIRED) poisoned=true;
+                return reject(checked);
+            }
+        }
         BibEngineReplyBufferV1 scratch_buffer{sizeof(scratch_buffer),static_cast<std::uint32_t>(scratch.size()),scratch.data()};
         bool command_entered=false;
         auto status=turn([&] {

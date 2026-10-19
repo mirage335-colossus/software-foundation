@@ -19,14 +19,16 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
+import appended_engine_guard_transition as GUARD_TRANSITION
 NATIVE = Path('recipes/webkitwasm-native-rich4083-v1/source')
 RECIPE = NATIVE.parent
 FIXTURE = Path('tests/appended_engine_native_actions_bootstrap_test.cpp')
 SCHEDULER = Path('tests/fixtures/appended_native_bootstrap/FixtureScheduler.hpp')
 GUARDS = {
     'rich': (NATIVE / 'foundation/third_party/appended-engine/src/ProviderGuard.cpp',
-             '3aebfcc5b4e838846f23a5c9c61a62acc51fecc73541fd58deaa9c157308b0ff',
-             'e19476baf039231cd4053b915f52f91fce0e25dd16c56083f5cd299fb9ac47a7'),
+             'c0e73457c85e3b54c956cad124407ff0fd03d53b0abdfdb5003f6146990a8157',
+             'd7993c7b116ea0d54531d07811ca16bbe04f77b1b9952c88ba7be6ce25fcb2c5'),
 }
 ONCE_SHA256 = '3848f57570997b6885642cf507094c99f7a1823f6932a77659b45cdf316a34ef'
 COMMON_SOURCES = (
@@ -432,6 +434,14 @@ class NativeActionsBootstrapSourceTests(unittest.TestCase):
             self.assertEqual(digest(instrument(raw).replace(HOOK, b'')), fixed)
             self.assertEqual(digest(instrument(raw, old=True).replace(HOOK, b'')), old)
 
+    def test_form_successor_keeps_original_instrumentation_history(self):
+        raw = (ROOT / GUARDS['rich'][0]).read_bytes()
+        previous = GUARD_TRANSITION.canonical_predecessor_bytes(raw)
+        self.assertEqual(digest(previous), '3aebfcc5b4e838846f23a5c9c61a62acc51fecc73541fd58deaa9c157308b0ff')
+        self.assertEqual(digest(instrument(previous, old=True).replace(HOOK, b'')),
+                         'e19476baf039231cd4053b915f52f91fce0e25dd16c56083f5cd299fb9ac47a7')
+        self.assertEqual(raw.count(GUARD_TRANSITION.INSERTION), 1)
+
     def test_editor_guard_successor_keeps_native_predecessors_and_profile_joins(self):
         logical = 'source/foundation/third_party/appended-engine/src/ProviderGuard.cpp'
         tracked = 'recipes/webkitwasm-native-rich4083-v1/' + logical
@@ -441,6 +451,8 @@ class NativeActionsBootstrapSourceTests(unittest.TestCase):
         imports_raw = (ROOT / RECIPE / 'source-imports.json').read_bytes()
         provenance = json.loads(provenance_raw)
         imports = json.loads(imports_raw)
+        provenance = GUARD_TRANSITION.provenance_predecessor(provenance)
+        imports = GUARD_TRANSITION.catalogue_predecessor(imports)
         record = provenance['runtime_files'][logical]
         self.assertEqual(record['after_sha256'], expected)
         self.assertEqual(record['after_bytes'], 74981)
@@ -465,7 +477,8 @@ class NativeActionsBootstrapSourceTests(unittest.TestCase):
         item = imports['inputs'][logical]
         self.assertEqual((item['tracked_path'], item['sha256'], item['bytes']), (tracked, expected, 74981))
         self.assertEqual(item['origin']['record'], record)
-        self.assertEqual(digest((ROOT / tracked).read_bytes()), expected)
+        self.assertEqual(digest(GUARD_TRANSITION.canonical_predecessor_bytes((ROOT / tracked).read_bytes())), expected)
+        imports = json.loads(imports_raw)
         self.assertEqual(imports['provenance']['sha256'], digest(provenance_raw))
         self.assertEqual(imports['inputs']['provenance.json']['sha256'], digest(provenance_raw))
         self.assertEqual(imports['inputs']['provenance.json']['bytes'], len(provenance_raw))
@@ -473,7 +486,15 @@ class NativeActionsBootstrapSourceTests(unittest.TestCase):
             profile = json.loads((ROOT / RECIPE / name).read_bytes())
             self.assertEqual(profile['source_map']['sha256'], digest(imports_raw))
             self.assertEqual(profile['provenance']['sha256'], digest(provenance_raw))
-            self.assertEqual((profile['source_files'], profile['engine_files'], profile['direct_translation_units']), (158 if profile['kind'] in ('foundation-native-engine-prototype-composition-undo-profile-v1', 'foundation-native-engine-windows-producer-composition-undo-profile-v1', 'foundation-native-engine-prototype-native-popup-capability-profile-v1', 'foundation-native-engine-windows-producer-native-popup-capability-profile-v1') else 157, 48, 32))
+            successor_kinds = {
+                'foundation-native-engine-' + producer + '-' + layer + '-profile-v1'
+                for producer in ('prototype', 'windows-producer')
+                for layer in ('composition-undo', 'native-popup-capability',
+                              'native-control-keypress', 'native-control-includes',
+                              'showpicker-settings', 'select-showpicker', 'select-events', 'input-method', 'retired-form-preflight')
+            }
+            self.assertEqual((profile['source_files'], profile['engine_files'], profile['direct_translation_units']),
+                             (158 if profile['kind'] in successor_kinds else 157, 48, 32))
 
     def test_closure_is_only_rich_and_expected_once(self):
         self.assertEqual(set(GUARDS), {'rich'})

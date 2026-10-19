@@ -338,8 +338,17 @@ def _validate_alias_groups(groups, files):
         seen.update(paths)
 
 
-def inspect_inputs(selection):
+def inspect_inputs(selection, *, _select_event_repair=False, _input_method_repair=False,
+                   _retained_transition=None):
     """Pure complete source/SDK/reuse verification; no tool execution/discovery."""
+    if type(_input_method_repair) is not bool or _input_method_repair and _select_event_repair:
+        raise ValueError('Input method inspection requires an exclusive strict boolean')
+    if type(_select_event_repair) is not bool:
+        raise ValueError('Select event input inspection opt-in must be a strict boolean')
+    if _retained_transition is not None:
+        if _select_event_repair or _input_method_repair:
+            raise ValueError('Retained successor inspection requires an exclusive transition')
+        _retained_module().layout(_retained_transition)
     if hasattr(selection, '__dict__'):
         selection = vars(selection)
     selection = dict(selection)
@@ -402,7 +411,13 @@ def inspect_inputs(selection):
     if recipe['toolchain']['paired_sdk_sha256'] != selection['sdk_manifest_sha256']:
         raise ValueError('Source recipe paired SDK differs')
     proof_path = ordinary(selection['reuse_proof'])
-    if proof_path.parent != reuse or proof_path.name != 'reuse-proof.json':
+    if _retained_transition is not None:
+        _retained_module().validate_proof_location(selection, proof_path, sources, source_manifest['files'])
+    elif _input_method_repair:
+        _input_method_module().validate_proof_location(selection, proof_path, sources, source_manifest['files'])
+    elif _select_event_repair:
+        _select_event_module().validate_proof_location(selection, proof_path, sources, source_manifest['files'])
+    elif proof_path.parent != reuse or proof_path.name != 'reuse-proof.json':
         raise ValueError('Reuse proof must be the explicit baseline root reuse-proof.json')
     proof = checked_document(proof_path, selection['reuse_proof_sha256'])
     fields(proof, ('schema_version', 'kind', 'profile', 'document_profile', 'target', 'paired_sdk_sha256',
@@ -414,6 +429,12 @@ def inspect_inputs(selection):
             or proof['target'] != recipe['target']
             or proof['paired_sdk_sha256'] != selection['sdk_manifest_sha256']):
         raise ValueError('Baseline reuse proof identity/profile differs')
+    if _retained_transition is not None:
+        _retained_module().validate_metadata_overlay(proof)
+    elif _input_method_repair:
+        _input_method_module().validate_metadata_overlay(proof)
+    elif _select_event_repair:
+        _select_event_module().validate_metadata_overlay(proof)
     inventory(reuse, proof['inventory'], 'reuse-proof.json')
     inventories = {'sources': source_manifest['files'], 'sdk': sdk_data['files'],
                    'reuse': proof['inventory']['files']}
@@ -1402,6 +1423,62 @@ NATIVE_CAPABILITY_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-succes
 NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-successful-donor-native-control-keypress-repair-plan-v1'
 NATIVE_CONTROL_KEYPRESS_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-successful-donor-native-control-keypress-repair-build-v1'
 SUCCESSFUL_HELPER = 'tools/appended_engine_successful_donor.py'
+THEME_SUCCESSOR_HELPER = 'tools/appended_engine_theme_successor.py'
+THEME_HELPER = THEME_SUCCESSOR_HELPER
+NATIVE_THEME_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-native-theme-repair-plan-v1'
+NATIVE_THEME_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-native-theme-repair-build-v1'
+
+SHOWPICKER_SUCCESSOR_HELPER = 'tools/appended_engine_showpicker_successor.py'
+NATIVE_SHOWPICKER_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-native-showpicker-repair-plan-v1'
+NATIVE_SHOWPICKER_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-native-showpicker-repair-build-v1'
+
+SELECT_EVENT_SUCCESSOR_HELPER = 'tools/appended_engine_select_event_successor.py'
+SELECT_EVENT_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-select-event-repair-plan-v1'
+SELECT_EVENT_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-select-event-repair-build-v1'
+
+INPUT_METHOD_SUCCESSOR_HELPER = 'tools/appended_engine_input_method_successor.py'
+INPUT_METHOD_REPAIR_PLAN_KIND = 'foundation-document-v2-maintenance-input-method-repair-plan-v1'
+INPUT_METHOD_REPAIR_BUILD_KIND = 'foundation-document-v2-maintenance-input-method-repair-build-v1'
+RETAINED_SUCCESSOR_HELPER = 'tools/appended_engine_retained_successor.py'
+RETAINED_SUCCESSOR_PLAN_KIND = 'foundation-document-v2-maintenance-retained-successor-plan-v1'
+RETAINED_SUCCESSOR_BUILD_KIND = 'foundation-document-v2-maintenance-retained-successor-build-v1'
+RETAINED_SUCCESSOR_TRANSITION = 'editor-form-guard-preentry-v1'
+
+
+def _retained_module():
+    import appended_engine_retained_successor
+    return appended_engine_retained_successor
+
+
+def _retained_layout(plan):
+    if plan.get('kind') != RETAINED_SUCCESSOR_PLAN_KIND:
+        return None
+    if type(plan.get('retained_transition')) is not dict:
+        raise ValueError('Retained successor plan layout differs')
+    spec = _retained_module().layout(plan['retained_transition'].get('transition'))
+    if plan['retained_transition'] != spec:
+        raise ValueError('Retained successor plan layout differs')
+    return spec
+
+def _input_method_module():
+    import appended_engine_input_method_successor
+    return appended_engine_input_method_successor
+
+
+def _select_event_module():
+    import appended_engine_select_event_successor
+    return appended_engine_select_event_successor
+
+
+def _showpicker_module():
+    import appended_engine_showpicker_successor
+    return appended_engine_showpicker_successor
+
+
+def _theme_module():
+    import appended_engine_theme_successor
+    return appended_engine_theme_successor
+
 
 
 def _successful_module():
@@ -2289,7 +2366,7 @@ def _completed_input_directories(completed):
 
 def _copy_completed_object(plan, object_id, output):
     """Copy admitted bytes independently; never call a compiler on any failure."""
-    if plan.get('kind') not in (RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND):
+    if plan.get('kind') not in (RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND, NATIVE_THEME_REPAIR_PLAN_KIND, NATIVE_SHOWPICKER_REPAIR_PLAN_KIND, SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND):
         raise ValueError('Object import requires a distinct admitted continuation plan')
     for root in _completed_input_directories(_work(plan)):
         if output == root or root in output.parents or output in root.parents:
@@ -2337,7 +2414,7 @@ def _copy_completed_object(plan, object_id, output):
         'depfile_sha256': hashlib.sha256(depfile).hexdigest(),
         'retained_depfile': str(provenance), 'hardlinked': False,
         'compiler_invoked': False, 'production_eligible': False}
-    if plan['kind'] in (NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND):
+    if plan['kind'] in (NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND, NATIVE_THEME_REPAIR_PLAN_KIND, NATIVE_SHOWPICKER_REPAIR_PLAN_KIND, SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND):
         record['donor_provenance'] = row['donor_provenance']
     if report.exists() or report.is_symlink():
         if checked_document(report) != record:
@@ -2349,7 +2426,7 @@ def _copy_completed_object(plan, object_id, output):
 
 def _copy_successful_archive(plan, name, output):
     """Import one admitted regular archive without invoking ar or a fallback."""
-    if plan.get('kind') not in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND):
+    if plan.get('kind') not in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND, NATIVE_THEME_REPAIR_PLAN_KIND, NATIVE_SHOWPICKER_REPAIR_PLAN_KIND, SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND):
         raise ValueError('Archive import requires an explicit successful-donor plan')
     work = plan['successful_donor']
     for root in _completed_input_directories(work):
@@ -2548,7 +2625,72 @@ def _native_control_keypress_build_receipt(result, plan, output, commands):
 def make_plan(selection, output, *, completed_work=None, successful_donor=None,
               successful_donor_guard_repair=False, successful_donor_composition_repair=False,
               successful_donor_native_capability_repair=False,
-              successful_donor_native_control_keypress_repair=False):
+              successful_donor_native_control_keypress_repair=False,
+              successful_donor_native_theme_repair=False, theme_supplement=None,
+              successful_donor_native_showpicker_repair=False,
+              successful_donor_select_event_repair=False, successful_donor_input_method_repair=False,
+              retained_transition=None):
+    if retained_transition is not None:
+        _retained_module().layout(retained_transition)
+        switches = (successful_donor_guard_repair, successful_donor_composition_repair,
+            successful_donor_native_capability_repair, successful_donor_native_control_keypress_repair,
+            successful_donor_native_theme_repair, successful_donor_native_showpicker_repair,
+            successful_donor_select_event_repair, successful_donor_input_method_repair)
+        if (any(type(v) is not bool for v in switches) or any(switches)
+                or successful_donor is None or completed_work is not None or theme_supplement is not None
+                or selection.get('document_profile') != 'editor'):
+            raise ValueError('Retained successor requires an exclusive editor donor and transition')
+        return _retained_module().make_plan(selection, output, successful_donor,
+            retained_transition, sys.modules[__name__])
+    if type(successful_donor_input_method_repair) is not bool:
+        raise ValueError('Input method repair opt-in must be a strict boolean')
+    if successful_donor_input_method_repair:
+        switches = (successful_donor_guard_repair, successful_donor_composition_repair,
+            successful_donor_native_capability_repair, successful_donor_native_control_keypress_repair,
+            successful_donor_native_theme_repair, successful_donor_native_showpicker_repair,
+            successful_donor_select_event_repair)
+        if (any(type(v) is not bool for v in switches) or any(switches)
+                or successful_donor is None or completed_work is not None or theme_supplement is not None
+                or selection.get('document_profile') != 'editor'):
+            raise ValueError('Input method repair requires exclusive accepted SelectEvent donor and editor profile')
+        return _input_method_module().make_plan(selection, output, successful_donor, sys.modules[__name__])
+    if type(successful_donor_select_event_repair) is not bool:
+        raise ValueError('Select event repair opt-in must be a strict boolean')
+    if successful_donor_select_event_repair:
+        switches = (successful_donor_guard_repair, successful_donor_composition_repair,
+            successful_donor_native_capability_repair, successful_donor_native_control_keypress_repair,
+            successful_donor_native_theme_repair, successful_donor_native_showpicker_repair)
+        if (any(type(v) is not bool for v in switches) or any(switches)
+                or successful_donor is None or completed_work is not None or theme_supplement is not None
+                or selection.get('document_profile') != 'editor'):
+            raise ValueError('Select event repair requires exclusive accepted showPicker donor and editor profile')
+        return _select_event_module().make_plan(selection, output, successful_donor, sys.modules[__name__])
+    if type(successful_donor_native_showpicker_repair) is not bool:
+        raise ValueError('showPicker repair opt-in must be a strict boolean')
+    if successful_donor_native_showpicker_repair:
+        switches = (successful_donor_guard_repair, successful_donor_composition_repair,
+            successful_donor_native_capability_repair, successful_donor_native_control_keypress_repair,
+            successful_donor_native_theme_repair)
+        if (any(type(v) is not bool for v in switches) or any(switches)
+                or successful_donor is None or completed_work is not None or theme_supplement is not None
+                or selection.get('document_profile') != 'editor'):
+            raise ValueError('showPicker requires exclusive accepted Theme donor and editor profile')
+        return _showpicker_module().make_plan(selection, output, successful_donor, sys.modules[__name__])
+    if type(successful_donor_native_theme_repair) is not bool:
+        raise ValueError("Theme repair opt-in must be a strict boolean")
+    if successful_donor_native_theme_repair:
+        if any(type(v) is not bool for v in (successful_donor_guard_repair,
+                successful_donor_composition_repair, successful_donor_native_capability_repair,
+                successful_donor_native_control_keypress_repair)):
+            raise ValueError('Theme repair lane switches require strict booleans')
+        if (successful_donor is None or theme_supplement is None or completed_work is not None
+                or successful_donor_guard_repair or successful_donor_composition_repair
+                or successful_donor_native_capability_repair or successful_donor_native_control_keypress_repair
+                or selection.get("document_profile") != "editor"):
+            raise ValueError("Theme repair requires exclusive editor donor and paired Theme supplement")
+        return _theme_module().make_plan(selection, output, successful_donor, theme_supplement, sys.modules[__name__])
+    if theme_supplement is not None:
+        raise ValueError("Theme supplement requires explicit Theme repair opt-in")
     if (type(successful_donor_native_control_keypress_repair) is not bool
             or successful_donor_native_control_keypress_repair and (successful_donor is None
                 or successful_donor_guard_repair or successful_donor_composition_repair
@@ -2603,6 +2745,16 @@ def make_plan(selection, output, *, completed_work=None, successful_donor=None,
 
 def verify_plan(path, expected_sha256):
     value = checked_document(path, expected_sha256)
+    if value.get('kind') == RETAINED_SUCCESSOR_PLAN_KIND:
+        return _retained_module().verify_plan(value, sys.modules[__name__])
+    if value.get("kind") == INPUT_METHOD_REPAIR_PLAN_KIND:
+        return _input_method_module().verify_plan(value, sys.modules[__name__])
+    if value.get("kind") == SELECT_EVENT_REPAIR_PLAN_KIND:
+        return _select_event_module().verify_plan(value, sys.modules[__name__])
+    if value.get("kind") == NATIVE_SHOWPICKER_REPAIR_PLAN_KIND:
+        return _showpicker_module().verify_plan(value, sys.modules[__name__])
+    if value.get("kind") == NATIVE_THEME_REPAIR_PLAN_KIND:
+        return _theme_module().verify_plan(value, sys.modules[__name__])
     resume = value.get('kind') == RESUME_PLAN_KIND
     guard_repair = value.get('kind') == GUARD_REPAIR_PLAN_KIND
     composition_repair = value.get('kind') == COMPOSITION_REPAIR_PLAN_KIND
@@ -2805,6 +2957,7 @@ def _supervise(argv, cwd, log, environment, timeout):
 
 
 def _graph(inspected, plan, plan_path, plan_hash, output):
+    retained = _retained_layout(plan)
     p, roots = inspected.proof, inspected.roots
     header_view = _header_identity(inspected)
     overlay_arguments = []
@@ -2842,7 +2995,7 @@ def _graph(inspected, plan, plan_path, plan_hash, output):
             metadata_command.extend(('--' + key.replace('_', '-'), resolve(metadata[key])))
     put('ENGINE_METADATA_COMMAND', *metadata_command)
     put('ENGINE_METADATA_DEPENDS', *(resolve(ref) for ref in metadata.values()),
-        *(roots['sources'] / name for name in required_helpers(inspected.selection['document_profile']) + ((SUCCESSFUL_HELPER,) if plan.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND) else ())),
+        *(roots['sources'] / name for name in required_helpers(inspected.selection['document_profile']) + ((SUCCESSFUL_HELPER,) if plan.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND, NATIVE_THEME_REPAIR_PLAN_KIND, NATIVE_SHOWPICKER_REPAIR_PLAN_KIND, SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND) else ())),
         roots['sources'] / 'recipe.json')
     object_outputs = {}
     imported = {row['id']: row for row in (_work(plan) or {}).get('objects', [])}
@@ -2905,6 +3058,8 @@ def _graph(inspected, plan, plan_path, plan_hash, output):
                              output / 'evidence/engine-link.map')
     put('ENGINE_FACTORY', factory); put('ENGINE_WASM', wasm); put('ENGINE_MAP', linkmap)
     wrapper_outputs = [object_outputs[name] for name in inspected.profile['direct_objects']]
+    if plan.get('kind') in (SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND):
+        wrapper_outputs.append(object_outputs[_select_event_module().OWNER])
     link_args = [_expand(arg, roots, output) for arg in p['link']['flags']]
     link_args += ['--pre-js', resolve(p['link']['pre_js']), '--js-library', resolve(p['link']['host_library'])]
     for data in p['link']['data']:
@@ -2918,16 +3073,30 @@ def _graph(inspected, plan, plan_path, plan_hash, output):
     put('ENGINE_INSPECTION', output / 'evidence/artifact-inspection.json')
     put('ENGINE_INSPECT_COMMAND', *internal, '--action', 'artifacts')
     put('ENGINE_INSPECT_DEPENDS', helper, plan_path)
+    if plan.get('kind') in (NATIVE_THEME_REPAIR_PLAN_KIND, NATIVE_SHOWPICKER_REPAIR_PLAN_KIND, SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND):
+        values['ENGINE_METADATA_DEPENDS'].append(str(roots['sources'] / THEME_HELPER))
+    if plan.get('kind') in (NATIVE_SHOWPICKER_REPAIR_PLAN_KIND, SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND):
+        values['ENGINE_METADATA_DEPENDS'].append(str(roots['sources'] / SHOWPICKER_SUCCESSOR_HELPER))
+    if plan.get('kind') == SELECT_EVENT_REPAIR_PLAN_KIND:
+        values['ENGINE_METADATA_DEPENDS'].append(str(roots['sources'] / SELECT_EVENT_SUCCESSOR_HELPER))
+    if plan.get('kind') == INPUT_METHOD_REPAIR_PLAN_KIND:
+        values['ENGINE_METADATA_DEPENDS'].extend(str(roots['sources'] / name) for name in
+            (SELECT_EVENT_SUCCESSOR_HELPER, INPUT_METHOD_SUCCESSOR_HELPER))
+    if retained is not None:
+        for name in _retained_module().producer_inputs(sys.modules[__name__]):
+            path = str(roots['sources'] / name)
+            if path not in values['ENGINE_METADATA_DEPENDS']:
+                values['ENGINE_METADATA_DEPENDS'].append(path)
     fragment = output / 'cmake/verified-plan.cmake'
     fragment.write_text(''.join('set(' + name + ''.join('\n  ' + _cmake_value(arg) for arg in args)
                                 + ')\n' for name, args in values.items()), encoding='utf-8')
     commands = {'metadata': list(map(str, metadata_command)),
         'objects': {obj['id']: values['ENGINE_OBJECT_o' + str(i) + '_COMMAND']
                     for i, obj in enumerate(p['objects']) if obj['id'] not in imported}, 'link': link_command}
-    if plan.get('kind') in (RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND):
+    if plan.get('kind') in (RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND, NATIVE_THEME_REPAIR_PLAN_KIND, NATIVE_SHOWPICKER_REPAIR_PLAN_KIND, SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND):
         commands['imports'] = {obj['id']: values['ENGINE_OBJECT_o' + str(i) + '_COMMAND']
                               for i, obj in enumerate(p['objects']) if obj['id'] in imported}
-    if plan.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND):
+    if plan.get('kind') in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND, NATIVE_THEME_REPAIR_PLAN_KIND, NATIVE_SHOWPICKER_REPAIR_PLAN_KIND, SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND):
         commands['archive_imports'] = {name: values['ENGINE_ARCHIVE_' + name + '_COMMAND'] for name in imported_archives}
     return tools, fragment, commands
 
@@ -2937,6 +3106,8 @@ def build(plan_path, expected_sha256, output, *, jobs=2, timeout_seconds=1800):
     plan, inspected = verify_plan(plan_path, expected_sha256)
     if type(jobs) is not int or jobs < 1 or type(timeout_seconds) is not int or timeout_seconds < 1:
         raise ValueError('Positive jobs and timeout are required')
+    if plan['kind'] in (NATIVE_THEME_REPAIR_PLAN_KIND, NATIVE_SHOWPICKER_REPAIR_PLAN_KIND, SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND) and jobs != 1:
+        raise ValueError('Theme/showPicker/select-event repair preserves exactly one compiler job')
     if not sys.platform.startswith('linux'):
         raise ValueError('The initial document-v2 producer is Linux-host only')
     output = engine_sdk.new_destination(output, (*inspected.roots.values(), plan_path.parent,
@@ -3014,6 +3185,16 @@ def build(plan_path, expected_sha256, output, *, jobs=2, timeout_seconds=1800):
             _completed_build_receipt(result, plan, output, commands)
         elif plan['kind'] == NATIVE_CAPABILITY_REPAIR_PLAN_KIND:
             _native_capability_build_receipt(result, plan, output, commands)
+        elif plan['kind'] == RETAINED_SUCCESSOR_PLAN_KIND:
+            _retained_module().build_receipt(result, plan, inspected, output, commands, sys.modules[__name__])
+        elif plan['kind'] == INPUT_METHOD_REPAIR_PLAN_KIND:
+            _input_method_module().build_receipt(result, plan, inspected, output, commands, sys.modules[__name__])
+        elif plan['kind'] == SELECT_EVENT_REPAIR_PLAN_KIND:
+            _select_event_module().build_receipt(result, plan, inspected, output, commands, sys.modules[__name__])
+        elif plan['kind'] == NATIVE_SHOWPICKER_REPAIR_PLAN_KIND:
+            _showpicker_module().build_receipt(result, plan, inspected, output, commands, sys.modules[__name__])
+        elif plan['kind'] == NATIVE_THEME_REPAIR_PLAN_KIND:
+            _theme_module().build_receipt(result, plan, inspected, output, commands, sys.modules[__name__])
         elif plan['kind'] == NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND:
             _native_control_keypress_build_receipt(result, plan, output, commands)
         elif plan['kind'] in (SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND):
@@ -3024,7 +3205,7 @@ def build(plan_path, expected_sha256, output, *, jobs=2, timeout_seconds=1800):
         # Preserve the owned failed/incomplete work. Never clean SDK pyc after
         # execution or publish a successful receipt from partial outputs.
         _save(output / 'maintenance-failure.json', {'schema_version': 1,
-            'kind': NATIVE_CONTROL_KEYPRESS_REPAIR_BUILD_KIND if plan['kind'] == NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND else NATIVE_CAPABILITY_REPAIR_BUILD_KIND if plan['kind'] == NATIVE_CAPABILITY_REPAIR_PLAN_KIND else COMPOSITION_REPAIR_BUILD_KIND if plan['kind'] == COMPOSITION_REPAIR_PLAN_KIND else GUARD_REPAIR_BUILD_KIND if plan['kind'] == GUARD_REPAIR_PLAN_KIND else SUCCESSFUL_BUILD_KIND if plan['kind'] == SUCCESSFUL_PLAN_KIND else RESUME_BUILD_KIND if plan['kind'] == RESUME_PLAN_KIND else BUILD_KIND,
+            'kind': RETAINED_SUCCESSOR_BUILD_KIND if plan['kind'] == RETAINED_SUCCESSOR_PLAN_KIND else INPUT_METHOD_REPAIR_BUILD_KIND if plan['kind'] == INPUT_METHOD_REPAIR_PLAN_KIND else SELECT_EVENT_REPAIR_BUILD_KIND if plan['kind'] == SELECT_EVENT_REPAIR_PLAN_KIND else NATIVE_SHOWPICKER_REPAIR_BUILD_KIND if plan['kind'] == NATIVE_SHOWPICKER_REPAIR_PLAN_KIND else NATIVE_THEME_REPAIR_BUILD_KIND if plan['kind'] == NATIVE_THEME_REPAIR_PLAN_KIND else NATIVE_CONTROL_KEYPRESS_REPAIR_BUILD_KIND if plan['kind'] == NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND else NATIVE_CAPABILITY_REPAIR_BUILD_KIND if plan['kind'] == NATIVE_CAPABILITY_REPAIR_PLAN_KIND else COMPOSITION_REPAIR_BUILD_KIND if plan['kind'] == COMPOSITION_REPAIR_PLAN_KIND else GUARD_REPAIR_BUILD_KIND if plan['kind'] == GUARD_REPAIR_PLAN_KIND else SUCCESSFUL_BUILD_KIND if plan['kind'] == SUCCESSFUL_PLAN_KIND else RESUME_BUILD_KIND if plan['kind'] == RESUME_PLAN_KIND else BUILD_KIND,
             'scope': SCOPE, 'status': 'incomplete', 'production_eligible': False,
             'error': str(error)[:4096], 'plan_sha256': expected_sha256})
         raise
@@ -3207,8 +3388,9 @@ def _step(args):
     # The CMake helper reads the pinned plan itself and immediate artifact inputs,
     # avoiding a complete 351MB+ source/SDK rescan for every archive node.
     plan = checked_document(args.plan, args.plan_sha256)
-    if plan.get('kind') not in (PLAN_KIND, RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND) or plan.get('production_eligible') is not False:
+    if plan.get('kind') not in (PLAN_KIND, RESUME_PLAN_KIND, SUCCESSFUL_PLAN_KIND, GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND, NATIVE_THEME_REPAIR_PLAN_KIND, NATIVE_SHOWPICKER_REPAIR_PLAN_KIND, SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND) or plan.get('production_eligible') is not False:
         raise ValueError('Invalid internal maintenance plan')
+    _retained_layout(plan)
     output = ordinary(args.build_root, True)
     p = plan['reuse']
     roots = {'sources': Path(plan['selection']['sources']), 'sdk': Path(plan['selection']['sdk']),
@@ -3224,7 +3406,7 @@ def _step(args):
         return _copy_completed_object(plan, args.object, output)
     if args.action == 'import-archive':
         return _copy_successful_archive(plan, args.archive, output)
-    if plan['kind'] in (GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND) and args.action in ('archive', 'repack'):
+    if plan['kind'] in (GUARD_REPAIR_PLAN_KIND, COMPOSITION_REPAIR_PLAN_KIND, NATIVE_CAPABILITY_REPAIR_PLAN_KIND, NATIVE_CONTROL_KEYPRESS_REPAIR_PLAN_KIND, NATIVE_THEME_REPAIR_PLAN_KIND, NATIVE_SHOWPICKER_REPAIR_PLAN_KIND, SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND) and args.action in ('archive', 'repack'):
         raise ValueError('Guard repair permits five archive imports and zero repacks')
     if args.action in ('archive', 'repack'):
         archive = next((a for a in p['archives'] if a['name'] == args.archive), None)
@@ -3276,6 +3458,8 @@ def _step(args):
                 raise ValueError('Closed archive changed after member readback')
         selected_members = []
         for replacement in p['replacements']:
+            if plan['kind'] in (SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND) and replacement['object_id'] == _select_event_module().OWNER:
+                continue  # This lane links the selected owner directly; its old archive member must stay unextracted.
             marker = ('lib' + replacement['archive'] + '.a(' + replacement['object_id'] + '.o)').encode()
             if marker not in linkmap:
                 raise ValueError('Actual link map lacks selected replacement member: ' + marker.decode())
@@ -3288,6 +3472,14 @@ def _step(args):
             'replacement_members_observed_in_map': selected_members,
             'provider_build_sha256': digest(output / 'document-generated/provider-build.json'),
             'generated_header_sha256': digest(output / 'document-generated/BibCopiedDocumentMetadata.generated.h')}
+        if plan['kind'] in (NATIVE_THEME_REPAIR_PLAN_KIND, NATIVE_SHOWPICKER_REPAIR_PLAN_KIND, SELECT_EVENT_REPAIR_PLAN_KIND, INPUT_METHOD_REPAIR_PLAN_KIND, RETAINED_SUCCESSOR_PLAN_KIND):
+            report['native_theme_selection'] = _theme_module().final_map(linkmap, output)
+        if plan['kind'] == SELECT_EVENT_REPAIR_PLAN_KIND:
+            report['select_event_selection'] = _select_event_module().final_map(linkmap, output, sys.modules[__name__])
+        if plan['kind'] == INPUT_METHOD_REPAIR_PLAN_KIND:
+            report['input_method_selection'] = _input_method_module().final_map(linkmap, output, sys.modules[__name__])
+        if plan['kind'] == RETAINED_SUCCESSOR_PLAN_KIND:
+            report['retained_successor_selection'] = _retained_module().final_map(linkmap, output, sys.modules[__name__])
         target = output / 'evidence/artifact-inspection.json'
     # This output is a CMake-owned rebuildable evidence node, never an input or
     # published successful build receipt. Recheck old ordinary identity first.
@@ -3321,6 +3513,13 @@ def main(argv=None):
     planning.add_argument('--successful-donor-composition-repair', action='store_true')
     planning.add_argument('--successful-donor-native-capability-repair', action='store_true')
     planning.add_argument('--successful-donor-native-control-keypress-repair', action='store_true')
+    planning.add_argument('--successful-donor-native-theme-repair', action='store_true')
+    planning.add_argument('--successful-donor-native-showpicker-repair', action='store_true')
+    planning.add_argument('--successful-donor-select-event-repair', action='store_true')
+    planning.add_argument('--successful-donor-input-method-repair', action='store_true')
+    planning.add_argument('--successful-donor-retained-transition', choices=(RETAINED_SUCCESSOR_TRANSITION,))
+    planning.add_argument('--theme-supplement', type=Path)
+    planning.add_argument('--theme-supplement-sha256')
     building = sub.add_parser('build')
     building.add_argument('--plan', type=Path, required=True)
     building.add_argument('--plan-sha256', required=True)
@@ -3336,6 +3535,43 @@ def main(argv=None):
     step.add_argument('--object')
     args = parser.parse_args(arguments)
     if args.action == 'plan':
+        if args.successful_donor_retained_transition is not None and (args.successful_donor is None
+                or args.completed_work is not None or args.theme_supplement is not None
+                or args.successful_donor_guard_repair or args.successful_donor_composition_repair
+                or args.successful_donor_native_capability_repair or args.successful_donor_native_control_keypress_repair
+                or args.successful_donor_native_theme_repair or args.successful_donor_native_showpicker_repair
+                or args.successful_donor_select_event_repair or args.successful_donor_input_method_repair
+                or args.document_profile != 'editor'):
+            parser.error('Retained successor requires an exclusive editor donor and transition')
+        if args.successful_donor_input_method_repair and (args.successful_donor is None
+                or args.completed_work is not None or args.theme_supplement is not None
+                or args.successful_donor_guard_repair or args.successful_donor_composition_repair
+                or args.successful_donor_native_capability_repair or args.successful_donor_native_control_keypress_repair
+                or args.successful_donor_native_theme_repair or args.successful_donor_native_showpicker_repair
+                or args.successful_donor_select_event_repair or args.document_profile != 'editor'):
+            parser.error('Input method repair requires exclusive accepted SelectEvent donor and editor profile')
+        if args.successful_donor_select_event_repair and (args.successful_donor is None
+                or args.completed_work is not None or args.theme_supplement is not None
+                or args.successful_donor_guard_repair or args.successful_donor_composition_repair
+                or args.successful_donor_native_capability_repair or args.successful_donor_native_control_keypress_repair
+                or args.successful_donor_native_theme_repair or args.successful_donor_native_showpicker_repair
+                or args.document_profile != 'editor'):
+            parser.error('Select event repair requires exclusive accepted showPicker donor and editor profile')
+        if args.successful_donor_native_showpicker_repair and (args.successful_donor is None
+                or args.completed_work is not None or args.theme_supplement is not None
+                or args.successful_donor_guard_repair or args.successful_donor_composition_repair
+                or args.successful_donor_native_capability_repair or args.successful_donor_native_control_keypress_repair
+                or args.successful_donor_native_theme_repair or args.document_profile != 'editor'):
+            parser.error('showPicker repair requires exclusive accepted Theme donor and editor profile')
+        if (args.theme_supplement is None) != (args.theme_supplement_sha256 is None):
+            parser.error('--theme-supplement and --theme-supplement-sha256 are required together')
+        if args.successful_donor_native_theme_repair:
+            if (args.successful_donor is None or args.theme_supplement is None or args.completed_work is not None
+                    or args.successful_donor_guard_repair or args.successful_donor_composition_repair
+                    or args.successful_donor_native_capability_repair or args.successful_donor_native_control_keypress_repair):
+                parser.error('Theme repair requires exclusive successful donor and Theme supplement')
+        elif args.theme_supplement is not None:
+            parser.error('--theme-supplement requires --successful-donor-native-theme-repair')
         if (args.completed_work is None) != (args.completed_work_sha256 is None):
             parser.error('--completed-work and --completed-work-sha256 are required together')
         if (args.successful_donor is None) != (args.successful_donor_sha256 is None):
@@ -3357,10 +3593,18 @@ def main(argv=None):
         if args.successful_donor is not None:
             result = make_plan(selection, args.output, successful_donor={
                 'path': str(args.successful_donor), 'sha256': sha(args.successful_donor_sha256, 'successful-donor')},
+                **({'retained_transition': args.successful_donor_retained_transition}
+                    if args.successful_donor_retained_transition is not None else {}),
+                **({'successful_donor_input_method_repair': True} if args.successful_donor_input_method_repair else {}),
+                **({'successful_donor_select_event_repair': True} if args.successful_donor_select_event_repair else {}),
+                **({'successful_donor_native_showpicker_repair': True} if args.successful_donor_native_showpicker_repair else {}),
                 **({'successful_donor_guard_repair': True} if args.successful_donor_guard_repair else {}),
                 **({'successful_donor_composition_repair': True} if args.successful_donor_composition_repair else {}),
                 **({'successful_donor_native_capability_repair': True} if args.successful_donor_native_capability_repair else {}),
-                **({'successful_donor_native_control_keypress_repair': True} if args.successful_donor_native_control_keypress_repair else {}))
+                **({'successful_donor_native_control_keypress_repair': True} if args.successful_donor_native_control_keypress_repair else {}),
+                **({'successful_donor_native_theme_repair': True, 'theme_supplement': {
+                    'path': str(args.theme_supplement), 'sha256': sha(args.theme_supplement_sha256, 'theme-supplement')}}
+                   if args.successful_donor_native_theme_repair else {}))
         elif args.completed_work is None:
             result = make_plan(selection, args.output)
         else:

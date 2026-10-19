@@ -25,6 +25,8 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
+import appended_engine_guard_transition as GUARD_TRANSITION
 HELPER = ROOT / 'tools/appended_engine_native_inputs.py'
 TARGET = {'system': 'Linux', 'processor': 'x86_64',
           'triple': 'x86_64-buildroot-linux-gnu', 'pointer_bits': 64}
@@ -2073,7 +2075,7 @@ class NativeForwardPatchSource(unittest.TestCase):
                     'patches/native-provider-getter.patch': 1,
                     'patches/native-provider-runtime.patch': 2}
         overlays = {name for name, item in entries.items() if item['role'] == 'source'}
-        self.assertEqual(len(overlays), 158 if self.source_map.get('kind') in (self.api.COMPOSITION_SOURCE_KIND,self.api.NATIVE_POPUP_SOURCE_KIND,self.api.NATIVE_CONTROL_KEYPRESS_SOURCE_KIND) else 157)
+        self.assertEqual(len(overlays), 158 if self.source_map.get('kind') in (self.api.COMPOSITION_SOURCE_KIND,self.api.NATIVE_POPUP_SOURCE_KIND,self.api.NATIVE_CONTROL_KEYPRESS_SOURCE_KIND,self.api.NATIVE_CONTROL_INCLUDES_SOURCE_KIND,self.api.NATIVE_SHOWPICKER_SOURCE_KIND,self.api.NATIVE_SELECT_EVENTS_SOURCE_KIND,self.api.NATIVE_INPUT_METHOD_SOURCE_KIND,self.api.NATIVE_FORM_PREFLIGHT_SOURCE_KIND) else 157)
         for name, count in expected.items():
             item = entries[name]
             raw = (ROOT / item['tracked_path']).read_bytes()
@@ -3995,7 +3997,17 @@ class NativeCurrentSourceCapture(unittest.TestCase):
 
 def composition_catalogue_fixture(api):
     """Inert metadata rows; no mapped source, SDK or compiler body is opened."""
-    value = json.loads((ROOT / api.RECIPE / 'source-imports.json').read_bytes())
+    value = GUARD_TRANSITION.catalogue_predecessor(json.loads((ROOT / api.RECIPE / 'source-imports.json').read_bytes()))
+    if value.get('kind') == api.NATIVE_FORM_PREFLIGHT_SOURCE_KIND:
+        value = api.native_form_preflight_catalogue_predecessor(value)
+    if value.get('kind') == api.NATIVE_INPUT_METHOD_SOURCE_KIND:
+        value = api.native_input_method_catalogue_predecessor(value)
+    if value.get('kind') == api.NATIVE_SELECT_EVENTS_SOURCE_KIND:
+        value = api.native_select_events_catalogue_predecessor(value)
+    if value.get('kind') == api.NATIVE_SHOWPICKER_SOURCE_KIND:
+        value = api.native_showpicker_catalogue_predecessor(value)
+    if value.get('kind') == api.NATIVE_CONTROL_INCLUDES_SOURCE_KIND:
+        value = api.native_control_includes_catalogue_predecessor(value)
     if value.get('kind') == api.NATIVE_CONTROL_KEYPRESS_SOURCE_KIND:
         value = api.native_control_keypress_catalogue_predecessor(value)
     if value.get('kind') == api.NATIVE_POPUP_SOURCE_KIND:
@@ -4076,6 +4088,9 @@ class NativePopupSourceCatalogue(unittest.TestCase):
     def setUp(self):
         self.api=load_helper()
         self.value=json.loads((ROOT/self.api.RECIPE/'source-imports.json').read_bytes())
+        self.value=self.api.native_select_events_catalogue_predecessor(self.api.native_input_method_catalogue_predecessor(GUARD_TRANSITION.catalogue_predecessor(self.value)))
+        self.value=self.api.native_showpicker_catalogue_predecessor(self.value)
+        self.value=self.api.native_control_includes_catalogue_predecessor(self.value)
         self.value=self.api.native_control_keypress_catalogue_predecessor(self.value)
 
     def test_exact_native_source_successor_retains_composition_history(self):
@@ -4092,7 +4107,7 @@ class NativePopupSourceCatalogue(unittest.TestCase):
         with no_programs():
             current=self.api.capture_current_sources(digest(profile_raw),digest(map_raw),repository_root=ROOT,inputs=inputs)
             facts=current.as_dict()
-        self.assertEqual(facts['scope'],'current198-final158-native-control-keypress-only')
+        self.assertEqual(facts['scope'],'current198-final158-retired-form-preflight-only')
         self.assertEqual((facts['source_files'],facts['engine_files'],facts['direct_translation_units']),(158,48,32))
         self.assertIs(facts['complete_original_source_admission'],False)
         self.assertIs(facts['source_tree_assembled'],False)
@@ -4127,7 +4142,9 @@ class NativeControlKeypressSourceCatalogue(unittest.TestCase):
     def setUp(self):
         self.api = load_helper()
         self.map_raw = (ROOT / self.api.RECIPE / 'source-imports.json').read_bytes()
-        self.value = json.loads(self.map_raw)
+        current = self.api.native_select_events_catalogue_predecessor(self.api.native_input_method_catalogue_predecessor(GUARD_TRANSITION.catalogue_predecessor(json.loads(self.map_raw))))
+        self.value = self.api.native_control_includes_catalogue_predecessor(
+            self.api.native_showpicker_catalogue_predecessor(current))
         self.profile_raw = (ROOT / self.api.PROFILE).read_bytes()
         self.leaf = 'source/document-provider/physical/BibDocumentPhysicalProvider.cpp'
 
@@ -4192,9 +4209,9 @@ class NativeControlKeypressSourceCatalogue(unittest.TestCase):
             current = self.api.capture_current_sources(digest(self.profile_raw), digest(self.map_raw), repository_root=ROOT, inputs=inputs)
             self.assertIs(current._owner, inputs)
             facts = current.as_dict()
-            self.assertEqual(facts['scope'], 'current198-final158-native-control-keypress-only')
+            self.assertEqual(facts['scope'], 'current198-final158-retired-form-preflight-only')
             self.assertEqual((facts['source_files'], facts['engine_files'], facts['direct_translation_units']), (158, 48, 32))
-            self.assertEqual(facts['overlays'][self.leaf]['sha256'], 'ee79f3bc8488cfd92c9b62abc2e84a9c110221cf2eba805fac4803980bae612a')
+            self.assertEqual(facts['overlays'][self.leaf]['sha256'], '9d5d434c1af6109c7a007e67fcceccb48b5549339663ada3621736bcbeefde47')
             self.assertFalse(facts['complete_original_source_admission'])
             self.assertFalse(facts['source_tree_assembled'])
             self.assertFalse(facts['production_eligible'])
@@ -4222,6 +4239,337 @@ class NativeControlKeypressSourceCatalogue(unittest.TestCase):
                 inputs.recheck()
             with no_programs(), self.assertRaisesRegex(ValueError, 'Native source input differs.*physical/BibDocumentPhysicalProvider.cpp'):
                 self.api.capture_current_sources(digest(self.profile_raw), digest(self.map_raw), repository_root=root, inputs=self.api.InputSet())
+
+
+
+class NativeShowpickerSourceCatalogue(unittest.TestCase):
+    """The new layer changes one source row and retains exact prior metadata."""
+    def setUp(self):
+        self.api = load_helper()
+        self.map_raw = (ROOT / self.api.RECIPE / 'source-imports.json').read_bytes()
+        self.value = self.api.native_select_events_catalogue_predecessor(self.api.native_input_method_catalogue_predecessor(GUARD_TRANSITION.catalogue_predecessor(json.loads(self.map_raw))))
+        self.logical = 'source/wrapper/src/embedder/main.cpp'
+
+    def test_exact_successor_reconstructs_control_includes_and_older_history(self):
+        with no_programs():
+            previous = self.api.native_showpicker_catalogue_predecessor(self.value)
+            self.assertEqual(self.api.native_showpicker_catalogue_counts(self.value),
+                {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
+            self.assertEqual(self.api.native_control_includes_catalogue_counts(previous),
+                {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
+        raw = (json.dumps(previous, indent=2, sort_keys=True, ensure_ascii=True, allow_nan=False) + '\n').encode('ascii')
+        self.assertEqual(digest(raw), self.api.NATIVE_SHOWPICKER_PREDECESSOR_SOURCE_MAP)
+        self.assertEqual(self.value['inputs'][self.logical]['sha256'], self.api.NATIVE_SHOWPICKER_SOURCE_FACTS[self.logical]['sha256'])
+        self.assertEqual(previous['inputs'][self.logical]['sha256'], '3c2c7beb2b582ab91fb8174aa7d5f6022ce1a4b29ec66918674f9f13fadd88ac')
+        self.assertEqual(sum(self.value['inputs'][name] != previous['inputs'][name] for name in previous['inputs']), 2)
+        for name in ('native_showpicker_catalogue_predecessor', 'native_showpicker_catalogue_counts'):
+            bodies = []
+            for path in (HELPER, ROOT / self.api.RECIPE / 'inspect_sources.py'):
+                node = next(node for node in ast.parse(path.read_bytes()).body
+                    if isinstance(node, ast.FunctionDef) and node.name == name)
+                bodies.append(ast.dump(node, include_attributes=False))
+            self.assertEqual(*bodies)
+
+    def test_mutated_successor_or_unrelated_catalogue_fails_closed(self):
+        unrelated = 'source/foundation/third_party/appended-engine/src/ProviderGuard.cpp'
+        edits = (
+            lambda v: v.update(kind=self.api.NATIVE_CONTROL_INCLUDES_SOURCE_KIND),
+            lambda v: v['inputs'][self.logical].update(sha256='f' * 64),
+            lambda v: v['inputs'][self.logical].update(bytes=True),
+            lambda v: v['inputs'][self.logical]['origin'].update(source_only=1),
+            lambda v: v['inputs'][self.logical]['origin'].update(reviewed_source_map_sha256='e' * 64),
+            lambda v: v['inputs'][self.logical]['origin']['supersedes'].update(bytes=True),
+            lambda v: v['inputs'][unrelated].update(sha256='d' * 64),
+            lambda v: v['inputs']['inspect_sources.py'].update(role='source'),
+            lambda v: v['limits'].update(maximum_entries=257),
+            lambda v: v['inputs'].update(extra=copy.deepcopy(v['inputs'][unrelated])),
+        )
+        for index, edit in enumerate(edits):
+            changed = copy.deepcopy(self.value); edit(changed)
+            with self.subTest(index=index), no_programs(), self.assertRaises(ValueError):
+                self.api.native_showpicker_catalogue_counts(changed)
+
+    def test_current_capture_keeps_source_only_scope(self):
+        profile_raw = (ROOT / self.api.PROFILE).read_bytes()
+        inputs = self.api.InputSet()
+        with no_programs():
+            current = self.api.capture_current_sources(digest(profile_raw), digest(self.map_raw),
+                repository_root=ROOT, inputs=inputs)
+            facts = current.as_dict()
+        self.assertEqual(facts['scope'], 'current198-final158-retired-form-preflight-only')
+        self.assertEqual((facts['source_files'], facts['engine_files'], facts['direct_translation_units']), (158, 48, 32))
+        self.assertFalse(facts['complete_original_source_admission'])
+        self.assertFalse(facts['source_tree_assembled'])
+        self.assertFalse(facts['production_eligible'])
+
+
+class NativeSelectEventsSourceCatalogue(unittest.TestCase):
+    """The accepted HTMLSelectElement successor preserves the exact showPicker catalogue."""
+    def setUp(self):
+        self.api = load_helper()
+        self.map_raw = (ROOT / self.api.RECIPE / 'source-imports.json').read_bytes()
+        self.value = self.api.native_input_method_catalogue_predecessor(GUARD_TRANSITION.catalogue_predecessor(json.loads(self.map_raw)))
+        self.logical = 'source/engine/Source/WebCore/html/HTMLSelectElement.cpp'
+
+    def test_exact_successor_reconstructs_the_current_showpicker_map(self):
+        with no_programs():
+            previous = self.api.native_select_events_catalogue_predecessor(self.value)
+            self.assertEqual(self.api.native_select_events_catalogue_counts(self.value),
+                {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
+            self.assertEqual(self.api.native_showpicker_catalogue_counts(previous),
+                {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
+        raw = (json.dumps(previous, indent=2, sort_keys=True, ensure_ascii=True, allow_nan=False) + '\n').encode('ascii')
+        self.assertEqual(digest(raw), self.api.NATIVE_SELECT_EVENTS_PREDECESSOR_SOURCE_MAP)
+        current = self.value['inputs'][self.logical]
+        prior = previous['inputs'][self.logical]
+        self.assertEqual((current['sha256'], current['bytes']), (self.api.NATIVE_SELECT_EVENTS_SOURCE_FACTS[self.logical]['sha256'], 74829))
+        self.assertEqual((prior['sha256'], prior['bytes']), ('0b4b077b36193fd5ebea0e29017c54ae2df430b6e6ef78d7a3a06f6c19cfe4b1', 74585))
+        self.assertEqual(current['origin']['record']['successor']['supersedes'], prior['origin']['record'])
+        self.assertEqual(current['origin']['record']['reviewed_packets'], prior['origin']['record']['reviewed_packets'])
+        for name in ('native_select_events_catalogue_predecessor', 'native_select_events_catalogue_counts'):
+            bodies = []
+            for path in (HELPER, ROOT / self.api.RECIPE / 'inspect_sources.py'):
+                node = next(node for node in ast.parse(path.read_bytes()).body
+                    if isinstance(node, ast.FunctionDef) and node.name == name)
+                bodies.append(ast.dump(node, include_attributes=False))
+            self.assertEqual(*bodies)
+
+    def test_mutated_successor_or_unrelated_catalogue_fails_closed(self):
+        unrelated = 'source/foundation/third_party/appended-engine/src/ProviderGuard.cpp'
+        edits = (
+            lambda v: v.update(kind=self.api.NATIVE_SHOWPICKER_SOURCE_KIND),
+            lambda v: v['inputs'][self.logical].update(sha256='f' * 64),
+            lambda v: v['inputs'][self.logical].update(bytes=True),
+            lambda v: v['inputs'][self.logical]['origin']['record']['successor'].update(source_only=1),
+            lambda v: v['inputs'][self.logical]['origin']['record']['successor']['supersedes'].update(sha256='1' * 64),
+            lambda v: v['inputs'][unrelated].update(sha256='d' * 64),
+            lambda v: v['inputs']['inspect_sources.py'].update(role='source'),
+            lambda v: v['limits'].update(maximum_entries=257),
+            lambda v: v['inputs'].update(extra=copy.deepcopy(v['inputs'][unrelated])),
+        )
+        for index, edit in enumerate(edits):
+            changed = copy.deepcopy(self.value); edit(changed)
+            with self.subTest(index=index), no_programs(), self.assertRaises(ValueError):
+                self.api.native_select_events_catalogue_counts(changed)
+
+    def test_current_capture_is_source_only_in_the_new_exact_profile(self):
+        profile_raw = (ROOT / self.api.PROFILE).read_bytes()
+        inputs = self.api.InputSet()
+        with no_programs():
+            current = self.api.capture_current_sources(digest(profile_raw), digest(self.map_raw),
+                repository_root=ROOT, inputs=inputs)
+            facts = current.as_dict()
+        self.assertEqual(facts['scope'], 'current198-final158-retired-form-preflight-only')
+        self.assertEqual((facts['source_files'], facts['engine_files'], facts['direct_translation_units']), (158, 48, 32))
+        self.assertFalse(facts['complete_original_source_admission'])
+        self.assertFalse(facts['source_tree_assembled'])
+        self.assertFalse(facts['production_eligible'])
+
+
+class NativeControlIncludesSourceCatalogue(unittest.TestCase):
+    """Source-only metadata boundary: no compiler or executable plan admission."""
+    def setUp(self):
+        self.api = load_helper()
+        current = self.api.native_select_events_catalogue_predecessor(
+            self.api.native_input_method_catalogue_predecessor(GUARD_TRANSITION.catalogue_predecessor(json.loads((ROOT / self.api.RECIPE / 'source-imports.json').read_bytes()))))
+        self.value = self.api.native_showpicker_catalogue_predecessor(current)
+        self.leaf = 'source/document-provider/physical/BibDocumentPhysicalProvider.cpp'
+
+    def test_include_only_successor_preserves_every_prior_row(self):
+        with no_programs():
+            previous = self.api.native_control_includes_catalogue_predecessor(self.value)
+            self.assertEqual(self.api.native_control_includes_catalogue_counts(self.value),
+                {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
+            self.api.native_control_keypress_catalogue_counts(previous)
+        raw = (json.dumps(previous, indent=2, sort_keys=True, ensure_ascii=True, allow_nan=False) + '\n').encode('ascii')
+        self.assertEqual(digest(raw), '11208c13bce5e005526199a1922deed8b17259d93d0d892e35fdc6a8969bd9d0')
+        self.assertEqual(previous['inputs'][self.leaf]['sha256'], 'ee79f3bc8488cfd92c9b62abc2e84a9c110221cf2eba805fac4803980bae612a')
+        self.assertEqual(self.value['inputs'][self.leaf]['sha256'], '9d5d434c1af6109c7a007e67fcceccb48b5549339663ada3621736bcbeefde47')
+        self.assertEqual(sum(self.value['inputs'][name] != previous['inputs'][name] for name in previous['inputs']), 2)
+        for name in ('native_control_includes_catalogue_predecessor', 'native_control_includes_catalogue_counts'):
+            bodies = []
+            for path in (HELPER, ROOT / self.api.RECIPE / 'inspect_sources.py'):
+                node = next(node for node in ast.parse(path.read_bytes()).body if isinstance(node, ast.FunctionDef) and node.name == name)
+                bodies.append(ast.dump(node, include_attributes=False))
+            self.assertEqual(*bodies)
+
+    def test_include_only_version_rejects_restamping_and_unrelated_changes(self):
+        other = 'source/foundation/third_party/appended-engine/src/ProviderGuard.cpp'
+        edits = (
+            lambda v: v.update(kind=self.api.NATIVE_CONTROL_KEYPRESS_SOURCE_KIND),
+            lambda v: v.update(schema_version=True),
+            lambda v: v['inputs'][self.leaf].update(bytes=True),
+            lambda v: v['inputs'][self.leaf].update(sha256='ee79f3bc8488cfd92c9b62abc2e84a9c110221cf2eba805fac4803980bae612a'),
+            lambda v: v['inputs'][self.leaf]['origin'].update(source_only=1),
+            lambda v: v['inputs'][self.leaf]['origin'].update(reviewed_source_map_sha256='f' * 64),
+            lambda v: v['inputs'][self.leaf]['origin']['supersedes'].update(bytes=True),
+            lambda v: v['inputs'][self.leaf]['origin']['supersedes']['origin'].update(source_only=False),
+            lambda v: v['inputs'][self.leaf]['origin']['supersedes']['origin']['supersedes'].update(sha256='e' * 64),
+            lambda v: v['inputs'][other].update(sha256='d' * 64),
+            lambda v: v['inputs']['inspect_sources.py'].update(role='source'),
+            lambda v: v['limits'].update(maximum_entries=257),
+            lambda v: v['inputs'].update(extra=copy.deepcopy(v['inputs'][other])),
+        )
+        for index, edit in enumerate(edits):
+            changed = copy.deepcopy(self.value); edit(changed)
+            with self.subTest(index=index), no_programs(), self.assertRaises(ValueError):
+                self.api.native_control_includes_catalogue_counts(changed)
+        with mock.patch.object(self.api, 'NATIVE_CONTROL_INCLUDES_SOURCE_FACTS', None), no_programs(), self.assertRaises(ValueError):
+            self.api.native_control_includes_catalogue_counts(self.value)
+
+class NativeInputMethodSourceCatalogue(unittest.TestCase):
+    """The new header layer restores the complete current select-events row."""
+    def test_input_method_successor_reconstructs_exact_predecessor_and_mirror(self):
+        import ast
+        from native_input_method_source_history import native_input_method_predecessor_bytes, native_input_method_source_map_history
+        api = load_helper()
+        map_path = ROOT / api.RECIPE / 'source-imports.json'
+        value = GUARD_TRANSITION.catalogue_predecessor(json.loads(map_path.read_bytes()))
+        previous = api.native_input_method_catalogue_predecessor(value)
+        restored = native_input_method_source_map_history(value)
+        raw = (json.dumps(previous, indent=2, sort_keys=True, ensure_ascii=True, allow_nan=False) + '\n').encode('ascii')
+        restored_raw = (json.dumps(restored, indent=2, sort_keys=True, ensure_ascii=True, allow_nan=False) + '\n').encode('ascii')
+        self.assertEqual(digest(raw), api.NATIVE_INPUT_METHOD_PREDECESSOR_SOURCE_MAP)
+        self.assertEqual(restored_raw, raw)
+        self.assertEqual(previous['inputs']['source/wrapper/src/embedder/BibPageClients.h']['sha256'],
+                         '6e77e9b1b47cc5e4e3d2a5dcd7600ea959c4b22eb95c763165c4ccc3c5d28a43')
+        header = ROOT / api.RECIPE / 'source/wrapper/src/embedder/BibPageClients.h'
+        self.assertEqual(digest(native_input_method_predecessor_bytes(header.read_bytes())),
+                         '6e77e9b1b47cc5e4e3d2a5dcd7600ea959c4b22eb95c763165c4ccc3c5d28a43')
+        self.assertEqual(sum(value['inputs'][name] != previous['inputs'][name] for name in previous['inputs']), 3)
+        for name in ('native_input_method_catalogue_predecessor', 'native_input_method_catalogue_counts'):
+            bodies = []
+            for path in (HELPER, ROOT / api.RECIPE / 'inspect_sources.py'):
+                node = next(node for node in ast.parse(path.read_bytes()).body
+                            if isinstance(node, ast.FunctionDef) and node.name == name)
+                bodies.append(ast.dump(node, include_attributes=False))
+            self.assertEqual(*bodies)
+
+
+    def test_input_method_rejects_restamped_supplier_history_and_current_record(self):
+        api = load_helper()
+        value = GUARD_TRANSITION.catalogue_predecessor(json.loads((ROOT / api.RECIPE / 'source-imports.json').read_bytes()))
+        logical = 'source/wrapper/src/embedder/BibPageClients.h'
+        edits = (
+            lambda v: v.update(kind=api.NATIVE_SELECT_EVENTS_SOURCE_KIND),
+            lambda v: v['inputs'][logical].update(bytes=True),
+            lambda v: v['inputs'][logical]['origin']['record'].update(sha256='f' * 64),
+            lambda v: v['inputs'][logical]['origin']['record'].update(after_sha256='f' * 64),
+            lambda v: v['inputs'][logical]['origin']['record'].update(extra='restamp'),
+            lambda v: v['inputs'][logical]['origin']['record']['successor'].update(source_only=1),
+            lambda v: v['inputs'][logical]['origin']['record']['successor'].update(reviewed_source_acceptance_sha256='f' * 64),
+            lambda v: v['inputs'][logical]['origin']['record']['successor']['supersedes'].update(bytes=True),
+            lambda v: v['inputs']['inspect_sources.py'].update(mode=True),
+            lambda v: v['inputs']['provenance.json'].update(sha256='e' * 64),
+            lambda v: v['inputs']['source/foundation/third_party/appended-engine/src/ProviderGuard.cpp'].update(sha256='d' * 64),
+            lambda v: v['limits'].update(maximum_entries=257),
+        )
+        for index, edit in enumerate(edits):
+            changed = copy.deepcopy(value)
+            edit(changed)
+            with self.subTest(index=index), no_programs(), self.assertRaises(ValueError):
+                api.native_input_method_catalogue_counts(changed)
+        with mock.patch.object(api, 'NATIVE_INPUT_METHOD_SOURCE_FACTS', None), no_programs(), self.assertRaises(ValueError):
+            api.native_input_method_catalogue_counts(value)
+
+    def test_input_method_current_capture_preserves_supplier_and_source_only_flags(self):
+        api = load_helper()
+        profile_raw = (ROOT / api.PROFILE).read_bytes()
+        map_raw = (ROOT / api.RECIPE / 'source-imports.json').read_bytes()
+        value = json.loads(map_raw)
+        logical = 'source/wrapper/src/embedder/BibPageClients.h'
+        record = value['inputs'][logical]['origin']['record']
+        prior = record['successor']['supersedes']
+        self.assertEqual((record['sha256'], record['bytes']), (prior['sha256'], prior['bytes']))
+        self.assertNotEqual(record['sha256'], record['after_sha256'])
+        inputs = api.InputSet()
+        with no_programs():
+            facts = api.capture_current_sources(digest(profile_raw), digest(map_raw), repository_root=ROOT, inputs=inputs).as_dict()
+            inputs.recheck()
+        self.assertEqual(facts['scope'], 'current198-final158-retired-form-preflight-only')
+        self.assertEqual((facts['source_files'], facts['engine_files'], facts['direct_translation_units']), (158, 48, 32))
+        self.assertEqual(facts['source_map']['files'], 198)
+        for flag in ('complete_original_source_admission', 'source_tree_assembled', 'production_eligible'):
+            self.assertIs(facts[flag], False)
+
+
+class NativeFormPreflightSourceCatalogue(unittest.TestCase):
+    """Source-data admission keeps the native canonical Guard and old map exact."""
+    def setUp(self):
+        self.api = load_helper()
+        self.map_raw = (ROOT / self.api.RECIPE / 'source-imports.json').read_bytes()
+        self.value = json.loads(self.map_raw)
+        self.logical = GUARD_TRANSITION.GUARD
+
+    def test_exact_guard_successor_restores_input_method_map_and_supplier_facts(self):
+        with no_programs():
+            previous = self.api.native_form_preflight_catalogue_predecessor(self.value)
+            self.assertEqual(self.api.native_form_preflight_catalogue_counts(self.value),
+                {'source_files': 158, 'engine_files': 48, 'direct_translation_units': 32})
+        self.assertEqual(previous, GUARD_TRANSITION.catalogue_predecessor(self.value))
+        canonical = (json.dumps(previous, sort_keys=True, indent=2, ensure_ascii=True, allow_nan=False) + '\n').encode('ascii')
+        self.assertEqual(digest(canonical), '13cbe3ca607bb5cba54f1f880f9b2471b430c9be3563a7f3a623ed9ceb7cff03')
+        self.assertEqual(len(self.value['inputs']), 198)
+        self.assertEqual({name for name in previous['inputs'] if previous['inputs'][name] != self.value['inputs'][name]},
+                         {self.logical, 'inspect_sources.py', 'provenance.json'})
+        record = self.value['inputs'][self.logical]['origin']['record']
+        old = previous['inputs'][self.logical]['origin']['record']
+        for key in ('sha256', 'bytes', 'preimage_sha256', 'origin', 'origin_path', 'source', 'mode'):
+            self.assertEqual(record[key], old[key])
+        self.assertEqual(record['successor']['supersedes'], old)
+        source = (ROOT / self.api.RECIPE / self.logical).read_bytes()
+        self.assertEqual(source, (ROOT / 'third_party/appended-engine/src/ProviderGuard.cpp').read_bytes())
+        self.assertEqual(digest(source), GUARD_TRANSITION.CURRENT_SHA256)
+        before = GUARD_TRANSITION.canonical_predecessor_bytes(source)
+        self.assertEqual(digest(before), GUARD_TRANSITION.PREDECESSOR_SHA256)
+        editor = (ROOT / 'recipes/webkitwasm-document-v2/overlays/editor/foundation/third_party/appended-engine/src/ProviderGuard.cpp').read_bytes()
+        self.assertNotEqual(source, editor)
+        with self.assertRaises(ValueError):
+            GUARD_TRANSITION.canonical_predecessor_bytes(editor)
+        for name in ('native_form_preflight_catalogue_predecessor', 'native_form_preflight_catalogue_counts'):
+            trees = [ast.parse(path.read_bytes()) for path in (HELPER, ROOT / self.api.RECIPE / 'inspect_sources.py')]
+            bodies = [ast.dump(next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name), include_attributes=False) for tree in trees]
+            self.assertEqual(*bodies)
+
+    def test_guard_successor_refuses_restamping_other_sources_or_edited_history(self):
+        other = 'source/wrapper/src/embedder/BibPageClients.h'
+        edits = (
+            lambda v: v.update(kind=self.api.NATIVE_INPUT_METHOD_SOURCE_KIND),
+            lambda v: v['inputs'][self.logical].update(sha256='b77001d050dfc2451b46cc116ea8e7c3c5271d4b4f08a7dcfdba59c58ffed6c5'),
+            lambda v: v['inputs'][self.logical].update(bytes=True),
+            lambda v: v['inputs'][self.logical]['origin']['record'].update(sha256='f' * 64),
+            lambda v: v['inputs'][self.logical]['origin']['record'].update(bytes=75818),
+            lambda v: v['inputs'][self.logical]['origin']['record'].update(preimage_sha256='f' * 64),
+            lambda v: v['inputs'][self.logical]['origin']['record'].update(after_sha256='f' * 64),
+            lambda v: v['inputs'][self.logical]['origin']['record'].update(extra='restamp'),
+            lambda v: v['inputs'][self.logical]['origin']['record']['successor'].update(source_only=1),
+            lambda v: v['inputs'][self.logical]['origin']['record']['successor'].update(reviewed_source_acceptance_sha256='f' * 64),
+            lambda v: v['inputs'][self.logical]['origin']['record']['successor']['supersedes']['successor'].update(source_only=False),
+            lambda v: v['inputs'][other].update(sha256='f' * 64),
+            lambda v: v['inputs']['inspect_sources.py'].update(mode=True),
+            lambda v: v['inputs']['provenance.json'].update(bytes=True),
+            lambda v: v['limits'].update(maximum_entries=257),
+            lambda v: v['inputs'].pop(other),
+        )
+        for index, edit in enumerate(edits):
+            changed = copy.deepcopy(self.value)
+            edit(changed)
+            with self.subTest(index=index), no_programs(), self.assertRaises(ValueError):
+                self.api.native_form_preflight_catalogue_counts(changed)
+        with mock.patch.object(self.api, 'NATIVE_FORM_PREFLIGHT_SOURCE_FACTS', None), no_programs(), self.assertRaises(ValueError):
+            self.api.native_form_preflight_catalogue_counts(self.value)
+
+    def test_current_capture_uses_explicit_form_profile_without_runtime_authority(self):
+        profile_raw = (ROOT / self.api.PROFILE).read_bytes()
+        inputs = self.api.InputSet()
+        with no_programs():
+            facts = self.api.capture_current_sources(digest(profile_raw), digest(self.map_raw), repository_root=ROOT, inputs=inputs).as_dict()
+            inputs.recheck()
+        self.assertEqual(facts['scope'], 'current198-final158-retired-form-preflight-only')
+        self.assertEqual((facts['source_files'], facts['engine_files'], facts['direct_translation_units']), (158, 48, 32))
+        self.assertEqual(facts['source_map']['files'], 198)
+        for key in ('complete_original_source_admission', 'source_tree_assembled', 'production_eligible'):
+            self.assertIs(facts[key], False)
 
 
 if __name__ == '__main__':

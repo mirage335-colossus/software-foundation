@@ -65,8 +65,90 @@ class WindowsContractTests(unittest.TestCase):
         for name in contract.FALSE_FACTS:
             self.assertIs(checked[name], False)
 
-    def test_native_control_keypress_profile_uses_distinct_exact_catalogue(self):
+    def test_showpicker_profile_has_separate_catalogue_and_rejects_old_kind(self):
+        historical = copy.deepcopy(self.profile)
+        historical.update(kind=contract.NATIVE_SHOWPICKER_PROFILE_KIND,
+                          **contract.NATIVE_SHOWPICKER_CATALOGUE)
+        checked = contract.validate_profile(historical)
+        catalogue = contract.NATIVE_SHOWPICKER_CATALOGUE
+        self.assertEqual(checked['kind'], contract.NATIVE_SHOWPICKER_PROFILE_KIND)
+        self.assertEqual(contract.catalogue_for_profile(checked), catalogue)
+        self.assertEqual(contract.catalogue_for_map_digest(checked['source_map']['sha256']), catalogue)
+        self.assertEqual(contract.catalogue_for_reference(catalogue), catalogue)
+        self.assertEqual(contract.catalogue_for_recipe_inputs({'map': checked['source_map']}), catalogue)
+        for field in ('kind', 'source_map', 'build'):
+            changed = copy.deepcopy(checked)
+            if field == 'kind': changed[field] = contract.NATIVE_CONTROL_INCLUDES_PROFILE_KIND
+            elif field == 'source_map': changed[field] = contract.NATIVE_CONTROL_KEYPRESS_CATALOGUE[field]
+            else: changed[field] = True
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                contract.validate_profile(changed)
+
+    def test_native_select_events_profile_has_separate_exact_catalogue(self):
+        historical = copy.deepcopy(self.profile)
+        historical.update(kind=contract.NATIVE_SELECT_EVENTS_PROFILE_KIND, **contract.NATIVE_SELECT_EVENTS_CATALOGUE)
+        checked = contract.validate_profile(historical)
+        catalogue = contract.NATIVE_SELECT_EVENTS_CATALOGUE
+        self.assertEqual(checked['kind'], contract.NATIVE_SELECT_EVENTS_PROFILE_KIND)
+        self.assertEqual(contract.catalogue_for_profile(checked), catalogue)
+        self.assertEqual(contract.catalogue_for_map_digest(checked['source_map']['sha256']), catalogue)
+        self.assertEqual(contract.catalogue_for_reference(catalogue), catalogue)
+        self.assertEqual(contract.catalogue_for_recipe_inputs({'map': checked['source_map']}), catalogue)
+        for mutation in ('old-kind', 'old-map', 'runtime-claim'):
+            value = copy.deepcopy(checked)
+            if mutation == 'old-kind': value['kind'] = contract.NATIVE_SHOWPICKER_PROFILE_KIND
+            elif mutation == 'old-map': value['source_map'] = contract.NATIVE_SHOWPICKER_CATALOGUE['source_map']
+            else: value['production_eligible'] = True
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                contract.validate_profile(value)
+
+    def test_input_method_profile_has_its_own_exact_catalogue(self):
+        historical = copy.deepcopy(self.profile)
+        historical.update(kind=contract.NATIVE_INPUT_METHOD_PROFILE_KIND, **contract.NATIVE_INPUT_METHOD_CATALOGUE)
+        checked = contract.validate_profile(historical)
+        catalogue = contract.NATIVE_INPUT_METHOD_CATALOGUE
+        self.assertEqual(checked['kind'], contract.NATIVE_INPUT_METHOD_PROFILE_KIND)
+        self.assertEqual(contract.catalogue_for_profile(checked), catalogue)
+        self.assertEqual(contract.catalogue_for_map_digest(checked['source_map']['sha256']), catalogue)
+        self.assertEqual(contract.catalogue_for_reference(catalogue), catalogue)
+        self.assertEqual(contract.catalogue_for_recipe_inputs({'map': checked['source_map']}), catalogue)
+        for mutation in ('old-kind', 'old-map', 'old-provenance', 'runtime-claim'):
+            changed = copy.deepcopy(checked)
+            if mutation == 'old-kind': changed['kind'] = contract.NATIVE_SELECT_EVENTS_PROFILE_KIND
+            elif mutation == 'old-map': changed['source_map'] = contract.NATIVE_SELECT_EVENTS_CATALOGUE['source_map']
+            elif mutation == 'old-provenance': changed['provenance'] = contract.NATIVE_SELECT_EVENTS_CATALOGUE['provenance']
+            else: changed['production_eligible'] = True
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                contract.validate_profile(changed)
+
+    def test_form_preflight_profile_has_distinct_exact_catalogue(self):
         checked = contract.validate_profile(self.profile)
+        catalogue = contract.NATIVE_FORM_PREFLIGHT_CATALOGUE
+        self.assertEqual(checked['kind'], contract.NATIVE_FORM_PREFLIGHT_PROFILE_KIND)
+        self.assertEqual(contract.catalogue_for_profile(checked), catalogue)
+        self.assertEqual(contract.catalogue_for_map_digest(checked['source_map']['sha256']), catalogue)
+        self.assertEqual(contract.catalogue_for_reference(catalogue), catalogue)
+        self.assertEqual(contract.catalogue_for_recipe_inputs({'map': checked['source_map']}), catalogue)
+        for mutation in ('kind', 'source_map', 'provenance', 'production_eligible'):
+            changed = copy.deepcopy(checked)
+            if mutation == 'kind': changed[mutation] = contract.NATIVE_INPUT_METHOD_PROFILE_KIND
+            elif mutation == 'production_eligible': changed[mutation] = True
+            else: changed[mutation] = contract.NATIVE_INPUT_METHOD_CATALOGUE[mutation]
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                contract.validate_profile(changed)
+
+    def test_historical_control_includes_profile_keeps_its_own_catalogue(self):
+        historical = copy.deepcopy(self.profile)
+        historical.update(kind=contract.NATIVE_CONTROL_INCLUDES_PROFILE_KIND,
+                          **contract.NATIVE_CONTROL_INCLUDES_CATALOGUE)
+        checked = contract.validate_profile(historical)
+        self.assertEqual(checked['kind'], contract.NATIVE_CONTROL_INCLUDES_PROFILE_KIND)
+        self.assertEqual(contract.catalogue_for_profile(checked), contract.NATIVE_CONTROL_INCLUDES_CATALOGUE)
+
+    def test_native_control_keypress_profile_uses_distinct_exact_catalogue(self):
+        historical = copy.deepcopy(self.profile)
+        historical.update(kind=contract.NATIVE_CONTROL_KEYPRESS_PROFILE_KIND, **contract.NATIVE_CONTROL_KEYPRESS_CATALOGUE)
+        checked = contract.validate_profile(historical)
         catalogue = contract.NATIVE_CONTROL_KEYPRESS_CATALOGUE
         self.assertEqual(checked['kind'], contract.NATIVE_CONTROL_KEYPRESS_PROFILE_KIND)
         self.assertEqual(contract.catalogue_for_profile(checked), catalogue)

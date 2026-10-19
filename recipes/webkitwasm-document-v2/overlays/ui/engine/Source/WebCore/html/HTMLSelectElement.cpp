@@ -180,6 +180,11 @@ void HTMLSelectElement::optionSelectedByUser(int optionIndex, bool fireOnChangeN
     if (optionIndex == selectedIndex())
         return;
 
+    // Script may have changed the selection since the popup opened. Compare an
+    // immediate user choice with the current value before committing it.
+    if (fireOnChangeNow && !m_isProcessingUserDrivenChange)
+        saveLastSelection();
+
     selectOption(optionIndex, DeselectOtherOptions | (fireOnChangeNow ? DispatchChangeEvent : 0) | UserDriven);
 }
 

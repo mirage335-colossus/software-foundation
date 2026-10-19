@@ -2,6 +2,238 @@
 
 <a id="current-continuation-handoff"></a>
 
+## Current continuation handoff — 2026-10-19 UTC
+
+The accepted full native runtime is `E/runtime-editor-terminal-recovery-v1/operation-v1`, original runtime caller `88524` closed 0 (`3e81f9`) in 167.2766838009993s. It passed all 65 cases / 12 batches in the direct browser Worker, including expected-negative cases; both Node negative controls also passed. All 47 physical inputs were unchanged, two owners and two streams closed naturally, and the monitor thread joined. Peak sampled RSS was 3,708,030,976 bytes and output was 211,516,169 bytes. Independent reader `21550` closed 0 (`349fae`) and accepted both outputs. The Root full readback `ROOT-FULL-READBACK-v1.json` has SHA-256 `8c89be49af69c96232c8a49c21eebdace32e39a13a5535f14fd3e4a2efc7f9dd`; neutral-closure readback `ROOT-NEUTRAL-CLOSURE-v1.json` has SHA-256 `d134c763feebb40289186015a0fd7a9efc80de6aa9833b07869db5278fd21d8a`. The original runtime caller and independent reader are separate records. Full runtime `13400` failed at E09 and remains preserved as a failed run. Focused negative diagnostic `23995` passed three negative paths / 76 case assertions; it is partial evidence, not the full gate. NC283 corrected only E09's mistaken inner-unknown-receipt assumption: the native wire adapter intentionally returns terminal uncertainty in the owned outer response and has no inner-unknown body.
+
+NC286's streamed-hash source-record repair is accepted, and the actual neutral request/binding passed. NC289's narrow logical `F01`→`D05` alias is accepted with the original two F01 anchors preserved, not weakened. Stage `32630` closed 0 (`c1e42e`) in 10.529789499s: 381 source files / 617,388,940 bytes produced 76 staged files / 291,929,178 bytes. Independent readback `84839` closed 0 (`43310a`) in 3.290980267s; Root accepted `E/neutral-execution-v2/ROOT-STAGE-ACCEPTANCE-v1.json` (SHA-256 `7b915500a5afb9658bdd103310f3f1e0d13b2f5e5bb9372663ec3bdea34b9600`). Separate export `71765` closed 0 (`4a00f6`) in 31.191051768s at `EX=E/neutral-export-execution-v1`. Root accepted `EX/ROOT-EXPORT-ACCEPTANCE-v1.json` (SHA-256 `0a990abbd56e9d7717f4d26a6070c6fe069dc8c674db178b43ee388f1521cc36`). Independent reader `52010` closed 0 (`24525e`) in 15.122170330s at 202,629,120-byte RSS; its proposal log is `EX/export-readback-v1-owner/child.log`. It accepted exactly three files / 582,956,175 bytes, verified all four pins, target and paired SDK against the staged payload, and rehashed/postflight-checked the canonical eight helpers and group bytes. Strict-consumer byte/static contract eligibility is true; full integration and production remain false. Preserve the earlier 24-test source diagnostic and the two request-size failures as history; no global cap was raised and all 381 source facts were preserved.
+
+Continue the current fast application loop: ordinary appended-web and portable C/C++/Rust work remain in scope. Foundation source compatibility is accepted: NC291 v2 controller `ROOT-SOURCE-ACCEPTANCE-v2.json` (`9ba17a4e…`) reuses 30 baseline checks and adds four publication plus two refreshed packet checks; NC294 reader source acceptance is `4da41a7b…` with 12 focused checks; NC295 SDK wrapper source acceptance is `d5810f98…` with eight focused checks. All three packages remain source-only; no Foundation configure/compiler/build/runtime ran. The first construction scope/cost is `E/foundation-authorization-preparation-v1/SCOPE-COST-v3.json` (`827b25b6…`), awaiting the user's separate Foundation construction approval. It selects 36 TUs, 18 archives, 15 headers, 73 captures and one link, reusing the accepted engine and read-only SDK under 7200/8100s operational watchdogs, two jobs and machine caps. A closed build observation is not full Foundation qualification: `construction_record=None` and outer authority assembly/original-engine admission remain implementation gates under NC296. SDK and engine gaps cannot be cleared by resource-reader or forwarding fixtures. Historical 900/1200s maintenance ceilings remain superseded; application 5s compile / 10s inclusive targets and behavioral deadlines remain unchanged. The integrated viewer is unfinished and production eligibility remains false. Preserve performance-evidence limits: the accepted preview-only evidence does not qualify pixels, trusted input or the retained integrated viewer. The exact `72e6` current Rust module component runtime is accepted; this is not release qualification. NC284's actual six-edit portable behavior loop is now accepted. Root acceptance `A/portable-behavior-loop-source-v1/ROOT-ACTUAL-MEASUREMENT-ACCEPTANCE-v1.json` SHA-256 is `e88581d343ee0cadc7a59b6dbea3ddd0d3efa06d78b63adb2fdcade84f780df8`. Caller `11175` closed 0 (`3ec445`) in 23.412836876988877s; all 48 owners/logs closed naturally. The retained console returned 24 typed results, including overflow and the `u32` boundary. Two meaningful `+1` / `+2` edits in each of C, C++ and Rust produced distinct module hashes and expected values 43 / 44. Nearest-rank p95 compile times were C 1.061971857s, C++ 0.865868485s and Rust 1.896808826s; inclusive loop times were 3.642895028s, 3.666430836s and 4.502795587s. Each language met its 5s compile / 10s inclusive target. Peak child-tree RSS was 265,887,744 bytes (under 1 GiB); the 120s whole / 15s cleanup limit and 4 GiB disk floor held. All 83 input facts and 20 SDK-directory facts were unchanged; compiler full-SDK byte verification was reused. Accepted source `30df3cdc…` is Sol source `7dc03b7d…` plus Root's disk-floor-only change from 2 to 4 GiB; targets were unchanged. This local-console component workflow compiled, packed, composed, verified and ran only the small guest module on retained console `be8af644`; it establishes no integrated viewer, native GUI, TUI, Foundation or general statistical qualification. No SDK maintenance, full-engine rebuild or Git publication is authorized by this handoff.
+
+## Retired-form continuation checkpoint — 2026-10-19 UTC
+
+The prior input-method candidate remains accepted (`a328a82e…`) with its copied capsule (`b1640613…`), but D06 runtime `72119` failed in 14.298s at `D06/actual-native-stale-before-effects`; both Node negatives, unchanged-input checks and natural closure passed. The 65-case / 12-batch runtime was not run. Preserve that result and diagnose the retired-lease path before retrying.
+
+The new central Guard preflight is source accepted (`A/retired-form-preflight-source-v1/ROOT-SOURCE-ACCEPTANCE-v1.json`, `aae075f8…`): 67 canonical and 65 actual-editor-overlay native fixtures pass; this is not Wasm runtime evidence. Editor/native catalogue acceptances are `705dac95…` / `fa450dac…`, with 52 editor and 342 native catalogue checks passing. Producer source v2 is accepted (`A/retired-form-producer-source-v1/ROOT-SOURCE-ACCEPTANCE-v2.json`, `f6d16bd1…`); the retained-form runtime reader is source accepted (`D/retained-form-runtime-reader-source-v1`, `cd0b84a8…`).
+
+Input preparation now accepts 381 physical files. Original preparation `42087` completed the 373-input assembly with producer exit 0 in 6.1968s, then its outer caller closed 1 during unchanged-prelink metadata admission, before any of six sidecar writes; preserve the failure and complete assembly. The narrow unchanged-prelink allowance passed 19 focused checks and independent NC262 review (`5e956f40…`). Metadata recovery and independent readback (`99258`) closed 0 in 3.622s and 2.137s without repeating assembly. Selective plan `E=D/retired-form-selective-execution-v1`, caller `11571`, closed 0 (`ecfe23`) in 204.1149s (producer 182.5295725s; peak RSS 611,553,280 bytes), with 135,886 physical input facts unchanged. Plan SHA-256: `6d91a5e2319708bb95f98c0d90f826f23a719f00ee6e9fd504b3c0badcfc40b5`.
+
+Supported full-plan verification `74432` and independent plan readback `75608` closed 0 in 187.1067s and 11.5511s; command projection passed. Selective build `11620` closed 0 (`a7879b`) in 1,223.009s at 2,449,780,736-byte peak RSS with the accepted Guard + Shim fresh units, 50 imports including main and Unified13, five archive copies, zero repacks, one link and 174-artifact closure; no new engine runtime has run. Then continue with fresh capsule, causal D06 partial, complete 65-case / 12-batch runtime and independent readback, neutral28+6 and separate export. Foundation requires concrete scope/cost and separate authority. The viewer remains unfinished and production eligibility false. Current authority is native/main-agent orchestration only; no board/claim protocol applies. Justified in-scope retries are not subject to cumulative attempt/time caps; retain machine protections and each behavior deadline. Source-only work grants no SDK maintenance, full-engine rebuild or Git operations.
+
+Independent candidate readback `96481` closed 1 (`0aa58a`) after 17.2525s at the reader’s incorrect all-52-direct-objects predicate. The actual ledger equals the accepted projection: 37 direct objects and 15 archive-only selected objects. Preserve this failed output and the successful build; isolated reader recovery is in progress, with five actual-metadata interface tests passing. No candidate, capsule or runtime acceptance follows from this partial readback.
+
+## Input-method continuation checkpoint — 2026-10-19 UTC
+
+The accepted input-method candidate is `N`, under `.agent-work/appended-implementation-20261016/runtime-D03-repair-v1/runtime-composition-repair-v1/runtime-allowance-20261018-v1/native-runtime-v1/P01-keyboard-diagnosis-v1/P11-pointer-diagnosis-v1/input-method-selective-execution-v1`. Original build `8260` closed 0 (`608c02`) in 1,243.652298s at 2,428,235,776-byte peak RSS: two fresh units (main + Shim), 50 imports, five archive copies, no repacks, one link. Plan SHA-256 is `62b781943494d766688679a148b0a4bc27c63e1693e6bbf2a261eb624698df0a`. The first readback's 18669 guard failure remains preserved; the exact-filename guard correction was independently Sol-reviewed. Passive readback `81894` closed 0 (`bd4591`) with caller 0 in 99.6959s. Root reader `90883` closed 0 (`34d878`), caller 0, and accepted 124,325 files, 8,631 directories and 174 artifacts in 36.7843s. Candidate acceptance is `N/ROOT-CANDIDATE-CALLER-CLOSED-ACCEPTED.json`, SHA-256 `a328a82ea65e0f58248f86ebc6bbf6e04d04238b7bb3d42c1e3572be0bb6b68e`.
+
+Capsule `X=N/capsule-runtime-execution-v1` (`58729`) closed 0 (`bbd157`) with caller 0; independent readback accepted 16 distinct copies totaling 168,789,551 bytes. Acceptance is `X/ROOT-CAPSULE-COPY-ACCEPTANCE.json`, SHA-256 `b1640613384d2d96e0ed326f3a320ce3b821b5203270658499f75fab931b3132`. The first capsule parent-setup refusal is preserved; the empty-parent correction required no source-build retry. Full packet `X/RUNTIME-PACKET-CANDIDATE-v1.json` is `308c8e0c…` (65 cases / 12 batches); partial packet `X/D06-PARTIAL-PACKET-v1.json` is `7e5a0eba…` and retains the original D06 predicates. Independent NC242 physical source review passed in 3.0676s across all 47 inputs. D06 partial runtime `72119` closed 1 (`8da60d`) in 14.298337s at `D06/actual-native-stale-before-effects`; result SHA-256 is `53302a1cfb9a6a650a19ac12a2d03b5c7edc296bc1cd0f4066924415f905e586`. Both Node negatives passed; inputs were unchanged, owners and streams closed naturally, and the monitor thread joined. Current full-runtime execution remains unrun. Preserve this failure and diagnose the actual retired-lease result before another runtime. Keep the original runtime readback failure, input identities and accepted reader/case/peer findings recorded in NC234/NC218/NC226. The reader/header283 changes are accepted. Viewer completion, production eligibility and neutral/export/Foundation gates remain outstanding; no SDK maintenance is in scope.
+
+The active user override is native-agent orchestration only; historical board claims are not gates. Incidental maintenance watch limits and cumulative attempt/time caps are superseded by generous maintenance watchdogs and meaningful application fast-path targets. Preserve each behavior deadline, resource bound and coverage predicate. Continue ordinary rich-web and portable-module iteration without SDK maintenance.
+
+## Current successor-navigation checkpoint — 2026-10-19 UTC
+
+Selective build `66597` closed 0 in 1,232.840s. Independent candidate reader `49372` closed 0 in 90.208s; Root rechecked all 174 artifacts and 129,990 readback facts before accepting candidate `b54335756ec47ca63432f079775a472635af07492210ba17005e578add234485`. It compiles only Unified13 and the metadata Shim, imports 50 objects, copies five archives, repacks none and links once. The accepted 16-copy capsule is `00ed675b…`; no retained SDK, kernel or full engine rebuild was performed. Earlier binding, reader and projection failures remain preserved. The corrected six-test command projection includes the direct Theme link input and matches the actual command ledger; the successful build was reused for that reader repair.
+
+Complete runtime `87839` closed 1 in 172.967s (`558e6c56e4846c84467e40db741802bdc60f051f50fcc1cb8a08b133bd3bd12e`). Seven batches pass, including P11 keyboard (190 assertions), P11 pointer (164), E6a cancellation (82) and E8b (48). D06 in the eighth batch fails the successor-BEGIN observer; four later batches remain unobserved. Node's two negatives pass. All 47 inputs were unchanged, owners and streams closed naturally and the monitor thread joined; sampled peak RSS was 3,717,586,944 bytes. This is a failed complete gate, not runtime acceptance.
+
+Saved-trace diagnosis proves actual old-document CLOSE (peer serial 1443) followed by successful successor BEGIN (1446). The observer incorrectly requires a replacement event emitted only while the old document remains open; it also returns wrapped trace rows where the case expects raw lifecycle events. `D06-CLOSED-TRACE-CAUSE-v1.json` (`27b2fc44…`) records this evidence and corrects the initial extraction that missed successor document 2. The observer/case repair is source accepted (`1e0faaa1…`), with truthful close/replacement evidence and the unchanged 15s wait. Fresh D06 diagnostic `65502` closed 1 in 11.965s after successor BEGIN, lifecycle ordering and successor JSC service passed; its first native successor query returned terminal uncertainty. A second diagnostic, `57112`, changed only Worker exception observation (46 physical facts unchanged) and closed 1 in 14.046s. It captured `authoritative input-method state unavailable`, followed by `v2 current capture unavailable` (`D06-NATIVE-QUERY-CAUSE-v1.json`, `0563a9f3…`). Both failures and natural closure/input-integrity evidence are preserved. A central native-client lifecycle reset is now source accepted (`539a2dd0…`, header `283876d4…`), retaining the accessor’s foreign/expired unknown behavior outside a retirement event. Actual main-TU syntax `77672` closed 0 in 12.709s, peak 1,306,435,584 bytes, with all 2,476 dependencies and 2,173 frozen cache entries unchanged (`f36ca474…`). Earlier resource preflight `8722` refused before any compiler launch; its failure remains recorded. Accepted dependency evidence limits the next build to main plus Shim, importing 50 objects including the repaired Unified13, with five archive copies and no repack. Source-catalogue admission and the reviewed selective producer are being completed before a fresh plan/build/readback and D06/full-runtime gates; there is no new engine runtime acceptance. Accepted source-only neutral28+6, staged-tree readback and separate-export preparation remain unexecuted. Foundation still needs concrete scope/cost and separate authority; the viewer is unfinished and production eligibility remains false. Native subagent coordination applies, without the superseded separate-chat administration or aggregate attempt/time ceilings.
+
+## Prior select-event continuation — 2026-10-19 UTC
+
+The current repair targets the history-dependent P11 pointer failure. In the prior paired run, pointer alone passed 177 assertions; keyboard followed by pointer passed the keyboard cases and then reproduced the missing input/change events. The accepted central `HTMLSelectElement` repair (`ccabb685…`, Root acceptance `aee6871e…`) restores the current-value baseline before committing an immediate changed selection initiated by the user. Seven structural checks and 28 extracted-method checks passed. The real Unified13 syntax compiler completed in 22.451s (caller `82670` closed 0); its 3,170 depfile facts and 2,173 cache entries remained unchanged.
+
+The fresh 375-file source package was independently read back by `80619` (closed 0, 1.2396s); accepted preparation reused the existing 861.8 MB reuse tree without cloning. Plan producer `47423` closed 0 in 183.949s, full verification `46790` closed 0 in 204.222s, and independent plan reader `30344` closed 0 in 11.751s. Root accepted `retained-plan-v1/plan.json` (`2c65205c…`): two fresh units (Unified13 and Shim), 50 imports including main, 52 selected objects, five archive copies, zero repacks, one link, and all 129,974 verification facts unchanged.
+
+The current selective build is `66597`, still running under one job, 4 GiB RSS, 24 processes, 8 GiB output and growth caps, a 4 GiB free-disk floor, and 14,400s inner / 16,200s outer watchdogs. The earlier invalid relative-path build binding is preserved; the corrected real-binder fixture passed and v2 is bound, so that incident is not a compiler failure. Root also corrected the relocated adapter's duplicated selective-execution output guard after a real CLI-forwarding fixture exposed it; the fixture now passes under sourceACKv2 (`39ae8403…`). Its private configuration is now ready; build completion remains unverified. No candidate, capsule, or runtime acceptance exists for this repair yet. After build acceptance, run the complete 65-case / 12-batch runtime and independent readback; then continue the already-defined neutral28+6 and separate export gates. Foundation still requires concrete scope/cost and separate authority before it proceeds. The viewer remains unfinished and production eligibility remains false. Use native subagent coordination. Aggregate attempt/time ceilings are superseded; retained SDK/kernel maintenance, full-engine rebuilds and Git publication remain outside this task's authority.
+
+## Latest continuation checkpoint — 2026-10-19 UTC
+
+### Current showPicker continuation — 2026-10-19 UTC
+
+The preceding actual runtime, `68992`, closed 1 / `452762` at P11 (`showPicker` unavailable) after four complete batches / 48 passed cases; the full 65-case / 12-batch runtime remains failed and incomplete. Source tracing identifies `SelectShowPickerEnabled`, which defaults false and is not enabled by the prior direct Page startup. The accepted central startup repair (`d86c1384…`) enables it. The real main-TU syntax check passed in 12.313s, preserving 2,476 original depfile inputs and 2,173 cache entries; new engine/runtime behavior is not yet established.
+
+The prior retained Theme build is `54226` / `cd3d23`, independently read back and accepted for its two fresh units, 50 imports, 52 selected objects and 174 artifacts. Accepted preparation produced a fresh 371-entry source package and complete 42,779-file / 861,802,853-byte reuse clone; source/copy owner `66565` closed 0 / `f2ff74` in 32.3448s, with independent owner `21866` closed 0 / `fc97ba` in 17.9191s. Only two cloned metadata files changed; raw51 SHA-256 is `686817b20bb8a311e9ec8c7d72addd455896805cdd6b5010ce3a51ce0a0ae569`, and the exact inverse restores `4ba…`. NC177 Root accepted 390 focused catalogue tests; this is not engine evidence.
+
+The execution directory (`E`) is `.agent-work/appended-implementation-20261016/runtime-D03-repair-v1/runtime-composition-repair-v1/runtime-allowance-20261018-v1/native-runtime-v1/P01-keyboard-diagnosis-v1/showpicker-selective-execution-v1`. The accepted fresh plan is `8750` closed 0 / `4a9cba` (producer 186.625s; outer 194.186s), SHA-256 `6dffb6317a425b782980794271c2f0fe782abd93ec21c1e06f763775579a9746`; full verification `74342` closed 0 / `0130d6` in 174.610s and independent plan readback `9388` closed 0 / `d44063` in 9.12265s accepted all 127,043 physical facts. Root acceptance is `E/ROOT-PLAN-ACCEPTED-v1.json`, SHA-256 `abba25daf821b1267f0669fce7e278d2b5170ce949c47cf29d24d2c92405fc67`. Exact command projection `85028` closed 0 / `f50e5c` in 4.528s: two fresh units (main + Shim), 50 imports, 52 selected objects, five archive copies, zero repacks and one link.
+
+Selective build `21606` closed 0 / `c3e835` in 1,204.591s, with peak sampled RSS 2,438,197,248 bytes and all 127,051 input physical facts unchanged; the owner and log closed naturally. Build receipt SHA-256 is `7d242e23aa78254c9ec143bde2e71aa49def041c6ad7d96f6c639dddc7f4d23d`. The first passive reader `28888` closed 1 / `a8a371` after 30.812s on a stale protected-header donor-root accessor (`bindings`), before publishing acceptance. The original failure and sources are preserved. Root repaired this accessor through the accepted showPicker compiler-root helper; a 0.686s real-metadata check reproduced the old error and verified the exact three header sets across five source roots. Independent NC195 review caught and resolved a stale output-path guard before launch; eight focused interface tests passed. Fresh passive reader `9846` closed 0 / `57f48c` in 89.126s. Root rechecked all 174 artifact identities and the complete input freeze; candidate acceptance SHA-256 is `476393e2498ce17ac9d33dbb8567d67c57741c868bac7674b65a05a10c82a342`. Fresh capsule owner `5578` closed 0 / `3454ac` in 3.480s; independent reader `f4af16` accepted 16 distinct copies / 168,159,769 bytes (`4f040081…`). The bound 47-input packet (`876777fb…`) passed independent physical/configuration admission. Actual runtime `39302` then closed 1 / `a37c03` in 148.697s at `popup.P11.pointer.selection-input-once`; result SHA-256 is `d64e89fe10d6dd31989d7cd63f55321f4d6c5d733132e53aec05c31da3e84425`. Four batches / 48 cases completed; P11 keyboard now passes, while the pointer successor changes `next-alpha` to `next-beta` without its expected input/change pair. All inputs remained unchanged and owners, streams and monitor thread closed naturally; sampled peak RSS was 3,604,119,552 bytes. Full runtime acceptance remains failed. The separate two-batch history comparison `10609` closed 1 / `eb80ff` in 24.128s: pointer alone passed 177 assertions; keyboard then pointer passed keyboard and reproduced the missing-event failure. All 47 inputs remained unchanged and owners, streams and the monitor thread closed naturally. This partial diagnostic supports a selection-history dependency and cannot qualify the complete gate. Root source-accepted the central guarded selection-baseline repair (`ccabb685…`, acceptance `aee6871e…`); seven structural checks and 28 extracted-method checks passed. The original host observer setup failure is preserved. Real Unified13 compilation and engine behavior remain unverified; the new selective lane must freshly compile Unified13 plus the metadata Shim, import 50 unchanged objects and verify direct ownership before the copied archives. Current maintenance watchdogs are 14,400s inner / 16,200s outer, with one build job, 4 GiB RSS, 24 processes, 8 GiB output/growth caps and 4 GiB disk floor. Earlier incidental maintenance and cumulative budgets are superseded; resource protections and behavioral deadlines remain. Do not rebuild the retained SDK, kernel or full engine. NC181 (`8bf32de9`), repaired NC185 (`ef48cb78`, independent NC195 `7b50c69b`), NC187 (`34e3262d`) and neutral NC190 (`8d820f6c`) source successors are accepted. The neutral execution binder NC194 is also source accepted (`1892be75…`); its original local error and subsequent Sol review corrections remain preserved, and no actual neutral binding has run. Required next gates remain causal P11 pointer repair, complete 65-case / 12-batch runtime and independent readback; then neutral28+6 and separate export. Foundation still needs concrete scope/cost and separate authority. Preserve all behavior deadlines and final predicates. The integrated viewer is unfinished and production eligibility remains false. The user's native-only coordination override remains active; no board/session/claim/lifecycle administration applies.
+
+The Theme source repair is accepted: `tools/appended_engine_successful_donor.py`
+(`bcd60bec…`) and `tools/appended_engine_theme_successor.py` (`df8d25…`)
+preserve the default schema while retaining each origin's authenticated
+dependency references. The original plan failure `13522` / `a935a1` remains
+closed 1 after 331.474s, with 66,418 inputs unchanged; targeted reproduction
+took 0.985s and 51 focused tests passed in 3.462s. Do not relabel that failure.
+
+Fresh compile-free plan `21814` closed 0 after 250.147s, peak sampled RSS
+747,393,024 bytes, retaining all 66,418 input identities and writing plan
+`b814d4b7…`. Full-plan verification `66465` closed 0 / `388cb2` in
+255.527s; independent readback `86972` closed 0 / `7db7a0` accepted the
+complete plan and unchanged inputs (`8fb829c8…`).
+
+Selective Theme build `54226` closed 0 / `cd3d23` in 1,589.035s, peak
+sampled RSS 2,432,389,120 bytes. It compiled two fresh units (Theme and
+metadata Shim), imported 50 objects, selected 52 objects, copied five archives,
+repacked none and linked once. Full independent readback `37572` closed 0 /
+`362c6f` in 68.282s, verifying all 174 artifacts and all 73,492 file / 6,147
+directory input identities. Root final acceptance `0fe2184d…` was published
+only after original caller zero and the complete physical readback.
+
+The first reader `45210` remains closed 1: its dependency parser omitted
+869 authenticated SDK cache seed aliases, although the compiler used the
+matching private-cache copies. The strong repair `71fdbc57…` preserves the
+existing SHA/size/mode checks, per-object compiler ownership and literal
+non-cache dependency checks. Four focused regressions and the actual complete
+52-object metadata check passed; no engine rebuild was needed for this repair.
+The accepted validator/runtime cohort is `theme-runtime-source-v2`.
+
+Separate capsule owner `91212` closed 0 / `67a288`; independent reader
+`b6a137` closed 0 and accepted 16 distinct copies / 167,945,869 bytes
+(`ea0ea1eb…`). Packet `b99a4a6b…` passed full physical admission and
+independent review. Runtime `26277` closed 1 / `3b7a6e` in 1.817s: Node2
+passed, while the restricted execution sandbox denied the local automation
+socket before any browser case. The same bind probe failed inside that sandbox
+and passed outside; no engine source change was needed for this setup failure.
+
+Fresh packet `d7623626…` changes only the output namespace; admission
+`41885` closed 0 / `7708a4`, followed by independent recovery review
+`5044ccb5…`. The authorized browser invocation `50436` closed 1 / `554924`
+in 112.530s at `Bounded Worker trace`. Three batches passed. The original
+popup-a report records P00–P04 and P05.empty passed, including P01 keyboard
+opening and P02 hidden-option navigation; P05.unidentified remained running.
+Its 12,890-event trace occupied 8,384,670 bytes of the 8 MiB diagnostic budget.
+All 47 inputs were unchanged and owners, streams and guard thread closed.
+Independent failed-run review accepted the completed predicates and diagnosed
+diagnostic trace exhaustion. The lossless repair doubles only trace capacity
+to 16 MiB / 32,768 events; the 24 MiB whole-observation bound and all case,
+batch, resource and behavior predicates remain unchanged. Real allocator
+boundaries and saved original reports passed focused source checks and review.
+
+Fresh packet `53c9d9e5…` passed physical admission and independent review
+(`7fc06a7e…`). Runtime `68992` closed 1 / `452762` in 125.490s at
+`Actual author showPicker API unavailable` in P11.keyboard. Four complete
+batches passed all 48 cases, including all ten popup-a cases and E8b; Node2
+and author31 passed. Popup-a retained 17,129 contiguous events / 10,425,892
+trace bytes. Popup-b preserves four completed prefix cases; P11 and later
+cases remain unqualified. Independent review `1e9fce9a…` revalidated the
+original predicates, all 47 unchanged physical inputs and qualified process,
+stream and watchdog closure. The final page-closure assertion was unreached.
+The full 65-case / 12-batch runtime has not passed.
+
+The actual embedded WebCore/JSC page exposes no select `showPicker` method.
+Retained IDL and generated bindings contain it but gate it on the default-false
+`SelectShowPickerEnabled` setting. Direct Page initialization currently sets
+scripts/storage/idle features before frame initialization without enabling this
+setting. A central startup repair and Theme52 selective successor (fresh
+main.cpp plus metadata Shim, 50 imports) are being prepared; neither is built
+or accepted yet. The outer Firefox page is the Worker transport, not the app DOM.
+
+Small standalone edit-loop diagnostics passed: three web-resource packages
+in 0.069–0.083s; two C module compiles in approximately 1.060s each; two C++
+module compiles in 1.062s and 1.057s; two Rust module compiles in 2.073s and
+1.870s. These compiled edits only add comments. Supported CLI receipts and
+complete production SDK checks establish the small-module paths for these
+fixtures, with natural process closure, not general performance acceptance.
+The real six-resource rich-web fixture (1,543,773 baseline bytes) subsequently
+passed three packaging-only HTML/CSS/JS edits in 0.08512s, 0.08195s and
+0.08413s against a fixed 1.000s pack target. Exact resource/package readback
+passed; the Python CLI observer and source route audit found no child compiler
+or retained-component build. This observer does not cover shell bootstrap as
+an exhaustive OS process ledger. Application startup/interaction targets and
+integrated Foundation behavior remain pending on a working base.
+
+Current Rust module `72e6b87b…` (17,898 bytes, application source `574ef580…`)
+now passed three typed dispatches through retained console carrier `be8af644…`:
+7+35=42, 1+2=3 and checked u32 overflow. Caller `6685` closed 0 / `16d894`;
+pack, compose, verify and all three owners/logs closed, with eight input facts
+rechecked. This is current-module component evidence, distinct from historical
+module `96714fda…`. It does not accept Foundation, TUI, the integrated viewer
+or host unit tests (still zero). No retained component was rebuilt.
+
+The full 65-case / 12-batch runtime and independent readback, neutral28+6,
+separate export, Foundation and remaining application work are still pending.
+The viewer remains unfinished and production eligibility is false. Reuse the
+accepted preparation, plan and build; preserve all original failures and
+retained SDKs. Machine protections and behavior-specific deadlines remain;
+incidental maintenance and aggregate qualification ceilings were superseded.
+
+Only this chat and its managed subagents are writing. The user's native
+orchestration override supersedes the historical separate-chat protocol;
+old coordination records are retained as evidence without administrative gates.
+
+This checkpoint supersedes older uses of “current” below. Git main is
+`1660716ce6f5f59d2603859548e1eb18589938aa`,
+`WIP - Preserve current appended application work`. The preservation commit
+captured 57 files; ignored evidence, generated binaries and retained SDKs remain
+outside Git. A later 18-file include/catalogue repair comprises 17 modified
+tracked files and one new helper. CPP `9d5d434c…` adds four definition headers
+while preserving the `ee79…` implementation body. Source acceptance
+`8e1e2877…` retains 380 passing tests with zero skips.
+
+Failed build `74326` / `16e3e0` exposed four undefined-inline errors.
+The real-TU differential `35262` / `43177b` reproduced those four errors
+and accepted the repaired TU with the original flags and VFS. Its 224.854s
+total versus the old build handle-to-result interval of 771.435s measures
+feedback for this defect, not total build or application-loop performance.
+Failed outputs remain retained and were not consumed.
+
+Fresh preparation `52904` / `8b7f2d` and independent readback
+`27213` / `464efc` accepted 369 sources / 564,670,593 bytes, 12 metadata
+files and 42,779 reuse files / 861,802,853 bytes, with 411 unchanged inputs
+(`910584d9…`). Reuse that preparation. Binder `28640` / `7d86c2` and
+physical admission `50696` / `cf005f` passed. Plan `86057` closed 0 /
+`309554`; independent readback `93935` closed 0 / `b3df9e`, accepting
+plan `70485f92…` and all input/process checks (`6aee128a…`).
+The selective build remains six fresh units, 45 imports, 51 objects, five
+archive copies, zero repacks, one link and 167 artifacts, with one build job.
+
+Selective build `40718` closed 0 / `6d4dc7`; independent candidate readback
+`89476` closed 0 / `a3c613` accepted all 167 artifacts, 51 dependencies,
+six fresh compiles, 45 imports, five archive copies, zero repacks and one link
+(`1f4feabd…`). The separately copied 16-file capsule was accepted after
+`84784` closed 0 / `a49f70` and independent readback `67884` closed 0 /
+`a385cf` (`cd3c0372…`). Reuse this candidate and capsule.
+
+Runtime `70059` closed 1 / `c5f1fe` in 1.211s before Node, browser or
+engine assertions: two helper paths failed the new driver’s private-directory
+admission. Zero cases and batches executed. The driver retained preflight
+`inputs_unchanged=false`; independent postclose readback verified all 47
+physical/hash facts unchanged (`39ef3861…`). The two-helper-only correction
+passed the real loader, negative boundaries and full configuration in 1.757s;
+independent review `23060` closed 0 / `a3da89` accepted packet `754aefa8…`.
+Fresh runtime `50492` closed 1 / `f47da6` in 95.915s at the same P01
+keyboard-popup predicate after 38 cases / three batches and Node2. Independent
+closed-failure readback `56890` closed 0 / `03feb4` revalidated those original
+predicates, the failed P01 predicate, all 47 unchanged inputs and natural
+closure (`d1dc743f…`). The failure is retained; no unchanged retry is planned.
+The focused observer diagnostic `85730` closed 1 / `d6fe42` in 13.156s;
+independent readback `37247` closed 0 / `5f9a47` verified its trusted Space
+keypress on the focused select, with `defaultPrevented=false`, unchanged
+inputs and natural closure (`3bd29648…`). This is partial diagnosis, not
+runtime acceptance. The accepted link map selects the fresh keypress helper,
+but the Emscripten theme inherits false popup keyboard capabilities. A
+controlled source fixture passed 145 checks with the original policy closed
+and a Space-only override open; independent strong review accepted its model
+limits. The prepared override is `b6720505…`; Arrow policy remains false.
+A distinct selective successor will need fresh Theme and metadata Shim,
+50 imports and 52 selected objects; exact final inventory and source admission
+remain pending. No SDK mutation or full engine rebuild is selected.
+The focused feedback saved 82.759s against the 95.915s full path to P01; this
+measures this diagnosis, not application editing or complete qualification.
+The complete runtime remains pending. Earlier runtime `95094`
+closed 1 / `00a07d` after 38 cases in three batches, Node2 and author31,
+failing `popup.P01.default.native-key-popup-open`; eight later batches were
+unreached. Preserve that failure. Full 65-case / 12-batch predicates,
+expected negatives, original caller zero, unchanged inputs, natural closure
+and independent readback remain mandatory.
+
+The rich viewer is unfinished and production eligibility is false. The next
+accepted retained base must demonstrate packaging-only web edits, small-module-only
+C/C++/Rust rebuilds and responsive startup/interaction. Those everyday workflow
+measurements remain pending. Incidental short maintenance and aggregate
+qualification ceilings were superseded by operational watchdog authority;
+machine protections and behavior-specific deadlines remain required.
+
 ## Current continuation handoff — 2026-10-18 UTC
 
 The current checkout is `8cc8863f283f8b6972be6bbe383051419c7c6153`.

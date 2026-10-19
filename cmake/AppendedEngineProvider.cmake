@@ -104,6 +104,8 @@ if(BUILD_TESTING AND NOT EMSCRIPTEN)
             action-replay backpressure ack-metadata ack-old-document ack-capacity
             malformed-ack ack-retained-replies ack-unmatched ack-expired
             shared-query-sequence sequence-max request-validation enter-rejection
+            request-preflight request-preflight-throw request-preflight-terminal
+            request-enter-invalidation request-enter-revalidation
             reply-validation query-zero-revision query-wrong-revision query-error
             query-navigation query-malformed query-reply-validator inner-unknown
             terminal-unknown command-error command-malformed leave-throw retire-error

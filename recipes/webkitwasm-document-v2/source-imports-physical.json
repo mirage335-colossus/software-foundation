@@ -1041,25 +1041,38 @@
       "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/engine/Source/WebCore/editing/Editor.cpp"
     },
     "source/engine/Source/WebCore/html/HTMLSelectElement.cpp": {
-      "bytes": 74585,
+      "bytes": 74829,
       "mode": 420,
       "origin": {
-        "kind": "reviewed-shared-rich-ui-successor",
-        "original_supplier": {
-          "path": "third_party/WebKit/Source/WebCore/html/HTMLSelectElement.cpp",
-          "sha256": "72dbbadb8c01208192af65a97f913ac35a13db56a7b44057a7d1494e26e7757e"
-        },
-        "reviewed_packets": {
-          "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
-          "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
-        },
-        "selection": "shared-ui-popup-and-internal-rich-clipboard",
-        "sha256": "0b4b077b36193fd5ebea0e29017c54ae2df430b6e6ef78d7a3a06f6c19cfe4b1",
+        "correction": "compare-current-selection-before-immediate-changed-user-choice-commit",
+        "kind": "reviewed-native-select-events-successor",
+        "reviewed_source_acceptance_sha256": "aee6871efc89abbb98119bbf01eb9e71713c1a0db529e6bc1c9ba7f249e469d4",
+        "sha256": "ccabb6855aa4befe7db1f9a2225ae1ef1b942a7508cc3fdeea62783e01f73509",
         "source_only": true,
-        "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/engine-call-sites/proposed/source/engine/Source/WebCore/html/HTMLSelectElement.cpp"
+        "source_path": "recipes/webkitwasm-document-v2/overlays/ui/engine/Source/WebCore/html/HTMLSelectElement.cpp",
+        "supersedes": {
+          "bytes": 74585,
+          "origin": {
+            "kind": "reviewed-shared-rich-ui-successor",
+            "original_supplier": {
+              "path": "third_party/WebKit/Source/WebCore/html/HTMLSelectElement.cpp",
+              "sha256": "72dbbadb8c01208192af65a97f913ac35a13db56a7b44057a7d1494e26e7757e"
+            },
+            "reviewed_packets": {
+              "clipboard": "13a95eb9637dec4a9e7827a34de79690ab70055084bb5065c6a53a203c638ea1",
+              "popup": "b7d9bd5218ef53c2c06ac53e3c03b1b11252eb45ca25e4a38f421d4422c1a228"
+            },
+            "selection": "shared-ui-popup-and-internal-rich-clipboard",
+            "sha256": "0b4b077b36193fd5ebea0e29017c54ae2df430b6e6ef78d7a3a06f6c19cfe4b1",
+            "source_only": true,
+            "source_path": ".agent-work/appended-implementation-20261016/native-html-popup-implementation-v1/engine-call-sites/proposed/source/engine/Source/WebCore/html/HTMLSelectElement.cpp"
+          },
+          "sha256": "0b4b077b36193fd5ebea0e29017c54ae2df430b6e6ef78d7a3a06f6c19cfe4b1",
+          "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/engine/Source/WebCore/html/HTMLSelectElement.cpp"
+        }
       },
       "role": "source",
-      "sha256": "0b4b077b36193fd5ebea0e29017c54ae2df430b6e6ef78d7a3a06f6c19cfe4b1",
+      "sha256": "ccabb6855aa4befe7db1f9a2225ae1ef1b942a7508cc3fdeea62783e01f73509",
       "tracked_path": "recipes/webkitwasm-document-v2/overlays/ui/engine/Source/WebCore/html/HTMLSelectElement.cpp"
     },
     "source/engine/Source/WebCore/loader/DocumentLoader.cpp": {

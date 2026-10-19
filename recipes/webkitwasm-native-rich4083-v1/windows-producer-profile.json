@@ -11,12 +11,12 @@
   },
   "implementation_status": "passive-input-contract-only",
   "kernel_rebuild": false,
-  "kind": "foundation-native-engine-windows-producer-native-control-keypress-profile-v1",
+  "kind": "foundation-native-engine-windows-producer-retired-form-preflight-profile-v1",
   "production_eligible": false,
   "profile": "document-actions-v1",
   "provenance": {
     "path": "recipes/webkitwasm-native-rich4083-v1/provenance.json",
-    "sha256": "f5e4a29c6e5bdd0d396c634e8f51a2cc64c43f75d8f25e251184f65c55eb86ee"
+    "sha256": "5312e2bb2de6754de28f0792382096d2542484af2d8cef32b9c37cc842a4ee89"
   },
   "publication_policy": "unimplemented-native-adapter-or-two-host-metadata-join",
   "recipe_directory": "recipes/webkitwasm-native-rich4083-v1",
@@ -25,7 +25,7 @@
   "source_files": 158,
   "source_map": {
     "path": "recipes/webkitwasm-native-rich4083-v1/source-imports.json",
-    "sha256": "11208c13bce5e005526199a1922deed8b17259d93d0d892e35fdc6a8969bd9d0"
+    "sha256": "4e2b665e0124afc912ee1e64dd1f4159b88a05aaba1662237bbdfedf93ba009e"
   },
   "target": {
     "pointer_bits": 64,

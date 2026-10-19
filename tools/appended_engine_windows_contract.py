@@ -43,7 +43,45 @@ NATIVE_CONTROL_KEYPRESS_PROFILE_KIND = 'foundation-native-engine-windows-produce
 NATIVE_CONTROL_KEYPRESS_CATALOGUE = {'source_map': {'path': 'recipes/webkitwasm-native-rich4083-v1/source-imports.json', 'sha256': '11208c13bce5e005526199a1922deed8b17259d93d0d892e35fdc6a8969bd9d0'}, 'provenance': {'path': 'recipes/webkitwasm-native-rich4083-v1/provenance.json', 'sha256': 'f5e4a29c6e5bdd0d396c634e8f51a2cc64c43f75d8f25e251184f65c55eb86ee'}, 'graph': {'path': 'recipes/webkitwasm-native-rich4083-v1/cmake/native-provider.cmake', 'sha256': 'a19c8e7ddd7f1c4f15b143ca33a4826bec806ad0bd95137ac5a6059811d6dab1'}}
 
 
+NATIVE_CONTROL_INCLUDES_PROFILE_KIND = 'foundation-native-engine-windows-producer-native-control-includes-profile-v1'
+NATIVE_CONTROL_INCLUDES_CATALOGUE = {'source_map': {'path': 'recipes/webkitwasm-native-rich4083-v1/source-imports.json', 'sha256': '20778ece9cd45fc8f4e1839cdd9da8abd820d21e9042099b9157b32c018b43d8'}, 'provenance': {'path': 'recipes/webkitwasm-native-rich4083-v1/provenance.json', 'sha256': 'f5e4a29c6e5bdd0d396c634e8f51a2cc64c43f75d8f25e251184f65c55eb86ee'}, 'graph': {'path': 'recipes/webkitwasm-native-rich4083-v1/cmake/native-provider.cmake', 'sha256': 'a19c8e7ddd7f1c4f15b143ca33a4826bec806ad0bd95137ac5a6059811d6dab1'}}
+
+NATIVE_SHOWPICKER_PROFILE_KIND = 'foundation-native-engine-windows-producer-showpicker-settings-profile-v1'
+NATIVE_SHOWPICKER_CATALOGUE = {'source_map': {'path': 'recipes/webkitwasm-native-rich4083-v1/source-imports.json', 'sha256': '5033e776046234aad7b60a4adf833e589be45133786315755173933ec7146b1e'}, 'provenance': {'path': 'recipes/webkitwasm-native-rich4083-v1/provenance.json', 'sha256': 'f5e4a29c6e5bdd0d396c634e8f51a2cc64c43f75d8f25e251184f65c55eb86ee'}, 'graph': {'path': 'recipes/webkitwasm-native-rich4083-v1/cmake/native-provider.cmake', 'sha256': 'a19c8e7ddd7f1c4f15b143ca33a4826bec806ad0bd95137ac5a6059811d6dab1'}}
+
+NATIVE_SELECT_EVENTS_PROFILE_KIND = 'foundation-native-engine-windows-producer-select-events-profile-v1'
+NATIVE_SELECT_EVENTS_CATALOGUE = {'source_map': {'path': 'recipes/webkitwasm-native-rich4083-v1/source-imports.json', 'sha256': '9e6b36bcfd6efdbc834c8fb06ef2ab9ca5a7dadb91b9c0d78b7a94fddf0bcf31'}, 'provenance': {'path': 'recipes/webkitwasm-native-rich4083-v1/provenance.json', 'sha256': 'e4b1c122b95fe2b629ad80818552bc354614223d8fadcf7de004aed5b857084c'}, 'graph': {'path': 'recipes/webkitwasm-native-rich4083-v1/cmake/native-provider.cmake', 'sha256': 'a19c8e7ddd7f1c4f15b143ca33a4826bec806ad0bd95137ac5a6059811d6dab1'}}
+
+
+NATIVE_INPUT_METHOD_PROFILE_KIND = 'foundation-native-engine-windows-producer-input-method-profile-v1'
+NATIVE_INPUT_METHOD_CATALOGUE = {'source_map': {'path': 'recipes/webkitwasm-native-rich4083-v1/source-imports.json', 'sha256': '13cbe3ca607bb5cba54f1f880f9b2471b430c9be3563a7f3a623ed9ceb7cff03'}, 'provenance': {'path': 'recipes/webkitwasm-native-rich4083-v1/provenance.json', 'sha256': '124b5904cdf711214ea3ade9cf840f179c1f3e439b29f60cfd01e4408cf4101c'}, 'graph': {'path': 'recipes/webkitwasm-native-rich4083-v1/cmake/native-provider.cmake', 'sha256': 'a19c8e7ddd7f1c4f15b143ca33a4826bec806ad0bd95137ac5a6059811d6dab1'}}
+
+
+NATIVE_FORM_PREFLIGHT_PROFILE_KIND = 'foundation-native-engine-windows-producer-retired-form-preflight-profile-v1'
+NATIVE_FORM_PREFLIGHT_CATALOGUE = {'source_map': {'path': 'recipes/webkitwasm-native-rich4083-v1/source-imports.json', 'sha256': '4e2b665e0124afc912ee1e64dd1f4159b88a05aaba1662237bbdfedf93ba009e'}, 'provenance': {'path': 'recipes/webkitwasm-native-rich4083-v1/provenance.json', 'sha256': '5312e2bb2de6754de28f0792382096d2542484af2d8cef32b9c37cc842a4ee89'}, 'graph': {'path': 'recipes/webkitwasm-native-rich4083-v1/cmake/native-provider.cmake', 'sha256': 'a19c8e7ddd7f1c4f15b143ca33a4826bec806ad0bd95137ac5a6059811d6dab1'}}
+
+
 def catalogue_for_profile(value):
+    if type(value) is dict and value.get('kind') == NATIVE_FORM_PREFLIGHT_PROFILE_KIND:
+        if type(NATIVE_FORM_PREFLIGHT_CATALOGUE) is not dict or set(NATIVE_FORM_PREFLIGHT_CATALOGUE) != set(CATALOGUE):
+            raise ValueError('Native form preflight source catalogue remains unbound')
+        return NATIVE_FORM_PREFLIGHT_CATALOGUE
+    if type(value) is dict and value.get('kind') == NATIVE_INPUT_METHOD_PROFILE_KIND:
+        if type(NATIVE_INPUT_METHOD_CATALOGUE) is not dict or set(NATIVE_INPUT_METHOD_CATALOGUE) != set(CATALOGUE):
+            raise ValueError('Native input method source catalogue remains unbound')
+        return NATIVE_INPUT_METHOD_CATALOGUE
+    if type(value) is dict and value.get('kind') == NATIVE_SELECT_EVENTS_PROFILE_KIND:
+        if type(NATIVE_SELECT_EVENTS_CATALOGUE) is not dict or set(NATIVE_SELECT_EVENTS_CATALOGUE) != set(CATALOGUE):
+            raise ValueError('Native select events source catalogue remains unbound')
+        return NATIVE_SELECT_EVENTS_CATALOGUE
+    if type(value) is dict and value.get('kind') == NATIVE_SHOWPICKER_PROFILE_KIND:
+        if type(NATIVE_SHOWPICKER_CATALOGUE) is not dict or set(NATIVE_SHOWPICKER_CATALOGUE) != set(CATALOGUE):
+            raise ValueError('Native showPicker source catalogue remains unbound')
+        return NATIVE_SHOWPICKER_CATALOGUE
+    if type(value) is dict and value.get('kind') == NATIVE_CONTROL_INCLUDES_PROFILE_KIND:
+        if type(NATIVE_CONTROL_INCLUDES_CATALOGUE) is not dict or set(NATIVE_CONTROL_INCLUDES_CATALOGUE) != set(CATALOGUE):
+            raise ValueError('Native control includes source catalogue remains unbound')
+        return NATIVE_CONTROL_INCLUDES_CATALOGUE
     if type(value) is dict and value.get('kind') == NATIVE_CONTROL_KEYPRESS_PROFILE_KIND:
         if type(NATIVE_CONTROL_KEYPRESS_CATALOGUE) is not dict or set(NATIVE_CONTROL_KEYPRESS_CATALOGUE) != set(CATALOGUE):
             raise ValueError('Native control keypress source catalogue remains unbound')
@@ -60,6 +98,16 @@ def catalogue_for_profile(value):
 
 
 def catalogue_for_map_digest(value):
+    if type(NATIVE_FORM_PREFLIGHT_CATALOGUE) is dict and value == NATIVE_FORM_PREFLIGHT_CATALOGUE['source_map']['sha256']:
+        return NATIVE_FORM_PREFLIGHT_CATALOGUE
+    if type(NATIVE_INPUT_METHOD_CATALOGUE) is dict and value == NATIVE_INPUT_METHOD_CATALOGUE['source_map']['sha256']:
+        return NATIVE_INPUT_METHOD_CATALOGUE
+    if type(NATIVE_SELECT_EVENTS_CATALOGUE) is dict and value == NATIVE_SELECT_EVENTS_CATALOGUE['source_map']['sha256']:
+        return NATIVE_SELECT_EVENTS_CATALOGUE
+    if type(NATIVE_SHOWPICKER_CATALOGUE) is dict and value == NATIVE_SHOWPICKER_CATALOGUE['source_map']['sha256']:
+        return NATIVE_SHOWPICKER_CATALOGUE
+    if type(NATIVE_CONTROL_INCLUDES_CATALOGUE) is dict and value == NATIVE_CONTROL_INCLUDES_CATALOGUE['source_map']['sha256']:
+        return NATIVE_CONTROL_INCLUDES_CATALOGUE
     if type(NATIVE_CONTROL_KEYPRESS_CATALOGUE) is dict and value == NATIVE_CONTROL_KEYPRESS_CATALOGUE['source_map']['sha256']:
         return NATIVE_CONTROL_KEYPRESS_CATALOGUE
     if type(NATIVE_POPUP_CATALOGUE) is dict and value == NATIVE_POPUP_CATALOGUE['source_map']['sha256']:
@@ -70,6 +118,21 @@ def catalogue_for_map_digest(value):
 
 
 def catalogue_for_recipe_inputs(inputs):
+    if (type(NATIVE_FORM_PREFLIGHT_CATALOGUE) is dict and type(inputs) is dict and
+            any(type(row) is dict and row.get('sha256') == NATIVE_FORM_PREFLIGHT_CATALOGUE['source_map']['sha256'] for row in inputs.values())):
+        return NATIVE_FORM_PREFLIGHT_CATALOGUE
+    if (type(NATIVE_INPUT_METHOD_CATALOGUE) is dict and type(inputs) is dict and
+            any(type(row) is dict and row.get('sha256') == NATIVE_INPUT_METHOD_CATALOGUE['source_map']['sha256'] for row in inputs.values())):
+        return NATIVE_INPUT_METHOD_CATALOGUE
+    if (type(NATIVE_SELECT_EVENTS_CATALOGUE) is dict and type(inputs) is dict and
+            any(type(row) is dict and row.get('sha256') == NATIVE_SELECT_EVENTS_CATALOGUE['source_map']['sha256'] for row in inputs.values())):
+        return NATIVE_SELECT_EVENTS_CATALOGUE
+    if (type(NATIVE_SHOWPICKER_CATALOGUE) is dict and type(inputs) is dict and
+            any(type(row) is dict and row.get('sha256') == NATIVE_SHOWPICKER_CATALOGUE['source_map']['sha256'] for row in inputs.values())):
+        return NATIVE_SHOWPICKER_CATALOGUE
+    if (type(NATIVE_CONTROL_INCLUDES_CATALOGUE) is dict and type(inputs) is dict and
+            any(type(row) is dict and row.get('sha256') == NATIVE_CONTROL_INCLUDES_CATALOGUE['source_map']['sha256'] for row in inputs.values())):
+        return NATIVE_CONTROL_INCLUDES_CATALOGUE
     if (type(NATIVE_CONTROL_KEYPRESS_CATALOGUE) is dict and type(inputs) is dict and
             any(type(row) is dict and row.get('sha256') == NATIVE_CONTROL_KEYPRESS_CATALOGUE['source_map']['sha256'] for row in inputs.values())):
         return NATIVE_CONTROL_KEYPRESS_CATALOGUE
@@ -84,12 +147,22 @@ def catalogue_for_recipe_inputs(inputs):
 
 def catalogue_for_reference(value):
     """Accept only one complete independently pinned catalogue version."""
+    if type(NATIVE_FORM_PREFLIGHT_CATALOGUE) is dict and type(value) is dict and value == NATIVE_FORM_PREFLIGHT_CATALOGUE:
+        return NATIVE_FORM_PREFLIGHT_CATALOGUE
+    if type(NATIVE_INPUT_METHOD_CATALOGUE) is dict and type(value) is dict and value == NATIVE_INPUT_METHOD_CATALOGUE:
+        return NATIVE_INPUT_METHOD_CATALOGUE
     if type(value) is dict and value == CATALOGUE:
         return CATALOGUE
+    if type(NATIVE_SELECT_EVENTS_CATALOGUE) is dict and type(value) is dict and value == NATIVE_SELECT_EVENTS_CATALOGUE:
+        return NATIVE_SELECT_EVENTS_CATALOGUE
+    if type(NATIVE_SHOWPICKER_CATALOGUE) is dict and type(value) is dict and value == NATIVE_SHOWPICKER_CATALOGUE:
+        return NATIVE_SHOWPICKER_CATALOGUE
     if type(COMPOSITION_CATALOGUE) is dict and type(value) is dict and value == COMPOSITION_CATALOGUE:
         return COMPOSITION_CATALOGUE
     if type(NATIVE_POPUP_CATALOGUE) is dict and type(value) is dict and value == NATIVE_POPUP_CATALOGUE:
         return NATIVE_POPUP_CATALOGUE
+    if type(NATIVE_CONTROL_INCLUDES_CATALOGUE) is dict and type(value) is dict and value == NATIVE_CONTROL_INCLUDES_CATALOGUE:
+        return NATIVE_CONTROL_INCLUDES_CATALOGUE
     if type(NATIVE_CONTROL_KEYPRESS_CATALOGUE) is dict and type(value) is dict and value == NATIVE_CONTROL_KEYPRESS_CATALOGUE:
         return NATIVE_CONTROL_KEYPRESS_CATALOGUE
     raise ValueError('Unsupported exact native source catalogue reference')
@@ -193,15 +266,20 @@ def inside(path, root):
 
 
 def validate_profile(value):
+    native_form_preflight = type(value) is dict and value.get('kind') == NATIVE_FORM_PREFLIGHT_PROFILE_KIND
+    native_input_method = type(value) is dict and value.get('kind') == NATIVE_INPUT_METHOD_PROFILE_KIND
+    native_select_events = type(value) is dict and value.get('kind') == NATIVE_SELECT_EVENTS_PROFILE_KIND
+    native_showpicker = type(value) is dict and value.get('kind') == NATIVE_SHOWPICKER_PROFILE_KIND
+    native_control_includes = type(value) is dict and value.get('kind') == NATIVE_CONTROL_INCLUDES_PROFILE_KIND
     native_control_keypress = type(value) is dict and value.get('kind') == NATIVE_CONTROL_KEYPRESS_PROFILE_KIND
     native_popup = type(value) is dict and value.get('kind') == NATIVE_POPUP_PROFILE_KIND
     composition = type(value) is dict and value.get('kind') == COMPOSITION_PROFILE_KIND
     catalogue = catalogue_for_profile(value)
     expected = {
-        'schema_version': 1, 'kind': NATIVE_CONTROL_KEYPRESS_PROFILE_KIND if native_control_keypress else NATIVE_POPUP_PROFILE_KIND if native_popup else COMPOSITION_PROFILE_KIND if composition else 'foundation-native-engine-windows-producer-profile-v1',
+        'schema_version': 1, 'kind': NATIVE_FORM_PREFLIGHT_PROFILE_KIND if native_form_preflight else NATIVE_INPUT_METHOD_PROFILE_KIND if native_input_method else NATIVE_SELECT_EVENTS_PROFILE_KIND if native_select_events else NATIVE_SHOWPICKER_PROFILE_KIND if native_showpicker else NATIVE_CONTROL_INCLUDES_PROFILE_KIND if native_control_includes else NATIVE_CONTROL_KEYPRESS_PROFILE_KIND if native_control_keypress else NATIVE_POPUP_PROFILE_KIND if native_popup else COMPOSITION_PROFILE_KIND if composition else 'foundation-native-engine-windows-producer-profile-v1',
         'scope': SCOPE, 'profile': 'document-actions-v1', 'target': TARGET,
         'recipe_directory': RECIPE, **catalogue,
-        'source_files': 158 if native_control_keypress or native_popup or composition else 157, 'engine_files': 48, 'direct_translation_units': 32,
+        'source_files': 158 if native_form_preflight or native_input_method or native_select_events or native_showpicker or native_control_includes or native_control_keypress or native_popup or composition else 157, 'engine_files': 48, 'direct_translation_units': 32,
         'toolchain_policy': 'native-windows-x64-clang-cl-cxx23-release-static-mt',
         'publication_policy': 'unimplemented-native-adapter-or-two-host-metadata-join',
         'dependency_policy': 'complete-pinned-static-native-inventory-and-provenance',

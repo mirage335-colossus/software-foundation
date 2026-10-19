@@ -606,6 +606,9 @@ if(BUILD_TESTING)
       appended_engine_document_maintenance appended_engine_document_metadata
       appended_engine_document_sources appended_engine_document_reuse completed_work_resume
       appended_engine_successful_donor appended_engine_document_source_successful_donor
+      appended_engine_theme_successor appended_engine_showpicker_successor appended_engine_showpicker_source_assembly appended_engine_theme_source_assembly
+      appended_engine_select_event_successor appended_engine_select_event_source_assembly
+      appended_engine_theme_dependency_ownership
       appended_engine_editor_contract appended_engine_editor_consumer appended_engine_editor_profile browser_editor_bundle
       appended_engine_composition_undo_journal
       appended_editor_cmake
@@ -627,6 +630,9 @@ if(BUILD_TESTING)
         appended_engine_document_maintenance appended_engine_document_metadata
         appended_engine_document_sources appended_engine_document_reuse completed_work_resume
         appended_engine_successful_donor appended_engine_document_source_successful_donor
+        appended_engine_theme_successor appended_engine_showpicker_successor appended_engine_showpicker_source_assembly appended_engine_theme_source_assembly
+      appended_engine_select_event_successor appended_engine_select_event_source_assembly
+        appended_engine_theme_dependency_ownership
         appended_engine_editor_contract appended_engine_editor_consumer appended_engine_editor_profile browser_editor_bundle
       appended_engine_composition_undo_journal
         appended_editor_cmake

@@ -781,6 +781,7 @@ int32_t bibProviderCreatePage(const ProviderRuntimeConfig& config)
     // The pinned Page has no vm() accessor. Its main normal world uses commonVM.
     JSC::JSLockHolder lock(WebCore::commonVM());
     page->settings().setScriptEnabled(true);
+    page->settings().setSelectShowPickerEnabled(true);
     page->settings().setAcceleratedCompositingEnabled(false);
     page->settings().setLoadsImagesAutomatically(true);
     page->settings().setServiceWorkersEnabled(false);
