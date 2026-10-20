@@ -125,7 +125,7 @@ fn validate_record(bytes: &[u8], depth: u32) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn validate_value(field_type: u8, required: bool, value: &[u8], depth: u32) -> Result<(), CodecError> {
+pub(crate) fn validate_value(field_type: u8, required: bool, value: &[u8], depth: u32) -> Result<(), CodecError> {
     let invalid = || Err(CodecError::InvalidValue);
     match field_type as u32 {
         FIELD_U32 => if value.len() != 4 { return invalid(); },

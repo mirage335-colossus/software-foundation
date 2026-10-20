@@ -1,0 +1,158 @@
+{
+  "generation_u64": "9007199254741013",
+  "view_handle_u64": "7",
+  "provider_service_handle_u64": "8",
+  "provider_token_u64": "9",
+  "increment_schema_sha256": "3fe7ab0d3f8f76499f054ca6f29f68deee28627681f79231af3b095b0635b246",
+  "increment_operand_u32": 17,
+  "increment_reply_u32": [
+    18,
+    1
+  ],
+  "calculator_inputs": [
+    17,
+    25
+  ],
+  "calculator_result": "42",
+  "view_title": "Portable calculator",
+  "view_snapshots": [
+    {
+      "revision_u64": "0",
+      "lhs": "0",
+      "rhs": "0",
+      "result": "Press Sum",
+      "width": 400,
+      "height": 240,
+      "scale": 1
+    },
+    {
+      "revision_u64": "1",
+      "lhs": "17",
+      "rhs": "0",
+      "result": "Press Sum",
+      "width": 400,
+      "height": 240,
+      "scale": 1
+    },
+    {
+      "revision_u64": "2",
+      "lhs": "17",
+      "rhs": "25",
+      "result": "Press Sum",
+      "width": 400,
+      "height": 240,
+      "scale": 1
+    },
+    {
+      "revision_u64": "3",
+      "lhs": "17",
+      "rhs": "25",
+      "result": "42",
+      "width": 400,
+      "height": 240,
+      "scale": 1
+    },
+    {
+      "revision_u64": "4",
+      "lhs": "17",
+      "rhs": "25",
+      "result": "42",
+      "width": 480,
+      "height": 280,
+      "scale": 1.5
+    },
+    {
+      "revision_u64": "5",
+      "lhs": "4294967295",
+      "rhs": "25",
+      "result": "42",
+      "width": 480,
+      "height": 280,
+      "scale": 1.5
+    },
+    {
+      "revision_u64": "6",
+      "lhs": "4294967295",
+      "rhs": "0",
+      "result": "42",
+      "width": 480,
+      "height": 280,
+      "scale": 1.5
+    },
+    {
+      "revision_u64": "7",
+      "lhs": "4294967295",
+      "rhs": "0",
+      "result": "4294967295",
+      "width": 480,
+      "height": 280,
+      "scale": 1.5
+    },
+    {
+      "revision_u64": "8",
+      "lhs": "4294967295",
+      "rhs": "1",
+      "result": "4294967295",
+      "width": 480,
+      "height": 280,
+      "scale": 1.5
+    },
+    {
+      "revision_u64": "9",
+      "lhs": "4294967295",
+      "rhs": "1",
+      "result": "Overflow",
+      "width": 480,
+      "height": 280,
+      "scale": 1.5
+    },
+    {
+      "revision_u64": "10",
+      "lhs": "x",
+      "rhs": "1",
+      "result": "Overflow",
+      "width": 480,
+      "height": 280,
+      "scale": 1.5
+    },
+    {
+      "revision_u64": "11",
+      "lhs": "x",
+      "rhs": "1",
+      "result": "Enter whole numbers from 0 to 4294967295",
+      "width": 480,
+      "height": 280,
+      "scale": 1.5
+    }
+  ],
+  "provider_calls": [
+    {
+      "operation": 1,
+      "operand_u32": 17,
+      "status": 0,
+      "reply": [
+        18,
+        1
+      ]
+    },
+    {
+      "operation": 2,
+      "operand_u32": 17,
+      "status": 9
+    },
+    {
+      "operation": 1,
+      "payload_hex": "000102",
+      "status": 1
+    },
+    {
+      "operation": 1,
+      "operand_u32": 4294967295,
+      "status": 0,
+      "reply": [
+        0,
+        2
+      ]
+    }
+  ]
+}

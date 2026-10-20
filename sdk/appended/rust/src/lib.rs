@@ -12,6 +12,7 @@ pub mod abi;
 pub mod record;
 pub mod bootstrap;
 pub mod providers;
+pub mod view;
 
 use abi::*;
 

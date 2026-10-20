@@ -1011,4 +1011,43 @@ class NativeLinuxToolchainTests(unittest.TestCase):
             self.assertIn('SDK-manifest-does-not-declare-a-C-compiler',result.stdout+result.stderr)
             verify_sdk(sdk_root)
 
+    def test_emscripten_processor_comes_from_manifest_and_survives_toolchain_reinclude(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); sdk_root=root/'emsdk'; (sdk_root/'sysroot').mkdir(parents=True)
+            (sdk_root/'bin').mkdir(); (sdk_root/'bin/c++').write_text('synthetic compiler marker\n')
+            (sdk_root/'.emscripten').write_text('# synthetic SDK config\n')
+            toolchain=sdk_root/'upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake'
+            toolchain.parent.mkdir(parents=True)
+            toolchain.write_text(
+                'if(NOT DEFINED EMSCRIPTEN_SYSTEM_PROCESSOR)\n'
+                '  set(EMSCRIPTEN_SYSTEM_PROCESSOR x86)\n'
+                'endif()\n'
+                'set(CMAKE_SYSTEM_NAME Emscripten)\n'
+                'set(CMAKE_SYSTEM_PROCESSOR "${EMSCRIPTEN_SYSTEM_PROCESSOR}")\n')
+            write_json(sdk_root/'sdk.json', {'schema_version':1,'recipe_id':'b'*64,
+                'kind':'diagnostic','target':{'system':'Emscripten','processor':'wasm32',
+                'triple':'wasm32-unknown-emscripten','sysroot':'sysroot','cxx_compiler':'bin/c++',
+                'toolchain':'upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake'},
+                'files':file_inventory(sdk_root)})
+            source=root/'source'; source.mkdir()
+            (source/'CMakeLists.txt').write_text(
+                'cmake_minimum_required(VERSION 3.24)\n'
+                'project(ManifestProcessor NONE)\n'
+                'if(NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "wasm32")\n'
+                '  message(FATAL_ERROR "initial toolchain processor was ${CMAKE_SYSTEM_PROCESSOR}")\n'
+                'endif()\n'
+                'include("${CMAKE_TOOLCHAIN_FILE}")\n'
+                'if(NOT EMSCRIPTEN_SYSTEM_PROCESSOR STREQUAL "wasm32" OR\n'
+                '   NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "wasm32")\n'
+                '  message(FATAL_ERROR "re-included toolchain processor was ${CMAKE_SYSTEM_PROCESSOR}")\n'
+                'endif()\n'
+                'if(NOT "EMSCRIPTEN_SYSTEM_PROCESSOR" IN_LIST CMAKE_TRY_COMPILE_PLATFORM_VARIABLES)\n'
+                '  message(FATAL_ERROR "processor is not forwarded to nested try_compile")\n'
+                'endif()\n'
+                'file(WRITE "${CMAKE_BINARY_DIR}/selected-processors.txt"\n'
+                '  "${EMSCRIPTEN_SYSTEM_PROCESSOR};${CMAKE_SYSTEM_PROCESSOR}")\n')
+            result=self.configure(source,root/'build',sdk_root)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertEqual((root/'build/selected-processors.txt').read_text(),'wasm32;wasm32')
+
 if __name__ == '__main__': unittest.main()

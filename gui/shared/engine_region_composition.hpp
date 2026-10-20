@@ -110,7 +110,24 @@ public:
         gui::validate_snapshot(result);
         return result;
     }
-    // Safe redaction is an internally valid root candidate, including all
+    // A resumable suspension must preserve the compiled source's widget and
+    // command lifetimes. Retain only their declaration/geometry, never hidden
+    // content or paint callables. The rich frame has its own retired lifetime.
+    static void redact_content(gui::Snapshot& value) noexcept {
+        std::erase_if(value.widgets, [](const auto& widget) { return widget.spec.key.id == engine_id; });
+        for (auto& widget : value.widgets) {
+            const auto bounds = widget.state.bounds;
+            const auto extent = widget.state.content_size;
+            const auto clip = widget.state.content_clip;
+            widget.state = {}; widget.state.bounds = bounds;
+            widget.state.content_size = extent; widget.state.content_clip = clip;
+            widget.state.visible = false; widget.state.enabled = false;
+        }
+        for (auto& page : value.pages) { page.label.clear(); page.visible = false; page.enabled = false; }
+        for (auto& command : value.commands) command.enabled = false;
+        value.active_page.reset(); value.key_bindings.clear(); value.modal_root.reset();
+    }
+    // Terminal erasure is an internally valid root candidate, including all
     // references which could otherwise name a removed compiled widget.
     static void clear_content(gui::Snapshot& value) noexcept {
         value.widgets.clear(); value.commands.clear(); value.key_bindings.clear(); value.modal_root.reset();

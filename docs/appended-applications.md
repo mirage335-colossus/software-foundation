@@ -493,6 +493,21 @@ capabilities 259. The application composition roots register the shared
 `demo.echo` native service described below. A raw provider's wider catalog or a
 metadata flag cannot add implemented services.
 
+Foundation kernel factories have a separate dependency policy from retained
+engine factories. The rich producers accept dependency-free ES modules and the
+reviewed Emscripten `web,worker,node` adapter shape: generated `globalThis` Node
+detection, guarded `createRequire` from `node:module`, and guarded builtin reads
+from `node:fs`, `node:path` and `node:url`. No general dynamic import, arbitrary
+require, altered guard, CommonJS export or additional child-module edge is
+admitted. The generated Node guard permits its single initializer and fixed
+boolean tests; writes, aliases, shadow bindings, destructuring and property uses
+of that guard name reject. Other generator shapes require a reviewed policy
+extension. Inspection
+checks a temporary lexical projection and leaves the retained factory bytes
+unchanged. It records the Node dependencies explicitly; runtime inertness still
+requires the separately pinned observations. The engine and browser child-module
+scanners retain their existing stricter policies.
+
 After explicit Foundation maintenance and real runtime checks, retain a separate
 Foundation receipt and its independent hash. It must bind the actual factory and
 Wasm bytes, full target and paired SDK, source projection, typed exports, the
@@ -976,6 +991,15 @@ and blob Worker, with native offline-state readback and joined listener/process
 owners. This is test instrumentation; the application still opens directly from
 its unchanged final HTML file. Both adapters use existing generic widgets and
 permit one edit per widget before an application acknowledgement.
+
+The adapter also admits an eligible HTML BOTH carrier through a separately
+frozen schema-2 scenario. Its [identity schema](../tests/fixtures/appended-rich-both-browser-scenario.schema.json)
+binds the retained prefix, engine, Foundation receipt, payload and exact public
+inspection-source cohort. Input uses ordered WebDriver pointer and keyboard
+actions on generic compiled controls. Focused admission/action fixtures pass;
+actual public BOTH browser execution remains pending an eligible retained base.
+Recorded DOM spans do not establish visible startup, warm reload, native
+publication/ACK or rich-frame interaction latency; those metrics remain pending.
 
 The Chromium successor passed focused synthetic checks; no actual Chromium or
 ChromeDriver execution has verified its native endpoints, direct-file canaries

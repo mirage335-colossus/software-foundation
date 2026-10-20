@@ -10,6 +10,7 @@
 #include <mutex>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace foundation::host {
@@ -99,26 +100,26 @@ public:
     bool input_admitted() const noexcept { return !failed_ && !closed_ && !publishing_ && !callback_; }
     bool editor_endpoint_bound()const noexcept{return profile_==surface_web::Profile::editor_v1&&editor_endpoint_.bound();}
     bool document_endpoint_bound()const noexcept{return document_endpoint_.bound();}
-    void activate_document_endpoint(){if(!document_endpoint_bound()||!document_endpoint_.activate_terminal)return;require_input();Callback guard(*this);document_endpoint_.activate_terminal();}
+    void activate_document_endpoint(){if(!document_endpoint_bound()||!document_endpoint_.activate_terminal)return;require_input();Callback guard(*this,false,__LINE__);document_endpoint_.activate_terminal();}
     ::foundation::gui_document::Submission document_submit(::foundation::gui_document::Intent value){
         namespace D=::foundation::gui_document;
         if(!document_endpoint_bound()||!input_admitted())return {closed()?D::Admission::closed:D::Admission::unavailable,{}};
-        Callback guard(*this);return document_endpoint_.submit(std::move(value));
+        Callback guard(*this,false,__LINE__);return document_endpoint_.submit(std::move(value));
     }
     std::optional<::foundation::gui_document::Completion> document_take(::foundation::gui_document::Ticket ticket){
         if(!document_endpoint_bound()||!input_admitted()||!ticket.value)return {};
         std::optional<::foundation::gui_document::Completion> result;
-        {Callback guard(*this);result=document_endpoint_.take(ticket);}
+        {Callback guard(*this,false,__LINE__);result=document_endpoint_.take(ticket);}
         if(result){
-            if(result->ticket!=ticket){fail();throw std::invalid_argument("Mismatched document completion ticket");}
+            if(result->ticket!=ticket){fail(__LINE__);throw std::invalid_argument("Mismatched document completion ticket");}
             (void)document_web::json_completion(*result);
-            if(result->outcome==::foundation::gui_document::Outcome::unknown)fail();
+            if(result->outcome==::foundation::gui_document::Outcome::unknown)fail(__LINE__);
         }
         return result;
     }
     ::foundation::gui_document::State document_state(){
         if(!document_endpoint_bound()||!input_admitted())throw std::logic_error("Document endpoint state is unavailable");
-        Callback guard(*this);return document_endpoint_.state();
+        Callback guard(*this,false,__LINE__);return document_endpoint_.state();
     }
     const gui_surface::Capabilities& capabilities() const noexcept {
         return connected_ && policy_ && !failed_ ? (profile_==surface_web::Profile::editor_v1?editor_capabilities_:policy_->capabilities()) : absent_;
@@ -142,12 +143,12 @@ public:
             pointers_.clear();clear_editor();
             if(policy_&&policy_->accepted()){
                 auto result=policy_->legacy_present(policy_->accepted()->identity.presentation_revision);
-                if(result.status!=gui_surface::Status::ok){fail();return;}
+                if(result.status!=gui_surface::Status::ok){fail(__LINE__);return;}
                 result.revoked.reason=gui_surface::RevocationReason::service;
                 notify(std::move(result.revoked),true);
             }
         }
-        catch (...) { fail(); throw; }
+        catch (...) { fail(__LINE__); throw; }
     }
 
     // Queue returned revocation after return, including an identity with no held
@@ -170,12 +171,12 @@ public:
         try {
             legacy_.present(std::move(next));
             if (legacy_.snapshot().revision != surface.identity.presentation_revision || !owner_matches(surface)) {
-                fail(); return {Status::stale_revision,{}};
+                fail(__LINE__); return {Status::stale_revision,{}};
             }
             auto candidate = pair(&declaration);
             auto terminal = terminal_pair(candidate);
             auto committed = policy_->commit(std::move(preparation.prepared), legacy_.snapshot().revision);
-            if (committed.status != Status::ok) { fail(); return committed; }
+            if (committed.status != Status::ok) { fail(__LINE__); return committed; }
             // Existing boolean slots are changed without allocation after commit.
             auto& state = object(object(candidate).at("surface"));
             state.at("focused").value = policy_->focused();
@@ -183,7 +184,7 @@ public:
             publication_ = std::move(candidate); terminal_ = std::move(terminal);
             if(!retain_pointers){pointers_.clear();editor_held_.clear();}
             return committed;
-        } catch (...) { fail(); throw; }
+        } catch (...) { fail(__LINE__); throw; }
     }
     gui_surface::CommitResult present_editor_pair(::gui::Snapshot next,const gui_surface::Presentation& surface,
         std::optional<::foundation::gui_editor::EditorPublication> publication,
@@ -252,7 +253,7 @@ public:
             Publishing guard(*this);
             legacy_.present(std::move(next));
             if(legacy_.snapshot().revision!=surface.identity.presentation_revision||!owner_matches(surface)){
-                fail();return {Status::stale_revision,{}};
+                fail(__LINE__);return {Status::stale_revision,{}};
             }
             Json candidate=Json::Object{{"snapshot",legacy_.presentation()},
                 {"surface",surface_web::json_state(editor_capabilities_,&surface,policy_->focused(),policy_->active(),transaction,
@@ -260,7 +261,7 @@ public:
                 {"editor",publication?surface_editor_web::json_publication(*publication):Json{}}};
             auto terminal=terminal_pair(candidate);
             auto committed=policy_->commit(std::move(preparation.prepared),legacy_.snapshot().revision);
-            if(committed.status!=Status::ok){fail();return committed;}
+            if(committed.status!=Status::ok){fail(__LINE__);return committed;}
             auto& state=object(object(candidate).at("surface"));state.at("focused").value=policy_->focused();state.at("active").value=policy_->active();
             editor_presentation_=std::move(retained);editor_publication_=std::move(publication);editor_composition_=std::move(composition);
             editor_inert_publication_=std::move(inert);
@@ -268,7 +269,7 @@ public:
             if(!retain_pointers)pointers_.clear();
             if(!retain_keys)editor_held_.clear();
             return committed;
-        }catch(...){fail();throw;}
+        }catch(...){fail(__LINE__);throw;}
     }
     // A checked null editor readback can follow an already redacted empty
     // widget Snapshot. It retires authority; it never invents an owner widget or
@@ -295,11 +296,11 @@ public:
                     policy_->last_sequence(),service_,profile_)},{"editor",std::move(metadata)}};
             auto terminal=terminal_pair(candidate);
             auto retired=policy_->legacy_present(legacy_.snapshot().revision);
-            if(retired.status!=Status::ok){fail();return retired;}
+            if(retired.status!=Status::ok){fail(__LINE__);return retired;}
             clear_editor();editor_publication_=std::move(publication);pointers_.clear();
             publication_=std::move(candidate);terminal_=std::move(terminal);
             return retired;
-        }catch(...){fail();throw;}
+        }catch(...){fail(__LINE__);throw;}
     }
     const ::foundation::gui_editor::EditorPublication* editor_publication()const noexcept{
         return editor_endpoint_bound()&&!failed_&&!closed_&&!publishing_&&editor_publication_?&*editor_publication_:nullptr;
@@ -309,34 +310,34 @@ public:
             !editor_presentation_||!editor_presentation_->available||!editor_presentation_->editor||!editor_presentation_->editor->editable||
             !policy_->accepted()||!policy_->focused()||!policy_->active())return {};
         std::optional<std::uint64_t> result;
-        { Callback guard(*this);result=editor_endpoint_.submit(std::move(packet)); }
+        { Callback guard(*this,false,__LINE__);result=editor_endpoint_.submit(std::move(packet)); }
         if(failed_)return {};
         return result;
     }
     std::optional<std::uint64_t> editor_revoke(::foundation::gui_editor::Revocation record){
         if(!editor_endpoint_bound()||!input_admitted())return {};
         std::optional<std::uint64_t> result;
-        { Callback guard(*this);result=editor_endpoint_.revoke(std::move(record)); }
+        { Callback guard(*this,false,__LINE__);result=editor_endpoint_.revoke(std::move(record)); }
         if(failed_)return {};
         return result;
     }
     std::optional<::foundation::gui_editor::EditorCompletion> editor_take(std::uint64_t ticket){
         if(!editor_endpoint_bound()||failed_||closed_||publishing_||callback_||!ticket)return {};
         std::optional<::foundation::gui_editor::EditorCompletion> result;
-        { Callback guard(*this);result=editor_endpoint_.take(ticket); }
+        { Callback guard(*this,false,__LINE__);result=editor_endpoint_.take(ticket); }
         if(failed_||!result)return {};
         try {
             (void)surface_editor_web::json_completion(*result);
             if(result->ticket!=ticket)throw std::invalid_argument("Mismatched editor completion ticket");
             check_completion(*result);
             if(result->result.admission==::foundation::gui_editor::Admission::terminal||
-                (result->result.receipt&&result->result.receipt->outcome==::foundation::gui_editor::Outcome::unknown))fail();
-        }catch(...){fail();throw;}
+                (result->result.receipt&&result->result.receipt->outcome==::foundation::gui_editor::Outcome::unknown))fail(__LINE__);
+        }catch(...){fail(__LINE__);throw;}
         return result;
     }
     void editor_resync(){
         if(!editor_endpoint_bound()||!input_admitted())return;
-        Callback guard(*this);editor_endpoint_.resync();
+        Callback guard(*this,false,__LINE__);editor_endpoint_.resync();
     }
     gui_surface::AcceptResult accept(gui_surface::Event event) {
         using gui_surface::Status;
@@ -402,7 +403,7 @@ public:
             legacy_.present(std::move(next));
             retire_companion();
             cache_pair(pair(nullptr));
-        } catch (...) { fail(); throw; }
+        } catch (...) { fail(__LINE__); throw; }
     }
     ::gui::Size measure_text(const ::gui::TextMeasureRequest& request) const override { require_access(); return legacy_.measure_text(request); }
     ::gui::Availability resolved_availability(const ::gui::WidgetKey& key) const override { require_access(); return legacy_.resolved_availability(key); }
@@ -421,10 +422,10 @@ public:
     bool closed() const override { return closed_ || failed_ || legacy_.closed(); }
     void close() override {
         if (failed_ || closed_) {detach_document();return;}
-        require_publication(); closed_=true;
+        require_publication(); first_close_line_=__LINE__; closed_=true;
         // Admission closes first; cleanup cannot reopen this owner.
         try{policy_.reset(); connected_=false;deferred_revocation_.reset(); clear_editor();publication_=std::move(terminal_); legacy_.close();}
-        catch(...){fail();detach_document();throw;}
+        catch(...){fail(__LINE__);detach_document();throw;}
         detach_document(); // Detach and join before the owning App can be destroyed.
     }
 private:
@@ -435,14 +436,14 @@ private:
     static const Json::Object& object(const Json& value) { return std::get<Json::Object>(value.value); }
     struct Publishing { BrowserSurfaceAdapter& owner; explicit Publishing(BrowserSurfaceAdapter& value):owner(value){owner.publishing_=true;} ~Publishing(){owner.publishing_=false;} };
     struct Callback {
-        BrowserSurfaceAdapter& owner;int exceptions=std::uncaught_exceptions();
-        explicit Callback(BrowserSurfaceAdapter& value,bool notification=false):owner(value){
+        BrowserSurfaceAdapter& owner;unsigned diagnostic_line;int exceptions=std::uncaught_exceptions();
+        explicit Callback(BrowserSurfaceAdapter& value,bool notification,unsigned line):owner(value),diagnostic_line(line){
             if(owner.callback_)throw std::logic_error("Reentrant surface callback");
             owner.callback_=true;owner.notifying_=notification;
         }
         ~Callback() noexcept {
             owner.callback_=false;owner.notifying_=false;
-            if(std::uncaught_exceptions()>exceptions){owner.fail();return;}
+            if(std::uncaught_exceptions()>exceptions){owner.fail(__LINE__,diagnostic_line);return;}
             owner.deliver_deferred();
         }
     };
@@ -469,12 +470,17 @@ private:
     std::vector<HeldEditorKey> editor_held_;
     std::uint64_t highest_pointer_=0;
     bool publishing_=false,callback_=false,notifying_=false,failed_=false,closed_=false,connected_=false,retired_=false,service_=false,legacy_service_=false,owned_service_=false;
+    // Diagnostic scalars never participate in admission or lifecycle decisions.
+    unsigned first_failure_line_=0,first_failure_flags_=0,first_close_line_=0,first_failure_callback_line_=0;
     void require_access() const { if(failed_||closed_||publishing_)throw std::logic_error("Surface owner is unavailable"); }
     void require_input() const { if(!input_admitted())throw std::logic_error("Surface input is unavailable"); }
     void require_publication() const { if(failed_||closed_||publishing_)throw std::logic_error("Surface publication is unavailable"); }
-    void fail() noexcept {
+    void fail(unsigned diagnostic_line,unsigned diagnostic_callback_line=0) noexcept {
         static_assert(std::is_nothrow_move_assignable_v<Json>);
         if(failed_)return;
+        first_failure_line_=diagnostic_line;first_failure_callback_line_=diagnostic_callback_line;
+        first_failure_flags_=(closed_?1u:0u)|(publishing_?2u:0u)|(callback_?4u:0u)|(notifying_?8u:0u)|
+            (connected_?16u:0u)|(service_?32u:0u)|(owned_service_?64u:0u);
         failed_=true;connected_=false; // Never depend on fallible cleanup to close admission.
         if(document_endpoint_.terminal.notify)
             document_endpoint_.terminal.notify(document_endpoint_.terminal.context);
@@ -550,11 +556,11 @@ private:
             Publishing guard(*this);
             const auto* current=profile_==surface_web::Profile::editor_v1?
                 (editor_presentation_?&*editor_presentation_:nullptr):(policy_?policy_->accepted():nullptr);
-            if(current && (legacy_.snapshot().revision!=current->identity.presentation_revision||!owner_matches(*current))){fail();return publication_;}
+            if(current && (legacy_.snapshot().revision!=current->identity.presentation_revision||!owner_matches(*current))){fail(__LINE__);return publication_;}
             auto declaration=current&&profile_!=surface_web::Profile::editor_v1?
                 std::optional<Json>{surface_web::json_presentation(*current,profile_)}:std::nullopt;
             cache_pair(pair(declaration?&*declaration:nullptr));return publication_;
-        } catch (...) { fail(); throw; }
+        } catch (...) { fail(__LINE__); throw; }
     }
     gui_surface::Status connect(gui_surface::Capabilities offered) {
         using gui_surface::Status;
@@ -579,16 +585,16 @@ private:
             if(deferred_revocation_){
                 const auto& old=*deferred_revocation_;
                 if(old.identity==value.identity&&old.reason==value.reason&&old.composition==value.composition&&old.popup==value.popup&&old.held_keys==value.held_keys)return;
-                fail();throw std::logic_error("Deferred surface retirement is full");
+                fail(__LINE__);throw std::logic_error("Deferred surface retirement is full");
             }
             deferred_revocation_.emplace(std::move(value));return;
         }
-        Callback guard(*this,true);revoked_(std::move(value));
+        Callback guard(*this,true,__LINE__);revoked_(std::move(value));
     }
     void deliver_deferred() noexcept {
         if(failed_||closed_||!deferred_revocation_)return;
         auto value=std::move(*deferred_revocation_);deferred_revocation_.reset();
-        try{notify(std::move(value));}catch(...){fail();}
+        try{notify(std::move(value));}catch(...){fail(__LINE__);}
     }
     void retire_companion() {
         clear_editor();
@@ -598,11 +604,11 @@ private:
             auto result=policy_->legacy_present(legacy_.snapshot().revision);
             if(result.status!=gui_surface::Status::ok){policy_.reset();connected_=false;retired_=true;return;}
             notify(std::move(result.revoked));
-        }catch(...){fail();throw;}
+        }catch(...){fail(__LINE__);throw;}
     }
     void legacy_event(const ::gui::Event& event) {
         if(!input_admitted()||owned_service_||!legacy_sink_)return;
-        Callback guard(*this);legacy_sink_(event);
+        Callback guard(*this,false,__LINE__);legacy_sink_(event);
     }
     void set_service(bool pending) {
         if(service_==pending)return;
@@ -614,17 +620,17 @@ private:
             if(!(policy_->capabilities().supported&gui_surface::feature(gui_surface::Feature::focus))){
                 if(policy_->capabilities().supported&gui_surface::feature(gui_surface::Feature::mouse_input)){
                     auto result=policy_->legacy_present(policy_->accepted()->identity.presentation_revision);
-                    if(result.status!=gui_surface::Status::ok){fail();return;}
+                    if(result.status!=gui_surface::Status::ok){fail(__LINE__);return;}
                     result.revoked.reason=gui_surface::RevocationReason::service;notify(std::move(result.revoked));return;
                 }
                 gui_surface::Revocation revoke;revoke.identity=policy_->accepted()->identity;revoke.reason=gui_surface::RevocationReason::service;
                 notify(std::move(revoke));return;
             }
-            if(policy_->last_sequence()==std::numeric_limits<std::uint64_t>::max()){fail();return;}
+            if(policy_->last_sequence()==std::numeric_limits<std::uint64_t>::max()){fail(__LINE__);return;}
             auto result=policy_->accept({policy_->accepted()->identity,policy_->last_sequence()+1,gui_surface::FocusChange{false,true,gui_surface::FocusCause::owned_service}});
-            if(result.status!=gui_surface::Status::ok){fail();return;}
+            if(result.status!=gui_surface::Status::ok){fail(__LINE__);return;}
             notify(std::move(result.accepted->revoked));
-        } catch(...) {fail();throw;}
+        } catch(...) {fail(__LINE__);throw;}
     }
     void set_legacy_service(bool pending) {
         legacy_service_=pending;set_service(legacy_service_||owned_service_);
@@ -641,9 +647,9 @@ public:
         ::gui::WebSession::NextService next={},::gui::WebSession::CompleteService complete={},::gui::WebSession::Tick tick={},bool poll_prepared_services=false)
         :adapter_(adapter),input_(std::move(input)),connected_(std::move(connected)),document_enabled_(adapter.document_endpoint_bound()) {
         session_=std::make_unique<::gui::WebSession>(adapter_.legacy_,std::move(epoch),
-            [this,next=std::move(next),poll_prepared_services]{if(!adapter_.input_admitted()||(adapter_.owned_service_&&!poll_prepared_services))return std::optional<::gui::ServiceRequest>{};BrowserSurfaceAdapter::Callback guard(adapter_);return next?next():std::optional<::gui::ServiceRequest>{};},
-            [this,complete=std::move(complete)](::gui::ServiceResult result){if(!adapter_.input_admitted())return false;adapter_.set_legacy_service(true);BrowserSurfaceAdapter::Callback guard(adapter_);return complete&&complete(std::move(result));},
-            [this,tick=std::move(tick)]{if(!adapter_.input_admitted())return;BrowserSurfaceAdapter::Callback guard(adapter_);if(tick)tick();},
+            [this,next=std::move(next),poll_prepared_services]{if(!adapter_.input_admitted()||(adapter_.owned_service_&&!poll_prepared_services))return std::optional<::gui::ServiceRequest>{};BrowserSurfaceAdapter::Callback guard(adapter_,false,__LINE__);return next?next():std::optional<::gui::ServiceRequest>{};},
+            [this,complete=std::move(complete)](::gui::ServiceResult result){if(!adapter_.input_admitted())return false;adapter_.set_legacy_service(true);BrowserSurfaceAdapter::Callback guard(adapter_,false,__LINE__);return complete&&complete(std::move(result));},
+            [this,tick=std::move(tick)]{if(!adapter_.input_admitted())return;BrowserSurfaceAdapter::Callback guard(adapter_,false,__LINE__);if(tick)tick();},
             [this](const surface_web::Json& operation){return dispatch(operation);},
             [this](const std::optional<::gui::ServiceRequest>& service){return adapter_.publication(service);},
             [this]{return adapter_.input_admitted();});
@@ -658,7 +664,7 @@ public:
             else if(type.starts_with("editor"))validate_editor_operation(op);
             else if(type.starts_with("document"))validate_document_operation(op);
             else if(type.starts_with("surface"))throw std::invalid_argument("Unknown surface operation");
-        } catch(...) {adapter_.fail();throw;}
+        } catch(...) {adapter_.fail(__LINE__);throw;}
         if(adapter_.profile_!=surface_web::Profile::editor_v1&&!document_enabled_)return session_->receive(message);
         const auto envelope=::gui::web_detail::Parser(message).parse();
         current_sequence_=surface_web::detail::decimal(envelope.at("seq"),true);
@@ -696,7 +702,7 @@ public:
         if(!request||request->id!=result.id)return false;
         Receiving guard(*this);adapter_.set_legacy_service(true);
         try{const bool done=session_->complete_host_service(std::move(result));adapter_.set_legacy_service(bool(session_->pending_service()));return done;}
-        catch(...){adapter_.fail();throw;}
+        catch(...){adapter_.fail(__LINE__);throw;}
     }
     std::optional<std::uint64_t> editor_submit(::foundation::gui_editor::Packet packet){
         return editor_call([&]{return adapter_.editor_submit(std::move(packet));});
@@ -741,7 +747,12 @@ private:
     struct Receiving {BrowserSurfaceSession& owner;explicit Receiving(BrowserSurfaceSession& value):owner(value){owner.receiving_=true;}~Receiving(){owner.receiving_=false;}};
     bool admitted() const noexcept {return !receiving_&&adapter_.input_admitted();}
     template<class F>std::string run(F&& operation){
-        if(!admitted())throw std::logic_error("Surface session admission is closed");
+        if(!admitted())throw std::logic_error(std::string("Surface session admission is closed")+
+            " [receiving="+std::to_string(receiving_)+",failed="+std::to_string(adapter_.failed_)+
+            ",closed="+std::to_string(adapter_.closed_)+",publishing="+std::to_string(adapter_.publishing_)+
+            ",callback="+std::to_string(adapter_.callback_)+",notifying="+std::to_string(adapter_.notifying_)+
+            ",first_fail="+std::to_string(adapter_.first_failure_line_)+",fail_flags="+std::to_string(adapter_.first_failure_flags_)+
+            ",first_close="+std::to_string(adapter_.first_close_line_)+",first_callback="+std::to_string(adapter_.first_failure_callback_line_)+"]");
         Receiving guard(*this);
         fresh_completion_.reset();document_reply_=surface_web::Json{};cache_response_=false;replay_response_=false;
         try{
@@ -751,7 +762,7 @@ private:
                 auto value=surface_editor_web::response_metadata(response);
                 if(fresh_completion_&&!adapter_.failed_){
                     try{adapter_.check_completion(*fresh_completion_);}
-                    catch(...){adapter_.fail();BrowserSurfaceAdapter::object(value).at("error")="Editor completion lost its paired publication";}
+                    catch(...){adapter_.fail(__LINE__);BrowserSurfaceAdapter::object(value).at("error")="Editor completion lost its paired publication";}
                 }
                 BrowserSurfaceAdapter::object(value).at("snapshot")=adapter_.publication_.at("snapshot");
                 BrowserSurfaceAdapter::object(value).at("surface")=adapter_.publication_.at("surface");
@@ -782,12 +793,12 @@ private:
             }
             if(cache_response_){cached_request_=std::move(current_request_);cached_response_=response;}
             return response;
-        }catch(...){adapter_.fail();throw;}
+        }catch(...){adapter_.fail(__LINE__);throw;}
     }
     template<class F>auto editor_call(F&& operation)->decltype(operation()) {
         if(!admitted()||!adapter_.editor_endpoint_bound())throw std::logic_error("Editor endpoint admission is closed");
         Receiving guard(*this);
-        try{return operation();}catch(...){adapter_.fail();throw;}
+        try{return operation();}catch(...){adapter_.fail(__LINE__);throw;}
     }
     void validate_editor_operation(const surface_web::Json& operation) const {
         using namespace surface_web;
@@ -841,7 +852,7 @@ private:
                     admission==D::Admission::accepted?std::optional{ticket}:std::nullopt,std::move(completion));
             }
             return true;
-          }catch(...){adapter_.fail();throw;}
+          }catch(...){adapter_.fail(__LINE__);throw;}
         }
         if(type.starts_with("editor")){
             validate_editor_operation(operation);
@@ -867,19 +878,19 @@ private:
                 auto caps=surface_web::parse_connect(operation,adapter_.profile_);
                 const auto status=adapter_.connect(std::move(caps));
                 if(status!=gui_surface::Status::ok)throw std::invalid_argument(gui_surface::status_name(status));
-                if(connected_){BrowserSurfaceAdapter::Callback guard(adapter_);connected_(adapter_.capabilities());}
+                if(connected_){BrowserSurfaceAdapter::Callback guard(adapter_,false,__LINE__);connected_(adapter_.capabilities());}
                 return true;
-            }catch(...){adapter_.fail();throw;}
+            }catch(...){adapter_.fail(__LINE__);throw;}
         }
         if(type=="surfaceInput"){
             gui_surface::Event event;
-            try{event=surface_web::parse_event(operation,adapter_.profile_);}catch(...){adapter_.fail();throw;}
+            try{event=surface_web::parse_event(operation,adapter_.profile_);}catch(...){adapter_.fail(__LINE__);throw;}
             auto result=adapter_.accept(std::move(event));
             if(result.status!=gui_surface::Status::ok)throw std::invalid_argument(gui_surface::status_name(result.status));
-            if(input_){BrowserSurfaceAdapter::Callback guard(adapter_);input_(std::move(*result.accepted));}
+            if(input_){BrowserSurfaceAdapter::Callback guard(adapter_,false,__LINE__);input_(std::move(*result.accepted));}
             return true;
         }
-        if(type.starts_with("surface")){adapter_.fail();throw std::invalid_argument("Unknown surface operation");}
+        if(type.starts_with("surface")){adapter_.fail(__LINE__);throw std::invalid_argument("Unknown surface operation");}
         if(adapter_.owned_service_)throw std::invalid_argument("A native service owns input");
         // A legacy route cannot retain companion authority accidentally. Ordinary
         // legacy behavior then proceeds through the unchanged supplier dispatcher.

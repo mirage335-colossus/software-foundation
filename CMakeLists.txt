@@ -581,7 +581,7 @@ if(BUILD_TESTING)
       appended_document_label_association_test)
   endif()
   # Only explicitly named suites run; adding one requires registering its label.
-  set(_tool_suites appended_entry appended_project appended_container appended_policy appended_compile appended_wasm appended_kernel browser_bundle package_wasm import_wasm ci_retry build build_capacity rev_probe ci_changes package_notices agent_board test_plan artifact gui_boundary gui_source_group gui_visual coverage certification ci_plan qualification_tasks process_tree host_contracts sdk sdk_retention rust_build rust_sdk rust_workflow dependencies source_identity release portability release_check run_tests github_release ci_transport ci_artifacts ci_cleanup ci_cleanup_repository ci_cleanup_previous ci_cleanup_drafts ci_cleanup_expired workflow_storage legacy_artifacts verify_legacy_preservation screenshots gallery_browser latest_release windows_graphics windows_compiler)
+  set(_tool_suites appended_entry appended_project appended_container appended_policy appended_compile appended_wasm appended_kernel browser_bundle package_wasm import_wasm ci_retry build build_capacity rev_probe ci_changes package_notices agent_board test_plan artifact gui_boundary gui_source_group gui_source_group_retained_reintegration gui_visual coverage certification ci_plan qualification_tasks process_tree host_contracts sdk sdk_retention rust_build rust_sdk rust_workflow dependencies source_identity release portability release_check run_tests github_release ci_transport ci_artifacts ci_cleanup ci_cleanup_repository ci_cleanup_previous ci_cleanup_drafts ci_cleanup_expired workflow_storage legacy_artifacts verify_legacy_preservation screenshots gallery_browser latest_release windows_graphics windows_compiler)
   list(APPEND _tool_suites appended_wasm3 appended_release appended_providers_sdk package_appended_wasm
     appended_ci)
   list(APPEND _tool_suites appended_qualification appended_release_check appended_delivery)
@@ -599,9 +599,10 @@ if(BUILD_TESTING)
   endif()
   # Docker account IDs, ownership and privilege fixtures apply to Linux hosts.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND _tool_suites appended_guest_memory)
     list(APPEND _tool_suites container_job prepare_dependencies sdk_paths sdk_build_runtime ci_apt offline_acceptance offline_namespace
       appended_checkout
-      appended_engine_sdk appended_engine_consumer appended_engine_maintenance appended_engine_donor package_appended_engine_wasm browser_surface_bundle
+      appended_engine_sdk appended_engine_consumer appended_engine_maintenance appended_engine_donor package_appended_engine_wasm appended_kernel_factory_policy browser_surface_bundle
       appended_engine_document_contract appended_engine_document_consumer appended_engine_document_profile
       appended_engine_document_maintenance appended_engine_document_metadata
       appended_engine_document_sources appended_engine_document_reuse completed_work_resume
@@ -623,9 +624,10 @@ if(BUILD_TESTING)
       appended_engine_windows_dependency_proof appended_engine_windows_dependencies
       package_appended_engine_document_wasm)
   else()
+    string(JSON _platform_exclusions SET "${_platform_exclusions}" "tools.appended_guest_memory" "\"Native guest memory ASan/UBSan fixtures are currently qualified on Linux only\"")
     string(JSON _platform_exclusions SET "${_platform_exclusions}" "tools.appended_checkout" "\"Current-checkout POSIX executable-mode, identity, symlink and owned-FD publication fixtures are currently qualified on Linux only\"")
     string(JSON _platform_exclusions SET "${_platform_exclusions}" "tools.appended_engine_sdk" "\"Retained-engine filesystem adapter fixtures are currently qualified on Linux only\"")
-    foreach(_rich_tool appended_engine_consumer appended_engine_maintenance appended_engine_donor package_appended_engine_wasm browser_surface_bundle
+    foreach(_rich_tool appended_engine_consumer appended_engine_maintenance appended_engine_donor package_appended_engine_wasm appended_kernel_factory_policy browser_surface_bundle
         appended_engine_document_contract appended_engine_document_consumer appended_engine_document_profile
         appended_engine_document_maintenance appended_engine_document_metadata
         appended_engine_document_sources appended_engine_document_reuse completed_work_resume
@@ -681,7 +683,7 @@ if(BUILD_TESTING)
     foundation_test_prerequisites(tools.${suite})
     set_tests_properties(tools.${suite} PROPERTIES LABELS "tools" TIMEOUT 120)
   endforeach()
-  set_tests_properties(tools.gui_boundary tools.gui_source_group tools.gui_visual PROPERTIES LABELS "tools;gui;focused;fast")
+  set_tests_properties(tools.gui_boundary tools.gui_source_group tools.gui_source_group_retained_reintegration tools.gui_visual PROPERTIES LABELS "tools;gui;focused;fast")
   set_tests_properties(tools.build tools.build_capacity tools.ci_changes PROPERTIES LABELS "tools;fast")
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_tests_properties(tools.sdk_paths PROPERTIES LABELS "tools;fast")

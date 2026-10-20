@@ -307,6 +307,29 @@ for (const order of ['update-first', 'beforeinput-first']) test(`native IME ${or
   assert.equal(f.conduit.state().basis.composition, '0'); assert.equal(f.conduit.state().pending, 0); healthy(f); f.conduit.close();
 });
 
+test('Firefox-style terminal insertCompositionText input is consumed once after compositionend', async () => {
+  const f = fixture({initial: basis({value: 'abc', first: 1, last: 2})}), node = f.conduit.element();
+  node.emit('compositionstart', {data: '', cancelable: false});
+  node.emit('compositionupdate', {data: 'あ', cancelable: false});
+  node.emit('beforeinput', {inputType: 'insertCompositionText', data: 'あ', isComposing: true, cancelable: false});
+  node.value = 'aあc'; node.setSelectionRange(2, 2);
+  node.emit('input', {inputType: 'insertCompositionText', data: 'あ', isComposing: true, cancelable: false});
+  // Firefox reports the final composing passage again immediately before end.
+  node.emit('beforeinput', {inputType: 'insertCompositionText', data: 'あ', isComposing: true, cancelable: false});
+  node.emit('input', {inputType: 'insertCompositionText', data: 'あ', isComposing: true, cancelable: false});
+  node.emit('compositionend', {data: 'あ', cancelable: false});
+  const count = f.sent.length;
+  node.emit('input', {inputType: 'insertCompositionText', data: 'あ', isComposing: false, cancelable: false});
+  assert.equal(f.conduit.element(), node); assert.equal(f.sent.length, count);
+  assert.equal(node.value, 'aあc'); assert.ok(f.traces.some(entry => entry.type === 'terminal-input'));
+  healthy(f); await f.finish(); healthy(f);
+  assert.deepEqual(f.sent.map(packet => packet.observation.data.operation), ['begin', 'update', 'update', 'commit']);
+  assert.equal(f.conduit.state().basis.composition, '0'); assert.equal(node.value, 'aあc');
+  node.emit('input', {inputType: 'insertCompositionText', data: 'あ', isComposing: false, cancelable: false});
+  await flush(); assert.equal(f.conduit.element(), null);
+  assert.match(f.resync[0].reason, /duplicate terminal input/i); assert.deepEqual(f.failures, []);
+});
+
 for (const type of ['beforeinput', 'input']) test(`only one exact terminal ${type} duplicate is locally consumed`, async () => {
   const f = fixture(), node = f.conduit.element(); node.emit('compositionstart', {data: '', cancelable: false});
   preedit(node, 'é', 'é', 1, 'update-first'); node.emit('compositionend', {data: 'é', cancelable: false});

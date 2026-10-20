@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actual direct-file checks of frozen binary-defined browser GUI carriers.
+"""Actual direct-file checks of frozen binary and rich BOTH browser carriers.
 
 The composition dispatcher supplies verified byte helpers and complete execution
 bindings. The outer qualifier validates the frozen policy/plan; this adapter
@@ -12,6 +12,7 @@ import http.client
 import http.server
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -28,6 +29,38 @@ from process_tree import ProcessTreeError
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER_SOURCES = ('tools/appended_browser_check.py', 'gui/tests/browser_test.py', 'tools/process_tree.py')
+# Additional interpreting code for schema-2 rich scenarios. The immutable
+# qualification schema-v1 source catalogue remains unchanged. These fixed paths
+# have a separate exact pin map inside the independently frozen scenario.
+RICH_INSPECTION_SOURCES = (
+    'tools/appended_container.py',
+    'tools/appended_engine_consumer.py',
+    'tools/appended_engine_document_consumer.py',
+    'tools/appended_engine_document_contract.py',
+    'tools/appended_engine_editor_consumer.py',
+    'tools/appended_engine_editor_contract.py',
+    'tools/appended_engine_manifest.py',
+    'tools/appended_engine_sdk.py',
+    'tools/appended_policy.py',
+    'tools/appended_project.py',
+    'tools/appended_wasm.py',
+    'tools/browser_bundle.py',
+    'tools/browser_editor_bundle.py',
+    'tools/browser_surface_bundle.py',
+    'tools/dependency_archive.py',
+    'tools/package_appended_engine_document_wasm.py',
+    'tools/package_appended_engine_wasm.py',
+    'tools/package_notices.py',
+    'tools/package_wasm.py',
+    'tools/sdk_manifest.py',
+    'tools/source_identity.py',
+)
+RICH_PENDING = {
+    'cold_app_startup': 'requires a correlated presented frame, ready frontend and accepted real input',
+    'warm_app_startup': 'ordinary reloads with the same visible/interactive witness have not been measured',
+    'input_feedback': 'requires input-correlated native publication ACK applied to a presented frame',
+    'provider_computation': 'requires the native reply/ACK plus the corresponding presented result',
+}
 MAX_SCENARIO = 512 * 1024
 MAX_VALUE = 64 * 1024
 NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z')
@@ -78,12 +111,37 @@ def _scenario(path, pin, subject, artifact, target, backend):
     if container.digest(saved.content) != release._sha(pin):
         raise ValueError('browser scenario differs from its independent SHA-256 pin')
     value = release._json(saved.content)
-    release._keys(value, ('schema_version', 'kind', 'candidate_sha256', 'artifact_id', 'target', 'backend',
-                         'browser', 'viewport', 'title', 'steps'), ('inputs',), label='browser scenario')
-    if (type(value['schema_version']) is not int or value['schema_version'] != 1 or value['kind'] != 'foundation-appended-browser-scenario'
+    rich = artifact.get('profile') == 'both'
+    keys = ('schema_version', 'kind', 'candidate_sha256', 'artifact_id', 'target', 'backend',
+            'browser', 'viewport', 'title', 'steps') + (('rich_identities', 'rich_inspection_sources') if rich else ())
+    release._keys(value, keys, ('inputs',), label='browser scenario')
+    expected_kind = 'foundation-rich-both-browser-scenario' if rich else 'foundation-appended-browser-scenario'
+    expected_schema = 2 if rich else 1
+    if (type(value['schema_version']) is not int or value['schema_version'] != expected_schema or value['kind'] != expected_kind
             or value['candidate_sha256'] != subject['candidate_sha256']
             or (value['artifact_id'], value['target'], value['backend']) != (artifact['id'], target, backend)):
         raise ValueError('browser scenario names another frozen artifact or target')
+    if rich:
+        pins = value['rich_inspection_sources']
+        release._keys(pins, RICH_INSPECTION_SOURCES, label='rich inspection source cohort')
+        for pin in pins.values():
+            release._sha(pin)
+        # Scenario pins are checked against identities extracted from the public
+        # descriptor, payload and rich-prefix contracts in _rich_both_identity.
+        identity = value['rich_identities']
+        release._keys(identity, ('profile', 'source_tree_sha256', 'source_observed_at_package_sha256',
+            'kernel_inputs_sha256', 'kernel_descriptor_sha256', 'kernel_prefix_sha256', 'kernel_prefix_length',
+            'kernel_receipt_sha256', 'engine_recipe_sha256', 'engine_manifest_sha256', 'engine_proof_sha256',
+            'engine_runtime_sha256', 'payload_transport_sha256', 'payload_package_sha256', 'payload_id'),
+            label='rich BOTH scenario identities')
+        hashes = tuple(key for key in identity if key not in ('profile', 'kernel_prefix_length', 'payload_id'))
+        if (identity['profile'] != 'both' or type(identity['kernel_prefix_length']) is not int
+                or identity['kernel_prefix_length'] <= 0):
+            raise ValueError('rich BOTH scenario requires a positive exact base prefix identity')
+        for key in hashes:
+            release._sha(identity[key])
+        if not _text(identity['payload_id'], 256) or not identity['payload_id']:
+            raise ValueError('rich BOTH scenario requires the exact public payload identifier')
     browser = value['browser']
     release._keys(browser, ('engine', 'executable', 'sha256'), ('driver',), label='selected browser')
     if browser['engine'] not in ('firefox', 'chromium') or not _text(browser['executable'], 4096) or not Path(browser['executable']).is_absolute():
@@ -148,6 +206,92 @@ def _scenario(path, pin, subject, artifact, target, backend):
     return saved, value, snapshots
 
 
+def _rich_sources(pins):
+    """Bind every additional public-prefix interpreter before importing it."""
+    release._keys(pins, RICH_INSPECTION_SOURCES, label='rich inspection source cohort')
+    snapshots = []
+    for name in RICH_INSPECTION_SOURCES:
+        saved = container._snapshot(ROOT / name, 2 * 1024 * 1024)
+        if container.digest(saved.content) != release._sha(pins[name]):
+            raise ValueError('rich inspection source differs from frozen scenario: ' + name)
+        snapshots.append(saved)
+    return snapshots
+
+
+def _inspect_rich_prefix(prefix, kind):
+    """Select the public role parser; never reinterpret editor bytes as rendering."""
+    if kind in ('foundation-rich-browser-document-kernel-v1', 'foundation-rich-browser-editor-kernel-v1'):
+        from package_appended_engine_document_wasm import inspect_prefix
+    elif kind in ('foundation-rich-browser-kernel-v1', 'foundation-rich-browser-physical-kernel-v1'):
+        from package_appended_engine_wasm import inspect_prefix
+    else:
+        raise ValueError('unsupported public rich retained-prefix role')
+    envelope, facts = inspect_prefix(prefix)
+    if envelope.get('kind') != kind:
+        raise ValueError('rich descriptor and inspected prefix roles differ')
+    # Imported modules must be the same fixed source-root files that the
+    # scenario pins. A cached module from another checkout is not this cohort.
+    for name in RICH_INSPECTION_SOURCES:
+        loaded = sys.modules.get(Path(name).stem)
+        if loaded is not None and Path(loaded.__file__).resolve() != (ROOT / name).resolve():
+            raise ValueError('rich interpreter loaded from another source root: ' + name)
+    return envelope, facts
+
+
+def _rich_both_identity(directory, subject, artifact):
+    """Derive rich BOTH pins from the verified public candidate metadata."""
+    selection = subject['selection']
+    composition = subject['composition']
+    if (artifact.get('carrier') != 'html' or artifact.get('profile') != 'both'
+            or composition['payload'].get('mode') != 'both'):
+        raise ValueError('rich browser requires an HTML BOTH kernel and BOTH payload')
+    selected = [item for item in selection['kernels'] if item['id'] == artifact['id']]
+    if len(selected) != 1:
+        raise ValueError('rich browser selection lacks one exact retained base')
+    selected = selected[0]
+    descriptor_path = directory / selected['descriptor']['path']
+    descriptor_saved = container._snapshot(descriptor_path, 16 * 1024 * 1024)
+    if container.digest(descriptor_saved.content) != selected['descriptor']['sha256']:
+        raise ValueError('rich browser retained descriptor differs from its content address')
+    descriptor = container.parse_json(descriptor_saved.content, 'retained rich kernel descriptor')
+    container.validate_descriptor(descriptor)
+    described, members, _ = release._members(directory / artifact['archive'])
+    runtime_name = artifact['runtime_member']
+    if runtime_name not in members:
+        raise ValueError('rich browser runtime is absent from the selected artifact')
+    runtime = members[runtime_name][0]
+    parsed = container.parse_artifact(runtime, descriptor, expected_mode='both')
+    if parsed.package is None or parsed.package.mode != 'both':
+        raise ValueError('rich browser payload is not the selected BOTH package')
+    envelope, facts = _inspect_rich_prefix(parsed.prefix, descriptor.get('provenance', {}).get('kind'))
+    if facts.get('production_eligible') is not True:
+        raise ValueError('rich browser engine and Foundation receipt are not production eligible')
+    provenance = descriptor.get('provenance', {})
+    identities = envelope.get('identities', {})
+    if provenance.get('identities') != identities:
+        raise ValueError('rich base descriptor and embedded public identities differ')
+    # These are the exact joins in the package producer's public metadata:
+    # source/tree and payload from selection/composition; engine, kernel and
+    # receipt identities from the inspected retained prefix; base from descriptor.
+    return {
+        'profile': 'both',
+        'source_tree_sha256': selection['source']['tree_sha256'],
+        'source_observed_at_package_sha256': identities['source_observed_at_package_sha256'],
+        'kernel_inputs_sha256': identities['kernel_inputs_sha256'],
+        'kernel_descriptor_sha256': artifact['kernel_descriptor_sha256'],
+        'kernel_prefix_sha256': artifact['kernel_prefix_sha256'],
+        'kernel_prefix_length': artifact['kernel_prefix_length'],
+        'kernel_receipt_sha256': identities['kernel_receipt_sha256'],
+        'engine_recipe_sha256': identities['engine_recipe_sha256'],
+        'engine_manifest_sha256': identities['engine_manifest_sha256'],
+        'engine_proof_sha256': identities['engine_proof_sha256'],
+        'engine_runtime_sha256': identities['engine_runtime_sha256'],
+        'payload_transport_sha256': composition['payload']['transport_sha256'],
+        'payload_package_sha256': composition['payload']['package_sha256'],
+        'payload_id': composition['payload']['payload_id'],
+    }
+
+
 WIDGET = '''const key=JSON.stringify([arguments[0],arguments[1]]);
 const matches=Array.from(document.querySelectorAll('.widget')).filter(e=>e.dataset.key===key);
 if(matches.length!==1)throw Error('Expected exactly one widget');
@@ -165,6 +309,78 @@ ACTION = WIDGET + '''if(arguments[2]==='edit'){
 }else{const button=widget.matches('button')?widget:widget.querySelector('button');
  if(!button||button.disabled)throw Error('Widget is not an enabled button');button.click();}
 return true;'''
+TRUSTED_TARGET = '''const key=JSON.stringify([arguments[0],arguments[1]]);
+const matches=Array.from(document.querySelectorAll('.widget')).filter(e=>e.dataset.key===key);
+if(matches.length!==1)throw Error('Expected exactly one widget');
+const widget=matches[0],button=widget.matches('button')?widget:widget.querySelector('button');
+const editor=widget.matches('input,textarea')?widget:widget.querySelector('input,textarea');
+const target=arguments[2]==='edit'?editor:button;
+if(!target||target.disabled||arguments[2]==='edit'&&target.readOnly)throw Error('Trusted input target is unavailable');
+const style=getComputedStyle(target),r=target.getBoundingClientRect();
+if(widget.hidden||style.visibility==='hidden'||style.display==='none'||r.width<=0||r.height<=0)
+ throw Error('Trusted input target is not visibly presented');
+return {x:r.left+r.width/2,y:r.top+r.height/2};'''
+
+
+def _trusted_action(browser, engine, step):
+    """Use WebDriver pointer/keyboard actions; script execution only locates controls."""
+    widget = step['widget']
+    point = browser.evaluate(TRUSTED_TARGET, (widget['id'], widget['generation'], step['action']))
+    if (type(point) is not dict or any(type(point.get(key)) not in (int, float) or not math.isfinite(point[key])
+                                      for key in ('x', 'y'))):
+        raise ValueError('browser did not return finite visible input coordinates')
+    x, y = round(point['x']), round(point['y'])
+    pointer = {'type': 'pointer', 'id': 'foundation-pointer', 'parameters': {'pointerType': 'mouse'},
+               'actions': [{'type': 'pointerMove', 'duration': 0, 'x': x, 'y': y},
+                           {'type': 'pointerDown', 'button': 0}, {'type': 'pointerUp', 'button': 0}]}
+    def dispatch(actions):
+        request = {'actions': actions}
+        if engine == 'chromium':
+            browser.request('POST', browser.path('/actions'), request)
+        else:
+            browser.command('WebDriver:PerformActions', request)
+    # WebDriver sources share ticks. Complete the focus click before sending
+    # Ctrl+A/text; combining pointer and keyboard sources races initial focus.
+    dispatched_ns = time.monotonic_ns()
+    dispatch([pointer])
+    if step['action'] == 'edit':
+        keys = [{'type': 'keyDown', 'value': '\ue009'}, {'type': 'keyDown', 'value': 'a'},
+                {'type': 'keyUp', 'value': 'a'}, {'type': 'keyUp', 'value': '\ue009'}]
+        value = step.get('value', '')
+        for char in value or '\ue003':
+            keys.extend(({'type': 'keyDown', 'value': char}, {'type': 'keyUp', 'value': char}))
+        dispatch([{'type': 'key', 'id': 'foundation-keyboard', 'actions': keys}])
+    return dispatched_ns
+
+
+def _rich_clocks(start, dispatch, observed):
+    """Protocol/DOM spans only: public bootstrap exports no presentation ACK."""
+    return {'kind': 'ordinary-rich-browser-dom-observation-v1',
+        'adapter_start_ns': start, 'first_trusted_dispatch_ns': dispatch,
+        'changed_dom_observed_ns': observed,
+        'adapter_to_changed_dom_ns': observed - start,
+        'first_dispatch_to_changed_dom_ns': observed - dispatch,
+        'pending_measurements': dict(RICH_PENDING)}
+
+
+def _valid_rich_clocks(value):
+    if type(value) is not dict:
+        return False
+    try:
+        release._keys(value, ('kind', 'adapter_start_ns', 'first_trusted_dispatch_ns',
+            'changed_dom_observed_ns', 'adapter_to_changed_dom_ns',
+            'first_dispatch_to_changed_dom_ns', 'pending_measurements'), label='rich browser DOM spans')
+        start, dispatch, observed = (value[key] for key in
+            ('adapter_start_ns', 'first_trusted_dispatch_ns', 'changed_dom_observed_ns'))
+        if not all(type(item) is int and item > 0 for item in (start, dispatch, observed)):
+            return False
+        return (start <= dispatch <= observed
+            and all(type(value[key]) is int and value[key] >= 0 for key in
+                ('adapter_to_changed_dom_ns', 'first_dispatch_to_changed_dom_ns'))
+            and release._same_json(value, _rich_clocks(start, dispatch, observed)))
+    except (ValueError, TypeError):
+        return False
+
 OFFLINE = '''const done=arguments[arguments.length-1];
 const io=Components.classes['@mozilla.org/network/io-service;1'].getService(Components.interfaces.nsIIOService);
 const prefs=Components.classes['@mozilla.org/preferences-service;1'].getService(Components.interfaces.nsIPrefBranch);
@@ -468,6 +684,7 @@ def _chromium_quit(browser, image, driver, deadline):
 
 def _execute_chromium(runtime, scenario, evidence, work, timeout, environment):
     helper, deadline = _load_browser_helper(), time.monotonic() + timeout
+    adapter_start_ns = time.monotonic_ns() if 'rich_identities' in scenario else None
 
     class Chromium(helper.ChromiumBrowser):
         def _launch(self, argv, directory, log_name, *, env=None):
@@ -560,6 +777,7 @@ def _execute_chromium(runtime, scenario, evidence, work, timeout, environment):
                         key = (step['widget']['id'], step['widget']['generation'], step['action'])
                         initial[key] = browser.evaluate(READ, key)
                 observations, changed, edits = [], False, set()
+                first_input_dispatch_ns = changed_dom_observed_ns = None
                 for step in scenario['steps']:
                     key = (step['widget']['id'], step['widget']['generation'])
                     args = (*key, step['action'], step.get('value'))
@@ -568,10 +786,17 @@ def _execute_chromium(runtime, scenario, evidence, work, timeout, environment):
                             if key in edits:
                                 raise ValueError('scenario cannot repeat an unacknowledged edit')
                             edits.add(key)
-                        browser.evaluate(ACTION, args)
+                        if 'rich_identities' in scenario:
+                            dispatched_ns = _trusted_action(browser, 'chromium', step)
+                            if first_input_dispatch_ns is None:
+                                first_input_dispatch_ns = dispatched_ns
+                        else:
+                            browser.evaluate(ACTION, args)
                     else:
                         browser.until(READ, args[:3], step['value'])
                         changed |= key not in edits and initial[(*key, step['action'])] != step['value']
+                        if changed and first_input_dispatch_ns is not None and changed_dom_observed_ns is None:
+                            changed_dom_observed_ns = time.monotonic_ns()
                     observations.append({'id': step['id'], 'action': step['action'], 'widget': step['widget'], 'passed': True})
                 if not changed:
                     raise ValueError('scenario did not prove a changed application result beyond provisional edits')
@@ -599,6 +824,10 @@ def _execute_chromium(runtime, scenario, evidence, work, timeout, environment):
                     'direct_file_uri': runtime.resolve().as_uri(), 'runtime_sha256': container.digest(runtime.read_bytes()),
                     'executed_tests': [step['id'] for step in scenario['steps']], 'observations': observations,
                     'application_result_changed': True, 'capture_sha256': container.digest(capture), 'frame_policy': policy}
+                if adapter_start_ns is not None:
+                    if first_input_dispatch_ns is None or changed_dom_observed_ns is None:
+                        raise ValueError('rich BOTH DOM span lacks a trusted input and changed result')
+                    result['clocks'] = _rich_clocks(adapter_start_ns, first_input_dispatch_ns, changed_dom_observed_ns)
             finally:
                 try:
                     if resources is not None:
@@ -617,6 +846,7 @@ def _execute_browser(runtime, scenario, evidence, work, timeout, environment):
         return _execute_chromium(runtime, scenario, evidence, work, timeout, environment)
     helper = _load_browser_helper()
     deadline = time.monotonic() + timeout
+    adapter_start_ns = time.monotonic_ns() if 'rich_identities' in scenario else None
     helper.FIREFOX_STARTUP_TIMEOUT_SECONDS = min(timeout, 60)
 
     class Firefox(helper.Browser):
@@ -691,6 +921,7 @@ def _execute_browser(runtime, scenario, evidence, work, timeout, environment):
                         key = (step['widget']['id'], step['widget']['generation'], step['action'])
                         initial[key] = browser.evaluate(READ, key)
                 observations, changed, edits = [], False, set()
+                first_input_dispatch_ns = changed_dom_observed_ns = None
                 for step in scenario['steps']:
                     key = (step['widget']['id'], step['widget']['generation'])
                     args = (*key, step['action'], step.get('value'))
@@ -699,10 +930,17 @@ def _execute_browser(runtime, scenario, evidence, work, timeout, environment):
                             if key in edits:
                                 raise ValueError('scenario v1 cannot repeat an edit without an application acknowledgement')
                             edits.add(key)
-                        browser.evaluate(ACTION, args)
+                        if 'rich_identities' in scenario:
+                            dispatched_ns = _trusted_action(browser, 'firefox', step)
+                            if first_input_dispatch_ns is None:
+                                first_input_dispatch_ns = dispatched_ns
+                        else:
+                            browser.evaluate(ACTION, args)
                     else:
                         browser.until(READ, args[:3], step['value'])
                         changed |= key not in edits and initial[(*key, step['action'])] != step['value']
+                        if changed and first_input_dispatch_ns is not None and changed_dom_observed_ns is None:
+                            changed_dom_observed_ns = time.monotonic_ns()
                     observations.append({'id': step['id'], 'action': step['action'], 'widget': step['widget'], 'passed': True})
                 if not changed:
                     raise ValueError('scenario did not prove a changed application result beyond provisional edits')
@@ -731,6 +969,10 @@ def _execute_browser(runtime, scenario, evidence, work, timeout, environment):
                     'runtime_sha256': container.digest(runtime.read_bytes()), 'executed_tests': [step['id'] for step in scenario['steps']],
                     'observations': observations, 'application_result_changed': True,
                     'capture_sha256': container.digest(capture), 'frame_policy': policy}
+                if adapter_start_ns is not None:
+                    if first_input_dispatch_ns is None or changed_dom_observed_ns is None:
+                        raise ValueError('rich BOTH DOM span lacks a trusted input and changed result')
+                    result['clocks'] = _rich_clocks(adapter_start_ns, first_input_dispatch_ns, changed_dom_observed_ns)
             finally:
                 if browser is not None:
                     browser.close()
@@ -779,9 +1021,18 @@ def run(context):
     observed = release.verify_composition_subject(directory, subject['candidate_sha256'])
     if observed != subject or artifact not in observed['composition']['artifacts']:
         raise ValueError('browser selection differs from verified complete candidate')
-    if artifact['carrier'] != 'html' or artifact['profile'] != 'binary' or subject['composition']['payload']['mode'] != 'binary':
+    rich = artifact.get('profile') == 'both'
+    if rich:
+        if artifact['carrier'] != 'html' or subject['composition']['payload']['mode'] != 'both':
+            raise ValueError('rich browser adapter requires an HTML BOTH application')
+    elif artifact['carrier'] != 'html' or artifact['profile'] != 'binary' or subject['composition']['payload']['mode'] != 'binary':
         raise ValueError('browser adapter requires a binary-defined GUI application in an HTML carrier')
     saved, scenario, inputs = _scenario(context['scenario'], context['scenario_sha256'], subject, artifact, context['target'], context['backend'])
+    rich_sources = _rich_sources(scenario['rich_inspection_sources']) if rich else []
+    if rich:
+        expected = _rich_both_identity(directory, subject, artifact)
+        if scenario['rich_identities'] != expected:
+            raise ValueError('rich BOTH scenario identities differ from verified engine/kernel/base/payload metadata')
     if not sys.platform.startswith('linux'):
         raise ValueError('actual browser adapters currently require Linux')
     chromium = scenario['browser']['engine'] == 'chromium'
@@ -808,6 +1059,11 @@ def run(context):
         raise ValueError('installed browser execution requires both trusted prefix and full inventory')
     evidence.mkdir()
     helpers['new_json'](evidence / 'scenario.json', scenario)
+    if rich:
+        source_directory = evidence / 'rich-inspection-sources';source_directory.mkdir()
+        for name, item in zip(RICH_INSPECTION_SOURCES, rich_sources):
+            with (source_directory / Path(name).name).open('xb') as stream:
+                stream.write(item.content)
     if installed[0]:
         relocated, before = _installed(context, helpers)
     else:
@@ -830,6 +1086,8 @@ def run(context):
                 or result.get('direct_file_uri') != runtime.resolve().as_uri()
                 or result.get('runtime_sha256') != artifact['runtime_sha256']):
             raise ValueError('actual browser identity, offline and quit/join evidence are incomplete')
+        if rich and not _valid_rich_clocks(result.get('clocks')):
+            raise ValueError('rich BOTH browser result lacks honest DOM spans and pending presentation metrics')
         capabilities, image = result.get('capabilities', {}), result.get('actual_image', {})
         if chromium:
             if not _chromium_identity(capabilities, image, result.get('actual_driver'), scenario):
@@ -867,7 +1125,7 @@ def run(context):
         if (after != before or _identities(relocated) != identities
                 or container.digest(runtime.read_bytes()) != artifact['runtime_sha256']):
             raise ValueError('browser runtime or extracted byte inventory changed')
-        for item in (saved, executable, image_after, capture, *inputs, *sources):
+        for item in (saved, executable, image_after, capture, *inputs, *sources, *rich_sources):
             container._recheck(item)
         if chromium:
             container._recheck(driver_input);container._recheck(actual_driver)
@@ -881,6 +1139,9 @@ def run(context):
     helpers['junit'](evidence / 'scenario.junit.xml', names)
     result.update(executable={'path': str(executable.path), 'sha256': scenario['browser']['sha256']},
                   scenario_sha256=context['scenario_sha256'], browser_version=capabilities['browserVersion'], status='passed')
+    if rich:
+        result['rich_inspection_sources'] = dict(scenario['rich_inspection_sources'])
+        result['scenario_scope'] = 'trusted compiled-view controls in an eligible BOTH carrier; rich engine-frame interactions unmeasured'
     if chromium:
         result['driver'] = {'path': str(driver_input.path), 'sha256': scenario['browser']['driver']['sha256']}
     helpers['new_json'](evidence / 'observation.json', result)

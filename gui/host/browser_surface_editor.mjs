@@ -71,6 +71,9 @@ export function createBrowserEditorConduit({root, document = globalThis.document
   };
   const observe = (kind, authority, before, after, data, {group = null, groupEnd = false, transaction = '0'} = {}) =>
     controller.observe({kind, authority, before, after, data, group, groupEnd, transaction});
+  const terminalPassage = (phase, event, capture) => terminal && !candidate && event.data === terminal.text &&
+    same(capture, terminal.after) && (event.inputType === 'insertFromComposition' ||
+      (phase === 'input' && event.inputType === 'insertCompositionText' && event.isComposing === false));
   const copyKey = event => {
     if (typeof event.key !== 'string' || !event.key || event.key.length > 64 || typeof event.code !== 'string' ||
         !/^[\x21-\x7e]*$/.test(event.code) || event.code.length > 64 || !Number.isInteger(event.location) ||
@@ -117,7 +120,7 @@ export function createBrowserEditorConduit({root, document = globalThis.document
   const beforeInput = event => {
     if (event.defaultPrevented) { resync('Native editor input was already cancelled'); return; }
     const before = read(), inputType = event.inputType;
-    if (terminal && !candidate && inputType === 'insertFromComposition' && event.data === terminal.text && same(before, terminal.after)) {
+    if (terminalPassage('beforeinput', event, before)) {
       if (terminal.beforeConsumed) { resync('Duplicate terminal beforeinput'); return; }
       terminal.beforeConsumed = true; if (event.cancelable) event.preventDefault(); trace('terminal-beforeinput'); return;
     }
@@ -139,7 +142,7 @@ export function createBrowserEditorConduit({root, document = globalThis.document
   };
   const input = event => {
     const after = read();
-    if (terminal && !candidate && event.inputType === 'insertFromComposition' && event.data === terminal.text && same(after, terminal.after)) {
+    if (terminalPassage('input', event, after)) {
       if (terminal.inputConsumed) { resync('Duplicate terminal input'); return; }
       terminal.inputConsumed = true; trace('terminal-input'); return;
     }

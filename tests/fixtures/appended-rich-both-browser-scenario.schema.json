@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Foundation rich BOTH browser scenario identity fields",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "candidate_sha256",
+    "artifact_id",
+    "target",
+    "backend",
+    "browser",
+    "viewport",
+    "title",
+    "steps",
+    "rich_identities",
+    "rich_inspection_sources"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "kind": {
+      "const": "foundation-rich-both-browser-scenario"
+    },
+    "candidate_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "artifact_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "target": {
+      "const": "web-wasm32"
+    },
+    "backend": {
+      "const": "web"
+    },
+    "browser": {
+      "type": "object"
+    },
+    "viewport": {
+      "type": "object"
+    },
+    "title": {
+      "type": "string"
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 64
+    },
+    "rich_identities": {
+      "type": "object",
+      "required": [
+        "profile",
+        "source_tree_sha256",
+        "source_observed_at_package_sha256",
+        "kernel_inputs_sha256",
+        "kernel_descriptor_sha256",
+        "kernel_prefix_sha256",
+        "kernel_prefix_length",
+        "kernel_receipt_sha256",
+        "engine_recipe_sha256",
+        "engine_manifest_sha256",
+        "engine_proof_sha256",
+        "engine_runtime_sha256",
+        "payload_transport_sha256",
+        "payload_package_sha256",
+        "payload_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "both"
+        },
+        "source_tree_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_observed_at_package_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "kernel_inputs_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "kernel_descriptor_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "kernel_prefix_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "kernel_prefix_length": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kernel_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "engine_recipe_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "engine_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "engine_proof_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "engine_runtime_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "payload_transport_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "payload_package_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "payload_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "rich_inspection_sources": {
+      "type": "object",
+      "required": [
+        "tools/appended_container.py",
+        "tools/appended_engine_consumer.py",
+        "tools/appended_engine_document_consumer.py",
+        "tools/appended_engine_document_contract.py",
+        "tools/appended_engine_editor_consumer.py",
+        "tools/appended_engine_editor_contract.py",
+        "tools/appended_engine_manifest.py",
+        "tools/appended_engine_sdk.py",
+        "tools/appended_policy.py",
+        "tools/appended_project.py",
+        "tools/appended_wasm.py",
+        "tools/browser_bundle.py",
+        "tools/browser_editor_bundle.py",
+        "tools/browser_surface_bundle.py",
+        "tools/dependency_archive.py",
+        "tools/package_appended_engine_document_wasm.py",
+        "tools/package_appended_engine_wasm.py",
+        "tools/package_notices.py",
+        "tools/package_wasm.py",
+        "tools/sdk_manifest.py",
+        "tools/source_identity.py"
+      ],
+      "properties": {
+        "tools/appended_container.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/appended_engine_consumer.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/appended_engine_document_consumer.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/appended_engine_document_contract.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/appended_engine_editor_consumer.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/appended_engine_editor_contract.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/appended_engine_manifest.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/appended_engine_sdk.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/appended_policy.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/appended_project.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/appended_wasm.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/browser_bundle.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/browser_editor_bundle.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/browser_surface_bundle.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/dependency_archive.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/package_appended_engine_document_wasm.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/package_appended_engine_wasm.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/package_notices.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/package_wasm.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/sdk_manifest.py": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tools/source_identity.py": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "inputs": {
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/sha256"
+      },
+      "description": "Optional exact support-input hashes. Production additionally enforces portable container.resource_path names, case-insensitive uniqueness, physical identity and bounded aggregate bytes."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "minLength": 64,
+      "maxLength": 64
+    }
+  }
+}

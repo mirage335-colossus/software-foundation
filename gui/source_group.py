@@ -277,20 +277,158 @@ def export(source, output, foundation_root=ROOT):
                 if metadata(target, mode) != info:
                     raise ValueError('source changed while retaining inputs')
                 entries[base + '/' + name] = info
-        validate_entries(entries)
-        with (group / 'gui-inputs.tar.gz').open('xb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0, compresslevel=1) as zipped:
-            with tarfile.open(fileobj=zipped, mode='w', format=tarfile.PAX_FORMAT) as bundle:
-                for name, info in sorted(entries.items()):
-                    item = tarfile.TarInfo(name); item.size = info['size']; item.mode = info['mode']; item.mtime = 0
-                    with (tree / name).open('rb') as data:
-                        bundle.addfile(item, data)
-        digest = archive.digest(group / 'gui-inputs.tar.gz')
-        manifest = {'schema_version': 1, 'kind': 'foundation-gui-inputs', **{key: lock[key] for key in ['revision', 'source_tree', 'upstream', 'license']}, 'redistributable': distributable(lock), 'archive_sha256': digest, 'files': entries}
-        (group / 'manifest.json').write_bytes(archive.encoded(manifest))
-        (group / 'SHA256SUMS').write_text(f'{digest}  gui-inputs.tar.gz\n' +
-            f'{archive.digest(group / "manifest.json")}  manifest.json\n')
+        manifest = write_group(tree, group, lock, entries)
         verify(group, foundation_root=foundation_root)
         group.rename(output)
+    return receipt(output, manifest)
+
+
+def write_group(tree, group, lock, entries):
+    """Write a deterministic complete group from a verified file tree."""
+    validate_entries(entries)
+    with (group / 'gui-inputs.tar.gz').open('xb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0, compresslevel=1) as zipped:
+        with tarfile.open(fileobj=zipped, mode='w', format=tarfile.PAX_FORMAT) as bundle:
+            for name, info in sorted(entries.items()):
+                item = tarfile.TarInfo(name); item.size = info['size']; item.mode = info['mode']; item.mtime = 0
+                with (tree / name).open('rb') as data:
+                    bundle.addfile(item, data)
+    digest = archive.digest(group / 'gui-inputs.tar.gz')
+    manifest = {'schema_version': 1, 'kind': 'foundation-gui-inputs', **{key: lock[key] for key in ['revision', 'source_tree', 'upstream', 'license']}, 'redistributable': distributable(lock), 'archive_sha256': digest, 'files': entries}
+    (group / 'manifest.json').write_bytes(archive.encoded(manifest))
+    (group / 'SHA256SUMS').write_text(f'{digest}  gui-inputs.tar.gz\n' +
+        f'{archive.digest(group / "manifest.json")}  manifest.json\n')
+    return manifest
+
+
+def _retained_upstream(group, foundation_root):
+    """Validate a retained archive's complete upstream tree, ignoring stale integration contents."""
+    group = ordinary(group)
+    if not group.is_dir() or {p.name for p in group.iterdir()} != GROUP_FILES:
+        raise ValueError('incomplete or unexpected group inputs')
+    observed = {name: observed_metadata(ordinary(group / name)) for name in GROUP_FILES}
+    if (group / 'manifest.json').stat().st_size > MAX_JSON or (group / 'SHA256SUMS').stat().st_size > 1024:
+        raise ValueError('oversize group metadata')
+    manifest = archive.read_json(group / 'manifest.json')
+    if set(manifest) != {'schema_version', 'kind', 'revision', 'source_tree', 'upstream', 'license', 'redistributable', 'archive_sha256', 'files'} or type(manifest['schema_version']) is not int or manifest['schema_version'] != 1 or manifest['kind'] != 'foundation-gui-inputs':
+        raise ValueError('unsupported GUI input manifest')
+    expected_sums = ''.join(f'{observed[name][0]["sha256"]}  {name}\n' for name in ['gui-inputs.tar.gz', 'manifest.json'])
+    if (group / 'SHA256SUMS').read_text() != expected_sums or observed['gui-inputs.tar.gz'][0]['sha256'] != manifest['archive_sha256']:
+        raise ValueError('group checksum mismatch')
+    lock, inputs = integration(foundation_root)
+    for key in ['revision', 'source_tree', 'upstream', 'license']:
+        if manifest[key] != lock[key]:
+            raise ValueError('group does not match current dependency lock')
+    if manifest['redistributable'] is not distributable(lock):
+        raise ValueError('group terms differ from reviewed lock')
+    expected = manifest['files']; validate_entries(expected)
+    expanded = 0
+    with gzip.open(group / 'gui-inputs.tar.gz', 'rb') as compressed:
+        for block in iter(lambda: compressed.read(1024 * 1024), b''):
+            expanded += len(block)
+            if expanded > MAX_TOTAL + MAX_FILES * 4096:
+                raise ValueError('archive expansion exceeds limit')
+    seen, upstream, upstream_hashes, stale_names = set(), {}, {}, set()
+    with tarfile.open(group / 'gui-inputs.tar.gz', 'r:gz', tarinfo=BoundedInfo) as stream:
+        for member in stream:
+            if len(seen) >= MAX_FILES or not member.isfile() or member.name in seen or member.name not in expected:
+                raise ValueError('unexpected, duplicate or non-file archive entry')
+            name = member.name; portable(name); seen.add(name)
+            info = expected[name]
+            if member.size != info['size'] or member.mode != info['mode'] or member.uid != 0 or member.gid != 0 or member.linkname:
+                raise ValueError('archive metadata differs from inventory')
+            with stream.extractfile(member) as data:
+                digest, blob = stream_identity(data, info['size'])
+            if digest != info['sha256']:
+                raise ValueError('archive content differs from inventory')
+            if name.startswith('upstream/'):
+                relative = name[len('upstream/'):]
+                upstream[relative] = (member.mode, blob)
+                upstream_hashes[relative] = digest
+            elif name.startswith('foundation/'):
+                relative = name[len('foundation/'):]
+                if relative not in inputs:
+                    raise ValueError('unexpected retained integration path')
+                stale_names.add(relative)
+            else:
+                raise ValueError('unexpected retained namespace')
+    if seen != set(expected) or not upstream:
+        raise ValueError('incomplete archive inventory')
+    if tree_from_blobs(upstream) != lock['source_tree']:
+        raise ValueError('complete source tree differs from reviewed commit')
+    for name, digest in lock['files'].items():
+        if upstream_hashes.get(name) != digest:
+            raise ValueError('consumed upstream input differs from lock')
+    if {path.name for path in group.iterdir()} != GROUP_FILES or any(
+            file_version(ordinary(group / name)) != version for name, (_, version) in observed.items()):
+        raise ValueError('group inputs changed during verification')
+    return lock, inputs, manifest, expected, stale_names, observed
+
+
+def reintegrate(group, output, foundation_root=ROOT):
+    """Replace a stale Foundation portion using a verified complete retained upstream archive."""
+    group = ordinary(group).resolve()
+    foundation_root = ordinary(foundation_root).resolve()
+    output = ordinary(output).resolve()
+    if group == output or group in output.parents or output in group.parents:
+        raise ValueError('reintegrated output overlaps retained input group')
+    if output.exists():
+        raise ValueError('reintegrated output must be new')
+    lock, inputs, _old_manifest, old_entries, _stale_names, observed = _retained_upstream(group, foundation_root)
+    if any(output == path or output in path.parents for path in inputs.values()):
+        raise ValueError('reintegrated output overlaps integration inputs')
+    integration_observed = {name: observed_metadata(path, 0o644) for name, path in inputs.items()}
+    if archive.read_json(inputs['third_party/gui-boundary.lock.json']) != lock:
+        raise ValueError('integration lock changed during reintegration')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=output.parent, prefix='.gui-reintegrate-') as temporary:
+        stage = Path(temporary); tree = stage / 'tree'; tree.mkdir(); fresh = stage / 'group'; fresh.mkdir()
+        entries = {}
+        # Re-read only upstream members into private staging and bind the exact old inventory.
+        seen = set()
+        with tarfile.open(Path(group) / 'gui-inputs.tar.gz', 'r:gz', tarinfo=BoundedInfo) as stream:
+            for member in stream:
+                name = member.name
+                if name in seen or name not in old_entries or not member.isfile():
+                    raise ValueError('retained archive changed during reintegration')
+                seen.add(name)
+                info = old_entries[name]
+                if member.size != info['size'] or member.mode != info['mode'] or member.uid != 0 or member.gid != 0 or member.linkname:
+                    raise ValueError('retained archive metadata changed during reintegration')
+                if not name.startswith('upstream/'):
+                    continue
+                target = tree / name; target.parent.mkdir(parents=True, exist_ok=True)
+                with stream.extractfile(member) as source, target.open('xb') as destination:
+                    digest = hashlib.sha256(); remaining = info['size']
+                    while remaining:
+                        block = source.read(min(1024 * 1024, remaining))
+                        if not block: raise ValueError('archive content differs from inventory')
+                        digest.update(block); destination.write(block); remaining -= len(block)
+                    if source.read(1) or digest.hexdigest() != info['sha256']:
+                        raise ValueError('archive content differs from inventory')
+                target.chmod(info['mode'])
+                if metadata(target, info['mode']) != info:
+                    raise ValueError('upstream source changed while reintegrating')
+                entries[name] = info
+        if seen != set(old_entries):
+            raise ValueError('retained archive inventory changed during reintegration')
+        for name, path in inputs.items():
+            info, version = integration_observed[name]
+            if file_version(path) != version:
+                raise ValueError('integration source changed while reintegrating: ' + name)
+            target = tree / 'foundation' / name; target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, target); target.chmod(info['mode'])
+            if metadata(target, 0o644) != info:
+                raise ValueError('integration source changed while reintegrating: ' + name)
+            entries['foundation/' + name] = info
+        manifest = write_group(tree, fresh, lock, entries)
+        verify(fresh, foundation_root=foundation_root)
+        if any(file_version(ordinary(Path(group) / name)) != version for name, (_, version) in observed.items()):
+            raise ValueError('group inputs changed during reintegration')
+        if any(file_version(ordinary(inputs[name])) != version for name, (_, version) in integration_observed.items()):
+            raise ValueError('integration inputs changed during reintegration')
+        if {path.name for path in group.iterdir()} != GROUP_FILES or output.exists():
+            raise ValueError('reintegration input/output inventory changed')
+        fresh.rename(output)
     return receipt(output, manifest)
 
 
@@ -332,10 +470,12 @@ def main():
     create = commands.add_parser('export'); create.add_argument('--source', type=Path, required=True); create.add_argument('--output', type=Path, required=True)
     check = commands.add_parser('verify'); check.add_argument('group', type=Path); check.add_argument('--redistribution', action='store_true')
     recover = commands.add_parser('restore'); recover.add_argument('group', type=Path); recover.add_argument('--output', type=Path, required=True)
+    reintegrate_command = commands.add_parser('reintegrate'); reintegrate_command.add_argument('group', type=Path); reintegrate_command.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     try:
         if args.command == 'export': result = export(args.source, args.output)
         elif args.command == 'verify': result = receipt(args.group, verify(args.group, args.redistribution))
+        elif args.command == 'reintegrate': result = reintegrate(args.group, args.output)
         else: result = restore(args.group, args.output)
         print(json.dumps(result, sort_keys=True))
     except (ValueError, OSError, EOFError, KeyError, TypeError, subprocess.CalledProcessError, tarfile.TarError) as error:

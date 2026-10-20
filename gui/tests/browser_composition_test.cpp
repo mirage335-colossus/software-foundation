@@ -245,6 +245,13 @@ struct AllHooks : InputOnly {
     void surface_connected(gui_surface::Capabilities value) { probe.connections.push_back(std::move(value)); }
     void surface_revoked(gui_surface::Revocation value) { probe.revocations.push_back(std::move(value)); }
 };
+struct PublishingRetryApp : InputOnly {
+    using InputOnly::InputOnly;
+    void retry_presentation() {
+        LegacyApp::retry_presentation();
+        if (probe.during_retry) probe.during_retry();
+    }
+};
 struct BorrowedInput : LegacyApp { using LegacyApp::LegacyApp; void surface_input(gui_surface::AcceptedEvent&) {} };
 struct ConstBorrowedInput : LegacyApp { using LegacyApp::LegacyApp; void surface_input(const gui_surface::AcceptedEvent&) {} };
 struct RvalueConnected : LegacyApp { using LegacyApp::LegacyApp; void surface_connected(gui_surface::Capabilities&&) {} };
@@ -304,6 +311,45 @@ template<class App> void surface_routes() {
         "Identity-only revocation was dropped or changed");
     check(probe.handles == 0, "Typed surface work was also delivered as a legacy widget event");
 }
+void continuing_retry_preserves_shown_ingress() {
+    Probe probe; Context context(probe); host::BrowserSurfaceComposition policy(host::surface_web::basic_supported);
+    const auto generation = policy.generation();
+    host::Browser<PublishingRetryApp, host::BrowserSurfaceComposition> browser("surface", std::move(policy));
+    connect(browser);
+    auto shown = presentation(generation);
+    check(browser.adapter.present_pair(snapshot(2), shown).status == gui_surface::Status::ok,
+        "Surface composition could not publish the ingress basis");
+    const auto retries_before_input = probe.retries;
+    bool publish_newer = true;
+    probe.during_retry = [&] {
+        throws([&] { (void)browser.receive("{}"); }, "Retry callback reentered Browser receive");
+        if (!publish_newer) return;
+        publish_newer = false;
+        auto newer = presentation(generation);
+        newer.identity.presentation_revision = 3;
+        check(browser.adapter.present_pair(snapshot(3), newer).status == gui_surface::Status::ok,
+            "Metadata retry could not publish the next presentation");
+    };
+
+    const auto fresh = send(browser, 2, surface_input(shown));
+    check(fresh.at("error").str().empty() && probe.inputs.size() == 1 && probe.retries == retries_before_input,
+        "A current shown focus was retried into staleness before surface admission");
+
+    const auto progressed = send(browser, 3, Json::Object{{"type", "poll"}});
+    check(progressed.at("error").str().empty() && probe.retries == retries_before_input + 1,
+        "Metadata poll stopped advancing presentation retry work");
+    const auto old = send(browser, 4, surface_input(shown));
+    check(!old.at("error").str().empty() && old.at("error").str().find("stale_identity") != std::string::npos,
+        "A genuinely old surface identity was accepted after metadata publication");
+
+    probe.during_retry = [] {};
+    const auto retries_before_malformed = probe.retries;
+    throws([&] {
+        (void)browser.receive(R"({"epoch":"surface","epoch":"surface","seq":"5","operation":{"type":"poll"}})");
+    }, "Duplicate envelope property bypassed ordinary receive validation");
+    check(probe.retries == retries_before_malformed + 1,
+        "Malformed envelope classification suppressed the established retry path");
+}
 void zero_surface_and_generation() {
     Probe probe; Context context(probe);
     { host::Browser<LegacyApp, host::BrowserSurfaceComposition> browser("surface"); connect(browser);
@@ -334,7 +380,8 @@ int main() {
     try {
         legacy_graph(); lifetime_and_arm(); construction_failure_and_cleanup(); entry_and_callback_guards();
         surface_routes<LegacyApp>(); surface_routes<InputOnly>(); surface_routes<ConnectedOnly>();
-        surface_routes<RevokedOnly>(); surface_routes<AllHooks>(); surface_routes<ExactOverloads>(); zero_surface_and_generation();
+        surface_routes<RevokedOnly>(); surface_routes<AllHooks>(); surface_routes<ExactOverloads>();
+        continuing_retry_preserves_shown_ingress(); zero_surface_and_generation();
         std::cout << "browser composition: eleven groups passed\n";
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

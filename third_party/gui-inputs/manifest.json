@@ -1,5 +1,5 @@
 {
-  "archive_sha256": "c40d7d0962e80e4ea79e97a652939cbb158454e19df6913d3c2adb9c671b8b26",
+  "archive_sha256": "de88d8777e8bb7f261018bf5b319576e24845f10ae2b0e18a548c7a1374dbd9e",
   "files": {
     "foundation/gui/patches/adapter-portability.patch": {
       "mode": 420,
@@ -81,6 +81,11 @@
       "sha256": "f5c4cf6a53e3af289d8e3eb3340fbcd13ab0d5b780ae424a6a7d679f765970e3",
       "size": 5981
     },
+    "foundation/gui/patches/fltk-native-surface.patch": {
+      "mode": 420,
+      "sha256": "28fbc72d8615941d21842f049ce96619f71240d507372b1927c921edb369c42a",
+      "size": 6331
+    },
     "foundation/gui/patches/fltk-pointer.patch": {
       "mode": 420,
       "sha256": "f5bee29f80652a504c5b9f7e875f21fb12071b8f1e5756317684eec18a3dad26",
@@ -148,8 +153,8 @@
     },
     "foundation/gui/patches/rev-build.patch": {
       "mode": 420,
-      "sha256": "fce352fa06aa589ea7c6023338c53089f85d356f4e2216df0ad7e83a608058d9",
-      "size": 4274
+      "sha256": "a562bed23e7c333c14e3074ff44c1e36f32c6003b836f43e8f021056bc97715f",
+      "size": 4271
     },
     "foundation/gui/patches/rev-clipboard-ownership.patch": {
       "mode": 420,
@@ -176,6 +181,36 @@
       "sha256": "d49d464b746c224b0a5d92aaf27c1ca9c52d68d1ba8956a1c2b26ef0602d129f",
       "size": 12287
     },
+    "foundation/gui/patches/rev-native-surface-api.patch": {
+      "mode": 420,
+      "sha256": "6ae2d39b413301dfdadf519205a6c362a72fab997837310efc97652b7cd8d6cc",
+      "size": 1450
+    },
+    "foundation/gui/patches/rev-native-surface-event.patch": {
+      "mode": 420,
+      "sha256": "7f93daca7383b60515c150c5260ca96d3f4f3518503d3cf7d2f80cdb0ec48649",
+      "size": 6796
+    },
+    "foundation/gui/patches/rev-native-surface-linux.patch": {
+      "mode": 420,
+      "sha256": "b843b88dba85cc8e4df87a46c67ddecd59357504698f7c3fa6b12b0c9ce7305f",
+      "size": 25967
+    },
+    "foundation/gui/patches/rev-native-surface-prepare.patch": {
+      "mode": 420,
+      "sha256": "b5f9767a299fba00ac66a8b552eed3aca03d3cf30aaba210c7427bfec5886fc5",
+      "size": 1011
+    },
+    "foundation/gui/patches/rev-native-surface-windows.patch": {
+      "mode": 420,
+      "sha256": "0b970b30a61cd1f07dc5cbb1c91d77fd1180f0a118bd371db27fc2bc821618ce",
+      "size": 20240
+    },
+    "foundation/gui/patches/rev-native-surface.patch": {
+      "mode": 420,
+      "sha256": "6601b3cfcb5facb06f1fba7a8eb3b88a627ac84b6bdedbb1df4df3643dd9aba5",
+      "size": 11201
+    },
     "foundation/gui/patches/rev-pointer-probe.patch": {
       "mode": 420,
       "sha256": "b9333202b0ac145dd05073ef69ea725c56619df29f986f1d31eeb41e914a51d6",
@@ -193,8 +228,8 @@
     },
     "foundation/gui/patches/sdl-runner.patch": {
       "mode": 420,
-      "sha256": "b86844985f0e3e72707e89d5dc79a7c4380f0305b17e9645494c7ec8074c2517",
-      "size": 11167
+      "sha256": "c98e670301caf5659b85d0e2c1d74de2a7ebfbe45b8f69e6657e94993f819403",
+      "size": 13806
     },
     "foundation/gui/patches/shortcut-contract.patch": {
       "mode": 420,
@@ -218,8 +253,8 @@
     },
     "foundation/gui/patches/terminal-runner.patch": {
       "mode": 420,
-      "sha256": "51b6ff4fb2b940f58ac8ad15d4e35b48abeba9711119804252b2a11dbee1a104",
-      "size": 2970
+      "sha256": "ae94b3681a5a58abf5a43ffacd0921f93b1ee6ed53ff2e6e7cd0b2f69dc2cde7",
+      "size": 11401
     },
     "foundation/gui/patches/terminal-shortcuts.patch": {
       "mode": 420,
@@ -378,8 +413,8 @@
     },
     "foundation/third_party/gui-boundary.lock.json": {
       "mode": 420,
-      "sha256": "a0a945b34858b4106cc80ad29c63290ecbe937c219bdfd9f214b0580a3f90336",
-      "size": 20387
+      "sha256": "7933ffb5f8c4995ea8ee1232d6512398fcfb337c695722b86b65637132472498",
+      "size": 21471
     },
     "upstream/.github/workflows/screenshots.yml": {
       "mode": 420,

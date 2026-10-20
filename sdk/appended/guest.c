@@ -22,19 +22,36 @@ void foundation_guest_write_u32(uint8_t *p, uint32_t v) {
 void foundation_guest_write_u64(uint8_t *p, uint64_t v) {
     for (uint32_t i = 0; i != 8; ++i) p[i] = (uint8_t)(v >> (8 * i));
 }
+/* Constant-width builtins lower to unaligned Wasm loads/stores. The temporary
+ * avoids C alignment and effective-type assumptions, including overlapping moves. */
+static void copy_forward(uint8_t *d, const uint8_t *s, size_t n) {
+    while (n >= 8) {
+        uint64_t word; __builtin_memcpy(&word, s, 8); __builtin_memcpy(d, &word, 8);
+        d += 8; s += 8; n -= 8;
+    }
+    while (n) { *d++ = *s++; --n; }
+}
 void *memcpy(void *to, const void *from, size_t n) {
-    uint8_t *d = (uint8_t *)to; const uint8_t *s = (const uint8_t *)from;
-    for (size_t i = 0; i != n; ++i) d[i] = s[i];
+    copy_forward((uint8_t *)to, (const uint8_t *)from, n);
     return to;
 }
 void *memmove(void *to, const void *from, size_t n) {
     uint8_t *d = (uint8_t *)to; const uint8_t *s = (const uint8_t *)from;
-    if ((uintptr_t)d < (uintptr_t)s) { for (size_t i = 0; i != n; ++i) d[i] = s[i]; }
-    else { while (n) { --n; d[n] = s[n]; } }
+    if ((uintptr_t)d <= (uintptr_t)s) { copy_forward(d, s, n); return to; }
+    d += n; s += n;
+    while (n >= 8) {
+        uint64_t word; d -= 8; s -= 8; n -= 8;
+        __builtin_memcpy(&word, s, 8); __builtin_memcpy(d, &word, 8);
+    }
+    while (n) { --n; *--d = *--s; }
     return to;
 }
 void *memset(void *to, int value, size_t n) {
-    uint8_t *d = (uint8_t *)to; for (size_t i = 0; i != n; ++i) d[i] = (uint8_t)value; return to;
+    uint8_t *d = (uint8_t *)to;
+    uint64_t word = (uint64_t)(uint8_t)value * UINT64_C(0x0101010101010101);
+    while (n >= 8) { __builtin_memcpy(d, &word, 8); d += 8; n -= 8; }
+    while (n) { *d++ = (uint8_t)value; --n; }
+    return to;
 }
 int memcmp(const void *a, const void *b, size_t n) {
     const uint8_t *x = (const uint8_t *)a, *y = (const uint8_t *)b;

@@ -100,9 +100,10 @@ function fakeModule(role,handler){
   return module;
 }
 function fixture({asyncStartup=false,physicalInput=false,documentInput=null,editorInput=false,
-  describedProfile=editorInput?editorProfile():documentInput?documentProfile(documentInput==='physical'):physicalInput?physicalProfile():profile(),engineWasmLookup=defaultEngineWasmLookup}={}){
+  describedProfile=editorInput?editorProfile():documentInput?documentProfile(documentInput==='physical'):physicalInput?physicalProfile():profile(),
+  engineWasmLookup=defaultEngineWasmLookup,onDirty,captureCheckpoint,beforeOwnerTask,holdFirstClose=false}={}){
   const retainedProfile=editorInput?editorProfile():documentInput?documentProfile(documentInput==='physical'):physicalInput?physicalProfile():profile();
-  const posted=[],events=[],tasks=new Map(),loads=[],factoryURLs=[],ownWasmURLs=[];let nextTask=0,closed=0,hostCallback,current;
+  const posted=[],events=[],tasks=new Map(),loads=[],factoryURLs=[],ownWasmURLs=[];let nextTask=0,closed=0,hostCallback,current,closeHeld=holdFirstClose;
   const scheduler={setTimeout(task,delay){tasks.set(++nextTask,{task,delay});return nextTask;},clearTimeout(id){tasks.delete(id);}};
   const worker=U64_MAX-1n,initial={worker,instance:0n,document:0n,generation:0n};
   const document={worker,instance:U64_MAX-10n,document:U64_MAX-9n,generation:U64_MAX-8n};current={...initial};
@@ -118,6 +119,7 @@ function fixture({asyncStartup=false,physicalInput=false,documentInput=null,edit
     if(operation===OP.BEGIN_DOCUMENT){current={...document};return receipt(request,{identity:current});}
     if(operation===OP.BEGIN_RESOURCE_EPOCH){current={...document,generation:0n};const epoch=new Uint8Array(8);
       new DataView(epoch.buffer).setBigUint64(0,17n,true);return receipt(request,{identity:current,payload:epoch});}
+    if(operation===OP.CLOSE&&closeHeld){closeHeld=false;return receipt(request,{service:2});}
     if([OP.TURN_ENTER,OP.TURN_LEAVE,OP.PUMP_ONE,OP.CLOSE].includes(operation))return receipt(request);
     // This fixture never navigates: both explicit retirement mailboxes are
     // genuinely empty, alongside the service completion/ACK mailboxes.
@@ -202,10 +204,16 @@ function fixture({asyncStartup=false,physicalInput=false,documentInput=null,edit
   const factories={kernel:create('kernel'),engine:create('engine')};
   let factoryNumber=0;
   const scope={postMessage:value=>posted.push(value),close:()=>{++closed;}};
-  const controller=installAppendedEngineWasmWorker(scope,async url=>{
+  const loadModule=async url=>{
     assert.equal(new URL(url).protocol,'blob:');factoryURLs.push(url);const role=factoryNumber++===0?'kernel':'engine';
     return {default:options=>factories[role](options)};
-  },scheduler);
+  };
+  const controller=beforeOwnerTask===undefined
+    ?(captureCheckpoint===undefined
+      ?(onDirty===undefined?installAppendedEngineWasmWorker(scope,loadModule,scheduler):
+        installAppendedEngineWasmWorker(scope,loadModule,scheduler,onDirty))
+      :installAppendedEngineWasmWorker(scope,loadModule,scheduler,onDirty,captureCheckpoint))
+    :installAppendedEngineWasmWorker(scope,loadModule,scheduler,onDirty,captureCheckpoint,beforeOwnerTask);
   const message={type:'init',epoch:'engine-worker-fixture',workerEpoch:String(worker),kernelProfile:'web',engineProfile:{...retainedProfile},
     kernelWasmLookup,engineWasmLookup,
     factorySource:'retained kernel factory data',wasmBinary:bytes([0,97,115,109,1,0,0,0]),
@@ -652,8 +660,7 @@ test('retained factory options install callback routing without executing surfac
   const f=fixture();await f.send(f.message);
   assert.equal(f.controller.state,'ready');assert.equal(f.posted[0].type,'ready');
   assert.deepEqual(f.events.slice(0,3),[['engine',ENGINE.DESCRIBE],['kernel',OP.CONFIGURE],['engine',ENGINE.START]]);
-  for(const {options}of f.loads){assert.equal(options.noInitialRun,true);assert.equal(typeof options.foundationEngineHost,'function');
-    assert.throws(()=>options.locateFile('unretained.data'),/Unretained/);}
+  for(const {options}of f.loads){assert.throws(()=>options.locateFile('unretained.data'),/Unretained/);}
   assert.equal(new URL(f.loads[1].options.locateFile('retained.data')).protocol,'blob:');
   const assetURL=f.loads[1].options.locateFile('retained.data');
   const retainedURLs=[...f.factoryURLs,...f.ownWasmURLs.map(value=>value.url),assetURL];
@@ -672,6 +679,42 @@ test('retained factory options install callback routing without executing surfac
   assert.equal(f.kernel.ccalls.filter(value=>value.name==='gui_web_destroy').length,1);
   for(const url of retainedURLs)assert.equal(resolveObjectURL(url),undefined,'closed Worker must revoke every observed retained Blob URL');
   assert.equal(globalThis.engineFixtureApplicationRan,undefined);
+});
+test('production Worker forwards onDirty and exposes document replay only through its live bridge owner',async()=>{
+  assert.throws(()=>installAppendedEngineWasmWorker({},undefined,undefined,null),/Invalid engine Worker document observer/);
+  const dirty=[];
+  const f=fixture({documentInput:'pixel',onDirty:()=>dirty.push('dirty')});
+  await f.send(f.message);
+  assert.equal(f.controller.state,'ready');
+  const before=dirty.length;
+  f.step();await microtasks();
+  assert.ok(dirty.length>before,'the installed bridge pump must reach the fourth onDirty callback');
+  await assert.rejects(f.controller.replayDocumentCompletion(null),/Invalid document replay selector/,
+    'a ready Worker delegates selector validation to the real bridge');
+  await f.send({type:'close'});assert.equal(f.controller.state,'closed');
+
+  const starting=fixture({asyncStartup:true}),initializing=starting.send(starting.message);
+  await microtasks();assert.equal(starting.controller.state,'starting');
+  await assert.rejects(starting.controller.replayDocumentCompletion(null),/live ready Worker owner/);
+  await starting.send({type:'close'});await initializing;
+  assert.equal(starting.controller.state,'closed');
+  await assert.rejects(starting.controller.replayDocumentCompletion(null),/live ready Worker owner/);
+
+  const closing=fixture({documentInput:'pixel',holdFirstClose:true});
+  await closing.send(closing.message);assert.equal(closing.controller.state,'ready');
+  await closing.send({type:'close'});
+  await assert.rejects(closing.controller.replayDocumentCompletion(null),/live ready Worker owner/,
+    'the handle must reject as soon as shutdown begins, while the owner drains close');
+  for(let count=0;closing.controller.state!=='closed';++count){
+    assert.ok(count<10,'pending Worker close must finish through its scheduled owner task');
+    await microtasks();
+    if(closing.controller.state!=='closed')closing.step();
+  }
+  await assert.rejects(closing.controller.replayDocumentCompletion(null),/live ready Worker owner/);
+
+  const failed=fixture();await failed.send({type:'unexpected'});
+  assert.equal(failed.controller.state,'failed');
+  await assert.rejects(failed.controller.replayDocumentCompletion(null),/live ready Worker owner/);
 });
 test('engine factory cannot call the owner before the copied bridge is installed',async()=>{
   const f=fixture();f.factories.engine=async options=>{f.ownLookup('engine',options);options.foundationEngineHost(HOST.WAKE,0,0,0,0);return f.engine;};
@@ -1008,8 +1051,152 @@ test('editor owned4095-byte facts survive heap growth and release before exact64
   await f.send(f.message);assert.equal(f.controller.state,'ready');assert.deepEqual(f.documentBootstrap.configure,[{lo:4294967294,hi:4294967295}]);assert.deepEqual(f.documentBootstrap.freedAtConfigure,[1]);
   await f.send({type:'close'});assert.equal(f.controller.state,'closed');
 });
+test('actual installer keeps Foundation factory options separate from deferred engine host options',async()=>{
+  const f=fixture();await f.send(f.message);
+  assert.equal(f.controller.state,'ready');
+  const byRole=Object.fromEntries(f.loads.map(({role,options})=>[role,options]));
+  assert.ok(byRole.kernel&&byRole.engine,'both actual retained factories must be loaded');
+  assert.deepEqual(Object.keys(byRole.kernel).sort(),['locateFile','print','printErr','wasmBinary']);
+  assert.equal(Object.hasOwn(byRole.kernel,'noInitialRun'),false,
+    'Foundation --no-entry factory uses its incoming API without engine-only deferral');
+  assert.equal(Object.hasOwn(byRole.kernel,'foundationEngineHost'),false);
+  assert.deepEqual(Object.keys(byRole.engine).sort(),
+    ['foundationEngineHost','locateFile','noInitialRun','print','printErr','wasmBinary']);
+  assert.equal(byRole.engine.noInitialRun,true,'retained engine startup remains deferred');
+  assert.equal(typeof byRole.engine.foundationEngineHost,'function');
+  for(const options of [byRole.kernel,byRole.engine]){
+    assert.ok(options.wasmBinary instanceof Uint8Array);
+    assert.equal(typeof options.print,'function');assert.equal(typeof options.printErr,'function');
+    assert.equal(typeof options.locateFile,'function');
+  }
+  assert.equal(f.engine.calls.some(value=>value.kind===ENGINE.START),true,
+    'engine deferred-start path must still reach its explicit START');
+  await f.send({type:'close'});assert.equal(f.controller.state,'closed');
+});
 test('editor DESCRIBE must agree with retained and preconfigured facts before Package CONFIGURE',async()=>{
   const changed=editorProfile();changed.build_sha256='9'.repeat(64);const f=fixture({editorInput:true,describedProfile:changed});await f.send(f.message);
   assert.equal(f.controller.state,'failed');assert.equal(f.documentBootstrap.configure.length,1);assert.equal(f.kernel.calls.some(value=>value.kind===OP.CONFIGURE),false);
   assert.deepEqual(f.engine.calls.map(value=>value.kind),[ENGINE.DESCRIBE]);assert.equal(f.engine.calls.some(value=>value.kind===ENGINE.START),false);
+});
+
+
+function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};}
+async function until(predicate,label){
+  for(let count=0;count<128;++count){if(predicate())return;await Promise.resolve();}
+  assert.ok(predicate(),'timed out awaiting '+label);
+}
+
+test('capture checkpoint null preserves the synchronous configure-to-start phase',async()=>{
+  const f=fixture({documentInput:'pixel',captureCheckpoint:null});let startAtConfigureMicrotask=null;
+  const dispatch=f.kernel._gui_web_engine_dispatch_v1;
+  f.kernel._gui_web_engine_dispatch_v1=(operation,...args)=>{
+    const result=dispatch(operation,...args);
+    if(operation===OP.CONFIGURE)queueMicrotask(()=>{
+      startAtConfigureMicrotask=f.engine.calls.filter(value=>value.kind===ENGINE.START).length;
+    });
+    return result;
+  };
+  await f.send(f.message);
+  assert.equal(f.controller.state,'ready');
+  assert.equal(startAtConfigureMicrotask,1,'null checkpoint must not insert an await after validated CONFIGURE');
+  assert.equal(f.engine.calls.filter(value=>value.kind===ENGINE.START).length,1);
+});
+
+test('capture checkpoint callback is validated before the Worker message handler is installed',()=>{
+  const scope={postMessage(){},close(){}};
+  assert.throws(()=>installAppendedEngineWasmWorker(scope,undefined,undefined,undefined,{}),/capture checkpoint/i);
+  assert.throws(()=>installAppendedEngineWasmWorker(scope,undefined,undefined,undefined,null,{}),/owner task gate/i);
+  assert.equal(Object.hasOwn(scope,'onmessage'),false,'invalid checkpoint must be refused before handler installation');
+});
+
+test('capture checkpoint gates inspected and configured startup phases',async()=>{
+  const inspected=deferred(),configured=deferred(),phases=[];
+  const f=fixture({documentInput:'pixel',captureCheckpoint(phase){
+    phases.push(phase);return phase==='inspected'?inspected.promise:configured.promise;
+  }});
+  const initializing=f.send(f.message);
+  await until(()=>phases.length===1,'inspected checkpoint');
+  assert.deepEqual(phases,['inspected']);
+  assert.equal(f.kernel.calls.filter(value=>value.kind===OP.CONFIGURE).length,0);
+  assert.equal(f.engine.calls.filter(value=>value.kind===ENGINE.START).length,0);
+  inspected.resolve();
+  await until(()=>phases.length===2,'configured checkpoint');
+  assert.deepEqual(phases,['inspected','configured']);
+  assert.equal(f.kernel.calls.filter(value=>value.kind===OP.CONFIGURE).length,1);
+  assert.equal(f.engine.calls.filter(value=>value.kind===ENGINE.START).length,0);
+  configured.resolve();await initializing;
+  assert.equal(f.controller.state,'ready');
+  assert.equal(f.engine.calls.filter(value=>value.kind===ENGINE.START).length,1);
+});
+
+test('checkpoint rejection follows existing fail path and prevents later configure or START',async()=>{
+  for(const rejectedPhase of ['inspected','configured']){
+    const phases=[],f=fixture({documentInput:'pixel',captureCheckpoint(phase){
+      phases.push(phase);if(phase===rejectedPhase)throw Error('fixture checkpoint rejected '+phase);
+    }});
+    await f.send(f.message);
+    assert.deepEqual(phases,rejectedPhase==='inspected'?['inspected']:['inspected','configured']);
+    assert.equal(f.controller.state,'failed',rejectedPhase);
+    assert.equal(f.closed,1,rejectedPhase);
+    assert.equal(f.kernel.calls.filter(value=>value.kind===OP.CONFIGURE).length,rejectedPhase==='inspected'?0:1);
+    assert.equal(f.engine.calls.filter(value=>value.kind===ENGINE.START).length,0);
+    assert.equal(f.posted.filter(value=>value.type==='error').length,1);
+    const calls=[f.kernel.calls.length,f.engine.calls.length,f.kernel.exports.length,f.engine.exports.length];
+    await f.send(f.message);await f.send({type:'receive',id:1,text:'{}'});
+    assert.deepEqual([f.kernel.calls.length,f.engine.calls.length,f.kernel.exports.length,f.engine.exports.length],calls,
+      'rejected checkpoint must leave no later native-call authority');
+  }
+});
+
+test('close while inspected checkpoint is pending prevents configure and START',async()=>{
+  const inspected=deferred(),phases=[];
+  const f=fixture({documentInput:'pixel',captureCheckpoint(phase){phases.push(phase);return inspected.promise;}});
+  const initializing=f.send(f.message);
+  await until(()=>phases.length===1,'pending inspected checkpoint');
+  await f.send({type:'close'});
+  assert.equal(f.kernel.calls.filter(value=>value.kind===OP.CONFIGURE).length,0);
+  assert.equal(f.engine.calls.filter(value=>value.kind===ENGINE.START).length,0);
+  inspected.resolve();await initializing;
+  assert.equal(f.controller.state,'closed');
+  assert.equal(f.closed,1);
+  assert.deepEqual(phases,['inspected'],'close must prevent entry to configured checkpoint');
+  assert.equal(f.kernel.calls.filter(value=>value.kind===OP.CONFIGURE).length,0);
+  assert.equal(f.engine.calls.filter(value=>value.kind===ENGINE.START).length,0);
+  assert.equal(f.posted.some(value=>value.type==='ready'),false);
+});
+
+test('init owner hook receives the actual message and gates ready until its action runs',async()=>{
+  const entered=deferred(),release=deferred();let observedMessage,actionRuns=0;
+  const f=fixture({beforeOwnerTask:async(action,message)=>{
+    observedMessage=message;entered.resolve();await release.promise;action();++actionRuns;
+  }});
+  const initializing=f.send(f.message);
+  await entered.promise;
+  assert.strictEqual(observedMessage,f.message,'hook must receive the exact init object submitted to the Worker');
+  assert.equal(f.controller.state,'starting');
+  assert.equal(f.posted.some(value=>value.type==='ready'),false,'ready must wait for the hook-owned action');
+  assert.equal(actionRuns,0);
+  release.resolve();await initializing;
+  assert.equal(actionRuns,1);
+  assert.equal(f.controller.state,'ready');
+  assert.equal(f.posted.filter(value=>value.type==='ready').length,1);
+  assert.ok(f.kernel.ccalls.some(value=>value.name==='gui_web_create'),'the gated action performs actual ready construction');
+  await f.send({type:'close'});assert.equal(f.controller.state,'closed');
+});
+
+test('close during init owner gate prevents ready and closes after the gate is released',async()=>{
+  const entered=deferred(),release=deferred();let actionRuns=0;
+  const f=fixture({beforeOwnerTask:async(action,message)=>{
+    assert.strictEqual(message,f.message);entered.resolve();await release.promise;action();++actionRuns;
+  }});
+  const initializing=f.send(f.message);await entered.promise;
+  assert.equal(f.controller.state,'starting');assert.equal(f.posted.some(value=>value.type==='ready'),false);
+  await f.send({type:'close'});
+  assert.equal(f.controller.state,'closed');assert.equal(f.closed,1);
+  assert.equal(f.posted.some(value=>value.type==='ready'),false);
+  release.resolve();await initializing;await microtasks();
+  assert.equal(actionRuns,1,'the hook action can return, but the closed Worker must reject its ready publication');
+  assert.equal(f.controller.state,'closed');assert.equal(f.closed,1);
+  assert.equal(f.posted.some(value=>value.type==='ready'),false);
+  assert.equal(f.kernel.ccalls.filter(value=>value.name==='gui_web_destroy').length,1);
 });

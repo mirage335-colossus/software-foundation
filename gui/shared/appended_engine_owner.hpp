@@ -54,6 +54,10 @@ struct EngineOwnerConfiguration {
     /* Trusted CLOSE/replacement may abandon results belonging to a disposed
      * page through the immutable owner audit protocol, never a page callback. */
     bool abandon_closed_document_outcomes{false};
+    /* A trusted application with native retirement may defer copied CLOSE.
+     * It must drain its exact owned work and then call close() itself. The
+     * default preserves standalone Owner and existing native consumers. */
+    bool defer_copied_close_to_application{false};
     /* Explicitly maintained compiled facts only. Disabled preserves the
      * original bitmap-only copied bridge, including its empty input catalog. */
     engine_input::EngineSurfaceProfileFacts input_profile;

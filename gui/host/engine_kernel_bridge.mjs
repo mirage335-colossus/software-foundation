@@ -574,9 +574,10 @@ const knownFormCompletion=result=>{
 };
 
 export function createEngineKernelBridge({kernel,engine,workerEpoch,post=task=>setTimeout(task,0),timer=globalThis,startTimeout=30000,
-  abandonClosedDocumentOutcomes=false,onTerminalOutcome=null,onFailure=()=>{},onDirty=()=>{}}){
+  abandonClosedDocumentOutcomes=false,onTerminalOutcome=null,onFailure=()=>{},onDirty=()=>{},beforeOwnerTask=null}){
   if(kernel.role!=='kernel'||engine.role!=='engine'||kernel.memory===engine.memory||!u64(workerEpoch)||workerEpoch===0n)throw new BridgeError('Bridge needs distinct private instances and a fresh Worker epoch');
   if(typeof abandonClosedDocumentOutcomes!=='boolean'||onTerminalOutcome!==null&&typeof onTerminalOutcome!=='function')throw new BridgeError('Invalid immutable closed-document policy');
+  if(beforeOwnerTask!==null&&typeof beforeOwnerTask!=='function')throw new BridgeError('Invalid private owner task gate');
   let identity={worker:workerEpoch,instance:0n,document:0n,generation:0n},state='new',active=false,depth=0,pumping=false,
     scheduled=false,delivery=null,ack=null,command=null,documentCall=null,documentEnabled=false,documentIdle=false,editorEnabled=false,physicalInput=false,lastCommandSequence=0n,terminalOutcome=null,retirement=null,engineTimer=null,currentTransfer=0n,persistence=null,inspected=null,advanceRequested=false,inspecting=false,startTimer=null,lastReady=null,metadataIdentity=identity;
   const retired=new Set(),identityKey=value=>[value.instance,value.document,value.generation].join('/'),sameIdentity=(a,b)=>['worker','instance','document','generation'].every(k=>a[k]===b[k]);
@@ -598,7 +599,13 @@ export function createEngineKernelBridge({kernel,engine,workerEpoch,post=task=>s
   const clearTimers=()=>{if(engineTimer!==null)timer.clearTimeout(engineTimer);if(startTimer!==null)timer.clearTimeout(startTimer);engineTimer=null;startTimer=null;};
   const fail=error=>{if(state==='failed'||state==='closed')return;state='failed';clearDocumentReplays(error);clearTimers();readyReject(error);closedResolve({graceful:false});onFailure(error instanceof Error?error:Error(String(error)));};
   const terminal=error=>{fail(error);throw new BridgeError(String(error.message||error),{terminal:true});};
-  const queued=action=>post(()=>{if(state==='ready'||state==='closing'){try{action();}catch(error){fail(error);}}});
+  const ownerTask=action=>{
+    if(beforeOwnerTask===null)return action();
+    Promise.resolve(beforeOwnerTask(action)).catch(fail);
+  };
+  const queued=action=>post(()=>{if(state==='ready'||state==='closing'){try{ownerTask(()=>{
+    if(state==='ready'||state==='closing')action();
+  });}catch(error){fail(error);}}});
   const requireOK=reply=>{if(reply.control!==CONTROL.OK)throw new BridgeError('Kernel/engine operation refused',{code:reply.control});return reply;};
   const kernelCall=(op,payload=new ByteArray(),options={},target=identity)=>{
     const capacity=op===OP.PEEK_EDITOR_WORK?RECEIPT_BYTES+EDITOR_WORK_PREFIX+MAX_SERVICE:MAX_SERVICE+RECEIPT_BYTES;
@@ -840,7 +847,10 @@ export function createEngineKernelBridge({kernel,engine,workerEpoch,post=task=>s
     if(!abandonClosedDocumentOutcomes)return false;
     // Resource setup is prospective and does not replace committed service
     // metadata. Its generation-zero tuple cannot select these owner mailboxes.
-    const target=metadataIdentity;if(!target.instance)return false;
+    // Copied CLOSE can defer native retirement while the application still
+    // owns the live document. Its last-ready tuple remains admitted metadata
+    // both before and after the Owner actually closes that document.
+    const target=state==='closing'?(lastReady??metadataIdentity):metadataIdentity;if(!target.instance)return false;
     const audit=kernelCall(OP.PEEK_RETIREMENT_AUDIT,new ByteArray(),{},target);
     if(audit.control===CONTROL.OK){
       validateTerminalOutcome(audit);
@@ -857,6 +867,28 @@ export function createEngineKernelBridge({kernel,engine,workerEpoch,post=task=>s
     if(next.control!==CONTROL.EMPTY)return terminal(Error('Kernel retired-document mailbox refused'));
     return false;
   };
+  const drainPhysical=(target,closing=false)=>{
+    if(physicalInput){
+      const input=kernelCall(OP.PEEK_INPUT,new ByteArray(),{},target);
+      if(input.control===CONTROL.OK){
+        if(input.service!==0||input.source!==0||!input.transfer||!sameIdentity(input.identity,target)
+            ||!input.identity.instance||!input.identity.document||!input.identity.generation)
+          return terminal(Error('Malformed physical input mailbox authority'));
+        const sequence=commandSequence(input.payload);
+        if(sequence<=lastCommandSequence||documentEnabled&&sequence===U64_MAX)return terminal(Error('Physical command sequence was reused, wrapped or used final document ACK headroom'));
+        if(closing){
+          const view=new DataView(input.payload.buffer,input.payload.byteOffset,input.payload.byteLength);
+          if(view.getUint32(0,true)!==3||input.payload.byteLength!==88||view.getUint32(56,true)!==2)
+            return terminal(Error('Only owned physical context retirement may drain during close'));
+        }
+        lastCommandSequence=sequence;
+        command={payload:input.payload,identity:input.identity,transfer:input.transfer,sequence};
+        executeCommand();return true;
+      }
+      if(input.control!==CONTROL.EMPTY)return terminal(Error('Physical input mailbox refused'));
+    }
+    return false;
+  };
   const drive=()=>{
     if(!['ready','closing'].includes(state)||active||depth||pumping||command||documentCall||replayActive||terminalOutcome||retirement)return;
     if(delivery&&!retired.has(identityKey(delivery.identity))||ack&&!retired.has(identityKey(ack.identity)))return;
@@ -864,12 +896,16 @@ export function createEngineKernelBridge({kernel,engine,workerEpoch,post=task=>s
     if(retirementStep())return;
     if(delivery||ack)return;
     if(state==='closing'){
-      if(drainDocument())return;
+      // Exact retired disposal may have finished the native Owner. Consume its
+      // real close witness before polling scheduler routes that now reject work.
       const reply=requireOK(kernelCall(OP.CLOSE,new ByteArray(),{},metadataIdentity));
-      if(reply.service===0){state='closed';clearTimers();persistence=null;closedResolve({graceful:true});}
+      if(reply.service===0){state='closed';clearTimers();persistence=null;closedResolve({graceful:true});return;}
+      if(reply.service!==2)return terminal(Error('Kernel cleanup did not reach a known pending close'));
+      if(drainDocument())return;
+      const target=identity.generation?identity:lastReady;
+      if(target&&drainPhysical(target,true))return;
       // Outstanding engine-owned resource leases require a later real owner
       // release. No busy retry loop or invented resource release is permitted.
-      else if(reply.service!==2)return terminal(Error('Kernel cleanup did not reach a known pending close'));
       return;
     }
     const target=identity.generation?identity:lastReady;
@@ -896,20 +932,7 @@ export function createEngineKernelBridge({kernel,engine,workerEpoch,post=task=>s
     if(next.control===CONTROL.OK){delivery={payload:next.payload,identity:next.identity,transfer:next.transfer,blocked:false};queued(deliver);return;}
     if(next.control!==CONTROL.EMPTY)return terminal(Error('Completion mailbox refused'));
     if(drainDocument())return;
-    if(physicalInput){
-      const input=kernelCall(OP.PEEK_INPUT,new ByteArray(),{},target);
-      if(input.control===CONTROL.OK){
-        if(input.service!==0||input.source!==0||!input.transfer||!sameIdentity(input.identity,target)
-            ||!input.identity.instance||!input.identity.document||!input.identity.generation)
-          return terminal(Error('Malformed physical input mailbox authority'));
-        const sequence=commandSequence(input.payload);
-        if(sequence<=lastCommandSequence||documentEnabled&&sequence===U64_MAX)return terminal(Error('Physical command sequence was reused, wrapped or used final document ACK headroom'));
-        lastCommandSequence=sequence;
-        command={payload:input.payload,identity:input.identity,transfer:input.transfer,sequence};
-        executeCommand();return;
-      }
-      if(input.control!==CONTROL.EMPTY)return terminal(Error('Physical input mailbox refused'));
-    }
+    if(drainPhysical(target))return;
     if(serviceSuspended||documentEnabled&&!documentIdle){onDirty();return;}
     if(advanceRequested){advanceRequested=false;requireOK(engineCall(ENGINE.ADVANCE));}
     onDirty();
@@ -926,8 +949,10 @@ export function createEngineKernelBridge({kernel,engine,workerEpoch,post=task=>s
   };
   const startupStep=()=>{
     if(state!=='starting')return;
-    try{requireOK(engineCall(ENGINE.ADVANCE));if(!checkReady())timer.setTimeout(startupStep,1);}
-    catch(error){fail(error);}
+    try{ownerTask(()=>{
+      if(state!=='starting')return;
+      requireOK(engineCall(ENGINE.ADVANCE));if(!checkReady())timer.setTimeout(startupStep,1);
+    });}catch(error){fail(error);}
   };
   return Object.freeze({
     ready,closed,

@@ -264,7 +264,7 @@ struct Fixture {
     std::uint64_t last_retired_context{}, held_ticket{};
     std::optional<ne::NativeRetireMaterial> last_retired_material;
     unsigned native_effects{}, native_retirements{};
-    bool hold_on_entry=false;
+    bool hold_on_entry=false,handler_reentry_refused=false;
     static constexpr std::string_view service_name="org.example.editor-app.native";
     explicit Fixture(bool create=true,bool native_service=false) {
         EngineOwnerConfiguration config; config.worker_epoch=large+11; config.editor_profile=facts;
@@ -280,6 +280,13 @@ struct Fixture {
                 if (hold_on_entry) {
                     check(owner->hold_native_effect(effect->ticket),"actual native handler could not retain its UI hold");
                     held_ticket=effect->ticket;
+                    const auto prior_handler_count=native_effects;
+                    const auto reentrant=call(*owner,FOUNDATION_ENGINE_PUMP_ONE,owner->identity());
+                    check(reentrant.control==FOUNDATION_ENGINE_CONFLICT &&
+                          reentrant.service==static_cast<std::uint32_t>(ServiceStatus::unavailable) &&
+                          !owner->reserve_document_sequence() && !owner->reserve_editor_sequence() && native_effects==prior_handler_count,
+                          "synchronous actual Registry handler reentered native pump/admission before its own return");
+                    handler_reentry_refused=true;
                 }
                 ++native_effects; std::copy(value.begin(),value.end(),output.begin()); return {ServiceStatus::ok,4};
             }});
@@ -512,6 +519,7 @@ void same_content(const D::State& actual,const D::State& expected,const char* me
     }
 }
 struct BitmapFixture : Fixture {
+    explicit BitmapFixture(bool native=false):Fixture(true,native) {}
     unsigned native_entries{},ack_entries{};
     std::uint64_t revision{13},lease{9001};
     std::string native_value{"Actual copied fixture readback"};
@@ -631,6 +639,254 @@ struct BitmapFixture : Fixture {
         check(native_entries==before,"ACK7 entered another native TURN");return value;
     }
 };
+
+ne::Packet text_packet(ne::Basis basis) {
+    ne::Packet result;
+    result.session=large+601; result.basis=std::move(basis);
+    auto& observation=result.observation;
+    observation.id=large+701; observation.kind=ne::Kind::text; observation.authority=ne::Authority::range;
+    observation.before={"A😀B",1,3,ne::Direction::forward,{1,5},6};
+    observation.after=ne::TextObservation{"AXB",2,2,ne::Direction::none,{2,2},3};
+    observation.data=ne::TextData{"insertText","X",{1,5},{}};
+    check(ne::valid_observation(observation),"fixture text observation is malformed");
+    return result;
+}
+
+Bytes service_request(EngineIdentity target,std::uint64_t sequence,std::uint64_t handle,std::uint32_t operation,Span payload) {
+    Envelope header; header.generation=target.service_generation; header.sequence=sequence;
+    header.interface_handle=handle; header.operation=operation;
+    Bytes result;
+    check(encode_envelope(header,payload,result)==CodecStatus::ok,"fixture service envelope is invalid");
+    return result;
+}
+Bytes collect_service(Fixture& f,std::uint64_t sequence) {
+    const auto target=f.owner->identity();
+    const auto delivery=call(*f.owner,FOUNDATION_ENGINE_PEEK_DELIVERY,target); ok(delivery);
+    Envelope header; Span payload;
+    check(decode_envelope(delivery.body(),header,payload)==CodecStatus::ok && header.sequence==sequence && header.service_status==0,
+          "actual Registry completion changed service correlation/status");
+    Bytes result(payload.begin(),payload.end());
+    const auto accepted=encode_u32(FOUNDATION_ENGINE_ACCEPTED);
+    ok(call(*f.owner,FOUNDATION_ENGINE_DELIVERY_RESULT,target,accepted,delivery.transfer));
+    const auto staged=call(*f.owner,FOUNDATION_ENGINE_STAGE_ACK,target,encode_u64(sequence));
+    check(staged.control==FOUNDATION_ENGINE_OK && staged.service==static_cast<std::uint32_t>(ServiceStatus::unavailable),
+          "actual Registry ACK did not stage its owned barrier");
+    ok(call(*f.owner,FOUNDATION_ENGINE_PUMP_ONE,target));
+    const auto receipt=call(*f.owner,FOUNDATION_ENGINE_PEEK_ACK_RECEIPT,target); ok(receipt);
+    check(get(receipt.body(),0,8)==sequence,"actual Registry ACK receipt changed prefix");
+    ok(call(*f.owner,FOUNDATION_ENGINE_ACK_RECEIPT_RESULT,target,accepted,receipt.transfer));
+    return result;
+}
+Bytes native_effect_cycle(Fixture& f,std::uint64_t sequence,std::uint64_t handle,std::uint32_t operation,Span payload, const std::function<void()>& during_hold={}) {
+    const auto target=f.owner->identity();
+    const auto old=f.basis();
+    const auto prior_effects=f.native_effects, prior_retirements=f.native_retirements;
+    ok(call(*f.owner,FOUNDATION_ENGINE_SUBMIT,target,service_request(target,sequence,handle,operation,payload)));
+    const auto gate=call(*f.owner,FOUNDATION_ENGINE_PUMP_ONE,target);
+    check(gate.control==FOUNDATION_ENGINE_CONFLICT && gate.service==static_cast<std::uint32_t>(ServiceStatus::unavailable) &&
+          f.owner->native_effect() && f.native_effects==prior_effects,"native Registry effect bypassed editor redaction gate");
+    f.app->tick();
+    check(f.port->service && !f.port->editable() && !f.port->available() && f.adapter.snapshot().widgets.empty() && !f.peek_physical(),
+          "native suspension retained pixels, editor admission or premature physical retirement");
+    const auto cleanup=f.peek_editor();
+    check(cleanup && cleanup->work.kind==EngineEditorWorkKind::revoke,"native effect failed to retain actual editor9 cleanup");
+    f.finish_revoke(*cleanup);
+    check(f.native_retirements==prior_retirements+1 && f.last_retired_material && f.last_retired_material->input_context==old.identity.context,
+          "native effect retired unrelated editor material");
+    check(call(*f.owner,FOUNDATION_ENGINE_PUMP_ONE,target).control==FOUNDATION_ENGINE_CONFLICT && f.native_effects==prior_effects,
+          "unpublished native9 result acknowledged actual native effect");
+    f.app->tick();
+    const auto retire=f.consume_physical(); input::Focus retired;
+    check(retire.operation==3 && input::decode_focus(retire.payload,retired)==input::Status::ok && retired.action==2 &&
+          retired.expected_context==old.identity.context,"physical authority retired before or apart from exact editor9");
+    check(f.native_effects==prior_effects,"physical retirement collection synchronously invoked Registry");
+    f.app->tick();
+    ok(call(*f.owner,FOUNDATION_ENGINE_PUMP_ONE,target));
+    const auto result=collect_service(f,sequence);
+    f.app->tick();
+    if (f.hold_on_entry) {
+        check(f.held_ticket && f.owner->native_effect() && f.port->service && !f.port->available() && !f.peek_editor() && !f.peek_physical(),
+              "known native reply released its independent UI hold");
+        // A real frame during the hold cannot become the post-release rearm frame.
+        ok(call(*f.owner,FOUNDATION_ENGINE_FRAME_COMMIT,target,frame(f.owner->frame()->frame_revision)));
+        f.app->tick();
+        check(f.adapter.snapshot().widgets.empty() && !f.port->available(),"held native UI exposed an in-hold actual frame");
+        if (during_hold) during_hold();
+        check(f.owner->release_native_effect(f.held_ticket),"trusted UI release lost its exact held native ticket");
+        f.app->tick();
+    }
+    const auto floor=f.owner->frame()->frame_revision;
+    f.app->tick();
+    check(!f.port->available() && f.adapter.snapshot().widgets.empty() && !f.peek_editor() && !f.peek_physical(),
+          "release reused the old actual frame or invented a bind/editor query");
+    ok(call(*f.owner,FOUNDATION_ENGINE_FRAME_COMMIT,target,frame(floor)));
+    f.app->tick();
+    const auto bind=f.consume_physical(); input::Focus context;
+    check(bind.operation==3 && input::decode_focus(bind.payload,context)==input::Status::ok && context.action==1 &&
+          context.input_context>old.identity.context,"post-effect frame reused retired physical context");
+    f.app->tick();
+    check(!f.port->available(),"post-effect bind opened authority before fresh q4");
+    f.finish_query(f.query(),true); f.app->tick();
+    check(f.port->editable() && f.basis().identity.context==context.input_context && f.basis().token!=old.token &&
+          f.owner->frame()->frame_revision==floor+1,"fresh rearm lost its actual frame/context/editor join");
+    return result;
+}
+
+struct ObservationHead {
+    std::uint64_t head{};
+    ne::Packet packet;
+    EngineEditorDispatch dispatch;
+    codec::NativeRequestEnvelope request;
+};
+ObservationHead prepare_observation(Fixture& f) {
+    ObservationHead result;
+    result.packet=text_packet(f.basis());
+    const auto head=f.app->editor_submit(result.packet);
+    check(head.has_value(),"terminal fixture could not retain its actual editor head"); result.head=*head;
+    f.app->tick(); f.finish_query(f.query(),true); f.app->tick();
+    const auto pending=f.peek_editor();
+    check(pending && pending->work.kind==EngineEditorWorkKind::observation &&
+          pending->work.operation==BIB_ENGINE_COMMAND_EDITOR_OBSERVATION_V1,
+          "terminal fixture did not resolve its actual native8 work");
+    result.dispatch=*pending;
+    check(codec::decode_native_request(result.dispatch.work.payload,result.request) && result.request.request.packet==result.packet,
+          "terminal fixture lost its original accepted Packet");
+    return result;
+}
+Bytes applied_observation_reply(Fixture& f,const ObservationHead& head) {
+    auto projection=head.request.request.resolved;
+    ++projection.editor_revision; projection.surrounding="AXB"; projection.selection={2,2}; projection.caret={40,24,1,18};
+    ne::NativeResult result;
+    result.outcome=ne::Outcome::applied; result.continuity=ne::Continuity::same;
+    result.availability=ne::NativeAvailability::available; result.observation_revision=++f.sample;
+    result.readback_identity=projection.identity; result.readback_attested=true;
+    result.retire=projection.retire; result.projection=projection;
+    Bytes encoded;
+    check(codec::encode_native_result({head.request.target,result},encoded),"terminal fixture native8 reply is malformed");
+    return encoded;
+}
+
+
+void settle_known_editor(BitmapFixture& f, const ObservationHead& head) {
+    const auto encoded=applied_observation_reply(f,head);
+    codec::NativeResultEnvelope decoded;
+    check(codec::decode_native_result(encoded,decoded) && decoded.result.projection.has_value(),"fixture known editor reply did not decode");
+    f.finish_editor(head.dispatch,encoded,1);
+    f.live=decoded.result.projection;
+    check(!f.app->editor_take(head.head),"known editor result escaped before sole paired publication");
+    f.app->tick();
+}
+void held_editor_head_orders_form_after_take() {
+    BitmapFixture f;f.activate();const auto observed=f.observe();
+    const auto head=prepare_observation(f);settle_known_editor(f,head);
+    const auto entries=f.native_entries,retired=f.native_retirements;
+    check(f.port->committed.editor && f.port->committed.editor->settlement && f.basis().surrounding=="AXB",
+          "known editor H was not actually published before queued Begin");
+    std::cout << "TRACE known native8 seq=" << head.dispatch.work.request_sequence << " H=" << head.head << " checked-published\n";
+    const auto form_ticket=f.submit(D::Begin{observed,10});f.app->tick();
+    std::cout << "TRACE queued Begin D=" << form_ticket.value << " while H untaken\n";
+    const auto revoke=f.peek_editor();
+    check(revoke && revoke->work.kind==EngineEditorWorkKind::revoke && !f.peek_document() && !f.peek_physical() &&
+          !f.app->editor_take(head.head) && f.native_retirements==retired,
+          "queued Begin did not withhold known H behind exact native9 retirement");
+    f.finish_revoke(*revoke);f.app->tick();
+    std::cout << "TRACE native9 seq=" << revoke->work.request_sequence << " completed and checked-published before TakeH\n";
+    check(!f.peek_document(),"form6 overtook physical retirement and untaken H");
+    const auto physical=f.consume_physical();input::Focus focus;
+    check(physical.operation==3 && input::decode_focus(physical.payload,focus)==input::Status::ok && focus.action==2,
+          "editor9 did not lead to actual physical3 retirement");
+    std::cout << "TRACE physical3 retire seq=" << physical.request_sequence << " completed before TakeH\n";
+    for(unsigned retry=0;retry<3;++retry) {
+        f.app->tick();
+        check(!f.peek_document() && !f.peek_editor() && !f.peek_physical() &&
+              f.native_entries==entries && f.native_retirements==retired+1 &&
+              f.app->document_state().pending==std::optional{form_ticket},
+              "held known H admitted form6 or replaced queued D after exact native retirement");
+    }
+    const auto completion=f.app->editor_take(head.head);
+    check(completion && completion->result.admission==ne::Admission::completed && completion->result.receipt &&
+          completion->ticket==head.head && completion->result.receipt->outcome==ne::Outcome::applied &&
+          completion->result.receipt->session==head.packet.session && completion->result.receipt->id==head.packet.observation.id &&
+          completion->result.receipt->submitted_token==head.packet.basis.token &&
+          completion->result.receipt->predecessor==head.packet.observation.predecessor && !f.app->editor_take(head.head),
+          "exact original H did not provide one known applied completion after retirement publication");
+    std::cout << "TRACE TakeH=" << head.head << " known applied; prior probes saw no form6\n";
+    const auto form=f.work();
+    check(form.work.kind==EngineDocumentWorkKind::form_action && form.work.operation==6 &&
+          head.dispatch.work.request_sequence<revoke->work.request_sequence &&
+          revoke->work.request_sequence<physical.request_sequence && physical.request_sequence<form.work.request_sequence,
+          "TakeH/editor9/physical3/form6 lost strict shared Owner sequence order");
+    std::cout << "TRACE native form6 seq=" << form.work.request_sequence << " entered after TakeH and editor9/physical3\n";
+    f.finish_form(form);f.app->tick();
+    check(!f.app->document_take(form_ticket),"form Take escaped before its exact ACK7");
+    const auto acknowledgement=f.ack(form);f.app->tick();
+    std::cout << "TRACE ACK7 seq=" << acknowledgement.work.request_sequence << " then TakeD=" << form_ticket.value << "\n";
+    check(f.take(form_ticket).outcome==D::Outcome::completed && f.native_entries==entries+1,
+          "queued ordinary form failed to complete after H and native retirement released");
+}
+void native_effect_refuses_and_releases_ordinary_operations() {
+    BitmapFixture f(true);f.activate();
+    const auto document_ticket=f.submit(D::Observe{});const auto previous_document_work=f.work();
+    f.finish_document_query(previous_document_work);f.app->tick();f.app->tick();f.take(document_ticket);
+    const auto major=encode_u32(1),minor=encode_u32(0);
+    const std::array<FieldView,4> fields{{{1,FieldType::utf8,true,bytes(Fixture::service_name)},
+        {2,FieldType::u32,true,major},{3,FieldType::u32,true,minor},{4,FieldType::u32,true,minor}}};
+    Bytes query;check(encode_record(fields,query)==CodecStatus::ok,"service discovery request invalid");
+    const auto descriptor=native_effect_cycle(f,1,0,FOUNDATION_APPENDED_CONTROL_DISCOVER,query);
+    std::vector<FieldView> decoded;std::uint64_t handle{};
+    check(decode_record(descriptor,decoded)==CodecStatus::ok && !decoded.empty() && read_u64(decoded.front(),handle) && handle,
+          "real Registry did not produce its opaque native service handle");
+    f.hold_on_entry=true;bool probed=false;
+    const auto value=encode_u32(73);
+    check(native_effect_cycle(f,2,handle,1,value,[&] {
+        probed=true;const auto effect=f.owner->native_effect();const auto target=f.owner->identity();
+        std::cout << "TRACE synchronous handler PUMP/reservations refused; entered held NativeEffect ticket=" << effect->ticket << " target=" << target.worker_epoch << ":" << target.application_instance << ":" << target.document_sequence << ":" << target.service_generation << "\n";
+        const auto entries=f.native_entries,handlers=f.native_effects,retirements=f.native_retirements;
+        const auto frame_revision=f.owner->frame()->frame_revision;
+        const auto state=f.app->document_state();
+        check(effect && effect->entered && effect->ticket==f.held_ticket && handlers==1 && f.handler_reentry_refused,
+              "probe missed actual entered held NativeEffect");
+        check(!f.owner->reserve_document_sequence() && !f.owner->reserve_editor_sequence(),
+              "native Owner minted ordinary document/editor reservation during entered service hold");
+        const auto denied=f.owner->stage_document_work(previous_document_work.work);
+        check(denied.code==EngineDocumentAdmissionCode::unavailable && !denied.ticket,
+              "native Owner did not refuse well-formed document work at effect gate before stale reservation checks");
+        Bytes focus;check(input::encode_focus({1,0,0,0,large+9999,0},focus)==input::Status::ok,"fresh bind input invalid");
+        check(!f.owner->stage_command(target,large+9999,3,input::kFocusSchema,focus,true),
+              "native Owner admitted a fresh physical bind during entered service hold");
+        const auto refusal=f.app->document_submit(D::Observe{});
+        check(refusal.admission==D::Admission::unavailable && !refusal.ticket,"public ingress accepted work during held service effect");
+        for(unsigned retry=0;retry<3;++retry) {
+            f.app->tick();const auto pump=call(*f.owner,FOUNDATION_ENGINE_PUMP_ONE,target);
+            check((pump.control==FOUNDATION_ENGINE_CONFLICT && pump.service==static_cast<std::uint32_t>(ServiceStatus::unavailable)) &&
+                  f.owner->native_effect() && f.owner->native_effect()->ticket==effect->ticket &&
+                  f.native_effects==handlers && f.native_entries==entries && f.native_retirements==retirements &&
+                  f.owner->identity()==target && f.owner->frame()->frame_revision==frame_revision &&
+                  !f.peek_document() && !f.peek_editor() && !f.peek_physical(),
+                  "refused work changed model/frame/native ledger or replayed a Registry handler during hold");
+        }
+        same_content(f.app->document_state(),state,"held refusal mutated accepted document/model content");
+        check(!f.owner->release_native_effect(effect->ticket+1) && f.owner->native_effect(),
+              "wrong UI release ticket removed the actual barrier");
+        std::cout << "TRACE native reservations/document work/physical bind refused; 3 ticks+PUMPs preserve handler/model/work; wrong release refused\n";
+    })==value && probed,"actual held Registry service lost completion or barrier probe");
+    std::cout << "TRACE exact release then fresh actual frame/physical bind/query4 completed\n";
+    const auto entries=f.native_entries;const auto observe=f.submit(D::Observe{});const auto work=f.work();
+    check(work.work.request_sequence>previous_document_work.work.request_sequence && !f.owner->native_effect(),
+          "post-release ordinary document request reused old authority or retained effect");
+    f.finish_document_query(work);f.app->tick();f.app->tick();check(f.take(observe).outcome==D::Outcome::completed && f.native_entries==entries+1,
+          "fresh ordinary document operation did not complete after exact release");
+    std::cout << "TRACE post-release document query3 seq=" << work.work.request_sequence << " completed with one Take\n";
+    const auto fresh=prepare_observation(f);settle_known_editor(f,fresh);
+    const auto result=f.app->editor_take(fresh.head);
+    check(result && result->result.admission==ne::Admission::completed && result->result.receipt &&
+          result->ticket==fresh.head && result->result.receipt->outcome==ne::Outcome::applied &&
+          result->result.receipt->session==fresh.packet.session && result->result.receipt->id==fresh.packet.observation.id &&
+          result->result.receipt->submitted_token==fresh.packet.basis.token && f.basis().surrounding=="AXB" &&
+          f.native_effects==1 && !f.owner->native_effect() && !f.app->editor_take(fresh.head),
+          "fresh current editor operation failed after release or replayed held service");
+    std::cout << "TRACE post-release native8 seq=" << fresh.dispatch.work.request_sequence << " applied AXB; exact H Taken; service handler count=1\n";
+}
 
 void observe_query_sole_publication_and_take() {
     BitmapFixture f;f.activate();const auto before=f.app->document_state();
@@ -754,7 +1010,9 @@ void document_terminal_is_metadata_only() {
 } // namespace
 
 int main(int argc,char** argv) {
-    const std::array<std::pair<std::string_view,void(*)()>,7> tests{{
+    const std::array<std::pair<std::string_view,void(*)()>,9> tests{{
+        {"E08 held editor H orders form after Take",held_editor_head_orders_form_after_take},
+        {"E08 actual NativeEffect refuses then releases ordinary work",native_effect_refuses_and_releases_ordinary_operations},
         {"Observe query3 sole publication and metadata Take",observe_query_sole_publication_and_take},
         {"Begin retires editor9 then physical3 before form6",begin_retires_editor_then_physical_before_form},
         {"query publication failure preserves accepted State and pending candidate",query_publication_failure_preserves_state},

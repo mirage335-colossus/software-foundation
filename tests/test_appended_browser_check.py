@@ -229,6 +229,104 @@ class BrowserCheckTests(unittest.TestCase):
                 change(value)
                 self.reject(scenario=value)
 
+    def test_rich_both_scenario_requires_versioned_identity_fields(self):
+        identities = {
+            'profile': 'both', 'source_tree_sha256': '1' * 64,
+            'source_observed_at_package_sha256': '2' * 64, 'kernel_inputs_sha256': '3' * 64,
+            'kernel_descriptor_sha256': '4' * 64, 'kernel_prefix_sha256': '5' * 64,
+            'kernel_prefix_length': 4096, 'kernel_receipt_sha256': '6' * 64,
+            'engine_recipe_sha256': '7' * 64, 'engine_manifest_sha256': '8' * 64,
+            'engine_proof_sha256': '9' * 64, 'engine_runtime_sha256': 'a' * 64,
+            'payload_transport_sha256': 'b' * 64, 'payload_package_sha256': 'c' * 64,
+            'payload_id': 'fixture-payload-id'}
+        rich_artifact = dict(self.product, profile='both')
+        scenario = dict(self.scenario_data, schema_version=2,
+                        kind='foundation-rich-both-browser-scenario', rich_identities=identities,
+                        rich_inspection_sources={name: archive.digest(ROOT / name) for name in browser.RICH_INSPECTION_SOURCES})
+        document(self.scenario, scenario)
+        _, selected, _ = browser._scenario(self.scenario, archive.digest(self.scenario), self.subject,
+                                            rich_artifact, 'web-wasm32', 'web')
+        self.assertEqual(selected['rich_identities'], identities)
+        for key in ('kernel_receipt_sha256', 'engine_runtime_sha256', 'payload_package_sha256'):
+            broken = copy.deepcopy(scenario)
+            broken['rich_identities'][key] = 'not-a-sha256'
+            document(self.scenario, broken)
+            with self.assertRaises(ValueError):
+                browser._scenario(self.scenario, archive.digest(self.scenario), self.subject,
+                                  rich_artifact, 'web-wasm32', 'web')
+
+    def test_rich_both_admission_refuses_binary_partial_candidate(self):
+        with self.assertRaisesRegex(ValueError, 'requires an HTML BOTH kernel and BOTH payload'):
+            browser._rich_both_identity(self.candidate, self.subject, self.product)
+
+    def test_binary_scenario_cannot_claim_rich_identity_fields(self):
+        value = copy.deepcopy(self.scenario_data)
+        value['rich_identities'] = {'profile': 'both'}
+        self.reject(scenario=value)
+
+    def test_rich_input_completes_focus_before_keyboard_and_reports_dom_only(self):
+        for engine in ('firefox', 'chromium'):
+            physical = Mock()
+            physical.evaluate.return_value = {'x': 12.5, 'y': 20}
+            physical.path.side_effect = lambda value: value
+            step = {'action': 'edit', 'widget': {'id': 'amount', 'generation': '2'}, 'value': '44'}
+            dispatched = browser._trusted_action(physical, engine, step)
+            self.assertGreater(dispatched, 0)
+            calls = physical.request.call_args_list if engine == 'chromium' else physical.command.call_args_list
+            self.assertEqual(len(calls), 2)
+            requests = [call.args[-1]['actions'] for call in calls]
+            self.assertEqual([group[0]['type'] for group in requests], ['pointer', 'key'])
+            self.assertEqual(requests[0][0]['actions'][-1], {'type': 'pointerUp', 'button': 0})
+            self.assertEqual([item['value'] for item in requests[1][0]['actions'][-4:]], ['4', '4', '4', '4'])
+        clocks = browser._rich_clocks(10, 20, 1020)
+        self.assertTrue(browser._valid_rich_clocks(clocks))
+        self.assertEqual(set(clocks['pending_measurements']), set(browser.RICH_PENDING))
+        self.assertNotIn('first_visible_ack_ns', clocks)
+        self.assertNotIn('warm_reload_samples', clocks)
+        clocks['changed_dom_observed_ns'] = 19
+        self.assertFalse(browser._valid_rich_clocks(clocks))
+
+    def test_real_public_document_editor_both_parsers_keep_fixtures_ineligible(self):
+        from test_package_appended_engine_document_wasm import DocumentBrowserProducerTests, EditorBrowserProducerTests
+        from package_appended_engine_wasm import inspect_prefix as rendering_parser
+        for fixture_type in (DocumentBrowserProducerTests, EditorBrowserProducerTests):
+            fixture = fixture_type()
+            try:
+                fixture.setUp()
+                prefix, envelope, facts = fixture.assemble(profile='both')
+                # This was the actual policy mismatch: the old rendering-only
+                # inspector rejects legitimate document/editor envelopes.
+                with self.assertRaises(ValueError):
+                    rendering_parser(prefix)
+                actual, observed = browser._inspect_rich_prefix(prefix, envelope['kind'])
+                self.assertEqual(actual, envelope)
+                self.assertFalse(observed['production_eligible'])
+                self.assertEqual(observed['kernel_receipt']['scope'], 'parser-fixture-only')
+            finally:
+                fixture.doCleanups()
+
+    def test_rich_interpreter_sources_are_exact_and_independently_pinned(self):
+        import ast
+        todo = ['package_appended_engine_document_wasm', 'package_appended_engine_wasm']
+        closure = set()
+        while todo:
+            name = todo.pop()
+            if name in closure:
+                continue
+            closure.add(name)
+            for node in ast.walk(ast.parse((ROOT / 'tools' / (name + '.py')).read_text())):
+                imports = ([item.name.split('.')[0] for item in node.names] if isinstance(node, ast.Import)
+                    else [node.module.split('.')[0]] if isinstance(node, ast.ImportFrom) and node.module else [])
+                todo.extend(item for item in imports if (ROOT / 'tools' / (item + '.py')).is_file() and item not in closure)
+        self.assertEqual(set(browser.RICH_INSPECTION_SOURCES), {'tools/' + name + '.py' for name in closure})
+        pins = {name: archive.digest(ROOT / name) for name in browser.RICH_INSPECTION_SOURCES}
+        self.assertEqual(len(browser._rich_sources(pins)), len(pins))
+        pins['tools/package_appended_engine_document_wasm.py'] = '0' * 64
+        with self.assertRaisesRegex(ValueError, 'differs from frozen scenario'):
+            browser._rich_sources(pins)
+        with self.assertRaisesRegex(ValueError, 'unsupported public rich retained-prefix role'):
+            browser._inspect_rich_prefix(b'not a prefix', 'unknown')
+
     def test_empty_unbounded_or_noninteractive_scenarios_never_launch(self):
         for steps in ([], self.scenario_data['steps'][:1], self.scenario_data['steps'] * 22,
                       [self.scenario_data['steps'][2], dict(self.scenario_data['steps'][2], id='another-assertion')],

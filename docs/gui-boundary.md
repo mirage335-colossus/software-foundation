@@ -341,6 +341,49 @@ with a new epoch. Startup failure, late responses and close during initializatio
 cannot revive an old session. See the [transport implementation](../gui/host/wasm_transport.mjs)
 and [Worker ownership notes](../gui/host/wasm-worker.md).
 
+The generic [appended engine Worker](../gui/host/appended_engine_wasm_worker.mjs)
+installer accepts an optional fourth `onDirty` observer (defaulting to a no-op);
+existing three-argument callers remain valid. Its owner handle also exposes
+`replayDocumentCompletion(selector)`, which returns the shared bridge's promise
+for replay. The call requires a live, ready Worker owner and rejects before
+readiness or while closing or after failure/closure. Shared bridge quiescence,
+document-state and identity checks still apply. Focused JavaScript contract
+coverage verifies forwarding and early-use rejection; this does not qualify the
+full partial BOTH runtime or remaining browser Worker regressions.
+
+This Worker's factory roles are explicit in the canonical source
+([`appended_engine_wasm_worker.mjs`](../gui/host/appended_engine_wasm_worker.mjs),
+SHA-256 `6273b9c0ecaf3307b0b51530e3567b07e2e9365fa9a0abe4351e6d1d77b5002f`).
+Both the Foundation kernel and retained engine receive their own `wasmBinary`,
+inert `print`/`printErr`, and exact retained `locateFile` resolver. Only the
+retained engine receives `noInitialRun: true` and the guarded
+`foundationEngineHost` callback. The Foundation kernel is built `--no-entry`
+with a closed Emscripten incoming API: its factory rejects `noInitialRun` and
+has no application entry point. Runtime initialization and constructors remain
+separate from explicit package configuration and GUI creation. PH10 source/control acceptance
+covers 51 Worker and 7 actual guard controls, but does not accept the full
+partial BOTH runtime. The later PH18 canonical source passed 56 maintained Worker tests with zero
+skips, plus five observer-init, nine scheduler and two Worker-init checks and
+the exact projector. It retains the private optional fifth `captureCheckpoint`
+callback, defaulting to `null`; the ordinary Worker path adds no extra await.
+When present, it checkpoints after inspection and validated configuration,
+before native startup. The optional sixth `beforeOwnerTask` hook also defaults
+to `null`; its no-op path adds no await. The ready continuation passes the
+original init message as the second argument, allowing a one-shot owner callback
+to restore command-turn ownership only around synchronous GUI creation/ready.
+Queued and startup async gates and the watchdog remain unchanged. This is
+private capture instrumentation, not a new product capability. PH18 source
+acceptance does not accept the partial BOTH runtime. Later PE19 and PE20 actual
+runs still failed bounded case capture; PE21 (`85659` / `e62653`) failed with
+`Widget generation was reused` after 31 GUI operations. Its capture does not
+identify the restored widget or failing key. Root accepted NC457's central
+compiled-redaction repair: retain compiled widget/command declarations and
+geometry while clearing hidden state and callable payloads, disabling and
+hiding retained controls, clearing hidden-page/navigation state and removing
+`engine.frame`. Existing generation retirement and composition/action/native
+gates remain. Its 41-check real MemoryAdapter fixture and C++20 fixture passed;
+the actual successor BOTH36 browser/engine execution remains unaccepted.
+
 A Wasm build also produces
 `gui/wasm-package/software-foundation-wasm.html`, `web-manifest.json` and
 `manifest.sha256`. The single HTML embeds the **generated patched** renderer,
@@ -630,6 +673,25 @@ requires the reviewed dependency approval and complete notice inventory. The
 current owner-specific approval is described in the [distribution gate](gui-audit.md#distribution-gate);
 ordinary export does not grant a general downstream supplier license.
 
+If the retained group still contains the complete reviewed upstream source but
+its Foundation integration is stale after this checkout's lock or patch set
+changes, make a new group from that retained input:
+
+```sh
+python3 -B gui/source_group.py reintegrate /path/to/retained-gui \
+  --output /path/to/current-retained-gui
+python3 -B gui/source_group.py verify /path/to/current-retained-gui
+```
+
+Reintegration checks the retained upstream revision and complete tree against
+the current reviewed lock, then regenerates the Foundation portion from this
+checkout's lock and patches. It neither downloads source nor builds or runs the
+toolkit. Keep the old group and choose a new output path; existing output is
+preserved and rejected. The resulting group must pass ordinary verification
+before it is selected with `--gui-input-group` or used by the normal GUI build.
+If the retained upstream source no longer matches the reviewed lock, obtain a
+clean checkout at the reviewed revision and export a new group instead.
+
 ## Build and run
 
 The bundled group supplies the locked revision. Configure/build never download
@@ -804,6 +866,15 @@ a completed editor result are separate obligations; detach alone is insufficient
 A bounded timeout preserves unresolved state and returns failure without forcing
 acknowledgement. These overloads preserve the ordinary runner bodies and add no
 engine dependency to generic adapters.
+
+In the copied-owner Bridge's opt-in close path, the retirement audit uses the
+last ready identity after closing begins; document, editor and physical drains
+remain tied to their full mailbox authority. After the retirement-audit and
+retired-document mailboxes are empty, the Bridge requests a final native `CLOSE`
+witness before polling scheduler routes that may already be closed. Only an `OK` reply with service
+status `0` completes graceful close. Status `2` continues the existing owned
+drains; early physical `CLOSED` remains a refusal. Runtime qualification is
+recorded separately in [appended validation](appended-validation.md).
 
 Native FLTK prompts retain keyboard and clipboard focus while the main window
 synchronizes; acceptance or cancellation restores the main window's retained

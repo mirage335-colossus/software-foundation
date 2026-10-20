@@ -39,7 +39,10 @@ const documentFacts=bytes=>{
 
 // A separately maintained rich host. The binary-only Worker and accepted
 // profiles are unchanged. No engine binding is fabricated when exports lack it.
-export function installAppendedEngineWasmWorker(scope,loadModule=url=>import(url),scheduler=globalThis){
+export function installAppendedEngineWasmWorker(scope,loadModule=url=>import(url),scheduler=globalThis,onDirty=()=>{},captureCheckpoint=null,beforeOwnerTask=null){
+  if(typeof onDirty!=='function')throw Error('Invalid engine Worker document observer');
+  if(captureCheckpoint!==null&&typeof captureCheckpoint!=='function')throw Error('Invalid engine Worker capture checkpoint');
+  if(beforeOwnerTask!==null&&typeof beforeOwnerTask!=='function')throw Error('Invalid private engine Worker owner task gate');
   let state='new',busy=false,closing=false,closingWait=false,physicalInput=false,documentInput=false,editorInput=false,kernelModule=null,engineModule=null,bridge=null,urls=[];
   let documentBootstrapAttempted=false;
   const post=value=>scope.postMessage(value);
@@ -144,23 +147,29 @@ export function installAppendedEngineWasmWorker(scope,loadModule=url=>import(url
     const result=invoke('_bib_engine_wasm_editor_configure_v1',[Number(workerEpoch&0xffffffffn),Number(workerEpoch>>32n)]);
     if(result!==0)throw Error('Engine editor Worker configuration failed');
   };
-  const factory=async(source,wasm,wasmName,assets={})=>{
+  const factory=async(role,source,wasm,wasmName,assets={})=>{
     if(!bounded(source,MAX_FACTORY))throw Error('Invalid retained factory source');
     if(!wasmLookup(wasmName)||Object.hasOwn(assets,wasmName))throw Error('Invalid or colliding own Wasm lookup');
     const wasmURL=URL.createObjectURL(new Blob([wasm],{type:'application/wasm'}));urls.push(wasmURL);
     const {default:create}=await loadModule(sourceURL(source));
     if(typeof create!=='function')throw Error('Missing retained module factory');
-    return create({wasmBinary:wasm,noInitialRun:true,print:()=>{},printErr:()=>{},
+    const options={wasmBinary:wasm,print:()=>{},printErr:()=>{},
       locateFile:name=>{
         // Emscripten resolves its own filename eagerly even with wasmBinary.
         // Only exact retained lookups are admitted; never infer a basename.
         if(name===wasmName)return wasmURL;
         if(!Object.hasOwn(assets,name))throw Error('Unretained engine dependency requested');return assets[name];
-      },
-      foundationEngineHost:(...args)=>{
+      }};
+    // Foundation is built --no-entry and has a closed Emscripten incoming API.
+    // The separate retained engine requires these explicit deferred-host inputs.
+    if(role==='engine'){
+      options.noInitialRun=true;
+      options.foundationEngineHost=(...args)=>{
         if(!bridge){const error=Error('Engine called its host before copied bridge installation');fail(error);throw error;}
         return bridge.callback(...args);
-      }});
+      };
+    }
+    return create(options);
   };
   scope.onmessage=async event=>{
     const message=event.data;
@@ -193,7 +202,7 @@ export function installAppendedEngineWasmWorker(scope,loadModule=url=>import(url
         }
         // Factories are inert/deferred; inspect actual engine exports/identity
         // BEFORE Package preparation can construct/initialize a portable Module.
-        kernelModule=await factory(message.factorySource,kernelBytes,message.kernelWasmLookup);
+        kernelModule=await factory('kernel',message.factorySource,kernelBytes,message.kernelWasmLookup);
         if(state==='failed'||state==='closed')return;
         if(closing){busy=false;shutdown();return;}
         if(typeof kernelModule._gui_web_engine_profile_v1!=='function'||typeof kernelModule.ccall!=='function'
@@ -215,7 +224,7 @@ export function installAppendedEngineWasmWorker(scope,loadModule=url=>import(url
         else if(documentInput)inspectKernelDocumentProfile(kernelModule,profile,live);
         else if(physicalInput)inspectKernelPhysicalProfile(kernelModule,profile,live);
         if(state==='failed'||state==='closed')return;
-        engineModule=await factory(message.engineFactorySource,engineBytes,message.engineWasmLookup,retained);
+        engineModule=await factory('engine',message.engineFactorySource,engineBytes,message.engineWasmLookup,retained);
         if(state==='failed'||state==='closed')return;
         if(closing){busy=false;shutdown();return;}
         const kernel=createCopiedEndpoint(kernelModule,'kernel',live);
@@ -224,21 +233,41 @@ export function installAppendedEngineWasmWorker(scope,loadModule=url=>import(url
         const engine=createCopiedEndpoint(engineModule,'engine',live,editorInput?{editorProfile:profile}:{});
         live();
         bridge=createEngineKernelBridge({kernel,engine,workerEpoch,post:task=>scheduler.setTimeout(task,0),timer:scheduler,
-          abandonClosedDocumentOutcomes:true,onFailure:fail});
+          abandonClosedDocumentOutcomes:true,onFailure:fail,onDirty,beforeOwnerTask});
         bridge.inspect(profile);
+        if(captureCheckpoint!==null){
+          await captureCheckpoint('inspected');
+          if(state==='failed'||state==='closed')return;
+          if(closing){busy=false;shutdown();return;}
+          if(state!=='starting'||!busy)throw Error('Engine Worker capture checkpoint lost its startup owner');
+        }
         const body=new Uint8Array(40+suffix.byteLength),view=new DataView(body.buffer);view.setBigUint64(0,BigInt(message.prefixLength),true);
         for(let i=0;i<32;i++)body[8+i]=parseInt(message.prefixSha256.slice(i*2,i*2+2),16);body.set(suffix,40);
         const metadata=bridge.configure(encodeRecord(OP.CONFIGURE,{worker:workerEpoch,instance:0n,document:0n,generation:0n},body));
         if(!metadata||Object.keys(metadata).sort().join(',')!=='application_name,entry_url,package_sha256'||typeof metadata.application_name!=='string'
             ||typeof metadata.package_sha256!=='string'||!/^[0-9a-f]{64}$/.test(metadata.package_sha256)
             ||typeof metadata.entry_url!=='string'||!metadata.entry_url.startsWith('app://'+metadata.package_sha256+'/web/'))throw Error('Invalid prepared Package metadata');
+        if(captureCheckpoint!==null){
+          await captureCheckpoint('configured');
+          if(state==='failed'||state==='closed')return;
+          if(closing){busy=false;shutdown();return;}
+          if(state!=='starting'||!busy)throw Error('Engine Worker capture checkpoint lost its startup owner');
+        }
         bridge.start(profile,{raster_output:true,width:800,height:600,entry_url:metadata.entry_url,package_sha256:metadata.package_sha256,
           required_capabilities:profile.capabilities,persistence_seed:''});
         await bridge.ready;
         if(state==='failed')return;
         if(closing){busy=false;shutdown();return;}
-        output('ready',null,kernelModule.ccall('gui_web_create','string',['string'],[message.epoch]));
-        state='ready';busy=false;
+        const publishReady=()=>{
+          if(state==='failed'||state==='closed'||closing)return;
+          output('ready',null,kernelModule.ccall('gui_web_create','string',['string'],[message.epoch]));
+          state='ready';busy=false;
+        };
+        if(beforeOwnerTask===null)publishReady();
+        else{
+          await beforeOwnerTask(publishReady,message);
+          if(closing&&state!=='failed'&&state!=='closed'){busy=false;shutdown();return;}
+        }
       }else if(message.type==='receive'){
         if(state!=='ready'||!uint(message.id,Number.MAX_SAFE_INTEGER)||message.id===0||!bounded(message.text,MAX_SERVICE))throw Error('Invalid engine GUI request');
         busy=true;
@@ -255,6 +284,10 @@ export function installAppendedEngineWasmWorker(scope,loadModule=url=>import(url
       fail(error);
     }
   };
-  return Object.freeze({get state(){return state;},close:shutdown});
+  return Object.freeze({get state(){return state;},close:shutdown,
+    replayDocumentCompletion(selector){
+      if(state!=='ready'||closing||!bridge)return Promise.reject(Error('Document replay requires a live ready Worker owner'));
+      return bridge.replayDocumentCompletion(selector);
+    }});
 }
 if(typeof WorkerGlobalScope!=='undefined'&&globalThis instanceof WorkerGlobalScope)installAppendedEngineWasmWorker(globalThis);

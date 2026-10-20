@@ -535,6 +535,43 @@ class GuestCompileTests(unittest.TestCase):
             self.assertIn(str(number) + name, schema['records']['widget']['3'])
             self.assertIn('FOUNDATION_GUEST_VIEW_' + name.upper() + ' ' + str(number) + 'u', header)
 
+    def test_rust_view_binding_identity_matches_authoritative_value_contract(self):
+        root = Path(__file__).resolve().parents[1]
+        schema_bytes = (root / 'abi/appended/view/v1.json').read_bytes()
+        schema = json.loads(schema_bytes)
+        rust = (root / 'sdk/appended/rust/src/view.rs').read_text(encoding='utf-8')
+        digest = hashlib.sha256(schema_bytes).hexdigest()
+
+        rust_digest = re.search(r'pub const SCHEMA_SHA256_HEX: &str = "([0-9a-f]+)";', rust)
+        self.assertIsNotNone(rust_digest)
+        self.assertEqual(rust_digest.group(1), digest)
+        literal = re.search(r'pub const SCHEMA: \[u8; 32\] = \[(.*?)\];', rust, re.S)
+        self.assertIsNotNone(literal)
+        self.assertEqual(bytes(int(item.strip(), 0) for item in literal.group(1).split(',')
+                               if item.strip()).hex(), digest)
+
+        self.assertEqual(schema['name'], 'foundation.view')
+        self.assertEqual(schema['major'], 1)
+        self.assertEqual(schema['minor'], 0)
+        self.assertIn('pub const SERVICE_NAME: &str = "' + schema['name'] + '";', rust)
+        rust_values = {name: int(value) for name, value in re.findall(
+            r'^pub const (\w+): u32 = (\d+);$', rust, re.M)}
+        self.assertEqual(rust_values.get('MAJOR'), schema['major'])
+        self.assertEqual(rust_values.get('MINOR'), schema['minor'])
+
+        for constant, operation in (('REPLACE', 'replace'), ('HOST_SERVICE', 'host_service')):
+            operation_id = next(int(key) for key, value in schema['operations'].items()
+                                if value['name'] == operation)
+            self.assertEqual(rust_values.get(constant), operation_id)
+
+        widget_kind = schema['records']['widget']['3']
+        schema_kinds = {name: int(value) for value, name in re.findall(r'(\d+)([a-z_]+)', widget_kind)}
+        for constant, name in (('GROUP', 'group'), ('LABEL', 'label'), ('BUTTON', 'button'),
+                               ('TOGGLE', 'toggle'), ('CHOICE', 'choice'), ('TEXT', 'text'),
+                               ('LIST', 'list'), ('BITMAP', 'bitmap'), ('MENU', 'menu')):
+            self.assertIn(name, schema_kinds)
+            self.assertEqual(rust_values.get(constant), schema_kinds[name])
+
 
 if __name__ == '__main__':
     unittest.main()

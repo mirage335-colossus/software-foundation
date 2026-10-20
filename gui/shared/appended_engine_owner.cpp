@@ -1654,6 +1654,8 @@ struct EngineOwner::Impl {
         }
         case FOUNDATION_ENGINE_CLOSE:
             if (!payload.empty()) return result(FOUNDATION_ENGINE_INVALID, ServiceStatus::invalid_request);
+            if (config.defer_copied_close_to_application && !close_requested && !is_closed)
+                return result(FOUNDATION_ENGINE_OK, ServiceStatus::unavailable);
             request_close(); return result(FOUNDATION_ENGINE_OK, is_closed ? ServiceStatus::ok : ServiceStatus::unavailable);
         default: return FOUNDATION_ENGINE_BAD_OPERATION;
         }

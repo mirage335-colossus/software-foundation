@@ -232,9 +232,11 @@ struct Fixture {
     std::unique_ptr<EngineOwner> owner;
     unsigned native_effects = 0;
     bool safe_publication = false;
-    explicit Fixture(Profile selected = Profile::editor, bool configure = true, std::shared_ptr<ModuleCounters> counters = {}, bool native_services = false) {
+    explicit Fixture(Profile selected = Profile::editor, bool configure = true, std::shared_ptr<ModuleCounters> counters = {},
+                     bool native_services = false, bool defer_copied_close = false) {
         EngineOwnerConfiguration configuration;
         configuration.worker_epoch = id.worker_epoch; configuration.application_instance = id.application_instance;
+        configuration.defer_copied_close_to_application = defer_copied_close;
         if (selected == Profile::pixel || selected == Profile::physical) configuration.document_profile = document_facts(selected == Profile::physical);
         if (selected == Profile::editor) configuration.editor_profile = editor_facts();
         if (native_services) configuration.native_services.push_back({{std::string(service_name), 1, 0, SchemaId{7}, 4},
@@ -703,6 +705,40 @@ void navigation_and_known_close_cancel_only_unclaimed_editor_work() {
         }
     }
 }
+
+void copied_close_defers_to_trusted_application_retirement() {
+    Fixture fixture(Profile::editor, true, {}, false, true);
+    fixture.bind_context();
+    const auto checked = complete_query(fixture);
+    const auto before = fixture.owner->identity();
+
+    const std::array<std::uint8_t, 1> malformed{1};
+    auto rejected = call(*fixture.owner, FOUNDATION_ENGINE_CLOSE, fixture.id, malformed);
+    check(rejected.control == FOUNDATION_ENGINE_INVALID && fixture.owner->document_enabled() &&
+        fixture.owner->editor_enabled(), "malformed copied CLOSE changed Owner retirement admission");
+    auto wrong_owner = fixture.id;
+    ++wrong_owner.worker_epoch;
+    rejected = call(*fixture.owner, FOUNDATION_ENGINE_CLOSE, wrong_owner);
+    check(rejected.control == FOUNDATION_ENGINE_STALE && fixture.owner->document_enabled() &&
+        fixture.owner->editor_enabled(), "wrong-owner copied CLOSE changed Owner retirement admission");
+
+    const auto deferred = call(*fixture.owner, FOUNDATION_ENGINE_CLOSE, fixture.id);
+    check(deferred.control == FOUNDATION_ENGINE_OK && deferred.service == 2 && !fixture.owner->closed() &&
+        fixture.owner->document_enabled() && fixture.owner->editor_enabled() && fixture.owner->identity() == before,
+        "valid copied CLOSE disabled admission before application retirement");
+
+    retire_projection(fixture, checked);
+    check(fixture.owner->document_enabled() && fixture.owner->editor_enabled(),
+        "checked native9 retirement closed Owner before trusted application close");
+    fixture.owner->close();
+    check(fixture.owner->closed(), "trusted application close failed after checked query4/native9 retirement");
+    ok(call(*fixture.owner, FOUNDATION_ENGINE_CLOSE, fixture.id));
+
+    Fixture compatible;
+    const auto ordinary = call(*compatible.owner, FOUNDATION_ENGINE_CLOSE, compatible.id);
+    check(ordinary.control == FOUNDATION_ENGINE_OK && ordinary.service == 0 && compatible.owner->closed(),
+        "default copied CLOSE compatibility changed");
+}
 Bytes service_request(EngineIdentity target, std::uint64_t sequence, std::uint64_t handle, std::uint32_t operation, Span payload) {
     Envelope envelope; envelope.generation = target.service_generation; envelope.sequence = sequence;
     envelope.interface_handle = handle; envelope.operation = operation;
@@ -938,7 +974,7 @@ int main(int argc, char** argv) {
             throw std::invalid_argument("unknown isolated editor terminal case");
         }
         if (argc != 1) throw std::invalid_argument("run normal cases or --case NAME in a fresh process");
-        const std::array<std::pair<std::string_view, void(*)()>, 15> cases{{
+        const std::array<std::pair<std::string_view, void(*)()>, 16> cases{{
             {"disabled and frozen profiles", disabled_and_frozen_profiles_refuse_editor_mailbox},
             {"independent editor facts", independent_editor_profile_facts},
             {"shared reservation burn", shared_reservation_burns_before_later_physical_and_document_work},
@@ -953,6 +989,7 @@ int main(int argc, char** argv) {
             {"allocation failure ordering", staged_allocation_failures_keep_exact_editor_reservation_cancellable},
             {"cross-mailbox authority refusal", other_mailbox_lanes_cannot_claim_or_settle_editor_authority},
             {"unclaimed navigation and close", navigation_and_known_close_cancel_only_unclaimed_editor_work},
+            {"copied close defers to trusted application retirement", copied_close_defers_to_trusted_application_retirement},
             {"old native9 and successor effect", old_target_revoke_drains_before_a_successor_native_effect},
         }};
         for (const auto& [name, test] : cases) { test(); std::cout << "PASS " << name << '\n'; }

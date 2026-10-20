@@ -215,7 +215,7 @@ test('retained profile strictly requires direct non-pthread wasm32 identity and 
     {capabilities:String(U64_MAX)},{capabilities:String(U64_MAX+1n)},{build_sha256:'X'.repeat(64)},{extra:true}])assert.throws(()=>validateEngineProfile({...profile(),...patch}),BridgeError);
 });
 
-function scenario({asyncStartup=false,abandonClosedDocumentOutcomes=false,onTerminalOutcome=null,editorInput=false,onEngineAccess=null}={}){
+function scenario({asyncStartup=false,abandonClosedDocumentOutcomes=false,onTerminalOutcome=null,editorInput=false,onEngineAccess=null,beforeOwnerTask=null}={}){
   const tasks=[],events=[],failures=[],submissions=[];let bridge,current={...initial},depth=0,effects=0,actualAcks=0,delivery=null,ack=null;
   let audit=null,pruned=null,auditsCollected=0,disposed=0;
   const hooks={},timers=new Map();let nextTimer=0;
@@ -304,7 +304,7 @@ function scenario({asyncStartup=false,abandonClosedDocumentOutcomes=false,onTerm
     native(OP.TURN_ENTER,new Uint8Array(),request.identity,request.transfer);
     const result=action();native(OP.TURN_LEAVE,new Uint8Array(),request.identity,request.transfer);return result;
   }
-  bridge=createEngineKernelBridge({kernel,engine,workerEpoch,post:task=>tasks.push(task),timer,onFailure:error=>failures.push(error),abandonClosedDocumentOutcomes,onTerminalOutcome});
+  bridge=createEngineKernelBridge({kernel,engine,workerEpoch,post:task=>tasks.push(task),timer,onFailure:error=>failures.push(error),abandonClosedDocumentOutcomes,onTerminalOutcome,beforeOwnerTask});
   return {bridge,kernelModule,engineModule,kernel,engine,hooks,tasks,events,failures,timers,native,
     configure(){bridge.inspect(profile());return bridge.configure(encodeRecord(OP.CONFIGURE,initial));},
     start(){this.configure();return bridge.start(profile(),{entry:'app://fixture/web/index.html'});},
@@ -350,6 +350,26 @@ test('close and startup timeout reject readiness and prevent late initialization
   assert.equal(timed.timers.size,1);timed.timers.values().next().value();await timeout;assert.equal(timed.bridge.state,'failed');
   const before=timed.engineModule.calls.length;timed.flush();assert.equal(timed.engineModule.calls.length,before);
   assert.equal(timed.engineModule.calls.filter(request=>request.kind===ENGINE.START).length,1);assert.deepEqual(timed.bridge.close(),{graceful:false});
+});
+test('private owner task gate holds startup ADVANCE while the original watchdog fires',async()=>{
+  let action,resolve;const pending=new Promise(yes=>{resolve=yes;});
+  const s=scenario({asyncStartup:true,beforeOwnerTask:task=>{action=task;return pending.then(task);}});
+  s.hooks.deferDocument=true;s.start();s.step();
+  assert.equal(s.engineModule.calls.filter(request=>request.kind===ENGINE.ADVANCE).length,0);
+  assert.equal(s.bridge.state,'starting');assert.equal(typeof action,'function');
+  const watchdog=s.timers.values().next().value;assert.equal(typeof watchdog,'function');watchdog();
+  await assert.rejects(s.bridge.ready,/startup timed out/);assert.equal(s.bridge.state,'failed');
+  resolve();await pending;await Promise.resolve();
+  assert.equal(s.engineModule.calls.filter(request=>request.kind===ENGINE.ADVANCE).length,0);
+  assert.equal(s.failures.length,1);
+});
+test('private owner task gate preserves close while startup work waits',async()=>{
+  let resolve;const pending=new Promise(yes=>{resolve=yes;});
+  const s=scenario({asyncStartup:true,beforeOwnerTask:task=>pending.then(task)});
+  s.start();s.step();assert.equal(s.engineModule.calls.filter(request=>request.kind===ENGINE.ADVANCE).length,0);
+  s.bridge.close();resolve();await pending;await Promise.resolve();
+  assert.equal(s.engineModule.calls.filter(request=>request.kind===ENGINE.ADVANCE).length,0);
+  await assert.rejects(s.bridge.ready,/closed|closing/i);
 });
 test('admission, effect pump, completion, actual ACK and receipt use separate serialized owner tasks',()=>{
   const s=scenario();s.start();s.flush();s.events.length=0;s.bridge.advance();assert.equal(s.effects,0);
@@ -600,8 +620,8 @@ function editorProviderReply(request,kind,sequence,{status=0,disposition=1,handl
   else{view.setUint32(4,disposition,true);view.setBigUint64(8,sequence,true);view.setUint32(16,payload.length,true);view.setUint32(20,handled,true);}
   bytes.set(payload,prefix);return receipt(request,{payload:bytes});
 }
-function editorScenario(){
-  const s=scenario({editorInput:true}),collected=[];let pending=null,claimed=false,barrier=0,documentBarrier=0;
+function editorScenario(options={}){
+  const s=scenario({editorInput:true,...options}),collected=[];let pending=null,claimed=false,barrier=0,documentBarrier=0;
   s.hooks.describe=request=>receipt(request,{payload:jsonBytes(editorProfile())});
   s.hooks.kernel=(op,request)=>{
     if(op===OP.PEEK_DOCUMENT_WORK)return receipt(request,{control:CONTROL.EMPTY,service:documentBarrier});
@@ -920,4 +940,110 @@ test('cached replay preserves ordinary high-water checks and the final exact ACK
     assert.equal(s.bridge.state,'ready');assert.equal(s.backendEntries,1);assert.equal(s.metadataRetirements,1);
     if(first===41n){s.offer(2,43n);s.flush();assert.equal(s.backendEntries,2);const exports=s.engineModule.calls.length;s.offer(2,43n);s.flush();assert.equal(s.bridge.state,'failed');assert.equal(s.engineModule.calls.length,exports);}
   }
+});
+
+test('closing drains only exact owned physical context retirement without ordinary engine advance',async()=>{
+ for(const action of [2,1]){
+  const s=editorScenario({abandonClosedDocumentOutcomes:true});s.startEditor();
+  let pending=true,done=false,closeCalls=0,commands=0;
+  const body=new Uint8Array(88),view=new DataView(body.buffer);
+  view.setUint32(0,3,true);view.setBigUint64(8,44n,true);
+  body.set(Buffer.from('eef60cda2aa7b791641b0e5082d551ec37c10b8d92ca4cc71f13be0af45321d9','hex'),16);
+  view.setUint32(48,16,true);view.setUint32(52,32,true);view.setUint32(56,action,true);
+  view.setUint32(68,3,true);view.setBigUint64(80,7n,true);
+  const kernel=s.hooks.kernel,engine=s.hooks.engine;
+  s.hooks.kernel=(op,request)=>{
+   if(op===OP.CLOSE){++closeCalls;return receipt(request,{service:done?0:2});}
+   if(op===OP.PEEK_INPUT)return pending?receipt(request,{identity:documentIdentity,transfer:91n,payload:body}):receipt(request,{control:CONTROL.EMPTY});
+   if(op===OP.COMMAND_RESULT){pending=false;done=true;assert.equal(request.transfer,91n);return receipt(request);}
+   return kernel(op,request);
+  };
+  s.hooks.engine=(op,request)=>{
+   if(op===ENGINE.COMMAND){++commands;s.turn(request);const result=new Uint8Array(24),v=new DataView(result.buffer);v.setUint32(4,1,true);v.setBigUint64(8,44n,true);return receipt(request,{payload:result});}
+   return engine(op,request);
+  };
+  const before=s.engineModule.calls.filter(x=>x.kind===ENGINE.ADVANCE).length;
+  assert.deepEqual(s.bridge.close(),{graceful:false,pending:true});s.flush();
+  if(action===2){assert.equal(s.bridge.state,'closed');assert.equal(commands,1);assert.equal(done,true);assert.deepEqual(await s.bridge.closed,{graceful:true});assert.ok(closeCalls>=2);}
+  else{assert.equal(s.bridge.state,'failed');assert.equal(commands,0);assert.match(s.failures[0].message,/Only owned physical context retirement/);}
+  assert.equal(s.engineModule.calls.filter(x=>x.kind===ENGINE.ADVANCE).length,before);
+ }
+});
+
+test('deferred copied close uses last-ready audit authority through live retirement and disposal',async()=>{
+ const s=editorScenario({abandonClosedDocumentOutcomes:true});s.startEditor();
+ let pending=true,phase='live',closes=0,commands=0;const audits=[];
+ const body=new Uint8Array(88),view=new DataView(body.buffer);
+ view.setUint32(0,3,true);view.setBigUint64(8,44n,true);
+ body.set(Buffer.from('eef60cda2aa7b791641b0e5082d551ec37c10b8d92ca4cc71f13be0af45321d9','hex'),16);
+ view.setUint32(48,16,true);view.setUint32(52,32,true);view.setUint32(56,2,true);
+ view.setUint32(68,3,true);view.setBigUint64(80,7n,true);
+ const kernel=s.hooks.kernel,engine=s.hooks.engine;
+ s.hooks.kernel=(op,request)=>{
+  if(op===OP.CLOSE){++closes;return receipt(request,{service:phase==='retired'&&s.disposed?0:2});}
+  if(op===OP.PEEK_RETIREMENT_AUDIT||op===OP.PEEK_RETIRED_DOCUMENT){
+   audits.push({op,phase,identity:{...request.identity}});
+   if(Object.keys(documentIdentity).some(key=>request.identity[key]!==documentIdentity[key]))
+    return receipt(request,{control:CONTROL.STALE,service:4});
+   if(op===OP.PEEK_RETIREMENT_AUDIT)return receipt(request,{control:CONTROL.EMPTY,service:2});
+  }
+  if(op===OP.PEEK_INPUT)return pending?receipt(request,{identity:documentIdentity,transfer:91n,payload:body}):receipt(request,{control:CONTROL.EMPTY});
+  if(op===OP.COMMAND_RESULT){pending=false;phase='retired';s.markCurrentClosed();s.queuePruned();return receipt(request);}
+  return kernel(op,request);
+ };
+ s.hooks.engine=(op,request)=>{
+  if(op===ENGINE.COMMAND){++commands;s.turn(request);const result=new Uint8Array(24),v=new DataView(result.buffer);v.setUint32(4,1,true);v.setBigUint64(8,44n,true);return receipt(request,{payload:result});}
+  return engine(op,request);
+ };
+ assert.deepEqual(s.bridge.close(),{graceful:false,pending:true});s.flush();
+ assert.equal(s.bridge.state,'closed','deferred Owner metadata must remain selectable until actual retirement completes');
+ assert.deepEqual(await s.bridge.closed,{graceful:true});
+ assert.equal(commands,1);assert.equal(s.disposed,1);assert.ok(closes>=2);
+ assert.ok(audits.some(x=>x.phase==='live')&&audits.some(x=>x.phase==='retired'));
+ assert.ok(audits.every(x=>Object.keys(documentIdentity).every(key=>x.identity[key]===documentIdentity[key])));
+ assert.deepEqual(s.failures,[]);
+ for(const control of [CONTROL.STALE,CONTROL.CONFLICT,CONTROL.CLOSED]){
+  const f=editorScenario({abandonClosedDocumentOutcomes:true});f.startEditor();const normal=f.hooks.kernel;
+  f.hooks.kernel=(op,request)=>op===OP.CLOSE?receipt(request,{service:2}):op===OP.PEEK_RETIREMENT_AUDIT?receipt(request,{control,service:2}):normal(op,request);
+  f.bridge.close();f.flush();assert.equal(f.bridge.state,'failed');
+  assert.match(f.failures[0].message,/Kernel terminal-outcome mailbox refused/);
+ }
+});
+
+test('final native close witness precedes closed scheduler probes after exact retired disposal',async()=>{
+ for(const earlyClosed of [false,true]){
+  const s=editorScenario({abandonClosedDocumentOutcomes:true});s.startEditor();
+  let phase='live',commands=0,closedProbes=0,finalWitnesses=0;
+  const body=new Uint8Array(88),view=new DataView(body.buffer);
+  view.setUint32(0,3,true);view.setBigUint64(8,44n,true);
+  body.set(Buffer.from('eef60cda2aa7b791641b0e5082d551ec37c10b8d92ca4cc71f13be0af45321d9','hex'),16);
+  view.setUint32(48,16,true);view.setUint32(52,32,true);view.setUint32(56,2,true);
+  view.setUint32(68,3,true);view.setBigUint64(80,7n,true);
+  const kernel=s.hooks.kernel,engine=s.hooks.engine;
+  s.hooks.kernel=(op,request)=>{
+   if(op===OP.CLOSE){
+    if(phase==='retired'&&s.disposed){++finalWitnesses;return receipt(request,{service:0});}
+    return receipt(request,{service:2});
+   }
+   if(op===OP.PEEK_INPUT){
+    if(earlyClosed||phase==='retired'){++closedProbes;return receipt(request,{control:CONTROL.CLOSED,service:10});}
+    return receipt(request,{identity:documentIdentity,transfer:91n,payload:body});
+   }
+   if(op===OP.COMMAND_RESULT){phase='retired';s.markCurrentClosed();s.queuePruned();return receipt(request);}
+   return kernel(op,request);
+  };
+  s.hooks.engine=(op,request)=>{
+   if(op===ENGINE.COMMAND){++commands;s.turn(request);const result=new Uint8Array(24),v=new DataView(result.buffer);v.setUint32(4,1,true);v.setBigUint64(8,44n,true);return receipt(request,{payload:result});}
+   return engine(op,request);
+  };
+  assert.deepEqual(s.bridge.close(),{graceful:false,pending:true});s.flush();
+  if(earlyClosed){
+   assert.equal(s.bridge.state,'failed','CLOSED before an authentic final close witness must remain a refusal');
+   assert.match(s.failures[0].message,/Physical input mailbox refused/);assert.equal(commands,0);assert.equal(finalWitnesses,0);
+  }else{
+   assert.equal(s.bridge.state,'closed','consume authentic native close after disposal before polling closed input');
+   assert.deepEqual(await s.bridge.closed,{graceful:true});assert.equal(s.disposed,1);assert.equal(commands,1);
+   assert.equal(finalWitnesses,1);assert.equal(closedProbes,0);assert.deepEqual(s.failures,[]);
+  }
+ }
 });

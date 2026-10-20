@@ -1,4 +1,5 @@
 #include "../gui/shared/appended_engine_abi.h"
+#include "../gui/shared/appended_engine_input_codec.hpp"
 #include "../gui/shared/appended_engine_owner.hpp"
 
 #include <algorithm>
@@ -14,6 +15,7 @@
 #include <vector>
 
 using namespace foundation::appended;
+namespace input = foundation::appended::engine_input;
 
 namespace {
 constexpr std::uint64_t worker_epoch = 17, application_instance = 23, module_generation = 31;
@@ -21,6 +23,38 @@ constexpr std::size_t header_bytes = 72, receipt_bytes = 80;
 constexpr std::string_view native_name = "org.example.engine.counter";
 constexpr std::string_view module_name = "org.example.engine.provider";
 constexpr SchemaId native_schema{1, 7, 3};
+void require(bool value, const char* message);
+
+input::EngineSurfaceProfileFacts synthetic_input_profile() {
+    input::EngineSurfaceProfileFacts value;
+    value.enabled = true; value.name = input::kInputProfileName;
+    value.contract_sha256 = input::kProviderContractSha256;
+    value.build_sha256.fill(0x11); value.source_recipe_sha256.fill(0x22);
+    value.catalog_sha256 = input::kInputCatalogSha256;
+    value.provider_capabilities = input::kProviderCapabilities;
+    value.surface_capabilities = input::kSurfaceCapabilities;
+    value.surface_protocol_version = input::kSurfaceProtocolVersion;
+    value.mouse_input_version = input::kMouseInputVersion;
+    value.raw_key_mapping_revision = input::kRawKeyMappingRevision;
+    value.viewport_width = 800; value.viewport_height = 600; value.display_scale = 1;
+    value.commands = input::kCommands;
+    require(input::input_profile_valid(value), "synthetic physical profile invalid");
+    return value;
+}
+
+Bytes focus_command(std::uint64_t context) {
+    Bytes bytes;
+    require(input::encode_focus({1, 0, 0, 0, context, 0}, bytes) == input::Status::ok,
+        "physical FOCUS fixture encoding");
+    return bytes;
+}
+
+Bytes key_command(std::uint64_t context) {
+    Bytes bytes;
+    require(input::encode_key({0, 0, 0, 0, context, "a", "KeyA"}, bytes) == input::Status::ok,
+        "physical KEY fixture encoding");
+    return bytes;
+}
 
 static_assert(FOUNDATION_ENGINE_HEADER_BYTES == header_bytes);
 static_assert(FOUNDATION_ENGINE_RECEIPT_BYTES == receipt_bytes);
@@ -310,12 +344,14 @@ struct Fixture {
     EngineIdentity current{worker_epoch, application_instance, 0, 0};
     bool binary;
 
-    explicit Fixture(bool with_binary = false, bool abandon = false, bool trap = false) : binary(with_binary) {
+    explicit Fixture(bool with_binary = false, bool abandon = false, bool trap = false,
+                     bool with_physical = false) : binary(with_binary) {
         EngineOwnerConfiguration config;
         config.worker_epoch = worker_epoch;
         config.application_instance = application_instance;
         config.module_generation = module_generation;
         config.abandon_closed_document_outcomes = abandon;
+        if (with_physical) config.input_profile = synthetic_input_profile();
         config.native_services.push_back({{std::string(native_name), 1, 0, native_schema, 4},
             [this](std::uint32_t operation, std::span<const std::uint8_t> input,
                    std::span<std::uint8_t> output) -> ServiceReply {
@@ -961,6 +997,71 @@ void navigation_retires_queue_and_rejects_stale_authority() {
         fresh.transfer != pending.transfer && fresh.transfer != receipt.transfer, "successor reused old transport authority");
 }
 
+void navigation_rejects_stale_physical_document_and_context_before_dispatch() {
+    Fixture f(false, false, false, true);
+    f.boot();
+    auto& owner = *f.owner;
+    const auto old = f.current;
+    require(owner.input_enabled() && !owner.input_suspended(), "physical input profile was not enabled");
+
+    auto bind = [&](EngineIdentity target, std::uint64_t context) {
+        const auto ticket = owner.stage_command(target, context, 3, input::kFocusSchema,
+            focus_command(context), true);
+        require(ticket.has_value(), "valid physical context bind was refused");
+        auto pending = f.call_as(FOUNDATION_ENGINE_PEEK_INPUT, target);
+        input::Command command;
+        require(pending.ok() && input::decode_command(pending.data(), command) == input::Status::ok &&
+            command.operation == 3 && command.request_sequence == *ticket &&
+            command.schema_sha256 == input::kFocusSchema && command.payload == focus_command(context),
+            "valid FOCUS did not reach the owner's input dispatch lane");
+        f.enter(pending.transfer);
+        f.leave(pending.transfer);
+        Bytes result;
+        require(input::encode_command_result({0, 1, *ticket, 0, 0}, result) == input::Status::ok,
+            "physical FOCUS result fixture encoding");
+        require(f.call_as(FOUNDATION_ENGINE_COMMAND_RESULT, target, result, pending.transfer, 104).ok(),
+            "physical FOCUS result was not committed");
+        const auto outcome = owner.command_outcome(*ticket);
+        require(outcome && outcome->status == EngineInputCommandStatus::consumed,
+            "physical FOCUS context did not become owner state");
+        return *ticket;
+    };
+    const auto first_bind = bind(old, 41);
+    require(owner.identity() == old && owner.input_enabled() && !owner.input_suspended(),
+        "committed physical context changed current owner authority");
+
+    f.begin(2);
+    const auto current = f.current;
+    require(current.document_sequence == 2 && current != old && owner.identity() == current &&
+        owner.input_enabled() && !owner.input_suspended(),
+        "navigation did not retain fresh owner authority and retire old physical state");
+    const auto old_document = owner.stage_command(old, 41, 1, input::kKeySchema, key_command(41));
+    const auto old_context = owner.stage_command(current, 41, 1, input::kKeySchema, key_command(41));
+    const auto after_refusal = f.call_as(FOUNDATION_ENGINE_PEEK_INPUT, current);
+    require(!old_document && !old_context && after_refusal.control == FOUNDATION_ENGINE_EMPTY &&
+        owner.identity() == current && owner.input_enabled() && !owner.input_suspended() && f.effects == 0,
+        "stale physical authority queued work, mutated current authority, or invoked the native effect");
+
+    const auto current_bind = bind(current, 42);
+    const auto fresh_payload = key_command(42);
+    const auto stale_document_ready = owner.stage_command(old, 42, 1, input::kKeySchema, fresh_payload);
+    const auto stale_context_ready = owner.stage_command(current, 41, 1, input::kKeySchema, key_command(41));
+    const auto ready_refusal = f.call_as(FOUNDATION_ENGINE_PEEK_INPUT, current);
+    require(!stale_document_ready && !stale_context_ready && ready_refusal.control == FOUNDATION_ENGINE_EMPTY &&
+        owner.identity() == current && owner.input_enabled() && !owner.input_suspended() && f.effects == 0,
+        "retired document/context bypassed an otherwise ready current physical admission lane");
+    const auto fresh_ticket = owner.stage_command(current, 42, 1, input::kKeySchema, fresh_payload);
+    require(fresh_ticket && *fresh_ticket > current_bind && current_bind > first_bind,
+        "fresh physical admission did not advance its owner ticket");
+    const auto fresh = f.call_as(FOUNDATION_ENGINE_PEEK_INPUT, current);
+    input::Command command;
+    require(fresh.ok() && fresh.identity == current && input::decode_command(fresh.data(), command) == input::Status::ok &&
+        command.operation == 1 && command.request_sequence == *fresh_ticket &&
+        command.schema_sha256 == input::kKeySchema && command.payload == fresh_payload &&
+        owner.identity() == current && f.effects == 0,
+        "valid current-document physical command did not reach exact owned dispatch");
+}
+
 void resource_epochs_copied_reads_and_close_retirement() {
     Fixture f;
     require(f.call(FOUNDATION_ENGINE_CONFIGURE).ok(), "resource owner configuration");
@@ -1213,6 +1314,7 @@ int main() {
         retirement_clears_empty_ack_intents_and_audits_lowest_retained_sequence();
         actual_module_uncertain_outcome_is_audited_without_reexecution();
         navigation_retires_queue_and_rejects_stale_authority();
+        navigation_rejects_stale_physical_document_and_context_before_dispatch();
         resource_epochs_copied_reads_and_close_retirement();
         resource_adoption_requires_initial_native_turn();
         opaque_frame_revision_and_document_guards();

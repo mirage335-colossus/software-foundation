@@ -27,6 +27,16 @@ if(BUILD_TESTING)
     set_target_properties(${_target} PROPERTIES CXX_EXTENSIONS OFF)
     add_dependencies(${_target} foundation_gui_contract)
   endforeach()
+  add_executable(foundation_gui_compiled_redaction_identity_test EXCLUDE_FROM_ALL
+    tests/compiled_redaction_identity_test.cpp)
+  target_link_libraries(foundation_gui_compiled_redaction_identity_test PRIVATE foundation_gui_boundary)
+  target_include_directories(foundation_gui_compiled_redaction_identity_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/shared")
+  target_compile_features(foundation_gui_compiled_redaction_identity_test PRIVATE cxx_std_20)
+  set_target_properties(foundation_gui_compiled_redaction_identity_test PROPERTIES CXX_EXTENSIONS OFF)
+  add_dependencies(foundation_gui_compiled_redaction_identity_test foundation_gui_contract)
+  foundation_gui_appended_test(foundation.gui.compiled-redaction-identity foundation_gui_compiled_redaction_identity_test 15)
+
   foundation_gui_appended_test(foundation.gui.region-composition foundation_gui_region_composition_test 15)
   foundation_gui_appended_test(foundation.gui.prepared-service-poll foundation_gui_prepared_service_poll_test 15)
   foundation_gui_appended_test(foundation.gui.native-closed-service-poll foundation_gui_native_closed_service_poll_test 15)

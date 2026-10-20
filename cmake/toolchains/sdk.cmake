@@ -36,12 +36,16 @@ if(_system STREQUAL "Emscripten")
   # Assertions remain enabled in Release as part of this prepared SDK contract.
   set(CMAKE_CXX_FLAGS_INIT "-fexceptions")
   set(CMAKE_EXE_LINKER_FLAGS_INIT "-sASSERTIONS=1")
+  # Emscripten's supplier toolchain derives CMAKE_SYSTEM_PROCESSOR from this
+  # supported override (otherwise it defaults to x86). Bind it to the verified
+  # SDK manifest and forward it to nested try_compile toolchain invocations.
+  set(EMSCRIPTEN_SYSTEM_PROCESSOR "${_processor}")
+  list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES EMSCRIPTEN_SYSTEM_PROCESSOR FOUNDATION_SDK_ROOT)
   include("${_wasm_toolchain}")
   # Supplier CMake sets direct launcher paths; route every later Ninja command
   # through the retained wrappers so frozen-cache settings survive configuration.
   set(CMAKE_USER_MAKE_RULES_OVERRIDE "${CMAKE_CURRENT_LIST_DIR}/emscripten-rules.cmake")
   include("${CMAKE_USER_MAKE_RULES_OVERRIDE}")
-  list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES FOUNDATION_SDK_ROOT)
   return()
 elseif(NOT _system STREQUAL "Linux")
   message(FATAL_ERROR "Use the native Windows compiler with its verified dependency group")

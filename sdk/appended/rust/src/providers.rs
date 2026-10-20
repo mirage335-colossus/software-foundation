@@ -250,6 +250,14 @@ impl Service {
     /// Every completed outcome is acknowledged using this same client.
     #[cfg(all(target_arch = "wasm32", target_os = "none"))]
     pub fn discover(client: &mut Client, scratch: &mut Scratch<'_>) -> Result<Self, CallError> {
+        Self::discover_optional(client, scratch)?.ok_or(CallError::Service(SERVICE_NOT_FOUND))
+    }
+
+    /// Return `None` only for an absent gateway whose completed discovery was
+    /// successfully acknowledged. An acknowledgement failure always stays an
+    /// error, even when its status is itself `SERVICE_NOT_FOUND`.
+    #[cfg(all(target_arch = "wasm32", target_os = "none"))]
+    pub fn discover_optional(client: &mut Client, scratch: &mut Scratch<'_>) -> Result<Option<Self>, CallError> {
         let query = DiscoveryQuery { name: SERVICE_NAME, major: MAJOR,
             minimum_minor: MINOR, maximum_minor: MINOR, schema: Some(&SCHEMA) };
         let count = bootstrap::encode_discovery(query, scratch.payload).map_err(CallError::Codec)?;
@@ -261,7 +269,12 @@ impl Service {
                 handle: found.handle, generation: client.context().generation,
             }).map_err(CallError::Codec)
         });
-        retire(client, envelope.sequence, result, scratch)
+        let optional = match result {
+            Ok(service) => Ok(Some(service)),
+            Err(CallError::Service(SERVICE_NOT_FOUND)) => Ok(None),
+            Err(error) => Err(error),
+        };
+        retire(client, envelope.sequence, optional, scratch)
     }
 
     #[cfg(all(target_arch = "wasm32", target_os = "none"))]

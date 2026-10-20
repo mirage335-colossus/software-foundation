@@ -509,6 +509,8 @@ if(BUILD_TESTING)
     set_target_properties(foundation_gui_engine_document_bitmap_broker_test PROPERTIES CXX_EXTENSIONS OFF)
     foundation_options(foundation_gui_engine_document_bitmap_broker_test)
     foreach(_bitmap_broker_case IN ITEMS
+        "E08 held editor H orders form after Take"
+        "E08 actual NativeEffect refuses then releases ordinary work"
         "Observe query3 sole publication and metadata Take"
         "Begin retires editor9 then physical3 before form6"
         "query publication failure preserves accepted State and pending candidate"
@@ -953,6 +955,14 @@ inline const EngineEditorProfileFacts compiled_engine_editor_profile = [] {
             add_test(NAME "${_editor_host_test}" COMMAND ${_editor_host_target} "${_editor_host_argument}")
             foundation_test_prerequisites("${_editor_host_test}" ${_editor_host_target})
             set_tests_properties("${_editor_host_test}" PROPERTIES LABELS "gui;appended;focused" TIMEOUT 30)
+        endforeach()
+        foreach(_retirement_case IN ITEMS unavailable-retirement noneditable-retirement)
+            set(_retirement_test "foundation.gui.engine-editor-host-${_retirement_case}")
+            add_test(NAME "${_retirement_test}"
+                COMMAND foundation_gui_appended_engine_editor_host_valid_test "${_retirement_case}")
+            foundation_test_prerequisites("${_retirement_test}"
+                foundation_gui_appended_engine_editor_host_valid_test)
+            set_tests_properties("${_retirement_test}" PROPERTIES LABELS "gui;appended;focused" TIMEOUT 30)
         endforeach()
     endif()
 

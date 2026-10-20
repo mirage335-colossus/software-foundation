@@ -374,8 +374,11 @@ struct AppendedEngineApplication::Impl {
         const bool checked_null = !publication.basis && publication.retirement &&
             !publication.retirement->authority_retired &&
             publication.retirement->availability == ne::NativeAvailability::noneditable;
+        // Owned retirement does not imply current physical availability. An
+        // unavailable readback cannot retain an older admitted declaration.
         const bool pending_editor = !publication.basis &&
-            (!publication.retirement || publication.retirement->authority_retired);
+            (!publication.retirement || (publication.retirement->authority_retired &&
+                publication.retirement->availability != ne::NativeAvailability::unavailable));
         pair.available = !view.modal_root && physical_ready() && (publication.basis.has_value() || checked_null ||
                                               (pending_editor && editor_physical_admitted));
         pair.keys.fallback = gui_surface::Capture::capture;
@@ -411,7 +414,7 @@ struct AppendedEngineApplication::Impl {
                     else if (has_frame()) {
                         if (view.revision == std::numeric_limits<std::uint64_t>::max() || input_epoch == std::numeric_limits<std::uint64_t>::max())
                             throw std::overflow_error("Rich editor result navigation generations exhausted");
-                        editor_navigation_pending = true; EngineRegionComposition::clear_content(view); region_drawn = false;
+                        editor_navigation_pending = true; redact_view();
                         ++view.revision; ++input_epoch; pending = true;
                     }
                 }
@@ -706,13 +709,18 @@ struct AppendedEngineApplication::Impl {
             invalidate_editor();
         }
     }
-    void redact_document() {
+    void redact_view(bool terminal = false) noexcept {
+        if (region && !terminal) EngineRegionComposition::redact_content(view);
+        else EngineRegionComposition::clear_content(view);
+        region_drawn = false;
+    }
+    void redact_document(bool terminal = false) {
         if (document && !redacted) document->suspend(EngineDocumentBroker::Suspension::service);
         request_retirement();
         if (view.revision == std::numeric_limits<std::uint64_t>::max() || input_epoch == std::numeric_limits<std::uint64_t>::max())
             throw std::overflow_error("Rich redaction generations exhausted");
         ++view.revision; ++input_epoch;
-        EngineRegionComposition::clear_content(view); region_drawn = false;
+        redact_view(terminal);
         redacted = true; rearm_waiting = false; pending = true;
     }
     void retry_service_gate() {
@@ -772,7 +780,7 @@ struct AppendedEngineApplication::Impl {
             if (has_frame()) {
                 if (view.revision == std::numeric_limits<std::uint64_t>::max() || input_epoch == std::numeric_limits<std::uint64_t>::max())
                     throw std::overflow_error("Rich editor navigation generations exhausted");
-                EngineRegionComposition::clear_content(view); region_drawn = false; ++view.revision; ++input_epoch; pending = true;
+                redact_view(); ++view.revision; ++input_epoch; pending = true;
             }
         } else if (editor_navigation_pending && editor_retired()) {
             editor_navigation_pending = false; pending = true;
@@ -781,7 +789,7 @@ struct AppendedEngineApplication::Impl {
     void terminal_document() {
         if (document) document->notify_terminal();
         if (!terminal_requested) {
-            redact_document();
+            redact_document(true);
             terminal_requested = true; input_failed = true;
             set_service_gate(true);
         }

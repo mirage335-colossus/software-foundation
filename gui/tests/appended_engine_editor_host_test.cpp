@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: CC0-1.0
 #include "shared/appended_engine_abi.h"
 #include "shared/engine_editor_profile.hpp"
+#include "shared/appended_engine_input_codec.hpp"
+#include "shared/engine_editor_work.hpp"
+#include "shared/native_editor_codec.hpp"
 #include "../../src/appended/sha256.hpp"
 #include <foundation/appended/container.hpp>
 #include <gui/web.hpp>
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -98,11 +103,39 @@ void unprepared() {
     check(rejected, "read-only facts initialized an application");
 }
 #if FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE == 3
+struct PhysicalReply {
+    std::int32_t provider_status{};
+    std::uint32_t disposition{1};
+    std::uint32_t handled{};
+};
+struct EditorWorkView {
+    std::uint64_t worker_epoch{}, application{}, document{}, generation{}, transfer{}, request_sequence{};
+    std::uint32_t kind{}, operation{}, required_reply_capacity{};
+    std::array<std::uint8_t, 32> schema{};
+    Bytes payload;
+};
+struct EditorReply {
+    std::int32_t provider_status{};
+    std::uint32_t disposition{}, handled{};
+    std::uint64_t semantic_revision{};
+    Bytes payload;
+};
+struct ReplayHooks {
+    std::function<PhysicalReply(const foundation::appended::engine_input::Command&)> physical;
+    std::function<EditorReply(const EditorWorkView&)> query4;
+    std::function<EditorReply(const EditorWorkView&)> native9;
+    std::function<void(std::string_view)> after_cleanup_poll;
+    std::function<void(std::string_view)> after_recovery_poll;
+    std::function<EditorReply(const EditorWorkView&)> query4_recovery;
+};
 // Actual host composition with a verified in-memory Package and explicitly
 // synthetic copied engine replies. No engine, DSO, SDK or browser is launched.
-void ready_editor_composition() {
+void ready_editor_composition(const ReplayHooks& hooks = {}) {
     using namespace foundation::appended;
     using Span = std::span<const std::uint8_t>;
+    check(!hooks.query4 || static_cast<bool>(hooks.physical), "query4 replay requires the actual physical bind step");
+    check(!hooks.native9 || static_cast<bool>(hooks.query4), "native9 replay requires the initial actual query4 step");
+    check(!hooks.query4_recovery || static_cast<bool>(hooks.native9), "query4 recovery requires the preceding actual native9 step");
     const auto bytes = [](std::string_view text) { return Span{reinterpret_cast<const std::uint8_t*>(text.data()), text.size()}; };
     const auto put = [](std::span<std::uint8_t> out, std::size_t at, std::uint64_t value, unsigned width) {
         for (unsigned n = 0; n < width; ++n) out[at + n] = static_cast<std::uint8_t>(value >> (8 * n));
@@ -113,15 +146,15 @@ void ready_editor_composition() {
         for (unsigned n = 0; n < width; ++n) value |= std::uint64_t(in[at + n]) << (8 * n);
         return value;
     };
-    struct Identity { std::uint64_t application{}, document{}, generation{}; };
-    const auto request = [&](std::uint32_t operation, Identity id, Span body) {
+    struct Identity { std::uint64_t application{}, document{}, generation{}, worker_epoch{11}; };
+    const auto request = [&](std::uint32_t operation, Identity id, Span body, std::uint64_t transfer = 0) {
         Bytes out(72 + body.size()); std::copy_n("FKB1", 4, out.begin());
-        put(out, 4, 1, 2); put(out, 6, operation, 2); put(out, 8, out.size(), 4); put(out, 16, 11, 8);
+        put(out, 4, 1, 2); put(out, 6, operation, 2); put(out, 8, out.size(), 4); put(out, 16, id.worker_epoch, 8);
         put(out, 24, id.application, 8); put(out, 32, id.document, 8); put(out, 40, id.generation, 8);
-        put(out, 64, body.size(), 4); std::copy(body.begin(), body.end(), out.begin() + 72); return out;
+        put(out, 48, transfer, 8); put(out, 64, body.size(), 4); std::copy(body.begin(), body.end(), out.begin() + 72); return out;
     };
-    const auto bridge = [&](std::uint32_t operation, Identity id, Span body) {
-        const auto in = request(operation, id, body); Bytes out(8192);
+    const auto bridge = [&](std::uint32_t operation, Identity id, Span body, std::uint64_t transfer = 0) {
+        const auto in = request(operation, id, body, transfer); Bytes out(8192);
         const auto count = gui_web_engine_dispatch_v1(operation, in.data(), in.size(), out.data(), out.size());
         check(count >= 80 && static_cast<std::size_t>(count) <= out.size(), "editor host rejected copied receipt framing");
         out.resize(static_cast<std::size_t>(count)); return out;
@@ -181,18 +214,201 @@ void ready_editor_composition() {
     };
     (void)state(gui_web_create("editor-host"), false);
     std::uint64_t sequence{};
-    const auto receive = [&](Json operation) {
+    const auto receive_raw = [&](Json operation) {
         const auto envelope = gui::web_detail::encode(Json::Object{{"epoch", "editor-host"}, {"seq", std::to_string(++sequence)}, {"operation", std::move(operation)}});
-        return state(gui_web_receive(envelope.c_str()));
+        return std::string(gui_web_receive(envelope.c_str()));
+    };
+    const auto receive = [&](Json operation) {
+        return state(receive_raw(std::move(operation)));
     };
     const auto connected = receive(Json::Object{{"type", "surfaceConnect"}, {"version", 2}, {"profile", "editor_v1"}, {"supported", "8255"}, {"mouseInputVersion", 1}});
     check(connected.at("surface").at("capabilities").at("supported").str() == "8255", "editor host silently selected a legacy capability profile");
+    if (hooks.physical) {
+        (void)receive(Json::Object{{"type", "poll"}}); // Consume queued CONNECT before peeking actual bind.
+        const auto pending = bridge(FOUNDATION_ENGINE_PEEK_INPUT, id, {});
+        check(get(pending, 72, 4) == FOUNDATION_ENGINE_OK, "expected pending actual physical bind");
+        const auto target = Identity{get(pending, 24, 8), get(pending, 32, 8), get(pending, 40, 8), get(pending, 16, 8)};
+        const auto transfer = get(pending, 48, 8);
+        check(transfer != 0 && pending.size() > FOUNDATION_ENGINE_RECEIPT_BYTES,
+            "physical PEEK omitted its exact target, transfer, or command");
+        foundation::appended::engine_input::Command command;
+        const Span command_bytes{pending.data() + FOUNDATION_ENGINE_RECEIPT_BYTES, pending.size() - FOUNDATION_ENGINE_RECEIPT_BYTES};
+        check(foundation::appended::engine_input::decode_command(command_bytes, command) ==
+            foundation::appended::engine_input::Status::ok, "physical PEEK returned malformed command");
+        const auto reply = hooks.physical(command);
+        accepted(bridge(FOUNDATION_ENGINE_TURN_ENTER, target, {}, transfer));
+        accepted(bridge(FOUNDATION_ENGINE_TURN_LEAVE, target, {}, transfer));
+        Bytes result(24); put(result, 0, static_cast<std::uint32_t>(reply.provider_status), 4);
+        put(result, 4, reply.disposition, 4); put(result, 8, command.request_sequence, 8);
+        put(result, 20, reply.handled, 4);
+        accepted(bridge(FOUNDATION_ENGINE_COMMAND_RESULT, target, result, transfer));
+        (void)receive(Json::Object{{"type", "poll"}});
+    }
+    const auto pump_editor = [&](bool query4,
+        const std::function<EditorReply(const EditorWorkView&)>* override_handler = nullptr) {
+        if (query4 ? !(override_handler || hooks.query4) : !hooks.native9) return false;
+        const auto pending = bridge(FOUNDATION_ENGINE_PEEK_EDITOR_WORK, id, {});
+        if (get(pending, 72, 4) == FOUNDATION_ENGINE_EMPTY) return false;
+        check(get(pending, 72, 4) == FOUNDATION_ENGINE_OK && pending.size() >=
+            FOUNDATION_ENGINE_RECEIPT_BYTES + FOUNDATION_ENGINE_EDITOR_WORK_PREFIX_BYTES, "actual editor work had invalid framing");
+        EditorWorkView work;
+        work.worker_epoch = get(pending, 16, 8); work.application = get(pending, 24, 8);
+        work.document = get(pending, 32, 8); work.generation = get(pending, 40, 8);
+        work.transfer = get(pending, 48, 8); work.kind = static_cast<std::uint32_t>(get(pending, 80, 4));
+        work.operation = static_cast<std::uint32_t>(get(pending, 84, 4));
+        work.request_sequence = get(pending, 88, 8);
+        std::copy_n(pending.begin() + 96, work.schema.size(), work.schema.begin());
+        work.required_reply_capacity = static_cast<std::uint32_t>(get(pending, 128, 4));
+        const auto payload_bytes = get(pending, 132, 4);
+        check(work.worker_epoch && work.application && work.document && work.generation && work.transfer &&
+            work.request_sequence && payload_bytes == pending.size() - FOUNDATION_ENGINE_RECEIPT_BYTES - FOUNDATION_ENGINE_EDITOR_WORK_PREFIX_BYTES,
+            "editor PEEK omitted its exact target, transfer, sequence, or bounded payload");
+        work.payload.assign(pending.begin() + FOUNDATION_ENGINE_RECEIPT_BYTES + FOUNDATION_ENGINE_EDITOR_WORK_PREFIX_BYTES, pending.end());
+        const bool is_query4 = work.kind == static_cast<std::uint32_t>(foundation::appended::EngineEditorWorkKind::projection_query) &&
+            work.operation == BIB_ENGINE_QUERY_EDITOR_PROJECTION_V1;
+        const std::function<EditorReply(const EditorWorkView&)>* handler{};
+        if (is_query4) handler = override_handler ? override_handler : &hooks.query4;
+        else if (work.kind == static_cast<std::uint32_t>(foundation::appended::EngineEditorWorkKind::revoke) &&
+            work.operation == BIB_ENGINE_COMMAND_EDITOR_REVOKE_V1) handler = &hooks.native9;
+        check(handler && static_cast<bool>(*handler), "actual editor work did not match an installed query4/native9 hook");
+        check(query4 == is_query4, "editor work arrived at the wrong replay checkpoint");
+        const auto reply = (*handler)(work);
+        Bytes claim(FOUNDATION_ENGINE_EDITOR_BEGIN_BYTES);
+        put(claim, 0, work.kind, 4); put(claim, 8, work.request_sequence, 8);
+        const Identity target{work.application, work.document, work.generation, work.worker_epoch};
+        accepted(bridge(FOUNDATION_ENGINE_BEGIN_EDITOR_WORK, target, claim, work.transfer));
+        accepted(bridge(FOUNDATION_ENGINE_TURN_ENTER, target, {}, work.transfer));
+        accepted(bridge(FOUNDATION_ENGINE_TURN_LEAVE, target, {}, work.transfer));
+        Bytes result(FOUNDATION_ENGINE_EDITOR_RESULT_PREFIX_BYTES + reply.payload.size());
+        put(result, 0, work.kind, 4); put(result, 8, work.request_sequence, 8);
+        put(result, 16, static_cast<std::uint32_t>(reply.provider_status), 4);
+        put(result, 20, reply.disposition, 4); put(result, 24, reply.payload.size(), 4);
+        put(result, 28, reply.handled, 4); put(result, 32, reply.semantic_revision, 8);
+        std::copy(reply.payload.begin(), reply.payload.end(), result.begin() + FOUNDATION_ENGINE_EDITOR_RESULT_PREFIX_BYTES);
+        accepted(bridge(FOUNDATION_ENGINE_EDITOR_WORK_RESULT, target, result, work.transfer));
+        return true;
+    };
+    const bool replayed_query4 = pump_editor(true);
+    check(!hooks.query4 || replayed_query4, "configured query4 hook received no actual query4 request");
+    const auto expected_resync_sequence = std::to_string(sequence + 1);
     const auto resync = receive(Json::Object{{"type", "editorResync"}});
-    check(resync.at("editorReply").at("type").str() == "editorResync" && resync.at("editorReply").at("sequence").str() == "2",
+    check(resync.at("editorReply").at("type").str() == "editorResync" &&
+        resync.at("editorReply").at("sequence").str() == expected_resync_sequence,
         "actual editor Session did not route its metadata-only App endpoint");
     const auto pending = bridge(FOUNDATION_ENGINE_PEEK_EDITOR_WORK, id, {});
     check(get(pending, 72, 4) == FOUNDATION_ENGINE_EMPTY, "editor metadata ingress synchronously entered provider work");
+    if (hooks.native9) (void)receive(Json::Object{{"type", "poll"}});
+    const bool replayed_native9 = pump_editor(false);
+    check(!hooks.native9 || replayed_native9, "configured native9 hook received no actual cleanup request");
+    if (hooks.after_cleanup_poll || hooks.query4_recovery) {
+        const auto response = receive_raw(Json::Object{{"type", "poll"}});
+        if (hooks.after_cleanup_poll) hooks.after_cleanup_poll(response);
+    }
+    if (hooks.query4_recovery) {
+        const bool replayed = pump_editor(true, &hooks.query4_recovery);
+        check(replayed, "query4 recovery hook received no actual fresh query4 request");
+        const auto response = receive_raw(Json::Object{{"type", "poll"}});
+        if (hooks.after_recovery_poll) hooks.after_recovery_poll(response);
+    }
     gui_web_destroy(); unprepared();
+}
+namespace ne = foundation::ui::native_editor;
+namespace codec = ne::codec;
+gui::web_detail::Json public_metadata(std::string_view raw) {
+    std::string text(raw);
+    const auto marker=text.find("\"rgb\":\"");
+    check(marker!=std::string::npos,"causal response lost its actual bitmap");
+    const auto start=marker+7,end=text.find('"',start);
+    check(end!=std::string::npos && end-start==800*600*4 && text.compare(start,4,"gxct")==0,
+          "causal response changed its actual copied RGB image");
+    text.erase(start,end-start);
+    return gui::web_detail::Parser(text).parse();
+}
+codec::WireTarget target_of(const EditorWorkView& w) {
+    return {w.worker_epoch,w.application,w.document,w.generation,w.request_sequence};
+}
+void causal_replay(bool unavailable) {
+    std::optional<ne::NativeProjection> live;
+    unsigned queries{}, revocations{}, physicals{}, cleanup_checks{}, recoveries{};
+    ReplayHooks hooks;
+    hooks.physical = [&](const foundation::appended::engine_input::Command& command) {
+        namespace input=foundation::appended::engine_input;
+        input::Focus focus;
+        check(command.operation==3 && input::decode_focus(command.payload,focus)==input::Status::ok &&
+              focus.action==1 && focus.input_context,"expected actual physical bind command");
+        ++physicals;return PhysicalReply{};
+    };
+    const auto query = [&](const EditorWorkView& w) {
+        codec::ProjectionQuery request;
+        check(codec::decode_projection_query(w.payload,request) && request.target==target_of(w),
+              "query4 lost actual full target/sequence");
+        check(request.identity.owner.id=="engine.frame" && request.identity.context && request.identity.generation &&
+              request.identity.epoch && request.identity.presentation_revision,"query4 lacks actual GUI identity");
+        ne::NativeProjection projection;
+        projection.identity=request.identity;projection.editor_revision=1;
+        projection.surrounding="ordinary text";projection.selection={0,0};
+        projection.mapping_id=1;projection.frame_id=1;projection.readback_attested=true;
+        projection.caret={12,24,1,18};projection.editable=true;projection.input_purpose="text";
+        projection.retire=ne::NativeRetireMaterial{std::uint64_t(queries+1),1,request.identity.context,0};
+        check(!request.mapping_id || request.mapping_id==projection.mapping_id,"query4 unexpectedly changed mapping");
+        codec::ProjectionReply reply;
+        reply.state=codec::ProjectionReply::State::available;reply.target=request.target;
+        reply.identity=request.identity;reply.observation_revision=std::uint64_t(queries+2);reply.readback_attested=true;
+        reply.projection=projection;EditorReply encoded;encoded.semantic_revision=reply.observation_revision;
+        check(codec::encode_projection_reply(reply,encoded.payload),"real codec refused controlled query4");
+        live=projection;++queries;return encoded;
+    };
+    hooks.query4=query;
+    hooks.native9=[&](const EditorWorkView& w) {
+        codec::RevocationEnvelope request;
+        check(codec::decode_revocation(w.payload,request) && request.target==target_of(w) && live &&
+              request.request.material==live->retire && request.request.identity==live->identity,
+              "native9 lost exact provider material/target/sequence/identity");
+        check(!request.request.observed,"causal native9 must be cleanup-only with no browser head");
+        ne::NativeResult result;
+        result.outcome=ne::Outcome::applied;result.continuity=ne::Continuity::replaced;
+        result.availability=unavailable?ne::NativeAvailability::unavailable:ne::NativeAvailability::noneditable;
+        result.observation_revision=3;result.readback_identity=request.request.identity;
+        result.readback_attested=true;result.retired=request.request.material;
+        EditorReply encoded;encoded.disposition=1;
+        check(codec::encode_native_result({request.target,result},encoded.payload),"real codec refused exact applied native9");
+        ne::NativeResult invalid=result;invalid.availability=ne::NativeAvailability::available;
+        Bytes rejected;
+        check(!codec::encode_native_result({request.target,invalid},rejected),
+              "available without projection was incorrectly used as a valid control");
+        ++revocations;live.reset();return encoded;
+    };
+    hooks.after_cleanup_poll=[&](std::string_view raw) {
+        const auto value=public_metadata(raw);
+        check(value.at("error").str().empty() && !value.at("snapshot").at("closed").boolean(),
+              "known unavailable retirement closed the real application");
+        check(value.at("surface").at("presentation").at("available").boolean()==!unavailable,
+              "paired physical availability contradicts checked native retirement");
+        const auto& editor=value.at("editor");
+        check(std::holds_alternative<std::nullptr_t>(editor.at("basis").value),"cleanup invented an editor basis");
+        const auto& retirement=editor.at("retirement");
+        check(retirement.at("availability").str()==(unavailable?"unavailable":"noneditable") &&
+              retirement.at("authorityRetired").boolean() && retirement.at("readbackAttested").boolean() &&
+              retirement.at("observationRevision").str()=="3","actual paired retirement proof was lost");
+        ++cleanup_checks;
+        std::cout << "{\"phase\":\"after_cleanup\",\"closed\":false,\"available\":"
+                  << (!unavailable?"true":"false") << ",\"retirement\":\""
+                  << (unavailable?"unavailable":"noneditable") << "\"}\n";
+    };
+    hooks.query4_recovery=query;
+    hooks.after_recovery_poll=[&](std::string_view raw) {
+        const auto value=public_metadata(raw);
+        check(value.at("error").str().empty() && !value.at("snapshot").at("closed").boolean() &&
+              value.at("surface").at("presentation").at("available").boolean(),
+              "fresh ordinary query4 did not recover real open physical presentation");
+        check(!std::holds_alternative<std::nullptr_t>(value.at("editor").at("basis").value),
+              "fresh actual editable query4 did not publish a basis");
+        ++recoveries;
+        std::cout << "{\"phase\":\"after_recovery\",\"closed\":false,\"available\":true,\"basis\":true}\n";
+    };
+    ready_editor_composition(hooks);
+    check(physicals==1 && queries==2 && revocations==1 && cleanup_checks==1 && recoveries==1,
+          "causal replay skipped or replayed an actual physical/query/native operation");
 }
 #endif
 void run(bool valid) {
@@ -251,9 +467,14 @@ void run(bool valid) {
 } // namespace
 int main(int argc, char** argv) {
     try {
-        if (argc != 2 || (std::string_view(argv[1]) != "valid" && std::string_view(argv[1]) != "unavailable"))
-            throw std::invalid_argument("expected valid or unavailable fixture mode");
-        run(std::string_view(argv[1]) == "valid");
+        if (argc != 2) throw std::invalid_argument("expected one editor host fixture mode");
+        const std::string_view mode(argv[1]);
+        if (mode == "valid" || mode == "unavailable") run(mode == "valid");
+#if FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE == 3
+        else if (mode == "unavailable-retirement") causal_replay(true);
+        else if (mode == "noneditable-retirement") causal_replay(false);
+#endif
+        else throw std::invalid_argument("expected valid, unavailable, unavailable-retirement, or noneditable-retirement fixture mode");
         std::cout << "editor host readonly checks: " << assertions << '\n';
         return 0;
     } catch (const std::exception& error) { gui_web_destroy(); std::cerr << error.what() << '\n'; return 1; }

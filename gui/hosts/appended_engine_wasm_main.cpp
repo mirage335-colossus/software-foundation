@@ -149,6 +149,7 @@ using Runtime = foundation::host::Browser<PreparedApplication, foundation::host:
 using Runtime = foundation::host::Browser<PreparedApplication>;
 #endif
 std::unique_ptr<Runtime> runtime;
+bool runtime_close_requested = false;
 std::string response;
 std::uint64_t next_runtime = 1;
 
@@ -229,6 +230,7 @@ std::int32_t configure(Span input, std::span<std::uint8_t> output) {
         configuration.native_services = foundation::ui::demo_native_services();
         configuration.worker_epoch = little(input, 16, 8);
         configuration.abandon_closed_document_outcomes = true;
+        configuration.defer_copied_close_to_application = true;
 #if FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE == 3
         configuration.editor_profile = editor_profile();
 #elif FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE
@@ -453,7 +455,40 @@ std::int32_t gui_web_engine_dispatch_v1(std::uint32_t operation, const unsigned 
     // TURN_LEAVE can still be executing inside the engine's host callback when
     // native depth reaches zero. The base Worker schedules an ordinary browser
     // tick after the engine export returns; bridge callbacks never present.
-    return prepared_owner->dispatch(operation, {input, length}, {output, capacity});
+    const auto written = prepared_owner->dispatch(operation, {input, length}, {output, capacity});
+    // A validated close first retires the application's actual editor/input
+    // authority while its sole presenter still exists. Owner CLOSE alone can
+    // remain pending on that material; destroy cannot precede its native revoke.
+    const bool collected = operation == FOUNDATION_ENGINE_COMMAND_RESULT ||
+        operation == FOUNDATION_ENGINE_DOCUMENT_WORK_RESULT ||
+        operation == FOUNDATION_ENGINE_EDITOR_WORK_RESULT ||
+        operation == FOUNDATION_ENGINE_RETIREMENT_AUDIT_RESULT ||
+        operation == FOUNDATION_ENGINE_RETIRED_DOCUMENT_RESULT;
+    if (written >= static_cast<std::int32_t>(receipt_bytes) &&
+        little({output, static_cast<std::size_t>(written)}, 72, 4) == FOUNDATION_ENGINE_OK &&
+        (operation == FOUNDATION_ENGINE_CLOSE || (runtime_close_requested && collected &&
+            little({output, static_cast<std::size_t>(written)}, 76, 4) == 0))) {
+        runtime_close_requested = true;
+        // Native TURN_LEAVE may still be inside an engine callback. Application
+        // work is drained only at the following ordinary owner/result boundary.
+        if (!runtime && operation == FOUNDATION_ENGINE_CLOSE) {
+            prepared_owner->close();
+            return prepared_owner->dispatch(operation, {input, length}, {output, capacity});
+        }
+        if (runtime && prepared_owner->callback_depth() == 0) {
+            try {
+                runtime->application().shutdown();
+                if (!runtime->application().shutdown_complete()) runtime->application().tick();
+                if (operation == FOUNDATION_ENGINE_CLOSE && !runtime->application().shutdown_complete())
+                    put({output, static_cast<std::size_t>(written)}, 76,
+                        static_cast<std::uint32_t>(ServiceStatus::unavailable), 4);
+            } catch (...) {
+                prepared_owner->notify_document_terminal();
+                return FOUNDATION_ENGINE_EXCEPTION;
+            }
+        }
+    }
+    return written;
 }
 void gui_web_destroy() {
     if (prepared_owner && prepared_owner->callback_depth() != 0) { prepared_owner->close(); return; }
@@ -511,6 +546,7 @@ const char* gui_web_create(const char* epoch) {
 #else
     runtime = std::make_unique<Runtime>(name);
 #endif
+    runtime_close_requested = false;
     response = runtime->initial(); return response.c_str();
 }
 const char* gui_web_receive(const char* message) {

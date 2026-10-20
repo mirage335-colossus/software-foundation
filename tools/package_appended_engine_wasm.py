@@ -250,6 +250,97 @@ def composition_descriptor_policy(profile, checked_receipt, *, eligible):
     return policy
 
 
+_KERNEL_NODE_DETECTION = 'var ENVIRONMENT_IS_NODE=globalThis.process?.versions?.node&&globalThis.process?.type!="renderer";'
+_KERNEL_NODE_LOADER = 'if(ENVIRONMENT_IS_NODE){const{createRequire}=await import("node:module");var require=createRequire(import.meta.url)}'
+_KERNEL_NODE_IO = 'if(ENVIRONMENT_IS_NODE){const isNode=globalThis.process?.versions?.node&&globalThis.process?.type!="renderer";if(!isNode)throw new Error("not compiled for this environment (did you build to HTML and try to run it not on the web, or set ENVIRONMENT to something - like node - and run it someplace else - like on the web?)");var fs=require("node:fs");if(_scriptName.startsWith("file:")){scriptDirectory=require("node:path").dirname(require("node:url").fileURLToPath(_scriptName))+"/"}readBinary=filename=>{filename=isFileURI(filename)?new URL(filename):filename;var ret=fs.readFileSync(filename);assert(Buffer.isBuffer(ret));return ret};readAsync=async(filename,binary=true)=>{filename=isFileURI(filename)?new URL(filename):filename;var ret=fs.readFileSync(filename,binary?undefined:"utf8");assert(binary?Buffer.isBuffer(ret):typeof ret=="string");return ret};if(process.argv.length>1){thisProgram=process.argv[1].replace(/\\\\/g,"/")}programArgs=process.argv.slice(2);quit_=(status,toThrow)=>{process.exitCode=status;throw toThrow}}'
+
+
+def inspect_kernel_factory(data):
+    """Inspect Foundation factory dependencies, not runtime inertness.
+
+    Dependency-free factories retain the engine scanner's strict policy. A
+    separate generated adapter shape admits only Node's module/fs/path/url
+    builtins behind the generated Node guard. It never rewrites product bytes.
+    Unsupported generator shapes fail closed until explicitly reviewed.
+    """
+    consumer = _consumer()
+    try:
+        strict = consumer.scan_factory(data)
+    except consumer.ConsumerError as original:
+        # The strict scanner already checked owned bytes, UTF-8 and NUL. These
+        # checks also keep marker insertion from accepting invalid source data.
+        if type(data) is not bytes or b'\0' in data:
+            raise
+        try:
+            source = data.decode('utf-8')
+        except UnicodeError:
+            raise original
+        prefix = '$foundation_kernel_node_'
+        if prefix in source:
+            raise ValueError('Foundation kernel inspection marker collision') from original
+        shapes = ((_KERNEL_NODE_DETECTION, 'environment', 1),
+                  (_KERNEL_NODE_LOADER, 'loader', 2), (_KERNEL_NODE_IO, 'io', 2))
+        regions = []
+        for shape, label, depth in shapes:
+            if source.count(shape) != 1:
+                raise ValueError('Unsupported generated Foundation Node adapter: ' + label) from original
+            regions.append((source.index(shape), shape, label, depth))
+        if [start for start, *_ in regions] != sorted(start for start, *_ in regions):
+            raise ValueError('Generated Foundation Node adapters are out of order') from original
+        start, shape, _, _ = regions[-1]
+        if not source[start + len(shape):].startswith('else if(ENVIRONMENT_IS_SHELL)'):
+            raise ValueError('Generated Foundation Node I/O guard differs') from original
+        projected = source
+        for start, shape, label, _ in reversed(regions):
+            marker = prefix + label + '$'
+            replacement = ('var ENVIRONMENT_IS_NODE=' + marker + ';' if label == 'environment'
+                           else 'if(ENVIRONMENT_IS_NODE){' + marker + ';}')
+            projected = projected[:start] + replacement + projected[start + len(shape):]
+        # Prove each reviewed adapter occurred in executable code at its fixed
+        # generated nesting depth. Text in a string/comment/regexp is not an
+        # adapter. The unchanged scanner rejects all remaining module syntax.
+        lexical = re.sub(r'(?<![\w$.])import\s*\.\s*meta\s*\.\s*url\b', '$fe_meta$', projected)
+        tokens = browser_bundle._keywords(lexical, all_tokens=True)
+        words = [word for _, word in tokens]
+        for index, word in enumerate(words):
+            if word != 'ENVIRONMENT_IS_NODE':
+                continue
+            before, after = words[max(0, index - 2):index], words[index + 1:index + 3]
+            initialization = (before[-1:] == ['var'] and
+                              after == ['=', prefix + 'environment$'])
+            guard = before == ['if', '('] and after[:1] == [')']
+            negated = before[-1:] == ['!'] and (after[:1] == [')'] or after == ['&', '&'])
+            if not (initialization or guard or negated):
+                # This finite generated shape has one initializer and boolean
+                # tests only. Reject writes, aliases, binding/shadow positions,
+                # destructuring and property uses rather than infer JS effects.
+                raise ValueError('Unsupported use of generated Foundation Node guard') from original
+        observed = {}; depth = 0
+        for _, word in tokens:
+            if word == '{':
+                depth += 1
+            elif word == '}':
+                depth -= 1
+            elif word.startswith(prefix):
+                observed.setdefault(word, []).append(depth)
+        if any(observed.get(prefix + label + '$') != [wanted]
+               for _, _, label, wanted in regions):
+            raise ValueError('Generated Foundation Node adapter is not executable factory code') from original
+        strict = consumer.scan_factory(projected.encode('utf-8'))
+        return {'kind': 'foundation-kernel-factory-dependencies-v1',
+                'default_export': strict['default_export'], 'import_meta_url': strict['import_meta_url'],
+                'browser_worker_module_dependencies': [],
+                'guarded_node_module_dependencies': ['node:module'],
+                'guarded_node_builtin_requires': ['node:fs', 'node:path', 'node:url'],
+                'generated_adapter': 'emscripten-globalThis-node-createRequire-v1',
+                'product_bytes_modified': False, 'runtime_inertness_proven': False}
+    return {'kind': 'foundation-kernel-factory-dependencies-v1',
+            'default_export': strict['default_export'], 'import_meta_url': strict['import_meta_url'],
+            'browser_worker_module_dependencies': [], 'guarded_node_module_dependencies': [],
+            'guarded_node_builtin_requires': [], 'generated_adapter': None,
+            'product_bytes_modified': False, 'runtime_inertness_proven': False}
+
+
 def inspect_kernel_receipt(raw, pin, factory, wasm, profile, engine_profile, *, expected_kernel_inputs=None,
                            physical_input=False, host_assets=None):
     """Validate pinned observations; never execute or newly certify them."""
@@ -289,7 +380,7 @@ def inspect_kernel_receipt(raw, pin, factory, wasm, profile, engine_profile, *, 
         if type(data) is not bytes or len(data) != item['bytes'] or container.digest(data) != _sha(item['sha256'], role):
             raise ValueError('compiled kernel ' + role + ' differs from receipt')
     consumer = _consumer()
-    consumer.scan_factory(factory)
+    inspect_kernel_factory(factory)
     facts = consumer.scan_wasm(wasm)
     if not _same_json(value['wasm_facts'], facts):
         raise ValueError('compiled Foundation Wasm facts differ from receipt')

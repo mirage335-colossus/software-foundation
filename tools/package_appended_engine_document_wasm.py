@@ -299,7 +299,7 @@ def inspect_kernel_receipt(raw, pin, factory, wasm, profile, engine_profile, *, 
             raise ValueError('Foundation Wasm lookup differs from its compiled filename')
         if type(data) is not bytes or len(data) != item['bytes'] or container.digest(data) != _sha(item['sha256'], role):
             raise ValueError('Actual Foundation ' + role + ' differs from receipt')
-    consumer.scan_factory(factory)
+    rendering.inspect_kernel_factory(factory)
     facts = consumer.scan_wasm(wasm)
     if not _same(value['wasm_facts'], facts):
         raise ValueError('Foundation Wasm facts differ from actual section scan')
