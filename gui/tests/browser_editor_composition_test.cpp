@@ -44,7 +44,7 @@ gui::Snapshot snapshot(std::uint64_t revision = 1) {
     return value;
 }
 struct Probe {
-    int constructors = 0, shutdowns = 0, handles = 0, ticks = 0;
+    int constructors = 0, shutdowns = 0, handles = 0, ticks = 0, retries = 0;
     int submits = 0, revokes = 0, takes = 0, resyncs = 0;
     std::atomic_uint terminal{0};
     int publications = 0;
@@ -53,7 +53,7 @@ struct Probe {
     std::vector<editor::Revocation> revocations;
     std::vector<gui_surface::Capabilities> connections;
     std::map<std::uint64_t, editor::EditorCompletion> completions;
-    std::function<void(host::BrowserSurfaceAdapter&)> during_construct, during_shutdown, during_tick;
+    std::function<void(host::BrowserSurfaceAdapter&)> during_construct, during_shutdown, during_tick, during_retry;
     std::exception_ptr shutdown_error;
     std::uint64_t next_ticket = 41;
     int editor_callbacks() const { return submits + revokes + takes + resyncs; }
@@ -98,7 +98,10 @@ struct PlainApp {
             catch (...) { probe.shutdown_error = std::current_exception(); throw; }
         }
     }
-    void retry_presentation() {}
+    void retry_presentation() {
+        ++probe.retries;
+        if (probe.during_retry) probe.during_retry(dynamic_cast<host::BrowserSurfaceAdapter&>(adapter));
+    }
     std::optional<gui::ServiceRequest> next_service() { return {}; }
     bool complete_service(gui::ServiceResult) { return false; }
     void qualify(const std::function<void()>& present) { present(); }
@@ -422,6 +425,56 @@ void queue_then_tick_publication() {
     browser.session.editor_resync();
     check(probe.resyncs == 1 && probe.publications == 1, "Resync was lost or published inside its callback");
 }
+void wire_ingress_before_retry_and_take_progress() {
+    Probe probe; Context context(probe); EditorBrowser browser("editor", composition(probe));
+    const auto initial = prepare(browser);
+    const auto expected = packet(initial);
+    auto wire_packet = gui::web_detail::Parser(R"({"type":"editorObservation","session":"9","defaultToken":null,"defaultDependencies":[],
+        "observation":{"id":"1","predecessor":null,"kind":"text","authority":"range","group":null,"groupEnd":false,"transaction":"0",
+        "before":{"value":"a","selectionStart":1,"selectionEnd":1,"selectionDirection":"none","selection":[1,1],"byteLength":1},
+        "after":{"value":"aβ","selectionStart":2,"selectionEnd":2,"selectionDirection":"none","selection":[3,3],"byteLength":3},
+        "data":{"inputType":"insertText","text":"β","replacement":[1,1]}}})").parse();
+    std::get<Json::Object>(wire_packet.value).emplace("basis", host::surface_editor_web::json_basis(initial));
+    const auto request = gui::web_detail::encode(Json::Object{{"epoch", "editor"}, {"seq", "3"},
+        {"operation", Json::Object{{"type", "editorSubmit"}, {"packet", wire_packet}}}});
+    const auto successor = basis(presentation(browser.adapter.generation(), 3, "aβ"), 102);
+    const auto retries = probe.retries;
+    probe.during_retry = [&](host::BrowserSurfaceAdapter& adapter) {
+        check(probe.submits == 1 && probe.takes == 0, "Presentation advanced before the wire observation was queued");
+        check(adapter.present_editor_pair(snapshot(3), presentation(adapter.generation(), 3, "aβ"),
+            editor::EditorPublication{successor, editor::Settlement{9, 1, 101, {}}, {}, {}}, {}).status == gui_surface::Status::ok,
+            "Take retry could not publish the queued editor result");
+        probe.completions.emplace(41, completion(41, receipt(expected, successor)));
+    };
+    const auto response_text = browser.receive(request);
+    const auto response = gui::web_detail::Parser(response_text).parse();
+    check(response.at("error").str().empty() && response.at("editorReply").at("ticket").str() == "41" &&
+        probe.retries == retries && probe.packets == std::vector{expected} &&
+        browser.adapter.editor_publication()->basis == std::optional{initial},
+        "Wire submit did not preserve the shown basis before its owned admission");
+    check(browser.receive(request) == response_text && probe.submits == 1 && probe.retries == retries,
+        "Duplicate wire submit repeated application work or presentation progress");
+    const auto stale = send(browser, 4, Json::Object{{"type", "editorSubmit"}, {"packet", wire_packet}}, "retired-editor");
+    check(stale.at("error").str() == "Stale session epoch" && probe.submits == 1 && probe.retries == retries,
+        "Ordered ingress bypassed supplier epoch validation");
+    const auto taken = send(browser, 4, Json::Object{{"type", "editorTake"}, {"ticket", "41"}});
+    check(taken.at("error").str().empty() && taken.at("editorReply").at("completion").at("ticket").str() == "41" &&
+        taken.at("editor").at("basis").at("token").str() == "102" && probe.takes == 1 && probe.retries == retries + 1,
+        "Metadata Take lost presentation progress or the checked paired completion");
+    probe.during_retry = [](auto&) { throw std::runtime_error("Revocation crossed presentation retry"); };
+    const auto retired = send(browser, 5, Json::Object{{"type", "editorRevoke"}, {"record", Json::Object{
+        {"reason", "generic fixture retirement"}, {"basis", host::surface_editor_web::json_basis(successor)},
+        {"composition", nullptr}, {"keys", Json::Array{}}, {"incarnation", "7"}}}});
+    check(retired.at("error").str().empty() && probe.revocations == std::vector{revocation(successor)} &&
+        probe.retries == retries + 1, "Wire retirement lost its original authority before admission");
+    probe.during_retry = {};
+    check(send(browser, 6, Json::Object{{"type", "editorResync"}}).at("error").str().empty() &&
+        probe.resyncs == 1 && probe.retries == retries + 2, "Editor resync lost its established progress path");
+    throws([&] { (void)send(browser, 7, Json::Object{{"type", "editorSubmit"}, {"packet", nullptr}}); },
+        "Ordered ingress bypassed reserved editor packet validation");
+    check(browser.adapter.failed() && probe.terminal.load() == 1 && probe.submits == 1 && probe.retries == retries + 2,
+        "Malformed editor ingress performed work or lost terminal refusal");
+}
 void completion_requires_publication() {
     Probe probe;
     Context context(probe);
@@ -512,10 +565,11 @@ int main() {
         endpoint_refusals();
         unarmed_callbacks();
         queue_then_tick_publication();
+        wire_ingress_before_retry_and_take_progress();
         completion_requires_publication();
         throwing_hooks_close();
         legacy_and_mouse_unchanged();
-        std::cout << "browser editor composition: seven groups, " << assertions << " assertions passed\n";
+        std::cout << "browser editor composition: eight groups, " << assertions << " assertions passed\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

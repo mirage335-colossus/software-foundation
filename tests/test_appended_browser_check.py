@@ -259,6 +259,30 @@ class BrowserCheckTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'requires an HTML BOTH kernel and BOTH payload'):
             browser._rich_both_identity(self.candidate, self.subject, self.product)
 
+    def test_rich_surface_schema_is_additive_and_pins_its_new_interpreter(self):
+        identities = {name: '1' * 64 for name in (
+            'source_tree_sha256', 'source_observed_at_package_sha256', 'kernel_inputs_sha256',
+            'kernel_descriptor_sha256', 'kernel_prefix_sha256', 'kernel_receipt_sha256',
+            'engine_recipe_sha256', 'engine_manifest_sha256', 'engine_proof_sha256',
+            'engine_runtime_sha256', 'payload_transport_sha256', 'payload_package_sha256')}
+        identities.update(profile='both', kernel_prefix_length=4096, payload_id='fixture')
+        scenario = dict(self.scenario_data, schema_version=3, kind='foundation-rich-surface-browser-scenario',
+            rich_identities=identities, observer_protocol=browser.SURFACE_PROTOCOL,
+            rich_inspection_sources={name: archive.digest(ROOT / name) for name in browser.RICH_INSPECTION_SOURCES},
+            rich_surface_sources={name: archive.digest(ROOT / name) for name in browser.SURFACE_SOURCES},
+            steps=[{'id': 'calculate', 'action': 'surface-click', 'surface': {'id': 'engine.frame'}, 'point': {'x': 100, 'y': 200}},
+                {'id': 'total', 'action': 'assert-document', 'after': 'calculate', 'predicate': {'kind': 'text-present'}, 'expected': 'Total: 43'}])
+        document(self.scenario, scenario)
+        _, parsed, inputs = browser._scenario(self.scenario, archive.digest(self.scenario), self.subject,
+            dict(self.product, profile='both'), 'web-wasm32', 'web')
+        self.assertEqual(parsed['steps'], scenario['steps'])
+        self.assertIn(ROOT / browser.SURFACE_SOURCES[0], [item.path for item in inputs])
+        scenario['rich_surface_sources'][browser.SURFACE_SOURCES[0]] = '0' * 64
+        document(self.scenario, scenario)
+        with self.assertRaisesRegex(ValueError, 'differs from frozen scenario'):
+            browser._scenario(self.scenario, archive.digest(self.scenario), self.subject,
+                dict(self.product, profile='both'), 'web-wasm32', 'web')
+
     def test_binary_scenario_cannot_claim_rich_identity_fields(self):
         value = copy.deepcopy(self.scenario_data)
         value['rich_identities'] = {'profile': 'both'}
@@ -995,6 +1019,138 @@ class ChromiumAdapterTests(unittest.TestCase):
         self.assertLess(events.index(('listener-joined', True)), next(index for index, item in enumerate(events)
             if item[0] == 'POST' and item[1].endswith('/goog/cdp/execute')))
         self.assertEqual(helper.process_tree.launch.call_args.kwargs['env'], {'HOME': str(work)})
+
+
+class RichSurfaceObservationTests(unittest.TestCase):
+    def observed(self, text='Original'):
+        version = {'generation': '1', 'epoch': '2', 'revision': '3'}
+        nodes = [
+            {'id': '1', 'parent': '0', 'kind': 'element', 'tag': 'div', 'name': 'Quote text', 'masked': False, 'omitted': False},
+            {'id': '2', 'parent': '1', 'kind': 'text', 'text': text, 'masked': False, 'omitted': False}]
+        body = {'errorCode': '', 'snapshot': {'version': version, 'truncated': False, 'nodes': nodes},
+            'degraded': {'whitespace': False, 'elementSelection': False, 'truncatedSelection': False},
+            'originalSelection': {'endpoints': {'anchor': {'node': '2', 'kind': 'text_utf16', 'offset': 0},
+                'focus': {'node': '2', 'kind': 'text_utf16', 'offset': 8}}}}
+        return {'protocol': browser.SURFACE_PROTOCOL, 'frontendGeneration': 'a' * 64, 'closed': False,
+            'presentation': {'available': True, 'snapshotRevision': '10'},
+            'document': {'available': True, 'observation': '17', 'publicationRevision': '10',
+                'document': {'protocol': 2, 'publication': version, 'body': body,
+                    'forms': {'protocol': 2, 'version': version, 'controls': []}}}}
+
+    def test_exact_native_text_selection_and_semantic_tag_predicates(self):
+        observed = self.observed('A😀quote')
+        self.assertTrue(browser._document_predicate(observed, {'kind': 'text-present'}, '😀quote'))
+        self.assertTrue(browser._document_predicate(observed, {'kind': 'text-absent'}, 'missing'))
+        self.assertTrue(browser._document_predicate(observed, {'kind': 'descendant-text', 'name': 'Quote text'}, 'A😀quote'))
+        self.assertTrue(browser._document_predicate(observed, {'kind': 'selection-text'}, 'A😀quote'))
+        observed['document']['document']['body']['snapshot']['nodes'][0]['tag'] = 'strong'
+        self.assertTrue(browser._document_predicate(observed, {'kind': 'tagged-text', 'tag': 'strong'}, 'A😀quote'))
+        observed['document']['document']['body']['originalSelection']['endpoints']['focus']['kind'] = 'element_child_index'
+        self.assertFalse(browser._document_predicate(observed, {'kind': 'selection-text'}, 'A😀quote'))
+
+    def test_missing_or_degraded_native_publications_never_become_widget_assertions(self):
+        for change in (
+            lambda value: value.update(closed=True),
+            lambda value: value['presentation'].update(available=False),
+            lambda value: value['document'].update(publicationRevision='11'),
+            lambda value: value['document']['document']['body'].update(errorCode='unavailable'),
+            lambda value: value['document']['document']['body']['snapshot'].update(truncated=True),
+            lambda value: value['document']['document']['forms'].update(version={'generation': 'other'}),
+        ):
+            value = self.observed();change(value)
+            with self.assertRaises(ValueError):
+                browser._document_predicate(value, {'kind': 'text-present'}, 'Original')
+        value = self.observed();value['document']['document']['body']['snapshot']['nodes'][1]['masked'] = True
+        self.assertFalse(browser._document_predicate(value, {'kind': 'text-present'}, 'Original'))
+
+    def test_named_form_values_require_a_unique_complete_unmasked_control(self):
+        value = self.observed();controls = value['document']['document']['forms']['controls']
+        controls.append({'label': 'Materials', 'complete': True, 'kind': 'text', 'omitted': False,
+            'state': {'kind': 'text', 'value': {'value': '20'}}})
+        predicate = {'kind': 'form-value', 'label': 'Materials'}
+        self.assertTrue(browser._document_predicate(value, predicate, '20'))
+        controls[0]['kind'] = 'secure_readonly'
+        self.assertFalse(browser._document_predicate(value, predicate, '20'))
+        controls[0]['kind'] = 'text';controls.append(copy.deepcopy(controls[0]))
+        self.assertFalse(browser._document_predicate(value, predicate, '20'))
+
+    def test_native_observation_spans_keep_required_ack_and_causal_metrics_pending(self):
+        clocks = browser._surface_clocks(10, 20, 30)
+        self.assertTrue(browser._valid_surface_clocks(clocks))
+        self.assertFalse(browser._valid_rich_clocks(clocks))
+        self.assertEqual(clocks['pending_measurements'], browser.RICH_PENDING)
+        clocks['pending_measurements'] = {}
+        self.assertFalse(browser._valid_surface_clocks(clocks))
+
+    def test_surface_scenario_uses_physical_dispatch_native_readback_and_saved_captures(self):
+        baseline = self.observed()
+        identity = {'owner': {'id': 'engine.frame', 'generation': '1'}, 'presentationRevision': '10',
+            'generation': '2', 'epoch': '3', 'context': '4'}
+        rectangle = {'x': 0, 'y': 0, 'width': 800, 'height': 600}
+        baseline['presentation'].update(renderedRevision='10', identity=identity, bounds=rectangle, clip=rectangle,
+            displayScale=1, bitmap={'source': 'native-frame', 'revision': '5', 'width': 800, 'height': 600}, canvas=rectangle)
+        class Driver:
+            def __init__(self):
+                self.current = copy.deepcopy(baseline)
+                self.actions = []
+            def until(self, *args, **kwargs):
+                pass
+            def evaluate(self, source, arguments=(), *, asynchronous=False):
+                if asynchronous:
+                    return {'ok': True, 'value': copy.deepcopy(self.current)}
+                return copy.deepcopy(self.current)
+            def command(self, name, args):
+                if name == 'WebDriver:TakeScreenshot':
+                    import base64
+                    return {'value': base64.b64encode(b'\x89PNG\r\n\x1a\nunit fixture').decode()}
+                if name != 'WebDriver:PerformActions':
+                    raise AssertionError(name)
+                self.actions.append(args)
+                self.current['document']['observation'] = '18'
+                self.current['document']['document']['body']['snapshot']['nodes'][1]['text'] = 'Changed quote'
+        scenario = {'rich_surface_sources': {name: archive.digest(ROOT / name) for name in browser.SURFACE_SOURCES},
+            'steps': [{'id': 'click', 'action': 'surface-click', 'surface': {'id': 'engine.frame'}, 'point': {'x': 20, 'y': 30}},
+                {'id': 'quote', 'action': 'assert-document', 'after': 'click',
+                    'predicate': {'kind': 'descendant-text', 'name': 'Quote text'}, 'expected': 'Changed quote'}]}
+        driver = Driver()
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = Path(temporary)
+            records, first, last, before = browser._exercise_surface(driver, 'firefox', scenario, evidence,
+                browser.time.monotonic() + 2)
+            self.assertEqual(len(driver.actions), 1)
+            self.assertLessEqual(first, last)
+            result = {'observations': records, 'rich_surface_baseline': before,
+                'clocks': browser._surface_clocks(1, first, last)}
+            self.assertEqual(len(browser._check_surface_records(result, scenario, evidence)), 1)
+            original = copy.deepcopy(result)
+            for mutate, message in (
+                (lambda value: value['observations'][1]['native_observation']['document'].update(observation='17'), 'did not refresh'),
+                (lambda value: value['observations'][1].update(native_observed_ns=first - 1), 'precedes its physical input'),
+                (lambda value: value['clocks'].update(first_trusted_dispatch_ns=first + 1), 'timing envelope'),
+            ):
+                broken = copy.deepcopy(original);mutate(broken)
+                with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                    browser._check_surface_records(broken, scenario, evidence)
+            reordered = copy.deepcopy(original)
+            extended = copy.deepcopy(scenario)
+            extended['steps'].insert(1, dict(extended['steps'][0], id='second-click'))
+            reordered['observations'].insert(1, dict(reordered['observations'][0], id='second-click', physical_dispatch_ns=first - 1))
+            with self.assertRaisesRegex(ValueError, 'physical dispatch order regressed'):
+                browser._check_surface_records(reordered, extended, evidence)
+            records[1]['native_observation']['document']['document']['body']['snapshot']['nodes'][1]['text'] = 'Wrong quote'
+            with self.assertRaisesRegex(ValueError, 'saved native rich assertion'):
+                browser._check_surface_records(result, scenario, evidence)
+
+    def test_new_steps_reject_css_js_future_action_and_capture_only_success(self):
+        import appended_rich_surface_actions as actions
+        click = {'id': 'click', 'action': 'surface-click', 'surface': {'id': 'engine.frame'}, 'point': {'x': 10, 'y': 20}}
+        assertion = {'id': 'assert', 'action': 'assert-document', 'after': 'click',
+            'predicate': {'kind': 'text-present'}, 'expected': 'changed'}
+        browser._validate_surface_steps([click, assertion], actions)
+        for bad in (dict(assertion, after='future'), dict(assertion, predicate={'kind': 'text-present', 'selector': '#total'}),
+                    dict(assertion, predicate={'kind': 'eval', 'script': 'true'}), {'id': 'capture', 'action': 'capture', 'after': 'click'}):
+            with self.subTest(step=bad), self.assertRaises(ValueError):
+                browser._validate_surface_steps([click, bad], actions)
 
 
 if __name__ == '__main__':

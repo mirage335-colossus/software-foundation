@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quote Pad</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body>
+  <main class="pad">
+    <header class="masthead">
+      <div><p class="eyebrow">FIELD NOTES · 014</p><h1>Quote Pad</h1></div>
+      <p id="provider-status" class="status" role="status">Connecting to the portable total provider…</p>
+    </header>
+    <nav class="tabs" role="tablist" aria-label="Quote Pad pages">
+      <button id="quote-tab" type="button" role="tab" aria-selected="true" aria-controls="quote-page">Quote</button>
+      <button id="notes-tab" type="button" role="tab" aria-selected="false" aria-controls="notes-page" tabindex="-1">Notes</button>
+    </nav>
+    <section id="quote-page" role="tabpanel" aria-labelledby="quote-tab">
+      <section class="card calculator" aria-labelledby="calculator-heading">
+        <div class="card-heading"><div><p class="eyebrow">ESTIMATE</p><h2 id="calculator-heading">Project total</h2></div><span class="tag">USD</span></div>
+        <div class="fields">
+          <label>Materials<input id="left-amount" type="text" inputmode="numeric" value="20" autocomplete="off"></label>
+          <span class="operator" aria-hidden="true">+</span>
+          <label>Labor<input id="right-amount" type="text" inputmode="numeric" value="22" autocomplete="off"></label>
+        </div>
+        <button id="calculate-total" class="primary" type="button" disabled>Calculate total</button>
+        <p id="quote-total" class="total" aria-live="polite">Total: —</p>
+        <p id="total-detail" class="detail">The checked total is calculated by the portable module.</p>
+      </section>
+      <section class="card quote-card" aria-labelledby="quote-heading">
+        <div class="card-heading"><div><p class="eyebrow">CLIENT COPY</p><h2 id="quote-heading">A note for the quote</h2></div></div>
+        <div class="toolbar" role="toolbar" aria-label="Quote formatting">
+          <button id="bold-text" type="button" aria-label="Bold selection" aria-pressed="false"><strong>B</strong></button>
+          <button id="undo-text" type="button" aria-label="Undo quote edit">Undo</button>
+        </div>
+        <div id="quote-editor" class="editor" contenteditable="true" role="textbox" aria-label="Quote text" aria-multiline="true" spellcheck="true">Thank you for the opportunity. This estimate includes the materials and labor listed above.</div>
+      </section>
+    </section>
+    <section id="notes-page" role="tabpanel" aria-labelledby="notes-tab" hidden>
+      <section class="card" aria-labelledby="notes-heading">
+        <p class="eyebrow">PRIVATE DRAFT</p><h2 id="notes-heading">Working notes</h2>
+        <div id="notes-editor" class="editor notes-editor" contenteditable="true" role="textbox" aria-label="Working notes" aria-multiline="true" spellcheck="true">Confirm the delivery date and site access before sending.</div>
+      </section>
+    </section>
+    <footer>Changes stay in this page until you copy the quote.</footer>
+  </main>
+</body>
+</html>

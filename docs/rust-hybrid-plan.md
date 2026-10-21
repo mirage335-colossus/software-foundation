@@ -453,6 +453,6 @@ memory, target-library, interrupt, panic and mixed-link qualification.
 Expand Rust where a meaningful component benefits from its ownership/type
 checking. Measure iteration time, test cost, review effort and defects before
 claiming fewer AI tokens or lower maintenance. Two providers and another SDK
-have a real cost. Agents must coordinate shared ABI/build invariants and freeze
-relevant inputs during qualification under the existing
-[coordination policy](agent-coordination.md).
+have a real cost. Keep shared ABI/build invariants with the integrating owner,
+use disjoint scopes for parallel edits, and freeze relevant inputs during
+qualification.

@@ -654,6 +654,20 @@ public:
             [this](const std::optional<::gui::ServiceRequest>& service){return adapter_.publication(service);},
             [this]{return adapter_.input_admitted();});
     }
+    // State-bound ingress must be checked before a retry can publish a newer
+    // frame or widget generation. This query changes no admission/validation;
+    // poll, Take and other metadata routes still advance pending work.
+    bool retry_presentation_before_receive(std::string_view message) const noexcept {
+        try {
+            const auto value=::gui::web_detail::Parser(message).parse();
+            const auto& type=value.at("operation").at("type").str();
+            return type!="surfaceInput"&&type!="editorSubmit"&&type!="editorRevoke"&&type!="documentSubmit"&&
+                type!="resize"&&type!="page"&&type!="shortcut"&&type!="close"&&type!="focus"&&
+                type!="popupOpen"&&type!="popupClose"&&type!="popupChoice"&&type!="listKey"&&
+                type!="selection"&&type!="scroll"&&type!="activate"&&type!="checked"&&type!="edit"&&
+                type!="choose"&&type!="select"&&type!="activateRecord"&&type!="submit"&&type!="action"&&type!="pointer";
+        } catch (...) { return true; } // Normal receive owns malformed-input refusal.
+    }
     std::string initial() { return run([this]{return session_->initial();}); }
     std::string receive(std::string_view message) { return run([this,message]{
         // Validate the reserved vocabulary even while a modal service suppresses

@@ -245,13 +245,6 @@ struct AllHooks : InputOnly {
     void surface_connected(gui_surface::Capabilities value) { probe.connections.push_back(std::move(value)); }
     void surface_revoked(gui_surface::Revocation value) { probe.revocations.push_back(std::move(value)); }
 };
-struct PublishingRetryApp : InputOnly {
-    using InputOnly::InputOnly;
-    void retry_presentation() {
-        LegacyApp::retry_presentation();
-        if (probe.during_retry) probe.during_retry();
-    }
-};
 struct BorrowedInput : LegacyApp { using LegacyApp::LegacyApp; void surface_input(gui_surface::AcceptedEvent&) {} };
 struct ConstBorrowedInput : LegacyApp { using LegacyApp::LegacyApp; void surface_input(const gui_surface::AcceptedEvent&) {} };
 struct RvalueConnected : LegacyApp { using LegacyApp::LegacyApp; void surface_connected(gui_surface::Capabilities&&) {} };
@@ -314,7 +307,7 @@ template<class App> void surface_routes() {
 void continuing_retry_preserves_shown_ingress() {
     Probe probe; Context context(probe); host::BrowserSurfaceComposition policy(host::surface_web::basic_supported);
     const auto generation = policy.generation();
-    host::Browser<PublishingRetryApp, host::BrowserSurfaceComposition> browser("surface", std::move(policy));
+    host::Browser<InputOnly, host::BrowserSurfaceComposition> browser("surface", std::move(policy));
     connect(browser);
     auto shown = presentation(generation);
     check(browser.adapter.present_pair(snapshot(2), shown).status == gui_surface::Status::ok,
@@ -335,20 +328,51 @@ void continuing_retry_preserves_shown_ingress() {
     check(fresh.at("error").str().empty() && probe.inputs.size() == 1 && probe.retries == retries_before_input,
         "A current shown focus was retried into staleness before surface admission");
 
-    const auto progressed = send(browser, 3, Json::Object{{"type", "poll"}});
+    const auto key = send(browser, 3, Json::Object{{"type", "surfaceInput"},
+        {"identity", host::surface_web::json_presentation(shown).at("identity")}, {"sequence", "2"},
+        {"input", Json::Object{{"kind", "key"}, {"phase", "down"}, {"key", "a"}, {"code", "KeyA"},
+            {"location", 0}, {"modifiers", 0}, {"repeat", false}}}});
+    check(key.at("error").str().empty() && probe.inputs.size() == 2 && probe.retries == retries_before_input &&
+        std::holds_alternative<gui_surface::KeyTransition>(probe.inputs.back().event.input),
+        "A physical key lost the focus/presentation just admitted to the caller");
+
+    const auto progressed = send(browser, 4, Json::Object{{"type", "poll"}});
     check(progressed.at("error").str().empty() && probe.retries == retries_before_input + 1,
         "Metadata poll stopped advancing presentation retry work");
-    const auto old = send(browser, 4, surface_input(shown));
+    const auto old = send(browser, 5, surface_input(shown));
     check(!old.at("error").str().empty() && old.at("error").str().find("stale_identity") != std::string::npos,
         "A genuinely old surface identity was accepted after metadata publication");
 
     probe.during_retry = [] {};
     const auto retries_before_malformed = probe.retries;
     throws([&] {
-        (void)browser.receive(R"({"epoch":"surface","epoch":"surface","seq":"5","operation":{"type":"poll"}})");
+        (void)browser.receive(R"({"epoch":"surface","epoch":"surface","seq":"6","operation":{"type":"poll"}})");
     }, "Duplicate envelope property bypassed ordinary receive validation");
     check(probe.retries == retries_before_malformed + 1,
         "Malformed envelope classification suppressed the established retry path");
+}
+void retry_preserves_shown_widget_generation() {
+    Probe probe; Context context(probe);
+    host::Browser<LegacyApp, host::BrowserSurfaceComposition> browser("surface");
+    connect(browser);
+    const auto retries = probe.retries;
+    probe.during_retry = [&] {
+        auto next = snapshot(2); next.widgets.front().spec.key.generation = 2;
+        browser.adapter.present(std::move(next));
+    };
+    const auto activate = [](std::uint64_t generation) {
+        return Json::Object{{"type", "activate"}, {"key", gui::web_detail::key({"generic.button", generation})}};
+    };
+    check(send(browser, 2, activate(1)).at("error").str().empty() && probe.handles == 1 && probe.retries == retries,
+        "Retry replaced the shown widget generation before ordinary activation");
+    check(send(browser, 3, Json::Object{{"type", "poll"}}).at("error").str().empty() && probe.retries == retries + 1,
+        "Widget-generation fixture did not publish through ordinary polling");
+    probe.during_retry = {};
+    const auto old = send(browser, 4, activate(1));
+    check(old.at("error").str() == "Stale widget generation" && probe.handles == 1,
+        "An actually retired widget generation reached the application");
+    check(send(browser, 5, activate(2)).at("error").str().empty() && probe.handles == 2 && probe.retries == retries + 1,
+        "Newly shown widget generation could not use the ordinary route");
 }
 void zero_surface_and_generation() {
     Probe probe; Context context(probe);
@@ -381,7 +405,7 @@ int main() {
         legacy_graph(); lifetime_and_arm(); construction_failure_and_cleanup(); entry_and_callback_guards();
         surface_routes<LegacyApp>(); surface_routes<InputOnly>(); surface_routes<ConnectedOnly>();
         surface_routes<RevokedOnly>(); surface_routes<AllHooks>(); surface_routes<ExactOverloads>();
-        continuing_retry_preserves_shown_ingress(); zero_surface_and_generation();
-        std::cout << "browser composition: eleven groups passed\n";
+        continuing_retry_preserves_shown_ingress(); retry_preserves_shown_widget_generation(); zero_surface_and_generation();
+        std::cout << "browser composition: twelve groups passed\n";
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

@@ -587,6 +587,15 @@ proves inherited socket closure and denied socket/alternative syscalls in a chil
 
 ## Browser presentation scheduling
 
+The generic `Browser` lets a session choose whether presentation retry work runs
+before receiving a message. `BrowserSurfaceSession` admits surface input, editor
+submissions and retirements, document submissions and ordinary widget actions
+against the state already shown to the caller. Their envelope, sequence, widget
+generation and surface/editor authority checks remain in the normal receive
+path. Polls, metadata Takes, resync and service/measurement routes retain retry
+progress; a later publication still makes an older surface identity stale.
+Sessions without this optional policy retain their existing retry order.
+
 Both transports accept receipts and authoritative state immediately, while the
 presenter coalesces replaceable visual snapshots into one animation frame.
 Service changes, errors, initial state and close flush ordering boundaries; actions,

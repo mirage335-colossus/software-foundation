@@ -234,9 +234,11 @@ if(BUILD_TESTING AND FOUNDATION_NODE_EXECUTABLE)
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_surface_test.mjs")
     add_test(NAME foundation.gui.browser-surface-protocol COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_surface_protocol_test.mjs")
+    add_test(NAME foundation.gui.browser-rich-surface-observer COMMAND "${FOUNDATION_NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/browser_rich_surface_observer_test.mjs")
     foreach(name browser-responsiveness browser-presenter file-browser browser-channel browser-embedding browser-services
             browser-surface-channel browser-surface-frame browser-surface-renderer browser-surface-input browser-surface-protocol
-            browser-mouse-frame browser-mouse-renderer)
+            browser-mouse-frame browser-mouse-renderer browser-rich-surface-observer)
         foundation_test_prerequisites(foundation.gui.${name})
         set_tests_properties(foundation.gui.${name} PROPERTIES LABELS "gui;focused" TIMEOUT 30)
     endforeach()
@@ -297,7 +299,7 @@ if(FOUNDATION_APPENDED_ENGINE_DOCUMENT_PROFILE STREQUAL "editor")
     endforeach()
     foreach(module browser_surface_editor_text browser_surface_editor_controller
             browser_surface_editor browser_surface_editor_integration browser_editor_endpoint
-            browser_document_endpoint)
+            browser_document_endpoint browser_rich_surface_observer)
         configure_file("host/${module}.mjs" "${CMAKE_CURRENT_BINARY_DIR}/web-editor/${module}.mjs" COPYONLY)
         list(APPEND foundation_editor_web_assets "${CMAKE_CURRENT_BINARY_DIR}/web-editor/${module}.mjs")
     endforeach()

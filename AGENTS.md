@@ -51,81 +51,27 @@ appropriately spaced status checks. Required gates still precede binary-release
 publication and package-channel promotion; pending gates mean pending publication.
 Ordinary source commits and pushes do not require complete release qualification.
 
-## Simultaneous sessions
+## Parallel work
 
-A supervisor may use lightweight coordination with reasonable current evidence
-that it controls the writers affecting the relevant files/resources and no
-independent work conflicts. It may coordinate its subagents directly and consolidate
-bookkeeping. Use the [shared protocol](docs/agent-coordination.md) when independent
-agents, shared resources, unresolved ownership or uncertainty require it; reassess
-when circumstances change. This discretion qualifies procedural requirements in
-the coordination references, but never permits overwriting another worker's changes
-or ignoring known ownership. Passive read-only tools need no session.
-
-Keep temporary coordination and generated evidence in `.agent-work/` as appropriate.
-Git-ignored means excluded from Git tracking, not exempt from consultation: consult
-records according to the chosen coordination mode and known ownership/handoff
-dependencies.
-
-When using the shared protocol, give each independent writer this file, that guide,
-the absolute checkout and agreed absolute board path. The following requirements
-apply in that mode, across chats, harnesses and writing subagents:
-
-- Use the ignored `.agent-work/` directory for current ownership, temporary notes
-  and per-session artifacts. One independent writer owns each session identity.
-  Use the checked helper; do not implement ad hoc lock/unlock shell sequences.
-- Use `tools/agent_session.py` for record registration, review and checked commit,
-  `tools/check_agent_record.py` for bounded complete discovery, and
-  `tools/agent_publish.py` for complete immutable messages. Use
-  `tools/agent_edit.py` for supported existing-source replacements; otherwise use
-  a qualified adapter with equivalent guarantees or isolate writes. Read the
-  [exact operation recipes](docs/agent-recipes.md), including failure ordering.
-  These write helpers require qualified POSIX filesystem primitives. Unsupported
-  systems must fail closed; a native adapter needs equivalent tests.
-- An existing `state.json` board remains on `tools/agent_board.py` until the
-  [explicit migration](docs/agent-recipes.md#transition-an-existing-json-board)
-  completes. Never mix protocols, initialize a second board to avoid a conflict,
-  or migrate while any session or output writer is active. New boards use the
-  complete record protocol directly.
-- Discover complete claims, relevant releases and your inbox before acquisition.
-  Bounded output must not hide owners or truncate a claim list. Unknown, corrupt
-  or inaccessible data blocks affected shared writes; it never means free scope.
-- Claim each file, directory and resource before writing, including unique notes,
-  logs, build outputs and temporary directories. One writer per file. Claim both
-  sides of a rename. Protect common Git state and shared build trees explicitly.
-- Keep the registry mutex brief. File/resource claims persist after that mutex
-  closes. A message, old timestamp, missing PID or empty lock never grants scope.
-  Handoffs require an explicit release, fresh acquisition and acknowledgment.
-- After a rejected or uncertain operation, stop its dependent saves, notices and
-  launches. Inspect authoritative saved state before retrying uncertain results.
-  Preserve foreign edits, staged work, processes, notes and uncommitted changes.
-- Recheck input bytes and shared interface assumptions before applying an edit.
-  Freeze physical identity/version and exact bytes when reviewing. Revalidate
-  complete claims and scope-relevant predecessor releases at commit; an unchanged
-  source hash cannot erase an intervening owner. Page discovery with its returned
-  snapshot token; never combine pages from different snapshots.
-  Disjoint files can change the same invariant. Stabilize inputs during tests or
-  use an isolated copy containing the intended uncommitted changes.
-- Record launch intent before long commands, actual yielded handles when known,
-  and completion at the next checkpoint. Finish children, open output streams,
-  queued saves and cleanup writers before release. Parent exit alone is not proof.
-- Replace current progress, jobs, blockers and next action together; record actual
-  progress/inbox event times separately from publication time. Release a finished
-  shared file before unrelated reporting. Use a new ID after closure or recovery.
-- Keep useful unresolved findings in owned notes: evidence, environment, source
-  and access date, confidence, failed attempts, next probe and removal conditions.
-  Promote verified durable knowledge into tracked documentation/tests.
-- Follow [lifecycle and recovery](docs/agent-lifecycle.md) for overdue ownership,
-  interrupted jobs and eligible 30-day cleanup. Never automatically steal claims.
-- Coordination is cooperative. For participants that may bypass it, enforce
-  private checkout/output access or read-only access through the harness or OS.
-  A separate directory, stronger model, clean merge or passing tests does not
-  establish exclusion before writes. Qualified participants integrate shared work.
-
-Coordination adds no research quota, approval step, extra reports or limitation on
-normal browsing, delegation and tools. Continue independent useful work when one
-scope is contested. Bind every filesystem tool and subprocess to its intended
-absolute checkout; another tool's current directory does not carry over.
+Use native managed subagents for independent, bounded work when useful. Give each
+writer a clear, disjoint file or component scope, and keep shared interfaces and
+tightly coupled changes with the integrating supervisor. Preserve concurrent edits
+and coordinate directly with the assigned writers. Serialize work that uses a
+shared build tree, or use a purpose-specific directory under `build/` for each
+independent build or test run. Reuse a stable purpose-specific directory for
+ordinary incremental builds; do not accumulate date- or attempt-named trees by
+default. After a completed check, remove disposable generated binaries, object
+trees and package copies when they are no longer needed, while retaining its
+concise result, exact commands and source identity in existing validation or
+pending-qualification records. Retain an engine, kernel or SDK baseline only when
+it is deliberately current and its exact source, configuration and provenance are
+recorded; retire a replaced baseline after its successor is accepted. Historical
+validation results record past runs and do not prove an old binary is rerunnable.
+Put concise, durable restart notes in the existing plan or pending-qualification
+documents.
+Historical `.agent-work/` records are archival evidence and need no exhaustive
+inventory or active administration. Their disposable generated outputs follow
+the same retention policy; preserving a result does not require keeping its binary.
 
 ## Implementation integrity
 

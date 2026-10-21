@@ -9,6 +9,8 @@ from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 EXCLUDE = {".git", ".agent-work", "build", ".cache", "__pycache__"}
+# This generated tutorial workspace is explicitly ignored by tutorial-video/.gitignore.
+EXCLUDE_PATHS = {Path("tutorial-video/.work")}
 errors = []
 
 
@@ -40,7 +42,12 @@ def repository_files():
     # Prune generated SDK/build trees before traversal: rejecting their files
     # afterward still walks millions of unrelated retained compiler inputs.
     for directory, children, files in os.walk(ROOT, followlinks=False):
-        children[:] = [name for name in children if name not in EXCLUDE]
+        relative_directory = Path(directory).relative_to(ROOT)
+        children[:] = [
+            name for name in children
+            if name not in EXCLUDE
+            and relative_directory / name not in EXCLUDE_PATHS
+        ]
         for name in files:
             yield Path(directory) / name
 

@@ -61,6 +61,8 @@ RICH_PENDING = {
     'input_feedback': 'requires input-correlated native publication ACK applied to a presented frame',
     'provider_computation': 'requires the native reply/ACK plus the corresponding presented result',
 }
+SURFACE_PROTOCOL = 'foundation-rich-surface-observer-v1'
+SURFACE_SOURCES = ('tools/appended_rich_surface_actions.py',)
 MAX_SCENARIO = 512 * 1024
 MAX_VALUE = 64 * 1024
 NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z')
@@ -112,11 +114,12 @@ def _scenario(path, pin, subject, artifact, target, backend):
         raise ValueError('browser scenario differs from its independent SHA-256 pin')
     value = release._json(saved.content)
     rich = artifact.get('profile') == 'both'
+    surface = rich and value.get('schema_version') == 3
     keys = ('schema_version', 'kind', 'candidate_sha256', 'artifact_id', 'target', 'backend',
-            'browser', 'viewport', 'title', 'steps') + (('rich_identities', 'rich_inspection_sources') if rich else ())
+            'browser', 'viewport', 'title', 'steps') + (('rich_identities', 'rich_inspection_sources') if rich else ()) + (('observer_protocol', 'rich_surface_sources') if surface else ())
     release._keys(value, keys, ('inputs',), label='browser scenario')
-    expected_kind = 'foundation-rich-both-browser-scenario' if rich else 'foundation-appended-browser-scenario'
-    expected_schema = 2 if rich else 1
+    expected_kind = 'foundation-rich-surface-browser-scenario' if surface else 'foundation-rich-both-browser-scenario' if rich else 'foundation-appended-browser-scenario'
+    expected_schema = 3 if surface else 2 if rich else 1
     if (type(value['schema_version']) is not int or value['schema_version'] != expected_schema or value['kind'] != expected_kind
             or value['candidate_sha256'] != subject['candidate_sha256']
             or (value['artifact_id'], value['target'], value['backend']) != (artifact['id'], target, backend)):
@@ -163,8 +166,15 @@ def _scenario(path, pin, subject, artifact, target, backend):
         raise ValueError('invalid browser viewport or title')
     if type(value['steps']) is not list or not 2 <= len(value['steps']) <= 64:
         raise ValueError('browser scenario requires bounded nonempty interactions and results')
+    surface_sources = []
+    if surface:
+        if value['observer_protocol'] != SURFACE_PROTOCOL:
+            raise ValueError('unsupported rich surface observer protocol')
+        actions, source = _surface_actions(value['rich_surface_sources'])
+        surface_sources.append(source)
+        _validate_surface_steps(value['steps'], actions)
     seen, edited, interacted, later_assertion = set(), set(), False, False
-    for step in value['steps']:
+    for step in (() if surface else value['steps']):
         if type(step) is not dict or step.get('action') not in ('edit', 'activate', 'assert-text', 'assert-value'):
             raise ValueError('unsupported data-only browser action')
         fields = ('id', 'action', 'widget') + (() if step['action'] == 'activate' else ('value',))
@@ -187,12 +197,12 @@ def _scenario(path, pin, subject, artifact, target, backend):
             interacted = True
         elif interacted:
             later_assertion = True
-    if not later_assertion:
+    if not surface and not later_assertion:
         raise ValueError('browser scenario needs an application assertion after interaction')
     inputs = value.get('inputs', {})
     if type(inputs) is not dict or len(inputs) > 64:
         raise ValueError('invalid browser scenario input inventory')
-    snapshots, total, input_names = [], 0, set()
+    snapshots, total, input_names = list(surface_sources), 0, set()
     for name, expected in inputs.items():
         container.resource_path(name);release._sha(expected)
         if name.casefold() in input_names:
@@ -216,6 +226,268 @@ def _rich_sources(pins):
             raise ValueError('rich inspection source differs from frozen scenario: ' + name)
         snapshots.append(saved)
     return snapshots
+
+
+def _surface_actions(pins):
+    """Interpret only the independently pinned new action helper bytes."""
+    release._keys(pins, SURFACE_SOURCES, label='rich surface source cohort')
+    name = SURFACE_SOURCES[0]
+    saved = container._snapshot(ROOT / name, 2 * 1024 * 1024)
+    if container.digest(saved.content) != release._sha(pins[name]):
+        raise ValueError('rich surface action source differs from frozen scenario')
+    spec = importlib.util.spec_from_file_location('foundation_pinned_surface_actions', saved.path)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(saved.content, str(saved.path), 'exec'), module.__dict__)
+    return module, saved
+
+
+def _validate_surface_steps(steps, actions):
+    seen, physical, asserted = set(), set(), False
+    for step in steps:
+        if type(step) is not dict or not isinstance(step.get('id'), str) or not NAME.fullmatch(step['id']) or step['id'] in seen:
+            raise ValueError('invalid or duplicate rich surface step identity')
+        kind = step.get('action')
+        if isinstance(kind, str) and kind.startswith('surface-'):
+            actions.validate_surface_action(step)
+            physical.add(step['id'])
+        elif kind in ('assert-document', 'capture'):
+            release._keys(step, ('id', 'action', 'after') + (('predicate', 'expected') if kind == 'assert-document' else ()), label='rich observation step')
+            if type(step['after']) is not str or step['after'] not in physical:
+                raise ValueError('rich observation must follow a prior physical action')
+            if kind == 'assert-document':
+                predicate = step['predicate']
+                if type(predicate) is not dict:
+                    raise ValueError('rich document predicate must be typed data')
+                predicate_kind = predicate.get('kind')
+                if type(predicate_kind) is not str:
+                    raise ValueError('rich document predicate kind must be text')
+                fields = {'text-present': (), 'text-absent': (), 'form-value': ('label',),
+                    'descendant-text': ('name',), 'selection-text': (), 'tagged-text': ('tag',)}.get(predicate_kind)
+                if fields is None:
+                    raise ValueError('unsupported rich document predicate')
+                release._keys(predicate, ('kind', *fields), label='rich document predicate')
+                if not _text(step['expected'], 4096) or not step['expected']:
+                    raise ValueError('rich document expectation must be bounded nonempty text')
+                if any(not _text(predicate[key], 256) or not predicate[key] for key in fields):
+                    raise ValueError('rich document target must be bounded nonempty text')
+                if predicate_kind == 'tagged-text' and predicate['tag'] not in ('b', 'strong', 'em', 'i'):
+                    raise ValueError('rich tagged-text predicate requires a known semantic tag')
+                asserted = True
+        else:
+            raise ValueError('unsupported rich surface step')
+        seen.add(step['id'])
+    if not physical or not asserted:
+        raise ValueError('rich surface scenario needs physical input and a native document assertion')
+
+
+SURFACE_READ = "return globalThis.foundationRichSurfaceObserver?.read() ?? null;"
+SURFACE_OBSERVE = '''const done=arguments[arguments.length-1];
+const observer=globalThis.foundationRichSurfaceObserver;
+if(!observer){done({ok:false,error:'Rich surface observer unavailable',admission:null});}
+else observer.observeDocument().then(value=>done({ok:true,value}),
+ error=>done({ok:false,error:String(error.message||error),admission:error.admission??null}));'''
+
+
+def _native_surface_document(observed):
+    if (type(observed) is not dict or observed.get('protocol') != SURFACE_PROTOCOL or observed.get('closed') is not False
+            or not re.fullmatch(r'[0-9a-f]{64}', str(observed.get('frontendGeneration', '')))):
+        raise ValueError('native observation has no live public frontend identity')
+    presentation, state = observed.get('presentation'), observed.get('document')
+    if (type(presentation) is not dict or presentation.get('available') is not True or type(state) is not dict
+            or state.get('available') is not True or not DECIMAL.fullmatch(str(state.get('observation', '')))):
+        raise ValueError('native observation or actual rendered surface is unavailable')
+    revision = state.get('publicationRevision')
+    if not DECIMAL.fullmatch(str(revision)) or int(revision) > int(presentation['snapshotRevision']):
+        raise ValueError('native document has no accepted GUI publication')
+    document = state.get('document')
+    if type(document) is not dict or document.get('protocol') != 2:
+        raise ValueError('native observation has no paired document-v2 values')
+    body, forms = document.get('body'), document.get('forms')
+    if type(body) is not dict or type(forms) is not dict or forms.get('protocol') != 2:
+        raise ValueError('native document/form pair is incomplete')
+    snapshot = body.get('snapshot')
+    if (body.get('errorCode') != '' or type(snapshot) is not dict or snapshot.get('truncated') is not False
+            or snapshot.get('version') != forms.get('version') or forms.get('version') != document.get('publication')
+            or type(snapshot.get('nodes')) is not list or len(snapshot['nodes']) > 2048):
+        raise ValueError('native body is erroneous, truncated or not paired with forms')
+    return body, forms
+
+
+def _document_predicate(observed, predicate, expected):
+    body, forms = _native_surface_document(observed)
+    nodes = body['snapshot']['nodes']
+    visible = [node for node in nodes if not node.get('masked') and not node.get('omitted')]
+    text = ''.join(node.get('text', '') for node in visible if node.get('kind') == 'text')
+    kind = predicate['kind']
+    if kind == 'text-present':
+        return expected in text
+    if kind == 'text-absent':
+        return expected not in text
+    if kind == 'form-value':
+        controls = [control for control in forms['controls'] if control.get('label') == predicate['label'] and not control.get('omitted')]
+        if len(controls) != 1 or not controls[0].get('complete') or controls[0].get('kind') == 'secure_readonly':
+            return False
+        state = controls[0].get('state')
+        return bool(state and state.get('kind') == 'text' and state['value']['value'] == expected)
+    by_id = {node['id']: node for node in visible}
+    def descendant_text(parent):
+        ids = {parent['id']}
+        for node in visible:
+            if node.get('parent') in ids:
+                ids.add(node['id'])
+        return ''.join(node.get('text', '') for node in visible if node['id'] in ids and node.get('kind') == 'text')
+    if kind in ('descendant-text', 'tagged-text'):
+        matches = [node for node in visible if node.get('kind') == 'element' and
+            (node.get('name') == predicate['name'] if kind == 'descendant-text' else node.get('tag') == predicate['tag'])]
+        if kind == 'descendant-text':
+            return len(matches) == 1 and descendant_text(matches[0]) == expected
+        return sum(descendant_text(node) == expected for node in matches) == 1
+    selection = body.get('originalSelection')
+    if not selection or any(body['degraded'].values()):
+        return False
+    anchor, focus = (selection['endpoints'][key] for key in ('anchor', 'focus'))
+    if anchor['kind'] != 'text_utf16' or focus['kind'] != 'text_utf16' or anchor['node'] != focus['node']:
+        return False
+    node = by_id.get(anchor['node'])
+    if not node or node.get('kind') != 'text':
+        return False
+    low, high = sorted((anchor['offset'], focus['offset']))
+    encoded = node['text'].encode('utf-16-le')
+    if high * 2 > len(encoded):
+        return False
+    try:
+        return encoded[low * 2:high * 2].decode('utf-16-le') == expected
+    except UnicodeDecodeError:
+        return False
+
+
+def _surface_capture(browser, evidence, name):
+    raw = base64.b64decode(browser.command('WebDriver:TakeScreenshot', {})['value'], validate=True)
+    if not raw.startswith(b'\x89PNG\r\n\x1a\n') or len(raw) > 16 * 1024 * 1024:
+        raise ValueError('rich surface screenshot is invalid or oversized')
+    with (evidence / name).open('xb') as stream:
+        stream.write(raw)
+    return {'path': name, 'sha256': container.digest(raw)}
+
+
+def _exercise_surface(browser, engine, scenario, evidence, deadline):
+    actions, _ = _surface_actions(scenario['rich_surface_sources'])
+    browser.until("return globalThis.foundationRichSurfaceObserver?.read().presentation?.available === true;")
+    frontend_generation, last_observation = None, 0
+    def observe():
+        nonlocal frontend_generation, last_observation
+        result = browser.evaluate(SURFACE_OBSERVE, asynchronous=True)
+        if type(result) is not dict or result.get('ok') is not True:
+            raise ValueError('actual native document observation failed: ' + str(result))
+        # Native Take can finish before the next RAF blit. Wait only for
+        # presentation; never replay the preceding physical action.
+        browser.until("return globalThis.foundationRichSurfaceObserver?.read().presentation?.available === true;")
+        observed = browser.evaluate(SURFACE_READ)
+        if observed['document']['observation'] != result['value']['document']['observation']:
+            raise ValueError('native observation changed before presentation readback')
+        _native_surface_document(observed)
+        if frontend_generation is not None and observed['frontendGeneration'] != frontend_generation:
+            raise ValueError('rich frontend was replaced during the application scenario')
+        native_observation = int(observed['document']['observation'])
+        if native_observation <= last_observation:
+            raise ValueError('rich document observation did not refresh')
+        frontend_generation, last_observation = observed['frontendGeneration'], native_observation
+        return observed
+    baseline = observe()
+    observations, changed, first_input, last_observed = [], False, None, None
+    for step in scenario['steps']:
+        kind = step['action']
+        record = {'id': step['id'], 'action': kind, 'passed': True}
+        if kind.startswith('surface-'):
+            browser.until("return globalThis.foundationRichSurfaceObserver?.read().presentation?.available === true;")
+            dispatched = actions.dispatch_surface_action(browser, engine, step)
+            if first_input is None:
+                first_input = dispatched
+            record['physical_dispatch_ns'] = dispatched
+        elif kind == 'assert-document':
+            observed = observe()
+            while not _document_predicate(observed, step['predicate'], step['expected']):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('native rich document assertion failed: ' + step['id'])
+                time.sleep(.02)
+                observed = observe()
+            if step['predicate']['kind'] not in ('form-value', 'selection-text'):
+                changed |= not _document_predicate(baseline, step['predicate'], step['expected'])
+            last_observed = time.monotonic_ns()
+            record['native_observation'] = observed
+            record['native_observed_ns'] = last_observed
+            record['after'] = step['after']
+            record['capture'] = _surface_capture(browser, evidence, 'step-' + step['id'] + '.png')
+        else:
+            record['after'] = step['after']
+            record['capture'] = _surface_capture(browser, evidence, 'step-' + step['id'] + '.png')
+        observations.append(record)
+    if not changed or first_input is None or last_observed is None:
+        raise ValueError('rich surface scenario did not prove a changed native application result')
+    return observations, first_input, last_observed, baseline
+
+
+def _check_surface_records(result, scenario, evidence):
+    records = result.get('observations')
+    if type(records) is not list or len(records) != len(scenario['steps']):
+        raise ValueError('rich surface scenario observations are incomplete')
+    baseline = result.get('rich_surface_baseline')
+    _native_surface_document(baseline)
+    changed, captures = False, []
+    last_observation = int(baseline['document']['observation'])
+    last_dispatch = last_event = 0
+    first_dispatch = last_native_observed = None
+    dispatches = {}
+    for step, record in zip(scenario['steps'], records):
+        if (type(record) is not dict or record.get('id') != step['id'] or record.get('action') != step['action']
+                or record.get('passed') is not True):
+            raise ValueError('rich surface observation identity differs')
+        if step['action'].startswith('surface-'):
+            release._keys(record, ('id', 'action', 'passed', 'physical_dispatch_ns'), label='physical dispatch observation')
+            if type(record['physical_dispatch_ns']) is not int or record['physical_dispatch_ns'] <= 0:
+                raise ValueError('rich physical dispatch clock is absent')
+            dispatched = record['physical_dispatch_ns']
+            if dispatched <= last_dispatch or dispatched < last_event:
+                raise ValueError('rich physical dispatch order regressed')
+            dispatches[step['id']] = dispatched
+            if first_dispatch is None:
+                first_dispatch = dispatched
+            last_dispatch = last_event = dispatched
+            continue
+        release._keys(record, ('id', 'action', 'passed', 'after', 'capture') +
+            (('native_observation', 'native_observed_ns') if step['action'] == 'assert-document' else ()), label='rich native observation')
+        if record['after'] != step['after']:
+            raise ValueError('rich observation names another prior action')
+        if step['action'] == 'assert-document':
+            if record['native_observation'].get('frontendGeneration') != baseline['frontendGeneration']:
+                raise ValueError('saved native rich observation belongs to another frontend')
+            if not _document_predicate(record['native_observation'], step['predicate'], step['expected']):
+                raise ValueError('saved native rich assertion does not match its scenario')
+            observation = int(record['native_observation']['document']['observation'])
+            observed_ns = record['native_observed_ns']
+            if observation <= last_observation:
+                raise ValueError('saved native rich observation did not refresh')
+            if (type(observed_ns) is not int or observed_ns <= 0 or observed_ns < last_event
+                    or step['after'] not in dispatches or observed_ns < dispatches[step['after']]):
+                raise ValueError('saved native rich observation precedes its physical input')
+            last_observation, last_native_observed, last_event = observation, observed_ns, observed_ns
+            if step['predicate']['kind'] not in ('form-value', 'selection-text'):
+                changed |= not _document_predicate(baseline, step['predicate'], step['expected'])
+        capture = record['capture']
+        release._keys(capture, ('path', 'sha256'), label='rich step capture')
+        if capture['path'] != 'step-' + step['id'] + '.png':
+            raise ValueError('rich step capture path differs')
+        saved = container._snapshot(evidence / capture['path'], 16 * 1024 * 1024)
+        if not saved.content.startswith(b'\x89PNG\r\n\x1a\n') or container.digest(saved.content) != release._sha(capture['sha256']):
+            raise ValueError('rich step screenshot is missing or differs')
+        captures.append(saved)
+    if not changed:
+        raise ValueError('rich scenario lacks a changed native result beyond provisional form editing')
+    clocks = result.get('clocks')
+    if (not _valid_surface_clocks(clocks) or clocks['first_trusted_dispatch_ns'] != first_dispatch
+            or clocks['native_result_observed_ns'] != last_native_observed):
+        raise ValueError('rich surface timing envelope differs from its ordered observations')
+    return captures
 
 
 def _inspect_rich_prefix(prefix, kind):
@@ -379,6 +651,27 @@ def _valid_rich_clocks(value):
                 ('adapter_to_changed_dom_ns', 'first_dispatch_to_changed_dom_ns'))
             and release._same_json(value, _rich_clocks(start, dispatch, observed)))
     except (ValueError, TypeError):
+        return False
+
+
+def _surface_clocks(start, dispatch, observed):
+    return {'kind': 'ordinary-rich-browser-native-observation-v1',
+        'adapter_start_ns': start, 'first_trusted_dispatch_ns': dispatch,
+        'native_result_observed_ns': observed,
+        'adapter_to_native_observation_ns': observed - start,
+        'first_dispatch_to_native_observation_ns': observed - dispatch,
+        'pending_measurements': dict(RICH_PENDING)}
+
+
+def _valid_surface_clocks(value):
+    if type(value) is not dict:
+        return False
+    try:
+        start, dispatch, observed = (value[key] for key in
+            ('adapter_start_ns', 'first_trusted_dispatch_ns', 'native_result_observed_ns'))
+        return (all(type(item) is int and item > 0 for item in (start, dispatch, observed))
+            and start <= dispatch <= observed and release._same_json(value, _surface_clocks(start, dispatch, observed)))
+    except (KeyError, ValueError, TypeError):
         return False
 
 OFFLINE = '''const done=arguments[arguments.length-1];
@@ -771,33 +1064,37 @@ def _execute_chromium(runtime, scenario, evidence, work, timeout, environment):
                 if policy != [{'sandbox': 'allow-scripts', 'srcdoc': True}]:
                     raise ValueError('binary GUI requires exactly one isolated output frame')
                 browser.frame(0)
-                initial = {}
-                for step in scenario['steps']:
-                    if step['action'].startswith('assert-'):
-                        key = (step['widget']['id'], step['widget']['generation'], step['action'])
-                        initial[key] = browser.evaluate(READ, key)
-                observations, changed, edits = [], False, set()
-                first_input_dispatch_ns = changed_dom_observed_ns = None
-                for step in scenario['steps']:
-                    key = (step['widget']['id'], step['widget']['generation'])
-                    args = (*key, step['action'], step.get('value'))
-                    if step['action'] in ('edit', 'activate'):
-                        if step['action'] == 'edit':
-                            if key in edits:
-                                raise ValueError('scenario cannot repeat an unacknowledged edit')
-                            edits.add(key)
-                        if 'rich_identities' in scenario:
-                            dispatched_ns = _trusted_action(browser, 'chromium', step)
-                            if first_input_dispatch_ns is None:
-                                first_input_dispatch_ns = dispatched_ns
+                if scenario['schema_version'] == 3:
+                    observations, first_input_dispatch_ns, changed_dom_observed_ns, surface_baseline = _exercise_surface(browser, 'chromium', scenario, evidence, deadline)
+                    changed = True
+                else:
+                    initial = {}
+                    for step in scenario['steps']:
+                        if step['action'].startswith('assert-'):
+                            key = (step['widget']['id'], step['widget']['generation'], step['action'])
+                            initial[key] = browser.evaluate(READ, key)
+                    observations, changed, edits = [], False, set()
+                    first_input_dispatch_ns = changed_dom_observed_ns = None
+                    for step in scenario['steps']:
+                        key = (step['widget']['id'], step['widget']['generation'])
+                        args = (*key, step['action'], step.get('value'))
+                        if step['action'] in ('edit', 'activate'):
+                            if step['action'] == 'edit':
+                                if key in edits:
+                                    raise ValueError('scenario cannot repeat an unacknowledged edit')
+                                edits.add(key)
+                            if 'rich_identities' in scenario:
+                                dispatched_ns = _trusted_action(browser, 'chromium', step)
+                                if first_input_dispatch_ns is None:
+                                    first_input_dispatch_ns = dispatched_ns
+                            else:
+                                browser.evaluate(ACTION, args)
                         else:
-                            browser.evaluate(ACTION, args)
-                    else:
-                        browser.until(READ, args[:3], step['value'])
-                        changed |= key not in edits and initial[(*key, step['action'])] != step['value']
-                        if changed and first_input_dispatch_ns is not None and changed_dom_observed_ns is None:
-                            changed_dom_observed_ns = time.monotonic_ns()
-                    observations.append({'id': step['id'], 'action': step['action'], 'widget': step['widget'], 'passed': True})
+                            browser.until(READ, args[:3], step['value'])
+                            changed |= key not in edits and initial[(*key, step['action'])] != step['value']
+                            if changed and first_input_dispatch_ns is not None and changed_dom_observed_ns is None:
+                                changed_dom_observed_ns = time.monotonic_ns()
+                        observations.append({'id': step['id'], 'action': step['action'], 'widget': step['widget'], 'passed': True})
                 if not changed:
                     raise ValueError('scenario did not prove a changed application result beyond provisional edits')
                 capture = base64.b64decode(browser.command('WebDriver:TakeScreenshot', {})['value'], validate=True)
@@ -824,10 +1121,12 @@ def _execute_chromium(runtime, scenario, evidence, work, timeout, environment):
                     'direct_file_uri': runtime.resolve().as_uri(), 'runtime_sha256': container.digest(runtime.read_bytes()),
                     'executed_tests': [step['id'] for step in scenario['steps']], 'observations': observations,
                     'application_result_changed': True, 'capture_sha256': container.digest(capture), 'frame_policy': policy}
+                if scenario['schema_version'] == 3:
+                    result['rich_surface_baseline'] = surface_baseline
                 if adapter_start_ns is not None:
                     if first_input_dispatch_ns is None or changed_dom_observed_ns is None:
                         raise ValueError('rich BOTH DOM span lacks a trusted input and changed result')
-                    result['clocks'] = _rich_clocks(adapter_start_ns, first_input_dispatch_ns, changed_dom_observed_ns)
+                    result['clocks'] = (_surface_clocks if scenario['schema_version'] == 3 else _rich_clocks)(adapter_start_ns, first_input_dispatch_ns, changed_dom_observed_ns)
             finally:
                 try:
                     if resources is not None:
@@ -915,33 +1214,37 @@ def _execute_browser(runtime, scenario, evidence, work, timeout, environment):
                 if policy != [{'sandbox': 'allow-scripts', 'srcdoc': True}]:
                     raise ValueError('binary GUI requires exactly one isolated output frame')
                 browser.frame(0)
-                initial = {}
-                for step in scenario['steps']:
-                    if step['action'].startswith('assert-'):
-                        key = (step['widget']['id'], step['widget']['generation'], step['action'])
-                        initial[key] = browser.evaluate(READ, key)
-                observations, changed, edits = [], False, set()
-                first_input_dispatch_ns = changed_dom_observed_ns = None
-                for step in scenario['steps']:
-                    key = (step['widget']['id'], step['widget']['generation'])
-                    args = (*key, step['action'], step.get('value'))
-                    if step['action'] in ('edit', 'activate'):
-                        if step['action'] == 'edit':
-                            if key in edits:
-                                raise ValueError('scenario v1 cannot repeat an edit without an application acknowledgement')
-                            edits.add(key)
-                        if 'rich_identities' in scenario:
-                            dispatched_ns = _trusted_action(browser, 'firefox', step)
-                            if first_input_dispatch_ns is None:
-                                first_input_dispatch_ns = dispatched_ns
+                if scenario['schema_version'] == 3:
+                    observations, first_input_dispatch_ns, changed_dom_observed_ns, surface_baseline = _exercise_surface(browser, 'firefox', scenario, evidence, deadline)
+                    changed = True
+                else:
+                    initial = {}
+                    for step in scenario['steps']:
+                        if step['action'].startswith('assert-'):
+                            key = (step['widget']['id'], step['widget']['generation'], step['action'])
+                            initial[key] = browser.evaluate(READ, key)
+                    observations, changed, edits = [], False, set()
+                    first_input_dispatch_ns = changed_dom_observed_ns = None
+                    for step in scenario['steps']:
+                        key = (step['widget']['id'], step['widget']['generation'])
+                        args = (*key, step['action'], step.get('value'))
+                        if step['action'] in ('edit', 'activate'):
+                            if step['action'] == 'edit':
+                                if key in edits:
+                                    raise ValueError('scenario v1 cannot repeat an edit without an application acknowledgement')
+                                edits.add(key)
+                            if 'rich_identities' in scenario:
+                                dispatched_ns = _trusted_action(browser, 'firefox', step)
+                                if first_input_dispatch_ns is None:
+                                    first_input_dispatch_ns = dispatched_ns
+                            else:
+                                browser.evaluate(ACTION, args)
                         else:
-                            browser.evaluate(ACTION, args)
-                    else:
-                        browser.until(READ, args[:3], step['value'])
-                        changed |= key not in edits and initial[(*key, step['action'])] != step['value']
-                        if changed and first_input_dispatch_ns is not None and changed_dom_observed_ns is None:
-                            changed_dom_observed_ns = time.monotonic_ns()
-                    observations.append({'id': step['id'], 'action': step['action'], 'widget': step['widget'], 'passed': True})
+                            browser.until(READ, args[:3], step['value'])
+                            changed |= key not in edits and initial[(*key, step['action'])] != step['value']
+                            if changed and first_input_dispatch_ns is not None and changed_dom_observed_ns is None:
+                                changed_dom_observed_ns = time.monotonic_ns()
+                        observations.append({'id': step['id'], 'action': step['action'], 'widget': step['widget'], 'passed': True})
                 if not changed:
                     raise ValueError('scenario did not prove a changed application result beyond provisional edits')
                 raw = browser.command('WebDriver:TakeScreenshot', {})['value']
@@ -969,10 +1272,12 @@ def _execute_browser(runtime, scenario, evidence, work, timeout, environment):
                     'runtime_sha256': container.digest(runtime.read_bytes()), 'executed_tests': [step['id'] for step in scenario['steps']],
                     'observations': observations, 'application_result_changed': True,
                     'capture_sha256': container.digest(capture), 'frame_policy': policy}
+                if scenario['schema_version'] == 3:
+                    result['rich_surface_baseline'] = surface_baseline
                 if adapter_start_ns is not None:
                     if first_input_dispatch_ns is None or changed_dom_observed_ns is None:
                         raise ValueError('rich BOTH DOM span lacks a trusted input and changed result')
-                    result['clocks'] = _rich_clocks(adapter_start_ns, first_input_dispatch_ns, changed_dom_observed_ns)
+                    result['clocks'] = (_surface_clocks if scenario['schema_version'] == 3 else _rich_clocks)(adapter_start_ns, first_input_dispatch_ns, changed_dom_observed_ns)
             finally:
                 if browser is not None:
                     browser.close()
@@ -1064,6 +1369,11 @@ def run(context):
         for name, item in zip(RICH_INSPECTION_SOURCES, rich_sources):
             with (source_directory / Path(name).name).open('xb') as stream:
                 stream.write(item.content)
+        if scenario['schema_version'] == 3:
+            surface_directory = evidence / 'rich-surface-sources';surface_directory.mkdir()
+            _, surface_source = _surface_actions(scenario['rich_surface_sources'])
+            with (surface_directory / surface_source.path.name).open('xb') as stream:
+                stream.write(surface_source.content)
     if installed[0]:
         relocated, before = _installed(context, helpers)
     else:
@@ -1086,7 +1396,7 @@ def run(context):
                 or result.get('direct_file_uri') != runtime.resolve().as_uri()
                 or result.get('runtime_sha256') != artifact['runtime_sha256']):
             raise ValueError('actual browser identity, offline and quit/join evidence are incomplete')
-        if rich and not _valid_rich_clocks(result.get('clocks')):
+        if rich and not (_valid_surface_clocks if scenario['schema_version'] == 3 else _valid_rich_clocks)(result.get('clocks')):
             raise ValueError('rich BOTH browser result lacks honest DOM spans and pending presentation metrics')
         capabilities, image = result.get('capabilities', {}), result.get('actual_image', {})
         if chromium:
@@ -1112,20 +1422,26 @@ def run(context):
         if not capture.content.startswith(b'\x89PNG\r\n\x1a\n') or container.digest(capture.content) != result.get('capture_sha256'):
             raise ValueError('browser capture is missing or differs')
         context['passed'].append('actual-browser')
-        observations = result.get('observations')
-        if (result.get('executed_tests') != names or result.get('application_result_changed') is not True
-                or type(observations) is not list or len(observations) != len(names)
-                or any(observed != {'id': step['id'], 'action': step['action'], 'widget': step['widget'], 'passed': True}
-                       for observed, step in zip(observations, scenario['steps']))
-                or result.get('frame_policy') != [{'sandbox': 'allow-scripts', 'srcdoc': True}]):
-            raise ValueError('browser did not execute its complete application scenario')
+        surface_captures = []
+        if scenario['schema_version'] == 3:
+            if result.get('executed_tests') != names or result.get('application_result_changed') is not True or result.get('frame_policy') != [{'sandbox': 'allow-scripts', 'srcdoc': True}]:
+                raise ValueError('browser did not execute its complete rich surface scenario')
+            surface_captures = _check_surface_records(result, scenario, evidence)
+        else:
+            observations = result.get('observations')
+            if (result.get('executed_tests') != names or result.get('application_result_changed') is not True
+                    or type(observations) is not list or len(observations) != len(names)
+                    or any(observed != {'id': step['id'], 'action': step['action'], 'widget': step['widget'], 'passed': True}
+                           for observed, step in zip(observations, scenario['steps']))
+                    or result.get('frame_policy') != [{'sandbox': 'allow-scripts', 'srcdoc': True}]):
+                raise ValueError('browser did not execute its complete application scenario')
         context['passed'].append('application-scenario')
         after = helpers['tree'](relocated)
         helpers['new_json'](evidence / 'after.json', after)
         if (after != before or _identities(relocated) != identities
                 or container.digest(runtime.read_bytes()) != artifact['runtime_sha256']):
             raise ValueError('browser runtime or extracted byte inventory changed')
-        for item in (saved, executable, image_after, capture, *inputs, *sources, *rich_sources):
+        for item in (saved, executable, image_after, capture, *inputs, *sources, *rich_sources, *surface_captures):
             container._recheck(item)
         if chromium:
             container._recheck(driver_input);container._recheck(actual_driver)
@@ -1141,7 +1457,9 @@ def run(context):
                   scenario_sha256=context['scenario_sha256'], browser_version=capabilities['browserVersion'], status='passed')
     if rich:
         result['rich_inspection_sources'] = dict(scenario['rich_inspection_sources'])
-        result['scenario_scope'] = 'trusted compiled-view controls in an eligible BOTH carrier; rich engine-frame interactions unmeasured'
+        result['scenario_scope'] = ('physical retained-engine surface input, native document readback and captured pixels; native ACK/causal latency unmeasured' if scenario['schema_version'] == 3 else 'trusted compiled-view controls in an eligible BOTH carrier; rich engine-frame interactions unmeasured')
+        if scenario['schema_version'] == 3:
+            result['rich_surface_sources'] = dict(scenario['rich_surface_sources'])
     if chromium:
         result['driver'] = {'path': str(driver_input.path), 'sha256': scenario['browser']['driver']['sha256']}
     helpers['new_json'](evidence / 'observation.json', result)

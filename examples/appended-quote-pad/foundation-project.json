@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "application": {
+    "id": "org.example.quote-pad",
+    "name": "Quote Pad",
+    "version": "0.1.0"
+  },
+  "appended": {
+    "web": {
+      "enabled": true,
+      "source": "src-web-appended",
+      "entry": "index.html"
+    },
+    "binary": {
+      "enabled": true,
+      "source": "src-bin-appended"
+    }
+  },
+  "startup": {
+    "primary": "web"
+  },
+  "kernel": {
+    "selection": "project",
+    "profile": "both"
+  }
+}

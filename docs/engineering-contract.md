@@ -48,14 +48,10 @@ from its own before/after mutation check. See the
 Readers and writers must coordinate around the actual platform's replacement
 semantics. Windows `MoveFileEx` cannot replace an open destination, even when the
 reader shares delete access; see the [CPython platform analysis](https://github.com/python/cpython/issues/90161).
-The compatibility JSON board therefore holds the same brief mutex across a complete
-read or publication on every platform, binds that mutex to its owning thread,
-and closes its descriptors before release.
-A competing caller receives a bounded busy result before any write. Test real
-open readers against competing processes, along with mutation and uncertainty
-checks. Do not hide access failures through blind retries or weaken recovery.
-This does not qualify unrelated filesystem operations or the complete record
-protocol on an unsupported host.
+Test real open readers against competing processes, along with mutation and
+uncertainty checks. Do not hide access failures through blind retries or weaken
+recovery. Platform-specific file replacement behavior must be checked at the
+operation boundary that relies on it.
 
 A partial read is not a complete message; EOF, cancellation and malformed content
 must have distinct outcomes. Do not derive unbounded work from untrusted counts.
@@ -98,14 +94,9 @@ and apply backpressure. Specify what is dropped, coalesced, retried or rejected;
 never silently drop a required state transition. Avoid a UI refresh for every
 small internal operation; batch view updates while preserving final state.
 
-Separate locks that serialize brief metadata changes from ownership that lasts
-through a task. Do not hold a registry mutex during compilation, downloads or user
-interaction. Acquire complete needed resources in an agreed order, release unused
-scope promptly and avoid waiting while retaining unrelated contested resources.
-Source edits, shared build trees, index/ref operations, output streams and cleanup
-all need owners. [Agent coordination](agent-coordination.md) implements this for
-cooperating independent sessions; OS or harness isolation is required when a writer
-cannot honor it.
+Use native subagents for independent work with disjoint write scopes. Keep shared
+interfaces and tightly coupled changes with the integrating supervisor, and
+serialize operations that use the same build tree, Git index or release state.
 
 ## Architecture and platform boundaries
 

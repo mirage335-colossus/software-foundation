@@ -57,9 +57,9 @@ references and record pinned revisions; external community advice is a hypothesi
 until checked in the relevant environment.
 
 Store large evidence separately with a small indexed manifest, retention policy,
-checksums and reproduction instructions. Keep temporary findings under the
-ignored coordination board. Promote durable verified knowledge into current
-contracts, tests and procedures. Do not force every contributor to read all logs.
+checksums and reproduction instructions. Promote durable verified knowledge into
+current contracts, tests and procedures. Do not force every contributor to read
+all logs.
 
 A change affecting behavior updates its contract, test and user instructions in
 the same review. Renames preserve or repair inbound links. Use

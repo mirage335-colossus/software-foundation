@@ -19,7 +19,7 @@ spec.loader.exec_module(ci)
 
 class ClassificationTests(unittest.TestCase):
     def test_only_reviewed_narrative_documents_omit_expensive_work(self):
-        result = ci.classify(['README.md', 'docs/ci.md', 'docs/agent-coordination.md'])
+        result = ci.classify(['README.md', 'docs/ci.md', 'docs/maintenance.md'])
         self.assertEqual(result['scope'], 'documents')
         self.assertFalse(any(result[field] for field in ('build', 'gui', 'workflow_lint')))
 
@@ -109,14 +109,12 @@ class ClassificationTests(unittest.TestCase):
 
     def test_changed_domains_run_whole_affected_suites(self):
         for tool, required in {
-            'agent_edit': {'agent_edit', 'agent_record', 'agent_session', 'agent_stress'},
             'apt_repo': {'apt_repo', 'distro_channel', 'distribution_release'},
             'sdk': {'sdk', 'sdk_paths', 'sdk_retention'},
             'gui_source_group': {'gui_source_group', 'gui_boundary', 'gui_visual'},
         }.items():
             with self.subTest(tool=tool):
                 self.assertLessEqual(required, set(ci.infrastructure_suites(['tools/' + tool + '.py'])))
-        self.assertNotIn('apt_repo', ci.infrastructure_suites(['tools/agent_edit.py']))
         self.assertIn('gui_boundary', ci.infrastructure_suites(['gui/host/boot.mjs']))
         self.assertIn('distro_channel', ci.infrastructure_suites(['tests/test_distro_channel.py']))
 
@@ -148,21 +146,21 @@ class ClassificationTests(unittest.TestCase):
     def test_reviewed_policy_path_metadata_does_not_hide_real_script_dependencies(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); (root / 'tools').mkdir(); (root / 'tests').mkdir()
-            (root / 'tools/agent_edit.py').write_text('')
-            metadata = 'COMPOSITION_FILES = frozenset({"tools/agent_edit.py"})\n'
+            (root / 'tools/sdk.py').write_text('')
+            metadata = 'COMPOSITION_FILES = frozenset({"tools/sdk.py"})\n'
             (root / 'tools/appended_policy.py').write_text(metadata)
-            (root / 'tools/consumer.py').write_text('module("agent_edit")\n')
+            (root / 'tools/consumer.py').write_text('module("sdk")\n')
             (root / 'tests/test_appended_policy.py').write_text('import appended_policy\n')
             (root / 'tests/test_consumer.py').write_text('import consumer\n')
-            self.assertEqual(['consumer'], ci.infrastructure_suites(['tools/agent_edit.py'], root))
+            self.assertEqual(['consumer'], ci.infrastructure_suites(['tools/sdk.py'], root))
             (root / 'tools/appended_policy.py').write_text(
-                metadata + 'subprocess.run(["tools/agent_edit.py"])\n')
+                metadata + 'subprocess.run(["tools/sdk.py"])\n')
             self.assertEqual(['appended_policy', 'consumer'],
-                             ci.infrastructure_suites(['tools/agent_edit.py'], root))
+                             ci.infrastructure_suites(['tools/sdk.py'], root))
             (root / 'tools/appended_policy.py').write_text(
-                'COMPOSITION_FILES = frozenset(load("tools/agent_edit.py"))\n')
+                'COMPOSITION_FILES = frozenset(load("tools/sdk.py"))\n')
             self.assertEqual(['appended_policy', 'consumer'],
-                             ci.infrastructure_suites(['tools/agent_edit.py'], root))
+                             ci.infrastructure_suites(['tools/sdk.py'], root))
 
 
     def test_shared_test_fixtures_select_transitive_whole_suite_consumers(self):
@@ -177,29 +175,29 @@ class ClassificationTests(unittest.TestCase):
     def test_selected_suite_cannot_impersonate_its_unchanged_production_module(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); (root / 'tools').mkdir(); (root / 'tests').mkdir()
-            (root / 'tools/agent_edit.py').write_text('')
+            (root / 'tools/sdk.py').write_text('')
             (root / 'tools/ci_changes.py').write_text('')
             (root / 'tools/consumer.py').write_text('import ci_changes\n')
-            (root / 'tests/test_ci_changes.py').write_text('import agent_edit\n')
+            (root / 'tests/test_ci_changes.py').write_text('import sdk\n')
             (root / 'tests/test_consumer.py').write_text('import consumer\n')
             (root / 'tests/test_fixture_consumer.py').write_text('import test_ci_changes\n')
             self.assertEqual(['ci_changes', 'fixture_consumer'],
-                             ci.infrastructure_suites(['tools/agent_edit.py'], root))
+                             ci.infrastructure_suites(['tools/sdk.py'], root))
             # A real production import preserves the ordinary transitive edge.
-            (root / 'tools/ci_changes.py').write_text('import agent_edit\n')
+            (root / 'tools/ci_changes.py').write_text('import sdk\n')
             self.assertEqual(['ci_changes', 'consumer', 'fixture_consumer'],
-                             ci.infrastructure_suites(['tools/agent_edit.py'], root))
+                             ci.infrastructure_suites(['tools/sdk.py'], root))
 
     def test_production_consumers_of_actual_test_fixtures_remain_in_reference_closure(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); (root / 'tools').mkdir(); (root / 'tests').mkdir()
-            (root / 'tools/agent_edit.py').write_text('')
+            (root / 'tools/sdk.py').write_text('')
             (root / 'tools/consumer.py').write_text('import test_fixture\n')
-            (root / 'tests/test_fixture.py').write_text('import agent_edit\n')
+            (root / 'tests/test_fixture.py').write_text('import sdk\n')
             (root / 'tests/test_consumer.py').write_text('import consumer\n')
             (root / 'tests/test_transitive.py').write_text('import test_consumer\n')
             self.assertEqual(['consumer', 'fixture', 'transitive'],
-                             ci.infrastructure_suites(['tools/agent_edit.py'], root))
+                             ci.infrastructure_suites(['tools/sdk.py'], root))
 
     def test_actual_whole_suite_runner_rejects_skipped_and_expected_failure_cases(self):
         with tempfile.TemporaryDirectory() as temporary:

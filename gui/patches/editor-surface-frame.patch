@@ -1,6 +1,6 @@
 --- renderer_surface_frame.mjs
 +++ renderer_editor_frame.mjs
-@@ -1,8 +1,10 @@
+@@ -1,8 +1,11 @@
 -import {Renderer} from './renderer_surface_dom.mjs';
 +import {Renderer} from './renderer_editor_dom.mjs';
  import {validateSurfaceState,validateSurfaceOperation} from './browser_surface_protocol.mjs';
@@ -9,10 +9,11 @@
  import {CHANNEL_PROTOCOL} from './browser_limits.mjs';
 +import {createBrowserEditorEndpoint,validateEditorPublication,validateEditorOperation,validateEditorReply} from './browser_editor_endpoint.mjs';
 +import {createBrowserDocumentEndpoint,validateDocumentState,validateDocumentOperation,validateDocumentReply} from './browser_document_endpoint.mjs';
++import {createRichSurfaceObserver} from './browser_rich_surface_observer.mjs';
  
  // This module executes only inside the opaque sandbox document. It has no
  // Client, transport, token, Worker, file or service provider in its module graph.
-@@ -14,8 +16,8 @@
+@@ -14,8 +17,8 @@
    // navigation can replace the WindowProxy, but cannot receive this endpoint.
    const ports = new host.MessageChannel();
    const surfaceProtocol={
@@ -23,11 +24,11 @@
    };
    // This explicit browser profile uses native source evidence, never coordinates
    // or a remembered raw key. Other browser ports may supply their own qualified
-@@ -32,12 +34,15 @@
+@@ -32,12 +35,15 @@
      return origin===mouseSource&&event.pointerType==='mouse'?'pointer':null;
    }:undefined;
    let bound = false, closed = false, requests = null, renderer = null, presenter = null;
-+  let editorEndpoint=null,documentEndpoint=null;
++  let editorEndpoint=null,documentEndpoint=null,richObserver=null;
 +  const editorProtocol={validateEditorPublication,validateEditorOperation,validateEditorReply};
 +  const documentProtocol={validateDocumentState,validateDocumentOperation,validateDocumentReply};
    let surfaceProfile=null,surfaceConnection=null,surfaceStarted=false,surfaceBasis=null,surfacePaintBarrier=false;
@@ -36,11 +37,11 @@
      host.removeEventListener('pagehide',close);
      ports.port1.onmessage = null; ports.port1.onmessageerror = null; ports.port1.close();
 -    requests?.close(); presenter?.close(); renderer?.destroy(); document.querySelector('#stage')?.setAttribute('inert','');
-+    documentEndpoint?.close(); editorEndpoint?.close(); requests?.close(); presenter?.close(); renderer?.destroy(); document.querySelector('#stage')?.setAttribute('inert','');
++    richObserver?.close(); documentEndpoint?.close(); editorEndpoint?.close(); requests?.close(); presenter?.close(); renderer?.destroy(); document.querySelector('#stage')?.setAttribute('inert','');
    };
    const connect = event => {
      if (closed) return;
-@@ -45,13 +50,19 @@
+@@ -45,20 +51,29 @@
      const plain = data && !Array.isArray(data) && typeof data === 'object' && [Object.prototype,null].includes(Object.getPrototypeOf(data));
      if (!plain || data.protocol !== CHANNEL_PROTOCOL || data.generation !== generation || bound || data.type !== 'connect' || Object.keys(data).length !== 3 || !['protocol','type','generation'].every(key=>Object.hasOwn(data,key)) || event.ports?.length) { close(); return; }
      bound = true;
@@ -48,18 +49,29 @@
 -      acceptSnapshot(snapshot,cancelPointers,surface=null,hasSurface=false) {
 +    editorEndpoint=createBrowserEditorEndpoint({send:operation=>requests.send(operation),scheduler:host,onFailure:close});
 +    documentEndpoint=createBrowserDocumentEndpoint({send:operation=>requests.send(operation),scheduler:host,onFailure:close});
++    richObserver=createRichSurfaceObserver({generation,documentEndpoint,resolveCanvas:key=>renderer?.nodes.get(JSON.stringify([key.id,key.generation]))?.control});
++    Object.defineProperty(host,'foundationRichSurfaceObserver',{value:richObserver.api,configurable:false,writable:false});
 +    requests = createRendererRequests({port:ports.port1,generation,surfaceProtocol,editorProtocol,documentProtocol,
 +      acceptSnapshot(snapshot,cancelPointers,surface=null,hasSurface=false,editor=null,editorReply=null,documentState=null,documentReply=null) {
-         if(closed)return;
++        if(closed)return;
 +        documentEndpoint.accept(snapshot,documentState,documentReply);
 +        if(closed)return;
 +        editorEndpoint.accept(snapshot,surface,editor,editorReply);
-+        if(closed)return;
+         if(closed)return;
          if(surfaceProfile===null){
            surfaceProfile=hasSurface;
            const options={sendEdit:(key,value)=>requests.send({type:'editIntent',key,value})};
 -          if(surfaceProfile)options.surface={profile:'mouse_v1',classifyContext,onFailure:error=>{if(!error.stale)close();}};
 +          if(surfaceProfile)options.surface={profile:'editor_v1',editor:editorEndpoint,classifyContext,onFailure:error=>{if(!error.stale)close();}};
            renderer=new Renderer(document.querySelector('#stage'),document.querySelector('#pages'),operation=>requests.send(operation),document,options);
-           presenter=createBrowserPresenter(value=>renderer.render(value),host);
+-          presenter=createBrowserPresenter(value=>renderer.render(value),host);
++          presenter=createBrowserPresenter(value=>{renderer.render(value);richObserver.presented(value);},host);
          }
+         if(surfaceProfile!==hasSurface)throw Error('Renderer surface profile changed');
+         const p=surface?.presentation;
+         const basis=surfaceProfile?JSON.stringify(p?[p.identity.owner,p.identity.generation,p.identity.epoch,p.identity.context,p.bounds,p.clip,p.available]:null):null;
+         surfacePaintBarrier=basis!==surfaceBasis;surfaceBasis=basis;
++        richObserver.accept(snapshot,surface);
+         renderer.acceptSnapshot(snapshot,surface,Boolean(surface?.serviceActive));
+         if(cancelPointers||snapshot.closed)renderer.cancelPointers();
+         if(surfaceProfile&&!surfaceStarted&&!cancelPointers&&!surface?.serviceActive&&!snapshot.closed){

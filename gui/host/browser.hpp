@@ -125,7 +125,11 @@ public:
     }
     std::string receive(std::string_view message) {
         Receiving guard(*this);
-        application_->retry_presentation();
+        // A session can require admission against the presentation already
+        // shown to the caller. Metadata and wakeups retain retry progress.
+        if constexpr (requires { { session.retry_presentation_before_receive(message) } -> std::same_as<bool>; }) {
+            if (session.retry_presentation_before_receive(message)) application_->retry_presentation();
+        } else application_->retry_presentation();
         return session.receive(message);
     }
 };

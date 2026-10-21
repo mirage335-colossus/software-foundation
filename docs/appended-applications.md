@@ -1,13 +1,15 @@
 # Appended applications
 
-Implementation checkpoint, 2026-10-17. The project/configuration, container,
+The project/configuration, container,
 portable-module, retained-candidate and strict rich-browser producer tools
 described here are implemented. The complete
-[rich web application plan](appended-application-plan.md) is still in progress:
-**there is no integrated internal rich HTML/JavaScript engine**. A separate
-baseline engine prototype compiled and passed actual Node and offline Firefox
-checks; [the engine audit](appended-web-feasibility.md) records that result and
-the remaining integration gaps. Packaging HTML resources does not establish execution.
+[rich web application plan](appended-application-plan.md#current-continuation-handoff)
+is still in progress. Retained-engine and private partial-BOTH runtime checks
+have passed, but complete Foundation runtime and ordinary public application
+integration remain unaccepted. The current handoff and
+[validation record](appended-validation.md) distinguish those results from the
+earlier [engine feasibility work](appended-web-feasibility.md).
+Packaging HTML resources does not establish execution.
 
 The ordinary project has no `foundation-project.json` and selects neither layer.
 Its application binaries and runtime dependencies retain their ordinary path.
@@ -16,6 +18,11 @@ service/view interfaces. Developer/build Python is not a shipped application
 runtime; the C/C++/Rust guest SDK requires no script runtime or package manager.
 
 ## Select an independent application
+
+The maintained [QuotePad example](../examples/appended-quote-pad/README.md)
+combines ordinary HTML/CSS/JavaScript forms, tabs and rich editing with a small
+portable C provider. Its README gives component checks and packaging commands,
+and identifies the remaining public-host qualification.
 
 `fork.sh` preserves its exact initial snapshot, independent root, absent remote
 and reviewable attribution edits. Configure the application after forking:
@@ -1000,6 +1007,38 @@ actions on generic compiled controls. Focused admission/action fixtures pass;
 actual public BOTH browser execution remains pending an eligible retained base.
 Recorded DOM spans do not establish visible startup, warm reload, native
 publication/ACK or rich-frame interaction latency; those metrics remain pending.
+
+The additive [schema-3 rich surface scenario](../tests/fixtures/appended-rich-surface-browser-scenario.schema.json)
+addresses the retained engine's `engine.frame` canvas. It keeps the schema-2
+identity pins and independently pins the new physical-action helper. Click,
+wheel, key chords and scalar typing use WebDriver input at the current accepted
+surface owner and canvas geometry. Generations are resolved for each action;
+service retirement can replace a bitmap's generation. The engine viewport is
+currently 800×600, so ordinary scrolling or keyboard navigation may be needed
+to reach a page's editor.
+
+The editor renderer exposes the generic read-only
+`foundationRichSurfaceObserver.read()` and `observeDocument()` API inside its
+isolated frame. The latter uses the existing serialized native Observe/Take
+route; reading cached values alone does not refresh document state. The
+observation distinguishes accepted metadata from an actual canvas render.
+Fixed native predicates cover visible text, uniquely labeled form values,
+named descendant text, representable native selection and explicit rich tags.
+They reject unavailable, erroneous, truncated or mismatched publications.
+Per-step screenshots accompany assertions; a `capture` step is review evidence
+and cannot itself satisfy an application assertion. A bold tag assertion applies
+only when the native document actually exports that tag; it does not infer
+computed font weight for an arbitrary styled span.
+
+This source path has focused component checks, but requires a freshly bound
+host asset graph and eligible retained receipt before public execution. It does
+not change the pending complete Foundation runtime gate or establish a public
+QuotePad run. QuotePad's checked adjustment-one and adjustment-two modules produce
+43 and 44 for inputs 20 and 22. Native observation spans remain distinct from
+input-to-frame causal latency and native service ACK measurements; unavailable
+required measurements stay pending. Host observation changes require explicit
+host maintenance and fresh source/resource binding, while ordinary application
+HTML/CSS/JavaScript edits remain packaging-only.
 
 The Chromium successor passed focused synthetic checks; no actual Chromium or
 ChromeDriver execution has verified its native endpoints, direct-file canaries

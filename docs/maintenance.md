@@ -73,7 +73,7 @@ binaries. Never replace published artifacts to conceal a mistake; publish a new
 version with clear upgrade and rollback guidance. Revisit operational assumptions
 when compilers, runners, external APIs or dependency versions change.
 
-Keep source control clean of generated output and transient coordination data.
-Preserve other contributors' work, including untracked/staged files. Coordinate
-Git index, commits, merges and release operations as shared resources. Read
-[agent coordination](agent-coordination.md) before simultaneous editing.
+Keep source control clean of generated output and preserve other contributors'
+work, including untracked/staged files. Use disjoint native subagent scopes for
+parallel edits, and serialize operations that share the Git index, refs, build
+trees or release state.

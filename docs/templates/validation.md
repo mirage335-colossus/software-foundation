@@ -1,8 +1,9 @@
 # Validation: CHANGE OR CANDIDATE
 
 This is an unfilled template. Do not describe it as a completed check.
-Store real records with the relevant change or release; keep transient debugging
-notes in the ignored coordination directory.
+Store real records with the relevant change or release. Keep temporary build and
+test output in purpose-specific `build/` directories, and put concise durable
+findings in the existing plan or pending-qualification documents.
 
 ## Identity and scope
 

@@ -90,7 +90,7 @@ class EditorCMakeTests(unittest.TestCase):
                 header=True, directory=True, shared=True):
         guard, browser, _, _ = fragments()
         for name in ('appended_browser_bootstrap', 'appended_engine_browser_bootstrap',
-                     'appended_engine_wasm_worker', 'engine_kernel_bridge'):
+                     'appended_engine_wasm_worker', 'engine_kernel_bridge', 'browser_document_endpoint'):
             path = root / 'host' / (name + '.mjs')
             path.parent.mkdir(exist_ok=True)
             path.write_text('// inert unexecuted configure-file fixture\n')
@@ -137,7 +137,8 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/configured" "fragment completed")
                 self.assertFalse((root / 'build/configured').exists())
 
     def test_editor_real_gui_emits_macro3_exact_getter_and_binary_capability(self):
-        old_exports = ['_gui_web_engine_bridge_v1', '_gui_web_engine_profile_v1', '_gui_web_engine_input_describe_v1',
+        old_exports = ['_gui_web_engine_bridge_v1', '_gui_web_engine_profile_v1', '_gui_web_application_composition_v1',
+                       '_gui_web_engine_input_describe_v1',
                        '_gui_web_engine_document_describe_v1', '_gui_web_engine_dispatch_v1', '_gui_web_create',
                        '_gui_web_receive', '_gui_web_destroy', '_malloc', '_free']
         for profile in ('web', 'both'):
@@ -154,7 +155,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/configured" "fragment completed")
                 options = (tree / 'INTERFACE_LINK_OPTIONS.txt').read_text().split(';')
                 exports = next(value for value in options if value.startswith('-sEXPORTED_FUNCTIONS='))
                 self.assertEqual(json.loads(exports.split('=', 1)[1].replace("'", '"')),
-                    old_exports[:4] + ['_gui_web_engine_editor_describe_v1'] + old_exports[4:])
+                    old_exports[:5] + ['_gui_web_engine_editor_describe_v1'] + old_exports[5:])
                 self.assertEqual((tree / 'OUTPUT_NAME.txt').read_text(), 'gui_appended_engine_wasm')
                 self.assertEqual((tree / 'SUFFIX.txt').read_text(), '.js')
                 for name in ('appended_browser_bootstrap', 'appended_engine_browser_bootstrap',
@@ -179,7 +180,8 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/configured" "fragment completed")
                 self.assertIn("'_gui_web_engine_document_describe_v1'", exports)
                 export_option = next(value for value in exports.split(';') if value.startswith('-sEXPORTED_FUNCTIONS='))
                 self.assertEqual(json.loads(export_option.split('=', 1)[1].replace("'", '"')), [
-                    '_gui_web_engine_bridge_v1', '_gui_web_engine_profile_v1', '_gui_web_engine_input_describe_v1',
+                    '_gui_web_engine_bridge_v1', '_gui_web_engine_profile_v1', '_gui_web_application_composition_v1',
+                    '_gui_web_engine_input_describe_v1',
                     '_gui_web_engine_document_describe_v1', '_gui_web_engine_dispatch_v1', '_gui_web_create',
                     '_gui_web_receive', '_gui_web_destroy', '_malloc', '_free'])
                 self.assertFalse((tree / 'web-editor').exists())
@@ -236,7 +238,8 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/configured" "fragment completed")
         modules = re.search(r'set\(foundation_web_modules ([^)]*)\)', asset_source).group(1).split()
         host_names = set(modules) | {'browser_surface', 'browser_surface_protocol', 'renderer_compat',
             'browser_surface_editor_text', 'browser_surface_editor_controller', 'browser_surface_editor',
-            'browser_surface_editor_integration', 'browser_editor_endpoint'}
+            'browser_surface_editor_integration', 'browser_editor_endpoint', 'browser_document_endpoint',
+            'browser_rich_surface_observer'}
         for name in sorted(host_names):
             (gui / 'host' / (name + '.mjs')).write_bytes((ROOT / 'gui/host' / (name + '.mjs')).read_bytes())
         (gui / 'hosts/web_host.py').write_bytes((ROOT / 'gui/hosts/web_host.py').read_bytes())
@@ -280,7 +283,8 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/configured" "fragment completed")
             actual = {path.name: path.read_bytes() for path in (tree / 'web-editor').iterdir()}
             added = {'renderer_editor_dom.mjs', 'renderer_editor_frame.mjs', 'browser_surface_editor_text.mjs',
                      'browser_surface_editor_controller.mjs', 'browser_surface_editor.mjs',
-                     'browser_surface_editor_integration.mjs', 'browser_editor_endpoint.mjs', editor_bundle.BUNDLE_NAME}
+                     'browser_surface_editor_integration.mjs', 'browser_editor_endpoint.mjs',
+                     'browser_document_endpoint.mjs', 'browser_rich_surface_observer.mjs', editor_bundle.BUNDLE_NAME}
             self.assertEqual(set(actual), set(physical) | added)
             recorded = {Path(path).name for path in (tree / 'editor-assets').read_text().split(';')}
             self.assertEqual(recorded, set(actual))

@@ -463,10 +463,10 @@ RPATHs, and implicit access to a sibling checkout. A dependency with stricter
 path restrictions must reject them at its own preparation boundary and document
 that limit; do not impose the restriction on the whole application unnecessarily.
 
-All source and build-tree writes follow [agent coordination](agent-coordination.md).
-Claim the output tree for configure, build, test, package, and cleanup together.
-Do not run a build against files another session may still modify; use a stable
-snapshot or an agreed integration checkpoint.
+Keep parallel source edits in disjoint native subagent scopes. Serialize work that
+uses a shared build tree, or use a purpose-specific tree under `build/` for each
+independent build or test run. Use a stable source snapshot or integration
+checkpoint when a run depends on files still being edited.
 
 ## Rootless native development dependencies
 
@@ -572,10 +572,20 @@ and [toolchain manual](https://cmake.org/cmake/help/v3.24/manual/cmake-toolchain
 
 ## Explicit output, portability and host-check controls
 
-Use `--build-dir /owned/build-tree` for an independently claimed session tree.
+Use `--build-dir build/<purpose>` for an independent build tree.
 The wrapper still binds it to the exact compiler, SDK, feature choices and
 configuration; a different identity requires a fresh tree. Do not share one
 build directory between simultaneous writers.
+
+Reuse one stable purpose-specific tree for ordinary incremental builds; do not
+create date- or attempt-named trees by default. After the completed check, remove
+its disposable generated binaries, object trees and package copies when they are
+no longer needed. Keep the concise result, exact commands and source identity in
+the existing validation or pending-qualification record. Retain an engine,
+kernel or SDK baseline only when it is deliberately current with exact source,
+configuration and provenance; retire a replaced baseline after its successor is
+accepted. A historical validation result records a past run and does not prove an
+old binary can be rerun or reused.
 
 `--portable` selects generic CPU code and the chosen static C++/compiler-runtime
 policy. It cannot lower libc requirements by itself. Linux release candidates
@@ -590,7 +600,7 @@ run it only where the corresponding display/browser prerequisites are available.
 reduce development work without claiming omitted coverage as successful.
 
 ```sh
-./build.sh test dev --build-dir /owned/session-build --label core
+./build.sh test dev --build-dir build/core-check --label core
 ./build.sh test release --build-dir /owned/release-build --sdk /owned/sdk --rust-sdk /owned/matched-rust-sdk --portable --full
 ./build.sh package release --build-dir /owned/release-build --sdk /owned/sdk --rust-sdk /owned/matched-rust-sdk --portable
 ```

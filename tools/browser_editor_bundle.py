@@ -23,7 +23,7 @@ CHILD_MODULES = (
     'browser_surface.mjs', 'browser_surface_editor_text.mjs',
     'browser_surface_editor_controller.mjs', 'browser_surface_editor.mjs',
     'browser_surface_editor_integration.mjs', 'browser_editor_endpoint.mjs',
-    'browser_document_endpoint.mjs', 'renderer_channel.mjs', 'renderer_editor_dom.mjs', 'renderer_editor_frame.mjs',
+    'browser_document_endpoint.mjs', 'browser_rich_surface_observer.mjs', 'renderer_channel.mjs', 'renderer_editor_dom.mjs', 'renderer_editor_frame.mjs',
 )
 CHILD_GRAPH = {
     'browser_limits.mjs': (),
@@ -43,13 +43,14 @@ CHILD_GRAPH = {
         'browser_surface_editor_controller.mjs', 'browser_surface_editor_text.mjs',
         'browser_surface_protocol.mjs'),
     'browser_document_endpoint.mjs': (),
+    'browser_rich_surface_observer.mjs': (),
     'renderer_channel.mjs': ('browser_limits.mjs',),
     'renderer_editor_dom.mjs': (
         'browser_limits.mjs', 'browser_surface_editor_integration.mjs'),
     'renderer_editor_frame.mjs': (
         'renderer_editor_dom.mjs', 'browser_surface_protocol.mjs',
         'browser_presenter.mjs', 'renderer_channel.mjs', 'browser_limits.mjs',
-        'browser_editor_endpoint.mjs', 'browser_document_endpoint.mjs'),
+        'browser_editor_endpoint.mjs', 'browser_document_endpoint.mjs', 'browser_rich_surface_observer.mjs'),
 }
 CHILD_EXPORTS = {
     'browser_limits.mjs': browser_bundle.CHILD_EXPORTS['browser_limits.mjs'],
@@ -67,6 +68,7 @@ CHILD_EXPORTS = {
         'validateEditorPublication', 'validateEditorOperation', 'validateEditorReply',
         'createBrowserEditorEndpoint'),
     'browser_document_endpoint.mjs': ('validateDocumentState','validateDocumentOperation','validateDocumentReply','createBrowserDocumentEndpoint'),
+    'browser_rich_surface_observer.mjs': ('createRichSurfaceObserver',),
     'renderer_channel.mjs': browser_bundle.CHILD_EXPORTS['renderer_channel.mjs'],
     'renderer_editor_dom.mjs': ('identity', 'byteOffset', 'utf16Offset', 'Renderer'),
     'renderer_editor_frame.mjs': ('startRendererFrame',),

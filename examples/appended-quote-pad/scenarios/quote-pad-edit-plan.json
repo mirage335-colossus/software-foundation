@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "executable": false,
+  "reason": "The eligible normal public BOTH host/base and actual browser execution are still pending. This plan is not a launch packet or runtime evidence.",
+  "application": "org.example.quote-pad",
+  "provider": {"name":"org.example.quote.total","major":1,"minor":0,"operation":1,"source":"module"},
+  "initial_inputs": {"left":20,"right":22},
+  "ordinary_edit_loops": [
+    {"edit":"web-visible-label","source_file":"src-web-appended/index.html","change":"Rename the Project total heading to Revised project total","expected_visible_change":"The Quote page heading changes after ordinary reload"},
+    {"edit":"web-layout","source_file":"src-web-appended/style.css","change":"Increase the spacing between calculator fields while preserving the narrow-screen stacked layout","expected_visible_change":"The calculator field layout visibly changes after ordinary reload"},
+    {"edit":"module-adjustment-one","source_file":"src-bin-appended/c/quote_total.c","change":"Set QUOTE_ADJUSTMENT to 1","input":{"left":20,"right":22},"expected_visible_total":43},
+    {"edit":"module-adjustment-two","source_file":"src-bin-appended/c/quote_total.c","change":"Set QUOTE_ADJUSTMENT to 2","input":{"left":20,"right":22},"expected_visible_total":44}
+  ],
+  "observations": [
+    {"case":"adjustment-one","source_change":"QUOTE_ADJUSTMENT=1","input":{"left":20,"right":22},"expected_visible_total":43},
+    {"case":"adjustment-two","source_change":"QUOTE_ADJUSTMENT=2","input":{"left":20,"right":22},"expected_visible_total":44},
+    {"case":"checked-overflow","source_change":"QUOTE_ADJUSTMENT=1","input":{"left":4294967295,"right":0},"expected_visible":"Total: overflow"}
+  ],
+  "interaction_plan": [
+    {"target":"Quote tab","action":"edit quote text and select a range"},
+    {"target":"Bold selection","action":"toggle formatting while preserving selected range"},
+    {"target":"Undo quote edit","action":"undo a content edit"},
+    {"target":"Notes tab","action":"edit working notes and return to Quote"},
+    {"target":"Calculate total","action":"calculate using the normal public host and module provider"}
+  ],
+  "required_before_execution": ["accepted eligible base and source identity", "real packed artifact and receipt identities", "normal public host admission", "actual browser visible end and clocks"]
+}

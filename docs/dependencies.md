@@ -124,7 +124,7 @@ of its required prepared dependency binary/source/checksum groups. External
 references are supplemental and cannot replace release-owned recovery inputs. Test reconstruction from the retained source inventory in
 an empty, offline cache when qualifying a new SDK recipe. See [SDKs](sdk.md).
 
-Temporary investigation findings belong in the ignored coordination notes with
+Temporary investigation findings belong with the relevant build/test output, with
 source URL/date, dependency revision, affected environments, evidence, confidence,
 and recheck condition. Promote durable verified findings into this inventory,
 maintenance documentation, and regression tests. Community workarounds remain

@@ -19,7 +19,6 @@ DOCUMENTS = frozenset({
     'docs/README.md', 'docs/architecture.md', 'docs/ci.md',
     'docs/development-speed.md', 'docs/testing.md', 'docs/validation.md',
     'docs/documentation.md', 'docs/maintenance.md',
-    'docs/agent-coordination.md', 'docs/agent-recipes.md', 'docs/agent-lifecycle.md',
 })
 COMMIT = re.compile(r'[0-9a-f]{40}')
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,14 +26,15 @@ sys.path.insert(0, str(ROOT / 'tools'))
 import build_capacity
 # Domains cover dependencies expressed through command lines, generated recipes,
 # fixtures and retained inputs, in addition to the source-reference closure below.
+GUI_DOMAIN = frozenset('gui_boundary gui_source_group gui_visual gallery_browser screenshots package_wasm rev_probe host_contracts'.split())
+RUST_DOMAIN = frozenset('rust_sdk rust_build rust_component rust_workflow build ci_plan source_identity test_plan release release_check offline_acceptance container_job'.split())
 TOOL_DOMAINS = (
-    frozenset('agent_board agent_edit agent_migrate agent_publish agent_record agent_session agent_stress check_agent_record'.split()),
     frozenset('apt_repo artifact certification distribution_release distro_channel distro_check distro_client github_release latest_release legacy_artifacts package_notices portability release release_check verify_abi verify_legacy_preservation'.split()),
     frozenset('dependencies dependency_archive prepare_dependencies sdk sdk_paths sdk_retention windows_compiler windows_graphics'.split()),
-    frozenset('gui_boundary gui_source_group gui_visual gallery_browser screenshots package_wasm rev_probe host_contracts'.split()),
+    GUI_DOMAIN,
     frozenset('build build_capacity ci_plan ci_changes coverage qualification_tasks run_tests source_identity test_plan'.split()),
     frozenset('ci_apt ci_artifacts ci_cleanup ci_cleanup_repository ci_cleanup_previous ci_cleanup_drafts ci_cleanup_expired ci_retry ci_transport container_job workflow_storage'.split()),
-    frozenset('rust_sdk rust_build rust_component rust_workflow build ci_plan source_identity test_plan release release_check offline_acceptance container_job'.split()),
+    RUST_DOMAIN,
     frozenset('appended appended_project appended_container appended_policy appended_compile appended_wasm appended_release appended_checkout appended_ci ci_changes'.split()),
 )
 
@@ -85,9 +85,9 @@ def infrastructure_suites(paths, root=ROOT):
             direct.add(name)
             changed.add(name)
         elif path.startswith('gui/'):
-            changed.update(TOOL_DOMAINS[3])
+            changed.update(GUI_DOMAIN)
         elif path.startswith(('rust/', 'third_party/rust/')):
-            changed.update(TOOL_DOMAINS[6])
+            changed.update(RUST_DOMAIN)
         elif path.startswith(('src/', 'include/', 'tests/')) and Path(path).suffix in ('.cpp', '.hpp', '.h', '.c', '.cc'):
             continue  # Native application contracts remain in focused/shared-gui jobs.
         else:

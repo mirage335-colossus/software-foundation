@@ -1,5 +1,11 @@
 # Appended kernel qualification and implementation prerequisites
 
+Cleanup checkpoint: appended implementation is parked at the user's request.
+See the [current handoff](../docs/appended-application-plan.md#current-continuation-handoff).
+Obsolete generated binaries have been removed; historical results remain valid
+as records of their original runs, not as reusable qualification for current source.
+Rebuild any intentionally removed output before a new behavioral check.
+
 ## Current S8 failure and Foundation runtime qualification — 2026-10-20 UTC
 
 S8 (`.agent-work/foundation-full-runtime-20261020-v8/ROOT-RUNTIME-FAILURE-v1.json`, SHA-256 `4f026063323df96b15174fd9c35b515f3b5cca2920363f3a3b7391321dd82b94`) is a closed failed partial runtime: caller 2 / capture-failed, outer owner 0 and natural closure after 387.719795s at 3,495,653,376-byte peak RSS. The failure was a per-file byte cap in `runCase`, not an elapsed-time watchdog. All 196 inputs / 141,713,323 bytes were unchanged; E01 captured 4,959 events / 66 case records / 34 GUI operations / 17 polls. E02–E23 were unreached, no E01 case outcome was accepted, and no full independent reader ran. Root-accepted NC680 passive extraction found all 15 focus attempts stale with `focused=false`; revisions 23, 25, 27, 29, 31 and 33 were the last six. The seven-minute extraction ended after identifying the query-4 gap, without accepted focus or an outcome. NC674 component evidence does not establish actual focus recovery. NC685 diagnosis remains in progress; the `App.retry_presentation`/`beforeinput` starvation explanation is an unproven source hypothesis. NC682's capacity proposal is on hold and unselected; do not raise the cap solely to mask the focus retry.

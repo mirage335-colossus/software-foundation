@@ -201,7 +201,7 @@ owned targets and submit hash-bound results. The publisher verifies inventory
 completeness, gathers applicable evidence, and records publication results.
 Release automation needs explicit repository permissions and credentials; a
 generic template must not contain real keys, tokens, or account-specific runner
-names. See [CI](ci.md) and [agent coordination](agent-coordination.md).
+names. See [CI](ci.md) and [GitHub delivery](github-delivery.md).
 
 ## Executable local assembly and recovery
 
@@ -330,7 +330,7 @@ When using an external GUI checkout, pass `--supplement /owned/gui-source` to
 both identity and archive operations. Its actual source bytes are retained under
 `third_party/retained/gui/`; recovery must not depend on an upstream URL surviving.
 A source archive includes `source.json`, complete per-file hashes and executable
-modes. Generated build outputs and ignored coordination files are excluded.
+modes. Generated build outputs and historical agent evidence are excluded.
 Local `.env` and `.env.*` files and directories are excluded at every depth,
 even without Git metadata or when forcibly tracked. `.env.example` and
 `.env.*.example` templates remain source inputs. Environment-file backup, lock

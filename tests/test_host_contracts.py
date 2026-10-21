@@ -392,19 +392,6 @@ class HostContracts(unittest.TestCase):
                 self.assertIn('CMakeLists.txt', paths)
                 self.assertIn('.github/workflows/host-contracts.yml', paths)
 
-    def test_coordination_diagnostic_binds_real_helper_without_compiler_setup(self):
-        self.assertIn('agent_board', HOST.SUITES)
-        self.assertNotIn('agent_board', HOST.BUILD_SUITES)
-        _, case = HOST.run_tests.suite_source('agent_board', 'Windows')
-        self.assertEqual(case, ROOT / 'tests/test_agent_board.py')
-        for target in HOST.TARGETS:
-            with self.subTest(target=target):
-                paths = HOST.source_files('agent_board', target)
-                self.assertEqual(len(paths), len(set(paths)))
-                self.assertEqual(set(paths), {'tools/host_contracts.py', 'tools/run_tests.py',
-                    'tools/process_tree.py', 'tests/test_agent_board.py', 'tools/agent_board.py',
-                    '.github/workflows/host-contracts.yml'})
-
     def test_latest_release_diagnostic_binds_complete_source_without_compiler_setup(self):
         self.assertIn('latest_release', HOST.SUITES)
         self.assertNotIn('latest_release', HOST.BUILD_SUITES)

@@ -58,6 +58,7 @@ COMPOSITION_FILES = frozenset({
     'tools/appended_guest_check.py', 'tests/test_appended_guest_check.py',
     'tools/appended_install_check.py', 'tests/test_appended_install_check.py',
     'tools/appended_browser_check.py', 'tests/test_appended_browser_check.py',
+    'tools/appended_rich_surface_actions.py', 'tests/test_appended_rich_surface_actions.py',
     'docs/appended-release-policy.json',
     'tools/ci_changes.py',
     '.github/workflows/appended-compose.yml',

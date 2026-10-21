@@ -306,14 +306,14 @@ passes is not a substitute for investigating a flaky assertion.
 Agents must state the affected scope, use the smallest meaningful checks during
 editing, and apply the manual-qualification trigger at the candidate checkpoint.
 They must not claim full validation from `devfast`, a subset, an old build tree, or another
-revision. Recheck [coordination](agent-coordination.md) before launching shared
-builds or long tests. Record process identity and owned output paths if a job
+revision. Serialize access to shared build outputs before launching builds or
+long tests. Record process identity and output paths if a job
 outlives a tool response; do not launch duplicate work because the tool yielded.
 
 For each completed change, report commands, actual pass/failure status, omitted
 coverage, and remaining external qualification. Use the
-[validation template](templates/validation.md) for durable evidence and the
-ignored coordination directory for transient investigation notes.
+[validation template](templates/validation.md) for durable evidence. Keep
+temporary output in purpose-specific build directories.
 
 ## Unit-case evidence and release attempts
 
@@ -391,16 +391,13 @@ every host. These selections do not build an engine or application.
 
 The manual [Host contract diagnostics workflow](../.github/workflows/host-contracts.yml)
 runs one complete `process_tree`, `windows_graphics`, `ci_plan`, `github_release`,
-`ci_transport`, `latest_release`, `agent_board`, `test_plan`, `ci_retry`, `package_wasm` or `import_wasm` unit suite
+`ci_transport`, `latest_release`, `test_plan`, `ci_retry`, `package_wasm` or `import_wasm` unit suite
 directly on a Windows x64, Linux x64 or Linux ARM64 runner. The last four bind the
 complete maintained source inventory before and after execution. On Windows they
 select the installed native compiler and own a fresh private MSVC build session,
 retaining its exact helper identity and joined-completion receipt. This permits
 small configure/compile fixtures without rebuilding application GUI backends or
-acquiring an SDK. The `agent_board` selection runs the complete compatibility-board
-suite, including its eight independent writers, with the exact helper and runner
-source bound before/after each diagnostic. It requires no compiler or GUI build.
-The `latest_release` selection also binds the complete maintained source inventory
+acquiring an SDK. The `latest_release` selection also binds the complete maintained source inventory
 because its orchestration fixtures inspect workflow and helper files. It requires
 no compiler setup, application build or SDK acquisition.
 These diagnostic receipts never qualify a release.

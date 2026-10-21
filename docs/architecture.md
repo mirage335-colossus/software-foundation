@@ -12,7 +12,7 @@ release tools belong outside the runtime dependency graph.
 | `gui/` | Shared feature declarations and composition roots; generic external adapters stay in their pinned package |
 | `tests/` | Independent contract checks, failure cases and tool tests; private fixtures live here with provenance |
 | `examples/` | Small external consumer using installed public interfaces |
-| `tools/` | Build, coordination, evidence and artifact helpers; explicit inputs, bounded effects and nonzero failure codes |
+| `tools/` | Build, evidence and artifact helpers; explicit inputs, bounded effects and nonzero failure codes |
 | `third_party/` | Supplier inventory, revision locks, upgrade and license records; cached downloads remain ignored |
 | `cmake/` | Target-specific build policy, exported package configuration and toolchains |
 | `build/` | Ignored, replaceable generated output; each configuration owns its own tree |
@@ -22,10 +22,10 @@ release tools belong outside the runtime dependency graph.
 | `build.sh` | Thin POSIX entry into the cross-platform Python wrapper |
 | `CMakeLists.txt`, `CMakePresets.json` | Authoritative target graph and shared supported presets |
 | `AGENTS.md` | Required agent startup, ownership, scope and validation discipline |
-| `.gitignore` | Explicit local caches, coordination board and generated outputs; no blanket hiding of source |
+| `.gitignore` | Explicit local caches and generated outputs; no blanket hiding of source |
 | `.gitattributes` | Predictable text endings and binary treatment; exact-byte exceptions stay narrowly scoped |
 | `.editorconfig` | Basic editor consistency without requiring one editor |
-| `.agent-work/` | Ignored shared temporary coordination and knowledge; never an authority over tracked requirements |
+| `.agent-work/` | Ignored historical evidence retained for reference |
 | `LICENSE` | Terms for this repository's own work; dependency terms remain separate |
 
 ## Executable paths

@@ -256,8 +256,8 @@ FOUNDATION_FORK_SHELL=/bin/dash \
    inputs. Do not carry example placeholders into published metadata.
 4. Keep the short development loop and full qualification as explicit separate
    scopes. Preserve failures and omissions when reporting evidence.
-5. Reuse the [GUI boundary](docs/gui-boundary.md) and the
-   [shared-workspace protocol](docs/agent-coordination.md) when applicable.
+5. Reuse the [GUI boundary](docs/gui-boundary.md). For parallel work, use
+   bounded native subagent scopes and serialize access to shared build outputs.
 
 Author: mirage335. The code and documentation authored in this repository are
 dedicated to the public domain under [CC0 1.0 Universal](LICENSE); attribution

@@ -42,10 +42,9 @@ For an authorized publishing job, execute the same frozen request explicitly:
 python3 tools/github_release.py publish-candidate --input build/publication-request.json --execute
 ```
 
-Assign one publisher for a repository's release lifecycle. Hold the agreed release
-resource claim from preflight through final receipt, including the shared `base`
-release and Latest pointer. Local [coordination](agent-coordination.md) protects
-cooperating sessions on one agreed board; it is not a distributed GitHub lock.
+Assign one publisher for a repository's release lifecycle and keep that ownership
+through final receipt, including the shared `base` release and Latest pointer.
+Local coordination does not provide a distributed GitHub lock.
 Base/application publication, certificate attachment, promotion and native
 acceptance share the repository-wide release-lifecycle concurrency group.
 Signed-channel publication uses a target-scoped group so independent architectures

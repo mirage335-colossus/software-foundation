@@ -26,7 +26,7 @@ MODULES = (
     'browser_surface.mjs', 'browser_surface_editor_text.mjs',
     'browser_surface_editor_controller.mjs', 'browser_surface_editor.mjs',
     'browser_surface_editor_integration.mjs', 'browser_editor_endpoint.mjs',
-    'browser_document_endpoint.mjs', 'renderer_channel.mjs', 'renderer_editor_dom.mjs', 'renderer_editor_frame.mjs',
+    'browser_document_endpoint.mjs', 'browser_rich_surface_observer.mjs', 'renderer_channel.mjs', 'renderer_editor_dom.mjs', 'renderer_editor_frame.mjs',
 )
 GRAPH = {
     'browser_limits.mjs': (),
@@ -42,11 +42,12 @@ GRAPH = {
     'browser_editor_endpoint.mjs': ('browser_surface_editor_controller.mjs', 'browser_surface_editor_text.mjs',
                                    'browser_surface_protocol.mjs'),
     'browser_document_endpoint.mjs': (),
+    'browser_rich_surface_observer.mjs': (),
     'renderer_channel.mjs': ('browser_limits.mjs',),
     'renderer_editor_dom.mjs': ('browser_limits.mjs', 'browser_surface_editor_integration.mjs'),
     'renderer_editor_frame.mjs': ('renderer_editor_dom.mjs', 'browser_surface_protocol.mjs',
                                  'browser_presenter.mjs', 'renderer_channel.mjs', 'browser_limits.mjs',
-                                 'browser_editor_endpoint.mjs', 'browser_document_endpoint.mjs'),
+                                 'browser_editor_endpoint.mjs', 'browser_document_endpoint.mjs', 'browser_rich_surface_observer.mjs'),
 }
 EXPORTS = {
     'browser_limits.mjs': legacy.CHILD_EXPORTS['browser_limits.mjs'],
@@ -60,6 +61,7 @@ EXPORTS = {
     'browser_editor_endpoint.mjs': ('validateEditorPublication', 'validateEditorOperation',
                                    'validateEditorReply', 'createBrowserEditorEndpoint'),
     'browser_document_endpoint.mjs': ('validateDocumentState','validateDocumentOperation','validateDocumentReply','createBrowserDocumentEndpoint'),
+    'browser_rich_surface_observer.mjs': ('createRichSurfaceObserver',),
     'renderer_channel.mjs': legacy.CHILD_EXPORTS['renderer_channel.mjs'],
     'renderer_editor_dom.mjs': ('identity', 'byteOffset', 'utf16Offset', 'Renderer'),
     'renderer_editor_frame.mjs': ('startRendererFrame',),
@@ -164,7 +166,8 @@ class BrowserEditorBundleTests(unittest.TestCase):
                         editor.index('renderer.acceptSnapshot(snapshot,surface,'))
         self.assertIn('documentEndpoint?.close(); editorEndpoint?.close(); requests?.close();', editor)
         actual = {**self.blobs, 'renderer_editor_frame.mjs': editor.encode(),
-                  'browser_document_endpoint.mjs': (ROOT / 'gui/host/browser_document_endpoint.mjs').read_bytes()}
+                  'browser_document_endpoint.mjs': (ROOT / 'gui/host/browser_document_endpoint.mjs').read_bytes(),
+                  'browser_rich_surface_observer.mjs': (ROOT / 'gui/host/browser_rich_surface_observer.mjs').read_bytes()}
         self.assertEqual(bundle.parse_module(bundle.module_bytes(bundle.build(actual)))['CHILD_SANDBOX'],
                          'allow-scripts')
 

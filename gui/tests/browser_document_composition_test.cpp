@@ -3,6 +3,7 @@
 // No HTML engine, provider, kernel, SDK or browser process runs.
 #include "host/browser_surface_composition.hpp"
 #include <iostream>
+#include <functional>
 #include <stdexcept>
 #include <vector>
 #include <atomic>
@@ -16,14 +17,14 @@ using Json=gui::web_detail::Json;
 std::size_t assertions{};
 void check(bool value,const char* message){++assertions;if(!value)throw std::runtime_error(message);}
 template<class F>void rejected(F&& f,const char* message){++assertions;try{f();}catch(const std::exception&){return;}throw std::runtime_error(message);}
-struct Probe{int submits{},takes{},states{},terminals{},destructed{},shutdowns{},service_calls{};bool wrong_ticket{},future_publication{},throw_submit{},construct_inert{},destroy_inert{},throw_service{},fail_retry{};};
+struct Probe{int submits{},takes{},states{},terminals{},destructed{},shutdowns{},service_calls{},retries{};bool wrong_ticket{},future_publication{},throw_submit{},construct_inert{},destroy_inert{},throw_service{},fail_retry{};std::function<void()> during_retry;};
 Probe* probe{};
 gui::Snapshot snapshot(){gui::Snapshot s;s.revision=1;s.title="Generic document host";s.client_size={100,100};return s;}
 struct Plain{
     gui::Adapter& adapter;Probe& p;
     explicit Plain(gui::Adapter& a):adapter(a),p(*probe){adapter.present(snapshot());}
     ~Plain(){++p.destructed;}
-    void handle(gui::Event){} void tick(){} void shutdown(){++p.shutdowns;} void retry_presentation(){if(p.fail_retry){auto next=snapshot();next.revision=2;gui::Widget w;w.spec.key={"broken",1};w.spec.kind=gui::Kind::bitmap;w.state.bounds={0,0,100,100};w.state.bitmap={"broken",1,gui::BitmapSource([](const gui::BitmapRequest&,const gui::BitmapSink&){throw std::runtime_error("Fixture retry paint failure");})};next.widgets.push_back(std::move(w));adapter.present(std::move(next));}}
+    void handle(gui::Event){} void tick(){} void shutdown(){++p.shutdowns;} void retry_presentation(){++p.retries;if(p.during_retry)p.during_retry();if(p.fail_retry){auto next=snapshot();next.revision=2;gui::Widget w;w.spec.key={"broken",1};w.spec.kind=gui::Kind::bitmap;w.state.bounds={0,0,100,100};w.state.bitmap={"broken",1,gui::BitmapSource([](const gui::BitmapRequest&,const gui::BitmapSink&){throw std::runtime_error("Fixture retry paint failure");})};next.widgets.push_back(std::move(w));adapter.present(std::move(next));}}
     std::optional<gui::ServiceRequest> next_service(){++p.service_calls;if(p.throw_service)throw std::runtime_error("Fixture initial service failure");return {};} bool complete_service(gui::ServiceResult){return false;}
     void qualify(const std::function<void()>& f){f();}
 };
@@ -66,6 +67,21 @@ void route_and_lifetime(){
         const auto polled=gui::web_detail::Parser(runtime.receive(message(3,Json::Object{{"type","poll"}}))).parse();check(std::holds_alternative<std::nullptr_t>(polled.at("documentReply").value),"Poll relabeled an older document reply as its own GUI acknowledgment");
     }
     check(p.shutdowns==1&&p.destructed==1&&p.destroy_inert,"Document hooks survived application disarm/destruction");check(p.terminals==0,"Ordinary destruction fabricated terminal failure");
+}
+void submit_before_retry_and_take_progress(){
+    Probe p;probe=&p;host::Browser<Document,host::BrowserSurfaceComposition> runtime("generic-document",document_composition());
+    (void)runtime.initial();const auto retries=p.retries;
+    p.during_retry=[&]{check(p.submits==1&&p.takes==0,"Document retry crossed an unadmitted submit");runtime.app().live.available=false;};
+    const auto request=message(1,submit());const auto submitted_text=runtime.receive(request);
+    const auto submitted=gui::web_detail::Parser(submitted_text).parse();
+    check(submitted.at("error").str().empty()&&submitted.at("documentReply").at("ticket").str()=="53"&&p.submits==1&&p.retries==retries,
+        "Document submit advanced work before its typed reservation");
+    check(runtime.receive(request)==submitted_text&&p.submits==1&&p.retries==retries,"Duplicate document submit advanced work or repeated reservation");
+    const auto taken=gui::web_detail::Parser(runtime.receive(message(2,Json::Object{{"type","documentTake"},{"version",1},{"ticket","53"}}))).parse();
+    check(taken.at("error").str().empty()&&taken.at("documentReply").at("completion").at("outcome").str()=="completed"&&
+        !taken.at("document").at("available").boolean()&&p.takes==1&&p.retries==retries+1,
+        "Document metadata Take lost retry progress or its owned completion");
+    p.during_retry={};
 }
 void accept_later_edit(Document& app){
     auto frame=snapshot();frame.revision=2;app.adapter.present(std::move(frame));
@@ -147,4 +163,4 @@ void terminal_binding(){
 }
 void partial_descriptor(){host::BrowserDocumentEndpoint partial;partial.submit=[](D::Intent){return D::Submission{};};rejected([&]{host::BrowserSurfaceAdapter adapter(1,{}, {},0,host::surface_web::Profile::legacy,{},partial);},"Partial explicit document endpoint accepted");}
 }
-int main(){try{absent_legacy();explicit_opt_in();route_and_lifetime();duplicate_completion_after_accepted_edit();fail_once();first_failure_without_initial();initial_supplier_failure();prefix_retry_failure();crossed_and_future();terminal_binding();partial_descriptor();std::cout<<assertions<<" generic document composition assertions passed\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
+int main(){try{absent_legacy();explicit_opt_in();route_and_lifetime();submit_before_retry_and_take_progress();duplicate_completion_after_accepted_edit();fail_once();first_failure_without_initial();initial_supplier_failure();prefix_retry_failure();crossed_and_future();terminal_binding();partial_descriptor();std::cout<<assertions<<" generic document composition assertions passed\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}

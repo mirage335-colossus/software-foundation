@@ -19,10 +19,10 @@ what was observed. A proposed platform or procedure is not execution evidence.
 | Optional graphical editor | [Build/run commands](../COMPILE-editor), [editing, ordinary-source integration and local checks](../editor/README.md), [architecture decisions](../editor/PLAN.md), [pending native qualification](../.agent-pending/editor-platform-qualification.md) |
 | Optional appended application layers | [Current continuation handoff](appended-application-plan.md#current-continuation-handoff), [implemented tools and current limits](appended-applications.md), [historical design](appended-application-plan.md#historical-design-and-original-implementation-plan), [rich engine feasibility](appended-web-feasibility.md) |
 | Retained rich-engine inputs | [Integrity format and retained groups](../third_party/appended-engine/README.md) |
-| Collaboration | [Agent requirements](../AGENTS.md), [coordination](agent-coordination.md), [checked operation recipes](agent-recipes.md), [lifecycle](agent-lifecycle.md), [optional cooperation evaluation](agent-evaluation.md) |
+| Collaboration | [Agent requirements and parallel work](../AGENTS.md) |
 | Delivery | [Release requirements](releases.md), [certification](certification.md), [Debian distribution](distribution.md), [Arch and Gentoo channels](distro-channels.md), [GitHub delivery](github-delivery.md), [signed package release workflow and native clients](distribution-release.md), [Latest workflow](latest-release.md), [screenshots](screenshots.md), [browser prerequisite](gallery-browser.md), [installed package instructions](installed.md), [RELEASE](../RELEASE) |
 | Sustained maintenance | [Engineering practices](maintenance.md), [documentation rules](documentation.md) |
-| Reusable forms | [Decision](templates/decision.md), [dependency](templates/dependency.md), [temporary note](templates/temporary-note.md), [validation](templates/validation.md), [release inventory](templates/release-manifest.json) |
+| Reusable forms | [Decision](templates/decision.md), [dependency](templates/dependency.md), [validation](templates/validation.md), [release inventory](templates/release-manifest.json) |
 
 Search current source and the relevant topic before opening large logs. Follow
 linked contracts through callers and tests; do not treat this index as a limit on

@@ -41,7 +41,8 @@ even while their execution is deferred.
 Retire an entry after verified completion is recorded, or after explicit cancellation,
 supersession or a justified scope change. Preserve the disposition and necessary
 evidence references in the record, linked maintained evidence or its Git history.
-Large logs, payloads, locks and session state belong in their existing locations;
-use `.agent-work/` for temporary coordination and generated evidence as appropriate.
-Pending files neither replace the [coordination protocol](../docs/agent-coordination.md)
-nor acquire any file or resource claim.
+Keep existing `.agent-work/` contents as read-only historical evidence; consult
+referenced evidence directly when relevant without making an exhaustive inventory.
+Put new temporary build and test output in purpose-specific `build/` directories.
+Keep concise, durable restart notes in the existing plan or pending-qualification
+documents.

@@ -4,6 +4,55 @@
 
 ## Current continuation handoff — 2026-10-20 UTC
 
+### Cleanup checkpoint — 2026-10-20 America/Chicago
+
+The user has stopped appended-application implementation for now and requested
+cleanup only. Do not resume builds or acceptance runs without a new request.
+Work started from `c6dcfae251ae251dbbe93529699136792d1686b2`; changes are uncommitted.
+
+- Removed obsolete cross-harness coordination tools, dedicated tests, CI wiring,
+  guides and active instructions. Use native managed subagents with disjoint
+  scopes. `.agent-work/` is historical evidence, not an active registry.
+- Reuse stable, purpose-specific build directories. Remove completed disposable
+  binaries, object trees and package copies; preserve useful source, concise
+  results, failures, commands and pending qualification. Only explicitly current
+  SDK/engine baselines remain reusable. Old result records do not qualify new
+  source, and intentionally deleted historical binaries must be rebuilt.
+- Focus/input ordering repair is implemented; six native fixtures passed.
+  F13 scoped Foundation construction and independent full readback passed
+  (`build/appended-continuation/readback-execution-v1/ROOT-FULL-READBACK-ACCEPTANCE-v1.json`).
+  This establishes construction only. Its generated host binaries are disposable;
+  no complete Foundation23+3+6 or public browser runtime passed.
+- Maintained [QuotePad](../examples/appended-quote-pad/README.md) now includes
+  C/C++/Rust providers. Actual-Wasm fixtures pass totals43/44 and seven negative
+  contexts using a modeled serialized owner; compile/pack measurements are in
+  `build/quotepad-languages/strong/RESULT.json`. Generated modules/packages are
+  disposable test outputs, not retained application releases.
+- Public viewer observation and schema3 physical-input source is prepared.
+  `build/public-application-integration/CLEANUP-HANDOFF-v2.json` records46 passing
+  checker tests and a **known unrepaired signed/fractional JSON boundary gap**.
+  Scenario templates are unexecuted; no browser/application acceptance is implied.
+- Receipt converter source in `tools/appended_foundation_receipt.py` is partial,
+  untested and not registered. `build/appended-runtime/` preserves prepared reader
+  sources and seven passing pure witness fixtures. Resume by completing/reviewing
+  these sources, then construct a fresh host and perform complete runtime/readback.
+- Signal notebook (`src-web-appended/`) preserves the broader spreadsheet,
+  dropdown, dynamic-DOM, rich-editing and native/module-service example. Native
+  HTML TUI still needs a real admitted native engine group; the available retained
+  engine is wasm32. Do not substitute browser qualification for native/TUI gates.
+
+All managed writers and checks closed before binary cleanup. Removed 84,764
+obsolete generated files (79.988 GiB logical bytes). Cleanup tooling checks passed:
+CI classification 63, host contracts 26, test runner 8, documentation and diff checks.
+Exact deletion scope/counts and retained baseline paths are in
+`build/cleanup-validation/binary-cleanup-result.json`; the per-file deletion list
+is in the same directory. Sources, historical results, useful unfinished plans,
+generic process supervision and pending qualification remain. No full engine
+rebuild, SDK mutation, staging, commit, push or publication occurred.
+
+Earlier checkpoints below are historical, including their superseded execution
+instructions and references to removed disposable output files.
+
 ### S8 closed Foundation runtime failure and focus diagnosis — 2026-10-20 UTC
 
 The ordinary appended application loop remains active: rich-web edits package HTML/CSS/JS resources only, and compiled C/C++/Rust edits rebuild only the small portable module. S8 (`72663`) closed failed: caller 2 / capture-failed, outer owner 0, natural closure after 387.719795s at 3,495,653,376-byte peak RSS. The controller hit an instrumentation per-file byte cap in `runCase`, not an elapsed-time watchdog. All 196 inputs (141,713,323 bytes) were unchanged. E01 captured 4,959 events, 66 case records, 34 GUI operations and 17 polls; E02–E23 were unreached, no E01 case outcome was accepted, and the independent full reader did not run. See [the S8 failure record](../.agent-work/foundation-full-runtime-20261020-v8/ROOT-RUNTIME-FAILURE-v1.json) (SHA-256 `4f026063323df96b15174fd9c35b515f3b5cca2920363f3a3b7391321dd82b94`).
