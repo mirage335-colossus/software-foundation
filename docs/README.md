@@ -24,6 +24,11 @@ what was observed. A proposed platform or procedure is not execution evidence.
 | Sustained maintenance | [Engineering practices](maintenance.md), [documentation rules](documentation.md) |
 | Reusable forms | [Decision](templates/decision.md), [dependency](templates/dependency.md), [validation](templates/validation.md), [release inventory](templates/release-manifest.json) |
 
+Historical appended execution records live in `docs/history/`. They preserve
+evidence, not active instructions, and `.ignore` excludes them from ordinary
+ripgrep searches. Open a named record or use `rg --no-ignore PATTERN docs/history/` when
+its evidence is relevant.
+
 Search current source and the relevant topic before opening large logs. Follow
 linked contracts through callers and tests; do not treat this index as a limit on
 investigation. Update the relevant topic and backlinks when adding documents.

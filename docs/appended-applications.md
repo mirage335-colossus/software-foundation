@@ -590,7 +590,7 @@ Explicit runtime/output paths use UTF-8; the new Windows bitmap entry reads the
 original UTF-16 command line before conversion. Lookup does not depend on the
 working directory. These sources and focused components do not establish an
 eligible native provider, connected HTML TUI, actual window rendering or OS IME
-qualification; the [validation record](appended-validation.md#native-source-and-current-retained-producer-operations)
+qualification; the [validation record](history/appended-validation-2026-10.md#native-source-and-current-retained-producer-operations)
 keeps those limits separate.
 These are one-time kernel maintenance routes. Ordinary payload composition
 continues to reuse finalized binaries without configure, compile, link or install.
@@ -620,14 +620,14 @@ clipboard, popups, native and terminal integration remain unfinished. Reviewed
 provider/recipe source and diagnostic metadata are not a production retained SDK
 or a runnable kernel. Neither metadata nor a producer seal can turn these gaps
 into capabilities. See the
-[frozen component results](appended-validation.md#frozen-physical-input-and-ndv2-component-successors).
+[frozen component results](history/appended-validation-2026-10.md#frozen-physical-input-and-ndv2-component-successors).
 
 A later frozen Linux x86_64 supported-entry graph passed 43 selected component
 CTests with no failures, skips or disabled tests, including input owner/codec,
 NDV2 values, generic surfaces and affected owner/application/native-driver paths.
 Its mocked providers and Node fixtures do not establish an actual engine, browser,
 SDK or production kernel. Later build-entry/physical-admission changes are outside
-that source identity. See the [supported graph receipt](appended-validation.md#supported-input-and-ndv2-component-graph).
+that source identity. See the [supported graph receipt](history/appended-validation-2026-10.md#supported-input-and-ndv2-component-graph).
 
 ## Same-document terminal projection utility
 

@@ -463,10 +463,10 @@ RPATHs, and implicit access to a sibling checkout. A dependency with stricter
 path restrictions must reject them at its own preparation boundary and document
 that limit; do not impose the restriction on the whole application unnecessarily.
 
-Keep parallel source edits in disjoint native subagent scopes. Serialize work that
-uses a shared build tree, or use a purpose-specific tree under `build/` for each
-independent build or test run. Use a stable source snapshot or integration
-checkpoint when a run depends on files still being edited.
+Keep parallel source edits in disjoint scopes. Independent simultaneous builds
+need separate purpose-specific trees under `build/`; serialize work that shares
+a tree. Reuse a stable source snapshot when a run depends on files still being
+edited.
 
 ## Rootless native development dependencies
 
@@ -578,14 +578,14 @@ configuration; a different identity requires a fresh tree. Do not share one
 build directory between simultaneous writers.
 
 Reuse one stable purpose-specific tree for ordinary incremental builds; do not
-create date- or attempt-named trees by default. After the completed check, remove
-its disposable generated binaries, object trees and package copies when they are
-no longer needed. Keep the concise result, exact commands and source identity in
-the existing validation or pending-qualification record. Retain an engine,
-kernel or SDK baseline only when it is deliberately current with exact source,
-configuration and provenance; retire a replaced baseline after its successor is
-accepted. A historical validation result records a past run and does not prove an
-old binary can be rerun or reused.
+create date- or attempt-named trees by default. After a check, remove disposable
+generated binaries, object trees, package copies, CMake/Ninja state, caches and
+generated configuration files when they are no longer needed. Keep its concise
+result, exact commands and source identity in the existing validation or
+pending-qualification record. Retain an engine, kernel or SDK baseline only when
+deliberately current with exact source, configuration and provenance; retire a
+replaced baseline after its successor is accepted. Historical validation records
+a past run and does not prove an old binary can be rerun or reused.
 
 `--portable` selects generic CPU code and the chosen static C++/compiler-runtime
 policy. It cannot lower libc requirements by itself. Linux release candidates

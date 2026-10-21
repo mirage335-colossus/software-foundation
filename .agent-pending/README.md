@@ -41,8 +41,9 @@ even while their execution is deferred.
 Retire an entry after verified completion is recorded, or after explicit cancellation,
 supersession or a justified scope change. Preserve the disposition and necessary
 evidence references in the record, linked maintained evidence or its Git history.
-Keep existing `.agent-work/` contents as read-only historical evidence; consult
-referenced evidence directly when relevant without making an exhaustive inventory.
-Put new temporary build and test output in purpose-specific `build/` directories.
-Keep concise, durable restart notes in the existing plan or pending-qualification
-documents.
+`.agent-work/` is optional historical material, not active instructions or a
+required inventory. Consult a record only when it is relevant to current work.
+Reuse stable purpose-specific build trees for incremental work; give simultaneous
+independent builds separate trees. Remove disposable generated output when no
+longer needed, while retaining concise results and restart notes in existing
+validation, plan or pending-qualification records.

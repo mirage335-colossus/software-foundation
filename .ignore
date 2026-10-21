@@ -1,0 +1,3 @@
+# Historical evidence remains versioned but is outside ordinary ripgrep searches.
+# Read a named archive directly, or search it explicitly with rg --no-ignore.
+/docs/history/
