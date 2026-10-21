@@ -17,16 +17,23 @@ is not integration approval.
 
 ## Outputs and historical material
 
-Use stable purpose-specific directories under `build/`; serialize shared build
-trees. Reuse incremental outputs while useful, then delete obsolete binaries,
-packages, CMake/Ninja files, caches and generated configuration. Retain only
-deliberately current compatible SDK/engine baselines and concise results with
-source identity. A historical result does not qualify current source.
+Reuse stable purpose-specific build directories; serialize work that shares a
+tree. Remove obsolete binaries, packages, CMake/Ninja state, caches and generated
+configuration. Retain only current compatible SDK/engine inputs or records needed
+for unfinished implementation, pending qualification or an unresolved failure.
+Keep each record concise: source identity, verified outcome, remaining work and
+next action. Reference immutable shared inputs instead of copying trees. A past
+result does not qualify changed source.
 
-Use native coordination only: no session registration, boards, filesystem claims
-or new `.agent-work/` content. Existing `.agent-work/` and `docs/history/` contain
-optional historical evidence, not active instructions or required startup reads.
-Keep current restart notes in the relevant plan or pending record.
+Use native managed coordination only: no session registries, boards, filesystem
+claims or new `.agent-work/` material. Selected retained inputs keep their existing
+paths; the current handoff identifies their purpose.
+
+Search current tracked source normally. Consult a named retained input or record
+when relevant; do not recursively search build/history trees for instructions or
+inventory old runs. Historical documentation is optional, not a startup reading
+list. Do not compress routine build output for hypothetical recovery. Keep restart
+notes in the relevant plan or pending record.
 
 ## Development checks and manual qualification
 

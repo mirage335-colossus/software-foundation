@@ -2,97 +2,90 @@
 
 <a id="current-continuation-handoff"></a>
 
-Local `.agent-work/` archives are optional and are not required for repository documentation validation.
+## Current continuation handoff
 
-## Current continuation handoff — 2026-10-20 UTC
+Appended implementation is parked at the user's request. This task is cleanup
+only; resume implementation or acceptance runs on a new request. The current
+cleanup started from `23f3c150357efef79763dfd01d1d74af9b62d6c6`.
 
-### Cleanup checkpoint — 2026-10-20 America/Chicago
+### Implemented, prepared and missing
 
-The user has stopped appended-application implementation for now and requested
-cleanup only. Do not resume builds or acceptance runs without a new request.
-The initial cleanup started from `c6dcfae251ae251dbbe93529699136792d1686b2` and is
-now included in `73fbdbb984c00518203f168616e5e2ef165c9716`. The support-file cleanup
-and documentation corrections below are subsequent local changes.
-
-- Removed obsolete cross-harness coordination tools, dedicated tests, CI wiring,
-  guides and active instructions. Use native managed subagents with disjoint
-  scopes. `.agent-work/` is historical evidence, not an active registry.
-- Reuse stable, purpose-specific build directories. Remove completed disposable
-  binaries, object trees and package copies; preserve useful source, concise
-  results, failures, commands and pending qualification. Only explicitly current
-  SDK/engine baselines remain reusable. Old result records do not qualify new
-  source, and intentionally deleted historical binaries must be rebuilt.
-- Focus/input ordering repair is implemented; six native fixtures passed.
-  F13 scoped Foundation construction and independent full readback passed
+- Focus/input ordering is repaired; six native fixtures passed. F13 scoped
+  Foundation construction and independent full readback passed
   (`build/appended-continuation/readback-execution-v1/ROOT-FULL-READBACK-ACCEPTANCE-v1.json`).
-  This establishes construction only. Its generated host binaries are disposable;
-  no complete Foundation23+3+6 or public browser runtime passed.
-- Maintained [QuotePad](../examples/appended-quote-pad/README.md) now includes
-  C/C++/Rust providers. Actual-Wasm fixtures pass totals43/44 and seven negative
-  contexts using a modeled serialized owner; compile/pack measurements are in
-  `build/quotepad-languages/strong/RESULT.json`. Generated modules/packages are
-  disposable test outputs, not retained application releases.
-- Public viewer observation and schema3 physical-input source is prepared.
+  Complete Foundation23+3+6 runtime and ordinary public browser acceptance have
+  not passed. Deleted disposable host binaries require fresh construction.
+- Maintained [QuotePad](../examples/appended-quote-pad/README.md) has C/C++/Rust
+  providers. Actual-Wasm fixtures pass totals43/44 and seven negative contexts
+  with a modeled serialized owner. Compile/pack observations remain in
+  `build/quotepad-languages/strong/RESULT.json`; this is component evidence.
+- Viewer observation and schema3 physical-input source is prepared.
   `build/public-application-integration/CLEANUP-HANDOFF-v2.json` records46 passing
-  checker tests and a **known unrepaired signed/fractional JSON boundary gap**.
-  Scenario templates are unexecuted; no browser/application acceptance is implied.
-- Receipt converter source in `tools/appended_foundation_receipt.py` is partial,
-  untested and not registered. `build/appended-runtime/` preserves prepared reader
-  sources and seven passing pure witness fixtures. Resume by completing/reviewing
-  these sources, then construct a fresh host and perform complete runtime/readback.
-- Signal notebook (`src-web-appended/`) preserves the broader spreadsheet,
-  dropdown, dynamic-DOM, rich-editing and native/module-service example. Native
-  HTML TUI still needs a real admitted native engine group; the available retained
-  engine is wasm32. Do not substitute browser qualification for native/TUI gates.
+  checker tests and a known unrepaired signed/fractional JSON boundary gap.
+  Scenario templates are unexecuted, without browser/application acceptance.
+- `tools/appended_foundation_receipt.py` is partial, untested and unregistered.
+  `build/appended-runtime/` preserves prepared reader sources and seven passing
+  pure witness fixtures. Complete/review these sources before full runtime/readback.
+- `src-web-appended/` preserves the broader signal notebook: spreadsheet controls,
+  dropdowns, dynamic DOM, rich editing and native/module services. Native rich
+  HTML/TUI still needs an admitted native engine group; the retained engine is
+  wasm32. Browser qualification cannot replace native/TUI gates.
 
-All managed writers and checks closed before binary cleanup. Removed 84,764
-obsolete generated files (79.988 GiB logical bytes). Cleanup tooling checks passed:
-CI classification 63, host contracts 26, test runner 8, documentation and diff checks.
-Exact deletion scope/counts and retained baseline paths are in
-`build/cleanup-validation/binary-cleanup-result.json`; the per-file deletion list
-is in the same directory. Sources, historical results, useful unfinished plans,
-generic process supervision and pending qualification remain. No full engine
-rebuild, SDK mutation, staging, commit, push or publication occurred.
+Use [current tools and limits](appended-applications.md),
+[validation status](appended-validation.md) and
+[remaining qualification](../.agent-pending/appended-kernel-qualification.md).
+Preserve the product requirements and unfinished work packages below.
 
-The follow-up removed another 114,041 files (16.895 GiB logical bytes): 12 obsolete
-SDK/sysroot support trees, 33 identical WebKit source-archive copies and 15 old
-SDK source-archive copies whose hashes match retained public release assets.
-One canonical WebKit source archive, all five selected current SDK/engine roots,
-and the selected engine records remain. The executed removal receipt is
-`build/cleanup-validation/support-cleanup-result.json`. Retention is per compatible
-target/profile/toolchain, not simply the newest timestamp across all platforms.
+### Cleanup and retained material
+
+Retention is limited to current compatible inputs and identified unfinished work.
+`build/cleanup-validation/purpose-retention.json` names the five retained SDK/engine
+roots, prepared source directories and exact continuation helpers. The two current
+engine manifests select 104 additional files. Original retained-input paths stay
+in place so their identities are not rewritten; do not browse their parent trees
+for instructions. New work uses stable purpose-specific directories under `build/`.
+
+The retained material has these concrete uses:
+
+- Current SDKs, engine group, selected engine evidence and one pinned WebKit supplier
+  archive support fresh scoped host construction and portable-module compilation.
+- `build/appended-continuation/` retains preparation scripts, current input metadata
+  and independent F13 readback. Its old source-copy and compilation trees are gone,
+  apart from two manifest-selected records. Fresh current-source construction and
+  new source/readback bindings are required; the old launch is not immediately rerunnable.
+- `build/appended-runtime/`, `build/public-application-integration/`, the QuotePad
+  results and focus-repair records preserve unfinished runtime/scenario work and
+  relevant failures. The 68-file WebKit overlay remains under
+  `build/historical-sources/webkit-probe-overlay/`; the separate prototype and
+  pinned compatibility patches are also retained.
+- Small unresolved CI/checker records remain under `build/cleanup-validation/`.
+  The prepared provider and 75-file recipe projection remain maintained source in
+  `third_party/appended-engine/` and `recipes/webkitwasm-copied259-v1/`.
+
+Old coordination records, obsolete build/SDK copies, broad JSON/log archives and
+source-recovery indexes were deliberately discarded. They are not prerequisites
+for future development. `purpose-cleanup-result.json` records this cleanup and
+`purpose-retained-checks.json` records the selected-input verification. The retained
+`cleanup-followup-result.json` is an aggregate of the earlier storage cleanup;
+its former detailed selections and recovery catalogs are no longer retained.
+
+Use native managed coordination only. Current plans and pending records are the
+restart points; do not recreate `.agent-work` boards or inventory old run trees.
+Historical documentation preserves dated findings, not current instructions or
+assurance that its old local paths still exist.
 
 The [Development feedback run for 73fbdbb](https://github.com/mirage335-colossus/software-foundation/actions/runs/39537683170)
-failed documentation checks because 39 links required ignored local archives.
-Those references now remain as labeled archive paths; documentation validation
-passed both locally and in a copy containing tracked files only. The checker was
-not weakened. Other infrastructure failures remain: output replacement ownership,
-SDK source-insulation policy applied to README text, runner tool/environment
-assumptions, and changed source/schema/workflow expectations. Investigate these
-with their focused suites before another complete release attempt; they have not
-been repaired or rerun here.
+failed 39 documentation links to ignored archives; those links were corrected.
+Other observed failures remain: output replacement ownership, SDK source-insulation
+checks on README text, runner assumptions and changed source/schema/workflow
+expectations. These have not been repaired or requalified by cleanup. Restore
+ordinary release feedback separately from unfinished rich-runtime qualification,
+using the existing [Latest workflow](latest-release.md) and its complete gates.
 
-Next simplification priorities, without resuming implementation in this cleanup:
-
-1. Maintain one explicit current baseline selection per target/profile/toolchain
-   and one reusable output tree per compatible configuration. Delete superseded
-   local copies after their final consumer; retain results and provenance.
-2. Make this handoff the current-state entry point and treat the chronology below
-   as history. Preserve unfinished product plans and failure evidence without
-   requiring every future task to rediscover them.
-3. Complete the maintained public appended runner using the prepared QuotePad,
-   provider, viewer and runtime work. Keep web edits packaging-only and compiled
-   edits limited to the small module; preserve all acceptance predicates.
-4. Restore ordinary release feedback separately from unfinished rich-runtime
-   qualification. Use the existing [Latest release workflow](latest-release.md)
-   to build candidates once, certify their exact bytes and promote after gates
-   pass. Appended composition currently produces unqualified candidates; it is
-   not a shortcut around release certification.
-
-Historical execution checkpoints and the superseded original agent prompt are in
-[the plan archive](history/appended-plan-checkpoints-2026-10.md). Consult only a
-specific result needed for the current task. The preserved requirements and
-unfinished implementation plan below remain development inputs.
+Historical checkpoints and the original agent brief remain in
+[the plan archive](history/appended-plan-checkpoints-2026-10.md). Consult a specific
+finding only when relevant; the preserved product requirements and unfinished
+work packages below remain the development plan.
 
 ### Preserved user intent and acceptance criteria
 

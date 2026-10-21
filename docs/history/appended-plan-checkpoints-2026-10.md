@@ -3,7 +3,9 @@
 This archive preserves past observations and superseded instructions. It is not
 active agent guidance, current authorization or a required startup read. Start
 with the [current handoff](../appended-application-plan.md#current-continuation-handoff).
-Historical artifact paths may name deleted disposable outputs.
+Historical artifact paths may name deliberately deleted local logs, snapshots or
+outputs. Bulk recovery archives were retired; the current handoff identifies the
+small set of retained inputs and unfinished work.
 
 Earlier checkpoints below are historical, including their superseded execution
 instructions and references to removed disposable output files.

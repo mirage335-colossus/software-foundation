@@ -577,15 +577,14 @@ The wrapper still binds it to the exact compiler, SDK, feature choices and
 configuration; a different identity requires a fresh tree. Do not share one
 build directory between simultaneous writers.
 
-Reuse one stable purpose-specific tree for ordinary incremental builds; do not
-create date- or attempt-named trees by default. After a check, remove disposable
-generated binaries, object trees, package copies, CMake/Ninja state, caches and
-generated configuration files when they are no longer needed. Keep its concise
-result, exact commands and source identity in the existing validation or
-pending-qualification record. Retain an engine, kernel or SDK baseline only when
-deliberately current with exact source, configuration and provenance; retire a
-replaced baseline after its successor is accepted. Historical validation records
-a past run and does not prove an old binary can be rerun or reused.
+Reuse one stable purpose-specific tree for incremental builds; use separate trees
+for simultaneous independent builds. Remove obsolete binaries, object trees,
+packages, CMake/Ninja state, caches and generated configuration. Retain only
+current compatible SDK/engine inputs or concise records needed for unfinished
+implementation, pending qualification or an unresolved failure. A record should
+identify its source, verified result, remaining work and next action. Reference
+immutable shared inputs instead of copying trees; a past result does not qualify
+changed source.
 
 `--portable` selects generic CPU code and the chosen static C++/compiler-runtime
 policy. It cannot lower libc requirements by itself. Linux release candidates
